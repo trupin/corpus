@@ -7,15 +7,16 @@
  * `git show HEAD:` read — goes through this surface.
  */
 
-export { ACTOR_IDENTITIES, FALLBACK_COMMITTER, SQUASH_IDLE_MS } from "./commit.js";
+export { ACTOR_IDENTITIES, FALLBACK_COMMITTER, SQUASH_IDLE_MS, WINDOW_MAX_MS } from "./commit.js";
 export { TRAILER_ACTOR, TRAILER_ANCHORS, TRAILER_DOC } from "./commit.js";
-export { createAutoCommitter, gitAuthorOf } from "./commit.js";
+export { createAutoCommitter, editingSessionSubject, gitAuthorOf } from "./commit.js";
 export type {
   AnchorChange,
   AutoCommitter,
   AutoCommitterOptions,
   CommitOutcome,
   CommitRequest,
+  WindowCloseReason,
 } from "./commit.js";
 export { sanitizeGitEnv } from "./env.js";
 export type { ChildEnv } from "./env.js";

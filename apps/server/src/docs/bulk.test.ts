@@ -258,17 +258,21 @@ describe("the bulk commit stands alone in both directions (§4)", () => {
     const edited = await ws.put(`/api/docs/${id}`, { body: "the user's first draft" });
     expect(edited.status).toBe(200);
     const sessionCommit = ws.head();
+    const sessionTree = ws.git("rev-parse", `${sessionCommit}^{tree}`).trim();
     const commits = ws.log("%H").length;
 
     // No clock movement at all: the same author, the same document, well inside
-    // §4's 30 s squash window — exactly the situation an ordinary save folds in.
+    // §4's 30 s idle window — exactly the situation an ordinary save folds in.
     const { result } = await bulk(staged([id], { action: "archive" }));
 
     expect(result.commit).not.toBe(sessionCommit);
     expect(ws.log("%H")).toHaveLength(commits + 1);
-    expect(ws.git("rev-parse", "HEAD^").trim()).toBe(sessionCommit);
-    // The session's own commit still says what it said.
-    expect(ws.git("log", "-1", "--format=%s", sessionCommit).trim()).toContain("doc edit:");
+    // The act sits on top of the session's own commit, whose content is
+    // untouched. Its *sha* moved: §4 has the act close the open window first,
+    // and a window that no act named is relabelled as it closes (SERVER-091),
+    // which is an amend and so a new sha for the same tree.
+    expect(ws.git("rev-parse", "HEAD^^{tree}").trim()).toBe(sessionTree);
+    expect(ws.git("log", "-1", "--format=%s", "HEAD^").trim()).toContain("editing session:");
   });
 
   it("takes no later save into itself", async () => {

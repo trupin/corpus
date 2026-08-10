@@ -7,14 +7,22 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAutoCommitter, SQUASH_IDLE_MS, type AutoCommitter } from "./commit.js";
-import { createGit } from "./git.js";
+import {
+  createAutoCommitter,
+  editingSessionSubject,
+  SQUASH_IDLE_MS,
+  WINDOW_MAX_MS,
+  type AutoCommitter,
+} from "./commit.js";
+import { createGit, type Git } from "./git.js";
 import { sanitizeGitEnv } from "./env.js";
 import { disableAutoMaintenance } from "./maintenance.js";
 
 type Repo = {
   readonly root: string;
   readonly committer: AutoCommitter;
+  /** Every git invocation the committer made, in order — so "made no call at all" is assertable. */
+  readonly calls: string[][];
   clock: number;
   git(...args: string[]): string;
   touch(path: string, content: string): void;
@@ -31,7 +39,13 @@ afterEach(() => {
 
 function makeRepo(
   name: string,
-  options: { init?: boolean; identity?: boolean; seed?: boolean } = {},
+  options: {
+    init?: boolean;
+    identity?: boolean;
+    seed?: boolean;
+    /** A small ageing-out interval, so §4's backstop is reachable in a test. */
+    windowMaxMs?: number;
+  } = {},
 ): Repo {
   const root = mkdtempSync(join(tmpdir(), `corpus-s005-${name}-`));
   const git = (...args: string[]): string =>
@@ -57,9 +71,23 @@ function makeRepo(
   }
 
   const state = { clock: Date.parse("2026-07-27T09:00:00Z") };
+  const calls: string[][] = [];
+  const underlying = createGit(root);
+  const recording: Git = {
+    root,
+    exec: (args, execOptions) => {
+      calls.push([...args]);
+      return underlying.exec(args, execOptions);
+    },
+  };
   const made: Repo = {
     root,
-    committer: createAutoCommitter({ git: createGit(root), now: () => state.clock }),
+    calls,
+    committer: createAutoCommitter({
+      git: recording,
+      now: () => state.clock,
+      ...(options.windowMaxMs === undefined ? {} : { windowMaxMs: options.windowMaxMs }),
+    }),
     get clock() {
       return state.clock;
     },
@@ -159,7 +187,7 @@ describe("createAutoCommitter", () => {
     expect(r.git("show", "--stat", "--format=", "HEAD").trim()).toBe("");
   });
 
-  it("folds two rapid saves of one document by one author into one commit", async () => {
+  it("folds two rapid saves of one document by one party into one commit", async () => {
     const r = makeRepo("squash");
     const base = r.git("rev-parse", "HEAD").trim();
 
@@ -236,8 +264,11 @@ describe("createAutoCommitter", () => {
     expect(r.git("log", "-1", "--format=%b")).toContain("Corpus-Anchors: remapped=0 orphaned=1");
   });
 
-  it("starts a fresh commit past the window, for another author, another document, or after an interleaved commit", async () => {
-    for (const scenario of ["window", "actor", "document", "interleaved"] as const) {
+  // The `document` scenario this loop used to carry moved out on SERVER-091: a
+  // save to another document by the same party is now the *folding* case, and it
+  // is asserted as such under "a commit window belongs to a party".
+  it("starts a fresh commit past the window, for the other party, or after an interleaved commit", async () => {
+    for (const scenario of ["window", "actor", "interleaved"] as const) {
       const r = makeRepo(`squash-break-${scenario}`);
       const base = r.git("rev-parse", "HEAD").trim();
       r.touch(DOC, "one");
@@ -256,13 +287,12 @@ describe("createAutoCommitter", () => {
         r.git("commit", "-m", "an unrelated commit");
       }
 
-      const second = "data/docs/inbox/other.md";
-      r.touch(scenario === "document" ? second : DOC, "two");
+      r.touch(DOC, "two");
       const outcome = await r.committer.commit({
-        docId: scenario === "document" ? "doc_bbbb2222" : "doc_aaaa1111",
+        docId: "doc_aaaa1111",
         actor: scenario === "actor" ? "agent" : "user",
         subject: "doc edit: second save",
-        paths: [scenario === "document" ? second : DOC],
+        paths: [DOC],
       });
 
       expect(outcome.kind, scenario).toBe("committed");
@@ -544,14 +574,17 @@ describe("createAutoCommitter", () => {
     // A fresh commit, not a refusal and not a rewrite.
     expect(deleted.kind).toBe("committed");
     expect(r.git("rev-parse", "HEAD").trim()).not.toBe(createSha);
-    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(createSha);
     // The deletion is in the audit trail (SPEC.md §4) and the file is gone from
-    // the tree, while the create commit still holds its content.
+    // the tree, while the create commit still holds its content. That commit's
+    // *sha* moved on SERVER-091 — the window it held closed with no act to name
+    // it, so its subject was rewritten — but its content is untouched, which is
+    // the whole of what this regression is about.
     expect(r.git("log", "--diff-filter=D", "--format=%s", "--", DOC).trim()).toBe(
       "doc delete: Note (doc_aaaa1111) by user",
     );
     expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain(DOC);
-    expect(r.git("show", `${createSha}:${DOC}`)).toBe("created inside the window");
+    expect(r.git("show", "HEAD~1:" + DOC)).toBe("created inside the window");
+    expect(r.log("%s")[1]).toBe(editingSessionSubject(1, "user"));
   });
 
   it("leaves nothing staged after a delete inside the window, so the next commit is uncontaminated", async () => {
@@ -633,7 +666,6 @@ describe("createAutoCommitter", () => {
       subject: "doc create",
       paths: [DOC],
     });
-    const rootSha = r.git("rev-parse", "HEAD").trim();
 
     r.clock += 100;
     rmSync(join(r.root, DOC));
@@ -645,7 +677,10 @@ describe("createAutoCommitter", () => {
     });
 
     expect(outcome.kind).toBe("committed");
-    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(rootSha);
+    // Two commits, the root one still holding the create (relabelled as the
+    // editing session it turned out to be — see the sibling test above).
+    expect(r.log("%s")).toEqual(["doc delete", editingSessionSubject(1, "user")]);
+    expect(r.git("show", "HEAD~1:" + DOC)).toBe("one");
     expect(r.git("log", "--diff-filter=D", "--format=%s", "--", DOC).trim()).toBe("doc delete");
     expect(r.git("status", "--porcelain").trim()).toBe("");
   });
@@ -767,6 +802,43 @@ describe("createAutoCommitter", () => {
     expect(r.git("show", "--stat", "--format=", "HEAD").trim()).toBe("");
   });
 
+  it("takes no later save into an audit entry either — `squash: false` opens no window", async () => {
+    // The other half of "an audit entry is its own event, never part of an
+    // edit". It was only ever enforced against folding *into* a preceding
+    // window; the entry still opened one of its own, so the next save amended
+    // it — replacing its subject and dropping the trailer that says whose lease
+    // was broken, which no other trailer expresses (SERVER-091).
+    const r = makeRepo("audit-opens-no-window");
+    const audit = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "lock: force-break on doc_aaaa1111 (was agent) by user",
+      paths: [],
+      trailers: ["Corpus-Lock-Holder: agent"],
+      allowEmpty: true,
+      squash: false,
+    });
+    expect(audit.kind).toBe("committed");
+    const auditSha = audit.kind === "committed" ? audit.sha : "";
+
+    // Same party, no clock movement — everything an ordinary save needs to fold.
+    r.clock += 100;
+    r.touch(DOC, "typed right after the break");
+    const save = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    expect(save.kind).toBe("committed");
+    expect(r.git("rev-parse", "HEAD^").trim()).toBe(auditSha);
+    expect(r.git("log", "-1", "--format=%s", auditSha).trim()).toBe(
+      "lock: force-break on doc_aaaa1111 (was agent) by user",
+    );
+    expect(r.git("log", "-1", "--format=%b", auditSha)).toContain("Corpus-Lock-Holder: agent");
+  });
+
   it("commits with a fallback identity when the repository configures none", async () => {
     const r = makeRepo("no-identity", { identity: false });
     r.touch(DOC, "one");
@@ -793,7 +865,12 @@ describe("createAutoCommitter", () => {
     }
   });
 
-  it("serializes concurrent commits so no commit carries another document's change", async () => {
+  it("serializes concurrent commits so neither document's change is lost to the other", async () => {
+    // Before SERVER-091 this asserted two commits, one document each — the
+    // document was half the fold key. Under §4's party-scoped window the two
+    // saves belong to one commit, so what the git lock has to prove is that
+    // *both* changes are in it: without the lock the two stage/commit pairs
+    // interleave and one overwrites the other's index.
     const r = makeRepo("serialize");
     const base = r.git("rev-parse", "HEAD").trim();
     const paths = ["data/docs/inbox/a.md", "data/docs/inbox/b.md"];
@@ -811,14 +888,17 @@ describe("createAutoCommitter", () => {
     );
 
     const shas = r.git("log", "--format=%H", `${base}..HEAD`).trim().split("\n");
-    expect(shas).toHaveLength(2);
-    for (const sha of shas) {
-      const stat = r.git("show", "--stat", "--format=", sha);
-      const touched = paths.filter((path) => stat.includes(path));
-      expect(touched).toHaveLength(1);
-      const trailer = r.git("log", "-1", "--format=%b", sha);
-      expect(trailer).toContain(touched[0] === paths[0] ? "doc_aaaa1111" : "doc_bbbb2222");
+    expect(shas).toHaveLength(1);
+    const stat = r.git("show", "--stat", "--format=", "HEAD");
+    for (const [index, path] of paths.entries()) {
+      expect(stat).toContain(path);
+      expect(r.git("show", `HEAD:${path}`)).toBe(`content ${index}`);
     }
+    const trailers = r.git("log", "-1", "--format=%b");
+    expect(trailers).toContain("Corpus-Doc: doc_aaaa1111");
+    expect(trailers).toContain("Corpus-Doc: doc_bbbb2222");
+    // Nothing of the operator's, and nothing repeated.
+    expect(r.git("status", "--porcelain").trim()).toBe("");
   });
 });
 
@@ -872,10 +952,15 @@ describe("an act over a named set", () => {
     });
 
     expect(act.kind).toBe("committed");
+    // Two commits, the act's own on top. The editing session below it closed
+    // when the act refused to join it, and says so (SERVER-091): §4 has a bulk
+    // Save "close the window, let that commit land, and then commit separately".
     expect(r.log("%s").slice(0, 2)).toEqual([
       "bulk archive: 1 document by user",
-      "doc edit: Note (doc_aaaa1111) by user",
+      editingSessionSubject(1, "user"),
     ]);
+    // The session's content is untouched by the relabelling.
+    expect(r.git("show", "HEAD~1:" + A)).toBe("first edit");
   });
 
   it("takes no later save into itself", async () => {
@@ -904,5 +989,336 @@ describe("an act over a named set", () => {
     expect(r.git("rev-parse", "HEAD^").trim()).toBe(actSha);
     // The act still records the act, byte for byte.
     expect(r.git("show", `${actSha}:${A}`)).toBe("archived");
+  });
+
+  it("still commits alone when the open window is the same party's", async () => {
+    // The document used to be half the fold key, so an act on *another*
+    // document was kept apart by the key itself. Under the party-scoped window
+    // (SERVER-091) only `docIds` keeps it apart, which is the whole point of
+    // being told rather than inferring.
+    const r = makeRepo("act-alone-party-key");
+    r.touch(A, "an ordinary save");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+
+    r.clock += 100;
+    r.touch(B, "archived");
+    const act = await r.committer.commit({
+      docId: "doc_bbbb2222",
+      docIds: ["doc_bbbb2222"],
+      actor: "user",
+      subject: "bulk archive: 1 document by user",
+      paths: [B],
+    });
+
+    expect(act.kind).toBe("committed");
+    expect(r.log("%s").slice(0, 2)).toEqual([
+      "bulk archive: 1 document by user",
+      editingSessionSubject(1, "user"),
+    ]);
+    // The act's commit names only the act's document — the window's is not
+    // swept into it.
+    expect(r.git("log", "-1", "--format=%b")).toBe(
+      "Corpus-Doc: doc_bbbb2222\nCorpus-Actor: user\n\n",
+    );
+    expect(r.git("show", "--stat", "--format=", "HEAD")).not.toContain(A);
+  });
+});
+
+// SPEC.md §4's commit-window rider (SERVER-091): "At most one window is open at
+// a time and it belongs to one party". The fold key is the acting party alone,
+// the window remembers every document it has held, and closing it is "stop
+// amending it" plus — where no act named it — one subject-rewriting amend.
+describe("a commit window belongs to a party", () => {
+  const A = "data/docs/inbox/a.md";
+  const B = "data/docs/inbox/b.md";
+
+  it("gathers every document one party touched into a single commit", async () => {
+    const r = makeRepo("window-two-docs");
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    r.touch(A, "a one");
+    const first = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+    r.clock += 100;
+    r.touch(B, "b one");
+    const second = await r.committer.commit({
+      docId: "doc_bbbb2222",
+      actor: "user",
+      subject: "doc edit: B by user",
+      paths: [B],
+    });
+    // Back to the first document: the trailer set must not grow a duplicate.
+    r.clock += 100;
+    r.touch(A, "a two");
+    const third = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+
+    expect([first.kind, second.kind, third.kind]).toEqual(["committed", "amended", "amended"]);
+    expect(r.git("log", "--format=%H", `${base}..HEAD`).trim().split("\n")).toHaveLength(1);
+    // One commit, both documents' *latest* content, one trailer each, in the
+    // order the documents were first touched.
+    expect(r.git("show", `HEAD:${A}`)).toBe("a two");
+    expect(r.git("show", `HEAD:${B}`)).toBe("b one");
+    expect(r.git("log", "-1", "--format=%b")).toBe(
+      "Corpus-Doc: doc_aaaa1111\nCorpus-Doc: doc_bbbb2222\nCorpus-Actor: user\n\n",
+    );
+    expect(r.log("%an")[0]).toBe("user");
+  });
+
+  it("closes on the other party's write, so git log --author stays exact", async () => {
+    const r = makeRepo("window-party-change");
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    const save = async (actor: "user" | "agent", content: string): Promise<void> => {
+      r.touch(A, content);
+      await r.committer.commit({
+        docId: "doc_aaaa1111",
+        actor,
+        subject: `doc edit: A by ${actor}`,
+        paths: [A],
+      });
+      r.clock += 100;
+    };
+
+    await save("user", "the user types");
+    await save("agent", "the agent stewards");
+    await save("user", "the user types again");
+
+    // Three commits, in that authorship order — never one commit carrying both
+    // parties' work, and never the agent's change folded under `user`.
+    expect(r.git("log", "--format=%H", `${base}..HEAD`).trim().split("\n")).toHaveLength(3);
+    // Newest first: the last window is still open and keeps its save's subject;
+    // the two the handover closed each say what they were.
+    expect(r.log("%an|%s")).toEqual([
+      "user|doc edit: A by user",
+      `agent|${editingSessionSubject(1, "agent")}`,
+      `user|${editingSessionSubject(1, "user")}`,
+      "Seed|seed",
+    ]);
+    expect(
+      r.git("log", "--author=user", "--format=%an", `${base}..HEAD`).trim().split("\n"),
+    ).toHaveLength(2);
+    expect(
+      r.git("log", "--author=agent", "--format=%an", `${base}..HEAD`).trim().split("\n"),
+    ).toHaveLength(1);
+    // Relabelling a closed window never touches its content.
+    expect(r.git("show", "HEAD~2:" + A)).toBe("the user types");
+    expect(r.git("show", "HEAD~1:" + A)).toBe("the agent stewards");
+    expect(r.git("show", "HEAD:" + A)).toBe("the user types again");
+  });
+
+  it("ages out under continuing activity, and the next save opens a fresh window", async () => {
+    // §4: "once a window has been open long enough it commits anyway, however
+    // busy it has stayed". Saves every 100 ms, so nothing ever goes idle.
+    expect(WINDOW_MAX_MS).toBeGreaterThan(SQUASH_IDLE_MS);
+    const r = makeRepo("window-age-out", { windowMaxMs: 500 });
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    const kinds: string[] = [];
+    for (let step = 0; step <= 5; step += 1) {
+      r.touch(A, `save ${step}`);
+      const outcome = await r.committer.commit({
+        docId: "doc_aaaa1111",
+        actor: "user",
+        subject: `doc edit: save ${step}`,
+        paths: [A],
+      });
+      kinds.push(outcome.kind);
+      r.clock += 100;
+    }
+
+    // Five saves fold; the sixth is 500 ms past the window's opening.
+    expect(kinds).toEqual(["committed", "amended", "amended", "amended", "amended", "committed"]);
+    expect(r.git("log", "--format=%H", `${base}..HEAD`).trim().split("\n")).toHaveLength(2);
+    // Both are editing sessions — no act named either — and the aged-out one
+    // says so rather than keeping the subject of whichever save was last.
+    expect(r.log("%s").slice(0, 2)).toEqual(["doc edit: save 5", editingSessionSubject(1, "user")]);
+    expect(r.git("show", "HEAD:" + A)).toBe("save 5");
+    expect(r.git("show", "HEAD~1:" + A)).toBe("save 4");
+  });
+
+  it("does nothing at all when no window is open", async () => {
+    const r = makeRepo("window-close-none");
+    r.calls.length = 0;
+    await expect(r.committer.closeWindow("shutdown")).resolves.toBeUndefined();
+    // Not one invocation: every caller in §4's list closes unconditionally, so
+    // the common case has to cost nothing.
+    expect(r.calls).toEqual([]);
+  });
+
+  it("leaves a commit that is no longer HEAD alone", async () => {
+    const r = makeRepo("window-close-head-moved");
+    r.touch(A, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+
+    // A hook, the operator, another tool — anything at all committing after us.
+    r.touch("unrelated.txt", "outside");
+    r.git("add", "-A", "--", "unrelated.txt");
+    r.git("commit", "-m", "an unrelated commit");
+    const head = r.git("rev-parse", "HEAD").trim();
+
+    r.calls.length = 0;
+    await expect(r.committer.closeWindow("read-back")).resolves.toBeUndefined();
+
+    expect(r.git("rev-parse", "HEAD").trim()).toBe(head);
+    expect(r.calls.some((call) => call.includes("--amend"))).toBe(false);
+    expect(r.log("%s").slice(0, 2)).toEqual(["an unrelated commit", "doc edit: A by user"]);
+  });
+
+  it("refuses the subject rewrite in exactly the states an ordinary amend is refused", async () => {
+    for (const state of ["detached", "merging", "published"] as const) {
+      const r = makeRepo(`window-close-safe-${state}`);
+      r.touch(A, "one");
+      await r.committer.commit({
+        docId: "doc_aaaa1111",
+        actor: "user",
+        subject: "doc edit: A by user",
+        paths: [A],
+      });
+      const beforeSha = r.git("rev-parse", "HEAD").trim();
+
+      if (state === "detached") r.git("checkout", "--detach", "HEAD");
+      if (state === "merging") writeFileSync(join(r.root, ".git", "MERGE_HEAD"), beforeSha, "utf8");
+      if (state === "published") r.git("update-ref", "refs/remotes/origin/main", beforeSha);
+
+      // Refusing is harmless: the commit keeps the last save's subject and the
+      // window closes anyway — the next save cannot fold into it.
+      await expect(r.committer.closeWindow("shutdown")).resolves.toBeUndefined();
+      expect(r.git("rev-parse", "HEAD").trim(), state).toBe(beforeSha);
+      expect(r.git("log", "-1", "--format=%s").trim(), state).toBe("doc edit: A by user");
+
+      r.clock += 100;
+      r.touch(A, "two");
+      const next = await r.committer.commit({
+        docId: "doc_aaaa1111",
+        actor: "user",
+        subject: "doc edit: A by user",
+        paths: [A],
+      });
+      expect(next.kind, state).toBe(state === "merging" ? "failed" : "committed");
+      r.close();
+      repo = undefined;
+    }
+  });
+
+  it("keeps the subject where an act named the window, and rewrites it where none did", async () => {
+    for (const named of [true, false]) {
+      const r = makeRepo(`window-close-named-${String(named)}`);
+      r.touch(A, "a one");
+      await r.committer.commit({
+        docId: "doc_aaaa1111",
+        actor: "agent",
+        subject: "doc edit: A by agent",
+        paths: [A],
+      });
+      r.clock += 100;
+      r.touch(B, "b one");
+      // The act's own change is the last thing in the window's commit, and its
+      // subject names the act (SPEC.md §4).
+      await r.committer.commit({
+        docId: "doc_bbbb2222",
+        actor: "agent",
+        subject: "comment: turn on th_a1b2 by agent",
+        paths: [B],
+        ...(named ? { act: true } : {}),
+      });
+
+      await r.committer.closeWindow(named ? "act" : "superseded");
+
+      expect(r.log("%s")[0], String(named)).toBe(
+        named ? "comment: turn on th_a1b2 by agent" : editingSessionSubject(2, "agent"),
+      );
+      // Either way the commit still holds both documents and both trailers, and
+      // is still the agent's.
+      expect(r.log("%an")[0], String(named)).toBe("agent");
+      expect(r.git("log", "-1", "--format=%b"), String(named)).toContain(
+        "Corpus-Doc: doc_aaaa1111\nCorpus-Doc: doc_bbbb2222\nCorpus-Actor: agent",
+      );
+      expect(r.git("show", `HEAD:${A}`), String(named)).toBe("a one");
+      expect(r.git("show", `HEAD:${B}`), String(named)).toBe("b one");
+      r.close();
+      repo = undefined;
+    }
+  });
+
+  it("closes for good: after closeWindow the next save makes a fresh commit", async () => {
+    const r = makeRepo("window-close-is-final");
+    const base = r.git("rev-parse", "HEAD").trim();
+    r.touch(A, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+
+    await r.committer.closeWindow("read-back");
+    const closedSha = r.git("rev-parse", "HEAD").trim();
+
+    // Well inside the idle window: only the close stands between these two.
+    r.clock += 100;
+    r.touch(A, "two");
+    const next = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+
+    expect(next.kind).toBe("committed");
+    expect(r.git("log", "--format=%H", `${base}..HEAD`).trim().split("\n")).toHaveLength(2);
+    expect(r.git("rev-parse", "HEAD^").trim()).toBe(closedSha);
+    expect(r.log("%s")[1]).toBe(editingSessionSubject(1, "user"));
+  });
+
+  it("preserves a neighbour's committed change when the amend names only one document's paths", () => {
+    // The mechanism the whole window rests on, asserted against git itself
+    // rather than through the committer: `--amend --only -- <paths>` keeps every
+    // *other* path at the version the commit already holds. If a future git
+    // stopped doing this, a multi-document window would silently drop documents,
+    // and this is the test that would say so.
+    const r = makeRepo("amend-only-preserves");
+    r.touch(A, "a one");
+    r.git("add", "-A", "--", A);
+    r.git("commit", "-m", "first", "--only", "--", A);
+    const authorDate = r.git("log", "-1", "--format=%aI").trim();
+
+    r.touch(B, "b one");
+    r.git("add", "-A", "--", B);
+    r.git("commit", "--amend", `--date=${authorDate}`, "-m", "second", "--only", "--", B);
+
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).toContain(A);
+    expect(r.git("show", `HEAD:${A}`)).toBe("a one");
+    expect(r.git("show", `HEAD:${B}`)).toBe("b one");
+
+    // And the message-only form the close uses: no pathspec at all, so neither
+    // the working tree nor a staged change of the operator's reaches the commit.
+    r.touch("operator.txt", "the operator's own work\n");
+    r.git("add", "--", "operator.txt");
+    r.touch(A, "edited after the commit");
+    r.git("commit", "--amend", "--only", "-m", editingSessionSubject(2, "user"));
+
+    expect(r.log("%s")[0]).toBe(editingSessionSubject(2, "user"));
+    expect(r.git("show", `HEAD:${A}`)).toBe("a one");
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain("operator.txt");
+    expect(r.git("status", "--porcelain")).toContain("operator.txt");
   });
 });

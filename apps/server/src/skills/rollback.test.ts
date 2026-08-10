@@ -398,15 +398,20 @@ describe("the restoration is an ordinary mutation", () => {
       { "x-corpus-author": "agent" },
     );
     expect(edited.status).toBe(200);
-    const afterEdit = ws.head();
+    const afterEditTree = ws.git("rev-parse", `${ws.head()}^{tree}`).trim();
     const heightBefore = ws.log("%H").length;
 
     const { status } = await rollback(SKILL, { to: oldest }, "agent");
     expect(status).toBe(200);
     expect(ws.read(PATH)).toBe(skill("Version one."));
-    // A commit was *added*, and the bad edit's own commit is still reachable.
+    // A commit was *added*, and the bad edit is still in the history under the
+    // restoration rather than amended away. Its sha moved — §4 has the
+    // restoration close the edit's still-open window first, and a window no act
+    // named is relabelled as it closes (SERVER-091) — so the tree is what
+    // identifies it, not the sha.
     expect(ws.log("%H")).toHaveLength(heightBefore + 1);
-    expect(ws.log("%H")).toContain(afterEdit);
+    expect(ws.git("rev-parse", "HEAD^^{tree}").trim()).toBe(afterEditTree);
+    expect(ws.git("show", "HEAD^:" + PATH)).toContain("Version three — the bad edit.");
   });
 
   it("refuses to write bytes that would not pass a save", async () => {

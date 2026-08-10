@@ -15,11 +15,21 @@
 //   commit itself is `--only`, so an operator's unrelated dirty (or even
 //   staged) file is never swallowed by an autosave — and two mutations to two
 //   documents can never cross-contaminate each other's commits.
-// - **One commit per editing session, not one per keystroke.** Repeated saves
-//   of the same document by the same author inside `SQUASH_IDLE_MS` amend the
-//   previous auto-commit. Every condition under which that would rewrite
-//   something the server did not itself just create is checked first, and the
-//   fallback — a fresh commit — is always safe.
+// - **One commit per act, not per save** (§4's commit-window rider, signed
+//   2026-08-10). At most one window is open at a time and it belongs to **one
+//   party**: every save that party makes, to whichever document, folds into the
+//   same commit until the window closes. Every condition under which that would
+//   rewrite something the server did not itself just create is checked first,
+//   and the fallback — a fresh commit — is always safe.
+//
+//   The window's content is in git *at every instant*: the first save commits
+//   immediately and each later one amends that commit. "Closing a window" is
+//   therefore not a flush of buffered work — there is none — but "stop amending
+//   it", plus one final amend that rewrites the subject where no act named it.
+//   That is deliberate and adjudicated (SERVER-091): §5 says the file on disk is
+//   the truth and §14 says a mutation stands when its commit does not, so an
+//   in-memory buffer would lose a crash's worth of commits, where the amend
+//   model loses at worst a *boundary* — which is exactly the cost §4 states.
 // - **One action, one commit** (§4's other half). A mutation that names several
 //   documents — a bulk archive, tag or move — passes them as `docIds`, and that
 //   is the whole signal: such a commit neither folds into a preceding editing
@@ -40,16 +50,69 @@ import { silentLogger, type Logger } from "../logger.js";
 import { gitOutput, type Git, type GitCommandResult } from "./git.js";
 
 /**
- * How long after an auto-commit a further save by the same author to the same
- * document still counts as the same editing session (SPEC.md §4's "short idle
- * window"). Exported so the value can be read from the code rather than guessed,
- * and adjusted without redesign — sprint-005 Open Conflict 5 pins 30 s.
+ * How long after an auto-commit a further save by the same party still counts
+ * as the same commit window (SPEC.md §4's "things going quiet: the same short
+ * idle window that folds repeated saves today"). Exported so the value can be
+ * read from the code rather than guessed, and adjusted without redesign —
+ * sprint-005 Open Conflict 5 pins 30 s.
  */
 export const SQUASH_IDLE_MS = 30_000;
+
+/**
+ * The longest a window may stay open, however busy it stays (SPEC.md §4 — "No
+ * window stays open indefinitely"). Once a window has been open this long the
+ * next save opens a fresh one, so an unbroken hour of writing is several commits
+ * rather than one and an unclean stop costs a boundary rather than a session.
+ *
+ * Five minutes, chosen against the two intervals it has to live beside rather
+ * than for its own sake: comfortably longer than {@link SQUASH_IDLE_MS} (or
+ * ageing out would be the *usual* way a window ends rather than the backstop it
+ * is meant to be), and longer than `EDIT_ACK_IDLE_MS` (3 min), so an idle edit
+ * session's acknowledgment names a commit the window had already settled on.
+ *
+ * The number is deliberately here and not in SPEC.md: §4 guarantees that a
+ * window ages out, not the interval it ages out at.
+ */
+export const WINDOW_MAX_MS = 300_000;
 
 export const TRAILER_DOC = "Corpus-Doc";
 export const TRAILER_ACTOR = "Corpus-Actor";
 export const TRAILER_ANCHORS = "Corpus-Anchors";
+
+/**
+ * Why a window stopped taking saves. Informational — it reaches the log and
+ * nothing else, because what a close *does* is decided by the window (was it
+ * named by an act?) rather than by who asked for it. Naming the cases anyway
+ * keeps a closed window's log line answerable and gives §4's list of closers one
+ * place in the code where it is written down.
+ */
+export type WindowCloseReason =
+  /** A discrete act completed — a turn posted, a thread resolved, a document archived (SERVER-092). */
+  | "act"
+  /** The other party wrote: a window belongs to one party, so theirs ends first. */
+  | "party-change"
+  /** A deletion, a staged bulk Save, a force unlock — §4's three acts that commit alone. */
+  | "commits-alone"
+  /** The window has been open longer than {@link WINDOW_MAX_MS}. */
+  | "aged-out"
+  /**
+   * The idle gap elapsed, or the window's commit is no longer ours to amend —
+   * anything that made the next save a fresh commit without naming a cause.
+   */
+  | "superseded"
+  /** Something named, read or reverted a commit and must not see a held history (SERVER-093). */
+  | "read-back"
+  /** The server is stopping cleanly (SERVER-094). */
+  | "shutdown";
+
+/**
+ * The subject a window gets when it closes with no act to name it (SPEC.md §4 —
+ * "A window that closes with no act to name says so: that it is an editing
+ * session, and how many documents it holds"). The count, never the documents: a
+ * window can hold many, and the `Corpus-Doc` trailers already name each one.
+ */
+export const editingSessionSubject = (documents: number, actor: Actor): string =>
+  `editing session: ${documents} document${documents === 1 ? "" : "s"} by ${actor}`;
 
 /**
  * Git identity per acting party (SPEC.md §4). Author only — never the committer.
@@ -78,9 +141,11 @@ export type AnchorChange = {
 
 export interface CommitRequest {
   /**
-   * The document the commit is about; becomes the `Corpus-Doc` trailer and half
-   * the squash key. When {@link CommitRequest.docIds} is given it is the
-   * *representative* of the set rather than the whole subject — see there.
+   * The document the commit is about. It becomes a `Corpus-Doc` trailer and
+   * joins the open window's set of documents; it is **not** part of the fold
+   * key, which is the acting party alone (SPEC.md §4's commit window). When
+   * {@link CommitRequest.docIds} is given it is the *representative* of the set
+   * rather than the whole subject — see there.
    */
   readonly docId: string;
   /**
@@ -122,8 +187,25 @@ export interface CommitRequest {
    * and there is no file to stage.
    */
   readonly allowEmpty?: boolean | undefined;
-  /** `false` opts out of session folding — an audit entry is its own event, never part of an edit. */
+  /**
+   * `false` opts out of window folding **in both directions** — an audit entry
+   * is its own event, never part of an edit: it neither folds into the open
+   * window nor opens one for a later save to fold into.
+   */
   readonly squash?: boolean | undefined;
+  /**
+   * This write **is the act** that closes the window (SPEC.md §4: "the act's own
+   * change is the last thing in the window's commit, and the commit's subject
+   * names the act"). Its only effect is on the close that follows: a window a
+   * discrete act named keeps that subject, where one that merely went quiet is
+   * rewritten to {@link editingSessionSubject}.
+   *
+   * Set by the act call sites and by nothing else (SERVER-092) — an ordinary
+   * save that set it would leave a save's subject on a window that closed with
+   * no act, which is the one thing §4 asks the subject to disambiguate. It does
+   * not itself close the window: {@link AutoCommitter.closeWindow} does.
+   */
+  readonly act?: boolean | undefined;
 }
 
 export type CommitOutcome =
@@ -139,9 +221,23 @@ export interface AutoCommitter {
   /** Serializes arbitrary git work against the same index lock the commit path holds. */
   withGitLock<T>(run: () => Promise<T>): Promise<T>;
   /**
-   * End the squash session if it is sitting on `sha`, so the next save by the
-   * same author to the same document makes a **fresh** commit instead of
-   * amending that one.
+   * Close the open commit window (SPEC.md §4). No-op when none is open, and
+   * never an error: every caller in §4's list of closers calls it
+   * unconditionally, without first asking whether there is anything to close.
+   *
+   * Closing does not *flush* anything — the window's content has been in git
+   * since its first save. What it does is stop later saves folding into that
+   * commit, and, where no act named it, rewrite its subject to say it was an
+   * editing session and how many documents it holds. The rewrite is an ordinary
+   * amend and is refused in exactly the states an ordinary amend is (detached
+   * HEAD, mid-operation, published, HEAD moved under us, trailers that are not
+   * ours); refusing it is harmless — the commit keeps the last save's subject
+   * and the window closes anyway.
+   */
+  closeWindow(reason: WindowCloseReason): Promise<void>;
+  /**
+   * Forget the open window if it is sitting on `sha`, so the next save by the
+   * same party makes a **fresh** commit instead of amending that one.
    *
    * Called when a sha has been published *outside* the repository: §4's edit
    * acknowledgment names a commit range in a queue event, and from there the
@@ -153,10 +249,15 @@ export interface AutoCommitter {
    * applies to a commit a remote has seen, applied to the other way a sha gets
    * out (SERVER-052 review, PR #22).
    *
-   * Synchronous and lock-free by design. It only *forgets* state, which is safe
-   * from any point — the cost of forgetting a session that was still foldable is
+   * Synchronous and lock-free by design, and deliberately **not** a wrapper over
+   * {@link AutoCommitter.closeWindow}: it only *forgets* state, which is safe
+   * from any point — the cost of forgetting a window that was still foldable is
    * one commit that did not fold — and its caller is a timer that must not queue
-   * behind an autosave.
+   * behind an autosave. Closing needs the git lock for its subject rewrite, and
+   * a rewrite is precisely what must not happen here: the sha this is given has
+   * been published, so amending it (even only to relabel it) would dangle the
+   * very range that named it. Forgetting is the whole obligation; the window is
+   * closed in the sense that matters, and its commit keeps its own subject.
    */
   endSquashSession(sha: string): void;
 }
@@ -166,29 +267,55 @@ export interface AutoCommitterOptions {
   readonly logger?: Logger | undefined;
   readonly now?: (() => number) | undefined;
   readonly squashIdleMs?: number | undefined;
+  readonly windowMaxMs?: number | undefined;
 }
 
-/** What the last auto-commit was, so the next save can decide whether to fold into it. */
-type SessionRecord = {
-  readonly docId: string;
+/**
+ * The open commit window (SPEC.md §4) — what the last auto-commit was, so the
+ * next save can decide whether to fold into it. At most one exists at a time and
+ * it belongs to **one party**, which is the whole of the fold key.
+ */
+type WindowRecord = {
+  /** The party it belongs to. The moment the other one writes, this window closes. */
   readonly actor: Actor;
+  /**
+   * Every document the window has held, in the order they were first touched —
+   * one `Corpus-Doc` trailer each, so `git log` names them all. A `Set` gives
+   * both the insertion order and the "a third save to the first document adds no
+   * duplicate" property for free.
+   */
+  readonly docIds: ReadonlySet<string>;
   readonly sha: string;
-  /** Instant of the most recent save in this session — the idle window runs from here. */
+  /** Instant of the most recent save — the idle window runs from here. */
   readonly at: number;
-  /** Anchor ids touched anywhere in the session, so an amended message stays truthful. */
+  /** Instant of the first save — the ageing-out runs from here. */
+  readonly openedAt: number;
+  /** Did a discrete act set the subject? If so, closing leaves it alone. */
+  readonly namedByAct: boolean;
+  /** Anchor ids touched anywhere in the window, so an amended message stays truthful. */
   readonly remapped: ReadonlySet<string>;
   readonly orphaned: ReadonlySet<string>;
 };
 
-const trailerValue = (body: string, name: string): string | null => {
+const trailerValues = (body: string, name: string): string[] => {
+  const values: string[] = [];
   for (const line of body.split(/\r?\n/)) {
     const separator = line.indexOf(":");
     if (separator === -1) continue;
     if (line.slice(0, separator).trim() !== name) continue;
     const value = line.slice(separator + 1).trim();
-    if (value !== "") return value;
+    if (value !== "") values.push(value);
   }
-  return null;
+  return values;
+};
+
+const trailerValue = (body: string, name: string): string | null =>
+  trailerValues(body, name)[0] ?? null;
+
+/** Do the `Corpus-Doc` trailers on a commit name exactly the window's documents? */
+const namesExactly = (found: readonly string[], expected: ReadonlySet<string>): boolean => {
+  const unique = new Set(found);
+  return unique.size === expected.size && [...expected].every((id) => unique.has(id));
 };
 
 const buildTrailers = (
@@ -209,7 +336,7 @@ const buildTrailers = (
   return [...lines, ...extra].join("\n");
 };
 
-/** Union of the session's anchor ids; an anchor that later detached counts as orphaned only. */
+/** Union of the window's anchor ids; an anchor that later detached counts as orphaned only. */
 const mergeAnchors = (
   previous: { remapped: ReadonlySet<string>; orphaned: ReadonlySet<string> } | null,
   change: AnchorChange | undefined,
@@ -225,8 +352,10 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
   const logger = options.logger ?? silentLogger;
   const now = options.now ?? Date.now;
   const squashIdleMs = options.squashIdleMs ?? SQUASH_IDLE_MS;
+  const windowMaxMs = options.windowMaxMs ?? WINDOW_MAX_MS;
 
-  let session: SessionRecord | null = null;
+  /** The one open window, or `null`. §4 allows at most one at a time. */
+  let openWindow: WindowRecord | null = null;
   /**
    * `.git/index` is one shared file: two concurrent stage/commit pairs would
    * cross-contaminate each other's commits and can deadlock on the index lock.
@@ -258,6 +387,11 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
             `user.email=${FALLBACK_COMMITTER.email}`,
           ];
     return committerFallback;
+  };
+
+  const headSha = async (): Promise<string | null> => {
+    const result = await git.exec(["rev-parse", "--verify", "--quiet", "HEAD"]);
+    return result.ok && result.stdout.trim() !== "" ? result.stdout.trim() : null;
   };
 
   const gitPathExists = async (name: string): Promise<boolean> => {
@@ -295,44 +429,124 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
   };
 
   /**
-   * The HEAD commit this save may fold into, or `null`. Every condition SPEC.md
-   * §4 names is checked here; a `null` answer always means "make a fresh
-   * commit", which is safe in every repository state.
+   * May `HEAD` be rewritten as this window's commit? The half of the question
+   * that is about the *repository* rather than about the window, shared by the
+   * fold path and by the subject rewrite a close performs — because a subject
+   * rewrite is an ordinary amend and §4 refuses it in exactly the same states.
+   *
+   * Returns the commit's author date, which is the one thing an amend carries
+   * over: the window's start, not the moment of its latest save.
    */
-  const amendTarget = async (
-    request: CommitRequest,
-    head: string,
-  ): Promise<{ authorDate: string } | null> => {
-    // An act over a named set is not a save of a document, so §4's squashing
-    // does not reach it in either direction (see `CommitRequest.docIds`).
-    if (request.docIds !== undefined) return null;
-    if (request.squash === false || request.paths.length === 0) return null;
-    const record = session;
-    if (record === null) return null;
-    if (record.docId !== request.docId || record.actor !== request.actor) return null;
-    if (now() - record.at >= squashIdleMs) return null;
-    // Anything committed since ours — by us for another document, by a hook, by
-    // the operator — ends the session: folding would rewrite someone else's work.
-    if (record.sha !== head) return null;
+  const amendableHead = async (record: WindowRecord): Promise<{ authorDate: string } | null> => {
     // Detached HEAD: an amend there rewrites a commit no branch names.
     if (!(await git.exec(["symbolic-ref", "--quiet", "HEAD"])).ok) return null;
     if (await midOperation()) return null;
     if (await isPublished()) return null;
 
+    // The commit we are about to rewrite must be one *we* made, for *this*
+    // window: its trailers name exactly the documents the window has held and
+    // the party it belongs to. A set comparison rather than a first-value one,
+    // because a window commit carries one `Corpus-Doc` line per document.
     const message = await git.exec(["log", "-1", "--format=%B"]);
     if (!message.ok) return null;
-    if (trailerValue(message.stdout, TRAILER_DOC) !== request.docId) return null;
-    if (trailerValue(message.stdout, TRAILER_ACTOR) !== request.actor) return null;
+    if (!namesExactly(trailerValues(message.stdout, TRAILER_DOC), record.docIds)) return null;
+    if (trailerValue(message.stdout, TRAILER_ACTOR) !== record.actor) return null;
 
-    // Only the author date is carried over. The *subject* is deliberately the
-    // new save's: when different verbs fold into one window commit, a subject
-    // frozen at the session's first save ends up describing content that has
-    // since been moved, archived or rewritten — `doc create:` on a commit whose
-    // diff shows an archived document at a new path. The latest verb is the one
-    // that describes what the commit now contains.
     const authorDate = await git.exec(["log", "-1", "--format=%aI"]);
     if (!authorDate.ok) return null;
     return { authorDate: authorDate.stdout.trim() };
+  };
+
+  /**
+   * The open window this save folds into, or `null`. Every condition SPEC.md §4
+   * names is checked here; a `null` answer always means "close the window and
+   * make a fresh commit", which is safe in every repository state.
+   *
+   * Only the author date is carried over. The *subject* is deliberately the new
+   * save's: when different verbs fold into one window commit, a subject frozen
+   * at the window's first save ends up describing content that has since been
+   * moved, archived or rewritten — `doc create:` on a commit whose diff shows an
+   * archived document at a new path. The latest verb is the one that describes
+   * what the commit now contains, and a window that closes with no act to name
+   * gets an honest subject at the close instead.
+   */
+  const amendTarget = async (
+    request: CommitRequest,
+    head: string,
+  ): Promise<{ record: WindowRecord; authorDate: string } | null> => {
+    // An act over a named set is not a save of a document, so §4's window does
+    // not reach it in either direction (see `CommitRequest.docIds`).
+    if (request.docIds !== undefined) return null;
+    if (request.squash === false || request.paths.length === 0) return null;
+    const record = openWindow;
+    if (record === null) return null;
+    // The whole fold key: a window belongs to a party, not to a document, so a
+    // save to a *neighbour* document folds in and a save by the *other party*
+    // never does.
+    if (record.actor !== request.actor) return null;
+    if (now() - record.at >= squashIdleMs) return null;
+    // §4's "No window stays open indefinitely": activity keeps a window open,
+    // but only so far.
+    if (now() - record.openedAt >= windowMaxMs) return null;
+    // Anything committed since ours — by a hook, by the operator, by a commit
+    // that deliberately stands alone — ends the window: folding would rewrite
+    // someone else's work.
+    if (record.sha !== head) return null;
+
+    const base = await amendableHead(record);
+    return base === null ? null : { record, authorDate: base.authorDate };
+  };
+
+  /**
+   * Stop amending the open window, and — where no act named it — rewrite its
+   * commit's subject to say what it was. Assumes the git lock is held; the
+   * public {@link AutoCommitter.closeWindow} is this inside `withGitLock`, and
+   * the commit path calls it directly because it already holds the lock.
+   */
+  const closeWindowLocked = async (reason: WindowCloseReason): Promise<void> => {
+    const record = openWindow;
+    // Forgotten first and unconditionally: whatever git says next, this window
+    // takes no further saves. A close that cannot rewrite the subject is still
+    // a close.
+    openWindow = null;
+    if (record === null) return;
+    // §4: "the act's own change is the last thing in the window's commit, and
+    // the commit's subject names the act". Nothing to say here that the act has
+    // not already said better.
+    if (record.namedByAct) return;
+
+    const head = await headSha();
+    if (head !== record.sha) return;
+    const base = await amendableHead(record);
+    if (base === null) return;
+
+    // `--amend --only` with **no** pathspec is a message-only rewrite: it takes
+    // no working-tree content and no index content, so an operator's staged work
+    // is untouched and so is a save this very commit path has just staged. A
+    // caller's extra trailers are not replayed here and do not need to be: they
+    // arrive only with `squash: false`, which opens no window to close.
+    const rewritten = await git.exec([
+      ...(await committerFlags()),
+      "commit",
+      "--amend",
+      "--only",
+      `--author=${gitAuthorOf(record.actor)}`,
+      `--date=${base.authorDate}`,
+      "-m",
+      editingSessionSubject(record.docIds.size, record.actor),
+      "-m",
+      buildTrailers([...record.docIds], record.actor, record.remapped, record.orphaned),
+    ]);
+    if (!rewritten.ok) {
+      // Harmless: the commit keeps its last save's subject and the window is
+      // closed either way. Worth a line, because a workspace whose hook refuses
+      // every amend will never show an editing-session subject.
+      logger.info("could not name a closing commit window; it keeps its last subject", {
+        reason,
+        sha: record.sha,
+        output: gitOutput(rewritten),
+      });
+    }
   };
 
   /**
@@ -412,11 +626,6 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     }
   };
 
-  const headSha = async (): Promise<string | null> => {
-    const result = await git.exec(["rev-parse", "--verify", "--quiet", "HEAD"]);
-    return result.ok && result.stdout.trim() !== "" ? result.stdout.trim() : null;
-  };
-
   /** The subset git can be asked about: present on disk, or tracked (so a removal stages). */
   const stageablePaths = async (paths: readonly string[]): Promise<string[]> => {
     const candidates = [...new Set(paths)];
@@ -431,6 +640,20 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     return candidates.filter((path) => !missing.includes(path) || isTracked(path));
   };
 
+  /**
+   * Why the open window did not take this request. Informational only — the
+   * close happens either way — but it is the one place §4's causes are read off
+   * a real request rather than asserted, so a log line can say which it was.
+   */
+  const closeReason = (request: CommitRequest): WindowCloseReason => {
+    const record = openWindow;
+    if (record === null) return "superseded";
+    if (record.actor !== request.actor) return "party-change";
+    if (request.docIds !== undefined || request.squash === false) return "commits-alone";
+    if (now() - record.openedAt >= windowMaxMs) return "aged-out";
+    return "superseded";
+  };
+
   const failure = (reason: string, result: GitCommandResult): CommitOutcome => ({
     kind: "failed",
     reason,
@@ -442,7 +665,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     if (!repository.ok) {
       // Both are ordinary states of a usable workspace, and neither may cost the
       // operator a mutation (SPEC.md §14: the file is the source of truth).
-      session = null;
+      openWindow = null;
       return {
         kind: "skipped",
         reason: repository.spawned
@@ -483,9 +706,19 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // commit that records this save instead of losing it to that refusal.
     const target =
       candidate !== null && !allowEmpty && (await amendWouldEmptyHead(paths)) ? null : candidate;
-    const anchors = mergeAnchors(target === null ? null : session, request.anchors);
+    // A save that cannot fold is a save the open window did not take, which is
+    // exactly what "the window closed" means — because the other party wrote,
+    // because it went quiet, because it aged out, or because this write is one of
+    // §4's three acts that commit alone. Closing it *here* is what gives it an
+    // honest subject: its commit is still HEAD at this instant and still ours to
+    // rewrite, and one instruction later it will not be.
+    if (target === null) await closeWindowLocked(closeReason(request));
+
+    const anchors = mergeAnchors(target?.record ?? null, request.anchors);
+    // Every document the window has held, in the order they were first touched.
+    const windowDocIds = new Set([...(target?.record.docIds ?? []), request.docId]);
     const message = buildTrailers(
-      request.docIds ?? [request.docId],
+      request.docIds ?? [...windowDocIds],
       request.actor,
       anchors.remapped,
       anchors.orphaned,
@@ -515,7 +748,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
 
     const committed = await git.exec(args);
     if (!committed.ok) {
-      session = null;
+      openWindow = null;
       await unstage(paths, head);
       return failure(
         target === null ? "git commit failed" : "git commit --amend failed",
@@ -525,20 +758,29 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
 
     const sha = await headSha();
     if (sha === null) {
-      session = null;
+      openWindow = null;
       await unstage(paths, head);
       return { kind: "skipped", reason: "commit produced no HEAD" };
     }
-    // An act opens no session: §4 requires that no later save fold into it, and
-    // the only mechanism a later save has for folding is this record.
-    session =
-      request.docIds !== undefined
+    // A commit that stands alone opens no window: §4 requires that no later save
+    // fold into it, and the only mechanism a later save has for folding is this
+    // record. Both signals count — an act over a named set (`docIds`), and the
+    // explicit `squash: false` an audit entry carries. The second half was
+    // missing: a force break opened a window, so the next save by that party
+    // amended the audit entry, replacing its subject and dropping the
+    // `Corpus-Lock-Holder` trailer that is the whole point of it. "Never part of
+    // an edit" was only ever enforced in one direction (SERVER-091, verifying
+    // the issue's `allowEmpty` edge case).
+    openWindow =
+      request.docIds !== undefined || request.squash === false
         ? null
         : {
-            docId: request.docId,
             actor: request.actor,
+            docIds: windowDocIds,
             sha,
             at: now(),
+            openedAt: target?.record.openedAt ?? now(),
+            namedByAct: request.act ?? false,
             remapped: anchors.remapped,
             orphaned: anchors.orphaned,
           };
@@ -547,8 +789,9 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
 
   return {
     withGitLock,
+    closeWindow: (reason) => withGitLock(() => closeWindowLocked(reason)),
     endSquashSession(sha) {
-      if (session !== null && session.sha === sha) session = null;
+      if (openWindow !== null && openWindow.sha === sha) openWindow = null;
     },
     commit: (request) =>
       withGitLock(async () => {

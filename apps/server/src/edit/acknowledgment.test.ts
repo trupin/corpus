@@ -200,10 +200,16 @@ describe("doc.edited over the real write path", () => {
       pastTheSquashWindow(ws);
 
       await edit(ws, doc.id, "line one\nuser line\n");
+      // The sha the tracker records for the user's first session, taken at the
+      // instant it records it.
       const beforeAgent = ws.head();
       await edit(ws, doc.id, "line one\nuser line\nagent line\n", "agent");
-      const agentCommit = ws.head();
       await edit(ws, doc.id, "line one\nuser line\nagent line\nuser again\n");
+      // Named by position, not by the sha it had when it landed: the user's
+      // third save closed the agent's window, and a window no act named is
+      // relabelled as it closes (SERVER-091), which is an amend and so a new
+      // sha for the same tree.
+      const agentCommit = ws.git("rev-parse", "HEAD^").trim();
 
       await ws.server.close();
 
@@ -211,6 +217,14 @@ describe("doc.edited over the real write path", () => {
       expect(payloads).toHaveLength(2);
       // The first session ends at the commit before the agent's; the second
       // starts *from* the agent's commit. Neither range spans it.
+      //
+      // ESCALATED (SERVER-091): the first session's `to` is the sha its commit
+      // had *before* the agent's write closed — and so relabelled, and so
+      // re-sha'd — the user's window. The range's content is unaffected (the
+      // rewrite changed only the message), but the commit it names is no longer
+      // reachable from the branch, which is the rule PR #22 established for a
+      // sha the server publishes. Recorded here rather than hidden; the
+      // orchestrator rules on the fix (see the SERVER-091 report).
       const first = payloads.find((entry) => entry.to === beforeAgent);
       const second = payloads.find((entry) => entry.from === agentCommit);
       expect(first).toBeDefined();

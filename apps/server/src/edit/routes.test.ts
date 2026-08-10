@@ -54,11 +54,15 @@ describe("GET /api/docs/{id}/diff", () => {
   it("reads the range it is given, and reports it back resolved", async () => {
     const ws = workspace("diff-range");
     const doc = await createDoc(ws, { type: "note", title: "Ledger", body: "a\n" });
-    const created = ws.head();
     ws.advance(60_000);
     await ws.put(`/api/docs/${doc.id}`, { body: "a\nb\n" }, { "x-corpus-author": "user" });
     ws.advance(60_000);
     await ws.put(`/api/docs/${doc.id}`, { body: "a\nb\nc\n" }, { "x-corpus-author": "user" });
+    // Named only once its own window has closed. A commit window is amendable
+    // while it is open — that is §4's whole mechanism — so a sha read off an
+    // open window is rewritten under the reader, and a range starting there
+    // counts the rewrite as one more commit (SERVER-091).
+    const created = ws.git("rev-parse", "HEAD~2").trim();
 
     const { body } = await diff(ws, doc.id, `?from=${created.slice(0, 10)}&to=${ws.head()}`);
     // Abbreviated in, full sha out: a caller that omitted or shortened a half
@@ -88,8 +92,13 @@ describe("GET /api/docs/{id}/diff", () => {
   it("scopes the diff and the stats to this document's file alone", async () => {
     const ws = workspace("diff-scope");
     const one = await createDoc(ws, { type: "note", title: "One", body: "one\n" });
-    const base = ws.head();
+    // Past §4's idle window: the second creation is the *other* commit this
+    // range is meant to span, not a fold into the first one's window
+    // (SERVER-091 scoped the window to the party, so neighbours fold too), and
+    // the base is named only once that first window has closed under it.
+    ws.advance(60_000);
     await createDoc(ws, { type: "note", title: "Two", body: "two\n" });
+    const base = ws.git("rev-parse", "HEAD~1").trim();
 
     const { body } = await diff(ws, one.id, `?from=${base}&to=${ws.head()}`);
     expect(body.diff).toBe("");

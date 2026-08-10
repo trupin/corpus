@@ -147,6 +147,9 @@ describe("POST /api/threads/{id}/seen", () => {
 
   it("makes no commit — read state is runtime state, not corpus (§7)", async () => {
     const { id } = await threeTurns();
+    // Past §4's idle window, so the second thread's creation opens a commit of
+    // its own instead of folding into the window the turns above left open.
+    ws.advance(60_000);
     const before = ws.log("%H").length;
 
     await ws.post(`/api/threads/${id}/seen`, {});
