@@ -411,6 +411,8 @@ belongs to the same fix wave.
 | SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | done | P1 | — |
 | CONTRACT-047 | An archive can rewrite a document it never named, and say nothing (PR #38 review) | done | P2 | SERVER-078 |
 | SERVER-088 | Emit the carried-skill warnings the contract now publishes (CONTRACT-047) | done | P1 | CONTRACT-047 |
+| SERVER-089 | `rollback.test.ts` fails in CI at a git object the fixture should have — **blocks PR #41** | done | P0 | — |
+| CLI-037 | A workspace's git repairs itself in the background, and can corrupt itself doing it (SERVER-089) | todo | P0 | SERVER-089 |
 | UI-106 | A carried effect is not an error, and the UI renders every warning as one | todo | P2 | SERVER-088 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sanitizeGitEnv } from "./env.js";
+import { disableAutoMaintenance } from "./maintenance.js";
 import { createGit, type Git } from "./git.js";
 import { listFileRevisions, readVersionAt, resolveRevision } from "./show.js";
 
@@ -33,6 +34,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "corpus-s013-git-show-"));
   git = createGit(root);
   run("init", "--initial-branch=main");
+  disableAutoMaintenance(run);
   run("config", "user.name", "Owner");
   run("config", "user.email", "owner@example.test");
 });

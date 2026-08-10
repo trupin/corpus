@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sanitizeGitEnv } from "../git/env.js";
+import { disableAutoMaintenance } from "../git/maintenance.js";
 import {
   DOCTOR_WARNING_KINDS,
   UNINDEXABLE_WARNING_LIMIT,
@@ -213,6 +214,7 @@ describe("readCreatingCommit", () => {
 
   it("names the commit that added the file, subject included", () => {
     run("init", "--initial-branch=main");
+    disableAutoMaintenance(run);
     run("config", "user.name", "Owner");
     run("config", "user.email", "owner@example.test");
     write("data/docs/.claude/skills/invisible-doc.md", doc("doc_invisible001"));
@@ -233,6 +235,7 @@ describe("readCreatingCommit", () => {
 
   it("survives a commit with no subject at all", () => {
     run("init", "--initial-branch=main");
+    disableAutoMaintenance(run);
     run("config", "user.name", "Owner");
     run("config", "user.email", "owner@example.test");
     write("data/docs/.claude/subjectless.md", doc("doc_subjectless"));

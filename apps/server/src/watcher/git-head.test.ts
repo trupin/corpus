@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { disableAutoMaintenance } from "../git/index.js";
 import { readHeadVersion } from "./git-head.js";
 
 let root: string;
@@ -17,6 +18,13 @@ afterEach(() => {
 
 function git(cwd: string, ...args: string[]): void {
   execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "ignore"] });
+}
+
+function initRepo(cwd: string): void {
+  git(cwd, "init", "-q");
+  disableAutoMaintenance((...args) => {
+    git(cwd, ...args);
+  });
 }
 
 function commitAll(cwd: string, message: string): void {
@@ -43,7 +51,7 @@ describe("readHeadVersion", () => {
   it("returns the committed content, not what is on disk now", () => {
     const workspace = join(root, "ws");
     mkdirSync(workspace, { recursive: true });
-    git(workspace, "init", "-q");
+    initRepo(workspace);
     writeDoc(workspace, "data/docs/a.md", "---\nid: doc_a\n---\n\ncommitted\n");
     commitAll(workspace, "seed");
     writeDoc(workspace, "data/docs/a.md", "---\nid: doc_a\n---\n\nedited on disk\n");
@@ -54,7 +62,7 @@ describe("readHeadVersion", () => {
   it("answers null for an untracked file", () => {
     const workspace = join(root, "untracked");
     mkdirSync(workspace, { recursive: true });
-    git(workspace, "init", "-q");
+    initRepo(workspace);
     writeDoc(workspace, "data/docs/a.md", "seed\n");
     commitAll(workspace, "seed");
     writeDoc(workspace, "data/docs/new.md", "brand new\n");
@@ -65,7 +73,7 @@ describe("readHeadVersion", () => {
   it("answers null for a repository with no commits at all", () => {
     const workspace = join(root, "empty-repo");
     mkdirSync(workspace, { recursive: true });
-    git(workspace, "init", "-q");
+    initRepo(workspace);
     writeDoc(workspace, "data/docs/a.md", "uncommitted\n");
 
     expect(readHeadVersion(workspace, "data/docs/a.md")).toBeNull();
@@ -84,7 +92,7 @@ describe("readHeadVersion", () => {
     const repo = join(root, "repo");
     const workspace = join(repo, "nested");
     mkdirSync(workspace, { recursive: true });
-    git(repo, "init", "-q");
+    initRepo(repo);
     writeDoc(workspace, "data/docs/a.md", "nested content\n");
     commitAll(repo, "seed");
 

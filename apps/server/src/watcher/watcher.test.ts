@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QueryKey } from "@corpus/contract";
 import { computeContext } from "../anchors/index.js";
 import { createInvalidationBus, type InvalidationBus } from "../events/index.js";
+import { disableAutoMaintenance } from "../git/index.js";
 import { createLogger, silentLogger, type LogSink } from "../logger.js";
 import { openProjection, populateFromFiles, type ProjectionDb } from "../projection/index.js";
 import type { ReadHeadVersion } from "./git-head.js";
@@ -562,6 +563,7 @@ describe("the watcher — out-of-band anchor reconciliation", () => {
   it("remaps the selector on disk, then projects the reconciled file — once", async () => {
     write("data/docs/mortgage.md", anchored(BODY, EXACT));
     git("init", "-q");
+    disableAutoMaintenance(git);
     git("add", "-A");
     git(
       "-c",
@@ -600,6 +602,7 @@ describe("the watcher — out-of-band anchor reconciliation", () => {
   it("projects a brand-new anchored document with no committed version, without throwing", async () => {
     write("data/docs/seed.md", doc("doc_seed", "Seed", "Seeded."));
     git("init", "-q");
+    disableAutoMaintenance(git);
     await startWatching("info");
 
     write("data/docs/fresh.md", anchored(BODY, EXACT).replace("doc_mortgage", "doc_fresh"));
