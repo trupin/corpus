@@ -104,27 +104,36 @@
  * rather than a contract opinion. The derivation stays recorded here because it is why the route
  * exists, not because the route is undocumented.
  *
- * `POST /api/docs/bulk` (CONTRACT-037) is derived from SPEC.md §4 rather than
- * from §9.2, and the derivation is the whole issue. §4's "One action, one
- * commit" (rider signed 2026-08-05) says an action a person takes on several
- * documents at once "lands as a **single** auto-commit" containing "exactly the
- * documents the action **changed**" — a *capability*, not a UI preference.
- * Checked against the code rather than assumed: every document mutation route
- * declared above takes one `{id}`, and the auto-committer's fold decision keys
- * on the same document and actor, so twenty archives of twenty different
- * documents are twenty commits by construction. §4 therefore presupposes a way
- * to ask for several document mutations as one act, and none existed; SHARED-017
- * made that check its own final acceptance criterion and filed this issue first
- * for exactly that reason. It sits immediately after `POST /api/docs` because it
- * is the collection's other mutation, and before the parameterised routes
- * because a static segment must be registered ahead of the parameter it shares a
- * position with. **This is the one entry §9.2 does not yet list**, and the only
- * one: its bullet is drafted in CONTRACT-037's issue file under "Held for
- * sign-off" and awaits the user's, so the derivation is recorded here to make
- * the gap a pending amendment rather than an undocumented route. Three §9.2
- * amendments were signed and applied on 2026-08-08 — the re-attach route, the
- * widening of the acting-party clause, and the weight bullet — and this one was
- * not among them.
+ * `POST /api/docs/bulk` (CONTRACT-037, reshaped by CONTRACT-048) is derived from
+ * SPEC.md §4 rather than from §9.2, and the derivation is the whole issue. §4's
+ * "One action, one commit" says an action a person takes on several documents at
+ * once "lands as a **single** auto-commit" containing "exactly the documents the
+ * action **changed**" — a *capability*, not a UI preference. Checked against the
+ * code rather than assumed: every document mutation route declared above takes
+ * one `{id}`, and the auto-committer's fold decision keys on the same document
+ * and actor, so twenty archives of twenty different documents are twenty commits
+ * by construction. §4 therefore presupposes a way to ask for several document
+ * mutations as one act, and none existed; SHARED-017 made that check its own
+ * final acceptance criterion and filed CONTRACT-037 first for exactly that
+ * reason. SHARED-032 (signed 2026-08-09) then widened what has to be askable:
+ * board selection became a **mode** in which each row carries its own staged
+ * action, and §4 gained "**A Save carrying a mix of verbs is still one act and
+ * still one commit**". So the route now takes a staged set of `{id, action}`
+ * pairs plus §11's single whole-result-set entry, rather than one verb over many
+ * ids — the same one endpoint, because grouping client-side by verb would be
+ * several commits, which is what §4 forbids and what this route exists to
+ * prevent. It sits immediately after `POST /api/docs` because it is the
+ * collection's other mutation, and before the parameterised routes because a
+ * static segment must be registered ahead of the parameter it shares a position
+ * with. **This is the one entry §9.2 does not yet list**, and the only one: its
+ * bullet is drafted in **CONTRACT-048's** issue file under "Held for sign-off"
+ * and awaits the user's, so the derivation is recorded here to make the gap a
+ * pending amendment rather than an undocumented route. CONTRACT-037's own held
+ * draft described the `{ids, action}` shape and is **void** — its issue file says
+ * so. Three §9.2 amendments were signed and applied on 2026-08-08 — the
+ * re-attach route, the widening of the acting-party clause, and the weight
+ * bullet — and this one was not among them; SHARED-032's sign-off on 2026-08-09
+ * amended §4 and §11 and did not touch §9.2 either.
  *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so

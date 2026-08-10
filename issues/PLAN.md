@@ -405,7 +405,7 @@ belongs to the same fix wave.
 | SHARED-017 | Multi-select + bulk actions (SIGNED, applied) | done | P2 | — |
 | SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
 | UI-083 | Selecting rows and acting on the selection — **rewrite** against SHARED-032, not patch | todo | P2 | SHARED-032, SERVER-087 |
-| CONTRACT-048 | The bulk request cannot express a staged set (SHARED-032) | todo | P1 | SHARED-032 |
+| CONTRACT-048 | The bulk request cannot express a staged set (SHARED-032) | done | P1 | SHARED-032 |
 | SERVER-087 | Apply a mixed staged Save as one act, and one commit (SHARED-032) | todo | P1 | CONTRACT-048 |
 | SERVER-077 | Apply a bulk action as one act, and one commit (SHARED-017) | done | P2 | CONTRACT-037 |
 | SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | done | P1 | — |
@@ -520,7 +520,9 @@ cheapest moment for that to happen.
 | SERVER-086 | The server does not record that an agent is there | todo | P1 | CONTRACT-045 |
 | UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-086 |
 | UI-099 | Commenting on a document selection leaves no visible anchor | done | P0 | — |
-| UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | todo | P0 | — |
+| UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | done | P0 | — |
+| UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | todo | P1 | UI-103 |
+| UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | todo | P2 | — |
 | UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
 | SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc (DRAFTED — sign-off) | todo | P1 | — |
 | SHARED-034 | Full-screen editing has no persistent formatting toolbar (DRAFTED — sign-off) | todo | P1 | SHARED-035 |

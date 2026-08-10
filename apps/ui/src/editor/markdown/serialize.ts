@@ -39,7 +39,10 @@ import { MARK, NODE, type PmMark, type PmNode } from "./schema.js";
  *   payload, so a block holding its own fence stays one block instead of
  *   closing early and splitting (UI-057, from AGENT-012). This is the printer's
  *   widening, not ours — which is why `serialize.test.ts` asserts it;
- * - exactly one blank line between block nodes;
+ * - exactly one blank line between block nodes, including between the block
+ *   children of a list item — except a nested list, which stays flush under a
+ *   paragraph of the same item or under another list, and only when it is a
+ *   list that may interrupt a paragraph (see {@link separateListItemBlocks});
  * - a hard break inside a table cell is `<br>`, GFM's only spelling for one
  *   (UI-064); everywhere else a hard break stays a trailing `\`;
  * - the file ends with exactly one `\n`, and an empty body is `""`.
@@ -724,6 +727,136 @@ function leafToMdast(node: PmNode): MdNode[] {
 /* ── mdast → markdown ───────────────────────────────────────────────── */
 
 /**
+ * How much blank space goes between two block children of a list item.
+ *
+ * Everywhere else the printer's answer is one blank line and the question is
+ * uninteresting. Inside a list item it is not. Items are printed **tight**
+ * (`spread: false` in {@link listItems}, because ProseMirror does not model
+ * looseness and a corpus of tight lists must not come back loose), and tight
+ * is also what the printer then uses between an item's *own* blocks: a bare
+ * newline, no blank line. That is right for a nested list under its lead
+ * paragraph — it is what hand-written markdown looks like — and wrong for
+ * nearly everything else, because the block on the left keeps reading the line
+ * below it:
+ *
+ * - a paragraph after a nested list is a lazy continuation of the last nested
+ *   item, and comes back one level deeper than it went in (UI-103);
+ * - a paragraph after a blockquote is swallowed into the quotation;
+ * - a paragraph after a table becomes one more row of it;
+ * - a thematic break after a paragraph is a setext underline, and the
+ *   paragraph becomes a heading.
+ *
+ * Each of those rewrites the user's own file the first time anything is typed
+ * in it, because §11 gives the editor autosave and no save button. So the
+ * default here is the blank line and the flush spelling is the exception — the
+ * safe direction, and the one where a block type the schema grows later is
+ * separated rather than silently absorbed. `serialize.test.ts` enumerates
+ * every ordered pair of block types in a list item — each in every spelling
+ * that changes whether it can be printed flush — and asserts the round trip, so
+ * the exception list cannot quietly go stale.
+ *
+ * The exceptions are both about a **list** on the right, and both are subject
+ * to {@link listInterruptsParagraph}: a list only stays where it was put if it
+ * is a list that may interrupt a paragraph. See that function — the two
+ * spellings that may not are reachable from the editor by typing, and printing
+ * them flush destroys the list, or the paragraph above it, on the next save.
+ *
+ * - **A list under a paragraph of the same item.** Any paragraph, not only the
+ *   item's lead one; a list may follow a later paragraph too. This is what
+ *   hand-written markdown looks like and it is what keeps every nested list in
+ *   a corpus byte-identical.
+ * - **Two lists in a row**, which are left to the printer because it knows
+ *   something this rule does not: it tracks the bullet it last used
+ *   (`state.bulletLastUsed`, `mdast-util-to-markdown`'s `handle/list.js`) and
+ *   alternates the marker — `- a` then `* b` — which is what keeps two adjacent
+ *   lists two lists with no blank line and no separator between them.
+ */
+
+/**
+ * What a separation rule may look at: a node's type, and the little the two
+ * rules below need in order to know whether a list may be printed flush.
+ *
+ * Narrower than {@link MdNode} on purpose. The printer hands these rules its own
+ * nominal `@types/mdast` nodes, which this module deliberately does not import
+ * (see `mdast.ts`); asking for no more than these optional, structurally common
+ * fields is what lets the printer's nodes satisfy it without either side
+ * knowing the other's declarations.
+ */
+interface JoinNode {
+  readonly type: string;
+  readonly ordered?: boolean | null | undefined;
+  readonly start?: number | null | undefined;
+  readonly value?: string | undefined;
+  readonly children?: readonly JoinNode[] | undefined;
+}
+
+/**
+ * Whether printing this list flush under the line above it still reads back as
+ * a list.
+ *
+ * Inside a tight list item every block the printer emits ends on a line that a
+ * following list marker has to *interrupt* to start a list of its own, and
+ * CommonMark only lets a list interrupt a paragraph in the cases where the
+ * marker cannot be mistaken for a continuation of the text above it (§5.3,
+ * "Lists"). Two spellings fail that test, and both are two keystrokes away in
+ * the editor:
+ *
+ * - **an ordered list whose first number is not 1** (`orderedList` carries
+ *   `attrs.start`, so this is not only reachable from a file). Printed flush,
+ *   `- Lead.\n  5. item five\n` makes `5. item five` a lazy continuation of the
+ *   paragraph — the list is gone, and the *next* save escapes the marker
+ *   permanently as `5\. item five`;
+ * - **a list whose first item is empty** — `Enter` then `Tab` at the end of a
+ *   bullet. Printed flush, the lone `-` on the line after a paragraph is a
+ *   **setext underline**: `- Lead.\n  -\n` reads back as an empty outer item
+ *   holding `## Lead.`, and the user's sentence has become a heading.
+ *
+ * A blank line costs nothing here — it is what the default already is for every
+ * other adjacency — and it is what makes both spellings survive.
+ */
+function listInterruptsParagraph(list: JoinNode): boolean {
+  // `start` is only meaningful on an ordered list; `toMdast` leaves it null
+  // otherwise, and the printer renumbers from it.
+  if (list.ordered === true && list.start !== null && list.start !== undefined && list.start !== 1)
+    return false;
+  const first = list.children?.[0];
+  return first !== undefined && !itemStartsBlank(first);
+}
+
+/**
+ * Whether a list item's marker is followed by nothing on its own line.
+ *
+ * That is CommonMark's "list item that begins with a blank line", which may not
+ * interrupt a paragraph. The item's first block is what decides it: the schema
+ * makes that a paragraph, and only an empty one prints nothing after the
+ * marker. A task item is no exception — `mdast-util-gfm-task-list-item` only
+ * writes the `[ ] ` checkbox when the marker is followed by content, so an
+ * empty task item prints as a bare `-` too.
+ */
+function itemStartsBlank(item: JoinNode): boolean {
+  const head = item.children?.[0];
+  if (head === undefined) return true;
+  if (head.type !== "paragraph") return false;
+  return (head.children ?? []).every(
+    (child) => child.type === "text" && (child.value ?? "") === "",
+  );
+}
+
+function separateListItemBlocks(
+  left: JoinNode,
+  right: JoinNode,
+  parent: JoinNode,
+): number | undefined {
+  if (parent.type !== "listItem") return undefined;
+  // Checked before the exceptions rather than inside each of them: whatever is
+  // above it, a list that cannot interrupt a paragraph cannot be printed flush.
+  if (right.type === "list" && !listInterruptsParagraph(right)) return 1;
+  if (left.type === "list" && right.type === "list") return undefined;
+  if (left.type === "paragraph" && right.type === "list") return undefined;
+  return 1;
+}
+
+/**
  * Printer options. Every one of them is a normalisation rule this module
  * promises, so they are stated here rather than left to the printer's defaults.
  */
@@ -757,6 +890,22 @@ interface PrintInfo {
 }
 
 type PrintHandler = (node: MdNode, parent: unknown, state: PrintState, info: PrintInfo) => string;
+
+/**
+ * How many blank lines go between two adjacent block siblings; `undefined`
+ * defers to the printer's own rule.
+ */
+type PrintJoin = (
+  left: JoinNode,
+  right: JoinNode,
+  parent: JoinNode,
+  state: PrintState,
+) => number | undefined;
+
+/** The join list the printer is built with; a fresh array, since the printer keeps it. */
+function printJoin(): PrintJoin[] {
+  return [separateListItemBlocks];
+}
 
 function verbatim(node: MdNode): string {
   return emit(node, node.value ?? "");
@@ -811,13 +960,13 @@ let defensivePrinter: Processor | undefined;
 function printer(escapeText: boolean): Processor {
   if (escapeText) {
     minimalPrinter ??= unified()
-      .use(remarkStringify, { ...PRINT_OPTIONS, handlers: handlers(true) })
+      .use(remarkStringify, { ...PRINT_OPTIONS, join: printJoin(), handlers: handlers(true) })
       .use(remarkGfm)
       .freeze() as unknown as Processor;
     return minimalPrinter;
   }
   defensivePrinter ??= unified()
-    .use(remarkStringify, { ...PRINT_OPTIONS, handlers: handlers(false) })
+    .use(remarkStringify, { ...PRINT_OPTIONS, join: printJoin(), handlers: handlers(false) })
     .use(remarkGfm)
     .freeze() as unknown as Processor;
   return defensivePrinter;

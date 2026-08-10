@@ -1,6 +1,6 @@
-// `POST /api/docs/bulk` — one action, over a selection, as **one act and one
-// commit** (SPEC.md §4's "One action, one commit", §11's actions on a selection;
-// both riders signed 2026-08-05).
+// `POST /api/docs/bulk` — a column's **staged set**, applied as **one act and
+// one commit** (SPEC.md §4's "One action, one commit", §11's bulk mode; riders
+// signed 2026-08-05 and 2026-08-09).
 //
 // **Why this is not a loop.** Every single-document verb takes one `{id}`, and
 // the auto-committer folds saves by document plus actor, so archiving twenty
@@ -16,6 +16,26 @@
 // are one act — `docIds` on the `CommitRequest` — rather than left to infer it,
 // which is what makes the commit stand alone in both directions §4 names: it
 // never folds into a preceding editing session, and no later save folds into it.
+//
+// **A mix of verbs is still one act** (SHARED-032; §4, in signed text: "a Save
+// carrying a mix of verbs is still one act and still one commit — archiving
+// three documents and resolving two is one pass, so it is one commit, not one
+// per verb"). Concretely that means the planner is chosen **per document**
+// rather than once for the request: `planFor` runs against a row's own act, and
+// nothing else about the shape above moves. Grouping the staged set by verb and
+// running the loop once per group would write the same files and produce several
+// commits, so it would satisfy every assertion about *files* while breaking the
+// one §4 is about — which is why the loop below is over rows and never over
+// verbs (SERVER-087).
+//
+// **Where the rows come from.** Enumerated `entries` are the staged rows, in
+// request order; §11's whole-result-set selection is one further entry carrying
+// one act for everything a query matches, resolved into ids by
+// `docs/selection.ts` when the Save runs and covering everything **except** the
+// ids `entries` names — so no document is ever staged twice and the act needs no
+// precedence rule. An id repeated inside `entries` is the contract's `400`
+// (CONTRACT-048), refused before this file runs and deliberately not re-derived
+// here: last-write-wins would be a silent choice about someone's documents.
 //
 // **The act's report and the commit are one computation — containment, in one
 // direction.** Only a write that landed puts an id in `changed`, and only those
@@ -71,16 +91,19 @@
 // object containing exactly what landed, so a partially-applied act is never
 // half-recorded in the history.
 
-import type {
-  Actor,
-  BulkAction,
-  BulkActionRefusal,
-  BulkActionRequest,
-  BulkActionResult,
-  BulkRefusalReason,
-  Lock,
-  QueryKey,
-  Warning,
+import {
+  BULK_ACTION_NAMES,
+  type Actor,
+  type BulkAction,
+  type BulkActionName,
+  type BulkActionOutcome,
+  type BulkActionRefusal,
+  type BulkActionRequest,
+  type BulkActionResult,
+  type BulkRefusalReason,
+  type Lock,
+  type QueryKey,
+  type Warning,
 } from "@corpus/contract";
 import { removeThreadAttachments } from "../attachments/index.js";
 import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";
@@ -90,6 +113,7 @@ import { carriedDocumentIds, planSetArchived } from "./archive.js";
 import { AGENT_DELETE_MESSAGE, anchoredThreadParent, planDelete } from "./delete.js";
 import { assertMovable, planMove } from "./move.js";
 import { loadDocument, type LoadedDocument } from "./read.js";
+import { resolveWholeResultSet } from "./selection.js";
 import {
   DestinationOccupiedError,
   applyOperations,
@@ -139,22 +163,43 @@ type DocumentPlan = {
  * document only when it is **archived**, so a thread moving between `open` and
  * `resolved` is counted either way; `tag` and `review` are invisible to it
  * outright.
+ *
+ * **Asked per row, not per request** (SERVER-087). It used to be one question
+ * about the act's single verb; a Save that moves one document and tags another
+ * would then have measured nothing and left the badge stale, because the request
+ * as a whole has no verb to ask about. It is asked of the rows whose write
+ * actually **landed**: a refused row wrote nothing, so it can have moved
+ * nothing, and the answer here only ever decides whether the measurement is
+ * worth taking.
  */
-const TREE_MOVING_ACTIONS: ReadonlySet<BulkAction["action"]> = new Set([
+const TREE_MOVING_ACTIONS: ReadonlySet<BulkActionName> = new Set([
   "archive",
   "unarchive",
   "move",
   "delete",
 ]);
 
+/**
+ * One staged row, resolved: the document, the act staged against it, and — for
+ * a `move` — where that act sends it.
+ *
+ * `destination` is resolved **once per distinct folder and outside every lane**,
+ * because a folder that names nothing is the request's fault rather than any one
+ * document's: it is a `400` for the call, not twenty identical refusals. Two
+ * rows may legitimately name different folders in one Save, which is why it is a
+ * property of the row rather than of the act.
+ */
+type StagedRow = {
+  readonly id: string;
+  readonly action: BulkAction;
+  readonly destination: string | null;
+};
+
 /** The two acts that are only meaningful on a thread (SPEC.md §6). */
-const THREAD_ONLY_STATUS: Partial<Record<BulkAction["action"], "resolved" | "open">> = {
+const THREAD_ONLY_STATUS: Partial<Record<BulkActionName, "resolved" | "open">> = {
   resolve: "resolved",
   reopen: "open",
 };
-
-/** Ids as the act will answer about them: request order, each named once. */
-const collapse = (ids: readonly string[]): string[] => [...new Set(ids)];
 
 const docKeys = (loaded: LoadedDocument): QueryKey[] => {
   const keys: QueryKey[] = [DOCS_KEY, docKey(loaded.row.id)];
@@ -252,28 +297,33 @@ class Refusal extends Error {
  */
 function refusalFor(
   workspace: DocsWorkspace,
-  id: string,
+  row: StagedRow,
   error: unknown,
   fallback: BulkRefusalReason,
 ): BulkActionRefusal {
+  const id = row.id;
+  const action = row.action.action;
   if (error instanceof Refusal) {
-    return { id, reason: error.reason, message: error.message, lock: error.lock };
+    return { id, action, reason: error.reason, message: error.message, lock: error.lock };
   }
   if (error instanceof HttpError) {
     if (error.status === 423 && "lock" in error.body && error.body.lock !== undefined) {
-      return { id, reason: "locked", message: error.message, lock: error.body.lock };
+      return { id, action, reason: "locked", message: error.message, lock: error.body.lock };
     }
     if (error.status === 404)
-      return { id, reason: "not-found", message: error.message, lock: null };
-    if (error.status < 500) return { id, reason: fallback, message: error.message, lock: null };
+      return { id, action, reason: "not-found", message: error.message, lock: null };
+    if (error.status < 500)
+      return { id, action, reason: fallback, message: error.message, lock: null };
   }
   workspace.logger.error("a bulk act could not apply to a document", {
     docId: id,
+    action,
     reason: fallback,
     error: String(error),
   });
   return {
     id,
+    action,
     reason: fallback,
     message: error instanceof Error ? error.message : String(error),
     lock: null,
@@ -293,10 +343,11 @@ function refusalFor(
  * every entry in this part to carry its reason, and "the destination is already
  * occupied" without the destination is not one a person can act on.
  */
-function occupiedRefusal(id: string, error: DestinationOccupiedError): BulkActionRefusal {
+function occupiedRefusal(row: StagedRow, error: DestinationOccupiedError): BulkActionRefusal {
   const detail = "issues" in error.body ? error.body.issues[0]?.message : undefined;
   return {
-    id,
+    id: row.id,
+    action: row.action.action,
     reason: "write-failed",
     message: detail === undefined ? error.message : `${error.message}: ${detail}`,
     lock: null,
@@ -453,7 +504,98 @@ function planFor(
 }
 
 /**
- * Apply one act to a named set of documents, and land it as one commit.
+ * The staged set as rows this file can run: enumerated entries in request order,
+ * then §11's whole-result-set entry expanded into the ids its query matches,
+ * minus the ids `entries` already names.
+ *
+ * The exclusion is the contract's (CONTRACT-048 decision 4) and it is what makes
+ * the whole act need no tie-break: a row somebody staged by hand keeps the verb
+ * they chose, and no document is covered twice. Uniqueness *within* `entries` is
+ * the contract's too — a repeat is a `400` before the handler — so it is not
+ * re-derived here.
+ */
+function stageRows(workspace: DocsWorkspace, request: BulkActionRequest): StagedRow[] {
+  const folders = new Map<string, string>();
+  const destinationFor = (action: BulkAction): string | null => {
+    if (action.action !== "move") return null;
+    const known = folders.get(action.folder);
+    if (known !== undefined) return known;
+    const resolved = resolveFolder(action.folder);
+    folders.set(action.folder, resolved);
+    return resolved;
+  };
+
+  const rows: StagedRow[] = request.entries.map((entry) => ({
+    id: entry.id,
+    action: entry.action,
+    destination: destinationFor(entry.action),
+  }));
+
+  const whole = request.wholeResultSet;
+  if (whole !== undefined) {
+    const enumerated = new Set(rows.map((row) => row.id));
+    const destination = destinationFor(whole.action);
+    for (const id of resolveWholeResultSet(workspace, whole)) {
+      if (enumerated.has(id)) continue;
+      rows.push({ id, action: whole.action, destination });
+    }
+  }
+  return rows;
+}
+
+/**
+ * The lanes the act must hold: every staged document, plus every document a
+ * planner reaches without having been asked about it.
+ *
+ * Both extra sets are read **before** the lanes are taken, because which lanes
+ * to hold is a question only each document's own frontmatter answers. A mixed
+ * Save touches more planners than a single-verb one — a delete row and an
+ * archive row in the same request contribute a cascade parent and a carried
+ * skill respectively — so the union is larger, never different in kind.
+ *
+ * An id that fails to load here is simply not represented; it is refused inside
+ * the lanes, on the read that counts.
+ */
+function lanesFor(
+  workspace: DocsWorkspace,
+  rows: readonly StagedRow[],
+): {
+  readonly parents: Map<string, string>;
+  readonly carried: Set<string>;
+} {
+  // A deleted anchored thread rewrites its **parent's** frontmatter (§6), so the
+  // parent's lane is held too — and, per sprint-006 Adjudication 1, its lock can
+  // refuse the deletion.
+  const parents = new Map<string, string>();
+  // §7's skill folder move *writes* every other `SKILL.md` under the folder — it
+  // stamps the id the move would otherwise re-mint (SERVER-078) — so those
+  // documents' lanes are held too, on the same reasoning as a cascaded parent's
+  // and by the same pre-lane read (PR #38, finding 3).
+  const carried = new Set<string>();
+
+  for (const row of rows) {
+    const act = row.action.action;
+    if (act !== "delete" && act !== "archive" && act !== "unarchive") continue;
+    try {
+      const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, row.id);
+      if (act === "delete") {
+        const anchored = anchoredThreadParent(loaded);
+        if (anchored !== null) parents.set(row.id, anchored.parentId);
+        continue;
+      }
+      for (const carriedId of carriedDocumentIds(workspace, loaded, act === "archive")) {
+        carried.add(carriedId);
+      }
+    } catch {
+      // Unreadable now is unreadable inside the lanes too, where it is reported
+      // as this document's own refusal — on the read that counts.
+    }
+  }
+  return { parents, carried };
+}
+
+/**
+ * Apply a staged set to the documents it names, and land it as one commit.
  *
  * The whole act runs inside every named document's write lane, so it is
  * serialized against every other mutation to those documents for its entire
@@ -467,80 +609,34 @@ export async function applyBulkAction(
   actor: Actor,
   request: BulkActionRequest,
 ): Promise<BulkActionResult> {
-  const { action } = request;
-
   // Before anything is read or written: an agent may not delete, and whether the
   // documents exist is not information the refusal depends on (§9.2). The
-  // refusal is the request's, never a per-document outcome.
-  if (action.action === "delete" && actor === "agent") throw forbidden(AGENT_DELETE_MESSAGE);
-
-  const ids = collapse(request.ids);
-  // Resolved once, and outside the lanes: a folder that could never be written
-  // to is a `400` for the call, not twenty identical refusals.
-  const destination = action.action === "move" ? resolveFolder(action.folder) : null;
-
-  // A deleted anchored thread rewrites its **parent's** frontmatter (§6), so the
-  // parent's lane is held too — and, per sprint-006 Adjudication 1, its lock can
-  // refuse the deletion. Read before the lanes, because which lanes to hold is a
-  // question only each document's own frontmatter answers; an id that fails to
-  // load here is refused inside, on the read that counts.
-  const parents = new Map<string, string>();
-  if (action.action === "delete") {
-    for (const id of ids) {
-      try {
-        const anchored = anchoredThreadParent(
-          loadDocument(workspace.workspaceRoot, workspace.projection, id),
-        );
-        if (anchored !== null) parents.set(id, anchored.parentId);
-      } catch {
-        // Unreadable now is unreadable inside the lanes too, where it is
-        // reported as this document's own refusal.
-      }
-    }
+  // refusal is the request's, never a per-document outcome — **including when
+  // the delete is one row of five**: a staged set is not a way to smuggle a
+  // delete past §9.2, so the whole Save is refused rather than four rows of it
+  // applied. `wholeResultSet` cannot spell `delete` at all (§11), which the
+  // contract makes a type error rather than a check anyone here could forget.
+  if (actor === "agent" && request.entries.some((entry) => entry.action.action === "delete")) {
+    throw forbidden(AGENT_DELETE_MESSAGE);
   }
 
-  // §7's skill folder move *writes* every other `SKILL.md` under the folder — it
-  // stamps the id the move would otherwise re-mint (SERVER-078) — so those
-  // documents' lanes are held too, on the same reasoning as a cascaded parent's
-  // and by the same pre-lane read (PR #38, finding 3).
-  const carried = new Set<string>();
-  if (action.action === "archive" || action.action === "unarchive") {
-    for (const id of ids) {
-      try {
-        const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
-        for (const carriedId of carriedDocumentIds(
-          workspace,
-          loaded,
-          action.action === "archive",
-        )) {
-          carried.add(carriedId);
-        }
-      } catch {
-        // Unreadable now is unreadable inside the lanes too, where it is
-        // reported as this document's own refusal.
-      }
-    }
-  }
-
-  const held = new Set([...ids, ...carried, ...parents.values()]);
-  return runInLanes(mutex, [...held], () =>
-    runBulk(workspace, actor, ids, action, destination, parents, held),
-  );
+  const rows = stageRows(workspace, request);
+  const { parents, carried } = lanesFor(workspace, rows);
+  const held = new Set([...rows.map((row) => row.id), ...carried, ...parents.values()]);
+  return runInLanes(mutex, [...held], () => runBulk(workspace, actor, rows, parents, held));
 }
 
 async function runBulk(
   workspace: DocsWorkspace,
   actor: Actor,
-  ids: readonly string[],
-  action: BulkAction,
-  destination: string | null,
+  rows: readonly StagedRow[],
   parents: ReadonlyMap<string, string>,
   held: ReadonlySet<string>,
 ): Promise<BulkActionResult> {
   const guard = workspace.assertWritable ?? ((): void => undefined);
 
-  const changed: string[] = [];
-  const alreadyInState: string[] = [];
+  const changed: BulkActionOutcome[] = [];
+  const alreadyInState: BulkActionOutcome[] = [];
   const refused: BulkActionRefusal[] = [];
   const orphanedThreadIds: string[] = [];
   const deletedThreadIds: string[] = [];
@@ -555,8 +651,13 @@ async function runBulk(
   // so without this the later id loads a path the act itself emptied and is
   // refused `not-found` while its file rides in the commit (SERVER-078).
   const relocated = new Map<string, string>();
+  // Whether any write that *landed* could have moved a folder badge — asked of
+  // each row's own act, since a Save carrying a mix has no single verb to ask
+  // about (SERVER-087). `finishMutation` still decides `["tree"]` by measuring.
+  let mayChangeTree = false;
 
-  for (const id of ids) {
+  for (const row of rows) {
+    const { id, action } = row;
     let loaded: LoadedDocument;
     let plan: DocumentPlan | null;
     try {
@@ -586,12 +687,12 @@ async function runBulk(
         }
       }
     } catch (error) {
-      refused.push(refusalFor(workspace, id, error, "invalid"));
+      refused.push(refusalFor(workspace, row, error, "invalid"));
       continue;
     }
 
     try {
-      plan = planFor(workspace, loaded, action, destination, held);
+      plan = planFor(workspace, loaded, action, row.destination, held);
     } catch (error) {
       // Everything else `planFor` raises means "this act does not apply to this
       // document". A destination that is already taken means the write could not
@@ -599,13 +700,13 @@ async function runBulk(
       // rather than refresh a board that is perfectly current).
       refused.push(
         error instanceof DestinationOccupiedError
-          ? occupiedRefusal(id, error)
-          : refusalFor(workspace, id, error, "not-applicable"),
+          ? occupiedRefusal(row, error)
+          : refusalFor(workspace, row, error, "not-applicable"),
       );
       continue;
     }
     if (plan === null) {
-      alreadyInState.push(id);
+      alreadyInState.push({ id, action: action.action });
       continue;
     }
 
@@ -614,7 +715,7 @@ async function runBulk(
         warnings.push(...validateBeforeWrite(workspace, plan.validate.path, plan.validate.text));
       }
     } catch (error) {
-      refused.push(refusalFor(workspace, id, error, "invalid"));
+      refused.push(refusalFor(workspace, row, error, "invalid"));
       continue;
     }
 
@@ -626,11 +727,12 @@ async function runBulk(
       // failure is reported here rather than allowed to abort the act: the
       // documents already written would otherwise be left uncommitted, which is
       // a worse outcome than a refusal the caller can see. `refusalFor` logs it.
-      refused.push(refusalFor(workspace, id, error, "write-failed"));
+      refused.push(refusalFor(workspace, row, error, "write-failed"));
       continue;
     }
 
-    changed.push(id);
+    changed.push({ id, action: action.action });
+    if (TREE_MOVING_ACTIONS.has(action.action)) mayChangeTree = true;
     recordRelocations(relocated, plan.operations);
     stage.push(...plan.stage);
     project.push(...plan.project);
@@ -657,7 +759,6 @@ async function runBulk(
   // survive.
   const deleted = new Set(deletedThreadIds);
   const result = {
-    action: action.action,
     changed,
     alreadyInState,
     refused,
@@ -666,23 +767,26 @@ async function runBulk(
 
   // "An act that changes nothing makes no commit at all": no files moved, so
   // there is nothing to commit, nothing to re-project and nothing to announce.
+  // A Save whose every row was refused lands here, and so does one whose
+  // whole-result-set query matched nothing when it ran — neither is an error.
   if (changed.length === 0) return { ...result, commit: null, warnings };
 
+  const changedIds = changed.map((outcome) => outcome.id);
   const commit = await finishMutation(workspace, {
     // The representative of the set — see `finishMutation`. `docIds` is what the
     // trailers and §4's commit rule read.
-    docId: changed[0] ?? "",
-    docIds: changed,
+    docId: changedIds[0] ?? "",
+    docIds: changedIds,
     actor,
     plan: {
       stage: [...new Set(stage)],
       project: [...new Set(project)],
       unproject: [...new Set(unproject)],
-      commit: { subject: commitSubject(action.action, changed.length, actor) },
+      commit: { subject: commitSubject(changed, actor) },
       // One frame for the act, carrying every affected key once (§9.2) — never
       // one frame per document.
       keys: dedupeKeys(keys),
-      mayChangeTree: TREE_MOVING_ACTIONS.has(action.action),
+      mayChangeTree,
     },
   });
 
@@ -711,7 +815,30 @@ async function runBulk(
  * because a selection is legitimately thousands of documents and a subject line
  * is one line. `git log --format=%s` therefore reads as a list of acts, and
  * `git show` names every document.
+ *
+ * **A mixed Save names every verb it carried, with a count each** —
+ * `bulk archive 3, resolve 2: 5 documents by user`. §4 asks the message to name
+ * *the action*, and one act now legitimately holds several; naming only the
+ * first, or inventing a word like "save" that says nothing, would leave `git log`
+ * unable to tell a bulk archive from a bulk delete. The single-verb form is
+ * unchanged — a count repeated twice on one line reads as a mistake — so the
+ * common case still says `bulk archive: 3 documents by user`.
+ *
+ * Verbs are named in {@link BULK_ACTION_NAMES} order rather than in the order
+ * the rows arrived, so two Saves carrying the same mix produce the same subject
+ * and the history stays diffable. Bounded by construction: there are eight acts,
+ * so the line can never grow with the selection.
  */
-export function commitSubject(action: BulkAction["action"], count: number, actor: Actor): string {
-  return `bulk ${action}: ${String(count)} document${count === 1 ? "" : "s"} by ${actor}`;
+export function commitSubject(changed: readonly BulkActionOutcome[], actor: Actor): string {
+  const counts = new Map<BulkActionName, number>();
+  for (const outcome of changed) {
+    counts.set(outcome.action, (counts.get(outcome.action) ?? 0) + 1);
+  }
+  const verbs = BULK_ACTION_NAMES.filter((name) => counts.has(name));
+  const named =
+    verbs.length === 1
+      ? (verbs[0] ?? "")
+      : verbs.map((verb) => `${verb} ${String(counts.get(verb) ?? 0)}`).join(", ");
+  const count = changed.length;
+  return `bulk ${named}: ${String(count)} document${count === 1 ? "" : "s"} by ${actor}`;
 }

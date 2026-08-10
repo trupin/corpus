@@ -22,9 +22,20 @@ function canonicalOf(body: string): string {
   return serializeDoc(parseMarkdown(body));
 }
 
-/** Rebase the range covering `quote` in `body`, and read it back out of the target. */
-function travel(body: string, quote: string): string | null {
-  const canonical = canonicalOf(body);
+/**
+ * Rebase the range covering `quote` in `body`, and read it back out of the
+ * target spelling — by default what the editor would print for it.
+ *
+ * `target` is a parameter rather than always `canonicalOf(body)` because
+ * `rebaseRange` maps between **two texts**, whatever produced them: a stale
+ * editor buffer, a file another process rewrote, an older release's printer.
+ * Two describes below need a divergence that today's printer no longer makes
+ * (UI-103), and computing the target from it would have them assert the
+ * serializer's defect rather than this module's behaviour — which is exactly
+ * what happened, and why they went red the day the printer was fixed.
+ */
+function travel(body: string, quote: string, target?: string): string | null {
+  const canonical = target ?? canonicalOf(body);
   const start = body.indexOf(quote);
   expect(start).toBeGreaterThanOrEqual(0);
   const rebased = rebaseRange(body, canonical, { start, end: start + quote.length });
@@ -162,8 +173,17 @@ describe("rebasing a range between two spellings", () => {
  * blank line, so the paragraph re-parses as a lazy continuation of the last
  * nested bullet and the rendered text gains a newline the file does not have.
  *
- * What is asserted here is the boundary in both directions: the passages on
- * either side of the divergence travel, and one that straddles it does not.
+ * **The printer no longer does that** — UI-103 fixed it, and the construct is
+ * now a fixed point — so the respelling is written out below instead of
+ * computed. That is the honest shape for these tests either way: `rebaseRange`
+ * takes two texts and knows nothing about where the second came from, and a
+ * divergence of exactly this kind still reaches it from a stale editor buffer,
+ * an out-of-band edit, or a file last written by an older release. Deriving it
+ * from today's serializer made these cases assert a serializer defect, and they
+ * went red the day it was fixed although nothing here changed.
+ *
+ * What is asserted is the boundary in both directions: the passages on either
+ * side of the divergence travel, and one that straddles it does not.
  */
 describe("a document whose two spellings diverge in one place", () => {
   /** Outer item, nested sublist, then a further paragraph of the outer item. */
@@ -175,21 +195,30 @@ describe("a document whose two spellings diverge in one place", () => {
     "  A trailing paragraph of the outer item.\n" +
     "- Second outer bullet.\n";
 
-  it("is a body the printer really does respell, and only there", () => {
-    const canonical = canonicalOf(BODY);
-    expect(canonical).not.toBe(BODY);
+  /** What a pre-UI-103 editor printed for it: the blank line gone, and only that. */
+  const RESPELT =
+    "- Outer bullet leads in.\n" +
+    "  - Nested bullet one.\n" +
+    "  - Nested bullet two.\n" +
+    "  A trailing paragraph of the outer item.\n" +
+    "- Second outer bullet.\n";
+
+  it("differs from the file in one place, which the printer itself no longer causes", () => {
     // The whole of the difference: the blank line before the trailing paragraph.
     expect(BODY).toContain("Nested bullet two.\n\n  A trailing");
-    expect(canonical).toContain("Nested bullet two.\n  A trailing");
+    expect(RESPELT).toContain("Nested bullet two.\n  A trailing");
+    // And the reason it is spelled out rather than printed (UI-103): today the
+    // file *is* what the editor writes, so `canonicalOf` would hand back BODY.
+    expect(canonicalOf(BODY)).toBe(BODY);
   });
 
   it("places a passage before the divergence", () => {
-    expect(travel(BODY, "Outer bullet leads in")).toBe("Outer bullet leads in");
-    expect(travel(BODY, "Nested bullet one")).toBe("Nested bullet one");
+    expect(travel(BODY, "Outer bullet leads in", RESPELT)).toBe("Outer bullet leads in");
+    expect(travel(BODY, "Nested bullet one", RESPELT)).toBe("Nested bullet one");
   });
 
   it("places a passage after the divergence, shifted by the one length delta", () => {
-    expect(travel(BODY, "Second outer bullet")).toBe("Second outer bullet");
+    expect(travel(BODY, "Second outer bullet", RESPELT)).toBe("Second outer bullet");
   });
 
   /**
@@ -201,7 +230,7 @@ describe("a document whose two spellings diverge in one place", () => {
    * misplacement, and still far better than the nothing it drew before.
    */
   it("widens a passage inside the run the respelling merged", () => {
-    const quoted = travel(BODY, "trailing paragraph of the outer item");
+    const quoted = travel(BODY, "trailing paragraph of the outer item", RESPELT);
     expect(quoted).toContain("trailing paragraph of the outer item");
     expect(quoted).toBe("Nested bullet two.\n  A trailing paragraph of the outer item.");
     // And no further: the widening stops at the run it overlapped.
@@ -215,7 +244,7 @@ describe("a document whose two spellings diverge in one place", () => {
    * confident lie about which sentence a comment is on.
    */
   it("still refuses a passage that straddles the divergence", () => {
-    expect(travel(BODY, "Nested bullet two.\n\n  A trailing paragraph")).toBeNull();
+    expect(travel(BODY, "Nested bullet two.\n\n  A trailing paragraph", RESPELT)).toBeNull();
   });
 
   /**
@@ -259,17 +288,20 @@ describe("a document whose two spellings diverge twice", () => {
     "  A trailing paragraph of the second item.\n" +
     "- Final outer bullet.\n";
 
-  it("really does respell two separate places", () => {
-    const canonical = canonicalOf(BODY);
+  /** The same document as a pre-UI-103 editor printed it: two blank lines gone. */
+  const RESPELT = BODY.replaceAll("\n\n  A trailing", "\n  A trailing");
+
+  it("really does diverge in two separate places", () => {
     expect(BODY).toContain("Nested bullet one.\n\n  A trailing");
-    expect(canonical).toContain("Nested bullet one.\n  A trailing");
+    expect(RESPELT).toContain("Nested bullet one.\n  A trailing");
     expect(BODY).toContain("Another nested bullet.\n\n  A trailing");
-    expect(canonical).toContain("Another nested bullet.\n  A trailing");
+    expect(RESPELT).toContain("Another nested bullet.\n  A trailing");
+    expect(canonicalOf(BODY)).toBe(BODY);
   });
 
   it("places a passage before the first divergence and after the last", () => {
-    expect(travel(BODY, "Outer bullet leads in")).toBe("Outer bullet leads in");
-    expect(travel(BODY, "Final outer bullet")).toBe("Final outer bullet");
+    expect(travel(BODY, "Outer bullet leads in", RESPELT)).toBe("Outer bullet leads in");
+    expect(travel(BODY, "Final outer bullet", RESPELT)).toBe("Final outer bullet");
   });
 
   /**
@@ -278,9 +310,7 @@ describe("a document whose two spellings diverge twice", () => {
    */
   it("refuses a passage between the two divergences, though its own text agrees", () => {
     expect(BODY).toContain("A paragraph in the middle that both spellings agree about.");
-    expect(canonicalOf(BODY)).toContain(
-      "A paragraph in the middle that both spellings agree about.",
-    );
-    expect(travel(BODY, "paragraph in the middle")).toBeNull();
+    expect(RESPELT).toContain("A paragraph in the middle that both spellings agree about.");
+    expect(travel(BODY, "paragraph in the middle", RESPELT)).toBeNull();
   });
 });

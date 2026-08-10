@@ -492,3 +492,379 @@ describe("the position trace", () => {
     expect(traced.trace).toHaveLength(3);
   });
 });
+
+/**
+ * A list item's own blocks, and the blank lines that keep them its own (UI-103).
+ *
+ * The items themselves are printed tight, and the printer's default is to print
+ * an item's *children* tight too — a bare newline between them. That is right
+ * for a nested list under its lead paragraph and wrong nearly everywhere else,
+ * because the block on the left keeps reading the line below it: a paragraph
+ * after a nested list is a lazy continuation of the last nested item, a
+ * paragraph after a blockquote is swallowed by the quotation, a paragraph after
+ * a table becomes another row of it. §11 gives the editor autosave and no save
+ * button, so each of those reaches the user's own file the first time anything
+ * is typed in the document.
+ *
+ * **Idempotence is the property, because it is checkable without knowing the
+ * right answer**: whatever spelling the printer chooses, printing its own output
+ * must not choose differently. It is asserted here over every ordered pair of
+ * block types rather than for a fixture, since a round trip that is not a fixed
+ * point for one construct is unlikely to be one for exactly one construct — the
+ * sweep that found this found the same failure in five other shapes.
+ *
+ * **One node per block type is not enough**, and the first version of this probe
+ * proved it by passing over two live defects. Whether a list may be printed
+ * flush depends on the list's *spelling*, not its type: an ordered list is
+ * uninterruptible when its first number is not 1, and any list is when its first
+ * item is empty. A probe parameterised at `start: 1` with a non-empty first item
+ * everywhere structurally cannot fail on either. So {@link SPELLINGS} adds the
+ * spellings that change the answer, and the pairs run over those too.
+ */
+describe("blocks inside a list item", () => {
+  function listItem(...content: readonly PmNode[]): PmNode {
+    return { type: NODE.listItem, content };
+  }
+
+  function bulletList(...items: readonly PmNode[]): PmNode {
+    return { type: NODE.bulletList, content: items };
+  }
+
+  function cell(type: string, value: string): PmNode {
+    return {
+      type,
+      attrs: { colspan: 1, rowspan: 1, colwidth: null },
+      content: [paragraph(text(value))],
+    };
+  }
+
+  /** One node of every block type the schema models, as an item's child. */
+  const BLOCKS: Readonly<Record<string, PmNode>> = {
+    paragraph: paragraph(text("Bee prose.")),
+    bulletList: bulletList(listItem(paragraph(text("Bee bullet.")))),
+    orderedList: {
+      type: NODE.orderedList,
+      attrs: { start: 1 },
+      content: [listItem(paragraph(text("Bee number.")))],
+    },
+    taskList: {
+      type: NODE.taskList,
+      content: [
+        { type: NODE.taskItem, attrs: { checked: false }, content: [paragraph(text("Bee task."))] },
+      ],
+    },
+    blockquote: { type: NODE.blockquote, content: [paragraph(text("Bee quoted."))] },
+    codeBlock: {
+      type: NODE.codeBlock,
+      attrs: { language: "js" },
+      content: [text("const bee = 1;")],
+    },
+    heading: { type: NODE.heading, attrs: { level: 2 }, content: [text("Bee heading")] },
+    horizontalRule: { type: NODE.horizontalRule },
+    table: {
+      type: NODE.table,
+      attrs: { align: [null, null] },
+      content: [
+        {
+          type: NODE.tableRow,
+          content: [cell(NODE.tableHeader, "h1"), cell(NODE.tableHeader, "h2")],
+        },
+        { type: NODE.tableRow, content: [cell(NODE.tableCell, "c1"), cell(NODE.tableCell, "c2")] },
+      ],
+    },
+    rawBlock: { type: NODE.rawBlock, attrs: { source: "<div>Bee raw.</div>" } },
+  };
+
+  /**
+   * An empty paragraph as `parseMarkdown` spells one: no `content` key at all.
+   *
+   * The probe compares parsed trees to hand-built ones, so an empty item has to
+   * be built the way the parser builds it or every pair holding one fails for a
+   * reason that is not the printer's.
+   */
+  function emptyParagraph(): PmNode {
+    return { type: NODE.paragraph };
+  }
+
+  /**
+   * The list spellings that decide whether a list may be printed flush.
+   *
+   * Not extra block *types* — {@link BLOCKS} already has one of each — but the
+   * two ways a list stops being able to interrupt a paragraph, in each list
+   * flavour that can express them. Both are two keystrokes away in the editor,
+   * and both were printed flush, and destroyed, until UI-103's follow-up.
+   */
+  const SPELLINGS: Readonly<Record<string, PmNode>> = {
+    // An ordered list that does not start at 1 cannot interrupt a paragraph:
+    // printed flush, `5. item five` is lazy continuation text, and the save
+    // after that escapes it to `5\. item five` for good.
+    orderedListFromFive: {
+      type: NODE.orderedList,
+      attrs: { start: 5 },
+      content: [listItem(paragraph(text("item five"))), listItem(paragraph(text("item six")))],
+    },
+    // A list whose first item is empty cannot either — and a lone `-` on the
+    // line under a paragraph is a **setext underline**, so the paragraph above
+    // it becomes an H2.
+    bulletListEmptyLead: bulletList(
+      listItem(emptyParagraph()),
+      listItem(paragraph(text("Bee second."))),
+    ),
+    orderedListEmptyLead: {
+      type: NODE.orderedList,
+      attrs: { start: 1 },
+      content: [listItem(emptyParagraph()), listItem(paragraph(text("Bee second.")))],
+    },
+    // The task-list flavour of the same hole. `mdast-util-gfm-task-list-item`
+    // writes no `[ ] ` checkbox when the marker is followed by nothing, so an
+    // empty task item prints as a bare `-` exactly like a bullet one.
+    taskListEmptyLead: {
+      type: NODE.taskList,
+      content: [
+        { type: NODE.taskItem, attrs: { checked: false }, content: [emptyParagraph()] },
+        { type: NODE.taskItem, attrs: { checked: true }, content: [paragraph(text("Bee two."))] },
+      ],
+    },
+  };
+
+  const VARIANTS: Readonly<Record<string, PmNode>> = { ...BLOCKS, ...SPELLINGS };
+
+  const PAIRS = Object.keys(VARIANTS).flatMap((left) =>
+    Object.keys(VARIANTS).map((right) => [left, right] as const),
+  );
+
+  /** An item holding `left` then `right` after its lead paragraph, with a sibling after it. */
+  function itemHolding(left: string, right: string): PmNode {
+    const clone = (node: PmNode): PmNode => JSON.parse(JSON.stringify(node)) as PmNode;
+    return doc(
+      bulletList(
+        listItem(
+          paragraph(text("Aye lead.")),
+          clone(VARIANTS[left] as PmNode),
+          clone(VARIANTS[right] as PmNode),
+        ),
+        listItem(paragraph(text("Zed second."))),
+      ),
+    );
+  }
+
+  it("covers every block type the schema lets an item hold", () => {
+    // Read out of the real schema rather than listed here, so a block type the
+    // editor grows later arrives as a failure in this file instead of as an
+    // adjacency nobody thought to write a case for — which is how the reported
+    // one shipped.
+    const schema = corpusSchema();
+    const item = schema.nodes["listItem"];
+    const lead = item?.contentMatch.matchType(schema.nodes["paragraph"] as never);
+    const admitted = Object.values(schema.nodes)
+      .filter((type) => lead?.matchType(type) !== undefined && lead?.matchType(type) !== null)
+      .map((type) => type.name)
+      .sort();
+    expect(Object.keys(BLOCKS).sort()).toEqual(admitted);
+    // …and every extra spelling is a spelling of a type already covered, so the
+    // two maps can be merged without the coverage claim above weakening.
+    expect([...new Set(Object.values(VARIANTS).map((node) => node.type))].sort()).toEqual(admitted);
+  });
+
+  it("parameterises both conditions that stop a list interrupting a paragraph", () => {
+    // The probe's own guard. A spelling map that drifts back to `start: 1` with
+    // a non-empty first item everywhere cannot fail on the two defects it is
+    // pointed at, and would go on passing while they were reintroduced.
+    const spellings = Object.values(SPELLINGS);
+    expect(
+      spellings.some((list) => list.attrs?.["start"] !== 1 && list.attrs?.["start"] !== undefined),
+    ).toBe(true);
+    expect(
+      spellings.some((list) => (list.content?.[0]?.content?.[0]?.content ?? []).length === 0),
+    ).toBe(true);
+  });
+
+  it.each(PAIRS)("reads back unchanged with %s then %s in one item", (left, right) => {
+    const source = itemHolding(left, right);
+    expect(parseMarkdown(serializeDoc(source))).toEqual(source);
+  });
+
+  it.each(PAIRS)("prints the same twice with %s then %s in one item", (left, right) => {
+    const once = serializeDoc(itemHolding(left, right));
+    expect(canonicalizeMarkdown(once)).toBe(once);
+  });
+
+  it("keeps a nested list flush under a paragraph of the same item", () => {
+    // The join that stays tight: this is what hand-written markdown looks like,
+    // and widening it would rewrite every nested list in the corpus. It is not
+    // limited to the item's *lead* paragraph — a list may follow a later
+    // paragraph of the item too, and does so flush for the same reason.
+    expect(canonicalizeMarkdown("- outer\n  - nested\n")).toBe("- outer\n  - nested\n");
+    expect(canonicalizeMarkdown("- outer\n\n  later paragraph\n  - nested\n")).toBe(
+      "- outer\n\n  later paragraph\n  - nested\n",
+    );
+  });
+
+  it("leaves two same-marker lists to the printer, which alternates the bullet", () => {
+    // What keeps them two lists is **bullet alternation**, not a separator: the
+    // printer tracks `state.bulletLastUsed` (`mdast-util-to-markdown`'s
+    // `handle/list.js`) and writes the second list with the other marker. There
+    // is no `<!---->` in the output and there is no blank line — a blank line is
+    // what would merge them.
+    const source = doc(
+      bulletList(
+        listItem(
+          paragraph(text("lead")),
+          bulletList(listItem(paragraph(text("a")))),
+          bulletList(listItem(paragraph(text("b")))),
+        ),
+      ),
+    );
+    expect(serializeDoc(source)).toBe("- lead\n  - a\n  * b\n");
+    expect(parseMarkdown(serializeDoc(source))).toEqual(source);
+  });
+});
+
+/**
+ * The two list spellings that may not be printed flush under a paragraph.
+ *
+ * The flush exception for a list inside a list item is what keeps every
+ * hand-written nested list byte-identical, and it was written unconditionally.
+ * But a list only *stays* a list where it was put if it can interrupt the
+ * paragraph above it, and CommonMark says two spellings cannot. Both are
+ * reachable by typing — this is not a shape that only arrives from a file — and
+ * printing either one flush is a silent, unasked-for rewrite of the user's
+ * document on the very next autosave.
+ */
+describe("a sublist that cannot interrupt the paragraph above it", () => {
+  it("keeps an ordered sublist that does not start at 1 out of the paragraph", () => {
+    const markdown = "- Lead paragraph.\n\n  5. item five\n  6. item six\n";
+    // Byte-identical through the round trip…
+    expect(canonicalizeMarkdown(markdown)).toBe(markdown);
+    // …and a fixed point, which is the half that used to fail *twice*: printed
+    // flush, the sublist became lazy continuation text, and printing that again
+    // escaped the markers to `5\. item five` — permanently.
+    expect(canonicalizeMarkdown(canonicalizeMarkdown(markdown))).toBe(markdown);
+    const item = parseMarkdown(canonicalizeMarkdown(markdown)).content?.[0]?.content?.[0];
+    expect(item?.content?.map((child) => child.type)).toEqual([NODE.paragraph, NODE.orderedList]);
+    expect(item?.content?.[1]?.attrs?.["start"]).toBe(5);
+  });
+
+  it("keeps a sublist whose first item is empty from underlining the paragraph", () => {
+    // `Enter` then `Tab` at the end of a bullet's text, then a pause: autosave
+    // is what writes this, and printed flush the lone `-` is a setext
+    // underline, so "Lead paragraph." comes back as an H2.
+    const source = doc({
+      type: NODE.bulletList,
+      content: [
+        {
+          type: NODE.listItem,
+          content: [
+            paragraph(text("Lead paragraph.")),
+            {
+              type: NODE.bulletList,
+              content: [{ type: NODE.listItem, content: [{ type: NODE.paragraph }] }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(serializeDoc(source)).toBe("- Lead paragraph.\n\n  -\n");
+    expect(parseMarkdown(serializeDoc(source))).toEqual(source);
+    expect(canonicalizeMarkdown("- Lead paragraph.\n\n  -\n")).toBe("- Lead paragraph.\n\n  -\n");
+  });
+
+  it("keeps them separated under a sibling list too, not only under a paragraph", () => {
+    // The rule is on the list being printed, not on what precedes it: the last
+    // line of a sibling list is a paragraph line just as much as an item's own
+    // paragraph is.
+    for (const markdown of [
+      "- Lead.\n  - a\n\n  5. item five\n  6. item six\n",
+      "- Lead.\n  - a\n\n  *\n  * Bee second.\n",
+    ]) {
+      expect(canonicalizeMarkdown(markdown)).toBe(markdown);
+    }
+  });
+});
+
+/**
+ * The construct from the report, in the spellings it actually occurs in.
+ *
+ * A further paragraph of an outer list item after a nested sublist. Each of
+ * these is markdown as a person writes it, and each one was rewritten by the
+ * first save before UI-103: the blank line went, and the *next* save read the
+ * paragraph back as a continuation of the nested item and indented it to match.
+ */
+describe("a list item's trailing paragraph after a nested sublist", () => {
+  const SHAPES: readonly (readonly [string, string])[] = [
+    [
+      "unordered, one level",
+      "- Outer bullet leads in.\n" +
+        "  - Nested bullet one.\n" +
+        "  - Nested bullet two.\n" +
+        "\n" +
+        "  A trailing paragraph of the outer item.\n" +
+        "- Second outer bullet.\n",
+    ],
+    [
+      "ordered, one level",
+      "1. Outer item leads in.\n" +
+        "   1. Nested step one.\n" +
+        "   2. Nested step two.\n" +
+        "\n" +
+        "   A trailing paragraph of the outer item.\n" +
+        "2. Second outer item.\n",
+    ],
+    [
+      "ordered outer, unordered nested",
+      "1. Outer item leads in.\n" +
+        "   - Nested bullet.\n" +
+        "\n" +
+        "   A trailing paragraph of the outer item.\n",
+    ],
+    [
+      "three levels, trailing paragraph on the outermost",
+      "- Outer.\n" +
+        "  - Middle.\n" +
+        "    - Inner.\n" +
+        "\n" +
+        "  A trailing paragraph of the outer item.\n",
+    ],
+    [
+      "three levels, trailing paragraph on the middle item",
+      "- Outer.\n" +
+        "  - Middle.\n" +
+        "    - Inner.\n" +
+        "\n" +
+        "    A trailing paragraph of the middle item.\n",
+    ],
+    [
+      "task list",
+      "- [ ] Task leads in.\n" +
+        "  - [x] Nested task.\n" +
+        "\n" +
+        "  A trailing paragraph of the outer task.\n",
+    ],
+    [
+      "no trailing paragraph — the neighbour that must not change",
+      "- Outer bullet leads in.\n  - Nested bullet one.\n  - Nested bullet two.\n- Second outer bullet.\n",
+    ],
+  ];
+
+  it.each(SHAPES)("%s survives the round trip byte for byte", (_name, markdown) => {
+    expect(canonicalizeMarkdown(markdown)).toBe(markdown);
+  });
+
+  it.each(SHAPES)("%s is a fixed point of a second printing", (_name, markdown) => {
+    const once = canonicalizeMarkdown(markdown);
+    expect(canonicalizeMarkdown(once)).toBe(once);
+  });
+
+  it("keeps the paragraph at the outer item's level, not the nested one's", () => {
+    // The loss stated as structure rather than as bytes: before the fix, the
+    // second printing moved this paragraph inside the nested list.
+    const [, markdown] = SHAPES[0] as readonly [string, string];
+    const item = parseMarkdown(canonicalizeMarkdown(markdown)).content?.[0]?.content?.[0];
+    expect(item?.content?.map((child) => child.type)).toEqual([
+      NODE.paragraph,
+      NODE.bulletList,
+      NODE.paragraph,
+    ]);
+    expect(item?.content?.[2]?.content?.[0]?.text).toBe("A trailing paragraph of the outer item.");
+  });
+});

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
+import { BULK_ACTION_NAMES } from "./schemas/bulk.js";
 import { CHECK_CODES, CHECK_WARNING_CODES } from "./schemas/check.js";
 import {
   CONTEXT_MAX_EXCERPT_CHARS,
@@ -1331,16 +1332,20 @@ describe("the edit-session flush (CONTRACT-031)", () => {
  */
 /**
  * CONTRACT-037 — the contract half of SPEC.md §4's "One action, one commit"
- * (rider signed 2026-08-05) and §11's bulk actions on a selection. Each property
- * below is one a careless later edit would break silently, and the failure would
- * only surface as a history that disagrees with what the user was told.
+ * (rider signed 2026-08-05) and §11's bulk actions on a selection; CONTRACT-048
+ * for the staged-set request shape SHARED-032 (signed 2026-08-09) requires. Each
+ * property below is one a careless later edit would break silently, and the
+ * failure would only surface as a history that disagrees with what the user was
+ * told.
  */
-describe("one action, one commit (CONTRACT-037)", () => {
+describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   const BULK_PATH = "/api/docs/bulk";
   const bulk = () => operation(BULK_PATH, "post");
   const requestSchema = () => componentSchemas?.["BulkActionRequest"];
   const resultSchema = () => componentSchemas?.["BulkActionResult"];
-  const actionSchema = () => requestSchema()?.properties?.["action"];
+  const entrySchema = () => componentSchemas?.["BulkStagedEntry"];
+  const wholeResultSetSchema = () => componentSchemas?.["BulkWholeResultSetEntry"];
+  const actionSchema = () => entrySchema()?.properties?.["action"];
 
   it("adds exactly one endpoint to the inventory", () => {
     expect(ENDPOINT_INVENTORY).toContain("POST /api/docs/bulk");
@@ -1382,6 +1387,19 @@ describe("one action, one commit (CONTRACT-037)", () => {
   });
 
   /**
+   * CONTRACT-048. §4's amended text is explicit that a mixed Save is still one
+   * commit, and the obvious server shortcut — group the staged set by verb and
+   * write each group — produces the same files and the wrong history. The route
+   * is where that is ruled out, because the contract cannot enforce it.
+   */
+  it("says a mix of verbs is still one act and still one commit", () => {
+    const description = bulk().description ?? "";
+    expect(description).toContain("still one act and still one commit");
+    expect(description).toContain("not one commit per verb");
+    expect(description).toContain("grouping the staged set by verb");
+  });
+
+  /**
    * The invariant is directional, and the direction is the whole point: the only
    * way the report can be wrong is by naming a document the commit does not
    * carry. The converse — that the commit carries nothing else — is false, and
@@ -1410,23 +1428,84 @@ describe("one action, one commit (CONTRACT-037)", () => {
     expect(changed).toContain("did not name");
   });
 
-  it("takes at least one id, and refuses an empty act", () => {
-    expect(requestSchema()?.properties?.["ids"]?.minItems).toBe(1);
-    expect(requestSchema()?.required).toEqual(["ids", "action"]);
+  /**
+   * CONTRACT-048: the staged set, not one verb over many ids. `entries` carries
+   * `{id, action}` pairs, so a mixed Save is one request and therefore one
+   * commit. `wholeResultSet` is optional and singular; "nothing staged" is a
+   * refinement rather than a `minItems`, because an empty `entries` is legal
+   * exactly when that entry is present.
+   */
+  it("carries a list of staged rows and at most one whole-result-set entry", () => {
+    expect(Object.keys(requestSchema()?.properties ?? {})).toEqual(["entries", "wholeResultSet"]);
+    expect(requestSchema()?.required).toEqual(["entries"]);
     expect(requestSchema()?.additionalProperties).toBe(false);
+    expect(requestSchema()?.properties?.["entries"]?.type).toBe("array");
+    expect(requestSchema()?.properties?.["entries"]?.items?.$ref).toBe(
+      "#/components/schemas/BulkStagedEntry",
+    );
+    // Singular, so "at most one" needs no rule anyone has to remember.
+    expect(requestSchema()?.properties?.["wholeResultSet"]?.$ref).toBe(
+      "#/components/schemas/BulkWholeResultSetEntry",
+    );
+    expect(requestSchema()?.properties?.["wholeResultSet"]?.type).toBeUndefined();
     expect(bulk().requestBody?.required).toBe(true);
   });
 
   /**
-   * Ids, never a filter: a mutation aimed at a set nobody enumerated is a far
-   * larger promise, and §11 already forbids bulk delete on a whole-result-set
-   * selection for that reason.
+   * Each row names its document and its own act — the pair SHARED-032's per-row
+   * staged action needs, and the pair `{ids, action}` could not say.
    */
-  it("names documents by id and accepts no filter", () => {
-    const ids = requestSchema()?.properties?.["ids"];
-    expect(ids?.type).toBe("array");
-    expect(ids?.items?.pattern).toBe("^(doc|th)_[A-Za-z0-9]+$");
-    expect(Object.keys(requestSchema()?.properties ?? {})).toEqual(["ids", "action"]);
+  it("pairs each staged id with its own act", () => {
+    expect(Object.keys(entrySchema()?.properties ?? {})).toEqual(["id", "action"]);
+    expect(entrySchema()?.required).toEqual(["id", "action"]);
+    expect(entrySchema()?.additionalProperties).toBe(false);
+    expect(entrySchema()?.properties?.["id"]?.pattern).toBe("^(doc|th)_[A-Za-z0-9]+$");
+    expect(entrySchema()?.properties?.["action"]?.oneOf).toHaveLength(8);
+    // The request no longer has one verb for the whole call.
+    expect(requestSchema()?.properties?.["action"]).toBeUndefined();
+    expect(requestSchema()?.properties?.["ids"]).toBeUndefined();
+  });
+
+  /**
+   * §11's one selection that has no enumerated form: "a whole-result-set
+   * selection stages as a single entry … carrying one action for all of them",
+   * with "the count re-evaluated when the Save runs". Ids remain the shape of a
+   * staged row; this is the narrow exception, not a filter-shaped mutation.
+   */
+  it("expresses a whole-result-set selection as one entry carrying a query", () => {
+    expect(Object.keys(wholeResultSetSchema()?.properties ?? {})).toEqual(["query", "action"]);
+    expect(wholeResultSetSchema()?.required).toEqual(["query", "action"]);
+    expect(wholeResultSetSchema()?.additionalProperties).toBe(false);
+    // The same flat parameter map a `type: view` document stores, not a second
+    // filter grammar that could drift from `GET /api/docs`.
+    expect(wholeResultSetSchema()?.properties?.["query"]?.type).toBe("object");
+    expect(wholeResultSetSchema()?.properties?.["query"]?.description).toContain(
+      "`type: view` document stores",
+    );
+    const description = bulk().description ?? "";
+    expect(description).toContain("re-evaluated when the Save runs");
+    expect(description).toContain("except** the ids `entries` names individually");
+  });
+
+  /**
+   * §11: "Bulk delete is offered **only** on a selection whose documents are
+   * enumerated — a whole-result-set selection cannot be deleted." Published as a
+   * narrower union, so it is a type error in the generated client rather than a
+   * refusal discovered after confirming on 412 documents.
+   */
+  it("makes `delete` inexpressible on a whole-result-set entry", () => {
+    const acts = wholeResultSetSchema()?.properties?.["action"]?.oneOf ?? [];
+    expect(acts.flatMap((branch) => branch.properties?.["action"]?.enum ?? [])).toEqual([
+      "archive",
+      "unarchive",
+      "resolve",
+      "reopen",
+      "move",
+      "tag",
+      "review",
+    ]);
+    // Still expressible on an enumerated row, which is what §11 allows.
+    expect(actionSchema()?.oneOf?.at(-1)?.properties?.["action"]?.enum).toEqual(["delete"]);
   });
 
   it("offers the eight acts as one discriminated union, inline rather than named", () => {
@@ -1472,45 +1551,52 @@ describe("one action, one commit (CONTRACT-037)", () => {
   });
 
   it("states §11's three parts as three separate, always-present lists", () => {
-    expect(Object.keys(resultSchema()?.properties ?? {})).toEqual([
-      "action",
+    const parts = [
       "changed",
       "alreadyInState",
       "refused",
       "orphanedThreadIds",
       "commit",
       "warnings",
-    ]);
-    expect(resultSchema()?.required).toEqual([
-      "action",
-      "changed",
-      "alreadyInState",
-      "refused",
-      "orphanedThreadIds",
-      "commit",
-      "warnings",
-    ]);
+    ];
+    expect(Object.keys(resultSchema()?.properties ?? {})).toEqual(parts);
+    expect(resultSchema()?.required).toEqual(parts);
+    // CONTRACT-048: the single top-level `action` echo is gone. A Save carries a
+    // mix of verbs (§4), so one verb for the whole result would have been a lie;
+    // the verb moved onto each named document instead.
+    expect(resultSchema()?.properties?.["action"]).toBeUndefined();
   });
 
   it("says an already-archived document is a no-op and not a failure", () => {
     expect(resultSchema()?.properties?.["alreadyInState"]?.description).toContain("not a failure");
   });
 
-  /** A count alone is not a result: the part worth re-reading is the part that did not happen. */
-  it("names documents individually in every part", () => {
+  /**
+   * A count alone is not a result: the part worth re-reading is the part that
+   * did not happen. Each name carries its verb too (CONTRACT-048), so a mixed
+   * Save's report reads on its own — including for the documents a
+   * `wholeResultSet` entry covered, which the caller never enumerated and has no
+   * request row to pair against.
+   */
+  it("names documents individually in every part, each with the verb that applied", () => {
     for (const part of ["changed", "alreadyInState"]) {
-      expect(resultSchema()?.properties?.[part]?.items?.pattern, part).toBe(
-        "^(doc|th)_[A-Za-z0-9]+$",
+      expect(resultSchema()?.properties?.[part]?.items?.$ref, part).toBe(
+        "#/components/schemas/BulkActionOutcome",
       );
     }
     expect(resultSchema()?.properties?.["refused"]?.items?.$ref).toBe(
       "#/components/schemas/BulkActionRefusal",
     );
+    const outcome = componentSchemas?.["BulkActionOutcome"];
+    expect(Object.keys(outcome?.properties ?? {})).toEqual(["id", "action"]);
+    expect(outcome?.required).toEqual(["id", "action"]);
+    expect(outcome?.properties?.["id"]?.pattern).toBe("^(doc|th)_[A-Za-z0-9]+$");
+    expect(outcome?.properties?.["action"]?.enum).toEqual([...BULK_ACTION_NAMES]);
   });
 
   it("requires a reason and a message on every refusal, and carries the lock's holder", () => {
     const refusal = componentSchemas?.["BulkActionRefusal"];
-    expect(refusal?.required).toEqual(["id", "reason", "message", "lock"]);
+    expect(refusal?.required).toEqual(["id", "action", "reason", "message", "lock"]);
     expect(refusal?.properties?.["reason"]?.enum).toEqual([
       "locked",
       "not-found",
@@ -1572,6 +1658,21 @@ describe("one action, one commit (CONTRACT-037)", () => {
     const header = bulk().parameters?.find((entry) => entry.in === "header");
     expect(header?.name).toBe(ACTOR_HEADER);
     expect(header?.schema?.enum).toEqual([...ACTORS]);
+  });
+
+  /**
+   * CONTRACT-048. Both refusals are refinements — invisible in the JSON Schema —
+   * so the published prose is the only place a client reads them, and the only
+   * place a reviewer can check that last-write-wins was rejected on purpose.
+   */
+  it("publishes both ways a staged set is refused outright, and why", () => {
+    const description = bulk().description ?? "";
+    expect(description).toContain("nothing staged at all");
+    expect(description).toContain("one id staged twice");
+    expect(description).toContain("choosing one silently would");
+    const entries = requestSchema()?.properties?.["entries"]?.description ?? "";
+    expect(entries).toContain("An id may appear at most once");
+    expect(entries).toContain("refused naming both");
   });
 });
 

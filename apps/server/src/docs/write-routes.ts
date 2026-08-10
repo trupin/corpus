@@ -99,8 +99,10 @@ export function mountDocWriteRoutes(
     // is already in `validateBeforeWrite`'s own path-scoped line.
     for (const warning of result.warnings) {
       workspace.logger.info("mutation completed with a warning", {
-        action: result.action,
-        docIds: result.changed,
+        // Each changed document with the verb that changed it: a Save carries a
+        // mix (SPEC.md §4), so one `action` for the act would be a lie here in
+        // exactly the way it is on the wire (CONTRACT-048).
+        changed: result.changed.map((outcome) => `${outcome.id}:${outcome.action}`),
         code: warning.code,
         detail: warning.detail,
         note: "the file mutation stands; a §14 warning never fails a write",

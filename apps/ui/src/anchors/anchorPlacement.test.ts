@@ -314,10 +314,17 @@ describe("the placement rule, one anchor at a time", () => {
 
   /**
    * **The reported document** (UI-099). A second paragraph of an outer list item,
-   * after a nested sublist: the printer drops the blank line before it, so the
-   * two spellings render one newline differently. Every comment on the document
+   * after a nested sublist: the printer dropped the blank line before it, so the
+   * two spellings rendered one newline differently. Every comment on the document
    * used to be refused for it — including this one, on the very first bullet,
    * whole lines before the construct that disagrees.
+   *
+   * UI-103 fixed the printer, so the editor's own text for this file is now the
+   * file. The divergence is therefore supplied rather than printed — the
+   * placement rule maps a server range onto **whatever text the editor is
+   * showing**, and it is still handed a text that is not the file whenever the
+   * file is not in the serializer's canonical shape (a loose list, an unpadded
+   * table, a setext heading) or an out-of-band write has moved on.
    */
   it("draws an anchor that sits before the document's one respelt construct", () => {
     const raw =
@@ -327,7 +334,15 @@ describe("the placement rule, one anchor at a time", () => {
       "\n" +
       "  A trailing paragraph of the outer item.\n" +
       "- Second outer bullet.\n";
-    const traced = source(raw);
+    // What a pre-UI-103 editor held for it, and a fixed point of the printer:
+    // the trailing paragraph merged into the last nested bullet.
+    const traced = source(
+      "- Outer bullet leads in.\n" +
+        "  - Nested bullet one.\n" +
+        "  - Nested bullet two.\n" +
+        "    A trailing paragraph of the outer item.\n" +
+        "- Second outer bullet.\n",
+    );
     expect(traced.markdown).not.toBe(raw);
 
     const start = raw.indexOf("Outer bullet leads in.");

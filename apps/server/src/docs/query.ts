@@ -39,6 +39,7 @@ import {
   paramsFor,
   RELEVANCE_ORDER_BY,
   whereClause,
+  type FilterQuery,
 } from "./filters.js";
 import { parseSnippets } from "./fts.js";
 import {
@@ -382,4 +383,34 @@ export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): Do
     items: rows.map(toDocRow),
     page: { total: counted?.total ?? 0, limit: query.limit, offset: query.offset },
   };
+}
+
+/**
+ * **Every** document a query matches, as ids — the same collection query with no
+ * page and no row columns.
+ *
+ * §11's whole-result-set selection ("all 412 matching", `docs/selection.ts`) is
+ * the one caller: a Save that acts on what a column's query matches has to mean
+ * the same set the column would list, so this shares {@link compileFilters} and
+ * {@link whereClause} with {@link queryDocs} rather than restating the grammar.
+ * It is deliberately the **COUNT** statement's shape — {@link FROM_SQL} and the
+ * distinct-hits CTE, none of the page's row joins — because the answer is one
+ * column and nothing about a row is needed to compute it.
+ *
+ * Unpaged on purpose: `limit` and `offset` are how a column shows part of a
+ * result set, and this answers what the set *is*. Ordered by id, which is
+ * arbitrary but stable — a Save's report order is its own concern, and the
+ * query's `sort` decides display order, not membership.
+ */
+export function queryDocIds(db: ProjectionDb, query: FilterQuery, nowMs: number): string[] {
+  const compiled = compileFilters(query, nowMs);
+  const searching = compiled.match !== null;
+  const sql = `${searching ? `WITH ${COUNT_MATCH_CTE}\n` : ""}SELECT d.id AS id
+  ${FROM_SQL}
+  ${searching ? "JOIN m ON m.id = d.id" : ""}
+  ${whereClause(compiled)}
+  ORDER BY d.id ASC`;
+
+  const rows = db.prepare(sql).all(paramsFor(sql, compiled.binder.all())) as { id: string }[];
+  return rows.map((row) => row.id);
 }

@@ -9,6 +9,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { beginEditing, endEditing, resetEditingRegistry } from "../editor/editingRegistry.js";
+import { editorBody } from "../editor/editorBody.js";
 import { parseMarkdown } from "../editor/markdown/parse.js";
 import { canonicalizeMarkdown } from "../editor/markdown/serialize.js";
 import { STALE_SELECTION_NOTICE, type TextQuoteSelector } from "../editor/selection.js";
@@ -65,7 +66,7 @@ interface FakeEditor {
  * in a browser. Every `fromJSON` below goes through this for that reason.
  */
 function editorDocument(markdown: string): PmModelNode {
-  return PmModelNode.fromJSON(corpusSchema(), parseMarkdown(canonicalizeMarkdown(markdown)));
+  return PmModelNode.fromJSON(corpusSchema(), parseMarkdown(editorBody(markdown)));
 }
 
 function fakeEditor(markdown: string): FakeEditor {
@@ -274,7 +275,42 @@ describe("commenting on a selection", () => {
     const app = mount();
     selectQuote(app.layer(), 4, 4);
     expect(app.layer().draft).toBeNull();
-    expect(app.notices[0]?.tone).toBe("error");
+    expect(app.notices[0]).toEqual({ tone: "error", message: REFUSAL_NOTICE["no-quote"] });
+  });
+
+  /**
+   * The other refusal, and the one only this layer can produce (UI-068).
+   *
+   * `selectorFromSelection` decides it, but what makes it reachable is
+   * `quotableSource`: with no unsaved edits the quote is framed against the
+   * **file's own bytes**, not the editor's printing of them. On a document whose
+   * file spelling differs from the printer's — here `__sixty__`, which the
+   * editor shows as `**sixty**` — the framed quote is a string no file contains,
+   * so the layer refuses rather than opening a composer that would create a
+   * thread anchored to a document that does not exist.
+   *
+   * Pinned here because this is the only place `REFUSAL_NOTICE["not-in-file"]`
+   * is read: `selectorFromSelection.test.ts` proves the *reason* is produced,
+   * and nothing else proves the layer turns it into that sentence.
+   */
+  it("refuses, distinctly, when the file cannot spell the selection", () => {
+    // A soft line break inside an inline code span, which the printer flattens
+    // to a space (UI-104's largest category, 51 of the repo's own documents).
+    // The words on screen are real; the file spells them across two lines, so
+    // there is no byte range of the file that is the selection.
+    const FILE = "Run `corpus init\n--port 8791` first.\n\nA second paragraph follows it here.\n";
+    const app = mount([], [], readerTransport({}), FILE);
+    const live = traceOfBody(editorBody(FILE));
+    const QUOTE = "init --port";
+    expect(live.markdown).toContain(QUOTE);
+    expect(FILE).not.toContain(QUOTE);
+    const start = live.markdown.indexOf(QUOTE);
+    const pm = mdRangeToPm(live.trace, { start, end: start + QUOTE.length });
+    selectQuote(app.layer(), pm[0]?.from ?? 0, pm.at(-1)?.to ?? 0);
+
+    expect(app.layer().draft).toBeNull();
+    expect(app.notices[0]).toEqual({ tone: "error", message: REFUSAL_NOTICE["not-in-file"] });
+    expect(app.notices[0]?.message).not.toBe(REFUSAL_NOTICE["no-quote"]);
   });
 
   it("posts the shipped shape, with note-only as an explicit false", async () => {
@@ -447,31 +483,26 @@ describe("commenting on a file the editor would print differently", () => {
 });
 
 /**
- * UI-068 again, on the document class UI-099 found — **the second bug that fix
- * closed, and the one nothing else in the suite can see.**
+ * The document class UI-099 found, after UI-103 took the disagreement away.
  *
- * The pair above uses a padded GFM table, for which `canonicalizeMarkdown` *is*
- * idempotent: the editor's document and `traceOfBody(body)` print the same text,
- * so `quotableSource` picks the file either way and the tests pass whichever
- * text the layer traces. This body is the other kind. Printing it once drops the
- * blank line before the outer item's trailing paragraph; printing *that* re-reads
- * the paragraph as a continuation of the **nested** item and indents it 2 → 4
- * spaces. So the editor's own document (`parse(canonical)`) prints text that
- * `traceOfBody(body)` never produces.
+ * Printing this body once used to drop the blank line before the outer item's
+ * trailing paragraph, and printing *that* re-read the paragraph as a
+ * continuation of the **nested** item, indenting it 2 → 4 spaces. So the
+ * editor's own document printed text `traceOfBody(body)` never produced, the
+ * layer read the structural disagreement as "the editor holds unsaved edits",
+ * and a seam-spanning selection put `exact: "bullet two.\n    A trailing
+ * paragraph"` on the wire — four spaces the file does not contain, so
+ * `body.includes(exact)` is false, §6's ladder has nothing to match at any rung,
+ * and the comment is orphaned at creation (UI-068's failure exactly). UI-099
+ * turned that into a visible refusal; **UI-103 removed the seam**, so there is
+ * nothing left to refuse and the whole document comments normally again.
  *
- * Tracing the raw body therefore read that structural disagreement as "the
- * editor holds unsaved edits" and quoted the **printer's** spelling — which is
- * UI-068's failure exactly: a seam-spanning selection put
- * `exact: "bullet two.\n    A trailing paragraph"` on the wire, four spaces the
- * file does not contain, so `body.includes(exact)` is false and every rung of
- * §6's ladder is hunting bytes that were never on disk. The comment is orphaned
- * *at creation*, and no later edit repairs it.
- *
- * Both assertions matter and neither alone is enough: the refusal is what the
- * fix produces where a broken quote used to be, and the capture beside it is
- * what says the refusal is narrow rather than a document-wide surrender.
+ * That is what is asserted here, and it is the acceptance criterion of UI-103
+ * read from the user's side: the file is a fixed point of the printer, a
+ * selection spanning the boundary the two printings used to disagree about is
+ * accepted, and the quote it puts on the wire is the file's own bytes.
  */
-describe("commenting on a file whose two printings disagree about structure", () => {
+describe("commenting on a file whose two printings used to disagree about structure", () => {
   const FILE =
     "- Outer bullet leads in.\n" +
     "  - Nested bullet one.\n" +
@@ -484,27 +515,49 @@ describe("commenting on a file whose two printings disagree about structure", ()
   function selection(quote: string): { from: number; to: number } {
     // `parse(canonicalizeMarkdown(body))` is what `DocEditor` builds and what
     // `editorDocument` above builds; this is its printing.
-    const live = traceOfBody(canonicalizeMarkdown(FILE));
+    const live = traceOfBody(editorBody(FILE));
     const start = live.markdown.indexOf(quote);
     expect(start).toBeGreaterThanOrEqual(0);
     const pm = mdRangeToPm(live.trace, { start, end: start + quote.length });
     return { from: pm[0]?.from ?? 0, to: pm.at(-1)?.to ?? 0 };
   }
 
-  it("refuses a selection across the respelt seam instead of quoting the printer", () => {
-    // Spans the boundary the two printings disagree about: the end of the last
-    // nested bullet through the start of the outer item's trailing paragraph.
-    const SEAM = "bullet two.\n    A trailing paragraph";
-    expect(canonicalizeMarkdown(canonicalizeMarkdown(FILE))).toContain(SEAM);
-    expect(FILE).not.toContain(SEAM);
+  it("has no seam left to straddle: the file is what both printings say", () => {
+    // The old failure, spelled out so a regression names it: the printer used to
+    // reach this text on its second pass, and it is in no file.
+    const OLD_SEAM = "bullet two.\n    A trailing paragraph";
+    expect(FILE).not.toContain(OLD_SEAM);
+    expect(canonicalizeMarkdown(FILE)).toBe(FILE);
+    expect(canonicalizeMarkdown(canonicalizeMarkdown(FILE))).toBe(FILE);
+    expect(canonicalizeMarkdown(FILE)).not.toContain(OLD_SEAM);
+  });
 
+  it("quotes the file for a selection across the boundary that used to be a seam", async () => {
+    // Spans what the two printings disagreed about: the end of the last nested
+    // bullet through the start of the outer item's trailing paragraph. This was
+    // refused with `REFUSAL_NOTICE["not-in-file"]` until the printer agreed with
+    // itself; now it is an ordinary selection.
+    const QUOTE = "bullet two.\n\n  A trailing paragraph";
     const app = mount([], [], readerTransport({}), FILE);
-    const { from, to } = selection(SEAM);
+    const { from, to } = selection(QUOTE);
     selectQuote(app.layer(), from, to);
 
-    expect(app.layer().draft).toBeNull();
-    expect(app.notices).toHaveLength(1);
-    expect(app.notices[0]?.message).toBe(REFUSAL_NOTICE["not-in-file"]);
+    expect(app.notices).toHaveLength(0);
+    expect(app.layer().draft).not.toBeNull();
+
+    act(() => {
+      app.layer().submitComment("Does this still straddle anything?", false, {});
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const { selector } = app.wire.of("POST", "/api/threads")[0]?.body as {
+      selector: TextQuoteSelector;
+    };
+    // §6's rung 1: what went on the wire is in the file, byte for byte.
+    expect(FILE).toContain(selector.prefix + selector.exact + selector.suffix);
+    expect(selector.exact).toContain("bullet two.");
+    expect(selector.exact).toContain("A trailing paragraph");
   });
 
   it("still quotes the file itself for a selection clear of the seam", async () => {

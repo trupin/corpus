@@ -43,6 +43,7 @@ describe("the fixture corpus", () => {
       "hard-wrapped.md",
       "headings.md",
       "links.md",
+      "lists-block-content.md",
       "lists-bullet.md",
       "lists-ordered.md",
       "mixed-note.md",
@@ -54,7 +55,7 @@ describe("the fixture corpus", () => {
       "tables.md",
       "task-lists.md",
     ]);
-    expect(names).toHaveLength(16);
+    expect(names).toHaveLength(17);
   });
 
   it.each(names)("%s round-trips byte for byte", (name) => {
@@ -91,6 +92,12 @@ const NON_CANONICAL: readonly (readonly [string, string])[] = [
   ["loose list", "- one\n\n- two\n"],
   ["hard break by two spaces", "one  \ntwo\n"],
   ["mixed nesting", "* a\n  1. b\n     * c\n"],
+  // What a save wrote before UI-103: the blank line before an outer item's
+  // trailing paragraph, dropped. The paragraph now *is* part of the nested
+  // item — markdown says so — and the second read indents it to match. It has
+  // to settle there rather than keep moving, which is what this pins; the
+  // damage itself is not something a later save can undo.
+  ["a list item an older serializer flattened", "- outer\n  - nested\n  trailing\n"],
   ["html block", "<section>\n  <p>x</p>\n</section>\n"],
   ["escaped characters", "a \\* b \\_ c \\[ d\n"],
   ["reference link", "[text][id]\n\n[id]: https://example.com\n"],
