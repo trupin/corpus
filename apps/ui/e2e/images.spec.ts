@@ -1,3 +1,4 @@
+import type { MarkSeenResult, Thread, UnauthorizedError } from "@corpus/contract";
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
@@ -91,7 +92,10 @@ async function stubAttachments(page: Page): Promise<AttachmentTraffic> {
       return route.fulfill({
         status: 401,
         contentType: "application/json",
-        body: JSON.stringify({ code: "unauthorized", message: "missing bearer" }),
+        body: JSON.stringify({
+          code: "unauthorized",
+          message: "missing bearer",
+        } satisfies UnauthorizedError),
       });
     }
     return route.fulfill({
@@ -108,7 +112,19 @@ async function stubThread(page: Page): Promise<void> {
   await page.route("**/api/threads/**", async (route: Route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/seen")) {
-      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      /*
+       * `POST /api/threads/{id}/seen` answers a `MarkSeenResult`, not `{}` — the
+       * shape it used to send here is one no server response has (UI-102).
+       */
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          threadId: "th_img",
+          lastSeenTs: "2026-08-03T09:00:00.000Z",
+          unread: false,
+        } satisfies MarkSeenResult),
+      });
     }
     return route.fulfill({
       status: 200,
@@ -132,9 +148,10 @@ async function stubThread(page: Page): Promise<void> {
               "",
               `![plan.png](${PLAN})`,
             ].join("\n"),
+            model: null,
           },
         ],
-      }),
+      } satisfies Thread),
     });
   });
 }

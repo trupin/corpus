@@ -1,7 +1,7 @@
 import { DEFAULT_RECENT_JOBS, MAX_RECENT_JOBS } from "@corpus/contract";
 import { expect, test } from "./coverage";
 import { stubEventStream } from "./eventStream";
-import { stubCorpus } from "./stubCorpus";
+import { stubCorpus, type StubJob } from "./stubCorpus";
 
 /**
  * UI-084 in a real browser: the three controls a form renders, and the Attention
@@ -534,7 +534,7 @@ test.describe("the Attention row a form leaves behind", () => {
    */
   test("counts the wait from the buried ask a windowed answer would miss", async ({ page }) => {
     /** Enough unrelated unfinished work to saturate the shared query. */
-    const elsewhere = Array.from({ length: MAX_RECENT_JOBS }, (_, index) => ({
+    const elsewhere = Array.from({ length: MAX_RECENT_JOBS }, (_, index): StubJob => ({
       eventId: `evt_elsewhere${String(index)}`,
       type: "doc.edited",
       status: "pending",
@@ -542,14 +542,14 @@ test.describe("the Attention row a form leaves behind", () => {
       originId: "doc_elsewhere",
     }));
     /** This thread's later asks — a full console window of them, newest first. */
-    const laterAsks = Array.from({ length: DEFAULT_RECENT_JOBS }, (_, index) => ({
+    const laterAsks = Array.from({ length: DEFAULT_RECENT_JOBS }, (_, index): StubJob => ({
       eventId: `evt_later${String(index)}`,
       type: "comment.created",
       status: "in-progress",
       started: `2026-07-19T11:${String(59 - index).padStart(2, "0")}:00Z`,
       originId: "th_form",
     }));
-    const buried = {
+    const buried: StubJob = {
       eventId: "evt_buried",
       type: "comment.created",
       status: "deferred",

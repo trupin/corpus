@@ -1,3 +1,9 @@
+import {
+  INDEX_KEY,
+  INVALIDATE_EVENT,
+  type IndexStatus,
+  type InvalidatePayload,
+} from "@corpus/contract";
 import type { Page } from "@playwright/test";
 // `test` comes from the coverage fixture, not from `@playwright/test`: it is the
 // same runner plus the browser-side V8 collection the merged gate needs.
@@ -35,15 +41,12 @@ const SEPIA = hexToRgb(token(LIGHT, "--sepia"));
 const INK_3 = hexToRgb(token(LIGHT, "--ink-3"));
 const SIGNAL = hexToRgb(token(LIGHT, "--signal"));
 
-interface Status {
-  readonly indexed: number;
-  readonly pending: number;
-  readonly failed: number;
-  readonly identity: string | null;
-  readonly rebuilding: boolean;
-  readonly state: string;
-  readonly detail?: string;
-}
+/*
+ * The contract's own `IndexStatus`, not a transcription of it. The local
+ * interface this replaces had `state: string`, so a spec could seed a state the
+ * server has no word for and nothing would say so (UI-102).
+ */
+type Status = IndexStatus;
 
 const CAUGHT_UP: Status = {
   indexed: 273,
@@ -138,7 +141,9 @@ async function refuseEvents(page: Page): Promise<void> {
  * could have moved the counts, which is what the test is about.
  */
 async function pushIndexFrame(page: Page): Promise<void> {
-  const frame = `event: invalidate\ndata: ${JSON.stringify({ keys: [["index"]] })}\n\n`;
+  const frame =
+    `event: ${INVALIDATE_EVENT}\n` +
+    `data: ${JSON.stringify({ keys: [INDEX_KEY] } satisfies InvalidatePayload)}\n\n`;
   let delivered = false;
   await page.route(EVENT_STREAM, async (route) => {
     if (delivered) {

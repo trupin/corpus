@@ -1,3 +1,4 @@
+import type { Doc, ResolvedAnchor } from "@corpus/contract";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
@@ -114,7 +115,7 @@ async function openTodosBoard(page: Page, options: StubOptions = {}): Promise<To
   let items = ITEMS.map((item) => ({ ...item }));
   const writes: { path: string; body: unknown }[] = [];
 
-  const anchors =
+  const anchors: ResolvedAnchor[] =
     options.anchored === true
       ? [
           {
@@ -158,7 +159,7 @@ async function openTodosBoard(page: Page, options: StubOptions = {}): Promise<To
         body: bodyOf(items),
         path: "data/docs/inbox/chores.md",
         anchors,
-      }),
+      } satisfies Doc),
     });
   });
 

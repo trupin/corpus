@@ -1,3 +1,4 @@
+import type { MarkSeenResult, Thread } from "@corpus/contract";
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus } from "./stubCorpus";
@@ -85,7 +86,19 @@ async function stubThread(page: Page): Promise<void> {
   await page.route("**/api/threads/**", async (route: Route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/seen")) {
-      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      /*
+       * `POST /api/threads/{id}/seen` answers a `MarkSeenResult`, not `{}` — the
+       * shape it used to send here is one no server response has (UI-102).
+       */
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          threadId: url.pathname.split("/").at(-2) ?? "th_fence",
+          lastSeenTs: "2026-07-01T09:05:00.000Z",
+          unread: false,
+        } satisfies MarkSeenResult),
+      });
     }
     const id = url.pathname.split("/").pop() ?? "th_fence";
     return route.fulfill({
@@ -102,9 +115,14 @@ async function stubThread(page: Page): Promise<void> {
         anchor: null,
         agent: "engaged",
         turns: [
-          { author: "agent", ts: "2026-07-01T09:05:00.000Z", body: TURN_BODIES[id] ?? TURN_BODY },
+          {
+            author: "agent",
+            ts: "2026-07-01T09:05:00.000Z",
+            body: TURN_BODIES[id] ?? TURN_BODY,
+            model: null,
+          },
         ],
-      }),
+      } satisfies Thread),
     });
   });
 }

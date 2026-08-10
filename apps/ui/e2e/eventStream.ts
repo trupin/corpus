@@ -1,5 +1,5 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { INVALIDATE_EVENT, type QueryKey } from "@corpus/contract";
+import { INVALIDATE_EVENT, type InvalidatePayload, type QueryKey } from "@corpus/contract";
 import type { Page } from "@playwright/test";
 
 /**
@@ -45,7 +45,7 @@ export interface StubEventStream {
 }
 
 const frame = (keys: readonly QueryKey[]): string =>
-  `event: ${INVALIDATE_EVENT}\ndata: ${JSON.stringify({ keys })}\n\n`;
+  `event: ${INVALIDATE_EVENT}\ndata: ${JSON.stringify({ keys: [...keys] } satisfies InvalidatePayload)}\n\n`;
 
 /**
  * Starts the stream and points `page`'s `EventSource` at it. Call **before**

@@ -1,7 +1,7 @@
-import { DocsQuerySchema } from "@corpus/contract";
+import { DocsQuerySchema, type DocList, type DocRow, type FolderTree } from "@corpus/contract";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
-import { stubCorpus } from "./stubCorpus";
+import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /** The grammar's own size, so the help panel's count cannot go stale here. */
 const FIELD_COUNT = Object.keys(DocsQuerySchema.shape).length;
@@ -22,7 +22,7 @@ const FIELD_COUNT = Object.keys(DocsQuerySchema.shape).length;
 
 const VIEW_ID = "doc_view_threads";
 
-const VIEW = {
+const VIEW: StubRow = {
   id: VIEW_ID,
   type: "view",
   title: "Conversations",
@@ -33,7 +33,7 @@ const VIEW = {
 };
 
 /** A corpus with two document types in it, so `type=` has something real to say. */
-const CORPUS = [
+const CORPUS: readonly StubRow[] = [
   VIEW,
   { id: "doc_note", type: "note", title: "Mortgage options", body: "6.4% this week." },
   { id: "doc_todo", type: "todo", title: "Call the broker", body: "Before Friday." },
@@ -62,7 +62,7 @@ async function seedVocabulary(page: Page): Promise<void> {
             { path: "finance", name: "finance", count: 2, totalCount: 3, children: [] },
             { path: "inbox", name: "inbox", count: 5, totalCount: 5, children: [] },
           ],
-        }),
+        } satisfies FolderTree),
       });
     },
   );
@@ -81,8 +81,10 @@ async function seedVocabulary(page: Page): Promise<void> {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          items: CORPUS.filter((row) => row.id !== VIEW_ID).map((row) => ({
-            ...row,
+          items: CORPUS.filter((row) => row.id !== VIEW_ID).map((row): DocRow => ({
+            id: row.id,
+            type: row.type ?? "note",
+            title: row.title ?? "Untitled",
             path: `data/docs/inbox/${row.id}.md`,
             status: "open",
             tags: row.id === "doc_note" ? ["finance", "housing"] : ["urgent"],
@@ -103,6 +105,10 @@ async function seedVocabulary(page: Page): Promise<void> {
             unread: null,
             awaitingAgent: null,
             unreadThreads: 0,
+            // `0`, not absent. This literal predates CONTRACT-040 and simply
+            // omitted the field, so every row this route served arrived with
+            // `unansweredForms: undefined` — the exact silence UI-102 is about.
+            unansweredForms: 0,
             attention: [],
             snippets: [],
             pinned: false,
@@ -112,7 +118,7 @@ async function seedVocabulary(page: Page): Promise<void> {
             extra: {},
           })),
           page: { total: 2, limit: 200, offset: 0 },
-        }),
+        } satisfies DocList),
       });
     },
   );
