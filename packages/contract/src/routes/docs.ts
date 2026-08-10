@@ -197,14 +197,21 @@ export const archiveDoc = createRoute({
     "`type: skill` document additionally moves its folder to `.claude/skills-archived/`, which " +
     "disables it without unindexing it — carrying every file under that folder, including a " +
     "**nested skill** the request never named, whose id is stamped into it so the move does not " +
-    "change its identity (SERVER-078). Refused with `423` when the other party holds the lock on " +
+    "change its identity (SERVER-078). That carry **disables the nested skill too** (§7: what " +
+    "disables a skill is where its folder lives), and the response says so: one `carried_skill` " +
+    "warning per carried document, naming it, its path after the move, and that it is now " +
+    "**disabled**. It is a report *about* " +
+    "the act, not a part of it — a document the request never named never becomes a changed " +
+    "document (CONTRACT-047). The id stamp itself is deliberately not reported: it keeps an " +
+    "identity rather than changing one. An archive that carries no other skill document warns " +
+    "nothing. Refused with `423` when the other party holds the lock on " +
     "the named document **or on any document the folder move carries**, since the act writes " +
     "those files too; the refusal names which document's lock is held.",
   request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(
       DocMutationResponseSchema,
-      "The document, now archived, and any §14 warnings.",
+      "The document, now archived, any §14 warnings, and what a skill folder move carried.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
@@ -223,12 +230,24 @@ export const unarchiveDoc = createRoute({
     "`type: skill` document moves its folder back out of `.claude/skills-archived/`, carrying " +
     "every file under it — including a **nested skill** the request never named, whose id is " +
     "stamped into it so the move does not change its identity, and whose `status` is reconciled " +
-    "to the enabled root it now sits in (SERVER-078). Refused with `423` when the other party " +
+    "to the enabled root it now sits in (SERVER-078). Both effects on that carried document are " +
+    "reported (CONTRACT-047): a `carried_skill` warning per carried document, naming it, its " +
+    "path after the move, and that it is now **enabled**, and — only where a stale " +
+    "`status: archived` had to be " +
+    "corrected to `open` — a `carried_reconciliation` warning naming the document and the key " +
+    "rewritten. They are reports *about* the act, not parts of it: a document the request never " +
+    "named never becomes a changed document. The id stamp is deliberately not reported, since it " +
+    "keeps an identity rather than changing one. An unarchive that carries no other skill " +
+    "document warns nothing, and one whose carried documents needed no correction carries no " +
+    "`carried_reconciliation`. Refused with `423` when the other party " +
     "holds the edit lock on the named document **or on any document the folder move carries**, " +
     "since the act writes those files too; the refusal names which document's lock is held.",
   request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
   responses: {
-    200: jsonContent(DocMutationResponseSchema, "The document, restored, and any §14 warnings."),
+    200: jsonContent(
+      DocMutationResponseSchema,
+      "The document, restored, any §14 warnings, and what a skill folder move carried.",
+    ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,

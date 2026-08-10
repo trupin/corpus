@@ -605,6 +605,17 @@ export const BulkActionRefusalSchema = z
  *   skill (a supported shape). The move *disables* that nested document — §7:
  *   what disables a skill is where its folder lives — but its id was never
  *   requested, so it belongs in none of the three parts either.
+ *
+ * **Belonging in none of the three parts is not the same as going unsaid**
+ * (CONTRACT-047). A carried document is reported in `warnings`: a
+ * `carried_skill` naming it and the enablement the move gave or took, and a
+ * `carried_reconciliation` where the move also corrected a stale `status` in
+ * its frontmatter. That is a report *about* the act rather than a fourth part
+ * of it — the three parts partition the **requested** ids and must keep doing
+ * so, since a caller totals them against what it selected, and a carried id has
+ * no request row to pair against. The same two warnings appear on the
+ * single-document `POST /api/docs/{id}/archive` and `/unarchive`, because the
+ * behaviour is the single-document write path's and bulk loops through it.
  */
 export const BulkActionResultSchema = z
   .object({
@@ -614,9 +625,10 @@ export const BulkActionResultSchema = z
         "Documents the act changed, each with the verb that changed it — §11's first part. Every " +
           "one of them has a file in `commit` (§4); the containment runs this way only, since a " +
           "commit may also carry files for documents the act did not name (§6's anchor cascade " +
-          "reaching a surviving parent, a skill folder move carrying a nested skill). Empty is a " +
-          "legal outcome: every document was already in the target state, or every one was " +
-          "refused.",
+          "reaching a surviving parent, a skill folder move carrying a nested skill — reported " +
+          "in `warnings`, never as an entry here, since these lists partition the requested " +
+          "ids). Empty is a legal outcome: every document was already in the target state, or " +
+          "every one was refused.",
       ),
     alreadyInState: z
       .array(BulkActionOutcomeSchema)
