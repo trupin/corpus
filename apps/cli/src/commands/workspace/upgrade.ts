@@ -23,6 +23,7 @@ import {
 } from "../../template/plan.js";
 import { CONFIG_DIR } from "../../workspace.js";
 import { commitPaths, gitExitCode, gitFailure, identityFor, runGit } from "../init/git.js";
+import { ensureMaintenanceSettings, missingMaintenanceSettings } from "./maintenance.js";
 
 /**
  * `corpus workspace upgrade` — bringing an existing workspace's template files
@@ -184,6 +185,16 @@ export interface UpgradeReport {
   readonly manifestCommitted: boolean;
   /** The commit this run made, or `null` when it made none. */
   readonly commit: string | null;
+  /**
+   * Repository-local git settings this run wrote to take git's background
+   * maintenance out of the workspace (CLI-037) — what it *would* write under
+   * `--dry-run`. Empty in a workspace that already carries them, which is every
+   * workspace created since. This is how an **existing** workspace is brought
+   * under the rule without waiting for its next server start, and why the
+   * settings are not merely written by `corpus init`: `init` runs once, and a
+   * workspace made last week is in the hazardous configuration now.
+   */
+  readonly maintenanceSettings: readonly string[];
 }
 
 /**
@@ -256,6 +267,19 @@ export async function applyWorkspaceUpgrade(
   // can overwrite nothing. It is reported and committed with the run's own work.
   const queueSkeleton = missingQueueMarkers(root);
 
+  // The §2.4 vehicle for an existing workspace (CLI-037). Applied here rather
+  // than in the plan because it is not a template file and needs no baseline —
+  // a repository either carries these settings or it does not — and applied
+  // *before* the early "already up to date" return, so a workspace with nothing
+  // else to upgrade is still brought under the rule. It never packs: an upgrade
+  // is allowed to run with the server up, and packing beside the sole writer is
+  // the exact race this repairs.
+  const maintenanceSettings = dryRun
+    ? await missingMaintenanceSettings(root)
+    : await ensureMaintenanceSettings(root).catch((cause: unknown) => {
+        throw gitFailure("configuring the workspace repository's maintenance", cause);
+      });
+
   const report: UpgradeReport = {
     workspace: root,
     fromVersion: manifest?.tool ?? null,
@@ -270,6 +294,7 @@ export async function applyWorkspaceUpgrade(
     manifestWritten: false,
     manifestCommitted: false,
     commit: null,
+    maintenanceSettings,
   };
 
   const pending = decisions.filter((decision) => writes(decision.action, restore));
@@ -553,6 +578,17 @@ export function conflictResolutionCommand(path: string): string {
  * alternative being a second rendering of the same verdicts, which would drift.
  */
 export function renderUpgradeReport(out: Output, report: UpgradeReport): void {
+  // First, and outside the up-to-date short-circuit: a workspace whose template
+  // files are current can still be the one whose repository was left open to
+  // git's background maintenance, and "already up to date." would be a lie about
+  // the thing that just changed.
+  if (report.maintenanceSettings.length > 0) {
+    out.line(
+      `git: ${report.dryRun ? "would turn" : "turned"} off git's own background maintenance in ` +
+        `this repository (${report.maintenanceSettings.join(", ")}) — corpus packs it at server ` +
+        "start instead",
+    );
+  }
   if (report.upToDate) {
     out.line("already up to date.");
     return;
@@ -676,6 +712,14 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "a clone and that state has nowhere to live on a fresh checkout. Any missing marker is " +
     "created and committed — it needs no baseline, because a directory is either there or it is " +
     "not, and an empty marker overwrites nothing.\n\n" +
+    "One more repair needs no baseline and makes no commit: a workspace created before Corpus " +
+    "took git's **background maintenance** out of its repository has it back on. Since git 2.29 " +
+    "every `git commit` ends by spawning a detached `git maintenance run --auto`, and a repack " +
+    "racing the server's commits can leave the object store permanently corrupt. Any missing " +
+    "setting is written here, because `corpus init` runs once and a workspace made last week is " +
+    "in that state now. The repository is never **packed** here — an upgrade may run with the " +
+    "server up, and packing beside the sole writer is the race being repaired; packing happens " +
+    "at `corpus server start` and in `corpus workspace maintain`.\n\n" +
     "This command and `corpus init` are the only two that write workspace files directly and " +
     "commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the " +
     "server stopped, because a workspace whose skills are broken is exactly the one whose loop " +

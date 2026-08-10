@@ -79,6 +79,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus todos migrate`](#corpus-todos-migrate)
 - [`corpus workspace`](#corpus-workspace)
   - [`corpus workspace diff`](#corpus-workspace-diff)
+  - [`corpus workspace maintain`](#corpus-workspace-maintain)
   - [`corpus workspace upgrade`](#corpus-workspace-upgrade)
 - [Exit codes](#exit-codes)
 
@@ -146,7 +147,7 @@ corpus health --workspace ~/notes --timeout 1000
 
 Create a Corpus workspace here (document tree, config, git repository, agent skills).
 
-Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. The target is the positional `path`, else `--workspace`, else `CORPUS_WORKSPACE`, else the current directory — in that order, so a positional always wins and naming two targets warns rather than picking one quietly. Refuses a directory that already holds a workspace, which `--force` never overrides. Refuses **before writing anything** a directory that holds unrelated content — existing files, a git repository or worktree, or any directory inside one — naming what it found; `--force` proceeds there and reports what it overwrote. Refusing first is the whole safety property: the template replaces same-named files such as `README.md` and `.gitignore`, and nothing can put them back. It contacts no server — there is not yet one to contact.
+Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. That repository is created with git's own **background maintenance turned off**: since git 2.29 every `git commit` ends by spawning a detached `git maintenance run --auto` that rewrites the object store whenever it likes, and racing the server's commits that way can leave it permanently corrupt — the audit trail SPEC.md §4 makes the only recovery for a deletion. Corpus packs the repository itself instead, at `corpus server start` and through `corpus workspace maintain`. The target is the positional `path`, else `--workspace`, else `CORPUS_WORKSPACE`, else the current directory — in that order, so a positional always wins and naming two targets warns rather than picking one quietly. Refuses a directory that already holds a workspace, which `--force` never overrides. Refuses **before writing anything** a directory that holds unrelated content — existing files, a git repository or worktree, or any directory inside one — naming what it found; `--force` proceeds there and reports what it overwrote. Refusing first is the whole safety property: the template replaces same-named files such as `README.md` and `.gitignore`, and nothing can put them back. It contacts no server — there is not yet one to contact.
 
 ```
 corpus init [path] [flags]
@@ -1652,6 +1653,8 @@ Start this workspace's server as a background daemon.
 
 Spawns the server detached, with its output appended to `.corpus/server.log`, and waits until `GET /api/health` answers **for this workspace** before reporting the board URL. The daemon outlives the shell that started it. Idempotent: an already-running server is reported and the command exits 0. A port that another workspace's server already holds is refused before anything is spawned (exit 4) — its health answer is never mistaken for this workspace's, and no pidfile is written. If the daemon never becomes ready, the tail of the log is printed rather than a silent failure.
 
+**A start is also when Corpus maintains the workspace's git repository** (`corpus workspace maintain`). Git's own background maintenance is off in a Corpus workspace, because a detached repack racing the server's commits can leave the object store permanently corrupt; the packing is rescheduled to here, the one instant when the sole writer is provably absent — after every running server has been ruled out and before the next one is spawned. It packs only when the loose-object count is past git's own `gc.auto` threshold, so most starts say nothing about it, and a workspace that predates this behaviour is brought under it by its next start. Maintenance never blocks the start: a failure is reported as a warning and the server comes up anyway.
+
 ```
 corpus server start [flags]
 ```
@@ -2238,7 +2241,9 @@ corpus todos migrate --json
 
 Maintain the workspace's own scaffolding.
 
-Everything under `data/` is documents, and every change to one goes through the server. This topic is about the workspace _around_ them: the agent's skills, its personas and the seed files `corpus init` installed. They come from the tool, so a tool update has to be able to reach them — but the agent evolves its own skills, so an update must never overwrite what it wrote (SPEC.md §2.1). `upgrade` is that negotiation, and it is one of only two commands that write workspace files directly (§2.2 rule 4). What it refuses to overwrite it reports as a **conflict** — unresolved work, not a notice (§2.4) — and `diff` is what shows the difference the resolver has to act on. Neither verb needs the server running: a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them.
+Everything under `data/` is documents, and every change to one goes through the server. This topic is about the workspace _around_ them: the agent's skills, its personas and the seed files `corpus init` installed. They come from the tool, so a tool update has to be able to reach them — but the agent evolves its own skills, so an update must never overwrite what it wrote (SPEC.md §2.1). `upgrade` is that negotiation, and it is one of only two commands that write workspace files directly (§2.2 rule 4). What it refuses to overwrite it reports as a **conflict** — unresolved work, not a notice (§2.4) — and `diff` is what shows the difference the resolver has to act on. Neither of those two needs the server running: a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them.
+
+`maintain` is about the workspace's git repository rather than its files. Corpus disables git's own background maintenance in every workspace — a detached repack racing the server's commits can leave the object store permanently corrupt, and that store is the audit trail SPEC.md §4 makes the only recovery for a deletion — and packs the repository itself instead, at `corpus server start` and through this verb.
 
 ### `corpus workspace diff`
 
@@ -2286,6 +2291,47 @@ One JSON value: `{"root":"/home/me/notes","toolVersion":"0.3.0","baselineRecorde
 corpus workspace diff .claude/skills/comment/SKILL.md --json
 ```
 
+### `corpus workspace maintain`
+
+Pack this workspace's git repository, and report the state of its object store.
+
+Corpus turns git's own background maintenance **off** in every workspace it creates, and maintains the repository itself instead. Since git 2.29 every `git commit` ends by spawning a detached `git maintenance run --auto`, which rewrites the object store at a moment of its own choosing — concurrently with the server's next commit and with anything reading git beside it. The server is the sole writer of this repository and reads its own commits straight back, so that second unscheduled writer is a race, and a lost race leaves a **permanently corrupt** object store: the audit trail SPEC.md §4 makes the only recovery for a deletion.
+
+So the packing is rescheduled rather than abandoned. `corpus server start` runs it automatically, at the one instant a workspace provably has no writer — after it has established that no server for this workspace is running. This verb is the same run, on demand: it reports the loose-object count, the packed count and the threshold, applies the settings to a repository that lacks them, and packs when the count is above the threshold. The threshold is git's own `gc.auto` default, so a workspace is packed about as often as git would have packed it — counted exactly, rather than estimated from one directory.
+
+**It refuses while this workspace's server is running** (exit 7, nothing changed), because packing beside the writer is the race being removed. Stop the server first, or just start it and let the start maintain the repository. There is no flag to override the refusal.
+
+```
+corpus workspace maintain [flags]
+```
+
+**Flags**
+
+| Flag              | Type    | Default | Description                                                                                                                                                      |
+| ----------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--force`         | boolean | `false` | Pack now, whatever the loose-object count. The refusal to run beside a live server still applies.                                                                |
+| `--settings-only` | boolean | `false` | Apply the maintenance settings and report the counts, but pack nothing — what `corpus workspace upgrade` does, since it is allowed to run against a live server. |
+
+**Examples**
+
+Report the object store, and pack it if it is over the threshold.
+
+```
+corpus workspace maintain
+```
+
+Pack now, however few loose objects there are.
+
+```
+corpus workspace maintain --force
+```
+
+Machine-readable form: counts before and after, and whether anything packed.
+
+```
+corpus workspace maintain --json
+```
+
 ### `corpus workspace upgrade`
 
 Refresh the workspace's template files after a tool update, without clobbering edits.
@@ -2295,6 +2341,8 @@ Refresh the workspace's template files after a tool update, without clobbering e
 Only template-provenance paths are touched — `.claude/` skills and personas, the workspace `README.md` and `.gitignore`, the seed documents under `data/docs/` the template and plugins install — and nothing under `.corpus/` except the manifest itself and a missing queue status directory. Plugin-installed skills **and seed templates** are refreshed from **their plugin**, not from the template.
 
 One thing is repaired rather than compared: a workspace initialized before a queue status existed has no `.corpus/queue/<status>/.gitkeep` for it, so the directory does not survive a clone and that state has nowhere to live on a fresh checkout. Any missing marker is created and committed — it needs no baseline, because a directory is either there or it is not, and an empty marker overwrites nothing.
+
+One more repair needs no baseline and makes no commit: a workspace created before Corpus took git's **background maintenance** out of its repository has it back on. Since git 2.29 every `git commit` ends by spawning a detached `git maintenance run --auto`, and a repack racing the server's commits can leave the object store permanently corrupt. Any missing setting is written here, because `corpus init` runs once and a workspace made last week is in that state now. The repository is never **packed** here — an upgrade may run with the server up, and packing beside the sole writer is the race being repaired; packing happens at `corpus server start` and in `corpus workspace maintain`.
 
 This command and `corpus init` are the only two that write workspace files directly and commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the server stopped, because a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them. With the server running, the watcher treats the writes as ordinary out-of-band edits and re-projects. Every other document mutation goes through the server — the rule is not soft.
 

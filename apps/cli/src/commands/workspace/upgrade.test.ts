@@ -15,6 +15,7 @@ import { readTemplateManifest } from "../../template/manifest.js";
 import { generateToken, scaffoldWorkspace } from "../init/scaffold.js";
 import { commitAll, initRepository } from "../init/git.js";
 import { workspaceTopic } from "./index.js";
+import { ensureMaintenanceSettings, MAINTENANCE_SETTINGS } from "./maintenance.js";
 import {
   missingQueueMarkers,
   runWorkspaceUpgrade,
@@ -117,6 +118,10 @@ async function makeWorkspace(templateRoot: string, pluginsRoot: string): Promise
     toolVersion: "0.1.0",
   });
   await initRepository(root);
+  // Faithful to what `corpus init` leaves behind since CLI-037, so the upgrade
+  // tests below are not all shadowed by a one-off maintenance repair. The tests
+  // that are *about* that repair start from a workspace without it.
+  await ensureMaintenanceSettings(root);
   await commitAll({ dir: root, message: "workspace: initialize corpus workspace by user" });
   return root;
 }
@@ -309,6 +314,56 @@ describe("corpus workspace upgrade", () => {
 
     expect(harness.stdout()).toBe("already up to date.\n");
     expect(await git(root, "rev-parse", "HEAD")).toBe(head);
+  });
+
+  it("brings a workspace that predates CLI-037 under corpus's own git maintenance", async () => {
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    // A workspace as `corpus init` made it before CLI-037: git's background
+    // maintenance is on, which is the configuration SERVER-089 measured corrupt.
+    for (const [name] of MAINTENANCE_SETTINGS) await git(root, "config", "--unset", name);
+    const head = await git(root, "rev-parse", "HEAD");
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template, plugins });
+
+    for (const [name, value] of MAINTENANCE_SETTINGS) {
+      expect((await git(root, "config", "--local", "--get", name)).trim()).toBe(value);
+    }
+    // Reported, and reported *before* "already up to date." — the template files
+    // were current, and the sentence would otherwise be a lie about the one
+    // thing that did change.
+    expect(harness.stdout().split("\n")[0]).toContain("background maintenance");
+    expect(harness.stdout()).toContain("already up to date.");
+    // Repository configuration, not a workspace file: nothing to commit.
+    expect(await git(root, "rev-parse", "HEAD")).toBe(head);
+  });
+
+  it("says nothing about maintenance on the next run, having nothing left to write", async () => {
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    for (const [name] of MAINTENANCE_SETTINGS) await git(root, "config", "--unset", name);
+
+    await upgrade(harnessFor(root), { template, plugins });
+    const second = harnessFor(root, { json: true });
+    await upgrade(second, { template, plugins });
+
+    expect(second.report().maintenanceSettings).toEqual([]);
+  });
+
+  it("predicts the maintenance repair under --dry-run without writing it", async () => {
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    for (const [name] of MAINTENANCE_SETTINGS) await git(root, "config", "--unset", name);
+
+    const harness = harnessFor(root, { flags: { "dry-run": true } });
+    await upgrade(harness, { template, plugins });
+
+    expect(harness.stdout()).toContain("would turn off");
+    await expect(git(root, "config", "--local", "--get", "maintenance.auto")).rejects.toThrow();
   });
 
   it("writes nothing under --dry-run, then performs exactly the printed plan", async () => {
@@ -696,6 +751,10 @@ describe("the workspace upgrade command spec", () => {
   it("is reachable as `corpus workspace upgrade`, alongside the verb that shows its conflicts", () => {
     // Pinned rather than "contains": a new workspace verb is a change to the
     // command surface and shows up here as a failing diff (SPEC.md §2.3).
-    expect(workspaceTopic.commands.map((command) => command.name)).toEqual(["upgrade", "diff"]);
+    expect(workspaceTopic.commands.map((command) => command.name)).toEqual([
+      "upgrade",
+      "diff",
+      "maintain",
+    ]);
   });
 });

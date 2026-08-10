@@ -6,6 +6,7 @@ import { resolvePluginsRoot, resolveTemplateRoot, templateManifestPath } from ".
 import type { CommandContext, StandaloneCommandSpec } from "../../registry/types.js";
 import { WORKSPACE_TEMPLATES_DIR } from "../../template/install.js";
 import { CONFIG_DIR, CONFIG_FILE, findWorkspaceRoot } from "../../workspace.js";
+import { ensureMaintenanceSettings } from "../workspace/maintenance.js";
 import {
   commitAll,
   DEFAULT_BRANCH,
@@ -61,6 +62,12 @@ export interface InitReport {
   readonly configPath: string;
   readonly manifestPath: string;
   readonly repository: "initialized" | "reused";
+  /**
+   * Repository-local settings written to keep git's background maintenance out
+   * of this workspace (CLI-037). Always all of them for a fresh repository;
+   * possibly fewer for one `--force` reused, which may already carry some.
+   */
+  readonly maintenanceSettings: readonly string[];
   readonly installed: readonly string[];
   /** Plugin skill files copied into `.claude/skills/` (SPEC.md §10). */
   readonly installedPluginSkills: readonly string[];
@@ -180,6 +187,17 @@ export async function runInit(
       });
       created.record(join(target, ".git"), "tree");
     }
+
+    // Before the first commit, not after it: every `git commit` since git 2.29
+    // ends by spawning a detached `git maintenance run --auto`, so a repository
+    // that is committed into before it carries these settings has already been
+    // handed to the background scheduler once (CLI-037, `workspace/maintenance.ts`).
+    const maintenanceSettings = await ensureMaintenanceSettings(target, git).catch(
+      (cause: unknown) => {
+        throw gitFailure("configuring the workspace repository's maintenance", cause);
+      },
+    );
+
     await commitAll({ dir: target, message: INITIAL_COMMIT_MESSAGE, git }).catch(
       (cause: unknown) => {
         throw gitFailure("the workspace's initial commit", cause);
@@ -192,6 +210,7 @@ export async function runInit(
       configPath: result.configPath,
       manifestPath: templateManifestPath(target),
       repository: reused ? "reused" : "initialized",
+      maintenanceSettings,
       installed: result.installed.map((file) => file.to),
       installedPluginSkills: result.installedPluginSkills,
       installedPluginSeeds: result.installedPluginSeeds,
@@ -212,6 +231,12 @@ export const initCommand: StandaloneCommandSpec = {
     "`.corpus/config.json` holding a freshly generated bearer token and this workspace's port " +
     "(mode 600), the bundled agent skills and seed documents copied verbatim from the tool's " +
     "workspace template, and a git repository with one initial commit authored as `user`. " +
+    "That repository is created with git's own **background maintenance turned off**: since git " +
+    "2.29 every `git commit` ends by spawning a detached `git maintenance run --auto` that " +
+    "rewrites the object store whenever it likes, and racing the server's commits that way can " +
+    "leave it permanently corrupt — the audit trail SPEC.md §4 makes the only recovery for a " +
+    "deletion. Corpus packs the repository itself instead, at `corpus server start` and through " +
+    "`corpus workspace maintain`. " +
     "The target is the positional `path`, else `--workspace`, else `CORPUS_WORKSPACE`, else the " +
     "current directory — in that order, so a positional always wins and naming two targets " +
     "warns rather than picking one quietly. Refuses a directory that already holds a " +
@@ -280,6 +305,11 @@ export const initCommand: StandaloneCommandSpec = {
         ? "  git: reused the existing repository, added the workspace commit"
         : `  git: initialized on ${DEFAULT_BRANCH}, one commit authored as user`,
     );
+    if (report.maintenanceSettings.length > 0) {
+      context.out.line(
+        "  git: background maintenance is off here — corpus packs the repository at server start",
+      );
+    }
     context.out.line(
       `  installed ${plural(report.installed.length, "template file")}, recorded in ${relative(report.workspace, report.manifestPath)}`,
     );
