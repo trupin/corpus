@@ -51,3 +51,19 @@ Task items are lists too:
   - [x] A nested task.
 
   A trailing paragraph of the outer task.
+
+A sublist only stays under the paragraph above it if it is a list that may
+interrupt one. An ordered sublist whose first number is not 1 may not:
+
+- Outer bullet leads in.
+
+  5. item five
+  6. item six
+
+Neither may a sublist whose first item is empty, and a lone marker on the line
+under a paragraph is a setext underline rather than a list at all:
+
+- Outer bullet leads in.
+
+  -
+  - The second nested bullet.

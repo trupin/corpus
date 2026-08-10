@@ -22,7 +22,12 @@ import {
 import { anchorState } from "./anchorDecorations.js";
 import { mdRangeToPm } from "./offsetMap.js";
 import { resetTraceCache, traceOfBody } from "./traceCache.js";
-import { REAPPLY_DEBOUNCE_MS, useAnchorLayer, type AnchorLayer } from "./useAnchorLayer.js";
+import {
+  REAPPLY_DEBOUNCE_MS,
+  REFUSAL_NOTICE,
+  useAnchorLayer,
+  type AnchorLayer,
+} from "./useAnchorLayer.js";
 
 /**
  * The layer's decisions, driven through a real `EditorState` — the anchor
@@ -270,7 +275,42 @@ describe("commenting on a selection", () => {
     const app = mount();
     selectQuote(app.layer(), 4, 4);
     expect(app.layer().draft).toBeNull();
-    expect(app.notices[0]?.tone).toBe("error");
+    expect(app.notices[0]).toEqual({ tone: "error", message: REFUSAL_NOTICE["no-quote"] });
+  });
+
+  /**
+   * The other refusal, and the one only this layer can produce (UI-068).
+   *
+   * `selectorFromSelection` decides it, but what makes it reachable is
+   * `quotableSource`: with no unsaved edits the quote is framed against the
+   * **file's own bytes**, not the editor's printing of them. On a document whose
+   * file spelling differs from the printer's — here `__sixty__`, which the
+   * editor shows as `**sixty**` — the framed quote is a string no file contains,
+   * so the layer refuses rather than opening a composer that would create a
+   * thread anchored to a document that does not exist.
+   *
+   * Pinned here because this is the only place `REFUSAL_NOTICE["not-in-file"]`
+   * is read: `selectorFromSelection.test.ts` proves the *reason* is produced,
+   * and nothing else proves the layer turns it into that sentence.
+   */
+  it("refuses, distinctly, when the file cannot spell the selection", () => {
+    // A soft line break inside an inline code span, which the printer flattens
+    // to a space (UI-104's largest category, 51 of the repo's own documents).
+    // The words on screen are real; the file spells them across two lines, so
+    // there is no byte range of the file that is the selection.
+    const FILE = "Run `corpus init\n--port 8791` first.\n\nA second paragraph follows it here.\n";
+    const app = mount([], [], readerTransport({}), FILE);
+    const live = traceOfBody(editorBody(FILE));
+    const QUOTE = "init --port";
+    expect(live.markdown).toContain(QUOTE);
+    expect(FILE).not.toContain(QUOTE);
+    const start = live.markdown.indexOf(QUOTE);
+    const pm = mdRangeToPm(live.trace, { start, end: start + QUOTE.length });
+    selectQuote(app.layer(), pm[0]?.from ?? 0, pm.at(-1)?.to ?? 0);
+
+    expect(app.layer().draft).toBeNull();
+    expect(app.notices[0]).toEqual({ tone: "error", message: REFUSAL_NOTICE["not-in-file"] });
+    expect(app.notices[0]?.message).not.toBe(REFUSAL_NOTICE["no-quote"]);
   });
 
   it("posts the shipped shape, with note-only as an explicit false", async () => {

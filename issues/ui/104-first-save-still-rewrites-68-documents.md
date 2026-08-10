@@ -63,6 +63,42 @@ wrong — the writer is.
   run**. Healing malformed input is defensible; changing which words are bold is
   a content decision.
 
+### The category UI-103 itself added — classified, per this issue's own rule
+
+**40 documents gain a blank line inside a list item, which makes the list
+loose.** Raised by PR #40's review (MINOR 3) and named here because it was
+missing from both this issue's list and UI-103's: it is the entire measurable
+effect of UI-103's fix on the corpus, and it is a rewrite the tool performs that
+nobody asked for. `CLAUDE.md`'s `8. Format:` item plus its fenced block is the
+concrete case — the item gains a blank line, and every item in that twelve-item
+list re-renders `<p>`-wrapped.
+
+**Classification: intended normalisation, not a defect.** Decided on the record
+in UI-103 (*Where the blank line is not required, and why it is written anyway*),
+with the per-adjacency measurements — of 164 adjacencies inside list items across
+610 documents, 98 get a blank line that is not strictly required
+(`paragraph → code` 48, `code → paragraph` 36, `paragraph → blockquote` 9,
+`paragraph → table` 3, `code → code` 1, `paragraph → rawBlock` 1). The reasons it
+stands rather than being narrowed:
+
+- ProseMirror does not model list looseness, so tight and loose parse to the
+  identical document. Nothing the editor could hold is lost, the output is a
+  fixed point, and it is the same category as the already-listed "loose lists
+  tightened" running the other way;
+- every additional flush exception is a proof obligation over *all* spellings of
+  the right-hand block plus the left-hand block not being extended by it, and the
+  one exception written without discharging it fully had two live holes
+  (UI-103's follow-up). `paragraph → rawBlock` cannot even be decided without
+  classifying the HTML block type — `<div>` interrupts a paragraph, a bare
+  `<custom-el data-x>` does not;
+- blank-by-default is what makes a block type the schema grows later arrive
+  separated rather than silently absorbed.
+
+**It is still a byte rewrite of the user's file**, so if the looseness is
+unwanted the answer is to make the printer emit loose items consistently, not to
+narrow the join rule — a separate decision, and one for this issue rather than
+UI-103.
+
 ## Acceptance Criteria
 
 - [ ] The `|` case is fixed: a table cell containing a literal `|` round-trips
@@ -70,6 +106,8 @@ wrong — the writer is.
 - [ ] Every remaining category is **classified on the record** as either
       intended normalisation or a defect, with the reason. A category nobody
       classified is how this issue gets closed while a file still moves
+      (the blank-line-in-a-list-item category is classified above; the rest are
+      still open)
 - [ ] The emphasis-healing case is decided explicitly: healing is fine, changing
       the bold run is a different act
 - [ ] The sweep is a **test**, not a one-off script — round-tripping the repo's
