@@ -481,6 +481,41 @@ agent never picks the comment up. Two ways to settle it, both one word:
 or leave it as it stands, in which case the asymmetry deserves a clause saying
 why a person's turn is deliberately not an act.
 
+**(d) A window closed by an edit session ending keeps the last save's subject.**
+Raised by PR #42's review as a MINOR and confirmed by the implementer, 2026-08-10.
+§4 lists "an edit session ending" among what closes a window, and says a window
+that closes with no act to name "says so: that it is an editing session, and how
+many documents it holds". That one closer does **not** relabel — `endSquashSession`
+only forgets. So a three-document window closed by a reader flush ships as
+`doc edit: <third title> by user`, naming one document while holding three. A live
+artefact from the implementer's E2E: `ea3c60b doc edit: Beta doc (doc_nu4iwmez) by
+user` on a commit holding two documents, where the *other* document's
+acknowledgment is what closed it.
+
+**The recommendation is to amend the spec, not the code**, and the reasoning is
+worth reading before deciding, because the obvious objection has already been
+answered. It is *not* simply "you cannot amend a sha you have just published" —
+that order can be inverted (close, settle, then publish). The binding constraint
+is that `end()` is **synchronous and lock-free by design**: it must get in front
+of a save landing while the emitter's git reads are in flight. Relabelling needs
+the git lock, so `end()` becomes async, and in the gap an autosave folds into the
+very window the acknowledgment is about to publish — the hazard the forget exists
+to prevent. Making it correct needs a new two-part primitive (synchronous seal,
+then an asynchronous relabel of the sealed sha, with the emitter reading after
+it), which reopens the ordering question the SERVER-093 ruling settled once
+already.
+
+Proposed clause, appended to §4's "What closes a window" list where the edit
+session entry sits:
+
+> — an edit session ending closes the window **without** renaming its commit,
+> because the range naming that commit is about to leave the repository and may
+> not move under it; so such a commit keeps the subject of the save that ended
+> it, and its `Corpus-Doc` trailers are what name the rest.
+
+Not disclosable as-is: §4's sentence is a property of *the history*, and a person
+running `git log` cannot tell which closes were exempt.
+
 ## Completion Checklist (orchestrator)
 
 - [ ] Read aloud verbatim, on its own, separately from the other held riders
