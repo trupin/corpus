@@ -35,10 +35,11 @@
 //   an open window is provisional**. §4's answer is that nothing reads a history
 //   the window is still holding: any operation that names, reads or reverts a
 //   commit closes the window first, in the same critical section as the read
-//   ({@link AutoCommitter.withClosedWindow}) — and the one close that *moves* a
-//   sha announces it ({@link AutoCommitterOptions.onWindowRewritten}), so a
-//   range already published outside the repository follows the rewrite instead
-//   of dangling.
+//   ({@link AutoCommitter.withClosedWindow}) — and **every** amend that moves the
+//   window's sha announces it ({@link AutoCommitterOptions.onWindowRewritten}):
+//   the close's relabel, and each later save folding in. Two sites, one message,
+//   so a range already published outside the repository follows the rewrite
+//   instead of dangling.
 // - **One action, one commit** (§4's other half). A mutation that names several
 //   documents — a bulk archive, tag or move — passes them as `docIds`, and that
 //   is the whole signal: such a commit neither folds into a preceding editing
@@ -316,16 +317,24 @@ export interface AutoCommitterOptions {
   readonly squashIdleMs?: number | undefined;
   readonly windowMaxMs?: number | undefined;
   /**
-   * Told whenever closing a window **rewrote** its commit, so anything that had
-   * recorded the old sha can follow it (SERVER-093, ruling of 2026-08-10).
+   * Told whenever the open window's commit was **rewritten**, so anything that
+   * had recorded the old sha can follow it (SERVER-093, ruling of 2026-08-10).
    *
-   * A close relabels a window no act named, and a relabel is an amend: same
-   * tree, same content, **new sha**. Everything inside the server that had only
-   * to know "stop amending" is already served by the window being forgotten —
-   * this exists for the one thing that had written the sha down, `edit/sessions.ts`,
-   * whose `doc.edited` event publishes a commit range outside the repository. Its
-   * `observeCommit` is the twin of this: one hears about commits, the other about
-   * the rewrites of them.
+   * Two sites move a window's sha and both report here, because an amend is an
+   * amend either way: same tree, **new sha**.
+   *
+   * 1. **The close.** Where no act named it, a closing window has its subject
+   *    relabelled, and that is an amend.
+   * 2. **A fold.** Every later save into the window amends its commit too. Under
+   *    §4's party-scoped fold key that save may belong to a *different document*
+   *    than the one holding the sha — so the write's own `observeCommit`, which
+   *    names only the document written, cannot stand in for this (PR #42 review).
+   *
+   * Everything inside the server that had only to know "stop amending" is already
+   * served by the window being forgotten — this exists for the one thing that had
+   * written the sha down, `edit/sessions.ts`, whose `doc.edited` event publishes a
+   * commit range outside the repository. Its `observeCommit` is the twin of this:
+   * one hears about commits, the other about the rewrites of them.
    *
    * Called from inside the git lock on the commit path, so an implementation
    * must be synchronous and do no I/O — the same contract `observeCommit` has,
@@ -837,6 +846,17 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
       openWindow = null;
       await unstage(paths, head);
       return { kind: "skipped", reason: "commit produced no HEAD" };
+    }
+    // A fold is an amend, so it moves the window's commit exactly as a close's
+    // relabel does — and under a party-scoped fold key it moves it out from
+    // under a *neighbour* document, whose own write is not this one and so
+    // hears nothing through `observeCommit`. Both sites that rewrite a sha must
+    // say so, or an edit acknowledgment for the first document names a commit
+    // no branch holds (PR #42 review; the same hazard SERVER-093 closed at the
+    // close path). Read back rather than predicted, for the same reason the
+    // close reads it back: only git knows what the rewrite produced.
+    if (target !== null && sha !== target.record.sha) {
+      onWindowRewritten?.(target.record.sha, sha);
     }
     // A commit that stands alone opens no window: §4 requires that no later save
     // fold into it, and the only mechanism a later save has for folding is this

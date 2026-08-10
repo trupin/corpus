@@ -285,6 +285,86 @@ describe("doc.edited over the real write path", () => {
   });
 });
 
+// SPEC.md §4, party-scoped windows (SERVER-091): "Where several documents share
+// one window commit, each document's acknowledgment names that same commit."
+//
+// A window belongs to a *party*, not to a document, so a save to document B
+// **amends** the commit document A's session is sitting on. Nothing about that
+// amend reaches A through `observeCommit` — the write names B — so until PR #42's
+// review the second door of SERVER-093's hazard was open: A's acknowledgment
+// named a sha two rewrites behind the branch. Under the pre-rider fold key
+// (`docId` + actor) it was unreachable, which is why no earlier case covers it.
+describe("one commit window, several documents", () => {
+  it("names one commit from every document's acknowledgment, and it is on the branch", async () => {
+    const ws = workspace("ack-shared-window");
+    const alpha = await createDoc(ws, { type: "note", title: "Alpha", body: "a1\n" });
+    const beta = await createDoc(ws, { type: "note", title: "Beta", body: "b1\n" });
+    pastTheSquashWindow(ws);
+
+    // Same party, same instant: the second save folds into the first's commit
+    // by amending it, which is the move A's session has to follow.
+    await edit(ws, alpha.id, "a1\na2\n");
+    const opened = ws.head();
+    await edit(ws, beta.id, "b1\nb2\n");
+    expect(ws.head()).not.toBe(opened);
+
+    await ws.server.close();
+
+    const payloads = acknowledgments(ws);
+    expect(payloads).toHaveLength(2);
+    expect(new Set(payloads.map((entry) => entry.docId))).toEqual(new Set([alpha.id, beta.id]));
+    // §4's sentence, made true: one commit, named by both.
+    expect(new Set(payloads.map((entry) => entry.to)).size).toBe(1);
+    expect(payloads[0]?.to).toBe(ws.head());
+    // PR #22's rule, kept at this door too: every published sha is one that
+    // `git log` finds.
+    const branch = ws.log("%H");
+    for (const payload of payloads) {
+      expect(branch).toContain(payload.to);
+      expect(branch).toContain(payload.from);
+      expect(payload.stats.commits).toBe(1);
+      // And each still answers about its own document: the stats are
+      // path-scoped, so they describe the file rather than the shared commit.
+      const path = payload.docId === alpha.id ? alpha.path : beta.path;
+      const scoped = ws.git("diff", "--shortstat", `${payload.from}..${payload.to}`, "--", path);
+      expect(scoped).toContain(`${String(payload.stats.insertions)} insertion`);
+    }
+    // The commit holds both documents, so its whole diff is strictly larger
+    // than either acknowledgment reports.
+    const whole = ws.git("diff", "--shortstat", `${payloads[0]?.from ?? ""}..${ws.head()}`);
+    const total = payloads.reduce((sum, entry) => sum + entry.stats.insertions, 0);
+    expect(whole).toContain(`${String(total)} insertion`);
+  });
+
+  it("forgets the shared window when one of its documents is flushed", async () => {
+    // The same defect's third consequence. `end()` hands §4's squash the
+    // session's own last sha, and a session the neighbour's fold left behind
+    // offers a sha the window no longer sits on — so the forget silently no-ops
+    // and the next save amends the very commit the acknowledgment published.
+    const ws = workspace("ack-shared-forget");
+    const alpha = await createDoc(ws, { type: "note", title: "Alpha", body: "a1\n" });
+    const beta = await createDoc(ws, { type: "note", title: "Beta", body: "b1\n" });
+    pastTheSquashWindow(ws);
+
+    await edit(ws, alpha.id, "a1\na2\n");
+    await edit(ws, beta.id, "b1\nb2\n");
+    const shared = ws.head();
+
+    expect((await flush(ws, alpha.id)).status).toBe(204);
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+    expect(acknowledgments(ws)[0]?.to).toBe(shared);
+
+    // The clock does not move: still well inside §4's squash window, which is
+    // exactly the state the forget exists to defeat.
+    await edit(ws, alpha.id, "a1\na2\na3\n");
+    expect(ws.head()).not.toBe(shared);
+    expect(ws.git("rev-parse", "HEAD^").trim()).toBe(shared);
+    expect(ws.log("%H")).toContain(shared);
+  });
+});
+
 describe("POST /api/docs/{id}/edit-session/flush", () => {
   it("ends the open session now, without waiting out §4's window", async () => {
     // The shipped window is three minutes and this workspace's is the default:

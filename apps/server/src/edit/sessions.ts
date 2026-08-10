@@ -108,20 +108,33 @@ export interface EditSessionTracker {
    */
   observeCommit(commit: ObservedCommit): void;
   /**
-   * The twin of {@link observeCommit}: a window closing **relabelled** its
-   * commit, which is an amend and so moved its sha (`from` → `to`, same tree).
+   * The twin of {@link observeCommit}: the open window's commit was **amended**,
+   * so its sha moved (`from` → `to`, same tree).
    *
    * A session records shas at the instant its saves land, and a save's commit is
-   * the open window's commit — so any later close (the other party wrote, a
-   * `corpus doc diff` read the history, the server stopped) rewrites a sha this
-   * module is holding. Following the rewrite is what keeps §4's promise that a
-   * `doc.edited` range is "already in git when the agent receives it": without
-   * it the event names an object no branch holds, which still resolves for git's
-   * unreachable grace and then does not.
+   * the open window's commit — which two things then rewrite under it:
+   *
+   * - **A close** relabels it (the other party wrote, a `corpus doc diff` read
+   *   the history, the server stopped).
+   * - **A fold** amends it — and because §4's window belongs to a *party*, the
+   *   save that folds may be to a **different document**. That write's own
+   *   `observeCommit` names only its own document, so nothing there reaches the
+   *   neighbour's session; only this does (PR #42 review). It is why two
+   *   documents edited in one window can name one commit, as §4 requires.
+   *
+   * Following the rewrite is what keeps §4's promise that a `doc.edited` range is
+   * "already in git when the agent receives it": without it the event names an
+   * object no branch holds, which still resolves for git's unreachable grace and
+   * then does not.
    *
    * Note the *published* case never reaches here: {@link end} calls
    * `endSquashSession(session.lastSha)` before it emits, which forgets the
    * window, so a commit an event has already named is never relabelled at all.
+   * That forget depends on this: it matches by sha, so a session whose sha a
+   * neighbour's fold had moved would offer one the window is no longer sitting
+   * on and silently forget nothing. Following every rewrite is what makes
+   * `lastSha` the window's *current* commit and the forget effective.
+   *
    * This handles the window still open under a session still open — the state
    * SERVER-091 measured and escalated.
    *

@@ -17,6 +17,9 @@ import {
 const IDLE_MS = 60_000;
 const DOC = "doc_aaaaaaaa";
 const PATH = "data/docs/notes.md";
+/** A second document, for the cases where one window commit holds two of them. */
+const OTHER_DOC = "doc_bbbbbbbb";
+const OTHER_PATH = "data/docs/other.md";
 
 const ok = (stdout: string): GitCommandResult => ({
   ok: true,
@@ -290,6 +293,49 @@ describe("edit session tracker — the idle path (SPEC.md §4)", () => {
 
     await h.advance(IDLE_MS);
     expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "c0ffee1" });
+  });
+
+  it("moves every session sitting on the rewritten commit, not only the one just written", async () => {
+    // PR #42's review. §4's window belongs to a *party*, so a save to document B
+    // folds into — and therefore amends — the commit document A's session is
+    // sitting on. Nothing about that reaches A through `observeCommit`: that
+    // call names B. So the commit path announces the move separately and every
+    // session holding the old sha follows, which is how §4's "each document's
+    // acknowledgment names that same commit" comes true.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["c0ffee2", "ba5e001"],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    // The announcement lands *before* the fold's own `observeCommit`, because
+    // the committer makes it while still holding the git lock — at which instant
+    // B has no session at all.
+    h.tracker.observeRewrite("c0ffee1", "c0ffee2");
+    h.tracker.observeCommit(
+      save({
+        docId: OTHER_DOC,
+        paths: [OTHER_PATH],
+        editPath: OTHER_PATH,
+        outcome: amended("c0ffee2"),
+      }),
+    );
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued).toHaveLength(2);
+    const payloads = h.enqueued.map((event) =>
+      parseDocEditedPayload({ type: event.type, payload: event.payload }),
+    );
+    expect(new Set(payloads.map((payload) => payload?.docId))).toEqual(new Set([DOC, OTHER_DOC]));
+    // One commit, named by both — and both ends move, since each session holds
+    // its one commit at each end.
+    expect(payloads.map((payload) => payload?.to)).toEqual(["c0ffee2", "c0ffee2"]);
+    expect(payloads.map((payload) => payload?.from)).toEqual(["ba5e001", "ba5e001"]);
+    // And §4's squash is handed the sha that exists, for both — so the forget
+    // matches the window rather than no-opping against a sha it has left behind.
+    expect(h.sealed).toEqual(["c0ffee2", "c0ffee2"]);
   });
 
   it("keeps the base fixed when an amend rewrites a later commit", async () => {

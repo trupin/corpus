@@ -346,6 +346,136 @@ published range replays verbatim through `corpus doc diff`.
 | SSE frames (`events/**`, `queue/**`) | **None.** Query keys only — no sha anywhere. |
 | `git log` in a terminal outside Corpus | **Unflushable, by §4.** Lags by at most one open window. Nothing implemented. |
 
+## E2E Verification Log — follow-up fix: the fold is the second site that moves a sha
+
+**Model: opus.** PR #42 review, MAJOR. Real `corpus` CLI + real server on scratch ports
+**8843–8846** (never 8765/5173), real workspaces under
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/`, each created by `corpus init`. Every
+server stopped and every port confirmed free afterwards.
+
+### The gap
+
+The ruling above ("the tracker follows the rewrite") was implemented at **one** of the two
+sites that rewrite a window's sha. `closeWindowLocked` announced its relabel; the ordinary
+**fold** did not. Under the party-scoped fold key a save to document B *amends* the commit
+document A's session is sitting on, and A hears nothing — `observeCommit` names B. Under
+the pre-rider key (`docId` + actor) only a save to A could amend A's commit, which is why
+no earlier case reached it.
+
+### 1. Reproduced pre-fix, on a real server (the reviewer's exact scenario)
+
+Two documents, one party, one window, then `corpus server stop`:
+
+```
+c1  A's save opens the window            8e28b208831dcddd101c1fe7bd6eab033dc52733
+c2  B's save folds in, amending c1       757a5d1b47b5dc618d7d5073fec95b581c03cfef
+branch after shutdown   6f153ae editing session: 2 documents by user
+                        cf46bfe editing session: 2 documents by user
+                        be0c0f4 workspace: initialize corpus workspace by user
+
+doc.edited(B) → to = 6f153aee…   ON BRANCH
+doc.edited(A) → to = 8e28b208…   NOT ON BRANCH   (git cat-file -t → commit — still
+                                                  resolving on git's unreachable grace,
+                                                  which is what makes this quiet)
+```
+
+Two documents in one window commit named **two different** commits, contradicting §4's
+"each document's acknowledgment names that same commit", and A's named one no branch holds.
+
+### 2. Consequence (c) reproduced pre-fix — the forget forgets nothing
+
+Same window, then `POST /api/docs/{A}/edit-session/flush`, then one more save to A with the
+clock untouched (inside §4's 30 s squash window):
+
+```
+shared window commit                       9049eabfb059863ef6666629d4665ef0acc26d57
+A's published to                           5e799cee…            (the pre-fold sha)
+HEAD after the next save                   a98664f1…
+HEAD^                                      7926b03f…            (not the shared commit)
+→ shared commit AMENDED AWAY — endSquashSession(session.lastSha) no-opped, because
+  openWindow.sha was the post-fold sha and the session offered the pre-fold one
+```
+
+### 3. The fix
+
+`git/commit.ts`, in `runCommit`, right where the post-commit `sha` is read back:
+
+```ts
+if (target !== null && sha !== target.record.sha) {
+  onWindowRewritten?.(target.record.sha, sha);
+}
+```
+
+Same seam, same shape as the close: the sha is **read back from git**, never predicted.
+It fires from inside the git lock, before the write's own `observeCommit` — at which
+instant the folding document has no session yet, so nothing is clobbered.
+
+### 4. Verified post-fix, same scenarios, fresh workspaces
+
+Shutdown scenario (port 8843):
+
+```
+c1  A's save opens the window            40248e8 doc edit: Alpha doc (doc_y5a6mfld) by user
+c2  B's save folds in, amending c1       d94f3d8 doc edit: Beta doc  (doc_ryaptntu) by user
+                                         Corpus-Doc: doc_y5a6mfld
+                                         Corpus-Doc: doc_ryaptntu
+                                         data/docs/inbox/alpha-doc.md
+                                         data/docs/inbox/beta-doc.md
+branch after shutdown   207cfe6 editing session: 2 documents by user
+
+doc.edited(A)  from=ca5b0100…  to=207cfe69…  stats {commits:1, +2 −1}
+doc.edited(B)  from=ca5b0100…  to=207cfe69…  stats {commits:1, +2 −1}
+```
+
+**One** commit, named by both, and it is the branch tip — §4's sentence made true across a
+two-hop rewrite (`40248e8` → `d94f3d8` → `207cfe6`), both hops followed. The stats stay
+path-scoped: +2 each, not the commit's +4.
+
+Consequence (c), post-fix (port 8846) — **it fell out for free; `endSquashSession` was not
+touched**:
+
+```
+shared window commit                       ea3c60b2ea03259a861162189272fbe957a6a54b
+A's published to                           ea3c60b2…            (the shared commit itself)
+HEAD after the next save                   b04e16ca…
+HEAD^                                      ea3c60b2…            → a FRESH commit, no amend
+→ shared commit STILL ON BRANCH — the window was forgotten, because the session's lastSha
+  now *is* the window's sha
+```
+
+Final state of that workspace: three `doc.edited` events, every `to` on the branch, the
+second session's range starting exactly where the first ended (`from=ea3c60b2…`).
+
+### Tests
+
+- `edit/acknowledgment.test.ts` — new `describe("one commit window, several documents")`:
+  the reviewer's scenario end to end (two documents, edit A, edit B inside the window, stop
+  the server → one `to`, on the branch, path-scoped stats), and the flush case that asserts
+  the shared window is actually forgotten. **Both failed before the fix** — "expected 2 to
+  be 1" and the stale published sha.
+- `edit/sessions.test.ts` — a new multi-document case; the three existing `observeRewrite`
+  cases are untouched.
+- `git/commit.test.ts` — the fold announces its rewrite (and chains with the close's), and
+  a save that opens a *fresh* window announces nothing.
+
+### Checks run
+
+- `npm run build` — clean.
+- `vitest run apps/server/src` — **182 files / 3783 tests, all passing**.
+- Scoped during development: `apps/server/src/edit` + `git/commit.test.ts` — 130 ✓.
+- `eslint`, `prettier --check`, `tsc --noEmit` (apps/server) — clean on every touched file.
+- Anti-vacuity: the announcement disabled in place, both new integration cases fail and the
+  real-server runs above reproduce; restored and re-verified green.
+
+### Known divergence, not fixed here (PR #42 MINOR)
+
+A window closed by an **edit session ending** never gets §4's editing-session subject:
+`end()` calls `endSquashSession`, which forgets without relabelling. Confirmed live above —
+`ea3c60b` holds two documents and keeps `doc edit: Beta doc (doc_nu4iwmez) by user`, naming
+one of the two while the *other* document's acknowledgment is what closed it. The forget-only
+behaviour is correct and was left alone; whether §4 needs a clause for it is an open spec
+question, reported to the orchestrator rather than decided here.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

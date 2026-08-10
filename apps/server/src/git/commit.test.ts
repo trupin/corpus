@@ -1320,6 +1320,73 @@ describe("a commit window belongs to a party", () => {
     expect(r.log("%s")[0]).toBe(editingSessionSubject(1, "user"));
   });
 
+  it("announces the sha a fold moved, so a neighbour document's session can follow", async () => {
+    // PR #42's review: a fold is an amend too, and under a party-scoped window
+    // it moves the commit out from under a document this save does not name.
+    const r = makeRepo("window-fold-observed");
+    r.touch(A, "a one");
+    const first = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+    const before = first.kind === "committed" ? first.sha : "";
+    expect(r.rewrites).toEqual([]);
+
+    r.clock += 100;
+    r.touch(B, "b one");
+    const second = await r.committer.commit({
+      docId: "doc_bbbb2222",
+      actor: "user",
+      subject: "doc edit: B by user",
+      paths: [B],
+    });
+
+    expect(second.kind).toBe("amended");
+    const after = second.kind === "amended" ? second.sha : "";
+    expect(after).not.toBe(before);
+    expect(r.rewrites).toEqual([[before, after]]);
+
+    // And the close that follows announces its own move from *there*, so the
+    // two rewrites chain: a session that followed both ends on the branch.
+    await r.committer.closeWindow("read-back");
+    const closed = r.git("rev-parse", "HEAD").trim();
+    expect(r.rewrites).toEqual([
+      [before, after],
+      [after, closed],
+    ]);
+    expect(r.log("%H")).toContain(closed);
+  });
+
+  it("announces nothing for a save that opens a fresh window rather than folding", async () => {
+    // The other half of the pair: no amend, no rewrite. A fresh commit adds to
+    // the history and moves nothing that anything could be holding.
+    const r = makeRepo("window-fresh-silent");
+    r.touch(A, "a one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+    // Past the idle window: the next save closes this one and starts over. The
+    // close's own relabel is announced; the commit that follows is not.
+    r.clock += SQUASH_IDLE_MS;
+    r.touch(B, "b one");
+    const second = await r.committer.commit({
+      docId: "doc_bbbb2222",
+      actor: "user",
+      subject: "doc edit: B by user",
+      paths: [B],
+    });
+
+    expect(second.kind).toBe("committed");
+    expect(r.rewrites).toHaveLength(1);
+    const [, relabelled] = r.rewrites[0] ?? [];
+    expect(r.git("rev-parse", "HEAD^").trim()).toBe(relabelled);
+  });
+
   it("announces nothing when the close left the commit where it was", async () => {
     for (const scenario of ["act-named", "refused", "no-window"] as const) {
       const r = makeRepo(`window-rewrite-silent-${scenario}`);

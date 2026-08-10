@@ -390,11 +390,14 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
         git: gitCommands,
         logger,
         now,
-        // Closing a window relabels its commit, which moves its sha. The edit
+        // Every amend of the open window's commit moves its sha — the relabel a
+        // close performs, and each later save folding in. The edit
         // acknowledgment is the one thing that writes a sha down and publishes
         // it outside the repository, so it is the one thing that has to follow
-        // the rewrite (SERVER-093). Read through the `let` above rather than
-        // captured: the tracker is built below, because it needs this committer.
+        // the rewrite (SERVER-093; PR #42's review for the fold half, which
+        // reaches a *neighbour* document's session under §4's party-scoped
+        // window). Read through the `let` above rather than captured: the
+        // tracker is built below, because it needs this committer.
         onWindowRewritten: (from, to) => {
           editSessions?.observeRewrite(from, to);
         },
