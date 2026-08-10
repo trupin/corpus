@@ -187,8 +187,9 @@ which is the cost of one channel carrying two kinds of thing.
 
 **Distinct from the other held drafts**: CONTRACT-048's §9.2 bulk-result draft
 and CONTRACT-037's (now void) §9.2 draft are about the bulk act's shape; this one
-is a **§14** bullet about what the warnings channel is for. Nothing was edited in
-SPEC.md.
+is a **§14** bullet about what the warnings channel is for. (That last sentence
+read "Nothing was edited in SPEC.md" while the draft was held; it was signed and
+applied on 2026-08-10, and SPEC.md moves exactly one line for it.)
 
 Rationale for needing a line at all: §14 introduces warnings as things that
 "went wrong" and names two families. A carried effect is neither — the act was

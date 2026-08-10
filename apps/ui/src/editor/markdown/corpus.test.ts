@@ -320,8 +320,20 @@ const CATEGORIES = {
    * *lose* emphasis (`bold`, `italic`, `strike`), and every other mark on it —
    * `code`, `link` — must be untouched. A space that gains emphasis, or a
    * non-space that loses it, is not this.
+   *
+   * **Position-agnostic, deliberately, and the name is the narrower of the
+   * two** (PR #41 re-review). The rule does not check that the space sits at a
+   * marker's inside edge; it accepts any whitespace character anywhere losing
+   * emphasis. That is wider than the name, and it is left wide because the
+   * argument above does not depend on position: a space carries no visible
+   * weight wherever it is, so a printer that stopped emboldening an *interior*
+   * space — `**a b c**` → `**a** b **c**` — loses a mark no reader was
+   * rendering, exactly as the edge case does, and it settles. Narrowing the
+   * rule to the edge would leave that change `unexplained` and fail the sweep
+   * for a normalisation this category already justifies. Read the name as the
+   * instance that occurs in this corpus, not as the bound.
    */
-  emphasisEdgeSpace: "a space at the inside edge of an emphasis marker is hoisted out of it",
+  emphasisEdgeSpace: "whitespace loses emphasis it was carrying; the character stays",
 } as const;
 
 type Category = keyof typeof CATEGORIES;
