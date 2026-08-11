@@ -61,11 +61,34 @@ const execFileAsync = promisify(execFile);
  * whoever triggered the hook. With them gone, the `-c` arguments in
  * {@link commitAll} are the only source of attribution.
  */
+/**
+ * Every git child the CLI spawns is bounded (PR #42 review). Without it, §4's
+ * "Maintenance never prevents a server from starting: a failure is reported and
+ * the start proceeds" is false in the one case it most needs to hold: a
+ * `git gc` that *hangs* — a wedged `gc.pid` lock, a stalled network filesystem —
+ * is not a failure, so nothing catches it, and `corpus server start` waits
+ * forever. A timeout turns the hang into the failure the sentence already
+ * promises to handle.
+ *
+ * Generous on purpose, and the server's own `GIT_TIMEOUT_MS` is deliberately
+ * *not* reused: that one budgets a commit's user-written hooks, where 30 s is
+ * already suspicious. This one has to cover a real repack of a large corpus.
+ * The measured pack of 7028 loose objects took 0.16 s (CLI-037), so two minutes
+ * is three orders of magnitude of headroom — a bound on pathology, not a
+ * performance budget.
+ *
+ * `execFile` sends `SIGTERM` on expiry. `git gc` is interruptible by design: it
+ * builds new packs and swaps them at the end, so a killed run leaves temporary
+ * files and the original objects, never a half-written object store.
+ */
+export const GIT_TIMEOUT_MS = 120_000;
+
 export const runGit: GitRunner = async (args, cwd) => {
   const { stdout, stderr } = await execFileAsync("git", [...args], {
     cwd,
     encoding: "utf8",
     env: sanitizeGitEnv(),
+    timeout: GIT_TIMEOUT_MS,
   });
   return { stdout, stderr };
 };
