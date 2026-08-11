@@ -291,6 +291,96 @@ openable only via `editPath`. No second unscoped path exists.
   all three touched files — clean.
 - Servers stopped, port 8791 verified free.
 
+### Follow-up: the regression this fix introduced, and its fix (PR #42 re-review)
+
+**Model: opus** (server-dev), 2026-08-11. Found by PR #42's re-review; fixed in
+`apps/server/src/edit/sessions.ts` — **`docs/update.ts:413` is unchanged**, the
+conditional above stands.
+
+**What broke.** The tracker held one boolean meaning "an amend will rewrite this
+session's base", and maintained it from *its own saves*: a session was `single`
+until a second save it followed made a commit. That was only ever right because
+every user `PUT` was a save it followed. SERVER-095 made a frontmatter-only `PUT`
+land a commit the tracker opens no session for — the commit still lands, and it
+still opens a window the next body save folds into. The session then read that
+fold's `amended` as §4's squash rewriting *its* commit and moved `firstSha` onto
+the interloper. So the tracker inferred a fact about **git** from a fact about
+**observation**; the two coincided by accident and SERVER-095 separated them.
+
+**Reproduction, pre-fix, on a real server** (real `corpus init` workspace at
+`…/tmp/ws096`, `npm start -w apps/server` on port **8793** — never 8765 or 5173,
+real git, real file-backed queue, real 30 s/180 s windows waited out in real
+time). Body edit → 32 s pause → `PUT {"extra":{"width":725}}` → body edit →
+`POST …/edit-session/flush`:
+
+```
+1f812b4 user doc edit: Mortgage options (doc_vm7cdmv7) by user
+95375cf user editing session: 1 document by user      <- the first body edit
+ed291f2 user editing session: 1 document by user
+
+doc.edited close from=95375cf to=1f812b4 {"commits": 1, "insertions": 3, ...}
+$ git diff 95375cf..1f812b4 -- data/docs/inbox/mortgage-options-2.md
+ +width: 725
+ +three                       <- `+two` is missing: it is a context line
+```
+
+The range starts **after** the first edit, and one sitting is reported as one
+commit. The same sequence with a **thread creation** in place of the frontmatter
+save reproduces identically (`commits: 1`, `+two` absent) — that door was open
+before this PR, since a thread creation never carried an `editPath` either.
+
+**The fix.** `OpenSession.single` becomes `OpenSession.baseIsHead`, answered from
+the commits the tracker is told about rather than from the saves it follows:
+`observeCommit` hears about **every** mutation (that is how sealing works), so a
+commit that is not an amend now clears `baseIsHead` on *every* open session
+before the session for this write is opened or extended. A new commit is the new
+`HEAD`; nothing under it can have its base amended, whoever wrote it and whatever
+verb they used. `if (!result.amended) own.single = false` in the editor-save
+branch is subsumed by that loop and gone.
+
+**Verification, post-fix, same server and sequence:**
+
+```
+09a29df user doc edit: Mortgage options (doc_cspg4wvv) by user
+16b7708 user editing session: 1 document by user
+497e2ab user editing session: 1 document by user
+
+doc.edited close from=497e2ab to=09a29df {"commits": 2, "insertions": 4, ...}
+$ git diff 497e2ab..09a29df -- data/docs/inbox/mortgage-options-3.md
+ +width: 725
+ +two
+ +three
+```
+
+And with the thread creation as the interloper: `commits: 2`, both `+two` and
+`+three` in the range, the anchor frontmatter alongside them.
+
+**Tests** (4 new; 2 integration against real git, 2 unit):
+
+- `edit/acknowledgment.test.ts` → "a commit that opened no session does not move
+  the base (PR #42 re-review finding 1)": the reviewer's exact sequence, once with the
+  frontmatter-only save and once with a thread creation. Both assert `from` is
+  `HEAD~2`, `commits: 2`, and that the range's diff contains **both** edits.
+- `edit/sessions.test.ts`: the interloper as an observed commit with no
+  `editPath`, and as a *neighbour document's* save — §4's party-scoped window
+  reaches the same hazard through that door.
+- **Non-vacuity**: with the loop removed and `if (!result.amended) own.baseIsHead
+  = false` put back in the editor-save branch — i.e. exactly the pre-fix rule —
+  all **4** new cases fail and the other 96 in `src/edit` pass. SERVER-095's 13
+  cases pass unchanged either way; none was touched.
+
+**Checks:** `npm run build` clean · `./node_modules/.bin/vitest run
+apps/server/src` (VITEST_MAX_THREADS=4) — **182 files, 3800 tests, all passing**
+(3796 + 4) · `tsc --noEmit -w apps/server` clean · `eslint apps/server/src/edit/`
+and `prettier --check` on the three touched files clean · server stopped, port
+8793 free, the user's 8765 untouched.
+
+**SERVER-097 is not fixed here** and is made *easier*: it is about `from` naming
+a commit that never touched this document, and it lands on `parentOf(firstSha)`.
+This fix is the reason `firstSha` is now the session's real first commit, so 097
+starts from an honest base — before it, "walk back to the previous commit
+touching this path" would have walked back from the wrong commit.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

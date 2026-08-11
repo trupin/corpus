@@ -635,6 +635,102 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     expect(payload?.stats.commits).toBe(1);
   });
 
+  // SERVER-096, the regression SERVER-095 introduced and PR #42's re-review
+  // caught. Making `editSession` conditional was right, and stays — but it broke
+  // an assumption the tracker was making one layer down: that "every user `PUT`
+  // is a save I follow" and "my commit is still `HEAD`" are the same fact. They
+  // were only ever the same by accident. Once a write the tracker follows no
+  // longer covers every commit the person's own party lands, the next fold
+  // amends a commit the session never had, and a session that read that amend as
+  // §4's squash rewriting *its* commit moved its base onto the interloper — so
+  // the acknowledged range began after the person's first edit and the agent was
+  // shown half of what they wrote.
+  //
+  // Both doors are here. The frontmatter-only save is the one SERVER-095 opened
+  // and the board walks through constantly; the thread creation was reachable
+  // before it, and neither is a save the tracker follows.
+  describe("a commit that opened no session does not move the base (SERVER-096)", () => {
+    /**
+     * The reviewer's sequence, on a real repository: an edit, a pause past §4's
+     * 30 s squash idle but nowhere near the three-minute acknowledgment window,
+     * an unobserved write, and more typing.
+     *
+     * The default acknowledgment window is left in place — the pause has to be
+     * inside it — so the session is ended by the server stopping, which is §4's
+     * other door and emits the same event.
+     */
+    async function sitting(
+      prefix: string,
+      interlude: (ws: WriteWorkspace, docId: string) => Promise<void>,
+    ): Promise<{ ws: WriteWorkspace; payload: DocEditedPayload | undefined; path: string }> {
+      const ws = workspace(prefix);
+      const doc = await createDoc(ws, { type: "view", title: "Open threads", body: "one\n" });
+      pastTheSquashWindow(ws);
+
+      await edit(ws, doc.id, "one\ntwo\n");
+
+      // Past the squash idle: whatever comes next cannot fold, so it lands a
+      // **new** commit and opens a window of its own.
+      pastTheSquashWindow(ws);
+      await interlude(ws, doc.id);
+
+      // …and the person carries on typing, which folds into that window.
+      await edit(ws, doc.id, "one\ntwo\nthree\n");
+
+      await ws.server.close();
+      return { ws, payload: acknowledgments(ws)[0], path: doc.path };
+    }
+
+    /**
+     * What the range has to say, whichever write sat in the middle: it starts
+     * before the first edit and ends at the branch's tip, so both sittings'
+     * worth of typing is inside it.
+     *
+     * Named by position, never by a sha captured mid-window: a window no act
+     * named is relabelled as it closes, which is an amend and so a new sha for
+     * the same tree (SERVER-091).
+     */
+    function expectBothEditsInRange(
+      ws: WriteWorkspace,
+      payload: DocEditedPayload | undefined,
+      path: string,
+    ): void {
+      expect(payload).toBeDefined();
+      expect(payload?.to).toBe(ws.head());
+      expect(payload?.from).toBe(ws.git("rev-parse", "HEAD~2").trim());
+      // Two commits, not one: the sitting spans the interloper as well.
+      expect(payload?.stats.commits).toBe(2);
+      // The observable the review states: pre-fix the first edit shows up as a
+      // context line rather than an added one, because `from` names the commit
+      // that already contains it.
+      const diff = ws.git("diff", `${payload?.from ?? ""}..${payload?.to ?? ""}`, "--", path);
+      expect(diff).toContain("+two");
+      expect(diff).toContain("+three");
+      expect(payload?.stats.insertions).toBeGreaterThanOrEqual(2);
+    }
+
+    it("covers both edits across a frontmatter-only save — the board's own write", async () => {
+      const { ws, payload, path } = await sitting("ack-base-fm", async (workspaceUnderTest, id) => {
+        expect(
+          (await workspaceUnderTest.put(`/api/docs/${id}`, { extra: { width: 725 } })).status,
+        ).toBe(200);
+      });
+      expectBothEditsInRange(ws, payload, path);
+    });
+
+    it("covers both edits across a thread creation on the document", async () => {
+      const { ws, payload, path } = await sitting("ack-base-thread", async (w, id) => {
+        const response = await w.post("/api/threads", {
+          parent: id,
+          selector: { exact: "two" },
+          body: "a question about this line",
+        });
+        expect(response.status).toBe(201);
+      });
+      expectBothEditsInRange(ws, payload, path);
+    });
+  });
+
   it("still seals a user's session on an agent save that changed only frontmatter", async () => {
     // The linchpin of the fix being conditional at all. `observeCommit` seals
     // through `touches(commit, session)`, which compares the document id and the

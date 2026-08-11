@@ -356,6 +356,69 @@ describe("edit session tracker — the idle path (SPEC.md §4)", () => {
     expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "c0ffeeb" });
   });
 
+  it("keeps the base fixed when a commit that opened no session lands on top of it", async () => {
+    // SERVER-096. Not every write this tracker is told about opens a session —
+    // a frontmatter-only `PUT` (SERVER-095) and a thread creation carry no
+    // `editPath`. Both still land a commit and still open a window, so the next
+    // body save folds into *that* commit and reports an amend. The session's own
+    // base is untouched by it, and reading "amend" as "§4's squash rewriting my
+    // one commit" moved the range's start past the person's first edit.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["fmonly1", "c0ffee1"],
+        ["fmonlyb", "c0ffee1"],
+      ]),
+      counts: new Map([["ba5e001..fmonlyb", "2"]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    // The interloper: observed, but no editor save — it opens no session.
+    h.tracker.observeCommit(save({ editPath: null, outcome: committed("fmonly1") }));
+    // The next body save folds into the window that commit opened.
+    h.tracker.observeRewrite("fmonly1", "fmonlyb");
+    h.tracker.observeCommit(save({ outcome: amended("fmonlyb") }));
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued[0]?.payload).toMatchObject({
+      from: "ba5e001",
+      to: "fmonlyb",
+      stats: { commits: 2 },
+    });
+  });
+
+  it("keeps the base fixed when the interloping commit is another document's", async () => {
+    // The same hazard reached through the other door: §4's window belongs to a
+    // *party*, so a save to a neighbour document lands the commit that ends this
+    // session's claim on `HEAD` — and it is announced under the neighbour's id.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["bbbb001", "c0ffee1"],
+        ["bbbb00b", "c0ffee1"],
+      ]),
+      counts: new Map([["ba5e001..bbbb00b", "2"]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeCommit(
+      save({
+        docId: OTHER_DOC,
+        paths: [OTHER_PATH],
+        editPath: OTHER_PATH,
+        outcome: committed("bbbb001"),
+      }),
+    );
+    h.tracker.observeRewrite("bbbb001", "bbbb00b");
+    h.tracker.observeCommit(save({ outcome: amended("bbbb00b") }));
+
+    await h.advance(IDLE_MS);
+    const first = h.enqueued
+      .map((event) => parseDocEditedPayload({ type: event.type, payload: event.payload }))
+      .find((payload) => payload?.docId === DOC);
+    expect(first).toMatchObject({ from: "ba5e001", to: "bbbb00b" });
+  });
+
   it("tracks documents independently", async () => {
     const h = harness({
       parents: new Map([

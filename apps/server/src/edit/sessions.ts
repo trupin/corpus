@@ -207,12 +207,24 @@ interface OpenSession {
   /** The session's newest commit — `to`. */
   lastSha: string;
   /**
-   * True while `firstSha` and `lastSha` are the same commit, which is the only
-   * state in which §4's squash can rewrite the session's *base*: `git commit
-   * --amend` only ever rewrites `HEAD`, so once a second commit sits on top, the
-   * first one's sha is fixed.
+   * Is the session's *base* — `firstSha` — still `HEAD`? That is the only state
+   * in which §4's squash can rewrite it: `git commit --amend` only ever rewrites
+   * `HEAD`, so the moment anything sits on top, the base's sha is fixed.
+   *
+   * It answers a question about **git**, and so it is maintained from the
+   * commits this tracker is told about — never from "I have seen one save of my
+   * own and no others". Those were the same statement only while every user
+   * `PUT` opened a session; SERVER-095 made a frontmatter-only save open none,
+   * and a thread creation never did. Such a write still lands a commit on top of
+   * this session's base and still opens a window the next body save folds into —
+   * so a tracker reasoning from its own saves believed the amend was rewriting
+   * *its* commit, moved `firstSha` onto the interloper, and published a range
+   * starting after the person's first edit (SERVER-096).
+   *
+   * `observeCommit` hears about **every** mutation, including the ones that open
+   * no session, which is what makes the honest answer available here at no cost.
    */
-  single: boolean;
+  baseIsHead: boolean;
   lastWriteAt: number;
   /**
    * Set when a commit by **the other party** touched this document. A sealed
@@ -427,6 +439,21 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
         }
       }
 
+      // A commit that is not an amend becomes the new `HEAD`, so every session
+      // already open is now sitting under it and none of their bases can be
+      // rewritten again. Said here — over *all* sessions, from the commit rather
+      // than from the save — because the write that lands it need not be one
+      // this tracker follows: a frontmatter-only `PUT` (SERVER-095), a thread
+      // creation, an archive, a move. Each of those also opens a window the next
+      // body save folds into, and an amend of *that* window must not be mistaken
+      // for §4's squash rewriting the session's own commit (SERVER-096).
+      //
+      // Before the session below is opened or extended, so a session this very
+      // commit starts still records a base that is `HEAD` — which it is.
+      if (!result.amended) {
+        for (const session of sessions.values()) session.baseIsHead = false;
+      }
+
       if (editPath === null) {
         rearm();
         return;
@@ -438,19 +465,21 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
           path: editPath,
           firstSha: result.sha,
           lastSha: result.sha,
-          single: true,
+          baseIsHead: true,
           lastWriteAt: now(),
           sealed: false,
         };
         sessions.set(session.id, session);
       } else {
-        // §4's squash rewrites `HEAD` in place, so an amend of a one-commit
-        // session moves the session's *base* as well as its head — the old sha
-        // no longer exists and `from` has to be read from the new one. With a
-        // second commit on top, `HEAD` is no longer the session's first commit
-        // and only the head moves.
-        if (result.amended && own.single) own.firstSha = result.sha;
-        if (!result.amended) own.single = false;
+        // §4's squash rewrites `HEAD` in place, so an amend moves the session's
+        // *base* exactly when that base is `HEAD` — the old sha no longer exists
+        // and `from` has to be read from the new one. With anything on top, be
+        // it the session's own second commit or a write that opened no session
+        // at all, `HEAD` is not the session's first commit and only the head
+        // moves. (A new commit has already cleared `baseIsHead` above; it is the
+        // same statement, made once for every session rather than only for this
+        // one.)
+        if (result.amended && own.baseIsHead) own.firstSha = result.sha;
         own.lastSha = result.sha;
         own.path = editPath;
         own.lastWriteAt = now();
@@ -463,9 +492,10 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
       for (const session of sessions.values()) {
         // Both ends, and independently: a one-commit session has the same sha at
         // both, and that is precisely the case §4's squash can rewrite (an amend
-        // only ever touches `HEAD`). Leaving `single` alone is deliberate — a
-        // relabel replaces the commit the session already had, it does not add
-        // one, so how many commits the session spans has not changed.
+        // only ever touches `HEAD`). Leaving `baseIsHead` alone is deliberate —
+        // a rewrite replaces a commit in place, it adds none, so a base that was
+        // `HEAD` is still `HEAD` under its new sha and one that was not still is
+        // not.
         if (session.firstSha === from) session.firstSha = to;
         if (session.lastSha === from) session.lastSha = to;
       }

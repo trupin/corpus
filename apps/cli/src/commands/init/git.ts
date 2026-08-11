@@ -54,14 +54,6 @@ export type GitRunner = (args: readonly string[], cwd: string) => Promise<GitRes
 const execFileAsync = promisify(execFile);
 
 /**
- * The child environment is sanitized, not inherited: git exports `GIT_DIR`,
- * `GIT_INDEX_FILE`, `GIT_AUTHOR_*` and friends to the hooks it runs, so
- * `corpus init` from inside one would otherwise initialize, stage and commit
- * against *that* repository, attributing the workspace's first commit to
- * whoever triggered the hook. With them gone, the `-c` arguments in
- * {@link commitAll} are the only source of attribution.
- */
-/**
  * Every git child the CLI spawns is bounded (PR #42 review). Without it, §4's
  * "Maintenance never prevents a server from starting: a failure is reported and
  * the start proceeds" is false in the one case it most needs to hold: a
@@ -77,12 +69,28 @@ const execFileAsync = promisify(execFile);
  * is three orders of magnitude of headroom — a bound on pathology, not a
  * performance budget.
  *
- * `execFile` sends `SIGTERM` on expiry. `git gc` is interruptible by design: it
- * builds new packs and swaps them at the end, so a killed run leaves temporary
- * files and the original objects, never a half-written object store.
+ * **What the bound does not cover, stated because the first draft of this
+ * comment overclaimed it** (PR #42 re-review, finding 5). `execFile` sends
+ * `SIGTERM` to the direct child only. `git gc` spawns `git repack` and
+ * `pack-objects` as its own children, and those are not in the signalled set —
+ * so on expiry the `gc` process dies while a repack may still be running, and
+ * `corpus server start` then spawns the server beside it: the concurrent-writer
+ * condition CLI-037 exists to remove, reached through the pathological door
+ * rather than the ordinary one. Strictly better than hanging forever, and not
+ * the whole fix. The killed process itself is safe — `gc` builds new packs and
+ * swaps at the end, and a dead `gc.pid` is stolen by the next run — but that is
+ * a claim about `gc`, not about its children.
  */
 export const GIT_TIMEOUT_MS = 120_000;
 
+/**
+ * The child environment is sanitized, not inherited: git exports `GIT_DIR`,
+ * `GIT_INDEX_FILE`, `GIT_AUTHOR_*` and friends to the hooks it runs, so
+ * `corpus init` from inside one would otherwise initialize, stage and commit
+ * against *that* repository, attributing the workspace's first commit to
+ * whoever triggered the hook. With them gone, the `-c` arguments in
+ * {@link commitAll} are the only source of attribution.
+ */
 export const runGit: GitRunner = async (args, cwd) => {
   const { stdout, stderr } = await execFileAsync("git", [...args], {
     cwd,
