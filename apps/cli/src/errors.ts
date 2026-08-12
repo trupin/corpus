@@ -50,8 +50,10 @@ export const EXIT_CODES: readonly { readonly code: ExitCode; readonly meaning: s
   {
     code: ExitCode.staleKey,
     meaning:
-      "Stale key — the document changed after the read that handed you the key, so nothing was " +
-      "written. Re-read it, merge, and run the same command again with the fresh `--key`.",
+      "Stale key — the document changed after the read the write was made against, so nothing was " +
+      "written. On `doc edit`, re-read, merge, and resend with the fresh `--key`. On `doc patch` — which " +
+      "presents no key of its own — it means an outside editor moved the file mid-operation, and re-running " +
+      "the same patch is the whole recovery.",
   },
   {
     code: ExitCode.patchRefused,

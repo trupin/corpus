@@ -411,7 +411,8 @@ export const patchCommand: WorkspaceCommandSpec = {
     "the same staleness check by another route — and a better one, because it says _which_ text " +
     "is gone rather than _that_ the document changed. Everything else about a patch is an " +
     "ordinary write: it is validated before it lands (SPEC.md §14), anchors are reconciled with " +
-    "remaps and orphans reported (SPEC.md §6), one commit is made attributed to `--from`, and " +
+    "remaps and orphans reported (SPEC.md §6), the change is committed and attributed to `--from` — " +
+    "folded into the open commit window like any other save, not necessarily a commit of its own (§4) — and " +
     "the fresh key is printed on the line after the confirmation.\n\n" +
     "**Three ways to supply the text**, because both halves are routinely multi-line. `--old` " +
     "and `--new` are the literal form and the one to use by default — a shell's single quotes " +

@@ -239,11 +239,16 @@ Pick the smallest shape that actually answers the request.
   to tell them something — a decision, a preference, a missing fact, a go/no-go before you
   start. Every question you need answered to proceed goes into that **one** form, as fields, in
   **one** turn. *Forms* below carries the grammar and the batching rule.
+- **Patch the parent** with
+  `corpus doc patch <id> --from agent --old '<what it says>' --new '<what it should say>'`
+  when the change is one you can quote — a figure that moved, a sentence that is now wrong, a
+  paragraph that should go. It is the ordinary way to change a document that is mostly right,
+  and it sends the change rather than the document.
 - **Edit the parent** with `corpus doc edit <id> --key <the key that read printed> --from agent`
-  and a heredoc body when the request is about the document's content. The heredoc *is* the
-  document's whole new body, so this is the escalation of *Gather context*: read the document
-  whole before you rewrite it, and present the key that read printed.
-  The write path reconciles every anchor on save —
+  and a heredoc body when there is nothing to quote because the whole shape is changing. The
+  heredoc *is* the document's whole new body, so this is the escalation of *Gather context*:
+  read the document whole before you rewrite it, and present the key that read printed.
+  Either way the write path reconciles every anchor on save —
   threads follow their text automatically — so **never hand-maintain the `anchors` map** and
   never mention anchor ids in an edit. Read the command's anchor report: it names any thread
   that came loose.
@@ -263,8 +268,46 @@ Pick the smallest shape that actually answers the request.
   plugin's documents field by field from here. The plugin's skill knows the shape; you know
   the conversation.
 
-**Writing is a loop with nothing extra in it: read → work → write with the key you were
-given → keep the key the write returned.** Reading a document prints its **key**; a write
+**Which of the two writes you are making: a change you can quote is a patch; a change you
+cannot quote is a whole body.** If you can point at the text that is wrong — a figure, a
+sentence, a paragraph that should go — quote it and say what belongs there instead, and
+`corpus doc patch` writes that and touches nothing else. If the document is being restructured,
+or several separate corrections land in one pass, the change *is* the body and it goes back
+whole. Both mistakes cost something: rewriting for one line pays the length of the document
+for it and puts every other line in your hands, where a bad paste loses them; patching what
+should have been a rewrite leaves the document half migrated across a pile of little writes.
+Ask which you have before you start.
+
+```bash
+corpus doc show doc_a1b2c3
+The working rate assumption is 6.1% as of 2026-05-02.
+corpus doc patch doc_a1b2c3 --from agent --old '6.1% as of 2026-05-02' --new '6.4% as of 2026-07-28'
+patched doc_a1b2c3 — 1 occurrence replaced
+key 655ce64894a6835ddc50fee95928ab1482f30394739a6a7d9c2b369b96af1cc0
+```
+
+`--old` is matched **byte for byte** against the body as stored — no trimming, no
+normalisation, no patterns — so quote it exactly as `corpus doc show` printed it, whitespace
+and line breaks included; single quotes span lines, so a multi-line excerpt is still one
+command. The frontmatter block is not part of the body, and `--new ''` is how a deletion is
+spelled. **A patch presents no key**, and that is a consequence rather than an omission: the
+text it names *is* the staleness check, and a better one, because it says which text has gone
+rather than only that the document moved. Everything else about it is an ordinary write —
+validated, anchors reconciled and reported on the same line, one commit, a fresh key handed
+back for whatever you do next.
+
+**Two refusals, exit `10` both, nothing written, and their recoveries are opposites.** The
+message names the count, so branch on it rather than guessing. **Matched 0 times** means the
+text is not there: re-read the document and quote what it says now — never resend the same
+excerpt, and never go looking for the normalisation that would have made it match. **Matched
+more than once** means the excerpt is ambiguous: quote more of what surrounds it until it
+occurs exactly once, the line above usually being enough; `--all` replaces every occurrence
+and is right only when every occurrence is genuinely what you meant, never as a way to make a
+refusal go away. Exit `9` from a patch is a rarer, different thing — something outside Corpus
+wrote the file between the match and the save; read the document again and reissue.
+
+**A whole-body edit is a loop with nothing extra in it: read → work → write with the key you
+were given → keep the key the write returned.** Reading a document prints its **key**; a write
 that replaces the body presents that key; the write prints a fresh one on the line after its
 confirmation, which the next edit presents. So a chain of edits costs one read at the start
 rather than a read between every pair, and no step here is one you were not already taking —
@@ -302,10 +345,12 @@ validates and commits exactly as every other write does. Read the history:
 `corpus doc diff <id>` prints the document's path and its last committed change, and
 `git log --oneline -- <path>` then `git show <sha>:<path>` go further back. Work out the
 content you want back, which is rarely the whole old file — the version you are going back to
-predates everything since, and some of that should stay. Then write it with
-`corpus doc edit <id> --key <the key that read printed> --from agent`, like any other change,
-and say in the reply what you put back. Three things decide whether that is a repair or a
-second act of damage:
+predates everything since, and some of that should stay. Then write it the way the change
+fits: a passage you can quote goes back as a patch — `--old` what the document says now,
+`--new` what it used to say — and only a document that changed wholesale needs
+`corpus doc edit <id> --key <the key that read printed> --from agent`. Either way, say in the
+reply what you put back. Three things decide whether this is a repair or a second act of
+damage:
 
 - **Read from git, never write to it.** `git log`, `git show` and `git diff` are reads. Never
   `git checkout`, `git restore`, `git revert` or `git commit` — the server is the sole writer
@@ -313,11 +358,15 @@ second act of damage:
 - **Git hands you the whole file; the write takes the body.** Everything down to and
   including the closing `---` is frontmatter the server owns — id, timestamps, tags,
   `anchors` — so pasting the file in as a body writes that frontmatter into the document
-  again, as text. Send only what follows it.
+  again, as text. Send only what follows it. A patched revert cannot make this mistake: it
+  matches body text and writes body text, so there is no whole file in your hands to paste,
+  which is one more reason to undo a passage as a patch rather than as a body.
 - **The key is what makes a revert safe.** The content came from history, but the key you
   present names the version you just read, so a revert that would clobber a change made since
   that read is refused with exit `9` rather than landing on top of it. The age of the content
-  is never the question; what happened after your read is.
+  is never the question; what happened after your read is. A patched revert is guarded by the
+  excerpt instead: a passage somebody has since rewritten is not there to match, so it is
+  refused with the count rather than landing on top of their words.
 
 **Someone is editing this — stand aside, do not push through.** When a person has an edit
 session open on the document, the read says so:
