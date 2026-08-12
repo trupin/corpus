@@ -266,8 +266,11 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
             ...subject.frontmatter,
             // SPEC.md §5: unarchiving returns a document to `resolved` — the
             // state archiving already implied — not to `open` (SERVER-108).
-            // This double claims to answer as the server answers, so it has
-            // to move with it even where nothing reads the result today.
+            // The double is not faithful in the other half and never was: the
+            // server writes nothing at all for a document that was not
+            // archived, while this flips unconditionally. Nothing reads the
+            // result today; if something starts to, fix the unconditionality
+            // rather than trusting the value.
             status: verb === "archive" ? "archived" : "resolved",
           },
         };

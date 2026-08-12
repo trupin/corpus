@@ -100,9 +100,8 @@ export const patchDoc = createRoute({
     "staleness check by another route — sharper where it applies, since a patch whose text has " +
     "moved is told *which* text is gone rather than *that* the document changed, and requiring a " +
     "key would refuse a well-anchored patch because an unrelated paragraph moved. **It is not the " +
-    "key by another name**: it covers the text the patch quotes and nothing else, so it catches a " +
-    "writer who changed that text and not one who **inserted** elsewhere. A write that may race " +
-    "another writer's append goes back whole under a key instead.\n\n" +
+    "key by another name**: it covers the text the patch quotes and nothing else, which is why the " +
+    "insertion case above goes back whole under a key instead.\n\n" +
     "**An ordinary write once applied**: validated before writing (SPEC.md §14), anchors " +
     "reconciled with remapped and orphaned anchors reported (§6), and one auto-commit attributed " +
     "to the acting party (§4) — the same response shape `PUT /api/docs/{id}` answers with, plus " +
