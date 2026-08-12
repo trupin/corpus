@@ -1,5 +1,6 @@
 // Staleness (SPEC.md §5): a document's age runs from `max(updated, reviewed)`
-// against the 30/90/180-day ramp, and `evergreen: true` opts out entirely.
+// against the 30/90/180-day ramp — **for documents that are `open`** — and
+// `evergreen: true` opts out entirely.
 //
 // One constant backs both readings of that ramp — the `stale=` filter and the
 // `stale` Attention reason — so a row the filter returns can never lack the
@@ -46,9 +47,36 @@ export function stalenessCutoffs(nowMs: number): StalenessCutoffs {
  * reading: `aging` includes stale and very-stale). Binds the cutoff by name so
  * the same fragment can appear in the filter and in the reason without the
  * caller tracking positional order.
+ *
+ * **There are two exemptions from the ramp, not one** (SERVER-107). `evergreen`
+ * is the one a person sets on reference material; `status` is the other, and it
+ * is the document answering the ramp's own question. §5: "a `resolved` or
+ * `archived` document does not age, because the ramp asks whether something
+ * still needs attention and that document has answered … a second exemption
+ * beside `evergreen` rather than a replacement for it", which §9.2 then publishes
+ * as a route-level guarantee — `needs=stale` answers for `open` documents only,
+ * and such a row "never enters the union on that reason".
+ *
+ * Spelled positively (`= 'open'`) rather than as two negations. §5 defines the
+ * ramp *for open documents*: a status this predicate has never heard of should
+ * default to not ageing rather than to ageing, and `archived` — which is
+ * `resolved` plus hidden — is then covered by the same clause that covers
+ * `resolved` instead of by a second one somebody has to remember to add.
+ *
+ * The term belongs **here** rather than beside the three call sites for the
+ * reason the tier column exists here too: the `stale=` filter, the `stale`
+ * Attention reason and `DocRow.stale` are all this one fragment, so a document
+ * that stopped ageing stops on all three at once and no surface can keep
+ * offering a reason another has retired. It is also why resolving a stale
+ * document *removes* it from the set (§5: "leaves the stale set if it was
+ * already in it") with no dates rewritten and nothing to re-stamp: the row's
+ * age is untouched and simply no longer consulted.
+ *
+ * Note what this does **not** do: a resolved document keeps its place in every
+ * list (§5), so nothing here narrows a result set. Only the ramp stops.
  */
 export function atOrBeyondSql(tier: StaleTier): string {
-  return `(d.evergreen = 0 AND ${ACTIVITY_SQL} <> '' AND ${ACTIVITY_SQL} <= @cutoff_${tierParam(tier)})`;
+  return `(d.status = 'open' AND d.evergreen = 0 AND ${ACTIVITY_SQL} <> '' AND ${ACTIVITY_SQL} <= @cutoff_${tierParam(tier)})`;
 }
 
 /** Parameter-name-safe spelling of a tier (`very-stale` is not an identifier). */

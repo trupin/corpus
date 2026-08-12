@@ -332,7 +332,7 @@ export interface CorpusClient {
    */
   archiveDoc(id: string): Promise<DocMutationResponse>;
   /**
-   * `POST /api/docs/{id}/unarchive` — the inverse, back to `status: open`.
+   * `POST /api/docs/{id}/unarchive` — the inverse, back to `status: resolved`.
    *
    * The **only** way back: `PUT /api/docs/{id}` with a non-archived `status` on
    * an archived document is refused with a `400` whose message names this route

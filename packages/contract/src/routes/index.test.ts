@@ -332,6 +332,52 @@ function createStubApp() {
       200,
     );
   });
+  // SPEC.md §9.2's anchored patch: the refusals are the document's text
+  // refusing, so the stub decides them from the fixture body the same way a
+  // server must — and answers the ordinary write response plus the count.
+  app.openapi(contractRoutes.patchDoc, (c) => {
+    const { old, new: replacement, all } = c.req.valid("json");
+    const matches = doc.body.split(old).length - 1;
+    if (matches === 0) {
+      return c.json(
+        {
+          code: "conflict" as const,
+          message: "no such text in the body",
+          reason: "no-match" as const,
+          matches,
+        },
+        409,
+      );
+    }
+    if (matches > 1 && all !== true) {
+      return c.json(
+        {
+          code: "conflict" as const,
+          message: "that text occurs more than once",
+          reason: "multiple-matches" as const,
+          matches,
+        },
+        409,
+      );
+    }
+    const replaced = all === true ? matches : 1;
+    return c.json(
+      {
+        doc: {
+          ...doc,
+          body:
+            all === true
+              ? doc.body.split(old).join(replacement)
+              : doc.body.replace(old, replacement),
+          key: NEXT_DOC_KEY,
+        },
+        anchors: { remapped: [], orphaned: [] },
+        warnings: [],
+        replaced,
+      },
+      200,
+    );
+  });
   app.openapi(contractRoutes.deleteDoc, (c) =>
     c.json(
       { deletedId: c.req.valid("param").id, orphanedThreadIds: ["th_x9y8"], warnings: [] },

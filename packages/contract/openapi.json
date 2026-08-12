@@ -1895,6 +1895,91 @@
           ]
         }
       },
+      "PatchDocResponse": {
+        "type": "object",
+        "properties": {
+          "doc": {
+            "$ref": "#/components/schemas/Doc"
+          },
+          "anchors": {
+            "$ref": "#/components/schemas/AnchorReconciliation"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            },
+            "description": "Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do."
+          },
+          "replaced": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many occurrences of `old` were replaced, counted left to right without overlap. Always `1` unless the request set `all`, and never `0` — a patch that matched nothing is the `409` refusal, not a `200` that changed nothing.\n\nA **no-op** (`new` equal to `old`) still reports the occurrences it covered and writes nothing: no file change, no commit. The caller can see that case in its own request, so nothing here has to name it separately."
+          }
+        },
+        "required": [
+          "doc",
+          "anchors",
+          "warnings",
+          "replaced"
+        ]
+      },
+      "PatchConflictError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "conflict"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no-match",
+              "multiple-matches"
+            ],
+            "description": "Which state refused the patch: the status code says the document's text did, this says how. `no-match`: `old` does not occur in the body at all (`matches` is `0`) — the document is not what you last read, or the excerpt was never in the body (frontmatter is not part of it). Re-read the document and quote from what it says now. `multiple-matches`: `old` occurs more than once (`matches` says how many) and the patch did not ask for `all` — quote more surrounding context until the excerpt is unique, or send `all: true` if replacing every occurrence is genuinely what you meant."
+          },
+          "matches": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many times `old` occurs in the document's body, counted left to right without overlap — the count both refusals name, because the two have different recoveries and a caller must be able to tell them apart without reading English. `0` for `no-match`; two or more for `multiple-matches`. Nothing was written."
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "reason",
+          "matches"
+        ]
+      },
+      "PatchDocRequest": {
+        "type": "object",
+        "properties": {
+          "old": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The excerpt of the document's body to replace, quoted **exactly** as it is stored — the same bytes `GET /api/docs/{id}` returned in `body`. Matching is byte-exact: no trimming, no whitespace collapsing, no line-ending translation, no case folding, and no regular expressions. Whitespace and indentation are significant.\n\nIt must match **exactly once**, or the patch is refused with `409` naming how many times it did match — `0` means re-read the document, more than one means quote more surrounding context until the excerpt is unique (or pass `all`). The body here is the markdown **without the frontmatter block**, so an excerpt that quotes frontmatter matches nothing; frontmatter is changed by naming its fields on `PUT /api/docs/{id}`."
+          },
+          "new": {
+            "type": "string",
+            "description": "What to put in `old`'s place. **May be empty**, which deletes the quoted text — that is the spelling of a deletion, and it is not a refusal.\n\nSending it equal to `old` is a **no-op**: the resulting body is the body it started as, so nothing is written and no commit is made (SPEC.md §9.2). It is answered `200` rather than refused, because a caller that asks for a change already present has got what it asked for."
+          },
+          "all": {
+            "type": "boolean",
+            "description": "Replace **every** occurrence of `old` instead of requiring it to be unique. Defaults to `false` — the server applies the default, so omit the field rather than sending `false`.\n\nOccurrences are found **left to right and never overlap**: after a match, scanning resumes at the end of the text that matched, so `old: \"aa\"` finds one occurrence in `\"aaa\"` and two in `\"aaaa\"`. The same scan is what counts matches for a refusal, so the number the server reports and the number a caller counts for itself agree.\n\n**It lifts uniqueness, never the requirement to match at all**: an `old` that occurs zero times is refused with `409` whether or not `all` is set."
+          }
+        },
+        "required": [
+          "old",
+          "new"
+        ],
+        "additionalProperties": false
+      },
       "DeleteDocResult": {
         "type": "object",
         "properties": {
@@ -5143,6 +5228,114 @@
         }
       }
     },
+    "/api/docs/{id}/patch": {
+      "post": {
+        "tags": [
+          "docs"
+        ],
+        "summary": "Edit a document's body by anchored exact string replacement",
+        "description": "Edits the body by naming the text to replace rather than by sending a new body: `old` (an excerpt of the body), `new` (its replacement, possibly empty), and `all` (default `false`). **Prefer it over `PUT /api/docs/{id}` for a change you can quote.** That is most bounded changes and not all of them: a patch **replaces**, so it catches a writer who changed the text you quoted and not one who **inserted** elsewhere — an append that another writer may also be appending to goes back whole under a key instead (SPEC.md §7). The whole-body write prices a one-line edit at the length of the document, and — more than the cost — a body the caller never saw cannot survive a body the caller sends: an edit that never carries the rest of the document cannot destroy the rest of the document.\n\n**`old` must match the body exactly and uniquely.** Matching is **byte-exact against the body as stored** — the same bytes `GET /api/docs/{id}` returned in `body` — with no normalisation, no trimming, no line-ending translation and no regular expressions, so what you read is what you quote. It is a **body** operation: `body` excludes the frontmatter block, so an excerpt quoting frontmatter matches nothing, and frontmatter is changed by naming its fields on `PUT /api/docs/{id}`.\n\n**Zero matches and multiple matches are separate refusals that name the count** — both `409`, distinguished by `reason` and quantified by `matches` — because the recoveries are opposite: re-read the document, versus quote more context. A single *it did not apply* would collapse them and leave the caller guessing. `all: true` lifts the uniqueness requirement and replaces **every occurrence left to right without overlap**; it does not lift the requirement to match at all, so zero occurrences is still refused.\n\n**It presents no key** (SPEC.md §7). It names the text it expects to find, which is a staleness check by another route — sharper where it applies, since a patch whose text has moved is told *which* text is gone rather than *that* the document changed, and requiring a key would refuse a well-anchored patch because an unrelated paragraph moved. **It is not the key by another name**: it covers the text the patch quotes and nothing else, which is why the insertion case above goes back whole under a key instead.\n\n**An ordinary write once applied**: validated before writing (SPEC.md §14), anchors reconciled with remapped and orphaned anchors reported (§6), and one auto-commit attributed to the acting party (§4) — the same response shape `PUT /api/docs/{id}` answers with, plus `replaced`. **A patch whose result is the unchanged body is a no-op that writes nothing**: `new` equal to `old` answers `200` with no file change and no commit, rather than a refusal.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "required": true,
+            "description": "Identifier of any document; threads are documents too.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The text to find and what to put in its place. Mandatory: a patch that names no text is not an edit.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchDocRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved document — carrying a fresh `key` — the anchor reconciliation report, §14's warnings, and how many occurrences were `replaced`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchDocResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The document's text refuses the patch, and `matches` says how many times `old` occurs in it. `reason: no-match` (`matches: 0`) — the text is not there; re-read the document. `reason: multiple-matches` — the text is there more than once and the patch did not ask for `all`; quote more surrounding context. The two are separate because the recoveries are opposite. Nothing was written. A `stale_key` here is the other case: an external editor moved the document between the match and the write, so re-quoting against the copy this carries is the recovery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PatchConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StaleKeyError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/docs/{id}/move": {
       "post": {
         "tags": [
@@ -5320,7 +5513,7 @@
           "docs"
         ],
         "summary": "Restore an archived document",
-        "description": "The inverse flip, back to `status: open`. **The document id never changes.** Unarchiving a `type: skill` document moves its folder back out of `.claude/skills-archived/`, carrying every file under it — including a **nested skill** the request never named, whose id is stamped into it so the move does not change its identity, and whose `status` is reconciled to the enabled root it now sits in (SERVER-078). Both effects on that carried document are reported (CONTRACT-047): a `carried_skill` warning per carried document, naming it, its path after the move, and that it is now **enabled**, and — only where a stale `status: archived` had to be corrected to `open` — a `carried_reconciliation` warning naming the document and the key rewritten. They are reports *about* the act, not parts of it: a document the request never named never becomes a changed document. The id stamp is deliberately not reported, since it keeps an identity rather than changing one. An unarchive that carries no other skill document warns nothing, and one whose carried documents needed no correction carries no `carried_reconciliation`. **Unarchiving names its own delta and presents no key** (SPEC.md §7): it flips `status` back, overwriting nothing a reader may have been holding.",
+        "description": "The inverse flip, back to `status: resolved` — the state archiving already implied (§5). **The document id never changes.** Unarchiving a `type: skill` document moves its folder back out of `.claude/skills-archived/`, carrying every file under it — including a **nested skill** the request never named, whose id is stamped into it so the move does not change its identity, and whose `status` is reconciled to the enabled root it now sits in (SERVER-078). Both effects on that carried document are reported (CONTRACT-047): a `carried_skill` warning per carried document, naming it, its path after the move, and that it is now **enabled**, and — only where a stale `status: archived` had to be corrected to `resolved` — a `carried_reconciliation` warning naming the document and the key rewritten. They are reports *about* the act, not parts of it: a document the request never named never becomes a changed document. The id stamp is deliberately not reported, since it keeps an identity rather than changing one. An unarchive that carries no other skill document warns nothing, and one whose carried documents needed no correction carries no `carried_reconciliation`. **Unarchiving names its own delta and presents no key** (SPEC.md §7): it flips `status` back, overwriting nothing a reader may have been holding.",
         "parameters": [
           {
             "schema": {

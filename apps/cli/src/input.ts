@@ -292,8 +292,34 @@ export async function requireBody(
   return body;
 }
 
-async function readBodyFile(
+function readBodyFile(
   context: CommandContext,
+  file: string,
+  dependencies: InputDependencies,
+): Promise<string> {
+  return readFlagFile(context, "file", file, dependencies);
+}
+
+/**
+ * The text a `--<something>-file` flag names, read verbatim and relative to the
+ * directory the command was invoked from.
+ *
+ * It lives here rather than in the verb that wants it because **the `doc` and
+ * `thread` modules may not import `node:fs` at all** (`commands/hygiene.test.ts`,
+ * CLAUDE.md Architecture Decision 2). That rule is about the CLI never *writing*
+ * workspace data, and it is enforced by forbidding the module outright, with no
+ * per-file exemptions — so the one legitimate read those verbs need is performed
+ * from this module, which every body-taking verb already goes through. Reading is
+ * the only filesystem access the CLI has, and every byte read here goes straight
+ * to the server.
+ *
+ * The failure is a **usage error**: a path that does not resolve is a malformed
+ * invocation, and the cause's own message (`ENOENT`, `EISDIR`) is the hint,
+ * because nothing this layer could add would be more specific.
+ */
+export async function readFlagFile(
+  context: CommandContext,
+  flag: string,
   file: string,
   dependencies: InputDependencies,
 ): Promise<string> {
@@ -302,7 +328,7 @@ async function readBodyFile(
   try {
     return await read(path);
   } catch (cause) {
-    throw new UsageError(`cannot read --file ${file}.`, {
+    throw new UsageError(`cannot read --${flag} ${file}.`, {
       hint: cause instanceof Error ? cause.message : String(cause),
       cause,
     });

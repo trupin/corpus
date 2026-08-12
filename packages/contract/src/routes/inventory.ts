@@ -140,6 +140,16 @@
  * bullet — and this one was not among them; SHARED-032's sign-off on 2026-08-09
  * amended §4 and §11 and did not touch §9.2 either.
  *
+ * `POST /api/docs/{id}/patch` (CONTRACT-046) needs no derivation at all, and
+ * that is worth recording next to the entries above that did: SHARED-037 took it
+ * to §9.2 as a rider **before** any of it was implemented, and the user signed it
+ * on 2026-08-12, so the bullet existed before the route did. It is listed
+ * immediately after `PUT /api/docs/{id}` because that is where §9.2's own bullet
+ * order puts it. The rider was filed because PR #36's review caught this chain
+ * citing "the patch operation" as spec text while §9.2 was silent about it — the
+ * precedent that every user-observable behaviour reaches SPEC.md before it
+ * reaches the code, which the re-attach route set and this one followed.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -164,6 +174,7 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/docs/{id}/diff",
   "POST /api/docs/{id}/edit-session/flush",
   "PUT /api/docs/{id}",
+  "POST /api/docs/{id}/patch",
   "DELETE /api/docs/{id}",
   "POST /api/docs/{id}/move",
   "POST /api/docs/{id}/archive",

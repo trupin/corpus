@@ -6,7 +6,15 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-todo — **DRAFTED, awaiting sign-off**
+done — **SIGNED 2026-08-12 and applied to SPEC.md §11**
+
+**One clause dropped on application**, for the same reason SHARED-037 lost one:
+the drafted text said "the only read-only state is the one that makes every
+surface read-only: a lock held by the other party (§7), which freezes these
+controls and the body alike and names the holder." Locks were replaced by keys on
+2026-08-11 (SHARED-041), and §11 now says the board is **never** read-only. The
+sentence would have reintroduced a state the product no longer has. Everything
+else is applied verbatim. Drafted 2026-08-08, before the lock was replaced.
 
 ## Priority
 

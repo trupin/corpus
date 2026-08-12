@@ -6,7 +6,13 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-todo — **DRAFTED, awaiting sign-off**
+done — **SIGNED 2026-08-12 and applied to SPEC.md §9.2**
+
+One correction on application: the drafted text said a patch has "locks
+respected (§7)". Locks no longer exist (SHARED-041, 2026-08-11). §7 already
+exempts an anchored patch from presenting a key — it names the text it expects to
+find, which is the same check by another route — so the applied text says that
+instead. The rider was drafted 2026-08-08, before the lock was replaced.
 
 ## Priority
 

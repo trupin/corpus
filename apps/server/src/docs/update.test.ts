@@ -357,7 +357,10 @@ describe("PUT /api/docs/{id} — leaving `archived` is the unarchive route's job
     const restored = await ws.post(`/api/docs/${skillId}/unarchive`, {});
     expect(restored.status).toBe(200);
     expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
-    expect(ws.read(".claude/skills/demo/SKILL.md")).toContain("status: open");
+    // The route restores `resolved` (SPEC.md §5, SERVER-108) — which is also
+    // why `PUT` refuses *every* status above rather than only `open`: the one
+    // door that leaves `archived` is this one, and it decides where to land.
+    expect(ws.read(".claude/skills/demo/SKILL.md")).toContain("status: resolved");
 
     const rearchived = await ws.post(`/api/docs/${skillId}/archive`, {});
     expect(rearchived.status).toBe(200);

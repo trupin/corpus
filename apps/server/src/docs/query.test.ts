@@ -771,6 +771,107 @@ describe("staleness", () => {
       .sort();
     expect(flagged).toEqual(ids(run({ stale: "stale", limit: "200" })));
   });
+
+  /**
+   * SPEC.md §5's **second** exemption, which the ramp did not implement until
+   * SERVER-107: "a `resolved` or `archived` document does not age, because the
+   * ramp asks whether something still needs attention and that document has
+   * answered … a second exemption beside `evergreen` rather than a replacement
+   * for it". §9.2 states it as a route-level guarantee — `needs=stale` answers
+   * for `open` documents only, and such a row "never enters the union on that
+   * reason".
+   *
+   * Its own workspace, because the assertion is about four surfaces agreeing on
+   * three otherwise identical documents: same age, same `evergreen: false`, same
+   * absent `reviewed`, differing only in `status`. Anything that separates them
+   * is the status, and nothing else.
+   */
+  describe("a document that is not open does not age", () => {
+    let aged: Workspace;
+
+    const query = (params: Record<string, string>): DocRow[] =>
+      queryDocs(aged.db, DocsQuerySchema.parse({ limit: "200", ...params }), NOW).items;
+    const found = (params: Record<string, string>): string[] =>
+      query(params)
+        .map((item) => item.id)
+        .sort();
+
+    beforeAll(() => {
+      aged = createWorkspace("aged-statuses");
+      aged.doc({ id: "doc_agedopen", updated: daysAgo(200) });
+      aged.doc({ id: "doc_agedresolved", updated: daysAgo(200), status: "resolved" });
+      aged.doc({ id: "doc_agedarchived", updated: daysAgo(200), status: "archived" });
+      // The two exemptions are independent, so an open evergreen row still has
+      // to be exempt after the status term joins the predicate.
+      aged.doc({ id: "doc_agedevergreen", updated: daysAgo(200), evergreen: true });
+      aged.reproject();
+    });
+
+    afterAll(() => {
+      aged.close();
+    });
+
+    it("is absent from the `stale=` filter at every tier, archived included", () => {
+      for (const tier of STALE_TIERS) {
+        // `includeArchived` so the archived row's absence is the ramp's doing
+        // and not the default result set's — the two rules are separate, and
+        // §5 keeps a resolved document in every list either way.
+        expect(found({ stale: tier, includeArchived: "true" })).toEqual(["doc_agedopen"]);
+      }
+    });
+
+    it("is absent from `needs=stale`, and from `needs=me` on that reason", () => {
+      expect(found({ needs: "stale", includeArchived: "true" })).toEqual(["doc_agedopen"]);
+      expect(found({ needs: "me", includeArchived: "true" })).toEqual(["doc_agedopen"]);
+    });
+
+    it("reports no tier at all, so §11's ramp renders it fresh", () => {
+      const tiers = new Map(query({ includeArchived: "true" }).map((row) => [row.id, row.stale]));
+      expect(tiers.get("doc_agedopen")).toBe("very-stale");
+      expect(tiers.get("doc_agedresolved")).toBeNull();
+      expect(tiers.get("doc_agedarchived")).toBeNull();
+      expect(tiers.get("doc_agedevergreen")).toBeNull();
+
+      const attention = new Map(
+        query({ includeArchived: "true" }).map((row) => [row.id, row.attention]),
+      );
+      expect(attention.get("doc_agedopen")).toEqual(["stale"]);
+      expect(attention.get("doc_agedresolved")).toEqual([]);
+      expect(attention.get("doc_agedarchived")).toEqual([]);
+    });
+
+    /**
+     * §5: a resolved document "leaves the stale set if it was already in it".
+     * Resolving stamps `updated`, so a route-level round trip would restart the
+     * clock and prove nothing; the file is rewritten with its age untouched, so
+     * what moves the row is the status alone — and reopening it puts the row
+     * back with no date to restore, which is the property that makes the
+     * exemption a reading of the row rather than a rewrite of it.
+     */
+    it("leaves the stale set when resolved, and re-enters it when reopened", () => {
+      const leaving = createWorkspace("aged-resolve");
+      try {
+        const spec = { id: "doc_settled", updated: daysAgo(200) } as const;
+        leaving.doc(spec);
+        leaving.reproject();
+        const stale = (): string[] =>
+          queryDocs(leaving.db, DocsQuerySchema.parse({ needs: "stale" }), NOW).items.map(
+            (row) => row.id,
+          );
+        expect(stale()).toEqual(["doc_settled"]);
+
+        leaving.doc({ ...spec, status: "resolved" });
+        leaving.reproject();
+        expect(stale()).toEqual([]);
+
+        leaving.doc({ ...spec, status: "open" });
+        leaving.reproject();
+        expect(stale()).toEqual(["doc_settled"]);
+      } finally {
+        leaving.close();
+      }
+    });
+  });
 });
 
 describe("needs — the Attention union", () => {

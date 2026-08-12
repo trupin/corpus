@@ -5,6 +5,7 @@ import {
   ExitCode,
   InternalError,
   PartialFailureError,
+  PatchRefusedError,
   RefusedError,
   ServerResponseError,
   ServerUnreachableError,
@@ -56,9 +57,36 @@ describe("exit codes", () => {
     expect(error.name).toBe("RefusedError");
   });
 
-  it("documents every code from 0 to 9 exactly once", () => {
-    expect(EXIT_CODES.map((entry) => entry.code)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  it("documents every code from 0 to 10 exactly once", () => {
+    // Contiguous and gapless: the list is what `docs/cli.md`'s exit-code table
+    // is generated from, so a code that exists and is not here is a code no
+    // caller can look up.
+    expect(EXIT_CODES.map((entry) => entry.code)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     for (const entry of EXIT_CODES) expect(entry.meaning.length).toBeGreaterThan(0);
+  });
+
+  it("gives a patch refusal its own code, distinct from its nearest neighbours", () => {
+    // Both refusals share exit 10 — one class of outcome for a caller reading a
+    // shell status — and are told apart by `code`, exactly as `RefusedError`'s
+    // several dead ends are. Sharing 9 would be worse than sharing 7: a stale
+    // key is resent unchanged, a refused patch never applies until the quote
+    // changes.
+    const none = new PatchRefusedError("matched 0 times", {
+      code: "patch_no_match",
+      status: 409,
+    });
+    const several = new PatchRefusedError("occurs 3 times", {
+      code: "patch_multiple_matches",
+      status: 409,
+    });
+
+    expect([none.exitCode, several.exitCode]).toEqual([ExitCode.patchRefused, 10]);
+    expect(none.exitCode).not.toBe(ExitCode.staleKey);
+    expect(none.exitCode).not.toBe(ExitCode.refused);
+    expect(none.code).not.toBe(several.code);
+    // Nothing was written, and the envelope says so without being asked.
+    expect(toProblem(none)).toMatchObject({ code: "patch_no_match", changed: false });
+    expect(none.name).toBe("PatchRefusedError");
   });
 
   it("separates a refusal that changed nothing from a failure that changed something", () => {

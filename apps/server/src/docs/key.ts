@@ -91,7 +91,7 @@ export function assertDocumentKey(
   }
   if (presented === documentKey(stored)) return;
   throw staleKey(
-    `the key presented for ${id} names a version this document no longer is: it changed since ` +
+    `the write to ${id} was made against a version this document no longer is: it changed since ` +
       "you read it, so the write was refused rather than overwriting something you never saw. " +
       "Nothing was written — `doc` is the document as it now stands, `doc.key` is the fresh key, " +
       "and the content you tried to save is yours to reconcile and resend.",

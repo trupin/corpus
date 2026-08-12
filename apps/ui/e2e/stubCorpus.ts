@@ -1465,7 +1465,11 @@ export async function stubCorpus(
         if (subject === undefined) {
           return json(route, { code: "not_found", message: rest } satisfies NotFoundError, 404);
         }
-        subject.status = verb === "archive" ? "archived" : "open";
+        // SPEC.md §5: unarchiving returns a document to `resolved` — the state
+        // archiving already implied — not to `open` (SERVER-108). The stub
+        // models the server rather than being self-consistent, which is the
+        // only way a spec can catch the board disagreeing with it.
+        subject.status = verb === "archive" ? "archived" : "resolved";
         stampUpdated(subject);
         return json(route, { doc: asDoc(subject), warnings: [] } satisfies DocMutationResponse);
       }

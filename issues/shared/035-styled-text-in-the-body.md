@@ -6,7 +6,19 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-todo — **DRAFTED, awaiting sign-off**
+done — **SIGNED 2026-08-12 and applied to SPEC.md §5 and §11**
+
+Two of the four open questions were answered by the user at sign-off and are
+folded into the applied text: the colour roles are **`accent`, `warning`,
+`positive`, `muted`** (four, each with a light and dark value), and **per-range
+font size is out** — size is document-level, because a body marker for size is
+presentation soup.
+
+Two were adjudicated by the orchestrator rather than asked, being editorial
+rather than product decisions: `align` and `indent` values are left unenumerated
+in the spec (the vocabulary is closed, the value sets are the implementation's to
+propose), and §13's `publish-style` merging into `type: style` is left to the
+publish track rather than renaming a spec'd type from here.
 
 ## Priority
 

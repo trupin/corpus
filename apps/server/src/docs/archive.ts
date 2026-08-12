@@ -281,10 +281,65 @@ function ownedFields(
 ): Record<string, unknown> {
   const fields: Record<string, unknown> = { id: rowId };
   if (underEnabledRoot(destinationPath) && parsed.data["status"] === "archived") {
-    fields["status"] = "open";
+    // `resolved`, by the same rule the requested document is restored under
+    // (§5, SERVER-108): being swept back to the enabled root *is* being
+    // unarchived — implicitly rather than by name, but by the same act — so one
+    // move must not hand the skill a caller named and the nested one it carried
+    // two different states.
+    fields["status"] = RESTORED_STATUS;
   }
   return fields;
 }
+
+/**
+ * The `status` this act writes — `{}` when it writes none.
+ *
+ * Archiving is the easy half: `archived`, from whatever the document said
+ * before, because §5's ladder makes archiving settle a document and put it away
+ * in one act ("there is no such state as an archived document with work
+ * outstanding").
+ *
+ * **Unarchiving returns it to `resolved`, not to `open`** (SERVER-108, §5 as
+ * amended by SHARED-031): archiving already implied `resolved`, so restoring is
+ * lifting the *hidden* half and nothing else. It is deliberately not a memory of
+ * the status the document had before archiving — nothing keeps one, and §5 asks
+ * for none: a document archived while `open` also comes back `resolved`, because
+ * the act of archiving is what settled it.
+ *
+ * **A document that is not archived is not restored at all**, which is why this
+ * returns a patch rather than a value. `open` → `open` used to be a harmless
+ * unconditional write; `open` → `resolved` would not be, and unarchiving
+ * something that was never archived would silently declare it finished (the
+ * inverse of the wave-3 audit's FIX 11, which caught the same route quietly
+ * *re*opening a `resolved` document). Writing nothing keeps that call the no-op
+ * the route already reports it as: with no status in the patch and the id stamp
+ * already correct, the bytes do not change and {@link planSetArchived} returns
+ * `null`. The CLI's `isSettled` stops most such calls a layer earlier; this is
+ * the rule holding where the route itself can be reached.
+ *
+ * The question "is it archived?" is asked of the **projection row**, not of the
+ * frontmatter, because §7 makes a skill's location its enablement: a `SKILL.md`
+ * sitting under `.claude/skills-archived/` is archived whatever its own `status`
+ * key says, and it is that half-state this route exists to repair.
+ *
+ * §5's other carve-out — a type whose status is **derived** (§12) returns to
+ * whatever its record says at that moment — has no implementation to defer to:
+ * no type derives its status today (the todos plugin reports the authored
+ * frontmatter verbatim, and nothing recomputes it from body items). Whoever
+ * implements §12's derivation branches here, where the rule already is.
+ */
+function restoredStatus(loaded: LoadedDocument, archived: boolean): Record<string, unknown> {
+  if (archived) return { status: "archived" };
+  return loaded.row.status === "archived" ? { status: RESTORED_STATUS } : {};
+}
+
+/**
+ * Where the archive gives a document back to (§5). Named because two paths hand
+ * it back — the document a caller archived and a nested skill a folder move
+ * carried out of the archive ({@link ownedFields}) — and one act must not
+ * restore two different states.
+ */
+const RESTORED_STATUS = "resolved";
 
 /**
  * §7's enablement, read off a path: under `.claude/skills/` a skill is enabled
@@ -357,7 +412,7 @@ export function carriedWarnings(
       code: "carried_reconciliation",
       detail:
         `${document.id} (${document.path}) still said \`status: archived\` under the enabled ` +
-        `skills root, so its status was reconciled to \`open\``,
+        `skills root, so its status was reconciled to \`${RESTORED_STATUS}\``,
     });
   }
   return warnings;
@@ -432,9 +487,9 @@ function planCarriedWrites(
       content = serializeDocument(stamped);
       // Both halves, exactly as CONTRACT-047 specifies: the key was in the patch
       // *and* the document changed. Either alone would report a write that did
-      // not happen — a file already saying `open` never gets the key, and one
-      // whose only change is the id stamp is not a reconciliation.
-      reconciled = fields["status"] === "open";
+      // not happen — a file that did not say `archived` never gets the key, and
+      // one whose only change is the id stamp is not a reconciliation.
+      reconciled = fields["status"] === RESTORED_STATUS;
       /* c8 ignore start -- the projection racing an out-of-band edit to a file this act is only carrying */
     } catch {
       // A row said this file was readable and it no longer is. Skipping loses
@@ -490,7 +545,7 @@ export function planSetArchived(
     // And then the one key that is this act's whole point, which a carried
     // document never gets: the requested document's status is what the caller
     // asked to change.
-    status: archived ? "archived" : "open",
+    ...restoredStatus(loaded, archived),
   };
 
   const nextParsed = setFrontmatterFields(loaded.parsed, patch);

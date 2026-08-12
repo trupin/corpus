@@ -246,7 +246,7 @@ export const unarchiveDoc = createRoute({
   tags: ["docs"],
   summary: "Restore an archived document",
   description:
-    "The inverse flip, back to `status: open`. **The document id never changes.** Unarchiving a " +
+    "The inverse flip, back to `status: resolved` — the state archiving already implied (§5). **The document id never changes.** Unarchiving a " +
     "`type: skill` document moves its folder back out of `.claude/skills-archived/`, carrying " +
     "every file under it — including a **nested skill** the request never named, whose id is " +
     "stamped into it so the move does not change its identity, and whose `status` is reconciled " +
@@ -254,7 +254,7 @@ export const unarchiveDoc = createRoute({
     "reported (CONTRACT-047): a `carried_skill` warning per carried document, naming it, its " +
     "path after the move, and that it is now **enabled**, and — only where a stale " +
     "`status: archived` had to be " +
-    "corrected to `open` — a `carried_reconciliation` warning naming the document and the key " +
+    "corrected to `resolved` — a `carried_reconciliation` warning naming the document and the key " +
     "rewritten. They are reports *about* the act, not parts of it: a document the request never " +
     "named never becomes a changed document. The id stamp is deliberately not reported, since it " +
     "keeps an identity rather than changing one. An unarchive that carries no other skill " +

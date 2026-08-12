@@ -385,6 +385,45 @@ export interface CliDocSurface {
   readonly commands: ReadonlySet<string>;
   /** Topic names (`queue`) — legal as bare references in prose. */
   readonly topics: ReadonlySet<string>;
+  /** Flags each command declares, keyed by the same names as `commands`. */
+  readonly flags: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Flags merged into every command by `docs/cli.md`'s _Global flags_ table. */
+  readonly globalFlags: ReadonlySet<string>;
+}
+
+/** Every flag named in one markdown table row's **first** cell. */
+function rowFlags(line: string): string[] {
+  const firstCell = line.split("|")[1] ?? "";
+  return [...firstCell.matchAll(/(?<![\w-])--?[A-Za-z][A-Za-z0-9-]*/g)].map((match) => match[0]);
+}
+
+/**
+ * The flag table under one heading, read from **first cells only**.
+ *
+ * Descriptions name other flags constantly — `corpus doc patch`'s says there is
+ * no `--key` — so scanning whole rows would document exactly the flags the
+ * skills must not use. A flag exists here only where it is the row's subject.
+ */
+function flagsUnder(block: string): Set<string> {
+  const flags = new Set<string>();
+  for (const line of block.split("\n")) {
+    if (!line.trimStart().startsWith("|")) continue;
+    for (const flag of rowFlags(line)) flags.add(flag);
+  }
+  return flags;
+}
+
+/** `docs/cli.md` split into its `## `/`### ` sections, heading line included. */
+function sectionsOf(markdown: string): { readonly heading: string; readonly block: string }[] {
+  const sections: { heading: string; lines: string[] }[] = [];
+  let current: { heading: string; lines: string[] } | undefined;
+  for (const line of markdown.split("\n")) {
+    if (/^#{2,3} /.test(line)) {
+      current = { heading: line, lines: [] };
+      sections.push(current);
+    } else current?.lines.push(line);
+  }
+  return sections.map(({ heading, lines }) => ({ heading, block: lines.join("\n") }));
 }
 
 /**
@@ -392,6 +431,12 @@ export interface CliDocSurface {
  * command is a `## `/`### ` heading of the form `` `corpus <name>` ``; a
  * heading whose name prefixes deeper headings (`db` before `db doctor`) is a
  * topic rather than an invocable command.
+ *
+ * Each command's **flags** come from its own table, and the _Global flags_
+ * section's table is merged into all of them — which is what lets a caller ask
+ * not only whether a command exists but whether the flags a skill spells on it
+ * do (AGENT-024: `corpus doc patch` takes no `--key`, and a skill that passed
+ * one would teach a usage error the command extractor cannot see).
  */
 export function parseCliDoc(markdown: string): CliDocSurface {
   const names = [...markdown.matchAll(/^#{2,3} `corpus ([^`]+)`/gm)]
@@ -403,7 +448,27 @@ export function parseCliDoc(markdown: string): CliDocSurface {
   const topics = new Set(
     names.filter((name) => names.some((other) => other.startsWith(`${name} `))),
   );
-  return { commands: new Set(names.filter((name) => !topics.has(name))), topics };
+
+  const flags = new Map<string, ReadonlySet<string>>();
+  let globalFlags: ReadonlySet<string> = new Set();
+  for (const { heading, block } of sectionsOf(markdown)) {
+    if (/^#{2,3} Global flags\s*$/.test(heading)) {
+      globalFlags = flagsUnder(block);
+      continue;
+    }
+    const name = /^#{2,3} `corpus ([^`]+)`/.exec(heading)?.[1];
+    if (name !== undefined) flags.set(name, flagsUnder(block));
+  }
+  if (globalFlags.size === 0) {
+    throw new TemplateError("cli reference: no `Global flags` table found");
+  }
+
+  return {
+    commands: new Set(names.filter((name) => !topics.has(name))),
+    topics,
+    flags,
+    globalFlags,
+  };
 }
 
 /** Read `docs/cli.md` and parse its command surface. */
@@ -413,9 +478,73 @@ export function readCliDoc(docPath: string = CLI_DOC_PATH): CliDocSurface {
 
 const HEREDOC_MARKER = /<<-?\s*'?([A-Za-z_][A-Za-z_0-9]*)'?/;
 
-/** An invocation's tokens after `corpus`, flags dropped, heredocs and trailing comments cut. */
+/** One quote-aware pass over a shell fragment. */
+interface ShellScan {
+  /** The fragment's `&&`/`||`/`|`/`;`-separated parts, split outside quotes only. */
+  readonly segments: readonly string[];
+  /** The quote character still open where the fragment ended, `null` when balanced. */
+  readonly openQuote: string | null;
+}
+
+/**
+ * Split a shell fragment into its separated commands, and say whether it ended
+ * inside a quote.
+ *
+ * Both answers depend on quote state, which is why one pass produces them. A
+ * separator inside a quoted value is that value's text — `--old '| a | b |'`
+ * quotes a markdown table row in a corpus made of markdown, and splitting it
+ * would truncate the invocation and leave every later flag unread. Scanning
+ * stops at an unquoted ` # `, which is a trailing comment rather than argument.
+ */
+function scanShell(fragment: string): ShellScan {
+  const segments: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+
+  for (let index = 0; index < fragment.length; index += 1) {
+    const character = fragment[index] ?? "";
+    if (quote !== null) {
+      current += character;
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      current += character;
+      continue;
+    }
+    if (
+      character === "#" &&
+      /\s/.test(fragment[index - 1] ?? "") &&
+      /\s/.test(fragment[index + 1] ?? "")
+    ) {
+      break;
+    }
+    const pair = fragment.slice(index, index + 2);
+    if (pair === "&&" || pair === "||") {
+      segments.push(current);
+      current = "";
+      index += 1;
+      continue;
+    }
+    if (character === "|" || character === ";") {
+      segments.push(current);
+      current = "";
+      continue;
+    }
+    current += character;
+  }
+  segments.push(current);
+  return { segments, openQuote: quote };
+}
+
+/** Whether a scanned segment is a `corpus …` invocation. */
+const isCorpusSegment = (segment: string): boolean =>
+  segment.trim() === "corpus" || segment.trim().startsWith("corpus ");
+
+/** An invocation's tokens after `corpus`, flags dropped, heredoc body cut. */
 const invocationTokens = (invocation: string): string[] => {
-  const command = invocation.split("<<")[0]?.split(/\s#\s/)[0] ?? "";
+  const command = invocation.split("<<")[0] ?? "";
   return command
     .trim()
     .split(/\s+/)
@@ -424,21 +553,89 @@ const invocationTokens = (invocation: string): string[] => {
 };
 
 /**
- * Every `corpus …` invocation in a markdown document, as token arrays (the
- * words after `corpus`, flags dropped). Two sources are scanned: lines inside
- * fenced code blocks, and inline code spans in prose. Heredoc bodies inside
- * fenced blocks are content, not commands, and are skipped up to their
- * terminator — a reply that merely mentions the word corpus at the start of a
- * line is never extracted. Prose outside code is never scanned.
+ * An invocation's flags, in the order they were written and with any `=value`
+ * dropped.
+ *
+ * A word is a flag only where the dash is the shell's and not the text's. Two
+ * spellings decide that, and both are ordinary: a word whose quoting starts at
+ * its first character is a quoted argument, so `--new '--all is not what I
+ * meant'` spells one flag rather than two; a word that opens a quote partway
+ * through is a flag carrying an attached value, so `--key='abc'` is `--key` —
+ * the very flag this check exists to catch on a patch.
  */
-export function extractCorpusInvocations(markdown: string): string[][] {
-  const invocations: string[][] = [];
+const invocationFlags = (invocation: string): string[] => {
+  const command = invocation.split("<<")[0] ?? "";
+  const flags: string[] = [];
+  let quote: string | null = null;
+  let word = "";
+  let quoted = false;
+
+  const end = (): void => {
+    if (word.startsWith("-") && !quoted) flags.push(word.split("=")[0] ?? word);
+    word = "";
+    quoted = false;
+  };
+  for (const character of command) {
+    if (quote !== null) {
+      if (character === quote) quote = null;
+      else word += character;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      if (word === "") quoted = true;
+      continue;
+    }
+    if (/\s/.test(character)) end();
+    else word += character;
+  }
+  end();
+  return flags;
+};
+
+/** One `corpus …` invocation: the words after `corpus`, and the flags it spells. */
+export interface CorpusInvocation {
+  readonly tokens: readonly string[];
+  readonly flags: readonly string[];
+}
+
+/**
+ * Every `corpus …` invocation in a markdown document, with its tokens (the
+ * words after `corpus`, flags dropped) and its flags. Two sources are scanned:
+ * lines inside fenced code blocks, and inline code spans in prose. Heredoc
+ * bodies inside fenced blocks are content, not commands, and are skipped up to
+ * their terminator — a reply that merely mentions the word corpus at the start
+ * of a line is never extracted. Prose outside code is never scanned.
+ *
+ * An invocation is a **logical** line: a patch quotes passages, and a quoted
+ * value that opens on one line and closes on a later one is one command spread
+ * over several. Those lines are joined before anything is read off them, so the
+ * flags after the quote are checked like any others and a continuation line that
+ * happens to begin with the word corpus is not mistaken for a second command.
+ * Only a fragment that already holds a `corpus …` invocation joins, so an
+ * apostrophe in prose or in output never swallows the lines below it.
+ */
+export function extractCorpusInvocationUses(markdown: string): CorpusInvocation[] {
+  const invocations: CorpusInvocation[] = [];
   const proseLines: string[] = [];
   let inFence = false;
   let heredocTerminator: string | null = null;
+  let pending: string | null = null;
+
+  const record = (segments: readonly string[]): void => {
+    for (const segment of segments.filter(isCorpusSegment)) {
+      const invocation = segment.trim();
+      invocations.push({
+        tokens: invocationTokens(invocation),
+        flags: invocationFlags(invocation),
+      });
+    }
+  };
 
   for (const line of markdown.split("\n")) {
     if (line.trimStart().startsWith("```")) {
+      if (pending !== null) record(scanShell(pending).segments);
+      pending = null;
       inFence = !inFence;
       heredocTerminator = null;
       continue;
@@ -451,20 +648,28 @@ export function extractCorpusInvocations(markdown: string): string[][] {
       if (line.trim() === heredocTerminator) heredocTerminator = null;
       continue;
     }
-    for (const segment of line.split(/&&|\|\||[|;]/)) {
-      const trimmed = segment.trim();
-      if (trimmed === "corpus" || trimmed.startsWith("corpus ")) {
-        invocations.push(invocationTokens(trimmed));
-      }
+    const logical: string = pending === null ? line : `${pending}\n${line}`;
+    const { segments, openQuote } = scanShell(logical);
+    if (openQuote !== null && segments.some(isCorpusSegment)) {
+      pending = logical;
+      continue;
     }
-    heredocTerminator = HEREDOC_MARKER.exec(line)?.[1] ?? null;
+    pending = null;
+    record(segments);
+    heredocTerminator = HEREDOC_MARKER.exec(logical)?.[1] ?? null;
   }
+  if (pending !== null) record(scanShell(pending).segments);
 
   for (const match of proseLines.join("\n").matchAll(/`([^`\n]+)`/g)) {
     const span = (match[1] ?? "").trim();
-    if (span.startsWith("corpus ")) invocations.push(invocationTokens(span));
+    if (span.startsWith("corpus ")) record(scanShell(span).segments);
   }
   return invocations;
+}
+
+/** Every `corpus …` invocation as token arrays alone, flags dropped. */
+export function extractCorpusInvocations(markdown: string): string[][] {
+  return extractCorpusInvocationUses(markdown).map((invocation) => [...invocation.tokens]);
 }
 
 /**

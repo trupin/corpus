@@ -406,7 +406,7 @@ belongs to the same fix wave.
 | SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
 | UI-083 | Selecting rows and acting on the selection — **rewrite** against SHARED-032, not patch | todo | P2 | SHARED-032, SERVER-087 |
 | CONTRACT-048 | The bulk request cannot express a staged set (SHARED-032) | done | P1 | SHARED-032 |
-| SERVER-087 | Apply a mixed staged Save as one act, and one commit (SHARED-032) | todo | P1 | CONTRACT-048 |
+| SERVER-087 | Apply a mixed staged Save as one act, and one commit (SHARED-032) | done | P1 | CONTRACT-048 |
 | SERVER-077 | Apply a bulk action as one act, and one commit (SHARED-017) | done | P2 | CONTRACT-037 |
 | SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | done | P1 | — |
 | CONTRACT-047 | An archive can rewrite a document it never named, and say nothing (PR #38 review) | done | P2 | SERVER-078 |
@@ -470,7 +470,7 @@ belongs to the same fix wave.
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
 | SERVER-067 | Non-blocking errors reach the log but not the response: needs a §14 warning-channel decision | todo | P2 | SERVER-066 |
-| UI-081 | Console's job list / log split is not resizable (SIGNED §11 line applied) | todo | P2 | — |
+| UI-081 | Console's job list / log split is not resizable — needs a one-line SPEC amendment signed | blocked | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
 | CONTRACT-040 | An open form's count is not on the row, so "more than one" cannot be shown (UI-084 finding) | done | P2 | CONTRACT-038 |
@@ -503,9 +503,9 @@ cheapest moment for that to happen.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-031 | `status` is one vocabulary, not per-type (DRAFTED — sign-off) | todo | P1 | — |
-| SHARED-036 | A todo list says `open` after its last item is checked (DRAFTED — sign-off) | todo | P1 | SHARED-031 |
-| SHARED-030 | Frontmatter hides behind an edit mode the reader abolished (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-031 | `status` is one vocabulary, not per-type | done | P1 | — |
+| SHARED-036 | A todo list says `open` after its last item is checked | done | P1 | SHARED-031 |
+| SHARED-030 | Frontmatter hides behind an edit mode the reader abolished | done | P1 | — |
 | SHARED-032 | Bulk actions are a mode, staged per row, the one edit/save left (SIGNED 2026-08-09, applied) | done | P1 | SHARED-030 |
 | UI-093 | Frontmatter controls are always live and save on change | todo | P1 | SHARED-030 |
 | PLUGINS-016 | A plugin doc type can derive its own status | todo | P1 | SHARED-036 |
@@ -513,12 +513,12 @@ cheapest moment for that to happen.
 | UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-016, SERVER-085, UI-093 |
 | PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | todo | P1 | SHARED-036 |
 | UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
-| SHARED-038 | `--unstable` reaches §2.4 before it reaches the code (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-038 | `--unstable` reaches §2.4 before it reaches the code | done | P1 | — |
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
 | CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
 | UI-095 | Clicking a comment does not take you to it, opened | todo | P1 | — |
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
-| SHARED-033 | The UI claims an agent that is not working, and one that is not there (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
 | UI-097 | A request nobody has picked up says "agent is working…" | todo | P1 | SHARED-033 |
 | CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | todo | P1 | SHARED-033 |
 | SERVER-086 | The server does not record that an agent is there | todo | P1 | CONTRACT-045 |
@@ -528,12 +528,12 @@ cheapest moment for that to happen.
 | UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | done | P1 | UI-103 |
 | UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | todo | P2 | — |
 | UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
-| SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc (DRAFTED — sign-off) | todo | P1 | — |
-| SHARED-034 | Full-screen editing has no persistent formatting toolbar (DRAFTED — sign-off) | todo | P1 | SHARED-035 |
-| SHARED-037 | The patch operation reaches §9.2 before it reaches the code (DRAFTED — sign-off) | todo | P1 | — |
-| CONTRACT-046 | The only body edit is a whole-body replacement | todo | P1 | SHARED-037 |
-| SERVER-079 | Apply an anchored string patch through the ordinary write path | todo | P1 | SHARED-037, CONTRACT-046 |
-| CLI-035 | `corpus doc patch` — edit a line without shipping the document | todo | P1 | SHARED-037, CONTRACT-046, SERVER-079 |
+| SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc | done | P1 | — |
+| SHARED-034 | Full-screen editing has no persistent formatting toolbar | done | P1 | SHARED-035 |
+| SHARED-037 | The patch operation reaches §9.2 before it reaches the code | done | P1 | — |
+| CONTRACT-046 | The only body edit is a whole-body replacement | done | P1 | SHARED-037 |
+| SERVER-079 | Apply an anchored string patch through the ordinary write path | done | P1 | SHARED-037, CONTRACT-046 |
+| CLI-035 | `corpus doc patch` — edit a line without shipping the document | done | P1 | SHARED-037, CONTRACT-046, SERVER-079 |
 | UI-101 | Build the persistent formatting toolbar for focus mode | todo | P1 | SHARED-034 |
 
 ## Phase 29 — Commit windows: a commit per act, not per save (2026-08-10)
@@ -574,7 +574,7 @@ changes behaviour and nothing below waits on them.
 | SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | todo | P1 | — |
 | SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | todo | P1 | — |
 | SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
-| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P1 | — |
+| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P1 | — |
 
 ## Phase 30 — A key instead of a lock (2026-08-11)
 
@@ -633,10 +633,23 @@ guarantees the watcher commits it as the `user` edit it is.
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
 | SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | todo | P1 | — |
+| SERVER-106 | §4 says archiving closes a window; archiving through `PUT` does not (PR #44 review) | todo | P2 | — |
+| CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | todo | P1 | — |
+| INFRA-027 | `issues/PLAN.md` and the issue files disagree, and nothing checks (PR #44 review) | todo | P1 | — |
+### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 
+CONTRACT-046, SERVER-079 and CLI-035 shipped `corpus doc patch`. §9.2's bullet
+says **the agent's skills prefer it over a whole-body edit for bounded changes**,
+which is a promise about the workspace template rather than about the route — and
+it was false until the skills knew the verb existed.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| AGENT-024 | The skills reach for a patch when the change is bounded | done | P0 | CLI-035 |
+| SERVER-107 | A resolved document does not age — and the ramp never heard about it (PR #44 review) | done | P0 | SHARED-031 |
+| SERVER-108 | Unarchiving returns a document to `resolved`, not to `open` (PR #44 review) | done | P1 | SHARED-031 |
 
 ## Phase 32 — A resident agent for a conversation (2026-08-12)
-
 A top-level (standalone) thread can designate a **resident**: a long-lived agent
 that owns the thread's whole **scope** — the thread, its subthreads, and every
 artifact whose provenance walks back to it — and runs its own claim → work →
@@ -645,7 +658,6 @@ resident directly, warm, with no dispatch hop, which is what makes a Corpus
 conversation stop feeling async. Users see who is running (`corpus agents`, the
 composer's roster) and pick a recipient per message; the default is computed from
 where they post, and an override routes one message without rewiring anything.
-
 This deliberately revokes three standing doctrines, which is why SHARED-043 gates
 everything: the single-consumer assumption becomes **one consumer per lane**,
 "queue state never crosses the subagent boundary" becomes **a lane's owner settles
@@ -654,13 +666,11 @@ a job inline" is scoped to the orchestrator's lane: **a resident works its
 conversation inline**. Fallback keeps the revocation safe: presence is the parked scoped
 `idle`, and a lane whose listener lapses falls back to the orchestrator at claim
 time — slower, never silent, nothing rewritten.
-
 Provenance (CONTRACT-050/SERVER-110/CLI-044) is the load-bearing first step and is
 independently valuable: `CORPUS_JOB` makes every write name the job it serves, the
 `↳` trace line verifiable, and scope membership computable rather than stored.
 **AGENT-025 is the one that decides whether this works** — the converse skill is
 where "direct conversation with a subagent" either feels synchronous or doesn't.
-
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-043 | A resident agent for a conversation (rider — needs signature) | todo | P0 | — |

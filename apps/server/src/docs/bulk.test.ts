@@ -304,7 +304,12 @@ describe("the eight acts", () => {
     const restored = await bulk(staged(ids, { action: "unarchive" }));
     expect(idsOf(restored.result.changed)).toEqual(ids);
     expect(filesIn(restored.result.commit ?? "")).toEqual(docs.map((doc) => doc.path).sort());
-    for (const doc of docs) expect(ws.read(doc.path)).toContain("status: open");
+    // `resolved`, not `open` (SPEC.md §5, SERVER-108). The bulk act plans
+    // through the single-document `planSetArchived`, so this assertion is what
+    // proves the two doors still restore to the same state — a bulk path with
+    // its own opinion about status is exactly what sharing that function
+    // prevents.
+    for (const doc of docs) expect(ws.read(doc.path)).toContain("status: resolved");
   });
 
   it("resolves and reopens threads, and refuses a document that is not one", async () => {
@@ -594,9 +599,11 @@ describe("the eight acts", () => {
 
     it("warns about a carried skill whose own row was already in the state it asked for", async () => {
       const { outer, nested } = seedSkills();
-      // One unarchive of the already-enabled nested skill writes `status: open`
-      // and its id into the file — which is what makes the identical row below a
-      // genuine no-op rather than a write.
+      // One unarchive of the already-enabled nested skill writes its id into the
+      // file — which is what makes the identical row below a genuine no-op
+      // rather than a write. It writes no `status`: the skill was not archived,
+      // and §5's restore is `resolved`, which an unarchive must not hand to a
+      // document nobody archived (SERVER-108).
       expect(idsOf((await bulk(staged([nested], { action: "unarchive" }))).result.changed)).toEqual(
         [nested],
       );
@@ -659,9 +666,9 @@ describe("the eight acts", () => {
     ]);
     expect(result.warnings[1]?.detail).toBe(
       `${nested} (.claude/skills/demo/nested/SKILL.md) still said \`status: archived\` under ` +
-        `the enabled skills root, so its status was reconciled to \`open\``,
+        `the enabled skills root, so its status was reconciled to \`resolved\``,
     );
-    expect(statusAt(".claude/skills/demo/nested/SKILL.md")).toBe("open");
+    expect(statusAt(".claude/skills/demo/nested/SKILL.md")).toBe("resolved");
     expect(idsOf(result.changed)).toEqual([outer]);
   });
 
