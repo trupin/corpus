@@ -523,12 +523,26 @@ rather than leaving a hole; an omitted `--new` is a usage error, not a deletion,
 is sent.
 
 **A patch presents no key, and that is a consequence rather than an omission.** It names the
-text it expects to find, which is the same staleness check by another route — and the more
-useful one, because it tells you *which* text has gone rather than merely that the document
-moved. There is no `--key` flag on this verb and passing one is a usage error. Everything else
-about a patch is an ordinary write: it is validated before it lands, anchors are reconciled
-and reported on the same line, one commit is made under `--from`, and a fresh key comes back
-for whatever you do next.
+text it expects to find, which is the same staleness check by another route — and, *for the
+text it replaces*, the more useful one, because it tells you which text has gone rather than
+merely that the document moved. Read the scope of that check literally: it covers what you
+quoted and nothing else. The excerpt says the passage you are replacing is still the passage
+you read; it says nothing about what has grown up around it since. There is no `--key` flag on
+this verb and passing one is a usage error. Everything else about a patch is an ordinary
+write: it is validated before it lands, anchors are reconciled and reported on the same line,
+one commit is made under `--from`, and a fresh key comes back for whatever you do next.
+
+**A patch replaces; it does not insert — and an append is an insertion.** You can spell one
+anyway, by quoting text and handing it back with your addition attached, and it will work. Its
+check is on the wrong thing: your quote proves the text you quoted is unchanged, and what
+would make you wrong is somebody else's insertion at the same place, which leaves that text
+exactly as it was. So decide by what sits on either side of where you are inserting. Between
+two things, **quote across the gap** — the tail of what comes before and the head of what
+comes after, as one excerpt — and any other insertion there breaks the quote and is refused.
+At the **end of the body** there is nothing on the far side to quote and so nothing to refuse:
+another writer's paragraph can land between your read and your write, your patch splices yours
+above theirs, and the confirmation says one occurrence replaced. That one goes back whole
+under a key, which is the only check that covers text you did not name.
 
 **Two refusals, exit `10` both, nothing written — and their recoveries are opposites.** The
 message names the count, so branch on it rather than guessing.
@@ -850,28 +864,29 @@ what it means for the corpus: what you checked, what you found, what you changed
 what you deliberately left alone. A date and two sentences is the size of it. The entry is
 body text rather than a turn, so it carries no trace arrow.
 
-**Append; never rewrite the section.** There is no append verb and none is missing: an append
-is a bounded change, so it is a patch (*Writing a document*). It is
-`corpus doc show doc_a1b2c3` for the body as it now stands, then
-`corpus doc patch doc_a1b2c3 --from agent` quoting the tail of the last entry — enough of it
-to occur exactly once — and giving that same text back with your entry underneath it. The read
-comes first and is not optional: you cannot quote bytes you have not seen, and it is what
-tells you what the last entry says and whether the section is there at all. The quoted text is
-also what makes the append safe rather than hopeful: a section that moved between the read and
-the write refuses the patch instead of writing over the move.
+**Append; never rewrite the section.** There is no append verb — `corpus doc edit` replaces
+the body — so it is `corpus doc show doc_a1b2c3` for the body as it now stands **and for its
+key**, then one `corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent`
+sending that body back with the new entry after the last one, every other byte reproduced
+exactly. **This is the bounded change that does not go back as a patch**, and the reason is
+the one *Writing a document* gives: this section is the last thing in the body, so the append
+has nothing on its far side to quote. A patch quoting the tail of the last entry applies
+perfectly well to a document somebody appended to while you were reading it, splicing your
+entry above theirs and reporting success — because what the excerpt checks is that the entry
+you quoted is unchanged, and what has to be true here is that it is still the **last** one.
+The key is the check that covers the text you did not name: it makes the append safe rather
+than hopeful, refusing a body that never saw the move instead of writing over it.
 
 The person writes in this section too:
 re-wording, re-ordering, re-dating, merging or condensing an existing entry is how their
 writing disappears — and every thread anchored into an entry you rewrote comes loose, which
 the edit reports as an orphan after the fact rather than refusing beforehand. No reason for
-rewriting is a good one, and quoting one entry is how you cannot do it by accident: a patch
-puts nothing back that it did not quote. Entries run oldest first, so the
-newest goes last and the append disturbs nothing above it. Where the section is absent there
-is nothing to quote and the first entry creates it, which is the one append that sends the
-whole body: that read's **key**, then
-`corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent` with the section as
-the last thing in the body — a blank line, the heading, a blank line, the entry — and
-every other byte reproduced exactly. That heading is spelled `## Changelog` and nothing else —
+rewriting is a good one, and sending the body back is not a licence to tidy it on the way
+through: every byte above your entry goes back exactly as the read printed it, the person's
+wording included. Entries run oldest first, so the
+newest goes last and the append disturbs nothing above it. Where the section is absent the
+first entry creates it, as the last thing in the body — a blank line, the heading, a blank
+line, the entry. That heading is spelled `## Changelog` and nothing else —
 a second spelling is a second section, and the reader's clip finds neither.
 
 **The word to read in the anchor report is `orphaned`.** Appending at the end moves no
@@ -883,17 +898,15 @@ end the body, so the anchor sitting on that text has its trailing context rewrit
 reported as remapped while staying exactly where it was. Later appends land past the section
 and report nothing at all.
 
-**The check on this write is the text you quoted, not a key — and a thread post would have
-needed neither.** The read one paragraph above is where that quote comes from, and two things
-can have happened since. The section moved — somebody appended, or re-worded the entry you
-were quoting: the patch matches nothing, is refused at exit `10` naming the count, nothing is
-written, and you read the document again and append to *that* body. The session you are
-reflecting on is over, so what moved is somebody else's change and your entry belongs after it
-either way. Or the person's editor is open again: leave the document alone and
+**This write replaces the body, so it presents a key — where a thread post would have needed
+none.** The read one paragraph above is where that key comes from, and two things can have
+happened since. The document moved — somebody appended their own entry, or changed a line
+anywhere else in the body: the write is refused at exit `9` carrying the current text and a
+fresh key, nothing is written, and you append your entry to *that* body and write again. The
+session you are reflecting on is over, so what moved is somebody else's change and your entry
+belongs after it either way. Or the person's editor is open again: leave the document alone and
 defer with `--blocked-on` naming it, and the entry lands when the event comes back. Never drop
-the entry because the document was busy. Where the section did not exist and the write is the whole
-body, the key does that job instead: refused at exit `9` carrying the current text and a fresh
-key, with the same answer — append your entry to *that* body and write again.
+the entry because the document was busy.
 
 **Length is never a reason to prune.** Past a threshold the reader clips the section and says
 how many entries sit behind the control, and expanding shows them whole; the entries
@@ -962,22 +975,27 @@ corpus job log evt_7c1d9a "edited [[doc_7e3a91]] — carried the 6.4% rate assum
 That write replaced a whole body — one figure changed and the section it now carries did not
 exist — so it presented a key, and it printed a fresh one, which is what any further edit to
 `doc_7e3a91` would present with no second read. The entry on the edited document itself is a
-different document and a different shape of change: its changelog is already there, so the
-append is bounded and goes back as a patch quoting the tail of the July 14th entry. That read
-is still what makes it possible — the quote has to be bytes the document actually holds.
+different document, so it takes its own read, and it is an append at the end of a body: the
+key rather than a quote, the July 14th entry passed back through untouched.
 
 ```bash
 corpus doc show doc_a1b2c3
+key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70
+corpus doc edit doc_a1b2c3 --key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70 --from agent <<'EOF'
+# Mortgage options
+
+The working rate assumption is 6.4% as of 2026-07-28.
+
 ## Changelog
 
-- **2026-07-14** — replaced last year's lender table with this year's. Nothing else
-  in the corpus quoted those figures.
-corpus doc patch doc_a1b2c3 --from agent --old '  in the corpus quoted those figures.' --new '  in the corpus quoted those figures.
+- **2026-07-14** — replaced last year's lender table with this year's. Nothing else in the
+  corpus quoted those figures.
 - **2026-07-28** — the working rate assumption moved from 6.1% to 6.4%. [[doc_7e3a91]]
-  projected the whole term at the old figure and I carried the new one across; nothing
-  else quotes it, and nothing here needs a decision from you.'
-patched doc_a1b2c3 — 1 occurrence replaced
-key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70
+  projected the whole term at the old figure and I carried the new one across; nothing else
+  quotes it, and nothing here needs a decision from you.
+EOF
+edited doc_a1b2c3
+key 5c0f2a7d18e6b4930c1d8f27a6b5430e9f8c72d1a04b6e35f9c2807d61a34be8
 corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"
 corpus queue complete evt_7c1d9a
 ```

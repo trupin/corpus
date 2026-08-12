@@ -300,7 +300,8 @@ whole-body writes of bounded changes the moment this rule landed:
   whole-body branch kept for the one append that has nothing to quote — the
   first entry, which creates the section. Run verbatim against the server:
   `patched doc_hfbmjnkm — 1 occurrence replaced`, the new entry landing under the
-  July 14th one with every byte above it untouched.
+  July 14th one with every byte above it untouched. **Reverted 2026-08-12 —
+  the conversion was wrong; see "The append goes back under a key" below.**
 - **The 6.1% → 6.4% rate edit**, told from both sides (comment worked example 1,
   orchestrate's `## Worked example`). Both now patch the sentence, and both were
   run verbatim: `patched doc_… — 1 occurrence replaced — 1 anchor remapped`, the
@@ -346,6 +347,137 @@ Commands and their observed output are quoted above; every claim in the skill
 text about `corpus doc patch` was run against the server on port 8947 rather than
 read off `docs/cli.md`. The one claim not force-reproduced is the external-editor
 `stale_key` (exit 9), noted as such above.
+
+---
+
+## E2E Verification Log — PR #44 re-review (three findings)
+
+**Model: opus (claude-opus-5, 1M context).** 2026-08-12, second pass. Scratch
+workspaces `/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s024r/ws` (server on
+port **8951**) and `.../ws2` (port 8952, `init` only). 8765 and 5173 untouched;
+`~/cos` never written. Server stopped and both ports confirmed free at the end.
+
+### MAJOR 1 — the append goes back under a key, and the general claim is scoped
+
+**Reproduced first, against the real server.** The document holds one entry; the
+agent reads it and quotes that entry's tail; a person appends a newer entry
+through the ordinary write path; the agent then runs the patch the skill
+prescribed:
+
+```
+$ corpus doc edit doc_abjkt4l7 --key 2926852c… --from user   # the person's append
+edited doc_abjkt4l7
+$ corpus doc patch doc_abjkt4l7 --from agent --old '  corpus quoted those figures.' --new '…'
+patched doc_abjkt4l7 — 1 occurrence replaced
+exit=0
+## Changelog
+- **2026-07-14** — … Nothing else in the
+  corpus quoted those figures.
+- **2026-07-28** — the working rate assumption moved from 6.1% to 6.4%. …   ← the agent's
+- **2026-07-27** — called two lenders; both quoted within 10bp of the sheet. …  ← the person's
+```
+
+Exit **0**, `1 occurrence replaced`, and the agent's entry spliced **above** the
+person's newer one, breaking the oldest-first rule the same section states.
+Nothing refused. The reviewer's reading is exact.
+
+**Why no quote can fix it, and what replaced it.** The quote is a check on the
+text it *replaces*: it proves that text is unchanged. An append is an
+**insertion**, and what makes an insertion wrong is another insertion at the same
+point — which leaves the quoted text exactly as it was. The two possible repairs
+were weighed and measured:
+
+- **Quote something a later append necessarily changes.** There is nothing: an
+  append at the end of the body is purely additive, and `--old` has no
+  end-of-body anchor. Rejected on the mechanism, not on taste.
+- **Quote across the insertion point** — the tail of what precedes *and* the head
+  of what follows, as one excerpt. This works wherever there *is* a far side, and
+  was measured on a list: a person inserted a line between the two the agent had
+  quoted across, and the patch was **refused at exit 10, 0 matches**. The naive
+  one-sided quote on the same document applied at **exit 0** and put the new line
+  in the wrong place. Both runs are the evidence for the rule as written.
+- The changelog has no far side — it is the last thing in the body — so **that
+  one append goes back whole under a key**, which is the only check that covers
+  text the write did not name. Measured end to end: the agent's read key, the
+  person's append against it, then the agent's whole-body write with the key it
+  read → **exit 9**, carrying the current text and a fresh key; retried against
+  *that* body → exit 0 with all three entries in date order and one commit
+  authored `agent`. An anchor sitting inside an existing entry survived the
+  append (`orphaned: false`), so "an honest append orphans nothing" still holds
+  on the keyed path.
+
+So the safety sentence was not deleted with the example left standing: the
+example moved to the write whose check is true, and the *reason* is now stated as
+a rule an agent can apply anywhere — **a patch replaces; it does not insert** —
+in both skills. The general claim both skills carried ("the staleness check, and
+a better one") is scoped in both: better **for the text it replaces**, and
+covering nothing it did not quote. SPEC §7/§9.2 needed no change — they say "the
+same check by another route" and "a patch whose *text* has moved is refused",
+both of which stay true; the overreach was the skills'.
+
+### MAJOR 2 / MINOR — the extractor, probed the way the reviewer probed it
+
+`scripts/workspace-template.ts` now scans a fenced line **once, quote-aware**
+(`scanShell`), producing both the separator split and the quote left open at the
+end, and joins a line whose quote is still open with the next — but only when the
+fragment already holds a `corpus …` invocation, so an apostrophe in prose or in
+command output never swallows the lines below it. `invocationFlags` decides
+"flag" by where the quoting starts: at the first character it is a quoted
+argument, partway through it is a flag with an attached value.
+
+Probed directly through the exported function (`--reporter` output in the suite;
+the probe script is the same call the tests make):
+
+| input                                            | before                | now                                |
+| ------------------------------------------------ | --------------------- | ---------------------------------- |
+| `--key='abc' --old 'a' --new 'b'`                | `--old`, `--new`      | `--key`, `--old`, `--new`          |
+| `--old '\| a \| b \|' --key zzz`                 | `--old`               | `--old`, `--key`                   |
+| `--old 'a; b' --key zzz`                         | `--old`               | `--old`, `--key`                   |
+| `--old 'line one⏎line two' --key zzz --new 'x'`  | `--old`               | `--old`, `--key`, `--new`          |
+| continuation line starting with `corpus `        | 2 invocations         | **1** invocation                   |
+| `--new '--all is not what I meant'`              | no flag (kept)        | no flag                            |
+| `corpus doc show d && corpus queue idle`         | 2 invocations (kept)  | 2 invocations                      |
+| `# the document's own body` then a `corpus` line | both read (kept)      | both read                          |
+
+All eight are now cases in `scripts/workspace-template.test.ts`, next to the
+existing `--key` regression. The real skills gained flags that had been unread:
+the multi-line patches in both skills now report `--new` as well as `--old`, and
+the whole-tree check still passes, so no undocumented flag was hiding behind a
+quote.
+
+`scripts/workspace-template.test.ts:2866` — `declared?.has(flag) !== true` now
+returns early when `declared` is `undefined`, so an undocumented command fails
+once (naming the verb) instead of twice.
+
+### The line-wrap workaround: reverted
+
+Yes, and it is moot. The July 14th entry in the reflection's worked example is
+back to its natural wrap — `Nothing else in the / corpus quoted those figures.` —
+because that example is a heredoc again rather than a `--old` value, and because
+the extractor no longer mistakes a continuation line for a command. A test pins
+the reverted case directly, so a future reflow cannot resurrect the phantom.
+
+### One assertion that had been passing vacuously
+
+`works the whole procedure once` matched `corpus doc show doc_a1b2c3` … `corpus
+doc patch` **anywhere within 400 characters**, which the unrelated example in
+`## Writing a document` satisfied — so it never checked the reflection's append
+at all. It now matches the append exactly: the key the read printed must be the
+key the write presents, and the July 14th entry must appear before the new one in
+the body that is sent.
+
+### Checks
+
+`npx vitest run scripts` (`VITEST_MAX_THREADS=4`) → **603 passed, 0 failed**.
+`vitest run apps/cli/src/template apps/cli/src/commands/init` → **144 passed**
+(install contract unchanged: 8 template files).
+ESLint clean, Prettier clean, `tsc --noEmit -p scripts/tsconfig.json` clean —
+that last one caught a real defect, `TS7022` on the joined logical line, which
+had made it `any` and produced two `no-unsafe-*` warnings.
+CommonMark re-check (AGENT-016): **16** and **13** top-level `depth: 2` headings,
+matching the pinned `sections.size`, and **0** unterminated code nodes.
+`corpus init` into a fresh workspace installed the corrected skills, with **no**
+`corpus doc patch` invocation left anywhere in the changelog append rule.
 
 ## Completion Checklist (domain agent)
 

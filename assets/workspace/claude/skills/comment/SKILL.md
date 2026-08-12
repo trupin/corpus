@@ -296,10 +296,17 @@ normalisation, no patterns — so quote it exactly as `corpus doc show` printed 
 and line breaks included; single quotes span lines, so a multi-line excerpt is still one
 command. The frontmatter block is not part of the body, and `--new ''` is how a deletion is
 spelled. **A patch presents no key**, and that is a consequence rather than an omission: the
-text it names *is* the staleness check, and a better one, because it says which text has gone
-rather than only that the document moved. Everything else about it is an ordinary write —
-validated, anchors reconciled and reported on the same line, one commit, a fresh key handed
-back for whatever you do next.
+text it names *is* the staleness check for the text it replaces, and a better one there,
+because it says which text has gone rather than only that the document moved. It checks
+nothing it did not quote — which is why **a patch replaces; it does not insert**. An append
+spelled as one, quoting the last thing and handing it back with yours under it, is checked on
+text that another writer's append leaves exactly as it was, so it lands above theirs and
+reports success. Insert between two things by quoting across the gap — the tail of what comes
+before and the head of what comes after, as one excerpt — so that any other insertion there is
+refused; add at the end of a body with a whole-body write, whose key is the only check that
+covers text you did not name. Everything else about a patch is an ordinary write — validated, anchors
+reconciled and reported on the same line, one commit, a fresh key handed back for whatever you
+do next.
 
 **Two refusals, exit `10` both, nothing written, and their recoveries are opposites.** The
 message names the count, so branch on it rather than guessing. **Matched 0 times** means the
@@ -758,7 +765,8 @@ inside a document shows you things the thread did not send you for: a figure tha
 section that stopped matching its title, a decision the corpus recorded nowhere. Write that
 into the `## Changelog` section at the end of that document's own body — what changed and what
 you make of it, one entry appended after the last one, the rest of the body passed back
-through byte for byte. Never rewrite the section: the person writes in it too, rewriting is
+through byte for byte under the key that read printed. That is an append at the end of a body,
+so it is the write that presents a key rather than the one that quotes. Never rewrite the section: the person writes in it too, rewriting is
 how their writing disappears, and every thread anchored into an entry you rewrote comes loose
 as an orphan. A thread means _I need something from you_, and a changelog
 entry means _I noticed_; opening a thread to report an observation is exactly what buries the
