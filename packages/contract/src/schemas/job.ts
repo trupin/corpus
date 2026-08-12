@@ -48,9 +48,9 @@ export const JobSchema = z
           "next read.",
       ),
     blockedOn: DocumentIdSchema.nullable().describe(
-      "**The document whose edit lock this job is waiting for**, or null — non-null exactly when " +
+      "**The document being edited that this job is waiting on**, or null — non-null exactly when " +
         "`status` is `deferred` (SPEC.md §7, CONTRACT-021). It is the document supplied at defer " +
-        "time, and the one whose release, break or reap returns the job to `pending` " +
+        "time, and the one whose edit session ending returns the job to `pending` " +
         "automatically. The console needs it to say what a waiting row is waiting *for*: a " +
         "deferred job that names no document is indistinguishable from a stuck one.",
     ),
@@ -167,7 +167,7 @@ export const JobsQuerySchema = z.object({
       "count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's " +
       "reading into the wire would make every other caller live with it. The two callers that " +
       "ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal " +
-      "states, `deferred` included, since a job waiting on an edit lock is still owed.",
+      "states, `deferred` included, since a job waiting on somebody's editing is still owed.",
   }),
 });
 

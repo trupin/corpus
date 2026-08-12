@@ -1,6 +1,6 @@
 /**
  * The pinned method+path inventory of the Corpus HTTP API — every endpoint
- * SPEC.md §9.2 lists, plus the queue, lock and job verbs §7 requires, the
+ * SPEC.md §9.2 lists, plus the queue and job verbs §7 requires, the
  * projection-maintenance pair behind §2.2's `corpus db rebuild` / `db doctor`,
  * and the validation and loop-safety pair `POST /api/check` and
  * `POST /api/skills/{name}/rollback`. Those two were derived from the
@@ -58,11 +58,12 @@
  * that same rider, and it is here because a premise stated in CONTRACT-028 was
  * measured and found false. §4 names two ends for a user edit session, one of
  * them "the reader closes (the UI flushes the session)"; CONTRACT-028 read that
- * flush as §7's edit-lock release and declared no endpoint for it. SERVER-052
- * checked that against the shipped editor, which drops the lease on blur and
- * after ten seconds of not typing against the session's three minutes — so the
- * lock always wins and §4's explicitly "distinct and longer window" would never
- * be reached. A close signal of its own is therefore what the signed rider
+ * flush as the release of §7's then-current edit lock and declared no endpoint
+ * for it. SERVER-052 checked that against the shipped editor, which dropped the
+ * lease on blur and after ten seconds of not typing against the session's three
+ * minutes — so the lease always won and §4's explicitly "distinct and longer
+ * window" would never be reached. (The lock itself is gone since SHARED-041; the
+ * route it argued for is not.) A close signal of its own is therefore what the signed rider
  * requires, and §9.3 makes it a route declared here rather than one invented in
  * the server. It sits immediately after `GET /api/docs/{id}/diff` because those
  * two are §4's whole surface. Its §9.2 bullet was drafted here and applied by
@@ -190,12 +191,6 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/queue/{id}/fail",
   "POST /api/queue/{id}/defer",
   "DELETE /api/queue/{id}",
-
-  "GET /api/locks",
-  "POST /api/locks/reap",
-  "POST /api/locks/{docId}",
-  "DELETE /api/locks/{docId}",
-  "POST /api/locks/{docId}/break",
 
   "GET /api/jobs",
   "GET /api/jobs/{id}/log",

@@ -215,33 +215,35 @@ export const failEvent = createRoute({
  * The defer/requeue transition SPEC.md §7 names as the successor to the
  * `deferred:`-prefixed failure (CONTRACT-021; SERVER-030 implements it).
  *
- * It is a queue verb rather than a lock verb because what changes is the
- * *event's* state — the lock is untouched, and the caller has already discovered
- * it cannot have it. The reverse transition has no route at all, deliberately:
- * re-entry is the server's own reaction to the lock clearing, not something a
- * client asks for. `POST /api/jobs/{id}/retry` remains the manual override for a
- * deferral automatic re-entry never reached.
+ * It is a queue verb because what changes is the *event's* state and nothing
+ * else — the document is untouched, and the caller has taken nothing on it: an
+ * agent that defers has read the document, seen a person editing it, and decided
+ * to come back. The reverse transition has no route at all, deliberately:
+ * re-entry is the server's own reaction to that edit session ending, not
+ * something a client asks for. `POST /api/jobs/{id}/retry` remains the manual
+ * override for a deferral automatic re-entry never reached.
  */
 export const deferEvent = createRoute({
   method: "post",
   path: "/api/queue/{id}/defer",
   tags: ["queue"],
-  summary: "Defer a claimed event onto a document's lock",
+  summary: "Defer a claimed event while a person is editing that document",
   description:
     "Moves a claimed event to `deferred/` — waiting, not failed (SPEC.md §7). The agent calls it " +
-    "when the work it claimed needs a document the **user** holds the edit lock on: it replies to " +
-    "the waiting thread, defers the event, and moves on.\n\n" +
-    "**The event comes back on its own.** Releasing, force-breaking or reaping the lock on " +
-    "`blockedOn` returns it to `pending`, and `corpus queue idle` unparks — no retry call, no " +
-    "operator. Until then it is not claimable: `claim-all` skips deferred events, because handing " +
-    "back work whose lock is still held would spin the agent against it.\n\n" +
-    "**Nothing is ever silently dropped** (SPEC.md §7). A deferral whose lock is never released " +
-    "stays on disk, stays visible in the queue counts and the console, survives a restart, and " +
-    "stays retryable by hand through `POST /api/jobs/{id}/retry` — which is what §7's force-break " +
-    "bullet promises, now as the manual override rather than the only path.\n\n" +
+    "when the work it claimed needs a document a **person** has an edit session open on " +
+    "(`userEditing` on the document read): it replies to the waiting thread, defers the event, " +
+    "and moves on. **A judgement, not a refusal** — nothing stopped it writing; the key would " +
+    "have let the write through. It deferred because it saw.\n\n" +
+    "**The event comes back on its own.** The end of that edit session on `blockedOn` returns it " +
+    "to `pending`, and `corpus queue idle` unparks — no retry call, no operator. Until then it is " +
+    "not claimable: `claim-all` skips deferred events, because handing back work while the person " +
+    "is still typing would put the agent straight back where it decided not to be.\n\n" +
+    "**Nothing is ever silently dropped** (SPEC.md §7). A deferral whose document is never put " +
+    "down stays on disk, stays visible in the queue counts and the console, survives a restart, " +
+    "and stays retryable by hand through `POST /api/jobs/{id}/retry`.\n\n" +
     "`409` when the event is not `in-progress`: only claimed work can be deferred, since nothing " +
-    "else has tried the edit yet, exactly as only a finished job can be retried. `404` when there " +
-    "is no such event.",
+    "else has looked at the document yet, exactly as only a finished job can be retried. `404` " +
+    "when there is no such event.",
   request: {
     params: EventIdParamSchema,
     headers: ActorHeaderSchema,

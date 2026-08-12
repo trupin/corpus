@@ -60,7 +60,6 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
       { name: "capture", description: "The composer's Capture action." },
       { name: "threads", description: "Threads and their turns." },
       { name: "queue", description: "The agent-side event queue." },
-      { name: "locks", description: "Per-document edit locks." },
       { name: "jobs", description: "Job rows and their log streams — the console feed." },
       { name: "db", description: "Projection maintenance: rebuild and drift check." },
       { name: "check", description: "The corpus validator behind `corpus doc check`." },

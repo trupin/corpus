@@ -249,7 +249,7 @@ describe("the generated client's view of the thread-create body", () => {
 
   it("declares 413 on the route the client can now upload through", () => {
     const responses = buildOpenApiDocument().paths?.["/api/threads"]?.post?.responses ?? {};
-    expect(Object.keys(responses).sort()).toEqual(["201", "400", "401", "404", "413", "423"]);
+    expect(Object.keys(responses).sort()).toEqual(["201", "400", "401", "404", "413"]);
   });
 });
 

@@ -31,7 +31,6 @@ export const PROJECTION_COUNT_FIELDS = [
   "links",
   "events",
   "jobs",
-  "locks",
   "seen",
 ] as const;
 
@@ -48,7 +47,6 @@ const projectionCounts = {
   links: rowCount("links"),
   events: rowCount("events"),
   jobs: rowCount("jobs"),
-  locks: rowCount("locks"),
   seen: rowCount("seen"),
 } as const satisfies Record<ProjectionCountField, z.ZodType>;
 

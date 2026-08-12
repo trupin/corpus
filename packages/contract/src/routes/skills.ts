@@ -10,7 +10,6 @@ import {
 import {
   CONFLICT_RESPONSE,
   jsonContent,
-  LOCKED_RESPONSE,
   NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
@@ -21,7 +20,7 @@ import {
  *
  * The skill is identified in the **path**, not in the body: every other resource
  * route in this contract addresses its resource that way (`/api/docs/{id}`,
- * `/api/locks/{docId}`, `/api/threads/{id}/…`), the `404` gets its natural home,
+ * `/api/threads/{id}/…`), the `404` gets its natural home,
  * and a rollback reads as what it is — an action on a named skill rather than a
  * free-floating verb that happens to take a name.
  *
@@ -29,12 +28,13 @@ import {
  * sole writer (SPEC.md §9.1): a CLI that ran `git checkout` on a skill file
  * would bypass validation, the projection and the watcher all at once.
  *
- * It carries `423` for the same reason: a rollback rewrites
- * `.claude/skills/{name}/SKILL.md`, so it is a document write path, and §9.2's
- * "document write paths refuse edits to a document locked by the other party"
- * admits no carve-out for it. Rolling a skill back under the other party's edit
- * lock would discard whatever that party is mid-way through writing — precisely
- * the loss the lock exists to prevent (CONTRACT-018).
+ * **It presents no key** (SPEC.md §7). A rollback rewrites
+ * `.claude/skills/{name}/SKILL.md` wholesale, so the question is real, and the
+ * answer is that it names its own delta as precisely as any other verb: it
+ * restores *a named revision* — the caller states which version it wants, not a
+ * block of text it composed against a version it read. There is nothing here a
+ * key could be evidence of. Ordinary editing of the skill afterwards goes
+ * through `PUT /api/docs/{id}`, which does demand one for a body write.
  */
 
 const SkillNameParamSchema = z.object({
@@ -89,10 +89,9 @@ export const createSkill = createRoute({
     "`corpus doc archive` moves one) is likewise taken is answered by the server, and both " +
     "answers are already describable here: refusing it is this same `409`, allowing it is a " +
     "plain `201`.\n\n" +
-    "There is no `423`: an edit lock is held on a document, and this call's document does not " +
-    "exist until the call succeeds, so nothing can be holding it. A name that is already taken " +
-    "is a conflict, not a lock — and editing the skill afterwards goes through " +
-    "`PUT /api/docs/{id}`, which does refuse under the other party's lock.",
+    "It presents no key (SPEC.md §7): this call's document does not exist until the call " +
+    "succeeds, so there is no version anyone could have read. Editing the skill afterwards goes " +
+    "through `PUT /api/docs/{id}`, which does demand a key for a body write.",
   request: {
     headers: ActorHeaderSchema,
     body: {
@@ -139,8 +138,8 @@ export const rollbackSkill = createRoute({
     "directory. A skill that was archived (`corpus doc archive` moves it to " +
     "`.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: " +
     "unarchive it first.\n\n" +
-    "A skill is an ordinary document, and this is an ordinary document write path: refused with " +
-    "`423` when the other party holds the document's edit lock.",
+    "A skill is an ordinary document, but this write names a revision rather than replacing a " +
+    "block, so it presents no key (SPEC.md §7 — see the module docblock).",
   request: {
     params: SkillNameParamSchema,
     headers: ActorHeaderSchema,
@@ -160,6 +159,5 @@ export const rollbackSkill = createRoute({
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
-    423: LOCKED_RESPONSE,
   },
 });

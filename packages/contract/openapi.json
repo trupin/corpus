@@ -46,10 +46,6 @@
       "description": "The agent-side event queue."
     },
     {
-      "name": "locks",
-      "description": "Per-document edit locks."
-    },
-    {
       "name": "jobs",
       "description": "Job rows and their log streams — the console feed."
     },
@@ -599,13 +595,25 @@
             "items": {
               "$ref": "#/components/schemas/ResolvedAnchor"
             }
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "example": "3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3",
+            "description": "The **key** naming the version of this document that was read (SPEC.md §7). Present it on a write that replaces the document's body, and the write is refused with `409` if the document has changed since — carrying the document as it now stands, and a fresh key for it, so a refusal is one exchange rather than two. **A refusal is never a lost edit**: nothing was written, and the content you tried to save is yours to resend.\n\n**It is opaque. Echo it back exactly as received.** It is *derived from the document's stored content*, which is what makes it need no acquiring, releasing, expiry or reaping: an edit made outside the app invalidates it for free, and it survives a server restart. How it is derived is not contract and is deliberately unpublished. **Never compute, construct, parse, truncate or order a key** — a key is evidence that you read a version, and evidence you manufactured is not evidence; two keys are only ever equal or unequal. It is not a claim, a lease or a handle: there is nothing to release, and holding one confers nothing on you. Every write that lands answers with the document it wrote, carrying a fresh key for the next one.\n\nAlways present on a document read: a read that carried no key would leave a writer with nothing to present, and the only way to write would be not to have read."
+          },
+          "userEditing": {
+            "type": "boolean",
+            "description": "True when a **person** currently has an edit session open on this document (SPEC.md §4's edit session — the same one that ends in an acknowledgment; SPEC.md §7's *someone is editing this*).\n\n**Information, never a gate.** Nothing is refused because of it, there is nothing to acquire and nothing to release, and no document is ever read-only. Correctness is the `key`'s job; this is politeness — a writer that ignores it is impolite, not incorrect. The agent is expected to leave the document alone and come back, and may defer its claimed queue event (`POST /api/queue/{id}/defer`, `blockedOn` this document) to say so; that deferral returns to `pending` on its own once the session ends.\n\n**Asymmetric on purpose**, because the two writers are: a person's editing is a session the server tracks, while the agent's writing is a sequence of one-shot commands with no session to report. So this never reports the agent, and the person instead sees the agent's writes land live (SPEC.md §9.4). Neither is a lock in the other direction."
           }
         },
         "required": [
           "frontmatter",
           "body",
           "path",
-          "anchors"
+          "anchors",
+          "key",
+          "userEditing"
         ]
       },
       "DocFrontmatter": {
@@ -1017,7 +1025,7 @@
             "items": {
               "$ref": "#/components/schemas/BulkActionRefusal"
             },
-            "description": "Documents that **did not change, and why** — §11's third part, listed apart from both others because it is the part worth re-reading. After the act, §11 reduces the staged set to exactly these, so retrying after clearing a lock is one gesture."
+            "description": "Documents that **did not change, and why** — §11's third part, listed apart from both others because it is the part worth re-reading. After the act, §11 reduces the staged set to exactly these, so retrying what was refused is one gesture."
           },
           "orphanedThreadIds": {
             "type": "array",
@@ -1111,74 +1119,26 @@
           "reason": {
             "type": "string",
             "enum": [
-              "locked",
+              "stale",
               "not-found",
               "not-applicable",
               "invalid",
               "write-failed"
             ],
-            "description": "Which class of refusal this is. `locked`: an edit lock stands in the way, so it is refused exactly as a single edit would be (SPEC.md §7) — **the lock is not always on this document**: an act that writes another file in the same commit is refused by *that* document's lock (§6's anchor cascade reaching a deleted thread's parent, §7's skill folder move carrying a nested skill). `lock` names the holder **and the document it is held on**, which is the one to clear; this is the reason a retry after clearing it fixes. `not-found`: no document has that id; the other documents are not the caller's mistake, so it is an entry here rather than a `404` for the whole request. `not-applicable`: the act does not apply to this document (resolving something that is not a thread) — §11 offers an action only on the rows that can take it, so for an enumerated row this means the corpus changed between staging and saving, and for a `wholeResultSet` entry it is the ordinary case of one act covering a mixed result set. `invalid`: the write would leave the document failing §14 validation, refused with its reason. `write-failed`: the file could not be written; nothing about this document reached the commit.",
-            "example": "locked"
+            "description": "Which class of refusal this is. `stale`: this document's content moved under the staged Save, so it is refused exactly as a single edit to it would be (SPEC.md §7) — the staged action was chosen against a version the document no longer is. Nothing is held and there is nothing to clear: look at what it says now and retry. `not-found`: no document has that id; the other documents are not the caller's mistake, so it is an entry here rather than a `404` for the whole request. `not-applicable`: the act does not apply to this document (resolving something that is not a thread) — §11 offers an action only on the rows that can take it, so for an enumerated row this means the corpus changed between staging and saving, and for a `wholeResultSet` entry it is the ordinary case of one act covering a mixed result set. `invalid`: the write would leave the document failing §14 validation, refused with its reason. `write-failed`: the file could not be written; nothing about this document reached the commit.",
+            "example": "stale"
           },
           "message": {
             "type": "string",
             "minLength": 1,
-            "description": "Human-readable specifics for this document — the holder and when the lease expires, the validator's own finding, the write error. Rendered verbatim beside the document's title; never parsed. Always present: §11 requires every entry in this part to carry its reason, and a class alone does not tell a person what to do next."
-          },
-          "lock": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Lock"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The lock that refused this document, non-null **exactly when** `reason` is `locked` (SPEC.md §7 — a refusal identifies the holder). Read its `docId`: the lock is not always held on the refused document. An act that writes another file in the same commit is refused by that file's lock, so `docId` is the document to clear and the refused id is merely the one the caller asked about. Null on every other reason."
+            "description": "Human-readable specifics for this document — what moved under a `stale` refusal, the validator's own finding, the write error. Rendered verbatim beside the document's title; never parsed. Always present: §11 requires every entry in this part to carry its reason, and a class alone does not tell a person what to do next."
           }
         },
         "required": [
           "id",
           "action",
           "reason",
-          "message",
-          "lock"
-        ]
-      },
-      "Lock": {
-        "type": "object",
-        "properties": {
-          "docId": {
-            "type": "string",
-            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-            "description": "Identifier of any document; threads are documents too.",
-            "example": "doc_a1b2c3"
-          },
-          "holder": {
-            "type": "string",
-            "enum": [
-              "user",
-              "agent"
-            ],
-            "description": "The acting party for a request. Becomes the git author of the auto-commit the server makes for the mutation (SPEC.md §4, §7).",
-            "example": "user"
-          },
-          "acquired": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-07-19T10:05:00Z"
-          },
-          "ttl": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Seconds from `acquired` after which `lock reap` may clear it."
-          }
-        },
-        "required": [
-          "docId",
-          "holder",
-          "acquired",
-          "ttl"
+          "message"
         ]
       },
       "ForbiddenError": {
@@ -1788,31 +1748,44 @@
           "orphaned"
         ]
       },
-      "LockedError": {
+      "StaleKeyError": {
         "type": "object",
         "properties": {
           "code": {
             "type": "string",
             "enum": [
-              "locked"
+              "stale_key"
             ]
           },
           "message": {
             "type": "string"
           },
-          "lock": {
-            "$ref": "#/components/schemas/Lock"
+          "doc": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Doc"
+              },
+              {
+                "description": "The document **as it now stands** — the whole of it, not a summary — carrying a fresh `key` in the field every read carries it in. Nothing was written: this is what you would have overwritten, and the content you tried to save is still yours to resend. Reconcile against this and write again presenting its `key`."
+              }
+            ]
           }
         },
         "required": [
           "code",
           "message",
-          "lock"
+          "doc"
         ]
       },
       "UpdateDocRequest": {
         "type": "object",
         "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "example": "3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3",
+            "description": "The **key** naming the version of this document that was read (SPEC.md §7). Present it on a write that replaces the document's body, and the write is refused with `409` if the document has changed since — carrying the document as it now stands, and a fresh key for it, so a refusal is one exchange rather than two. **A refusal is never a lost edit**: nothing was written, and the content you tried to save is yours to resend.\n\n**It is opaque. Echo it back exactly as received.** It is *derived from the document's stored content*, which is what makes it need no acquiring, releasing, expiry or reaping: an edit made outside the app invalidates it for free, and it survives a server restart. How it is derived is not contract and is deliberately unpublished. **Never compute, construct, parse, truncate or order a key** — a key is evidence that you read a version, and evidence you manufactured is not evidence; two keys are only ever equal or unequal. It is not a claim, a lease or a handle: there is nothing to release, and holding one confers nothing on you. Every write that lands answers with the document it wrote, carrying a fresh key for the next one.\n\n**Required when this request carries `body`**, which is the write that replaces a block without naming what it changes; a `body` with no key is a `400` naming this field. **Not required by a write that names its own delta** — a tag, a status, `reviewed`, a view key — which merges with whatever else happened rather than overwriting it. Sending one anyway is welcome and is **still checked**: presenting a key always means *I am writing against this version*, so a stale one is refused whatever else the request changes. A caller that always sends what it read therefore needs no rule about which fields are which."
+          },
           "title": {
             "type": "string",
             "minLength": 1
@@ -1915,7 +1888,12 @@
             "description": "Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update."
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "dependentRequired": {
+          "body": [
+            "key"
+          ]
+        }
       },
       "DeleteDocResult": {
         "type": "object",
@@ -3058,16 +3036,6 @@
           },
           "message": {
             "type": "string"
-          },
-          "lock": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Lock"
-              },
-              {
-                "description": "Present when the conflict is a lock acquisition; identifies the existing holder."
-              }
-            ]
           }
         },
         "required": [
@@ -3285,7 +3253,7 @@
           "deferred": {
             "type": "integer",
             "minimum": 0,
-            "description": "Events waiting on a user-held edit lock (SPEC.md §7). Counted separately from `failed` because a deferral is not a failure — a non-zero count here is work that will resume by itself, and the console strip must not read it as breakage."
+            "description": "Events parked while a person is editing the document they need (SPEC.md §7). Counted separately from `failed` because a deferral is not a failure — a non-zero count here is work that will resume by itself, and the console strip must not read it as breakage."
           },
           "processed": {
             "type": "integer",
@@ -3516,7 +3484,7 @@
           "blockedOn": {
             "type": "string",
             "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-            "description": "The document whose edit lock the work is waiting for. Releasing, breaking or reaping that lock returns this event to `pending` automatically (SPEC.md §7), so a deferral that named the wrong document would wait forever.",
+            "description": "The document being edited that the work is waiting on. The end of that edit session returns this event to `pending` automatically (SPEC.md §7), so a deferral that named the wrong document would wait forever.",
             "example": "doc_a1b2c3"
           },
           "reason": {
@@ -3529,110 +3497,6 @@
           "blockedOn"
         ],
         "additionalProperties": false
-      },
-      "LockList": {
-        "type": "object",
-        "properties": {
-          "locks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Lock"
-            }
-          }
-        },
-        "required": [
-          "locks"
-        ],
-        "description": "Every active lock, for hydrating lock banners on load (SPEC.md §7)."
-      },
-      "LockReapResult": {
-        "type": "object",
-        "properties": {
-          "reaped": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-              "description": "Identifier of any document; threads are documents too.",
-              "example": "doc_a1b2c3"
-            },
-            "description": "Documents whose expired locks were cleared."
-          }
-        },
-        "required": [
-          "reaped"
-        ]
-      },
-      "LockConflictError": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "enum": [
-              "conflict"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "lock": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Lock"
-              },
-              {
-                "description": "The lock already held, and by whom."
-              }
-            ]
-          }
-        },
-        "required": [
-          "code",
-          "message",
-          "lock"
-        ]
-      },
-      "AcquireLockRequest": {
-        "type": "object",
-        "properties": {
-          "ttl": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Lease in seconds; defaults to 300. A TTL is what keeps a crashed editor from wedging a document — `POST /api/locks/reap` clears expired leases."
-          }
-        },
-        "additionalProperties": false
-      },
-      "ReleaseLockResult": {
-        "type": "object",
-        "properties": {
-          "docId": {
-            "type": "string",
-            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-            "description": "Identifier of any document; threads are documents too.",
-            "example": "doc_a1b2c3"
-          },
-          "released": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          },
-          "holder": {
-            "type": "string",
-            "enum": [
-              "user",
-              "agent"
-            ],
-            "description": "The party whose lock this call cleared.",
-            "example": "user"
-          }
-        },
-        "required": [
-          "docId",
-          "released",
-          "holder"
-        ]
       },
       "JobList": {
         "type": "object",
@@ -3673,7 +3537,7 @@
               "failed",
               "abandoned"
             ],
-            "description": "Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and could not proceed because the user holds the edit lock on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that lock is released, broken or reaped."
+            "description": "Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and the agent parked it because a person had an edit session open on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that session ends. Nothing refused it: the agent deferred because it saw, not because it was blocked."
           },
           "started": {
             "type": "string",
@@ -3714,7 +3578,7 @@
               "null"
             ],
             "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-            "description": "**The document whose edit lock this job is waiting for**, or null — non-null exactly when `status` is `deferred` (SPEC.md §7, CONTRACT-021). It is the document supplied at defer time, and the one whose release, break or reap returns the job to `pending` automatically. The console needs it to say what a waiting row is waiting *for*: a deferred job that names no document is indistinguishable from a stuck one.",
+            "description": "**The document being edited that this job is waiting on**, or null — non-null exactly when `status` is `deferred` (SPEC.md §7, CONTRACT-021). It is the document supplied at defer time, and the one whose edit session ending returns the job to `pending` automatically. The console needs it to say what a waiting row is waiting *for*: a deferred job that names no document is indistinguishable from a stuck one.",
             "example": "doc_a1b2c3"
           },
           "blockedOnTitle": {
@@ -3852,11 +3716,6 @@
             "minimum": 0,
             "description": "Rows written to `jobs` by this rebuild."
           },
-          "locks": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Rows written to `locks` by this rebuild."
-          },
           "seen": {
             "type": "integer",
             "minimum": 0,
@@ -3884,7 +3743,6 @@
           "links",
           "events",
           "jobs",
-          "locks",
           "seen",
           "durationMs",
           "skipped"
@@ -4783,7 +4641,7 @@
           "docs"
         ],
         "summary": "Apply a column's staged set — one action per document — as a single act",
-        "description": "Applies a **staged set** to several documents and answers for all of them — the board makes one request per Save, never one per document and never one per verb. **Each entry carries its own action** (SPEC.md §11: in bulk mode each row carries its own staged action), so archiving three documents and resolving two is one request. **The act lands as a single auto-commit** (SPEC.md §4, \"One action, one commit\"), authored by the acting party like any other mutation: archiving twenty documents is one commit, not twenty, so reverting the action is one `git revert` and `git log` never records an effect the user was told did not happen. §4 is explicit that this survives a mixed set — **a Save carrying a mix of verbs is still one act and still one commit**, not one commit per verb — so grouping the staged set by verb and writing each group is wrong even though it would produce the same files. **Every document `changed` names has a file in that commit**, and `git show --name-only` lists it: only a write that landed puts an id in `changed`, and only those writes are staged, so a document that was refused or was already in the target state wrote nothing **of its own**. Its files may still be in the commit, carried there by another document's act — archiving a skill that nests a second requested skill moves the nested one's file while refusing it by id. That containment is the invariant, and it holds in one direction only — **the commit may also carry files for documents the act did not name**, because the result's three parts partition the **requested** ids and nothing else. Two things do that today, both required by the spec rather than incidental, and both shared with the single-document routes: §6's anchor cascade rewrites the `anchors` map of a deleted thread's parent in the same commit, and that parent survives the act and need not even have been requested; and archiving or unarchiving a skill moves its whole folder, carrying every file under it — including the `SKILL.md` of a nested skill, which the move disables (§7: what disables a skill is where its folder lives) without the act ever naming it. The commit message names the actions the act carried and the documents each one changed. It is its own entry in the history: it never folds into a preceding editing session's squashed commit, and no later save folds into it (§4's squashing is about repeated saves of *one* document, never about one act across many). An implementation that loops the single-document write path is therefore wrong rather than merely slower — it produces N commits and has nothing honest to put in `commit`.\n\n**A whole-result-set selection is one entry, not a list of ids.** §11: because there is no per-row gesture for rows nobody enumerated, such a selection stages as a **single entry** carrying one action for everything the column's query matches. `wholeResultSet` is that entry — at most one, beside any number of enumerated `entries` — and **the count is re-evaluated when the Save runs**, not when it was staged, which is why it travels as a query rather than as ids the caller resolved earlier. It covers everything the query matches **except** the ids `entries` names individually, so no document is ever acted on twice and a hand-staged row keeps the verb the person chose. **`delete` cannot be spelled on it at all** (§11: \"all 412 matching\" is not a set anyone read before confirming), which is a type error in the generated client rather than a runtime refusal. The ids it resolves to appear in the result like any other, which is the only place the caller learns them.\n\n**Partial application is the normal case, and it is a `200`.** §11: a Save \"applies to what it can and reports what it could not\" and \"never refuses the whole set because of one document\". The result states three parts — what `changed`, what was `alreadyInState` (a document already archived is a no-op, **not** a failure), and, listed apart from both, what was `refused` and why, each named individually **with the verb that applied to it**. A document locked by the other party is refused with its holder named (SPEC.md §7) exactly as a single edit to it would be; one that fails validation is refused with its reason (§14); an unknown id is refused as `not-found`; a row the act does not apply to is refused as `not-applicable`; the rest go through. There is no `423` on this route and no `404`: a lock and an unknown id are per-document outcomes here, not verdicts on the request. Every requested id appears exactly once across the three parts, so the caller can compare the total against the count it showed.\n\n**`delete` is user-only** (SPEC.md §7, §9.2): a Save carrying a `delete` entry with `x-corpus-author: agent` is rejected with `403` for the **whole request** — the refusal is the request's, not a per-document outcome — exactly as `DELETE /api/docs/{id}` rejects it. The agent archives, never deletes. Every other act is available to both parties.\n\n**A `400` answers a staged set that cannot be applied as written**: nothing staged at all (no `entries` and no `wholeResultSet`), or one id staged twice. §11 makes a row carry exactly one staged action, so a repeated id means the staged set was keyed wrong; where the two entries name different verbs the message says both, because choosing one silently would be a choice about someone's documents and applying both would write one document twice inside an act that promises to be one commit of exactly what changed. Every document already being in the target state is a different thing entirely — a legal, successful act that changes nothing and therefore makes **no commit at all**: `200`, empty `changed`, null `commit`. The single-document routes are unchanged and remain the path for the reader's ⋯ menu and per-row quick actions (§11) — this route is for a selection, and the difference between them is the commit.",
+        "description": "Applies a **staged set** to several documents and answers for all of them — the board makes one request per Save, never one per document and never one per verb. **Each entry carries its own action** (SPEC.md §11: in bulk mode each row carries its own staged action), so archiving three documents and resolving two is one request. **The act lands as a single auto-commit** (SPEC.md §4, \"One action, one commit\"), authored by the acting party like any other mutation: archiving twenty documents is one commit, not twenty, so reverting the action is one `git revert` and `git log` never records an effect the user was told did not happen. §4 is explicit that this survives a mixed set — **a Save carrying a mix of verbs is still one act and still one commit**, not one commit per verb — so grouping the staged set by verb and writing each group is wrong even though it would produce the same files. **Every document `changed` names has a file in that commit**, and `git show --name-only` lists it: only a write that landed puts an id in `changed`, and only those writes are staged, so a document that was refused or was already in the target state wrote nothing **of its own**. Its files may still be in the commit, carried there by another document's act — archiving a skill that nests a second requested skill moves the nested one's file while refusing it by id. That containment is the invariant, and it holds in one direction only — **the commit may also carry files for documents the act did not name**, because the result's three parts partition the **requested** ids and nothing else. Two things do that today, both required by the spec rather than incidental, and both shared with the single-document routes: §6's anchor cascade rewrites the `anchors` map of a deleted thread's parent in the same commit, and that parent survives the act and need not even have been requested; and archiving or unarchiving a skill moves its whole folder, carrying every file under it — including the `SKILL.md` of a nested skill, which the move disables (§7: what disables a skill is where its folder lives) without the act ever naming it. The commit message names the actions the act carried and the documents each one changed. It is its own entry in the history: it never folds into a preceding editing session's squashed commit, and no later save folds into it (§4's squashing is about repeated saves of *one* document, never about one act across many). An implementation that loops the single-document write path is therefore wrong rather than merely slower — it produces N commits and has nothing honest to put in `commit`.\n\n**A whole-result-set selection is one entry, not a list of ids.** §11: because there is no per-row gesture for rows nobody enumerated, such a selection stages as a **single entry** carrying one action for everything the column's query matches. `wholeResultSet` is that entry — at most one, beside any number of enumerated `entries` — and **the count is re-evaluated when the Save runs**, not when it was staged, which is why it travels as a query rather than as ids the caller resolved earlier. It covers everything the query matches **except** the ids `entries` names individually, so no document is ever acted on twice and a hand-staged row keeps the verb the person chose. **`delete` cannot be spelled on it at all** (§11: \"all 412 matching\" is not a set anyone read before confirming), which is a type error in the generated client rather than a runtime refusal. The ids it resolves to appear in the result like any other, which is the only place the caller learns them.\n\n**Partial application is the normal case, and it is a `200`.** §11: a Save \"applies to what it can and reports what it could not\" and \"never refuses the whole set because of one document\". The result states three parts — what `changed`, what was `alreadyInState` (a document already archived is a no-op, **not** a failure), and, listed apart from both, what was `refused` and why, each named individually **with the verb that applied to it**. A document whose content moved under the staged Save is refused as `stale`, exactly as a single edit to it would be (SPEC.md §7); one that fails validation is refused with its reason (§14); an unknown id is refused as `not-found`; a row the act does not apply to is refused as `not-applicable`; the rest go through. There is no `404`: an unknown id is a per-document outcome here, not a verdict on the request. Every requested id appears exactly once across the three parts, so the caller can compare the total against the count it showed.\n\n**`delete` is user-only** (SPEC.md §7, §9.2): a Save carrying a `delete` entry with `x-corpus-author: agent` is rejected with `403` for the **whole request** — the refusal is the request's, not a per-document outcome — exactly as `DELETE /api/docs/{id}` rejects it. The agent archives, never deletes. Every other act is available to both parties.\n\n**A `400` answers a staged set that cannot be applied as written**: nothing staged at all (no `entries` and no `wholeResultSet`), or one id staged twice. §11 makes a row carry exactly one staged action, so a repeated id means the staged set was keyed wrong; where the two entries name different verbs the message says both, because choosing one silently would be a choice about someone's documents and applying both would write one document twice inside an act that promises to be one commit of exactly what changed. Every document already being in the target state is a different thing entirely — a legal, successful act that changes nothing and therefore makes **no commit at all**: `200`, empty `changed`, null `commit`. The single-document routes are unchanged and remain the path for the reader's ⋯ menu and per-row quick actions (§11) — this route is for a selection, and the difference between them is the commit.",
         "parameters": [
           {
             "schema": {
@@ -4861,7 +4719,8 @@
         "tags": [
           "docs"
         ],
-        "summary": "Read a document with its resolved anchors",
+        "summary": "Read a document, its resolved anchors, and its key",
+        "description": "The read that hands out the document's **key** (SPEC.md §7): `key` names the version this response returned, and presenting it back on a write that replaces the body is what keeps two writers from overwriting each other. Beside it, `userEditing` says whether a person has an edit session open on the document right now — information, never a gate: nothing is refused because of it, and no document is ever read-only.",
         "parameters": [
           {
             "schema": {
@@ -4878,7 +4737,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Frontmatter, body, and this document's anchors.",
+            "description": "Frontmatter, body, this document's anchors, its key, and whether a person is editing it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4924,7 +4783,7 @@
           "docs"
         ],
         "summary": "Edit a document's body and frontmatter",
-        "description": "Runs anchor reconciliation (SPEC.md §6) in the same save and reports which anchors were remapped and which were orphaned. Refused with `423` when the other party holds the document's edit lock. Every field is optional — a request names only what it changes — so an omitted body is exactly a `{}` body: a save that names no change and rewrites nothing.",
+        "description": "Runs anchor reconciliation (SPEC.md §6) in the same save and reports which anchors were remapped and which were orphaned. Every field is optional — a request names only what it changes — so an omitted body is exactly a `{}` body: a save that names no change, rewrites nothing, and needs no key.\n\n**A write that replaces the `body` must present the document's `key`** (SPEC.md §7): the key names the version you read, and a `body` with no key is a `400` — replacing a block without naming what it replaces is the write that can destroy something silently. **A write that names its own delta needs none** — a tag, a status, `due`, `reviewed`, `evergreen`, or a view key — because it says what it changes and merges with whatever else happened. Sending a key on such a write is welcome and is still checked, so a caller that always presents what it read needs no rule about which fields are which.\n\n**A stale key is a `409`**, carrying the document as it now stands and a fresh key for it — one exchange, never a bare refusal, and never a lost edit: nothing was written and the content is yours to resend. The saved document in a `200` likewise carries the fresh key for the next write, so a writer that keeps writing never has to re-read.",
         "parameters": [
           {
             "schema": {
@@ -4956,7 +4815,7 @@
         ],
         "requestBody": {
           "required": false,
-          "description": "The fields to change; omit the body entirely to change nothing.",
+          "description": "The fields to change, plus the `key` when they include `body`; omit the body entirely to change nothing.",
           "content": {
             "application/json": {
               "schema": {
@@ -4967,7 +4826,7 @@
         },
         "responses": {
           "200": {
-            "description": "The saved document and the anchor reconciliation report.",
+            "description": "The saved document — carrying a fresh `key` — and the anchor reconciliation report.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5006,12 +4865,12 @@
               }
             }
           },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
+          "409": {
+            "description": "The `key` presented names a version this document no longer is: it changed since you read it, so the write was refused rather than overwriting something you never saw (SPEC.md §7). Nothing was written and nothing is lost — `doc` is the document as it now stands, `doc.key` is the fresh key, and the content you tried to save is yours to reconcile and resend.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LockedError"
+                  "$ref": "#/components/schemas/StaleKeyError"
                 }
               }
             }
@@ -5023,7 +4882,7 @@
           "docs"
         ],
         "summary": "Delete a document (user-only)",
-        "description": "**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (SPEC.md §7). Cascade: the document's threads become **orphaned records** — they keep their `parent` id and stay readable, but their anchors no longer resolve. Nothing is hard-deleted from history; git preserves the file and every version of it. Refused with `423` when the other party holds the document's edit lock.",
+        "description": "**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (SPEC.md §7). Cascade: the document's threads become **orphaned records** — they keep their `parent` id and stay readable, but their anchors no longer resolve. Nothing is hard-deleted from history; git preserves the file and every version of it. Deletion presents no key (SPEC.md §7): it is a user's deliberate act on a document they are looking at, behind an explicit confirm, and it destroys the document rather than a version of it.",
         "parameters": [
           {
             "schema": {
@@ -5100,16 +4959,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockedError"
                 }
               }
             }
@@ -5358,7 +5207,7 @@
           "docs"
         ],
         "summary": "Move a document to another folder",
-        "description": "Rewrites the file path only (SPEC.md §9.2). **The document id never changes**, so every `[[ref]]`, anchor entry and thread `parent` keeps resolving; the projection re-maps id → path. Refused with `423` when the other party holds the document's edit lock.",
+        "description": "Rewrites the file path only (SPEC.md §9.2). **The document id never changes**, so every `[[ref]]`, anchor entry and thread `parent` keeps resolving; the projection re-maps id → path. **A move names its own delta and presents no key** (SPEC.md §7): it rewrites the path, not the content, so it invalidates nobody's key and overwrites nothing.",
         "parameters": [
           {
             "schema": {
@@ -5439,16 +5288,6 @@
                 }
               }
             }
-          },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockedError"
-                }
-              }
-            }
           }
         }
       }
@@ -5459,7 +5298,7 @@
           "docs"
         ],
         "summary": "Archive a document",
-        "description": "Flips `status` to `archived` — a reversible organizational act, never a deletion (SPEC.md §7). **The document id never changes** and nothing leaves git. Archived documents drop out of the default result set of `GET /api/docs` and come back with `status=archived`. Archiving a `type: skill` document additionally moves its folder to `.claude/skills-archived/`, which disables it without unindexing it — carrying every file under that folder, including a **nested skill** the request never named, whose id is stamped into it so the move does not change its identity (SERVER-078). That carry **disables the nested skill too** (§7: what disables a skill is where its folder lives), and the response says so: one `carried_skill` warning per carried document, naming it, its path after the move, and that it is now **disabled**. It is a report *about* the act, not a part of it — a document the request never named never becomes a changed document (CONTRACT-047). The id stamp itself is deliberately not reported: it keeps an identity rather than changing one. An archive that carries no other skill document warns nothing. Refused with `423` when the other party holds the lock on the named document **or on any document the folder move carries**, since the act writes those files too; the refusal names which document's lock is held.",
+        "description": "Flips `status` to `archived` — a reversible organizational act, never a deletion (SPEC.md §7). **The document id never changes** and nothing leaves git. Archived documents drop out of the default result set of `GET /api/docs` and come back with `status=archived`. Archiving a `type: skill` document additionally moves its folder to `.claude/skills-archived/`, which disables it without unindexing it — carrying every file under that folder, including a **nested skill** the request never named, whose id is stamped into it so the move does not change its identity (SERVER-078). That carry **disables the nested skill too** (§7: what disables a skill is where its folder lives), and the response says so: one `carried_skill` warning per carried document, naming it, its path after the move, and that it is now **disabled**. It is a report *about* the act, not a part of it — a document the request never named never becomes a changed document (CONTRACT-047). The id stamp itself is deliberately not reported: it keeps an identity rather than changing one. An archive that carries no other skill document warns nothing. **Archiving names its own delta and presents no key** (SPEC.md §7): it flips `status`, overwriting nothing a reader may have been holding.",
         "parameters": [
           {
             "schema": {
@@ -5529,16 +5368,6 @@
                 }
               }
             }
-          },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockedError"
-                }
-              }
-            }
           }
         }
       }
@@ -5549,7 +5378,7 @@
           "docs"
         ],
         "summary": "Restore an archived document",
-        "description": "The inverse flip, back to `status: open`. **The document id never changes.** Unarchiving a `type: skill` document moves its folder back out of `.claude/skills-archived/`, carrying every file under it — including a **nested skill** the request never named, whose id is stamped into it so the move does not change its identity, and whose `status` is reconciled to the enabled root it now sits in (SERVER-078). Both effects on that carried document are reported (CONTRACT-047): a `carried_skill` warning per carried document, naming it, its path after the move, and that it is now **enabled**, and — only where a stale `status: archived` had to be corrected to `open` — a `carried_reconciliation` warning naming the document and the key rewritten. They are reports *about* the act, not parts of it: a document the request never named never becomes a changed document. The id stamp is deliberately not reported, since it keeps an identity rather than changing one. An unarchive that carries no other skill document warns nothing, and one whose carried documents needed no correction carries no `carried_reconciliation`. Refused with `423` when the other party holds the edit lock on the named document **or on any document the folder move carries**, since the act writes those files too; the refusal names which document's lock is held.",
+        "description": "The inverse flip, back to `status: open`. **The document id never changes.** Unarchiving a `type: skill` document moves its folder back out of `.claude/skills-archived/`, carrying every file under it — including a **nested skill** the request never named, whose id is stamped into it so the move does not change its identity, and whose `status` is reconciled to the enabled root it now sits in (SERVER-078). Both effects on that carried document are reported (CONTRACT-047): a `carried_skill` warning per carried document, naming it, its path after the move, and that it is now **enabled**, and — only where a stale `status: archived` had to be corrected to `open` — a `carried_reconciliation` warning naming the document and the key rewritten. They are reports *about* the act, not parts of it: a document the request never named never becomes a changed document. The id stamp is deliberately not reported, since it keeps an identity rather than changing one. An unarchive that carries no other skill document warns nothing, and one whose carried documents needed no correction carries no `carried_reconciliation`. **Unarchiving names its own delta and presents no key** (SPEC.md §7): it flips `status` back, overwriting nothing a reader may have been holding.",
         "parameters": [
           {
             "schema": {
@@ -5616,16 +5445,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockedError"
                 }
               }
             }
@@ -6006,7 +5825,7 @@
           "threads"
         ],
         "summary": "Create a thread on a selection, a whole document, or standalone",
-        "description": "With a selector, the server writes the anchor entry into the parent's frontmatter and creates the thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's edit lock, since anchoring mutates the parent.\n\n**The stored anchor's context is the server's, not the caller's.** `exact` is stored verbatim, but `prefix`/`suffix` on the request are used for one thing only — saying which occurrence a repeated quote means — and are never written as sent: the server reads the context off the parent's own bytes around the quote, so the anchor is byte-faithful to the file even when the caller could not produce context (SERVER-071). A quote occurring more than once with nothing to tell the occurrences apart is a `400`, because guessing one would attach the conversation to a passage nobody chose; a quote the document does not contain is **not** refused, since §6 calls that anchor orphaned and orphaned is a normal state of a living corpus rather than a bad request.\n\nSend `application/json` for a plain thread, or `multipart/form-data` to attach files to the first turn — the composer's *Ask* with a screenshot (SPEC.md §8). The multipart form takes the same repeated `files` part as `POST /api/capture`, names the first turn's prose `text` rather than `body`, and carries `selector` as one JSON-encoded part; a first turn may be attachment-only, but a request with neither text nor files is a `400`. Multipart bodies are built by `uploadCreateThread` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountCreateThread` from `@corpus/contract`, which dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.",
+        "description": "With a selector, the server writes the anchor entry into the parent's frontmatter and creates the thread file atomically (SPEC.md §6). It presents no key (SPEC.md §7): anchoring adds one `anchors` entry to the parent and replaces nothing.\n\n**The stored anchor's context is the server's, not the caller's.** `exact` is stored verbatim, but `prefix`/`suffix` on the request are used for one thing only — saying which occurrence a repeated quote means — and are never written as sent: the server reads the context off the parent's own bytes around the quote, so the anchor is byte-faithful to the file even when the caller could not produce context (SERVER-071). A quote occurring more than once with nothing to tell the occurrences apart is a `400`, because guessing one would attach the conversation to a passage nobody chose; a quote the document does not contain is **not** refused, since §6 calls that anchor orphaned and orphaned is a normal state of a living corpus rather than a bad request.\n\nSend `application/json` for a plain thread, or `multipart/form-data` to attach files to the first turn — the composer's *Ask* with a screenshot (SPEC.md §8). The multipart form takes the same repeated `files` part as `POST /api/capture`, names the first turn's prose `text` rather than `body`, and carries `selector` as one JSON-encoded part; a first turn may be attachment-only, but a request with neither text nor files is a `400`. Multipart bodies are built by `uploadCreateThread` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountCreateThread` from `@corpus/contract`, which dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.",
         "parameters": [
           {
             "schema": {
@@ -6087,16 +5906,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationError"
-                }
-              }
-            }
-          },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockedError"
                 }
               }
             }
@@ -6372,7 +6181,7 @@
           "threads"
         ],
         "summary": "Delete a turn (user-only)",
-        "description": "**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent never deletes turns (SPEC.md §6). Cascade: deleting a thread's **last** turn deletes the thread itself, and deleting a thread removes its anchor entry from the parent's frontmatter, so no highlight is left pointing at an empty conversation. Git retains the deleted turn. Refused with `423` when the other party holds the parent document's edit lock, since the cascade may rewrite the parent's frontmatter.",
+        "description": "**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent never deletes turns (SPEC.md §6). Cascade: deleting a thread's **last** turn deletes the thread itself, and deleting a thread removes its anchor entry from the parent's frontmatter, so no highlight is left pointing at an empty conversation. Git retains the deleted turn. It presents no key (SPEC.md §7): deleting a named turn states its own change, and the cascade rewrites one `anchors` entry rather than replacing anything a reader was holding.",
         "parameters": [
           {
             "schema": {
@@ -6461,16 +6270,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockedError"
                 }
               }
             }
@@ -6858,7 +6657,7 @@
           "threads"
         ],
         "summary": "Re-attach a thread to a range a person chose (user-only)",
-        "description": "Attaches an anchored thread to a range of its parent document's current body, chosen by a **person**. The repair for a comment whose selector never byte-matched, which reconciliation cannot fix: a save only ever carries an anchor forward or orphans it, and an anchor that was never resolvable stays detached for the life of the document (SPEC.md §6).\n\n**The request names a range, never a candidate.** A candidate index would oblige the server to regenerate the same list the UI showed and count into it, so the moment the two lists differ the same index means a different passage — the exact silent misattachment this route exists to prevent. `range` is in `ResolvedAnchor.range`'s coordinate space, so a range read from `GET /api/docs/{id}` can be sent straight back.\n\n**Nothing the caller sends is stored.** The server reads the range's bytes out of the parent and computes the whole selector — `exact` and its `prefix`/`suffix` context — from the document itself, the same rule `POST /api/threads` follows (SERVER-071), so a repaired anchor is in exactly the shape a save would have left it in and the two cannot drift. `expectedText` is a **guard, not a selector**: the server refuses when the parent's live bytes at that range are not what the caller was looking at, because the document may have been saved between the person seeing the range and choosing it.\n\n**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. The evidence this route runs on is a person's memory of what they commented on; SERVER-059 showed it does not exist at read time, so a machine calling this would be guessing, and §6 puts a visible orphan above a silent misattachment. The agent also has no need for it — every edit that carries real evidence already reconciles on the save path.\n\n**One action, one commit** (SPEC.md §4): the repair rewrites one `anchors` entry in the parent's frontmatter and lands as a single auto-commit authored by the acting party. Nothing else about the thread changes — not its status, not its turns, not its body. `423` when the parent is held by the other party's edit lock, since the parent is what is written (§7).\n\n**`409`, with a machine-readable `reason`.** `range-changed` — the parent no longer holds `expectedText` at that range, or the range runs past the end of the body; the caller has to re-read and choose again. `range-overlaps` — the range overlaps text another thread's anchor already resolves over; §6 requires that two threads on disjoint text never end up claiming overlapping text, so this is refused rather than merged or silently dropped. The thread's **own** current anchor is not an overlap with itself. `not-anchored` — the thread is standalone or a whole-document comment; giving one an anchor changes the scope of somebody's comment rather than repairing it, and is not this route.\n\n**A thread that already resolves may be re-attached too**, which moves it. A misattached anchor is as wrong as a detached one, and refusing would leave delete-and-recreate — losing the conversation — as the only correction. The guard and the overlap check make the move as safe as the repair.",
+        "description": "Attaches an anchored thread to a range of its parent document's current body, chosen by a **person**. The repair for a comment whose selector never byte-matched, which reconciliation cannot fix: a save only ever carries an anchor forward or orphans it, and an anchor that was never resolvable stays detached for the life of the document (SPEC.md §6).\n\n**The request names a range, never a candidate.** A candidate index would oblige the server to regenerate the same list the UI showed and count into it, so the moment the two lists differ the same index means a different passage — the exact silent misattachment this route exists to prevent. `range` is in `ResolvedAnchor.range`'s coordinate space, so a range read from `GET /api/docs/{id}` can be sent straight back.\n\n**Nothing the caller sends is stored.** The server reads the range's bytes out of the parent and computes the whole selector — `exact` and its `prefix`/`suffix` context — from the document itself, the same rule `POST /api/threads` follows (SERVER-071), so a repaired anchor is in exactly the shape a save would have left it in and the two cannot drift. `expectedText` is a **guard, not a selector**: the server refuses when the parent's live bytes at that range are not what the caller was looking at, because the document may have been saved between the person seeing the range and choosing it.\n\n**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. The evidence this route runs on is a person's memory of what they commented on; SERVER-059 showed it does not exist at read time, so a machine calling this would be guessing, and §6 puts a visible orphan above a silent misattachment. The agent also has no need for it — every edit that carries real evidence already reconciles on the save path.\n\n**One action, one commit** (SPEC.md §4): the repair rewrites one `anchors` entry in the parent's frontmatter and lands as a single auto-commit authored by the acting party. Nothing else about the thread changes — not its status, not its turns, not its body. It presents no key (§7): it rewrites one `anchors` entry, and `expectedText` is already the same check by another route — a range whose bytes moved is refused on its own terms below.\n\n**`409`, with a machine-readable `reason`.** `range-changed` — the parent no longer holds `expectedText` at that range, or the range runs past the end of the body; the caller has to re-read and choose again. `range-overlaps` — the range overlaps text another thread's anchor already resolves over; §6 requires that two threads on disjoint text never end up claiming overlapping text, so this is refused rather than merged or silently dropped. The thread's **own** current anchor is not an overlap with itself. `not-anchored` — the thread is standalone or a whole-document comment; giving one an anchor changes the scope of somebody's comment rather than repairing it, and is not this route.\n\n**A thread that already resolves may be re-attached too**, which moves it. A misattached anchor is as wrong as a detached one, and refusing would leave delete-and-recreate — losing the conversation — as the only correction. The guard and the overlap check make the move as safe as the repair.",
         "parameters": [
           {
             "schema": {
@@ -6956,16 +6755,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReattachConflictError"
-                }
-              }
-            }
-          },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockedError"
                 }
               }
             }
@@ -7479,8 +7268,8 @@
         "tags": [
           "queue"
         ],
-        "summary": "Defer a claimed event onto a document's lock",
-        "description": "Moves a claimed event to `deferred/` — waiting, not failed (SPEC.md §7). The agent calls it when the work it claimed needs a document the **user** holds the edit lock on: it replies to the waiting thread, defers the event, and moves on.\n\n**The event comes back on its own.** Releasing, force-breaking or reaping the lock on `blockedOn` returns it to `pending`, and `corpus queue idle` unparks — no retry call, no operator. Until then it is not claimable: `claim-all` skips deferred events, because handing back work whose lock is still held would spin the agent against it.\n\n**Nothing is ever silently dropped** (SPEC.md §7). A deferral whose lock is never released stays on disk, stays visible in the queue counts and the console, survives a restart, and stays retryable by hand through `POST /api/jobs/{id}/retry` — which is what §7's force-break bullet promises, now as the manual override rather than the only path.\n\n`409` when the event is not `in-progress`: only claimed work can be deferred, since nothing else has tried the edit yet, exactly as only a finished job can be retried. `404` when there is no such event.",
+        "summary": "Defer a claimed event while a person is editing that document",
+        "description": "Moves a claimed event to `deferred/` — waiting, not failed (SPEC.md §7). The agent calls it when the work it claimed needs a document a **person** has an edit session open on (`userEditing` on the document read): it replies to the waiting thread, defers the event, and moves on. **A judgement, not a refusal** — nothing stopped it writing; the key would have let the write through. It deferred because it saw.\n\n**The event comes back on its own.** The end of that edit session on `blockedOn` returns it to `pending`, and `corpus queue idle` unparks — no retry call, no operator. Until then it is not claimable: `claim-all` skips deferred events, because handing back work while the person is still typing would put the agent straight back where it decided not to be.\n\n**Nothing is ever silently dropped** (SPEC.md §7). A deferral whose document is never put down stays on disk, stays visible in the queue counts and the console, survives a restart, and stays retryable by hand through `POST /api/jobs/{id}/retry`.\n\n`409` when the event is not `in-progress`: only claimed work can be deferred, since nothing else has looked at the document yet, exactly as only a finished job can be retried. `404` when there is no such event.",
         "parameters": [
           {
             "schema": {
@@ -7655,374 +7444,6 @@
         }
       }
     },
-    "/api/locks": {
-      "get": {
-        "tags": [
-          "locks"
-        ],
-        "summary": "List active locks",
-        "description": "Read on load so lock banners are correct before the first SSE frame arrives; lock state is projected and broadcast like any other state (SPEC.md §7).",
-        "responses": {
-          "200": {
-            "description": "Every lock currently held.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockList"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid workspace bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/locks/reap": {
-      "post": {
-        "tags": [
-          "locks"
-        ],
-        "summary": "Clear expired locks",
-        "description": "Clears every lock past its TTL, so a crashed editor cannot wedge a document — the same pattern as `POST /api/queue/reap-stale` (SPEC.md §7).",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "user",
-                "agent"
-              ],
-              "default": "user",
-              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
-            },
-            "required": false,
-            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
-            "name": "x-corpus-author",
-            "in": "header"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The documents whose expired locks were cleared.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockReapResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request failed schema validation; `issues` names the offending fields.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid workspace bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/locks/{docId}": {
-      "post": {
-        "tags": [
-          "locks"
-        ],
-        "summary": "Acquire a document's edit lock",
-        "description": "One holder at a time. The agent takes the lock before editing (the CLI's edit verbs do this implicitly) and the user's editor session holds it while actively editing (SPEC.md §7). Re-acquiring a lock you already hold renews its lease; a lock held by the other party is a `409` carrying that lock. The body is optional in full: a bare `POST` takes the lock for the default lease, and `ttl`, when given, sets a different one.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-              "description": "Identifier of any document; threads are documents too.",
-              "example": "doc_a1b2c3"
-            },
-            "required": true,
-            "description": "Identifier of any document; threads are documents too.",
-            "name": "docId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "user",
-                "agent"
-              ],
-              "default": "user",
-              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
-            },
-            "required": false,
-            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
-            "name": "x-corpus-author",
-            "in": "header"
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "description": "Optional lease override; omit the body entirely to take the default lease.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcquireLockRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "The lock, now held by the acting party.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Lock"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request failed schema validation; `issues` names the offending fields.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid workspace bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such resource.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Another party already holds this document's lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockConflictError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "locks"
-        ],
-        "summary": "Release a document's edit lock",
-        "description": "Only the holder may release: a request whose `x-corpus-author` is not the holder is rejected with `403`. To clear somebody else's lock, break it.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-              "description": "Identifier of any document; threads are documents too.",
-              "example": "doc_a1b2c3"
-            },
-            "required": true,
-            "description": "Identifier of any document; threads are documents too.",
-            "name": "docId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "user",
-                "agent"
-              ],
-              "default": "user",
-              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
-            },
-            "required": false,
-            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
-            "name": "x-corpus-author",
-            "in": "header"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The lock is gone.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReleaseLockResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request failed schema validation; `issues` names the offending fields.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid workspace bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The acting party in `x-corpus-author` may not make this call.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ForbiddenError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such resource.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/locks/{docId}/break": {
-      "post": {
-        "tags": [
-          "locks"
-        ],
-        "summary": "Force-unlock a document (user-only)",
-        "description": "The human escape hatch for a stuck agent lock — the banner's Force unlock button and `corpus lock break <docId>` (SPEC.md §7). **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`, because an agent breaking its own contention would defeat the mechanism. Breaks are recorded in the audit trail commit message, and the agent's deferred edit re-enters the queue rather than being lost.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-              "description": "Identifier of any document; threads are documents too.",
-              "example": "doc_a1b2c3"
-            },
-            "required": true,
-            "description": "Identifier of any document; threads are documents too.",
-            "name": "docId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "user",
-                "agent"
-              ],
-              "default": "user",
-              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
-            },
-            "required": false,
-            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
-            "name": "x-corpus-author",
-            "in": "header"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The lock is broken; `holder` names who held it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReleaseLockResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request failed schema validation; `issues` names the offending fields.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid workspace bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The acting party in `x-corpus-author` may not make this call.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ForbiddenError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such resource.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/jobs": {
       "get": {
         "tags": [
@@ -8059,10 +7480,10 @@
           {
             "schema": {
               "type": "string",
-              "description": "Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Deliberately a general set rather than a named `outstanding` shorthand: which statuses count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's reading into the wire would make every other caller live with it. The two callers that ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal states, `deferred` included, since a job waiting on an edit lock is still owed."
+              "description": "Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Deliberately a general set rather than a named `outstanding` shorthand: which statuses count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's reading into the wire would make every other caller live with it. The two callers that ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal states, `deferred` included, since a job waiting on somebody's editing is still owed."
             },
             "required": false,
-            "description": "Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Deliberately a general set rather than a named `outstanding` shorthand: which statuses count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's reading into the wire would make every other caller live with it. The two callers that ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal states, `deferred` included, since a job waiting on an edit lock is still owed.",
+            "description": "Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Deliberately a general set rather than a named `outstanding` shorthand: which statuses count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's reading into the wire would make every other caller live with it. The two callers that ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal states, `deferred` included, since a job waiting on somebody's editing is still owed.",
             "name": "status",
             "in": "query"
           }
@@ -8274,7 +7695,7 @@
           "jobs"
         ],
         "summary": "Retry a failed or deferred job",
-        "description": "Returns the event to `pending/` so the agent picks it up again — the retry action in the console's detail header (SPEC.md §11).\n\nIt works on a **deferred** job too, and stays the manual override once deferrals re-enter on their own (SPEC.md §7, CONTRACT-021): automatic re-entry handles the lock being released, broken or reaped, and this handles everything it did not reach — a lock released out of band, or a deferral an operator simply wants back now.",
+        "description": "Returns the event to `pending/` so the agent picks it up again — the retry action in the console's detail header (SPEC.md §11).\n\nIt works on a **deferred** job too, and stays the manual override once deferrals re-enter on their own (SPEC.md §7, CONTRACT-021): automatic re-entry handles the edit session ending, and this handles everything it did not reach — a deferral an operator simply wants back now, or one whose document was put down in a way the server never saw.",
         "parameters": [
           {
             "schema": {
@@ -8683,7 +8104,7 @@
           "skills"
         ],
         "summary": "Create a skill",
-        "description": "Creates `.claude/skills/{name}/SKILL.md` through the server's ordinary mutation pipeline — the write path SPEC.md §7's skill genesis needs, since the agent reaches the workspace only through the CLI and the server is the sole writer (SPEC.md §9.1).\n\n**The created file carries both frontmatter vocabularies**, which is what makes a skill simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory name) and `description` for Claude Code's discovery, plus the core document keys the server assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`.\n\n**The skill is named in the body rather than in the path** because the path names a resource that does not exist yet; this is `POST /api/docs`'s convention, not a departure from the rollback route's. The name doubles as the traversal guard: it is validated against the same pattern the rollback path parameter uses, which admits no `/`, `.` or whitespace, so a traversal attempt is a `400` naming `body.name` and never reaches the filesystem.\n\n**The creation lands as a normal auto-commit** (SPEC.md §9.2) and is projected and broadcast like any other write, so the new skill appears on the board and in `GET /api/docs?type=skill` without a restart. If the workspace's git hooks reject the commit, the file stands anyway and the rejection comes back in `warnings` (SPEC.md §14).\n\n`409` means the name is taken — a skill of that name is already installed. Whether a name held only by an *archived* skill (`.claude/skills-archived/{name}/`, where `corpus doc archive` moves one) is likewise taken is answered by the server, and both answers are already describable here: refusing it is this same `409`, allowing it is a plain `201`.\n\nThere is no `423`: an edit lock is held on a document, and this call's document does not exist until the call succeeds, so nothing can be holding it. A name that is already taken is a conflict, not a lock — and editing the skill afterwards goes through `PUT /api/docs/{id}`, which does refuse under the other party's lock.",
+        "description": "Creates `.claude/skills/{name}/SKILL.md` through the server's ordinary mutation pipeline — the write path SPEC.md §7's skill genesis needs, since the agent reaches the workspace only through the CLI and the server is the sole writer (SPEC.md §9.1).\n\n**The created file carries both frontmatter vocabularies**, which is what makes a skill simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory name) and `description` for Claude Code's discovery, plus the core document keys the server assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`.\n\n**The skill is named in the body rather than in the path** because the path names a resource that does not exist yet; this is `POST /api/docs`'s convention, not a departure from the rollback route's. The name doubles as the traversal guard: it is validated against the same pattern the rollback path parameter uses, which admits no `/`, `.` or whitespace, so a traversal attempt is a `400` naming `body.name` and never reaches the filesystem.\n\n**The creation lands as a normal auto-commit** (SPEC.md §9.2) and is projected and broadcast like any other write, so the new skill appears on the board and in `GET /api/docs?type=skill` without a restart. If the workspace's git hooks reject the commit, the file stands anyway and the rejection comes back in `warnings` (SPEC.md §14).\n\n`409` means the name is taken — a skill of that name is already installed. Whether a name held only by an *archived* skill (`.claude/skills-archived/{name}/`, where `corpus doc archive` moves one) is likewise taken is answered by the server, and both answers are already describable here: refusing it is this same `409`, allowing it is a plain `201`.\n\nIt presents no key (SPEC.md §7): this call's document does not exist until the call succeeds, so there is no version anyone could have read. Editing the skill afterwards goes through `PUT /api/docs/{id}`, which does demand a key for a body write.",
         "parameters": [
           {
             "schema": {
@@ -8762,7 +8183,7 @@
           "skills"
         ],
         "summary": "Restore a skill's last-known-good version",
-        "description": "Restores `.claude/skills/{name}/SKILL.md` from git and commits the restoration — the targeted revert SPEC.md §7 names as the loop-safety escape hatch. Skills are ordinary documents and are edited like ordinary documents, so a bad edit to a core-loop skill (`orchestrate`, `comment`) can break the very loop that would otherwise fix it; this is the operator's way back, and the orchestrate skill documents it.\n\n**The body is optional in full.** A bare `POST` restores the last-known-good version — the newest committed revision of the file that validates. `to` overrides that with any revision git resolves, for stepping further back.\n\n**The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway, `commit` is `null` and the rejection comes back in `warnings` (§14).\n\n`404` means no skill of that name is installed — there is no `.claude/skills/{name}/` directory. A skill that was archived (`corpus doc archive` moves it to `.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: unarchive it first.\n\nA skill is an ordinary document, and this is an ordinary document write path: refused with `423` when the other party holds the document's edit lock.",
+        "description": "Restores `.claude/skills/{name}/SKILL.md` from git and commits the restoration — the targeted revert SPEC.md §7 names as the loop-safety escape hatch. Skills are ordinary documents and are edited like ordinary documents, so a bad edit to a core-loop skill (`orchestrate`, `comment`) can break the very loop that would otherwise fix it; this is the operator's way back, and the orchestrate skill documents it.\n\n**The body is optional in full.** A bare `POST` restores the last-known-good version — the newest committed revision of the file that validates. `to` overrides that with any revision git resolves, for stepping further back.\n\n**The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway, `commit` is `null` and the rejection comes back in `warnings` (§14).\n\n`404` means no skill of that name is installed — there is no `.claude/skills/{name}/` directory. A skill that was archived (`corpus doc archive` moves it to `.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: unarchive it first.\n\nA skill is an ordinary document, but this write names a revision rather than replacing a block, so it presents no key (SPEC.md §7 — see the module docblock).",
         "parameters": [
           {
             "schema": {
@@ -8841,16 +8262,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          },
-          "423": {
-            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LockedError"
                 }
               }
             }
@@ -8936,7 +8347,7 @@
           "events"
         ],
         "summary": "Server-sent invalidation stream",
-        "description": "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\nThe key vocabulary is **closed** — these ten shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:\n\n- `[\"docs\"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.\n- `[\"docs\", \"<docId|threadId>\"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.\n- `[\"tree\"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.\n- `[\"threads\", \"<threadId>\"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.\n- `[\"queue\"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and any lock release, break or reap that re-enters a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.\n- `[\"jobs\"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.\n- `[\"jobs\", \"<eventId>\"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.\n- `[\"locks\"]` — emitted by lock acquire, release, force-break and reap. Refetch: `GET /api/locks` — the console's held-locks list.\n- `[\"locks\", \"<docId>\"]` — emitted by acquire, release, force-break and reap of that one document's lock. Refetch: the open reader for that document, which renders read-only with a holder banner while held.\n- `[\"index\"]` — emitted by the embed worker whenever the index's derived state moves: provider adoption, a new disabled or model-download reason, throttled progress while a backlog drains, and the caught-up transition — plus an index rebuild's start and end. Refetch: `GET /api/index/status` — the console strip's index pill.",
+        "description": "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\nThe key vocabulary is **closed** — these ten shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:\n\n- `[\"docs\"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.\n- `[\"docs\", \"<docId|threadId>\"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.\n- `[\"tree\"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.\n- `[\"threads\", \"<threadId>\"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.\n- `[\"queue\"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and the end of an edit session that re-enters a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.\n- `[\"jobs\"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.\n- `[\"jobs\", \"<eventId>\"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.\n- `[\"index\"]` — emitted by the embed worker whenever the index's derived state moves: provider adoption, a new disabled or model-download reason, throttled progress while a backlog drains, and the caught-up transition — plus an index rebuild's start and end. Refetch: `GET /api/index/status` — the console strip's index pill.",
         "security": [],
         "parameters": [
           {

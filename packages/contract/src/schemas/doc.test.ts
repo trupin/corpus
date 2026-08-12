@@ -14,6 +14,9 @@ import {
   docRowBaseShape,
 } from "./doc.js";
 
+/** A key as the wire carries one: 64 lowercase hex characters, and opaque. */
+const DOC_KEY = "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcde";
+
 const frontmatter = {
   id: "doc_a1b2c3",
   type: "note",
@@ -68,6 +71,8 @@ const doc = {
       orphaned: false,
     },
   ],
+  key: DOC_KEY,
+  userEditing: false,
 };
 
 describe("DocFrontmatter", () => {
@@ -204,6 +209,35 @@ describe("Doc", () => {
       anchors: [{ ...doc.anchors[0], range: null, orphaned: true }],
     };
     expect(DocSchema.parse(orphaned)).toEqual(orphaned);
+  });
+
+  /**
+   * SPEC.md §7: *every* document read carries the key naming the version it
+   * returned. A read that could omit it would leave a writer with nothing to
+   * present, so the only way to write would be not to have read.
+   */
+  it("requires the key, on every read of a whole document", () => {
+    const { key: _dropped, ...keyless } = doc;
+    expect(DocSchema.safeParse(keyless).success).toBe(false);
+  });
+
+  it("requires the editing signal beside it, so a read can never half-answer", () => {
+    const { userEditing: _dropped, ...unsignalled } = doc;
+    expect(DocSchema.safeParse(unsignalled).success).toBe(false);
+  });
+
+  it("reports a person editing without that changing anything else", () => {
+    const beingEdited = { ...doc, userEditing: true };
+    expect(DocSchema.parse(beingEdited)).toEqual(beingEdited);
+  });
+
+  /**
+   * A list row carries no body, so there is no version of a body to have read —
+   * and a key on one would let a caller write a document it never opened.
+   */
+  it("keeps the key off the list row", () => {
+    expect(Object.keys(docRowBaseShape)).not.toContain("key");
+    expect(Object.keys(docRowBaseShape)).not.toContain("userEditing");
   });
 });
 
@@ -345,8 +379,59 @@ describe("DeleteDocResult", () => {
 });
 
 describe("UpdateDocRequest and UpdateDocResponse", () => {
-  it("accepts a body-only edit", () => {
-    expect(UpdateDocRequestSchema.parse({ body: "new body" })).toEqual({ body: "new body" });
+  it("accepts a body edit that presents the key it read", () => {
+    expect(UpdateDocRequestSchema.parse({ body: "new body", key: DOC_KEY })).toEqual({
+      body: "new body",
+      key: DOC_KEY,
+    });
+  });
+
+  /**
+   * The whole of SHARED-041, at the boundary: a write that replaces a block
+   * without naming the version it replaces is refused before any handler runs.
+   * An optional field a server may ignore would be the edit lock again.
+   */
+  it("refuses a body edit that presents no key", () => {
+    const parsed = UpdateDocRequestSchema.safeParse({ body: "new body" });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.path).toEqual(["key"]);
+    expect(parsed.error?.issues[0]?.message).toContain("`key` is required");
+  });
+
+  /** An emptied body is the most destructive spelling of the write, not an absent one. */
+  it("refuses an emptied body that presents no key", () => {
+    expect(UpdateDocRequestSchema.safeParse({ body: "" }).success).toBe(false);
+    expect(UpdateDocRequestSchema.safeParse({ body: "", key: DOC_KEY }).success).toBe(true);
+  });
+
+  it.each([
+    ["a tag set", { tags: ["finance"] }],
+    ["a status flip", { status: "archived" as const }],
+    ['a "still current" mark', { reviewed: "2026-07-26T12:00:00Z" }],
+    ["a view key", { pinned: true }],
+    ["an extra-frontmatter merge patch", { extra: { "todo.items": [] } }],
+    ["a save that names no change at all", {}],
+  ])("takes no key on %s, which names its own delta", (_label, patch) => {
+    expect(UpdateDocRequestSchema.safeParse(patch).success).toBe(true);
+  });
+
+  /**
+   * Presenting a key you hold is never wrong, and it is still checked — so a
+   * caller that always sends what it read needs no rule about which fields are
+   * which.
+   */
+  it("accepts a key on a delta write too", () => {
+    expect(UpdateDocRequestSchema.parse({ tags: [], key: DOC_KEY }).key).toBe(DOC_KEY);
+  });
+
+  it.each([
+    ["an empty string", ""],
+    ["a document id", "doc_a1b2c3"],
+    ["uppercase hex, which would make equality depend on spelling", "A".repeat(64)],
+    ["a digest one character short", "a".repeat(63)],
+    ["a digest with a non-hex character", `${"a".repeat(63)}z`],
+  ])("refuses %s where a key belongs", (_label, key) => {
+    expect(UpdateDocRequestSchema.safeParse({ body: "new body", key }).success).toBe(false);
   });
 
   it('accepts a "still current" review mark', () => {

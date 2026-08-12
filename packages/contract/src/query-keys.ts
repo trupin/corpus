@@ -41,9 +41,6 @@ export const QUEUE_KEY: QueryKey = ["queue"];
 /** The console's job rows behind `GET /api/jobs`; every queue event is a job (SPEC.md §7). */
 export const JOBS_KEY: QueryKey = ["jobs"];
 
-/** Live lock banners behind `GET /api/locks` (SPEC.md §7). */
-export const LOCKS_KEY: QueryKey = ["locks"];
-
 /**
  * The semantic index's derived state behind `GET /api/index/status` (SPEC.md
  * §9.1, and §11's console index pill).
@@ -67,9 +64,6 @@ export const threadKey = (threadId: string): QueryKey => ["threads", threadId];
 /** One job's log, by the queue event id that names it. */
 export const jobKey = (eventId: string): QueryKey => ["jobs", eventId];
 
-/** One document's lock, by document id. */
-export const lockKey = (docId: string): QueryKey => ["locks", docId];
-
 /**
  * Names of every shape, in the order the vocabulary is documented. Pinned by
  * `query-keys.test.ts`, and the render order of the description that reaches
@@ -83,8 +77,6 @@ export const QUERY_KEY_NAMES = [
   "queue",
   "jobs",
   "job",
-  "locks",
-  "lock",
   "index",
 ] as const;
 
@@ -109,7 +101,7 @@ export interface QueryKeyShape {
 /**
  * The vocabulary itself: every key shape with the emitter that produces it and
  * the consumer that refetches on it. Publishing the *meaning* is the point — a
- * UI that had to re-derive "what does `["locks", docId]` mean" from the server's
+ * UI that had to re-derive "what does `["jobs", eventId]` mean" from the server's
  * source would drift the first time either side changed.
  */
 export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>> = {
@@ -155,7 +147,7 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     parameterised: false,
     emittedBy:
       "every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, " +
-      "and any lock release, break or reap that re-enters a deferred event",
+      "and the end of an edit session that re-enters a deferred event",
     refetchedBy: "`GET /api/queue/status` — the console strip's depth and halted state",
   },
   jobs: {
@@ -172,21 +164,6 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     emittedBy:
       "an append to that job's log — over HTTP or out of band — and its retry/abandon transitions",
     refetchedBy: "`GET /api/jobs/{id}/log` — the console's live log panel for the selected job",
-  },
-  locks: {
-    shape: '["locks"]',
-    key: () => [...LOCKS_KEY],
-    parameterised: false,
-    emittedBy: "lock acquire, release, force-break and reap",
-    refetchedBy: "`GET /api/locks` — the console's held-locks list",
-  },
-  lock: {
-    shape: '["locks", "<docId>"]',
-    key: lockKey,
-    parameterised: true,
-    emittedBy: "acquire, release, force-break and reap of that one document's lock",
-    refetchedBy:
-      "the open reader for that document, which renders read-only with a holder banner while held",
   },
   index: {
     shape: '["index"]',

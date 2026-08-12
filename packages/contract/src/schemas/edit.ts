@@ -139,15 +139,17 @@ export const DocChangeStatsSchema = z
  * - `close` — **the reader closed and the UI flushed the session**, by calling
  *   `POST /api/docs/{id}/edit-session/flush` (CONTRACT-031). A signal of its
  *   own, and it has to be: CONTRACT-028 originally read §4's flush as the
- *   release of the user's edit lock (`DELETE /api/locks/{docId}`, SPEC.md §7,
- *   "released on blur, idle, or close"), which the server already receives, and
- *   SERVER-052 measured that against the shipped editor — which drops the lease
- *   on blur and after ten seconds of not typing, against this session's three
- *   minutes. Binding the close path to it would have ended a session inside
- *   every pause, making the `idle` window below unreachable in every session and
- *   fragmenting one sitting at a document into an event per typing burst. The
- *   two signals answer different questions ("may somebody else write here" and
- *   "has the person put this document down"), so they are two calls.
+ *   release of the user's then-current edit lock ("released on blur, idle, or
+ *   close"), which the server already received, and SERVER-052 measured that
+ *   against the shipped editor — which dropped the lease on blur and after ten
+ *   seconds of not typing, against this session's three minutes. Binding the
+ *   close path to it would have ended a session inside every pause, making the
+ *   `idle` window below unreachable in every session and fragmenting one sitting
+ *   at a document into an event per typing burst. The two signals answered
+ *   different questions ("may somebody else write here" and "has the person put
+ *   this document down"), so they are two calls. The lock is gone since
+ *   SHARED-041 and this session outlived it — it is now also what
+ *   `Doc.userEditing` reports (SPEC.md §7).
  * - `idle` — the acknowledgment window elapsed with the document open and no user
  *   write (default 3 minutes, and §4 is explicit that this is "a distinct and
  *   longer window than the commit-squash idle").

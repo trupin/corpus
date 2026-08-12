@@ -33,7 +33,20 @@ const frontmatter = {
   extra: {},
 };
 
-const doc = { frontmatter, body: "Body.", path: "data/docs/mortgage.md", anchors: [] };
+/** A key as a read hands one out: 64 lowercase hex characters, and opaque (SPEC.md §7). */
+const DOC_KEY = "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcde";
+
+/** The key a write is answered with, which is never the one it presented. */
+const NEXT_DOC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+const doc = {
+  frontmatter,
+  body: "Body.",
+  path: "data/docs/mortgage.md",
+  anchors: [],
+  key: DOC_KEY,
+  userEditing: false,
+};
 
 /** Stands in for "the newest commit that touched this document" on the diff route. */
 const DEFAULT_HEAD_SHA = "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456";
@@ -160,13 +173,6 @@ const queueStatus = {
   abandoned: 0,
 };
 
-const lock = {
-  docId: "doc_a1b2c3",
-  holder: "user" as const,
-  acquired: "2026-07-19T10:05:00Z",
-  ttl: 300,
-};
-
 /** Stands in for a job whose log file has reached its size cap. */
 const CAPPED_JOB_ID = "evt_full";
 
@@ -193,7 +199,6 @@ const rebuildResult = {
   links: 0,
   events: 0,
   jobs: 0,
-  locks: 0,
   seen: 1,
   durationMs: 42,
   skipped: [{ path: "data/docs/broken.md", reason: "frontmatter is not valid YAML" }],
@@ -283,17 +288,16 @@ function createStubApp() {
         403,
       );
     }
-    const locked = staged.filter((row) => row.id.startsWith("th_"));
+    const moved = staged.filter((row) => row.id.startsWith("th_"));
     const [first, ...rest] = staged.filter((row) => !row.id.startsWith("th_"));
     return c.json(
       {
         changed: first === undefined ? [] : [first],
         alreadyInState: rest,
-        refused: locked.map((row) => ({
+        refused: moved.map((row) => ({
           ...row,
-          reason: "locked" as const,
-          message: `${row.action} refused: held by the agent`,
-          lock: { ...lock, docId: row.id, holder: "agent" as const },
+          reason: "stale" as const,
+          message: `${row.action} refused: it changed while the Save was staged`,
         })),
         orphanedThreadIds: deleting ? ["th_x9y8"] : [],
         // One sha for the whole act, whatever mix of verbs it carried, and none
@@ -305,9 +309,29 @@ function createStubApp() {
     );
   });
   app.openapi(contractRoutes.getDoc, (c) => c.json(doc, 200));
-  app.openapi(contractRoutes.updateDoc, (c) =>
-    c.json({ doc, anchors: { remapped: [], orphaned: [] }, warnings: [] }, 200),
-  );
+  // SPEC.md §7: a write that lands answers with a **fresh** key, so a writer
+  // that keeps writing never has to re-read; a stale one is refused with the
+  // document as it now stands, which `doc_stale1` stands in for.
+  app.openapi(contractRoutes.updateDoc, (c) => {
+    if (c.req.valid("param").id === "doc_stale1") {
+      return c.json(
+        {
+          code: "stale_key" as const,
+          message: "The key you presented names a version this document no longer is.",
+          doc: { ...doc, body: "what it says now", key: NEXT_DOC_KEY, userEditing: true },
+        },
+        409,
+      );
+    }
+    return c.json(
+      {
+        doc: { ...doc, key: NEXT_DOC_KEY },
+        anchors: { remapped: [], orphaned: [] },
+        warnings: [],
+      },
+      200,
+    );
+  });
   app.openapi(contractRoutes.deleteDoc, (c) =>
     c.json(
       { deletedId: c.req.valid("param").id, orphanedThreadIds: ["th_x9y8"], warnings: [] },
@@ -607,24 +631,6 @@ function createStubApp() {
   });
   app.openapi(contractRoutes.abandonEvent, (c) => c.json(queueEvent, 200));
 
-  app.openapi(contractRoutes.listLocks, (c) => c.json({ locks: [lock] }, 200));
-  app.openapi(contractRoutes.reapLocks, (c) => c.json({ reaped: ["doc_a1b2c3"] }, 200));
-  app.openapi(contractRoutes.acquireLock, (c) =>
-    c.json({ ...lock, docId: c.req.valid("param").docId }, 201),
-  );
-  app.openapi(contractRoutes.releaseLock, (c) =>
-    c.json(
-      { docId: c.req.valid("param").docId, released: true as const, holder: "user" as const },
-      200,
-    ),
-  );
-  app.openapi(contractRoutes.breakLock, (c) =>
-    c.json(
-      { docId: c.req.valid("param").docId, released: true as const, holder: "agent" as const },
-      200,
-    ),
-  );
-
   app.openapi(contractRoutes.listJobs, (c) => c.json({ jobs: [job] }, 200));
   app.openapi(contractRoutes.getJobLog, (c) =>
     c.json({ lines: [{ ts: job.updated, line: "step" }], nextCursor: 1 }, 200),
@@ -760,14 +766,14 @@ describe("contract route registry", () => {
   });
 
   /**
-   * Static-before-parameter is load-bearing: `/api/locks/reap` and
-   * `/api/locks/{docId}` compete for the same position, and a `docId` of `reap`
-   * would otherwise be indistinguishable. The failure mode is silent misrouting,
-   * so the order is held by a test rather than by a comment.
+   * Static-before-parameter is load-bearing: `/api/queue/reap-stale` and
+   * `/api/queue/{id}/complete` compete for the same position, and an event id
+   * literally named `reap-stale` would otherwise be indistinguishable. The
+   * failure mode is silent misrouting, so the order is held by a test rather
+   * than by a comment.
    */
   it.each([
     ["/api/docs/bulk", "/api/docs/{id}"],
-    ["/api/locks/reap", "/api/locks/{docId}"],
     ["/api/queue/reap-stale", "/api/queue/{id}/complete"],
     ["/api/queue/claim-all", "/api/queue/{id}/complete"],
     ["/api/queue/halt", "/api/queue/{id}"],
@@ -809,6 +815,74 @@ describe("routes mounted on a Hono app", () => {
     const response = await createStubApp().request("/api/health");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ status: "ok" });
+  });
+
+  /**
+   * SPEC.md §7 through the mounted definitions, which is where the enforcement
+   * actually lives: `@hono/zod-openapi` validates the body before any handler
+   * runs, so a keyless body write is refused by the **contract**, not by a
+   * server that remembered to check. That is the whole difference from the lock
+   * it replaced — forgetting is no longer possible rather than merely
+   * discouraged.
+   */
+  describe("the key on the write path", () => {
+    const write = async (body: unknown, id = "doc_a1b2c3"): Promise<Response> =>
+      createStubApp().request(`/api/docs/${id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    it("refuses a body write that presents no key, before any handler runs", async () => {
+      const response = await write({ body: "overwritten" });
+      expect(response.status).toBe(400);
+      // The refusal names the field and says what to do about it, because the
+      // caller's next move is a read it has not made yet.
+      const refusal = await response.text();
+      expect(refusal).toContain("key");
+      expect(refusal).toContain("send back the");
+    });
+
+    it("refuses a body write whose key is not a key", async () => {
+      expect((await write({ body: "overwritten", key: "doc_a1b2c3" })).status).toBe(400);
+    });
+
+    it("accepts a body write that presents one, and answers with a fresh key", async () => {
+      const response = await write({ body: "overwritten", key: DOC_KEY });
+      expect(response.status).toBe(200);
+      const saved = (await response.json()) as { doc: { key: string } };
+      expect(saved.doc.key).toBe(NEXT_DOC_KEY);
+      expect(saved.doc.key).not.toBe(DOC_KEY);
+    });
+
+    it.each([
+      ["a tag set", { tags: ["finance"] }],
+      ["a status flip", { status: "archived" }],
+      ["a save that names no change at all", {}],
+    ])("lets %s through with no key, since it names its own delta", async (_label, body) => {
+      expect((await write(body)).status).toBe(200);
+    });
+
+    /** Never a bare refusal, and never a lost edit (SPEC.md §7). */
+    it("refuses a stale key with the document as it now stands", async () => {
+      const response = await write({ body: "overwritten", key: DOC_KEY }, "doc_stale1");
+      expect(response.status).toBe(409);
+      const refusal = (await response.json()) as {
+        code: string;
+        doc: { body: string; key: string; userEditing: boolean };
+      };
+      expect(refusal.code).toBe("stale_key");
+      expect(refusal.doc.body).toBe("what it says now");
+      expect(refusal.doc.key).toBe(NEXT_DOC_KEY);
+      expect(refusal.doc.userEditing).toBe(true);
+    });
+
+    it("hands the key out on the read, so a writer never has to invent one", async () => {
+      const response = await createStubApp().request("/api/docs/doc_a1b2c3");
+      const read = (await response.json()) as { key: string; userEditing: boolean };
+      expect(read.key).toBe(DOC_KEY);
+      expect(read.userEditing).toBe(false);
+    });
   });
 
   it("applies the declared pagination and sort defaults to a bare list request", async () => {
@@ -929,7 +1003,7 @@ describe("routes mounted on a Hono app", () => {
   interface BulkResult {
     changed: { id: string; action: string }[];
     alreadyInState: { id: string; action: string }[];
-    refused: { id: string; action: string; reason: string; lock: { holder: string } | null }[];
+    refused: { id: string; action: string; reason: string; message: string }[];
     orphanedThreadIds: string[];
     commit: string | null;
   }
@@ -948,8 +1022,8 @@ describe("routes mounted on a Hono app", () => {
     expect(response.status).toBe(200);
     const result = (await response.json()) as BulkResult;
     expect(result.changed).toEqual([{ id: "doc_a1b2c3", action: "archive" }]);
-    expect(result.refused[0]).toMatchObject({ id: "th_x9y8", reason: "locked" });
-    expect(result.refused[0]?.lock?.holder).toBe("agent");
+    expect(result.refused[0]).toMatchObject({ id: "th_x9y8", reason: "stale" });
+    expect(result.refused[0]).not.toHaveProperty("lock");
     // One act, one commit — a single sha for the whole request.
     expect(result.commit).toBe(DEFAULT_HEAD_SHA);
   });
@@ -1218,21 +1292,15 @@ describe("routes mounted on a Hono app", () => {
     expect(response.status).toBe(400);
   });
 
-  /** A `docId` literally named `reap` must not swallow the reap verb, and vice versa. */
-  it.each([
-    ["/api/locks/reap", '{"reaped":["doc_a1b2c3"]}'],
-    ["/api/queue/reap-stale", '{"reaped":["evt_7c1d"],"failed":["evt_dead"]}'],
-  ])("routes %s to its own handler, not to the parameterised peer", async (path, expected) => {
-    const response = await createStubApp().request(path, { method: "POST" });
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe(expected);
-  });
-
-  it("still reaches the parameterised lock route for a real document id", async () => {
-    const response = await createStubApp().request("/api/locks/doc_a1b2c3", { method: "POST" });
-    expect(response.status).toBe(201);
-    await expect(response.json()).resolves.toMatchObject({ docId: "doc_a1b2c3" });
-  });
+  /** An event id literally named `reap-stale` must not swallow the verb, and vice versa. */
+  it.each([["/api/queue/reap-stale", '{"reaped":["evt_7c1d"],"failed":["evt_dead"]}']])(
+    "routes %s to its own handler, not to the parameterised peer",
+    async (path, expected) => {
+      const response = await createStubApp().request(path, { method: "POST" });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(expected);
+    },
+  );
 
   /** The turn timestamp is an ISO instant, so it carries `:` and must arrive percent-encoded. */
   it("matches a URL-encoded ISO timestamp in the turn-deletion path", async () => {
@@ -1573,7 +1641,7 @@ describe("routes mounted on a Hono app", () => {
 
   it.each([
     {},
-    { reason: "locked" },
+    { reason: "someone is editing it" },
     { blockedOn: "evt_7c1d" },
     { blockedOn: "doc_a1b2c3", docId: "doc_a1b2c3" },
   ])("rejects the unusable defer body %j before any handler runs", async (body) => {

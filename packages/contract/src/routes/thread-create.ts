@@ -16,7 +16,6 @@ import {
 } from "./dual-media.js";
 import {
   jsonContent,
-  LOCKED_RESPONSE,
   NOT_FOUND_RESPONSE,
   PAYLOAD_TOO_LARGE_RESPONSE,
   UNAUTHORIZED_RESPONSE,
@@ -45,8 +44,8 @@ const createThreadRoute = (required: boolean) =>
     summary: "Create a thread on a selection, a whole document, or standalone",
     description:
       "With a selector, the server writes the anchor entry into the parent's frontmatter and creates " +
-      "the thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's " +
-      "edit lock, since anchoring mutates the parent.\n\n" +
+      "the thread file atomically (SPEC.md §6). It presents no key (SPEC.md §7): anchoring adds one " +
+      "`anchors` entry to the parent and replaces nothing.\n\n" +
       "**The stored anchor's context is the server's, not the caller's.** `exact` is stored " +
       "verbatim, but `prefix`/`suffix` on the request are used for one thing only — saying which " +
       "occurrence a repeated quote means — and are never written as sent: the server reads the " +
@@ -87,7 +86,6 @@ const createThreadRoute = (required: boolean) =>
       401: UNAUTHORIZED_RESPONSE,
       404: NOT_FOUND_RESPONSE,
       413: PAYLOAD_TOO_LARGE_RESPONSE,
-      423: LOCKED_RESPONSE,
     },
   });
 

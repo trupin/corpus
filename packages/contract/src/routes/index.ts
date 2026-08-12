@@ -21,7 +21,6 @@ import { respondToForm } from "./forms.js";
 import { getHealth } from "./health.js";
 import { getIndexStatus, rebuildIndex } from "./index-maintenance.js";
 import { abandonJob, appendJobLog, getJobLog, listJobs, retryJob } from "./jobs.js";
-import { acquireLock, breakLock, listLocks, reapLocks, releaseLock } from "./locks.js";
 import {
   abandonEvent,
   claimAll,
@@ -64,7 +63,6 @@ export * from "./health.js";
 export * from "./index-maintenance.js";
 export * from "./inventory.js";
 export * from "./jobs.js";
-export * from "./locks.js";
 export * from "./queue.js";
 export * from "./dual-media.js";
 export * from "./responses.js";
@@ -83,9 +81,9 @@ export * from "./upgrade.js";
  * it cannot serve a shape the contract does not declare (SPEC.md §9.3).
  *
  * **Order is load-bearing, not cosmetic.** Several resources have a static
- * segment competing with a path parameter for the same position — `/api/locks/
- * reap` against `/api/locks/{docId}`, and `/api/queue/{claim-all,reap-stale,
- * halt,resume,status,idle}` against `/api/queue/{id}`. Registering the static
+ * segment competing with a path parameter for the same position —
+ * `/api/queue/{claim-all,reap-stale,halt,resume,status,idle}` against
+ * `/api/queue/{id}`. Registering the static
  * routes first is what makes a document literally named `reap` unambiguous; the
  * failure mode is silent misrouting, so `index.test.ts` holds the order rather
  * than a comment alone. It also fixes the path order of the generated document,
@@ -158,12 +156,6 @@ export const contractRoutes = {
   failEvent,
   deferEvent,
   abandonEvent,
-
-  listLocks,
-  reapLocks,
-  acquireLock,
-  releaseLock,
-  breakLock,
 
   listJobs,
   getJobLog,

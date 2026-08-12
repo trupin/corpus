@@ -50,7 +50,7 @@ import {
  * and `bulk` matches neither id prefix (`doc_`/`th_`) — but the failure mode of
  * getting this wrong is silent misrouting, so it is registered *before* the
  * parameterised peers in `./index.ts` and the order is held by a test, exactly
- * as `/api/locks/reap` is.
+ * as `/api/queue/reap-stale` is.
  */
 export const applyBulkAction = createRoute({
   method: "post",
@@ -104,11 +104,11 @@ export const applyBulkAction = createRoute({
     'one document". The result states three parts — what `changed`, what was `alreadyInState` ' +
     "(a document already archived is a no-op, **not** a failure), and, listed apart from both, " +
     "what was `refused` and why, each named individually **with the verb that applied to it**. A " +
-    "document locked by the other party is refused with its holder named (SPEC.md §7) exactly as " +
-    "a single edit to it would be; one that fails validation is refused with its reason (§14); " +
-    "an unknown id is refused as `not-found`; a row the act does not apply to is refused as " +
-    "`not-applicable`; the rest go through. There is no `423` on this route and no `404`: a lock " +
-    "and an unknown id are per-document outcomes here, not verdicts on the request. Every " +
+    "document whose content moved under the staged Save is refused as `stale`, exactly as a " +
+    "single edit to it would be (SPEC.md §7); one that fails validation is refused with its " +
+    "reason (§14); an unknown id is refused as `not-found`; a row the act does not apply to is " +
+    "refused as `not-applicable`; the rest go through. There is no `404`: an unknown id is a " +
+    "per-document outcome here, not a verdict on the request. Every " +
     "requested id appears exactly once across the three parts, so the caller can compare the " +
     "total against the count it showed.\n\n" +
     "**`delete` is user-only** (SPEC.md §7, §9.2): a Save carrying a `delete` entry with " +

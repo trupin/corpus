@@ -7,18 +7,39 @@ import {
   ForbiddenErrorSchema,
   InternalErrorSchema,
   isApiError,
-  LockConflictErrorSchema,
-  LockedErrorSchema,
   NotFoundErrorSchema,
+  StaleKeyErrorSchema,
   UnauthorizedErrorSchema,
   ValidationErrorSchema,
 } from "./error.js";
 
-const lock = {
-  docId: "doc_a1b2c3",
-  holder: "user",
-  acquired: "2026-07-19T10:05:00Z",
-  ttl: 300,
+/** A key is 64 lowercase hex characters; nothing here parses one. */
+const KEY = "a".repeat(64);
+
+const doc = {
+  frontmatter: {
+    id: "doc_a1b2c3",
+    type: "note",
+    title: "Mortgage options",
+    created: "2026-07-19T10:00:00Z",
+    updated: "2026-07-19T10:42:00Z",
+    tags: ["finance"],
+    status: "open" as const,
+    anchors: {},
+    due: null,
+    reviewed: null,
+    evergreen: false,
+    pinned: false,
+    order: null,
+    query: null,
+    column: null,
+    extra: {},
+  },
+  body: "Body, as it now stands.",
+  path: "data/docs/mortgage.md",
+  anchors: [],
+  key: KEY,
+  userEditing: false,
 };
 
 const variants = [
@@ -52,14 +73,13 @@ const variants = [
     value: { code: "conflict", message: "Only a failed job can be retried." },
   },
   {
-    name: "LockConflictError",
-    schema: LockConflictErrorSchema,
-    value: { code: "conflict", message: "doc_a1b2c3 is already locked.", lock },
-  },
-  {
-    name: "LockedError",
-    schema: LockedErrorSchema,
-    value: { code: "locked", message: "doc_a1b2c3 is being edited.", lock },
+    name: "StaleKeyError",
+    schema: StaleKeyErrorSchema,
+    value: {
+      code: "stale_key",
+      message: "doc_a1b2c3 changed since you read it.",
+      doc,
+    },
   },
   {
     name: "InternalError",
@@ -91,40 +111,59 @@ describe("ApiError", () => {
     expect(isApiError({ code: "teapot", message: "nope" })).toBe(false);
   });
 
-  it("rejects a locked error that does not name the blocking lock", () => {
-    expect(isApiError({ code: "locked", message: "held" })).toBe(false);
+  it("rejects a stale-key refusal that does not carry the document", () => {
+    expect(isApiError({ code: "stale_key", message: "it moved" })).toBe(false);
+  });
+
+  it("rejects a stale-key refusal whose document carries no fresh key", () => {
+    const { key: _dropped, ...keyless } = doc;
+    expect(isApiError({ code: "stale_key", message: "it moved", doc: keyless })).toBe(false);
   });
 
   it("discriminates cleanly on `code`, so one check narrows the union", () => {
-    const parsed = ApiErrorSchema.parse({ code: "locked", message: "held", lock });
-    expect(parsed.code === "locked" ? parsed.lock.holder : undefined).toBe("user");
+    const parsed = ApiErrorSchema.parse({ code: "stale_key", message: "moved", doc });
+    expect(parsed.code === "stale_key" ? parsed.doc.key : undefined).toBe(KEY);
   });
 
   /**
-   * 409 and 423 are deliberately different answers: "your lock request conflicts
-   * with a holder" versus "this write is refused because the document is locked".
-   * They must not collapse into one code.
+   * Both are `409`s, and they are deliberately different answers: "the state
+   * refuses this request" (a taken skill name, a moved re-attach range) versus
+   * "you are writing against a version this document no longer is". They must
+   * not collapse into one code — a client that reads `doc` off a plain conflict
+   * would read `undefined`.
    */
-  it("keeps conflict and locked distinct", () => {
-    expect(ApiErrorSchema.parse({ code: "conflict", message: "held", lock }).code).toBe("conflict");
-    expect(ApiErrorSchema.parse({ code: "locked", message: "held", lock }).code).toBe("locked");
+  it("keeps conflict and stale_key distinct", () => {
+    expect(ApiErrorSchema.parse({ code: "conflict", message: "taken" }).code).toBe("conflict");
+    expect(ApiErrorSchema.parse({ code: "stale_key", message: "moved", doc }).code).toBe(
+      "stale_key",
+    );
   });
 
-  it("accepts a conflict that carries no lock, since not every conflict is one", () => {
+  it("accepts a conflict that carries nothing but its message", () => {
     expect(isApiError({ code: "conflict", message: "already resolved" })).toBe(true);
   });
 
+  it("no longer declares the removed lock code", () => {
+    expect([...ERROR_CODES]).not.toContain("locked");
+    expect(isApiError({ code: "locked", message: "held" })).toBe(false);
+  });
+
   /**
-   * `LockConflictError` narrows `ConflictError` rather than adding a second
-   * `conflict` variant, so the union keeps exactly one member per code while the
-   * lock-acquire route can still promise the lock is present.
+   * A refusal carries a whole document by design (SHARED-041 decision 5: one
+   * round trip, not two), so the narrowing path has to survive a body far larger
+   * than every other error. Nothing in it caps or samples the value.
    */
-  it("parses a lock conflict as the general conflict variant too", () => {
-    const value = { code: "conflict", message: "held", lock };
+  it("classifies a refusal carrying a large document", () => {
+    const large = { ...doc, body: "x".repeat(200_000) };
+    const value = { code: "stale_key", message: "moved", doc: large };
+    expect(isApiError(value)).toBe(true);
+    const parsed = ApiErrorSchema.parse(value);
+    expect(parsed.code === "stale_key" ? parsed.doc.body.length : 0).toBe(200_000);
+  });
+
+  it("still parses a plain conflict through the general variant", () => {
+    const value = { code: "conflict", message: "that skill name is taken" };
     expect(ConflictErrorSchema.parse(value)).toEqual(value);
-    expect(LockConflictErrorSchema.safeParse({ code: "conflict", message: "held" }).success).toBe(
-      false,
-    );
   });
 
   it.each([null, undefined, "not an error", 42, {}])("rejects %s", (value) => {

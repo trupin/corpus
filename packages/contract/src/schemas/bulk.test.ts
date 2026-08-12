@@ -17,13 +17,6 @@ const request = (entries: unknown, wholeResultSet?: unknown): unknown =>
 
 const one = (action: unknown, id = "doc_a1b2c3"): unknown => request([entry(id, action)]);
 
-const lock = {
-  docId: "doc_a1b2c3",
-  holder: "agent" as const,
-  acquired: "2026-07-19T10:05:00Z",
-  ttl: 300,
-};
-
 describe("the staged set the Save sends (CONTRACT-048)", () => {
   /**
    * SHARED-032's whole point, and the reason `{ids, action}` had to go: §4 —
@@ -359,9 +352,8 @@ describe("the three-part result (CONTRACT-037, per-document verbs from CONTRACT-
       {
         id: "th_x9y8",
         action: "resolve" as const,
-        reason: "locked" as const,
-        message: "held by the agent until 10:10",
-        lock,
+        reason: "stale" as const,
+        message: "it changed while the Save was staged",
       },
     ],
     orphanedThreadIds: [],
@@ -461,20 +453,18 @@ describe("the three-part result (CONTRACT-037, per-document verbs from CONTRACT-
   });
 });
 
-describe("a refusal names the document, the act, the reason, and — for a lock — the holder", () => {
+describe("a refusal names the document, the act, the reason and what to do about it", () => {
   const refusal = {
     id: "doc_a1b2c3",
     action: "archive" as const,
     reason: "invalid" as const,
     message: "…",
-    lock: null,
   };
 
   it("requires a reason on every entry", () => {
-    expect(
-      BulkActionRefusalSchema.safeParse({ id: "doc_a1b2c3", action: "archive", lock: null })
-        .success,
-    ).toBe(false);
+    expect(BulkActionRefusalSchema.safeParse({ id: "doc_a1b2c3", action: "archive" }).success).toBe(
+      false,
+    );
   });
 
   it("requires the act that was refused, so the entry reads on its own", () => {
@@ -488,60 +478,62 @@ describe("a refusal names the document, the act, the reason, and — for a lock 
     expect(BulkActionRefusalSchema.safeParse(withoutMessage).success).toBe(false);
   });
 
-  it("carries the holder on a lock refusal (SPEC.md §7)", () => {
+  /**
+   * `stale` replaced `locked` when the lock did (SHARED-041). What a person does
+   * about it changed with it: there is no holder to wait for, so the class alone
+   * has to carry "look at what it says now", and the message carries the rest.
+   */
+  it("carries a content-moved refusal with no holder to name", () => {
     const parsed = BulkActionRefusalSchema.parse({
       ...refusal,
-      reason: "locked",
-      message: "held by the agent",
-      lock,
+      reason: "stale",
+      message: "the agent rewrote it while the Save was staged",
     });
-    expect(parsed.lock?.holder).toBe("agent");
+    expect(parsed.reason).toBe("stale");
   });
 
-  it("refuses a lock refusal that names no holder", () => {
-    expect(
-      BulkActionRefusalSchema.safeParse({ ...refusal, reason: "locked", lock: null }).success,
-    ).toBe(false);
+  /**
+   * The reason is refused outright; the holder is merely dropped, because a
+   * response schema is tolerant by policy (CONTRACT-017) — what matters is that
+   * a client can no longer read a holder off a refusal, not that a server that
+   * still sends one is punished for it.
+   */
+  it("no longer accepts the removed lock refusal, and drops a holder sent beside one", () => {
+    expect(BulkActionRefusalSchema.safeParse({ ...refusal, reason: "locked" }).success).toBe(false);
+    const parsed = BulkActionRefusalSchema.parse({
+      ...refusal,
+      lock: { docId: "doc_a1b2c3", holder: "agent", acquired: "2026-07-19T10:05:00Z", ttl: 300 },
+    });
+    expect(parsed).not.toHaveProperty("lock");
   });
 
-  it("refuses a holder on a reason that is not a lock", () => {
-    expect(BulkActionRefusalSchema.safeParse({ ...refusal, lock }).success).toBe(false);
-  });
-
-  it("distinguishes an unknown id from a lock and from a validation failure", () => {
+  it("distinguishes a stale document from an unknown id and from a validation failure", () => {
     expect([...BULK_REFUSAL_REASONS]).toEqual([
-      "locked",
+      "stale",
       "not-found",
       "not-applicable",
       "invalid",
       "write-failed",
     ]);
     for (const reason of BULK_REFUSAL_REASONS) {
-      const entryValue = { ...refusal, reason, ...(reason === "locked" ? { lock } : {}) };
-      expect(BulkActionRefusalSchema.safeParse(entryValue).success, reason).toBe(true);
+      expect(BulkActionRefusalSchema.safeParse({ ...refusal, reason }).success, reason).toBe(true);
     }
   });
 
-  /** Mixed holders: each document is named individually, with its own lock. */
-  it("names a different holder per document", () => {
+  /** Each document is named individually, with its own reason and its own message. */
+  it("names a different reason per document", () => {
     const parsed = BulkActionResultSchema.parse({
       changed: [],
       alreadyInState: [],
       refused: [
-        { id: "doc_a1b2c3", action: "archive", reason: "locked", message: "agent", lock },
-        {
-          id: "th_x9y8",
-          action: "resolve",
-          reason: "locked",
-          message: "user",
-          lock: { ...lock, docId: "th_x9y8", holder: "user" },
-        },
+        { id: "doc_a1b2c3", action: "archive", reason: "stale", message: "it moved" },
+        { id: "th_x9y8", action: "resolve", reason: "not-found", message: "no such thread" },
       ],
       orphanedThreadIds: [],
       commit: null,
       warnings: [],
     });
-    expect(parsed.refused.map((row) => row.lock?.holder)).toEqual(["agent", "user"]);
+    expect(parsed.refused.map((row) => row.reason)).toEqual(["stale", "not-found"]);
     expect(parsed.refused.map((row) => row.action)).toEqual(["archive", "resolve"]);
   });
 });

@@ -2,6 +2,14 @@ import { z } from "@hono/zod-openapi";
 import { BodyRangeSchema, TextQuoteSelectorSchema } from "./anchor.js";
 import { ExtraFrontmatterSchema } from "./extra.js";
 import { AnchorIdSchema, DocumentIdSchema, ThreadIdSchema } from "./id.js";
+import {
+  documentKeyRequestField,
+  documentKeyResponseField,
+  MISSING_DOCUMENT_KEY_MESSAGE,
+  KEYED_UPDATE_FIELDS,
+  updateNeedsDocumentKey,
+  userEditingField,
+} from "./key.js";
 import { ThreadStatusSchema } from "./thread.js";
 import { IsoDateSchema, IsoDateTimeSchema } from "./time.js";
 import { warningsField } from "./warning.js";
@@ -181,6 +189,23 @@ export const ResolvedAnchorSchema = z
   })
   .openapi("ResolvedAnchor");
 
+/**
+ * One whole document, and the **one place a key is published** (SPEC.md §7,
+ * `./key.ts`).
+ *
+ * `Doc` is what `GET /api/docs/{id}` answers with and what every document
+ * mutation wraps, so putting `key` here is what makes *"every document read
+ * carries its key"* and *"every write that lands gives you a fresh key"* the
+ * same sentence: a writer reads a key off the document it read, and reads the
+ * next one off the document its write answered with. There is no second place a
+ * key appears — not on the refusal beside the document, not on a list row — so
+ * two copies can never disagree about which version a key names.
+ *
+ * **A list row deliberately carries no key** (`docRowBaseShape`): a row carries
+ * no body, so there is no version of the body to have read, and a key on one
+ * would let a caller write a document it never opened — the exact overwrite the
+ * mechanism exists to refuse.
+ */
 export const DocSchema = z
   .object({
     frontmatter: DocFrontmatterSchema,
@@ -189,6 +214,8 @@ export const DocSchema = z
       .string()
       .describe("Path relative to the workspace root. Presentation only — `id` is identity."),
     anchors: z.array(ResolvedAnchorSchema),
+    key: documentKeyResponseField,
+    userEditing: userEditingField,
   })
   .openapi("Doc");
 
@@ -267,9 +294,20 @@ export const CreateDocRequestSchema = z
  * Strict (CONTRACT-017): with every field optional, a typoed key — `pinnned`,
  * or a plugin key sent at top level instead of inside `extra` — would otherwise
  * validate as the empty update and silently change nothing.
+ *
+ * **The one request in this contract that presents a key** (SPEC.md §7,
+ * `./key.ts`), and the distinction it draws is the mechanism's whole shape: a
+ * write that **replaces a block** — `body` — must name the version it replaces,
+ * while a write that **names its own delta** — a tag, a folder, an archive, a
+ * status, `reviewed`, a view key — merges with whatever else happened and needs
+ * nothing. `KEYED_UPDATE_FIELDS` holds that classification as a list rather than
+ * as a rule someone has to re-derive, and the refinement below is what makes the
+ * key **required, not optional, where it applies**: an optional field a server
+ * may ignore is a lock with extra steps.
  */
 export const UpdateDocRequestSchema = z
   .strictObject({
+    key: documentKeyRequestField,
     title: z.string().min(1).optional(),
     body: z.string().optional(),
     tags: z.array(z.string()).optional(),
@@ -299,7 +337,25 @@ export const UpdateDocRequestSchema = z
       .describe(`${COLUMN_DESCRIPTION} On update, \`null\` clears the key from the file.`),
     extra: ExtraFrontmatterSchema.optional(),
   })
-  .openapi("UpdateDocRequest");
+  .refine((patch) => !updateNeedsDocumentKey(patch) || patch.key !== undefined, {
+    message: MISSING_DOCUMENT_KEY_MESSAGE,
+    path: ["key"],
+  })
+  .openapi("UpdateDocRequest")
+  /**
+   * The keyed-write rule, **published as JSON Schema rather than only as prose**
+   * (OpenAPI 3.1 is JSON Schema 2020-12, so `dependentRequired` is legal here):
+   * a reader of `openapi.json` alone learns that a `body` write must carry a
+   * `key`, instead of having to take a description's word for it. Derived from
+   * {@link KEYED_UPDATE_FIELDS} so the two can never drift.
+   *
+   * It documents; the refinement above enforces. `openapi-typescript` ignores
+   * the keyword, so the generated client still types `key` as optional — which
+   * is why the enforcement is the schema's and not the type's.
+   */
+  .meta({
+    dependentRequired: Object.fromEntries(KEYED_UPDATE_FIELDS.map((field) => [field, ["key"]])),
+  });
 
 /**
  * Moving a document rewrites its path only (SPEC.md §9.2) — the id is assigned
