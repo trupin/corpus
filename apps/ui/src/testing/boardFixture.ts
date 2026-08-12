@@ -83,7 +83,6 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
       return json(collection(keyed ?? options.defaultRows ?? []));
     }
     if (url.pathname === "/api/tree") return json(options.tree ?? { folders: [] });
-    if (url.pathname === "/api/locks") return json({ locks: [] });
     if (url.pathname === "/api/jobs") return json({ jobs: [] });
     if (url.pathname === "/api/docs" && request.method === "POST") {
       return json({ doc: created("doc_created"), warnings: [] }, 201);

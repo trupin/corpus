@@ -608,16 +608,20 @@ describe("Reader", () => {
     expect(container.querySelector(".reader-gone")).toBeNull();
   });
 
-  it("shows a lock banner and freezes the title while the agent holds the lock", async () => {
-    const wire = readerTransport({
-      docs: [MORTGAGE],
-      locks: [{ docId: "doc_m", holder: "agent", acquired: "2026-07-02T09:00:00.000Z", ttl: 300 }],
-    });
+  /**
+   * SPEC.md §11, amended by SHARED-041: **the board is never read-only.** There
+   * is no banner to raise, no holder to name and no Force unlock, because there
+   * is no lock — a document the agent is writing is the same editable surface as
+   * any other, and the reader asks nobody's permission to show it that way.
+   */
+  it("renders no lock banner and never freezes the title", async () => {
+    const wire = readerTransport({ docs: [MORTGAGE] });
     const { container } = render(<Host wire={wire} />);
-    await waitFor(() => {
-      expect(container.querySelector(".lock-banner")).not.toBeNull();
-    });
-    expect(screen.getByLabelText("Document title")).toHaveProperty("readOnly", true);
+    await showsTitle(container, "Mortgage options");
+    expect(container.querySelector(".lock-banner")).toBeNull();
+    expect(screen.getByLabelText("Document title")).toHaveProperty("readOnly", false);
+    // And nothing on this surface asked the server about locks at all.
+    expect(wire.calls.some((call) => call.path.startsWith("/api/locks"))).toBe(false);
   });
 
   it("hands ⤢ up to the board rather than opening focus itself", async () => {

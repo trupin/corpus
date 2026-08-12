@@ -7,7 +7,7 @@ import { stubCorpus } from "./stubCorpus";
  *
  * The UI-observable half of the evidence (sprint-016 Adjudication 19) — the row
  * is gone from the board and the corpus saw a real `DELETE` — against the real
- * application over a stubbed transport. The disk, git, lock and projection half
+ * application over a stubbed transport. The disk, git and projection half
  * is the issue's real-app drill against a `corpus` server.
  */
 

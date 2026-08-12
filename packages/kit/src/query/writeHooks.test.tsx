@@ -2,8 +2,7 @@
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCorpusTestHarness } from "../testing/index.js";
-import { DOCS_KEY, docKey, lockKey, LOCKS_KEY, threadKey } from "./keys.js";
-import { useBreakLock } from "./useBreakLock.js";
+import { DOCS_KEY, docKey, threadKey } from "./keys.js";
 import { useDeleteDoc } from "./useDeleteDoc.js";
 import { useMarkThreadSeen, useSetThreadStatus } from "./useThreadStatus.js";
 
@@ -185,40 +184,5 @@ describe("useMarkThreadSeen", () => {
     expect(wire.calls).toEqual([
       { method: "POST", path: "/api/threads/th_1/seen", body: undefined },
     ]);
-  });
-});
-
-describe("useBreakLock", () => {
-  it("breaks the lock and refreshes everything the lock was gating", async () => {
-    const wire = transport({ docId: "doc_a", released: true, holder: "agent" });
-    const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const keys = spyInvalidations(harness);
-    const { result } = renderHook(() => useBreakLock(), { wrapper: harness.Wrapper });
-
-    result.current.mutate("doc_a");
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    expect(wire.calls[0]).toEqual({
-      method: "POST",
-      path: "/api/locks/doc_a/break",
-      body: undefined,
-    });
-    expect(result.current.data).toEqual({ docId: "doc_a", released: true, holder: "agent" });
-    expect(keys).toEqual([lockKey("doc_a"), LOCKS_KEY, docKey("doc_a"), DOCS_KEY]);
-  });
-
-  it("re-reads lock state on failure rather than claiming a break that did not happen", async () => {
-    const wire = transport({ code: "not_found", message: "no lock on doc_a" }, 404);
-    const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const keys = spyInvalidations(harness);
-    const { result } = renderHook(() => useBreakLock(), { wrapper: harness.Wrapper });
-
-    result.current.mutate("doc_a");
-    await waitFor(() => {
-      expect(result.current.isError).toBe(true);
-    });
-    expect(keys).toEqual([LOCKS_KEY]);
   });
 });

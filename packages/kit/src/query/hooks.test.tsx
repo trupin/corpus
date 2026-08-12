@@ -4,12 +4,11 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DocsFilter } from "../client/createCorpusClient.js";
 import { createCorpusTestHarness } from "../testing/index.js";
-import { docKey, docsListKey, HEALTH_KEY, LOCKS_KEY, threadKey, TREE_KEY } from "./keys.js";
+import { docKey, docsListKey, HEALTH_KEY, threadKey, TREE_KEY } from "./keys.js";
 import { useDoc } from "./useDoc.js";
 import { useDocs } from "./useDocs.js";
 import { useHealth } from "./useHealth.js";
 import { useJobs } from "./useJobs.js";
-import { useLocks } from "./useLocks.js";
 import { useThread } from "./useThread.js";
 import { useTree } from "./useTree.js";
 
@@ -19,7 +18,6 @@ const BODIES: Record<string, unknown> = {
   "/api/threads/th_a": { id: "th_a", title: "A thread", turns: [] },
   "/api/tree": { folders: [{ name: "finance", count: 1, children: [] }] },
   "/api/jobs": { jobs: [] },
-  "/api/locks": { locks: [] },
   "/api/health": { status: "ok", version: "9.9.9", uptimeSeconds: 1, workspace: "/tmp/ws" },
 };
 
@@ -57,7 +55,6 @@ describe("read hooks", () => {
     ["useThread", () => useThread("th_a"), "/api/threads/th_a", threadKey("th_a")],
     ["useTree", () => useTree(), "/api/tree", TREE_KEY],
     ["useJobs", () => useJobs({}), "/api/jobs", ["jobs", {}]],
-    ["useLocks", () => useLocks(), "/api/locks", LOCKS_KEY],
     ["useHealth", () => useHealth(), "/api/health", HEALTH_KEY],
   ])("%s calls %s and caches under the contract's key", async (_name, hook, path, key) => {
     const transport = routedFetch();

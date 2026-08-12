@@ -176,11 +176,6 @@
   white-space: nowrap;
 }
 
-.row .chip.warn.row-lock {
-  font-size: 10px;
-  flex: none;
-}
-
 /* ── The staleness ramp (SPEC.md §5) ─────────────────── */
 
 .row.age-1 .row-title {

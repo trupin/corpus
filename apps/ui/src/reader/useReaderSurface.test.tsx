@@ -40,7 +40,6 @@ function readerDoc(docId: string, body: string): ReaderDoc {
     threads: [],
     backlinks: [],
     related: [],
-    lock: null,
   };
 }
 

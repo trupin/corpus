@@ -27,6 +27,7 @@ export {
   createCorpusClient,
   CorpusRequestError,
   reattachRefusalReason,
+  staleKeyDoc,
   type AppendTurnInput,
   type AppendTurnUpload,
   type CaptureInput,
@@ -83,7 +84,6 @@ export { useQueueStatus } from "./query/useQueueStatus.js";
 // The semantic index's health report — the console strip's index pill reads it,
 // and it refreshes on the `["index"]` frames the embed worker already emits.
 export { useIndexStatus } from "./query/useIndexStatus.js";
-export { useLocks } from "./query/useLocks.js";
 export { useHealth } from "./query/useHealth.js";
 
 // The write path the board needs today.
@@ -110,8 +110,6 @@ export {
   type MarkSeenOnce,
 } from "./query/useMarkSeenOnce.js";
 export { attachmentKey, useAttachment, type AttachmentBytes } from "./query/useAttachment.js";
-export { useBreakLock } from "./query/useBreakLock.js";
-export { useAcquireLock, useReleaseLock, type AcquireLockVariables } from "./query/useEditLock.js";
 export {
   useAbandonJob,
   useHaltQueue,
@@ -139,8 +137,6 @@ export {
   jobKey,
   jobsListKey,
   JOBS_KEY,
-  lockKey,
-  LOCKS_KEY,
   PLUGIN_KEY_PREFIX,
   pluginKey,
   QUEUE_KEY,
@@ -160,7 +156,6 @@ export {
 export { Row, type ListItemComponent, type RowProps } from "./row/Row.js";
 export {
   AgeChip,
-  LockChip,
   NeedsYouBadge,
   UnreadBadge,
   // A plugin's own `ListItem` replaces `Row` wholesale, so the rule deciding
@@ -170,7 +165,6 @@ export {
   unreadBadgeProps,
   WorkingDot,
   type AgeChipProps,
-  type LockChipProps,
   type NeedsYouBadgeProps,
   type UnreadBadgeProps,
   type UnreadUnit,
@@ -206,7 +200,7 @@ export {
   type RowActionSubject,
   type RowNotice,
 } from "./row/useRowActions.js";
-export { useAgentActivity, useDocLock, type AgentActivity } from "./row/useRowSignals.js";
+export { useAgentActivity, type AgentActivity } from "./row/useRowSignals.js";
 
 // Rendered markdown (SPEC.md §10 names `MarkdownView` in the kit contract), and
 // the `[[ref]]` grammar of SPEC.md §5 that only it knows how to render. The

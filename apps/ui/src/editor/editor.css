@@ -26,14 +26,6 @@
   caret-color: var(--accent);
 }
 
-/* A locked document is visually flat: no caret, no text cursor, nothing that
-   invites a keystroke the server would refuse (SPEC.md §7). */
-.doc-editor[data-editable="false"] [contenteditable] {
-  caret-color: transparent;
-  cursor: default;
-  user-select: text;
-}
-
 /* prosemirror-view's own rule, and it stays: `pre-wrap` is what keeps a run of
    typed spaces, a tab and a trailing space on a line visible, which is what
    keeps the DOM matching the document ProseMirror reads changes back out of.

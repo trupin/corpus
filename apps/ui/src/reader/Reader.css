@@ -3,7 +3,7 @@
  * mockup authoritative for look & feel): `.reader`, `.reader-head`, `.back`,
  * `.reader-id`, `.save-chip`, `.comments-btn`, `.comments-pop`, `.cp-item`,
  * `.expand`, `.fm-chips`, `.doc-title`, `.thread-slot`, `.thread-card`,
- * `.backlinks` and the sepia `.lock-banner`.
+ * `.backlinks` and the archived banner.
  *
  * `.doc-body`, `.ref` and `.ref-broken` are NOT here — they ship from
  * `@corpus/kit/markdown.css` with the component that emits them, so a plugin
@@ -286,41 +286,6 @@
 .fm-save:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-/* ── Lock banner (SPEC.md §7) ── */
-.lock-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--sepia-wash-2);
-  background: var(--sepia-wash);
-  color: var(--sepia-ink);
-  border-radius: 10px;
-  padding: 9px 13px;
-  margin-bottom: 14px;
-  font-size: 12.5px;
-  font-family: var(--sans);
-  max-width: 62ch;
-}
-
-.lock-banner .working-dot {
-  background: var(--sepia);
-}
-
-.lock-banner button {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 11px;
-  border: 1px solid var(--sepia-wash-2);
-  border-radius: 6px;
-  padding: 3px 9px;
-  color: var(--sepia-ink);
-  white-space: nowrap;
-}
-
-.lock-banner button:hover {
-  background: var(--sepia-wash-2);
 }
 
 .archived-banner {

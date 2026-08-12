@@ -1,18 +1,11 @@
 import type { DocRow } from "@corpus/contract";
 import type { ComponentType, KeyboardEvent, MouseEvent, ReactElement } from "react";
-import {
-  AgeChip,
-  LockChip,
-  NeedsYouBadge,
-  UnreadBadge,
-  WorkingDot,
-  unreadBadgeProps,
-} from "./badges.js";
+import { AgeChip, NeedsYouBadge, UnreadBadge, WorkingDot, unreadBadgeProps } from "./badges.js";
 import { reasonChips } from "./reasons.js";
 import { ageLabel, hasStaleActions, stalenessClass, stalenessLevel } from "./staleness.js";
 import { isThreadRow, rowContext, rowExcerpt } from "./threadRow.js";
 import { useRowActions, type RowNotice } from "./useRowActions.js";
-import { useAgentActivity, useDocLock } from "./useRowSignals.js";
+import { useAgentActivity } from "./useRowSignals.js";
 
 /**
  * The single list-item renderer every column uses (SPEC.md §11 — type-aware rows).
@@ -108,7 +101,6 @@ export function Row(props: RowProps): ReactElement {
     ...(onNotify ? { onNotify } : {}),
     ...(now ? { now: () => now } : {}),
   });
-  const lock = useDocLock(row.id);
   const activity = useAgentActivity(row);
 
   // Hooks run unconditionally; the delegation happens after them, so a plugin
@@ -173,7 +165,6 @@ export function Row(props: RowProps): ReactElement {
           {unread !== null ? <UnreadBadge {...unread} /> : null}
           {needsYou !== null ? <NeedsYouBadge text={needsYou} /> : null}
           {activity.active ? <WorkingDot title={activity.title} /> : null}
-          {lock !== null ? <LockChip holder={lock.holder} /> : null}
           {/* One age element per row. It sits in the badge cluster exactly when
               the quick actions have taken the meta line's place. */}
           {showActions ? <AgeChip label={age} /> : null}

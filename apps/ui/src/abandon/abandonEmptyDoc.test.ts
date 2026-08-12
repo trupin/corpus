@@ -112,7 +112,7 @@ describe("abandonEmptyDoc", () => {
 
   it("swallows a refusal — leaving is not a request that can fail", async () => {
     publishDoc("doc_a", BLANK);
-    const { client } = fakeClient(() => Promise.reject(new Error("423 locked")));
+    const { client } = fakeClient(() => Promise.reject(new Error("409 refused")));
 
     await expect(abandonEmptyDoc("doc_a", client, new QueryClient())).resolves.toBe(true);
     expect(snapshotOf("doc_a")).toBeNull();

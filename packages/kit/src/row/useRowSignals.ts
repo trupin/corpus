@@ -1,34 +1,32 @@
-import type { DocRow, Lock, QueueEventStatus } from "@corpus/contract";
+import type { DocRow, QueueEventStatus } from "@corpus/contract";
 import { useOutstandingJobs } from "../query/useOutstandingJobs.js";
-import { useLocks } from "../query/useLocks.js";
 
 /**
- * The two row signals that do **not** ride a `DocRow`: the edit lock and the
- * running agent job.
+ * The row signal that does **not** ride a `DocRow`: the running agent job.
  *
- * Both read through a single shared kit query — `useLocks()` and
- * `useOutstandingJobs()` are cached under one key each, so a column of two
- * hundred rows still issues one request for each, and both repaint live because
- * the server invalidates those keys over SSE. This is the reason neither is a
- * prop drilled down from a column: a row that asks for its own lock is a row a
- * plugin can render anywhere.
+ * It reads through a single shared kit query — `useOutstandingJobs()` is cached
+ * under one key, so a column of two hundred rows still issues one request, and
+ * it repaints live because the server invalidates that key over SSE. This is the
+ * reason it is not a prop drilled down from a column: a row that asks for its
+ * own signals is a row a plugin can render anywhere.
+ *
+ * There used to be a second signal here — the edit lock — and it is gone with
+ * the mechanism (SPEC.md §7 "A key, not a lock"). Nothing on the board polls or
+ * subscribes to lock state, because there is no lock: a document the agent is
+ * writing renders exactly like any other, and the person's write presents its
+ * key like any other.
  */
 
 /**
  * Queue states that mean the agent is working on this row *right now*.
  *
  * Narrower than the shared query's `OUTSTANDING_JOB_STATUSES` on purpose:
- * `deferred` is work parked on someone else's edit lock, and a spinning dot on
- * every row of a corpus whose lock is held would say the agent is busy with each
- * of them. The wait is still reported — by `awaitingAgent`, below.
+ * `deferred` is work the agent parked because a person was editing the document
+ * (SPEC.md §7), and a spinning dot on every row it parked against would say the
+ * agent is busy with each of them. The wait is still reported — by
+ * `awaitingAgent`, below.
  */
 const ACTIVE_JOB_STATUSES: readonly QueueEventStatus[] = ["pending", "in-progress"];
-
-/** The lock held on this document, or `null`. Live over SSE (SPEC.md §7). */
-export function useDocLock(docId: string): Lock | null {
-  const locks = useLocks();
-  return locks.data?.locks.find((lock) => lock.docId === docId) ?? null;
-}
 
 export interface AgentActivity {
   readonly active: boolean;

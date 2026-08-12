@@ -13,7 +13,15 @@ const BODIES: Record<string, unknown> = {
   },
   "/api/tree": { folders: [{ name: "finance", count: 1, children: [] }] },
   "/api/jobs": { jobs: [] },
-  "/api/locks": { locks: [] },
+  "/api/queue/status": {
+    halted: false,
+    pending: 0,
+    inProgress: 0,
+    deferred: 0,
+    processed: 0,
+    failed: 0,
+    abandoned: 0,
+  },
   "/api/threads/th_a": {
     id: "th_a",
     title: "A thread",
@@ -71,7 +79,7 @@ describe("DataProbe", () => {
     await waitFor(() => {
       expect(screen.getByText("Budget")).toBeDefined();
     });
-    for (const label of ["useDocs", "useTree", "useJobs", "useLocks"]) {
+    for (const label of ["useDocs", "useTree", "useJobs", "useQueueStatus"]) {
       expect(
         document.querySelector(`[data-probe="${label}"] [data-probe-state="ok"]`),
       ).not.toBeNull();
@@ -140,8 +148,8 @@ describe("DataProbe", () => {
         const request = new Request(input, init);
         if (request.method === "POST") {
           return Promise.resolve(
-            new Response(JSON.stringify({ code: "locked", message: "held" }), {
-              status: 423,
+            new Response(JSON.stringify({ code: "conflict", message: "held" }), {
+              status: 409,
               headers: { "content-type": "application/json" },
             }),
           );
@@ -165,7 +173,7 @@ describe("DataProbe", () => {
       fireEvent.click(screen.getByText("append turn"));
     });
     await waitFor(() => {
-      expect(document.querySelector("[data-probe-append-error]")?.textContent).toContain("423");
+      expect(document.querySelector("[data-probe-append-error]")?.textContent).toContain("held");
     });
   });
 

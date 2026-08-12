@@ -126,22 +126,3 @@ export function AgeChip({ label }: AgeChipProps): ReactElement {
     </span>
   );
 }
-
-export interface LockChipProps {
-  /** The party holding the edit lock (SPEC.md §7). */
-  readonly holder: string;
-}
-
-/**
- * The `.chip.warn` lock indicator. Lock state never rides a `DocRow`; it comes
- * from the lock projection through `useLocks()`, which is what makes it appear
- * and clear live over SSE.
- */
-export function LockChip({ holder }: LockChipProps): ReactElement {
-  const label = `${holder} is editing this document`;
-  return (
-    <span className="chip warn row-lock" aria-label={label} title={label}>
-      🔒 {holder} editing
-    </span>
-  );
-}

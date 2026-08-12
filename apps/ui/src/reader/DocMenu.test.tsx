@@ -335,7 +335,7 @@ describe("DocMenu", () => {
       const { held, release } = gate();
       const inner = readerTransport({
         docs: [NOTE],
-        failing: { "DELETE /api/docs/doc_m": 423 },
+        failing: { "DELETE /api/docs/doc_m": 409 },
       });
       const harness = createCorpusTestHarness({ fetch: heldTransport(inner, held) });
       render(

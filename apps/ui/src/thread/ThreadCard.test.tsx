@@ -282,7 +282,7 @@ describe("a flip whose card went away before it settled", () => {
   it("still reports a refused resolve", async () => {
     const notices = await flipAndUnmount({
       status: "open",
-      failing: { "POST /api/threads/th_a/resolve": 423 },
+      failing: { "POST /api/threads/th_a/resolve": 409 },
     });
     // The server's sentence, not the route template it arrived through
     // (`CorpusRequestError`): this string is what a person reads in a toast.
@@ -292,7 +292,7 @@ describe("a flip whose card went away before it settled", () => {
   it("still reports a refused reopen", async () => {
     const notices = await flipAndUnmount({
       status: "resolved",
-      failing: { "POST /api/threads/th_a/reopen": 423 },
+      failing: { "POST /api/threads/th_a/reopen": 409 },
     });
     expect(notices).toEqual([{ tone: "error", message: "Reopen failed — the server refused" }]);
   });

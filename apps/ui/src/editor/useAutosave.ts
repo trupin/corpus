@@ -1,5 +1,5 @@
-import type { UpdateDocResponse } from "@corpus/contract";
-import { useUpdateDocById } from "@corpus/kit";
+import type { Doc, UpdateDocResponse } from "@corpus/contract";
+import { staleKeyDoc, useUpdateDocById } from "@corpus/kit";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { onPageHide } from "../abandon/pagehide.js";
 import { isAbandoned, publishBodyDraft } from "../abandon/registry.js";
@@ -24,6 +24,35 @@ import { beginEditing, endEditing } from "./editingRegistry.js";
  * hands the server a string. Autosave that touched the document would push
  * steps onto ProseMirror's undo stack, and a save landing mid-sentence would
  * make ⌘Z undo the save instead of the sentence (sprint-011 TEST-21).
+ *
+ * ## The key, and what a refusal may never cost (SPEC.md §7)
+ *
+ * The board is one of the document's two writers, and it presents a **key** like
+ * the other one: every save carries the key of the version this editor last read
+ * or wrote, and the server refuses the write if the document has moved since.
+ * There is no lock any more — no document renders read-only, nothing is
+ * acquired, nothing waits — so the only thing standing between two writers is
+ * this exchange.
+ *
+ * **A refusal must never cost the person a word, and that is the whole design
+ * constraint here.** A `409` arrives while somebody is mid-sentence; it carries
+ * the document as it now stands and a fresh key for it. What happens then:
+ *
+ * 1. the buffer is **kept** — it is put back exactly as any failure puts it
+ *    back, because the text the person typed is the only copy of it that exists;
+ * 2. the fresh key is **adopted**, and the refusal's document is handed to the
+ *    host ({@link UseAutosaveOptions.onServerDoc}) so the app's picture of the
+ *    server is current — the editor's own "an external change while the user is
+ *    typing" rule then owns the body, and that rule defers while a session is
+ *    open, which is precisely the state a mid-sentence refusal is;
+ * 3. the save is **retried** immediately, against the key just adopted.
+ *
+ * So the sentence lands. Nothing is dropped, nothing is replaced under the
+ * caret, and the editor is never reset to the server's copy while the person is
+ * still typing into it. The retry is bounded ({@link MAX_CONFLICT_RETRIES}):
+ * past that the buffer is still kept and the chip says, in words, that the text
+ * is not saved yet — a stuck chip over held text, never a save loop and never a
+ * discarded edit.
  */
 
 /** SPEC.md §11's "autosave (debounced)". Long enough to coalesce a burst of typing. */
@@ -39,6 +68,22 @@ export const EDIT_SETTLE_MS = 2_000;
 
 /** One automatic retry, then the chip asks. A save loop is worse than a stuck chip. */
 export const RETRY_DELAY_MS = 3_000;
+
+/**
+ * How many times one buffer may be re-sent against a freshly adopted key before
+ * the editor stops and says so (SPEC.md §7).
+ *
+ * A refusal means the document moved, so adopting the key it carried and writing
+ * again is the documented recovery — but a writer hammering the same document
+ * would otherwise put this in a loop that never reports anything. Bounded, the
+ * failure mode is a chip that says the text is not saved yet over a buffer that
+ * still holds every word of it, which the person can retry by hand.
+ */
+export const MAX_CONFLICT_RETRIES = 3;
+
+/** What the chip says once the conflict budget is spent. Names the state, honestly. */
+export const CONFLICT_STALLED_MESSAGE =
+  "the document changed while you were typing — your text is kept here, not saved yet";
 
 export type SaveState =
   | { readonly kind: "idle" }
@@ -69,13 +114,35 @@ export interface UseAutosaveOptions {
   readonly docId: string;
   /** The body as it stands on the server; the baseline a save is compared against. */
   readonly savedBody: string;
-  /** Writes are refused while another party holds the lock (SPEC.md §7). */
-  readonly locked: boolean;
+  /**
+   * SPEC.md §7's **key** for the version {@link savedBody} came from — opaque,
+   * echoed back on the next save, and never computed here.
+   *
+   * It travels beside the body rather than being derived from it because it
+   * names the whole *file*: a frontmatter-only change (a tag the agent added, a
+   * title the person just wrote) moves the key without moving the body, and a
+   * writer that re-derived one from the text it holds would have manufactured
+   * evidence it never read anything.
+   */
+  readonly savedKey: string;
   /**
    * Called with every `PUT` response's anchor report. Declared now, consumed by
    * UI-007: reconciliation is what re-anchors the highlights after a save.
    */
   readonly onAnchors?: ((report: AnchorReport) => void) | undefined;
+  /**
+   * Every **authoritative** document the server hands back: the one a save
+   * wrote, and the one a `409` refused against (SPEC.md §7's *what a refusal
+   * says*).
+   *
+   * The host publishes it into the document cache, which is the same channel an
+   * SSE-driven refetch uses — so a refusal reaches the editor as an ordinary
+   * external change, subject to the rule that already governs those, rather than
+   * through a second adoption mechanism written for conflicts alone. It also
+   * makes a landed save read-your-write: the reader shows what the server
+   * stored, at the instant it stored it, with no refetch in between.
+   */
+  readonly onServerDoc?: ((doc: Doc) => void) | undefined;
 }
 
 export interface Autosave {
@@ -93,7 +160,13 @@ interface Pending {
   readonly body: string;
 }
 
-export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosaveOptions): Autosave {
+export function useAutosave({
+  docId,
+  savedBody,
+  savedKey,
+  onAnchors,
+  onServerDoc,
+}: UseAutosaveOptions): Autosave {
   const update = useUpdateDocById();
   const [state, setState] = useState<SaveState>({ kind: "idle" });
 
@@ -116,8 +189,24 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
   mutate.current = update.mutateAsync;
   const anchors = useRef(onAnchors);
   anchors.current = onAnchors;
-  const isLocked = useRef(locked);
-  isLocked.current = locked;
+  const serverDoc = useRef(onServerDoc);
+  serverDoc.current = onServerDoc;
+  /**
+   * The key this editor presents on its next save: the one its last **read** or
+   * its last **write** carried, and nothing else. Opaque — echoed, never parsed,
+   * never constructed (SPEC.md §7).
+   */
+  const documentKey = useRef(savedKey);
+  /** Consecutive stale-key refusals for the buffer in hand. Reset by a landed save. */
+  const conflicts = useRef(0);
+  /**
+   * The server refused the buffer in hand and it has not landed since.
+   *
+   * Read by the `beforeunload` guard below: this is the one state in which
+   * closing the tab destroys the only copy of what the person wrote, because
+   * every other unsent buffer is flushed on the way out.
+   */
+  const refused = useRef(false);
   /**
    * True once this hook has stopped owning a surface for the document a
    * response is about — the surface unmounted, or it rebound onto another
@@ -172,12 +261,21 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
        */
       beginEditWrite(job.docId);
       void mutate
-        .current({ id: job.docId, changes: { body: job.body } })
+        // SPEC.md §7: a write that replaces the body presents the key of the
+        // version it read. Echoed exactly as received — this is the only place
+        // the key leaves the client, and it never leaves as anything but the
+        // string the server last handed over.
+        .current({ id: job.docId, changes: { body: job.body, key: documentKey.current } })
         .then((response: UpdateDocResponse) => {
           inFlight.current = false;
           endEditWrite(job.docId, true);
           retried.current = false;
+          conflicts.current = 0;
+          refused.current = false;
           lastSaved.current = job.body;
+          // "Every write that lands gives you a fresh key for the next one."
+          documentKey.current = response.doc.key;
+          serverDoc.current?.(response.doc);
           anchors.current?.({
             docId: job.docId,
             revision: stamp,
@@ -211,17 +309,6 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
           if (superseded) pending.current = null;
           if (next !== null && !superseded) {
             clearTimer(debounce);
-            if (isLocked.current) {
-              // A foreign lock arrived mid-save: the server would refuse this
-              // one too, so it waits — but the chip says so rather than
-              // reporting a save that the buffer contradicts. The effect below
-              // sends it the moment the lock clears.
-              setState({
-                kind: "error",
-                message: "the document is locked — this edit is not saved yet",
-              });
-              return;
-            }
             send(next);
             return;
           }
@@ -265,16 +352,55 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
            * it in any case: there is no chip left to report the failure and no
            * user left to press retry, and parking the body somewhere that
            * outlives its surface is the second source of truth for a document
-           * body that SPEC.md §5 is most careful about — the same reason the
-           * buffer is not rescued from behind a foreign lock. The acknowledgment
-           * then describes what the server actually has, which is the honest
-           * range. The chip and the buffer are skipped with it: nothing renders
-           * the one, and nothing can type over the other.
+           * body that SPEC.md §5 is most careful about. The acknowledgment then
+           * describes what the server actually has, which is the honest range.
+           * The chip and the buffer are skipped with it: nothing renders the
+           * one, and nothing can type over the other.
            */
           if (retired.current || boundDoc.current !== job.docId) return;
           // The buffer is put back, not discarded: the text the user typed is
-          // the only copy of it that exists.
+          // the only copy of it that exists. **This line is the guarantee** —
+          // it runs before anything below decides what kind of failure this was,
+          // so no refusal, of any shape, can reach a branch that has already
+          // dropped the person's sentence.
           pending.current ??= job;
+          refused.current = true;
+
+          /**
+           * SPEC.md §7's refusal: **the key named a version this document no
+           * longer is.** Adopt, then retry.
+           *
+           * The refusal carries the document as it now stands and a fresh key
+           * for it, so one exchange is all it takes. The document goes to the
+           * host, which publishes it where an SSE refetch would have — the
+           * editor's existing "an external change while the user is typing" rule
+           * then decides what to do with the body, and that rule holds the
+           * incoming copy back while a session is open. **The person's text is
+           * never replaced under the caret**, and the buffer above is re-sent
+           * against the key just adopted, which is what makes the sentence land
+           * rather than merely survive.
+           *
+           * Not an error chip: a conflict the mechanism resolves in one exchange
+           * is not a failure to report, and reporting it would train people to
+           * ignore the chip that means something.
+           */
+          const current = staleKeyDoc(error);
+          if (current !== null) {
+            documentKey.current = current.key;
+            serverDoc.current?.(current);
+            const next = pending.current;
+            if (conflicts.current < MAX_CONFLICT_RETRIES && next !== null) {
+              conflicts.current += 1;
+              clearTimer(debounce);
+              send(next);
+              return;
+            }
+            // The budget is spent and the buffer is still whole. Say so, and
+            // leave it exactly where it is — `retry` re-sends it by hand.
+            setState({ kind: "error", message: CONFLICT_STALLED_MESSAGE });
+            return;
+          }
+
           setState({
             kind: "error",
             message: error instanceof Error ? error.message : "the server refused the save",
@@ -299,26 +425,17 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
    * picks the buffer up and sends it, so a flush that lands mid-request still
    * ends with the text on disk.
    *
-   * **Declining under a foreign lock is different, and it is deliberate**
-   * (UI-013 rider). The server refuses a write to a locked document (SPEC.md
-   * §7), so there is no version of this that saves the text: sending it would
-   * produce a `423` and an error chip claiming a failure the user cannot act
-   * on. The buffer therefore waits for the lock to clear — the effect below
-   * sends it the moment it does — and while it waits the chip says, in words,
-   * that the edit is not saved yet.
-   *
-   * What that costs: if the *surface* goes before the lock clears, the buffer
-   * goes with it. Within the app that is a navigation the user made knowing
-   * the chip's state; leaving the page is not, so it is the one case worth
-   * intercepting, and {@link useAutosave} does (`beforeunload`, below).
-   * Reproducing the text elsewhere — a draft store outliving the reader —
-   * would be a second source of truth for a document body, which is the thing
-   * SPEC.md §5 is most careful about.
+   * **Nothing parks a buffer any more.** It used to wait behind a foreign lock,
+   * because the server refused every write to a locked document and sending one
+   * could only produce a failure the person could not act on. There is no lock
+   * (SPEC.md §7), and a key refusal is not that: it comes back with the document
+   * and a fresh key, so the way to save the text is to send it — which is what
+   * the conflict path in `send` does.
    */
   const flush = useCallback((): void => {
     clearTimer(debounce);
     const job = pending.current;
-    if (job === null || inFlight.current || isLocked.current) return;
+    if (job === null || inFlight.current) return;
     // The document is being removed for being empty (SPEC.md §11). Its buffer
     // is by definition the emptiness that decided it, and sending it would be a
     // `PUT` racing the `DELETE` that follows.
@@ -344,10 +461,11 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
       }
       beginEditing(docId);
       pending.current = { docId, body };
+      // A fresh keystroke is a fresh attempt: the conflict budget is per buffer,
+      // not per session, so a person who keeps writing is never refused for
+      // conflicts an earlier sentence already spent.
+      conflicts.current = 0;
       clearTimer(settle);
-      // Writes are refused under a foreign lock, so nothing is scheduled; the
-      // buffer is kept, and the editor is `editable: false` anyway.
-      if (isLocked.current) return;
       clearTimer(debounce);
       debounce.current = setTimeout(() => {
         debounce.current = null;
@@ -363,25 +481,31 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
 
   const retry = useCallback((): void => {
     retried.current = false;
+    conflicts.current = 0;
     flush();
   }, [flush]);
 
   /**
-   * The lock cleared and a buffer is still waiting on it.
+   * The server's copy moved on (a save landed, or somebody else wrote).
    *
-   * The only way to get here is the race the completion handler parks on: a
-   * foreign lock arrived while the user's save was on the wire. Nothing else
-   * would restart that save — the editor was read-only in the meantime, so
-   * there is no keystroke coming to re-arm the debounce.
+   * The body and its key travel together, because they describe one version:
+   * taking a key without the body it names would be presenting evidence of a
+   * read that never happened, which is exactly what SPEC.md §7 refuses.
+   *
+   * **The one exception is a key that arrives with the body already in hand.**
+   * A frontmatter-only write — the person's own title edit, a tag the agent
+   * added — moves the file's key and leaves the block this editor replaces
+   * untouched. Taking the key then adopts nothing unread, and not taking it
+   * would refuse the next sentence over a change that cannot collide with it.
    */
   useEffect(() => {
-    if (!locked) flush();
-  }, [flush, locked]);
-
-  /** The server's copy moved on (a save landed, or somebody else wrote). */
-  useEffect(() => {
-    if (pending.current === null && !inFlight.current) lastSaved.current = savedBody;
-  }, [savedBody]);
+    if (pending.current === null && !inFlight.current) {
+      lastSaved.current = savedBody;
+      documentKey.current = savedKey;
+      return;
+    }
+    if (savedBody === lastSaved.current) documentKey.current = savedKey;
+  }, [savedBody, savedKey]);
 
   /**
    * The buffer must not outlive the surface that holds it.
@@ -396,21 +520,21 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
       if (document.visibilityState === "hidden") flush();
     };
     /**
-     * The one parked buffer that can still be rescued (UI-013 rider).
+     * The one buffer that closing the tab would destroy.
      *
-     * A buffer waiting behind a foreign lock cannot be sent — the server would
-     * refuse it — so the only thing that keeps the text alive is the tab that
-     * holds it. Closing or reloading destroys the only copy, silently, and the
-     * chip that was saying so goes with it. This is the browser's own "leave
-     * without saving?" and it fires for exactly that state: an unsent buffer
-     * under a lock this session does not hold.
+     * A save the server **refused** and that has not landed since is text the
+     * flush below cannot rescue: sending it again is exactly what already
+     * failed. The only thing keeping it alive is the tab, so closing or
+     * reloading destroys the only copy silently, and the chip that was saying so
+     * goes with it. This is the browser's own "leave without saving?", fired for
+     * precisely that state.
      *
-     * An ordinary pending save needs nothing here: `pagehide` flushes it, and
-     * a prompt on every unloaded page with an unsettled debounce would be the
-     * kind of dialog people learn to dismiss without reading.
+     * An ordinary pending save needs nothing here: `pagehide` flushes it, and a
+     * prompt on every unloaded page with an unsettled debounce would be the kind
+     * of dialog people learn to dismiss without reading.
      */
     const onLeave = (event: BeforeUnloadEvent): void => {
-      if (pending.current === null || !isLocked.current) return;
+      if (pending.current === null || !refused.current) return;
       event.preventDefault();
     };
     document.addEventListener("visibilitychange", onHide);

@@ -33,7 +33,7 @@ function transport(status = 200): {
             anchors: { remapped: [], orphaned: [] },
             warnings: [],
           }
-        : { code: "locked", message: "agent holds the edit lock" };
+        : { code: "stale_key", message: "the document has moved on" };
     return new Response(JSON.stringify(payload), {
       status,
       headers: { "content-type": "application/json" },
@@ -100,7 +100,7 @@ describe("useUpdateDoc", () => {
   });
 
   it("surfaces a refusal rather than swallowing it", async () => {
-    const wire = transport(423);
+    const wire = transport(409);
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const { result } = renderHook(() => useUpdateDoc("doc_a"), { wrapper: harness.Wrapper });
 
@@ -108,7 +108,7 @@ describe("useUpdateDoc", () => {
     await waitFor(() => {
       expect(result.current.isError).toBe(true);
     });
-    expect(result.current.error?.message).toContain("agent holds the edit lock");
+    expect(result.current.error?.message).toContain("the document has moved on");
   });
 });
 
@@ -145,12 +145,12 @@ describe("useUpdateDocById", () => {
   });
 
   it("surfaces a refusal rather than swallowing it", async () => {
-    const wire = transport(423);
+    const wire = transport(409);
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const { result } = renderHook(() => useUpdateDocById(), { wrapper: harness.Wrapper });
 
     await expect(
       result.current.mutateAsync({ id: "doc_a", changes: { order: 5 } }),
-    ).rejects.toThrow(/agent holds the edit lock/);
+    ).rejects.toThrow(/the document has moved on/);
   });
 });

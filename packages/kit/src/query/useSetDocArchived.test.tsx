@@ -29,7 +29,7 @@ function transport(status = 200): {
     const payload =
       status === 200
         ? { doc: { frontmatter: { id: "doc_a" } }, warnings: [] }
-        : { code: "locked", message: "agent holds the edit lock" };
+        : { code: "conflict", message: "the document has moved on" };
     return new Response(JSON.stringify(payload), {
       status,
       headers: { "content-type": "application/json" },
@@ -128,7 +128,7 @@ describe("useSetDocArchived", () => {
 
   it("surfaces a refusal rather than swallowing it", async () => {
     const onError = vi.fn();
-    const wire = transport(423);
+    const wire = transport(409);
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const { result } = renderHook(() => useSetDocArchived({ onError }), {
       wrapper: harness.Wrapper,
@@ -138,7 +138,7 @@ describe("useSetDocArchived", () => {
     await waitFor(() => {
       expect(result.current.isError).toBe(true);
     });
-    expect(result.current.error?.message).toContain("agent holds the edit lock");
+    expect(result.current.error?.message).toContain("the document has moved on");
     expect(onError).toHaveBeenCalledTimes(1);
   });
 });

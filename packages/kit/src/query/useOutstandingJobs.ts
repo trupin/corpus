@@ -44,8 +44,9 @@ import { useJobs } from "./useJobs.js";
  * Queue states in which work is genuinely still outstanding.
  *
  * SPEC.md §7's three non-terminal outcomes. `deferred` counts: it is claimed
- * work parked on a document's edit lock, returned to `pending` automatically
- * when that lock is released, broken or reaped — the reply is still coming.
+ * work the agent parked because a person was editing the document (SPEC.md §7),
+ * returned to `pending` automatically when that session ends — the reply is
+ * still coming.
  * `processed`, `failed` and `abandoned` are terminal: nothing more arrives
  * without someone asking again.
  */

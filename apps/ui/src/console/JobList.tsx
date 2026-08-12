@@ -66,10 +66,10 @@ export function JobList({ jobs, selectedId, onSelect }: JobListProps): ReactElem
                * `🔒 <name>` rather than the full `blocked on <name>`: three
                * labels do not fit 380 px, and spending ten characters on the
                * preposition is what pushes the document's name — the one fact
-               * the row exists to add — into an ellipsis. The lock glyph is the
-               * mockup's own affordance for a held document (`🔒 agent
-               * editing`), the sepia matches the deferred dot beside it, and the
-               * full sentence with the id is on the hover and in the detail pane.
+               * the row exists to add — into an ellipsis. The padlock is the
+               * mockup's own affordance for a document somebody is at, the sepia
+               * matches the deferred dot beside it, and the full sentence with
+               * the id is on the hover and in the detail pane.
                */
               <span className="job-blocked" title={blockedOnDetailLabel(blocker)}>
                 🔒 {blocker.name}

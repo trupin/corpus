@@ -252,7 +252,7 @@ describe("rollback", () => {
       { kind: "status", status: 403, code: "forbidden" } as const,
       /refused/,
     ],
-    ["a locked response", { kind: "status", status: 423, code: "locked" } as const, /refused/],
+    ["a conflict response", { kind: "status", status: 409, code: "conflict" } as const, /refused/],
     ["a transport failure", { kind: "transport" } as const, /Failed to fetch/],
   ])("restores the cache after %s", async (_label, failure, message) => {
     const script = scripted();

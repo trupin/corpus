@@ -1,13 +1,14 @@
 /** @vitest-environment jsdom */
-import type { Doc, Lock } from "@corpus/contract";
+import type { Doc } from "@corpus/contract";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import type { Editor } from "@tiptap/react";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { docRowFixture } from "@corpus/kit/testing";
-import { docFixture } from "../testing/readerFixture";
+import { docFixture, nextDocumentKey } from "../testing/readerFixture";
 import { traceOfBody } from "../anchors/traceCache.js";
+import { useDoc } from "@corpus/kit";
 import { DocEditor, editorHandlesType } from "./DocEditor.js";
 import { editorBody } from "./editorBody.js";
 import { serializeDoc } from "./markdown/serialize.js";
@@ -20,12 +21,16 @@ import {
 import { resetEditingRegistry } from "./editingRegistry.js";
 import { SaveStatusProvider } from "./SaveChip.js";
 import type { EditorSelection } from "./selection.js";
-import { AUTOSAVE_DEBOUNCE_MS, EDIT_SETTLE_MS } from "./useAutosave.js";
+import { AUTOSAVE_DEBOUNCE_MS, EDIT_SETTLE_MS, MAX_CONFLICT_RETRIES } from "./useAutosave.js";
 
 /**
- * The editor as a mounted surface: what it renders, what it refuses to render
- * when the document is locked, and what it hands over when the user comments.
+ * The editor as a mounted surface: what it renders, what it presents on a save,
+ * what it does when the server refuses one, and what it hands over when the user
+ * comments.
  */
+
+/** The document every `Host` below edits. */
+const SUBJECT = "doc_a1b2c3";
 
 interface Call {
   readonly method: string;
@@ -38,7 +43,28 @@ interface Wire {
   readonly calls: Call[];
   readonly of: (method: string) => Call[];
   docs: Map<string, Doc>;
-  locks: Lock[];
+  /**
+   * SPEC.md §7's key for {@link SUBJECT}, as the *server* holds it — moved by
+   * every write that lands, and by {@link otherWriterWrites}.
+   */
+  key: string;
+  /** The body the other writer left behind; what a refusal answers with. */
+  otherBody: string;
+  /**
+   * The other writer moves the document **again** between the refusal and the
+   * retry, so every attempt is refused however fresh the key it presents.
+   */
+  otherWriterKeepsWriting: boolean;
+}
+
+/**
+ * The agent writes the document this editor has open (SPEC.md §7's realistic
+ * conflict), so the key the page is holding names a version that no longer
+ * exists and its next body write is refused.
+ */
+function otherWriterWrites(state: Wire, body: string): void {
+  state.key = nextDocumentKey();
+  state.otherBody = body;
 }
 
 function wire(docs: readonly Doc[] = [], listed: readonly Doc[] = []): Wire {
@@ -48,7 +74,9 @@ function wire(docs: readonly Doc[] = [], listed: readonly Doc[] = []): Wire {
     calls,
     of: (method) => calls.filter((call) => call.method === method),
     docs: new Map(docs.map((doc) => [doc.frontmatter.id, doc])),
-    locks: [],
+    key: nextDocumentKey(),
+    otherBody: "",
+    otherWriterKeepsWriting: false,
   };
   const rows = listed.map((doc) =>
     docRowFixture({
@@ -71,17 +99,6 @@ function wire(docs: readonly Doc[] = [], listed: readonly Doc[] = []): Wire {
       });
       // SPEC.md §4's close path: `204`, no body in either direction.
       if (url.pathname.endsWith("/edit-session/flush")) return new Response(null, { status: 204 });
-      if (url.pathname === "/api/locks") return json({ locks: state.locks });
-      if (url.pathname.startsWith("/api/locks/")) {
-        const docId = url.pathname.split("/")[3] ?? "";
-        if (request.method === "POST") {
-          return json(
-            { docId, holder: "user", acquired: "2026-07-28T09:00:00.000Z", ttl: 300 },
-            201,
-          );
-        }
-        return json({ docId, released: true, holder: "user" });
-      }
       if (url.pathname === "/api/docs") {
         return json({ items: rows, page: { total: rows.length, limit: 50, offset: 0 } });
       }
@@ -89,8 +106,41 @@ function wire(docs: readonly Doc[] = [], listed: readonly Doc[] = []): Wire {
         const id = url.pathname.slice("/api/docs/".length);
         const doc = state.docs.get(id);
         if (request.method === "PUT") {
+          const changes = (raw === "" ? {} : JSON.parse(raw)) as {
+            body?: string;
+            key?: string;
+          };
+          /*
+           * SPEC.md §7, as the server performs it: a write replacing the body
+           * presents the key of the version it read, and any other key is
+           * refused with the document **as it now stands** plus a fresh key.
+           */
+          if (id === SUBJECT && changes.body !== undefined && changes.key !== state.key) {
+            const refusal = docFixture({
+              frontmatter: { id },
+              body: state.otherBody,
+              key: state.key,
+            });
+            if (state.otherWriterKeepsWriting) state.key = nextDocumentKey();
+            return json(
+              {
+                code: "stale_key",
+                message: "the key names a version this document no longer is",
+                doc: refusal,
+              },
+              409,
+            );
+          }
+          if (id === SUBJECT) state.key = nextDocumentKey();
+          const base = doc ?? docFixture({ frontmatter: { id } });
+          const written: Doc = {
+            ...base,
+            ...(changes.body === undefined ? {} : { body: changes.body }),
+            ...(id === SUBJECT ? { key: state.key } : {}),
+          };
+          state.docs.set(id, written);
           return json({
-            doc: doc ?? docFixture(),
+            doc: written,
             anchors: { remapped: [], orphaned: [] },
             warnings: [],
           });
@@ -115,25 +165,68 @@ function json(payload: unknown, status = 200): Response {
 interface HostProps {
   readonly transport: Wire;
   readonly body?: string;
-  readonly locked?: boolean;
   readonly onComment?: (selection: EditorSelection) => void;
   readonly onEditor?: (editor: Editor | null) => void;
 }
 
-function Host({ transport, body, locked, onComment, onEditor }: HostProps): ReactElement {
+function Host({ transport, body, onComment, onEditor }: HostProps): ReactElement {
   const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
   return (
     <harness.Wrapper>
       <SaveStatusProvider>
         <DocEditor
-          docId="doc_a1b2c3"
+          docId={SUBJECT}
           body={body ?? "First paragraph.\n"}
-          locked={locked ?? false}
+          documentKey={transport.key}
           {...(onComment === undefined ? {} : { onComment })}
           {...(onEditor === undefined ? {} : { onEditor })}
         />
       </SaveStatusProvider>
     </harness.Wrapper>
+  );
+}
+
+/**
+ * The editor wired the way `DocView` wires it: body and key read from the
+ * **document cache**, not handed down by the test.
+ *
+ * That is what makes a conflict observable end to end here. A refusal's document
+ * is published into that cache (SPEC.md §7), so with this host the adoption
+ * travels the same path an agent's write travels over SSE — and the question the
+ * issue turns on, *what happens to what the person was typing*, is asked of the
+ * real arrangement rather than of a prop nobody moves.
+ */
+function LiveHost({
+  transport,
+  onEditor,
+}: {
+  readonly transport: Wire;
+  readonly onEditor?: (editor: Editor | null) => void;
+}): ReactElement {
+  const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
+  return (
+    <harness.Wrapper>
+      <SaveStatusProvider>
+        <LiveEditor {...(onEditor === undefined ? {} : { onEditor })} />
+      </SaveStatusProvider>
+    </harness.Wrapper>
+  );
+}
+
+function LiveEditor({
+  onEditor,
+}: {
+  readonly onEditor?: (editor: Editor | null) => void;
+}): ReactElement | null {
+  const doc = useDoc(SUBJECT);
+  if (doc.data === undefined) return null;
+  return (
+    <DocEditor
+      docId={SUBJECT}
+      body={doc.data.body}
+      documentKey={doc.data.key}
+      {...(onEditor === undefined ? {} : { onEditor })}
+    />
   );
 }
 
@@ -227,7 +320,6 @@ describe("the surface", () => {
 
     expect(prose().className).toContain("doc-body");
     expect(prose().getAttribute("contenteditable")).toBe("true");
-    expect(surface().dataset["editable"]).toBe("true");
     // SPEC.md §11: no edit mode, no save button, anywhere.
     expect(document.querySelector("button[type=submit]")).toBeNull();
     expect(
@@ -304,25 +396,30 @@ describe("references (SPEC.md §5)", () => {
   });
 });
 
-describe("under a foreign lock (SPEC.md §7)", () => {
-  it("renders the same surface, read-only", async () => {
-    render(<Host transport={wire()} locked />);
+/**
+ * SPEC.md §11, amended by SHARED-041: **the board is never read-only**, and §7
+ * has nothing to acquire or release. Both halves are asserted, because the
+ * second one is the quiet regression — a surface can be editable and still be
+ * chattering at a lock endpoint that no longer exists.
+ */
+describe("the surface has one state, and it is editable (SPEC.md §11)", () => {
+  it("renders an editable body with no read-only affordance", async () => {
+    render(<Host transport={wire()} />);
     await waitFor(() => {
       expect(prose()).toBeTruthy();
     });
-    expect(prose().getAttribute("contenteditable")).toBe("false");
-    expect(surface().dataset["editable"]).toBe("false");
-    expect(prose().getAttribute("aria-readonly")).toBe("true");
+    expect(prose().getAttribute("contenteditable")).toBe("true");
+    expect(prose().getAttribute("aria-readonly")).toBeNull();
+    expect(surface().dataset["editable"]).toBeUndefined();
     // Not a MarkdownView fallback: one surface, one scroll and selection model.
     expect(prose().className).toContain("doc-body");
   });
 
-  it("opens no selection toolbar", async () => {
+  it("opens the selection toolbar on any document", async () => {
     let editor: Editor | null = null;
     render(
       <Host
         transport={wire()}
-        locked
         body={"A sentence worth selecting.\n"}
         onEditor={(instance) => {
           editor = instance;
@@ -335,33 +432,30 @@ describe("under a foreign lock (SPEC.md §7)", () => {
     act(() => {
       editor?.commands.setTextSelection({ from: 1, to: 9 });
     });
-    expect(document.querySelector("[data-sel-toolbar]")).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector("[data-sel-toolbar]")).not.toBeNull();
+    });
   });
 
-  it("becomes editable again without remounting the surface", async () => {
+  it("asks the server about no locks at all — nothing polls or subscribes to them", async () => {
     const transport = wire();
-    const view = render(<Host transport={transport} locked />);
+    let editor: Editor | null = null;
+    render(
+      <Host
+        transport={transport}
+        onEditor={(instance) => {
+          editor = instance;
+        }}
+      />,
+    );
     await waitFor(() => {
-      expect(prose()).toBeTruthy();
+      expect(editor).not.toBeNull();
     });
-    const before = prose();
-
-    view.rerender(<Host transport={transport} locked={false} />);
-    await waitFor(() => {
-      expect(prose().getAttribute("contenteditable")).toBe("true");
+    await act(async () => {
+      editor?.commands.insertContentAt(1, "Typed. ");
+      await Promise.resolve();
     });
-    // The identical DOM node: a remount would have replaced it, and with it the
-    // scroll position and every decoration on the document.
-    expect(prose()).toBe(before);
-  });
-
-  it("takes no lock of its own while another party holds one", async () => {
-    const transport = wire();
-    render(<Host transport={transport} locked />);
-    await waitFor(() => {
-      expect(prose()).toBeTruthy();
-    });
-    expect(transport.calls.filter((call) => call.path.startsWith("/api/locks/"))).toHaveLength(0);
+    expect(transport.calls.filter((call) => call.path.includes("/locks"))).toHaveLength(0);
   });
 });
 
@@ -370,7 +464,7 @@ describe("editing", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
-  it("saves the serialized markdown and takes the user's edit lock", async () => {
+  it("saves the serialized markdown, presenting the key it read (SPEC.md §7)", async () => {
     const transport = wire();
     let editor: Editor | null = null;
     render(
@@ -390,15 +484,7 @@ describe("editing", () => {
       await Promise.resolve();
     });
 
-    // SPEC.md §7: the first keystroke takes the lock, so the agent's queue has
-    // something to defer on.
-    await waitFor(() => {
-      expect(
-        transport.calls.filter(
-          (call) => call.method === "POST" && call.path === "/api/locks/doc_a1b2c3",
-        ),
-      ).toHaveLength(1);
-    });
+    const presented = transport.key;
 
     await act(async () => {
       vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
@@ -407,7 +493,10 @@ describe("editing", () => {
     await waitFor(() => {
       expect(transport.of("PUT")).toHaveLength(1);
     });
-    expect(transport.of("PUT")[0]?.body).toEqual({ body: "First paragraph. Added.\n" });
+    expect(transport.of("PUT")[0]?.body).toEqual({
+      body: "First paragraph. Added.\n",
+      key: presented,
+    });
   });
 
   it("publishes the save state to the chip's context", async () => {
@@ -597,29 +686,6 @@ describe("the `[[` autocomplete (SPEC.md §11)", () => {
     expect(JSON.stringify(serialized)).toContain("doc_z9y8x7");
     expect(JSON.stringify(serialized)).not.toContain("Rates");
   });
-
-  it("never opens while another party holds the lock", async () => {
-    const transport = wire([RATES], [RATES]);
-    let editor: Editor | null = null;
-    render(
-      <Host
-        transport={transport}
-        locked
-        body={"See also \n"}
-        onEditor={(instance) => {
-          editor = instance;
-        }}
-      />,
-    );
-    await waitFor(() => {
-      expect(editor).not.toBeNull();
-    });
-    await act(async () => {
-      (editor as unknown as Editor).commands.insertContent("[[");
-      await Promise.resolve();
-    });
-    expect(menu()).toBeNull();
-  });
 });
 
 describe("an external change while the user is typing", () => {
@@ -801,6 +867,143 @@ describe("an external change while the user is typing", () => {
   });
 });
 
+/**
+ * SPEC.md §7's refusal, and **the criterion this issue turns on**: a `409`
+ * arriving mid-sentence may not cost the person the sentence.
+ *
+ * The arrangement is the real one — body and key read from the document cache,
+ * exactly as `DocView` wires them (`LiveHost`) — because what has to be proved
+ * is not that a retry is issued but that the text on screen survives the whole
+ * exchange: the refusal, the adoption of the other writer's document, and the
+ * retry that follows it.
+ */
+describe("a refusal arriving mid-sentence (SPEC.md §7)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  /** Seeds the document the editor opens, and returns the wire holding it. */
+  function seeded(body: string): Wire {
+    const transport = wire();
+    transport.docs.set(
+      SUBJECT,
+      docFixture({ frontmatter: { id: SUBJECT }, body, key: transport.key }),
+    );
+    return transport;
+  }
+
+  async function typedInto(transport: Wire): Promise<Editor> {
+    let editor: Editor | null = null;
+    render(
+      <LiveHost
+        transport={transport}
+        onEditor={(instance) => {
+          editor = instance;
+        }}
+      />,
+    );
+    await waitFor(() => {
+      expect(editor).not.toBeNull();
+    });
+    await act(async () => {
+      (editor as unknown as Editor).commands.insertContentAt(1, "Half a sen");
+      await Promise.resolve();
+    });
+    return editor as unknown as Editor;
+  }
+
+  it("keeps the person's text, adopts the fresh key, and lands the retry", async () => {
+    const transport = seeded("Original text.\n");
+    await typedInto(transport);
+    expect(prose().textContent).toContain("Half a sen");
+
+    // The other writer lands first. The key the page holds now names a version
+    // that no longer exists.
+    otherWriterWrites(transport, "Agent rewrote this.\n");
+    const fresh = transport.key;
+
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+
+    // Two writes: the one that was refused, and the one that presented the key
+    // the refusal carried. Same body both times — nothing was re-derived from
+    // the server's copy, and nothing was dropped.
+    await waitFor(() => {
+      expect(transport.of("PUT")).toHaveLength(2);
+    });
+    const [refused, retried] = transport.of("PUT") as [Call, Call];
+    const first = refused.body as { body: string; key: string };
+    const second = retried.body as { body: string; key: string };
+    expect(first.body).toContain("Half a sen");
+    expect(second.body).toBe(first.body);
+    expect(second.key).toBe(fresh);
+    expect(second.key).not.toBe(first.key);
+
+    // **The sentence is still on screen**, and the other writer's paragraph
+    // never replaced it under the caret.
+    expect(prose().textContent).toContain("Half a sen");
+    expect(prose().textContent).not.toContain("Agent rewrote");
+
+    // And it is still there once the editing session settles — the point at
+    // which a deferred external change would have been adopted.
+    await act(async () => {
+      vi.advanceTimersByTime(EDIT_SETTLE_MS + 100);
+      await Promise.resolve();
+    });
+    expect(prose().textContent).toContain("Half a sen");
+    // The server has it: the retry landed, so the stored body is the person's.
+    expect(transport.docs.get(SUBJECT)?.body).toContain("Half a sen");
+  });
+
+  it("never reports a conflict it resolved as an error", async () => {
+    const transport = seeded("Original text.\n");
+    await typedInto(transport);
+    otherWriterWrites(transport, "Agent rewrote this.\n");
+
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.of("PUT")).toHaveLength(2);
+    });
+    expect(document.querySelector(".save-chip.error")).toBeNull();
+  });
+
+  it("keeps the buffer when the other writer will not stop, rather than dropping it", async () => {
+    const transport = seeded("Original text.\n");
+    const editor = await typedInto(transport);
+    /*
+     * A writer that moves the document again between the refusal and the retry:
+     * every attempt is refused. The budget is spent, and what must remain true
+     * is the only thing that ever mattered — the text is still there, in the
+     * editor and in the buffer, and nothing claimed it was saved.
+     */
+    otherWriterWrites(transport, "Agent again.\n");
+    transport.otherWriterKeepsWriting = true;
+
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(transport.of("PUT").length).toBeGreaterThan(1);
+    });
+    // Bounded: it does not loop forever against a writer that will not yield.
+    expect(transport.of("PUT").length).toBeLessThanOrEqual(MAX_CONFLICT_RETRIES + 1);
+    expect(prose().textContent).toContain("Half a sen");
+    expect(editor.getText()).toContain("Half a sen");
+    // Every attempt carried the person's text; none of them carried the other
+    // writer's, and none of them was empty.
+    for (const call of transport.of("PUT")) {
+      expect((call.body as { body: string }).body).toContain("Half a sen");
+    }
+  });
+});
+
 describe("the comment hand-off", () => {
   it("calls back with the selection and writes nothing", async () => {
     const transport = wire();
@@ -896,7 +1099,10 @@ describe("the comment hand-off", () => {
     await waitFor(() => {
       expect(transport.of("PUT")).toHaveLength(1);
     });
-    expect(transport.of("PUT")[0]?.body).toEqual({ body: "**The rate** is 6.4%.\n" });
+    expect(transport.of("PUT")[0]?.body).toEqual({
+      body: "**The rate** is 6.4%.\n",
+      key: expect.any(String) as unknown,
+    });
   });
 });
 
@@ -926,9 +1132,9 @@ function SessionHost({ transport, mounted, onEditor }: SessionHostProps): ReactE
       <SaveStatusProvider>
         {mounted ? (
           <DocEditor
-            docId="doc_a1b2c3"
+            docId={SUBJECT}
             body={"First paragraph.\n"}
-            locked={false}
+            documentKey={transport.key}
             {...(onEditor === undefined ? {} : { onEditor })}
           />
         ) : null}

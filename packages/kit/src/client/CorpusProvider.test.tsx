@@ -7,7 +7,7 @@ import type { BridgeLogger } from "../events/sseBridge.js";
 import { useDoc } from "../query/useDoc.js";
 import { useDocs } from "../query/useDocs.js";
 import { useJobs } from "../query/useJobs.js";
-import { useLocks } from "../query/useLocks.js";
+import { useQueueStatus } from "../query/useQueueStatus.js";
 import { useThread } from "../query/useThread.js";
 import { useTree } from "../query/useTree.js";
 import { createCorpusTestHarness } from "../testing/index.js";
@@ -51,7 +51,7 @@ describe("one connection per provider", () => {
       () => useThread("th_a"),
       () => useTree(),
       () => useJobs({}),
-      () => useLocks(),
+      () => useQueueStatus(),
       () => useDocs({ folder: "finance" }),
     ] as const;
 

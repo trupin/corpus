@@ -17,7 +17,7 @@ import { SelectionMenuItems } from "./SelectionMenuItems";
  * **It opens on every document-body selection**, and lets the items thin out:
  * §11 says Copy always, Comment where there is something to anchor to, Cut and
  * Paste in editable content. A thread's conversation, a `view`, and a document
- * under someone else's lock therefore get a Copy-only menu rather than falling
+ * a `view`'s stored query therefore gets a Copy-only menu rather than falling
  * back to the browser's. Declining there — which is what this hook did until
  * PR #13's review — dropped the event on the reader's handler, and the *item*
  * menu opened on a text selection: neither Copy nor the native menu.

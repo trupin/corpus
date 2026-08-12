@@ -30,7 +30,7 @@ import {
  *
  * A refusal is swallowed on purpose. The user asked to leave, not to delete;
  * the only honest correction is the board's own refetch, which will show the
- * document if the server kept it (a `423` from a lock that arrived mid-exit is
+ * document if the server kept it (a refusal that arrived mid-exit is
  * the realistic case).
  */
 export async function abandonEmptyDoc(

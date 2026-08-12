@@ -714,12 +714,13 @@ describe("the master-detail body", () => {
    * Sprint-015 TEST-356, second half — through the real SSE seam.
    *
    * The server emits `invalidate` with the queue and jobs keys when a released
-   * lock re-enters the event; the console must follow that to the refetch and
+   * session ends; the server re-enters the event, and the console must follow
+   * that to the refetch and
    * repaint, with no reload and no remount. Asserting the row element is the
    * *same* node is what separates "updated live" from "the test re-rendered
    * everything".
    */
-  it("clears the deferral live when the lock releases, with no reload", async () => {
+  it("clears the deferral live when the editing session ends, with no reload", async () => {
     let jobs: readonly Job[] = [
       job({
         eventId: "evt_3ia",
@@ -745,7 +746,7 @@ describe("the master-detail body", () => {
     );
     const rowBefore = container.querySelector(".job");
 
-    // The lock releases out of band; the server re-enters the event and says so.
+    // The session ends out of band; the server re-enters the event and says so.
     jobs = [job({ eventId: "evt_3ia", status: "pending", blockedOn: null, blockedOnTitle: null })];
     queue = { ...IDLE_QUEUE, pending: 3 };
     harness?.eventSource.latest().invalidate([...QUEUE_KEY]);
@@ -888,7 +889,7 @@ describe("the master-detail body", () => {
       expect(container.querySelector(".job-detail-head")).not.toBeNull();
     });
     expect(screen.getByRole("button", { name: "Retry" }).getAttribute("title")).toContain(
-      "it re-enters on its own when the lock clears",
+      "it re-enters on its own when the editing session ends",
     );
     expect(screen.getByRole("button", { name: "Abandon" })).toBeDefined();
   });

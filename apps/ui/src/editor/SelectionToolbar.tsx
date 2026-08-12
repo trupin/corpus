@@ -9,9 +9,11 @@ import { createPortal } from "react-dom";
  * format buttons, the hairline, then the comment button in `--accent-ink` at
  * weight 600, because commenting is the act the surface is really for.
  *
- * **It never opens over a document somebody else is editing.** Under a foreign
- * lock the editor is not editable, and a toolbar offering to bold text that
- * cannot be bolded is a control that lies.
+ * **It opens only over an editable surface.** `editor.isEditable` is the gate
+ * and it is the whole of it — a toolbar offering to bold text that cannot be
+ * bolded is a control that lies. Since SPEC.md §11's *the board is never
+ * read-only*, that gate is never closed by a document's state; it still answers
+ * for an editor that has been torn down or put into a non-editing surface.
  *
  * The 💬 button does not touch the document. It hands the selection to its
  * caller and stops there — the thread, the anchor and the highlight are
@@ -30,8 +32,6 @@ const MIN_SELECTION = 2;
 
 export interface SelectionToolbarProps {
   readonly editor: Editor | null;
-  /** False under a foreign lock: the toolbar never opens. */
-  readonly enabled: boolean;
   readonly onComment: () => void;
 }
 
@@ -54,7 +54,6 @@ export function selectionPlacement(
 
 export function SelectionToolbar({
   editor,
-  enabled,
   onComment,
 }: SelectionToolbarProps): ReactElement | null {
   const [placement, setPlacement] = useState<Placement | null>(null);
@@ -67,7 +66,7 @@ export function SelectionToolbar({
     if (editor === null) return undefined;
 
     const update = (): void => {
-      if (!enabled || !editor.isEditable) {
+      if (!editor.isEditable) {
         setPlacement(null);
         return;
       }
@@ -117,7 +116,7 @@ export function SelectionToolbar({
       editor.off("transaction", update);
       window.removeEventListener("scroll", close, true);
     };
-  }, [editor, enabled]);
+  }, [editor]);
 
   if (editor === null || placement === null) return null;
 

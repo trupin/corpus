@@ -4,7 +4,7 @@ import {
   useConnectionState,
   useDocs,
   useJobs,
-  useLocks,
+  useQueueStatus,
   useThread,
   useTree,
   type ConnectionState,
@@ -110,7 +110,7 @@ export function DataProbe(): ReactElement {
   const docs = useDocs({});
   const tree = useTree();
   const jobs = useJobs({});
-  const locks = useLocks();
+  const queue = useQueueStatus();
 
   return (
     <main className="probe" aria-label="Kit data probe">
@@ -136,9 +136,9 @@ export function DataProbe(): ReactElement {
             detail={`${String(jobs.data?.jobs.length ?? 0)} jobs`}
           />
           <Row
-            label="useLocks"
-            state={statusOf(locks)}
-            detail={`${String(locks.data?.locks.length ?? 0)} locks`}
+            label="useQueueStatus"
+            state={statusOf(queue)}
+            detail={`${String(queue.data?.pending ?? 0)} pending`}
           />
         </tbody>
       </table>

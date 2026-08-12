@@ -36,14 +36,11 @@ export interface FrontmatterFormProps {
   readonly doc: Doc;
   /** True right after creation: the title is focused *and* selected. */
   readonly selectTitle: boolean;
-  /** An agent (or another session) holds the edit lock — every control freezes. */
-  readonly locked: boolean;
   readonly onNotify: (notice: RowNotice) => void;
   /**
-   * Rendered between the chip strip and the title, where the prototype puts the
-   * lock banner. A prop rather than a sibling because the strip, the banner and
-   * the title are one visual block and their order is the mockup's, not the
-   * caller's.
+   * Rendered between the chip strip and the title — today the archived notice.
+   * A prop rather than a sibling because the strip, the banner and the title are
+   * one visual block and their order is the mockup's, not the caller's.
    */
   readonly banner?: ReactNode;
 }
@@ -118,7 +115,6 @@ export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
 export function FrontmatterForm({
   doc,
   selectTitle,
-  locked,
   onNotify,
   banner,
 }: FrontmatterFormProps): ReactElement {
@@ -177,12 +173,11 @@ export function FrontmatterForm({
    * It is safe to publish an *uncommitted* draft here only because the exit
    * flush below guarantees it is committed on every route the abandon rule
    * treats as an exit — otherwise this would keep a document alive on a value
-   * that gets dropped. Under a foreign lock nothing here can be written at all,
-   * so the draft is withheld and the corpus's own title decides.
+   * that gets dropped.
    */
   useEffect(() => {
-    publishTitleDraft(docId, draft === null || locked ? null : draft.title);
-  }, [docId, draft, locked]);
+    publishTitleDraft(docId, draft?.title ?? null);
+  }, [docId, draft]);
 
   useEffect(() => {
     if (!selectTitle || selected.current) return;
@@ -194,7 +189,7 @@ export function FrontmatterForm({
   }, [selectTitle]);
 
   const save = (): void => {
-    if (!isDirty || locked) return;
+    if (!isDirty) return;
     beginEditWrite(docId);
     update.mutate(changes);
   };
@@ -204,8 +199,8 @@ export function FrontmatterForm({
    * effect below is registered once, and a handler holding the first render's
    * draft would write an empty title over a typed one.
    */
-  const pending = useRef({ doc, draft, locked });
-  pending.current = { doc, draft, locked };
+  const pending = useRef({ doc, draft });
+  pending.current = { doc, draft };
   const mutate = useRef(update.mutate);
   mutate.current = update.mutate;
 
@@ -221,8 +216,8 @@ export function FrontmatterForm({
    * on the tab-close route by {@link onPageHide}'s `decide` phase.
    */
   const outgoingWrite = useCallback((): { id: string; changes: UpdateDocRequest } | null => {
-    const { doc: outgoing, draft: unsaved, locked: frozen } = pending.current;
-    if (unsaved === null || frozen) return null;
+    const { doc: outgoing, draft: unsaved } = pending.current;
+    if (unsaved === null) return null;
     const id = outgoing.frontmatter.id;
     if (isAbandoned(id)) return null;
     const changes = changedFields(outgoing, unsaved);
@@ -328,7 +323,6 @@ export function FrontmatterForm({
           // always the floor.
           rows={1}
           value={value.title}
-          readOnly={locked}
           onChange={(event) => {
             patch({ title: event.target.value });
           }}
@@ -354,7 +348,6 @@ export function FrontmatterForm({
             <input
               className="fm-input"
               value={value.tags}
-              disabled={locked}
               placeholder="comma, separated"
               onChange={(event) => {
                 patch({ tags: event.target.value });
@@ -366,7 +359,7 @@ export function FrontmatterForm({
             <select
               className="fm-input"
               value={value.status}
-              disabled={locked || isArchived}
+              disabled={isArchived}
               onChange={(event) => {
                 patch({ status: event.target.value as DocStatus });
               }}
@@ -396,7 +389,6 @@ export function FrontmatterForm({
               className="fm-input"
               type="date"
               value={value.due}
-              disabled={locked}
               onChange={(event) => {
                 patch({ due: event.target.value });
               }}
@@ -407,17 +399,8 @@ export function FrontmatterForm({
 
       {isDirty ? (
         <div className="fm-actions" role="status">
-          <span className="fm-dirty">
-            {locked
-              ? "unsaved — the document was locked while you were editing; your changes are kept here"
-              : "unsaved changes"}
-          </span>
-          <button
-            type="button"
-            className="fm-save"
-            disabled={locked || update.isPending}
-            onClick={save}
-          >
+          <span className="fm-dirty">unsaved changes</span>
+          <button type="button" className="fm-save" disabled={update.isPending} onClick={save}>
             {update.isPending ? "Saving…" : "Save"}
           </button>
           <button
