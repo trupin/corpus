@@ -159,7 +159,11 @@ test.describe("the context menu", () => {
 
     await menu.locator('[data-act="unarchive"]').click();
 
-    await expect.poll(async () => (await corpus.doc("doc_other"))?.status).toBe("open");
+    // SPEC.md §5: unarchiving returns a document to `resolved` — the state
+    // archiving already implied — not to `open` (SERVER-108). Archiving is
+    // resolved-and-hidden, so the inverse is resolved-and-visible; coming back
+    // `open` would reopen work the archive had already settled.
+    await expect.poll(async () => (await corpus.doc("doc_other"))?.status).toBe("resolved");
     expect(await corpus.of("POST", "/api/docs/doc_other/unarchive")).toHaveLength(1);
     // Never the write SERVER-039 refuses with a 400 naming this route.
     expect(await corpus.of("PUT", "/api/docs/doc_other")).toHaveLength(0);
