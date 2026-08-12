@@ -155,11 +155,6 @@ export interface OutOfBandCommitterOptions {
  * how a caller declares an **act** (§4's "One action, one commit"), and an
  * external editor saving three files is not one act.
  *
- * A **removal** is the one change in a batch that does not fold, in either
- * direction (§4's "Two acts commit alone"; see the header). Deleting three
- * documents out of band is therefore three commits, exactly as deleting them
- * through `DELETE /api/docs/{id}` is.
- *
  * Sequential and awaited: `AutoCommitter.commit` serializes on the git lock
  * anyway, and folding depends on each call seeing the window the previous one
  * left. Never throws — §14 already rules that a mutation stands when its commit

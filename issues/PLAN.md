@@ -632,3 +632,4 @@ guarantees the watcher commits it as the `user` edit it is.
 | SERVER-104 | Delete the server's rollback module | done | P0 | SHARED-042 |
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
+| SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | todo | P1 | — |
