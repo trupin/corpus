@@ -17,7 +17,7 @@ fable
 - Blocks: [CONTRACT-050], [CONTRACT-051], [AGENT-025] (directly; the whole phase transitively)
 
 ## Spec References
-- SPEC.md §7 — the agent loop, the queue, and the single-consumer assumption this rider revokes
+- SPEC.md §7 — the agent loop, the queue, and the delegated/inline-work doctrine this rider scopes to the orchestrator's lane
 - SPEC.md §8 — threads, participation, mentions, and the composer
 
 ## Summary
@@ -72,8 +72,8 @@ Not applicable — this is spec work. The check is the signature.
 
 ## E2E Verification Plan
 Read the applied §7/§8 text against every acceptance criterion above; confirm PLAN.md and
-the rider agree on vocabulary; confirm no other SPEC section still asserts the
-single-consumer assumption (grep for "only process that claims").
+the rider agree on vocabulary; confirm no SPEC section asserts a queue-wide
+delegation or claiming rule that the per-lane doctrine does not scope.
 
 ### Verification Steps
 1. `grep -n "resident\|lane\|recipient" SPEC.md` — the vocabulary appears in §7/§8 and nowhere contradicts it
