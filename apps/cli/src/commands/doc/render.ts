@@ -130,8 +130,26 @@ function oneLine(exact: string): string {
  * it is the mechanism's designed path, not a failure. The message says so,
  * because an agent that reads "conflict" and stops has lost the edit as surely
  * as one that overwrites.
+ *
+ * ## `keyed: false` — the same refusal on the one route that presents no key
+ *
+ * SPEC.md §7 exempts `corpus doc patch`: quoting the text it expects to find
+ * *is* its staleness check, so it has no `--key` and passing one is exit 2. The
+ * keyed recovery above would therefore name a flag that does not exist, and an
+ * agent following it reaches a dead end — the recovery it needs was stated only
+ * in a reference table it was not reading (PR #44 re-review). So that route gets
+ * {@link patchStaleKeyError}: a different fact, a different recovery, and no
+ * document.
  */
-export function staleKeyError(status: number, doc: Doc): StaleKeyError {
+export function staleKeyError(
+  status: number,
+  doc: Doc,
+  options: { readonly keyed?: boolean } = {},
+): StaleKeyError {
+  // Keyed by default: every write but one presents a key, so the exception has
+  // to ask for itself rather than be assumed.
+  if (options.keyed === false) return patchStaleKeyError(status, doc);
+
   const id = doc.frontmatter.id;
   return new StaleKeyError(
     `${String(status)} stale_key: ${id} changed after the read that handed you that key — ` +
@@ -147,6 +165,55 @@ export function staleKeyError(status: number, doc: Doc): StaleKeyError {
       // current content, un-rendered and un-truncated.
       details: doc,
       detailLines: ["", ...documentLines(doc)],
+    },
+  );
+}
+
+/**
+ * The stale-key refusal of `corpus doc patch`, which is a different event
+ * wearing the same code.
+ *
+ * A keyed write goes stale because *the caller* read the document and then
+ * something else wrote it. A patch presents no key at all: the server reads the
+ * body, matches the excerpt, and hands the result to the ordinary write path
+ * with the key of the bytes it just matched (`packages/contract/src/routes/
+ * doc-patch.ts`). For that key to be stale, something **outside Corpus** must
+ * have rewritten the file inside that window. The caller did nothing wrong, its
+ * excerpt is very likely still there, and the patch is still the right patch —
+ * so the recovery is to run the identical command again, and the message says
+ * exactly that.
+ *
+ * ## Why it does not print the document
+ *
+ * `doc patch` exists so that a bounded change costs the bounded amount instead
+ * of the length of the file. A refusal that ships the whole document back
+ * inverts that premise on the one verb whose reason to exist is not shipping it
+ * — and it is not even usable here: there is no key to re-present and no merged
+ * body to resend, so nothing in the recovery reads it. What replaces it is the
+ * two-step the hint names: run it again, and *if* that is refused at exit 10,
+ * the excerpt really is gone and `corpus doc show` is the way to see what
+ * replaced it. Worst case that is one extra command, in the rarer of two rare
+ * cases; the alternative is paying for a document on every occurrence.
+ *
+ * `details` still carries it, un-rendered, so `--json` loses nothing: a caller
+ * that wants to check its excerpt against the new body before retrying reads
+ * `.error.details.body` and spends the round trip only if it wants to. The empty
+ * `detailLines` is how this file says "the prose is the human rendering"
+ * (`patchRefusal`'s precedent in `patch.ts`); without it the renderer would fall
+ * back to dumping `details` as JSON, which is the document again and worse.
+ */
+function patchStaleKeyError(status: number, doc: Doc): StaleKeyError {
+  const id = doc.frontmatter.id;
+  return new StaleKeyError(
+    `${String(status)} stale_key: ${id} was changed by something outside Corpus while this ` +
+      `patch was being applied — nothing was written, and the patch itself is still good.`,
+    {
+      status,
+      hint:
+        `Run the same patch again. If it is refused at exit 10 instead, the text you quoted is ` +
+        `no longer there — re-read with \`corpus doc show ${id}\` and quote what it says now.`,
+      details: doc,
+      detailLines: [],
     },
   );
 }

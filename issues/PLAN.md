@@ -633,6 +633,8 @@ guarantees the watcher commits it as the `user` edit it is.
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
 | SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | todo | P1 | — |
+| SERVER-106 | §4 says archiving closes a window; archiving through `PUT` does not (PR #44 review) | todo | P2 | — |
+| CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | todo | P1 | — |
 ### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 
 CONTRACT-046, SERVER-079 and CLI-035 shipped `corpus doc patch`. §9.2's bullet

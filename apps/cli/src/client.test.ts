@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { patchDoc } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
-import { createClient, transportError } from "./client.js";
+import { createClient, presentsAKey, transportError } from "./client.js";
 import { DOC, rekeyed } from "./commands/doc/fixtures.js";
 import {
   ExitCode,
@@ -153,6 +154,37 @@ describe("non-2xx responses", () => {
     expect(error).toHaveProperty("hint", expect.stringContaining(MOVED_ON.key));
   });
 
+  it("names the patch route's recovery instead, because that route presents no key", async () => {
+    // The same `409`, same code, same document — and the opposite instruction.
+    // `corpus doc patch` has no `--key` (SPEC.md §7 exempts it) and refuses one
+    // at exit 2, so the keyed hint would send an agent to a flag that does not
+    // exist. Driven over a real socket so the classification sees the URL the
+    // generated client actually built (PR #44 re-review).
+    const { port } = await listen(
+      json(409, { code: "stale_key", message: "it moved", doc: MOVED_ON }),
+    );
+    const error = await createClient({ workspace: workspaceOn(port) })
+      .request((api) =>
+        api.POST("/api/docs/{id}/patch", {
+          params: { path: { id: DOC.frontmatter.id } },
+          body: { old: "6.1%", new: "5.8%" },
+        }),
+      )
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(StaleKeyError);
+    expect(exitCodeFor(error)).toBe(ExitCode.staleKey);
+    expect((error as Error).message).toContain("outside Corpus");
+    expect(error).toHaveProperty("hint", expect.stringContaining("Run the same patch again"));
+    // The regression, asserted as an absence: neither the flag nor the key it
+    // would carry may appear anywhere the caller reads.
+    expect((error as Error).message).not.toContain("--key");
+    expect(error).toHaveProperty("hint", expect.not.stringContaining("--key"));
+    expect(error).toHaveProperty("hint", expect.not.stringContaining(MOVED_ON.key));
+    // Still the whole document for `--json`, which asked for structure.
+    expect(error).toHaveProperty("details", MOVED_ON);
+  });
+
   it("renders a body that is not a contract problem through the same path", async () => {
     const { port } = await listen(json(500, { oops: true }));
     const error = await createClient({ workspace: workspaceOn(port) })
@@ -245,5 +277,48 @@ describe("transportError", () => {
 
   it("wraps a thrown non-Error", () => {
     expect(transportError("nope", "http://127.0.0.1:1", 100).message).toBe("nope");
+  });
+});
+
+/**
+ * Which recovery a §7 refusal names is decided by the route, and the only thing
+ * a `Response` says about its route is its URL. These are the edges of reading
+ * that: a query string must not make a patch look keyed, a path that merely ends
+ * in the same word is not the patch route, and an unparseable URL falls back to
+ * the keyed refusal — which is every other write in the API, and at least
+ * carries the fresh key.
+ */
+describe("presentsAKey", () => {
+  const patchPath = patchDoc.path.replace("{id}", "doc_a1b2c3");
+
+  it("reads the one keyless route off the contract rather than off a spelling here", () => {
+    // If the contract renames the path, this file follows it — the assertion is
+    // that the CLI never hard-codes a second copy of it.
+    expect(patchDoc.path).toBe("/api/docs/{id}/patch");
+    expect(presentsAKey(`http://127.0.0.1:8765${patchPath}`)).toBe(false);
+  });
+
+  it("matches the path, not the string, so a query or a fragment cannot fool it", () => {
+    expect(presentsAKey(`http://127.0.0.1:8765${patchPath}?dry-run=1`)).toBe(false);
+    expect(presentsAKey(`http://127.0.0.1:8765${patchPath}#frag`)).toBe(false);
+    expect(presentsAKey(patchPath)).toBe(false);
+  });
+
+  it("says every other write presents one", () => {
+    expect(presentsAKey("http://127.0.0.1:8765/api/docs/doc_a1b2c3")).toBe(true);
+    expect(presentsAKey("http://127.0.0.1:8765/api/docs/doc_a1b2c3/move")).toBe(true);
+    // Ends in the same segment, is not the same route: the whole path matches or
+    // nothing does.
+    expect(presentsAKey("http://127.0.0.1:8765/api/skills/patch")).toBe(true);
+    expect(presentsAKey("http://127.0.0.1:8765/api/docs/doc_a1b2c3/patch/extra")).toBe(true);
+    // An empty id is not an id.
+    expect(presentsAKey("http://127.0.0.1:8765/api/docs//patch")).toBe(true);
+  });
+
+  it("falls back to the keyed refusal for a URL it cannot read", () => {
+    // `response.url` is `""` on a hand-built `Response`; a classifier must not
+    // throw over its own input.
+    expect(presentsAKey("")).toBe(true);
+    expect(presentsAKey("http://")).toBe(true);
   });
 });

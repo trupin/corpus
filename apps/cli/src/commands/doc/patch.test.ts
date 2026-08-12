@@ -1,6 +1,6 @@
 import type { PatchDocResponse } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
-import { ExitCode, exitCodeFor, isCliError, toProblem } from "../../errors.js";
+import { ExitCode, exitCodeFor, isCliError, renderError, toProblem } from "../../errors.js";
 import { pipe, unreadable } from "../../testing/stdin.js";
 import {
   closeStubServers,
@@ -308,6 +308,36 @@ describe("corpus doc patch — the two refusals", () => {
 
     expect(exitCodeFor(error)).toBe(ExitCode.staleKey);
     expect(isCliError(error) && error.code).toBe("stale_key");
+  });
+
+  it("tells that stale key to re-run the patch, and never names a `--key` this verb has not got", async () => {
+    // End to end through the verb, because this is the text an agent reads and
+    // acts on: the refusal is classified in `client.ts` for every route at once,
+    // and until PR #44's re-review it handed this one the keyed recovery —
+    // "run the same command again with `--key <k>`" — for a flag `corpus doc
+    // patch` refuses at exit 2. A dead end reached by following the instruction.
+    const moved = rekeyed(DOC, NEXT_KEY);
+    const { error } = await failureOf(
+      (_request, response) => {
+        sendJson(response, 409, {
+          code: "stale_key",
+          message: "the document moved on",
+          doc: moved,
+        });
+      },
+      { args: ARGS, flags: { old: "a", new: "b" } },
+    );
+
+    const text = renderError(error, { verbose: false });
+    expect(text).not.toContain("--key");
+    expect(text).not.toContain(NEXT_KEY);
+    expect(text).toContain("the patch itself is still good");
+    expect(text).toContain("Run the same patch again");
+    expect(text).toContain(`corpus doc show ${ARGS.id}`);
+    // And it does not ship the document back on the one verb whose reason to
+    // exist is not shipping it — `--json` still carries it as `details`.
+    expect(text).not.toContain(DOC.body.trim());
+    expect(toProblem(error).details).toEqual(moved);
   });
 
   it("leaves every other failure classified as it already was", async () => {

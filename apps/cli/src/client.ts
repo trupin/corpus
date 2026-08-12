@@ -1,3 +1,4 @@
+import { patchDoc } from "@corpus/contract";
 import {
   createCorpusClient,
   isApiError,
@@ -202,6 +203,50 @@ function collectCauses(error: unknown, depth = 0): CauseFacts {
   return { codes, names };
 }
 
+/**
+ * The write routes that present **no key of their own** (SPEC.md §7), as the
+ * path templates the contract itself declares — never as a string spelled here.
+ *
+ * There is exactly one, and reading it off `patchDoc` rather than writing
+ * `"/api/docs/{id}/patch"` is the whole point: the route's path is the
+ * contract's to choose, and a copy of it in this file would go stale silently,
+ * on the one code path whose job is telling an agent what to do next. A rename
+ * in `packages/contract` moves this with it.
+ */
+const KEYLESS_WRITE_ROUTES: readonly string[] = [patchDoc.path];
+
+/**
+ * Whether the request that got this response presented a key — which decides
+ * which recovery {@link staleKeyError} names, and is knowable from the route
+ * alone because §7 is a property of the route, not of the request.
+ *
+ * The response carries only its URL, so this matches that URL's **path** —
+ * parsed, not string-tested, so a query string or a fragment cannot make a patch
+ * look like a keyed write — against the templates above, segment by segment with
+ * `{param}` matching one non-empty segment. Anything unparseable or unmatched is
+ * keyed: that is every other write in the API, and the keyed refusal at least
+ * carries the fresh key and the document.
+ */
+export function presentsAKey(url: string): boolean {
+  // A base makes the parse total for a relative path, and `URL.parse` answers
+  // `null` instead of throwing for the rest — `response.url` is `""` on a
+  // hand-built `Response`, and a classifier must not throw over its own input.
+  const pathname = URL.parse(url, "http://corpus.invalid")?.pathname ?? "";
+  return !KEYLESS_WRITE_ROUTES.some((template) => matchesRoute(pathname, template));
+}
+
+/** `/api/docs/doc_a1/patch` against `/api/docs/{id}/patch`. */
+function matchesRoute(pathname: string, template: string): boolean {
+  const actual = pathname.split("/");
+  const expected = template.split("/");
+  if (actual.length !== expected.length) return false;
+  return expected.every((segment, index) =>
+    segment.startsWith("{") && segment.endsWith("}")
+      ? (actual[index] ?? "") !== ""
+      : segment === actual[index],
+  );
+}
+
 export function responseError(response: Response, body: unknown): CliError {
   const status = response.status;
   if (isApiError(body)) {
@@ -210,7 +255,14 @@ export function responseError(response: Response, body: unknown): CliError {
     // key — so it becomes an error class of its own (exit 9) with its own
     // rendering, instead of a `409` whose payload the caller has to go and dig
     // out of a JSON dump.
-    if (body.code === "stale_key") return staleKeyError(status, body.doc);
+    // The route decides which recovery the message names. Every keyed verb
+    // resends with a fresh `--key`; `doc patch` has none — §7 exempts it,
+    // because quoting the text it expects to find *is* the staleness check —
+    // so a `stale_key` there means an outside editor moved the file mid-write,
+    // and re-running the same patch is the whole recovery. Printing the keyed
+    // hint on that verb names a flag it refuses at exit 2 (PR #44 re-review).
+    if (body.code === "stale_key")
+      return staleKeyError(status, body.doc, { keyed: presentsAKey(response.url) });
 
     return new ServerResponseError(`${String(status)} ${body.code}: ${body.message}`, {
       code: body.code,
