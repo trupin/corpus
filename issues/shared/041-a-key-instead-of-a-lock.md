@@ -2,11 +2,13 @@
 
 ## Domain
 
-shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
+shared (orchestrator-handled — SPEC.md rider)
 
 ## Status
 
-todo — **DRAFTED 2026-08-11, awaiting sign-off**
+done — **AUTHORIZED 2026-08-11 and applied to SPEC.md §7.** The user
+answered seven design questions across three rounds, then directed that the
+rider be applied and built without a separate read-aloud sign-off.
 
 ## Priority
 
@@ -89,7 +91,7 @@ here so the implementer does not reopen them:
 
 ---
 
-## DRAFTED — §7 replacement text
+## AUTHORIZED 2026-08-11 — §7 replacement text, applied
 
 This **replaces** §7's "Document locks" section (lines 334–339) in full.
 
@@ -123,6 +125,14 @@ This **replaces** §7's "Document locks" section (lines 334–339) in full.
 > see what changed, decide, and write again. A refusal is never a lost edit: the
 > content the writer tried to save is theirs to resend, and nothing has been
 > written.
+>
+> **What a key does not do.** It stops a writer overwriting something it never
+> read. It does not coordinate two writers who both did read: two agents working
+> the same document are the same problem as two processes editing the same file
+> in a directory, and a key does not solve that — it only makes the loser find
+> out instead of losing the edit in silence. What is guaranteed is that no change
+> is lost without someone being told. Who *should* have written what is a
+> question for whoever set two writers on one document.
 >
 > **Someone is editing this.** A key keeps two writers correct; it does not keep
 > them polite. So a read also says whether a person has a **session open** on the
@@ -214,10 +224,17 @@ the sweep should be able to check each one.
 
 ## Open questions the implementer must not settle alone
 
-- **Concurrent writes by the same party.** Two `corpus doc edit` invocations racing
-  each other: the second is refused, correctly. But the agent's own retry then
-  looks identical to a conflict with a person. Worth distinguishing in the refusal,
-  and it is a contract question.
+- ~~**Concurrent writes by the same party.**~~ **Resolved 2026-08-11, by scoping
+  it out rather than answering it.** The user's point, and it is right: two agents
+  on one document are the same problem as two processes editing one file in a
+  directory, and this mechanism does not fix that class. The rider now says so in
+  *What a key does not do*. Two lesser cases fold in with it — an agent reusing a
+  key its own previous write invalidated is a correctable slip (the key comes back
+  in the write's own output, and the refusal hands it the current one), and a
+  retry after an ambiguous failure is diagnosable from the content the refusal
+  already carries. An earlier draft proposed naming the *acting party* on a
+  refusal; that was withdrawn, because both writers in the subagent case are
+  `agent`, so it distinguishes nothing there.
 - **What a bulk Save presents.** §11's staged Save writes many documents in one
   act, and gathering a key per row before saving is a different UX from the one
   §11 describes. Most likely a bulk Save is a named delta throughout (archive,
@@ -265,7 +282,51 @@ N/A for this issue — spec text. The follow-on issues carry it.
 
 _N/A — spec rider, no code._
 
-## Contradiction Sweep (to record at sign-off)
+## Contradiction Sweep — run 2026-08-11, after applying
+
+Fourteen edits, not the nine drafted: a `grep` for `lock` across the whole of
+SPEC.md after the planned ten found four more the draft had missed. Recorded
+because "I edited the places I listed" is not the same as "no reference
+survives", and only the second one is checkable.
+
+**The four the draft missed**, each a place a lock was referred to without the
+word appearing in a heading:
+
+- **§9.2's route list** carried a `Locks (§7): acquire / release / break · reap`
+  bullet with the `423` behaviour attached. Replaced by the key's own bullet,
+  including the `409` shape.
+- **§9.3** listed `lock` among the resources `packages/contract` holds schemas
+  for. Struck.
+- **§7's orchestrator-skill invariants** told every subagent to "acquire and
+  release document locks around edits". This is the instruction that made the
+  old mechanism forgettable; it now says to present the document's key.
+- **§7's subagent-outcome paragraph** described "a lock deferral … re-enters the
+  queue on its own when the lock clears". Re-based on the editing session.
+- **§11's bulk Save** referred to locked documents three times (a Save staying
+  available "when some of them are locked", a refusal "naming the holder",
+  retrying "after clearing a lock"). Re-based on content having moved.
+- **§15's M2 and M3** listed `locks` among the backbone and the CLI verb
+  families, and M2's check exercised a lock refusal and a force break.
+
+**Confirmed clear:**
+
+- §4's three references are all edited, and "Three acts commit alone" now reads
+  **two** — a deletion and a bulk Save. Checked that the paragraph still parses
+  as a list of two rather than leaving a dangling "and".
+- §7's "Every change leaves a visible trace" is unaffected: the force-break audit
+  entry was one such trace, and deleting the act deletes the trace with it rather
+  than leaving a claim about a commit nobody makes.
+- §11's "Autosave, no save button" is untouched and does not contradict the board
+  presenting a key: a key is not a user action, and §11's sentence is about what
+  the person has to do.
+- SHARED-037's `corpus doc patch` language holds against "a patch needs no key" —
+  that rider already defines a patch as naming the text it expects to find, so
+  the staleness check is the patch's own.
+- The final sweep for `lock` returns only two hits, both inside the new text and
+  both deliberate: the sentence naming what this replaces, and "there is no lock
+  to be held". Everything else matching is `block`/`blocked`.
+
+## Superseded sweep plan (kept for the record)
 
 - §4's three lock references: confirm items 4, 5 and 6 above leave the commit-window
   rules coherent, and that "Three acts commit alone" reads correctly as two.
