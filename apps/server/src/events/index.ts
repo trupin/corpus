@@ -17,13 +17,11 @@ export type { InvalidationBus, InvalidationBusOptions, InvalidationListener } fr
 export {
   DOCS_KEY,
   JOBS_KEY,
-  LOCKS_KEY,
   QUEUE_KEY,
   TREE_KEY,
   dedupeKeys,
   docKey,
   jobKey,
-  lockKey,
   threadKey,
 } from "./keys.js";
 export {

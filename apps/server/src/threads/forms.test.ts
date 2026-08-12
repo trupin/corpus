@@ -27,6 +27,7 @@ import {
   createThread,
   createThreadWorkspace,
   pendingEvents,
+  putDoc,
   threadFrontmatterOf,
   threadPath,
   turnsOf,
@@ -381,11 +382,20 @@ describe("answering a form", () => {
     expect([...stamps].sort()).toEqual(stamps);
   });
 
-  it("succeeds while the parent document is locked by the agent (no 423)", async () => {
+  it("succeeds while the agent is writing the parent document (SERVER-099)", async () => {
+    // The route declares no refusal for another writer, and since SPEC.md §7
+    // replaced the lock there is nothing left that could raise one.
     const thread = await threadWithForm();
     expect(
-      (await ws.post(`/api/locks/${thread.parent}`, {}, { "x-corpus-author": "agent" })).status,
-    ).toBe(201);
+      (
+        await putDoc(
+          ws,
+          thread.parent ?? "",
+          { body: "the agent writes on" },
+          { "x-corpus-author": "agent" },
+        )
+      ).status,
+    ).toBe(200);
 
     const response = await answerForm(thread, chose(OPTIONS[0]));
 

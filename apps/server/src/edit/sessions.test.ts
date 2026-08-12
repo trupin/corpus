@@ -94,6 +94,8 @@ interface Harness {
   readonly git: Git & { readonly calls: string[][] };
   /** Shas handed back to §4's squash as "never amend this", in order. */
   readonly sealed: string[];
+  /** Document ids §7's deferral trigger was fired for, in order. */
+  readonly sessionsEnded: string[];
   advance(ms: number): Promise<void>;
   settle(): Promise<void>;
 }
@@ -103,6 +105,7 @@ let clock = 1_000_000;
 function harness(repo: FakeRepo, enqueue?: () => Promise<{ id: string }>): Harness {
   const enqueued: EditEnqueueInput[] = [];
   const sealed: string[] = [];
+  const sessionsEnded: string[] = [];
   const git = fakeGit(repo);
   let minted = 0;
   const tracker = createEditSessionTracker({
@@ -114,6 +117,9 @@ function harness(repo: FakeRepo, enqueue?: () => Promise<{ id: string }>): Harne
     },
     endSquashSession: (sha) => {
       sealed.push(sha);
+    },
+    onSessionEnded: (docId) => {
+      sessionsEnded.push(docId);
     },
     now: () => clock,
     idleMs: IDLE_MS,
@@ -129,6 +135,7 @@ function harness(repo: FakeRepo, enqueue?: () => Promise<{ id: string }>): Harne
     enqueued,
     git,
     sealed,
+    sessionsEnded,
     async advance(ms) {
       clock += ms;
       await vi.advanceTimersByTimeAsync(ms);
@@ -951,5 +958,98 @@ describe("is a person editing this document (SPEC.md §7)", () => {
       save({ actor: "agent", editPath: null, outcome: committed("c0ffee2") }),
     );
     expect(h.tracker.isOpen(DOC)).toBe(true);
+  });
+});
+
+// SPEC.md §7 (SHARED-041, SERVER-099): "the deferral … re-enters the queue on
+// its own once the session ends." That trigger replaced the lock's release,
+// break and reap, so it is the *only* automatic way out of `deferred` and is
+// asserted here rather than left to `app.ts`'s wiring.
+describe("the deferral trigger — a session ending (SPEC.md §7)", () => {
+  const graph = (): FakeRepo => ({
+    parents: new Map([
+      ["ba5e001", null],
+      ["c0ffee1", "ba5e001"],
+    ]),
+  });
+
+  it("fires once, with the document, when the session goes idle", async () => {
+    const h = harness(graph());
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+
+    await h.advance(IDLE_MS - 1);
+    expect(h.sessionsEnded).toEqual([]);
+
+    await h.advance(1);
+    expect(h.sessionsEnded).toEqual([DOC]);
+  });
+
+  it("fires on a flush too — the reader closing is the other of §4's two ends", async () => {
+    const h = harness(graph());
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+
+    h.tracker.flush(DOC);
+    await h.settle();
+
+    expect(h.sessionsEnded).toEqual([DOC]);
+  });
+
+  it("fires even when the session emits no event at all", async () => {
+    // A range whose path-scoped diff is empty — an edit and its undo — enqueues
+    // nothing. The person still put the document down, and parked work that
+    // waited for the acknowledgment instead would wait forever.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+      ]),
+      shortstat: new Map([["ba5e001..c0ffee1", ""]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+
+    await h.advance(IDLE_MS);
+
+    expect(h.enqueued).toEqual([]);
+    expect(h.sessionsEnded).toEqual([DOC]);
+  });
+
+  it("fires once per session, not once per save", async () => {
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["c0ffee2", "c0ffee1"],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    await h.advance(IDLE_MS / 2);
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee2") }));
+
+    await h.advance(IDLE_MS);
+
+    expect(h.sessionsEnded).toEqual([DOC]);
+  });
+
+  it("names each document when a shutdown ends two sessions at once", async () => {
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["c0ffee2", "c0ffee1"],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeCommit(
+      save({
+        docId: OTHER_DOC,
+        paths: [OTHER_PATH],
+        editPath: OTHER_PATH,
+        outcome: committed("c0ffee2"),
+      }),
+    );
+
+    await h.tracker.close();
+
+    expect([...h.sessionsEnded].sort()).toEqual([DOC, OTHER_DOC].sort());
   });
 });

@@ -4,16 +4,9 @@
 // was called. Every claim below is read off the file on disk, `git log`, the
 // projection, or the invalidation bus.
 
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  ACTOR_HEADER,
-  LockedErrorSchema,
-  LockSchema,
-  SkillRollbackResultSchema,
-  type QueryKey,
-} from "@corpus/contract";
+import { SkillRollbackResultSchema, type QueryKey } from "@corpus/contract";
 import {
   createDocumentMutex,
   updateDocument,
@@ -21,7 +14,6 @@ import {
   type DocsWorkspace,
 } from "../docs/index.js";
 import {
-  AUTH,
   createWriteWorkspace,
   keyOnDisk,
   putDoc,
@@ -84,18 +76,6 @@ async function rollback(
 const docIdOf = (path: string): string | undefined =>
   (ws.db.prepare("SELECT id FROM documents WHERE path = ?").get(path) as { id: string } | undefined)
     ?.id;
-
-const acquire = async (id: string, actor: "user" | "agent"): Promise<Response> =>
-  ws.server.app.request(`/api/locks/${id}`, {
-    method: "POST",
-    headers: { ...AUTH, [ACTOR_HEADER]: actor },
-  });
-
-const release = async (id: string, actor: "user" | "agent"): Promise<Response> =>
-  ws.server.app.request(`/api/locks/${id}`, {
-    method: "DELETE",
-    headers: { ...AUTH, [ACTOR_HEADER]: actor },
-  });
 
 describe("restoring the last-known-good version", () => {
   beforeEach(() => {
@@ -468,122 +448,6 @@ describe("the restoration is an ordinary mutation", () => {
       ws.server.selfWrites.claim(join(ws.root, PATH), Buffer.from(skill("Version one."), "utf8")),
     ).toBe(true);
     expect(docId).toBe(docIdOf(PATH));
-  });
-});
-
-// PR #11 review, finding 1 (MAJOR). A rollback rewrites `SKILL.md`, so it is a
-// document write path — and it was the only one that never consulted the edit
-// lock. The user editing `comment/SKILL.md` in the board holds the lease (a
-// `PUT` on the same document is 423-refused), and `corpus skill rollback
-// comment` overwrote and committed straight over the in-progress edit.
-//
-// Driven through the real `createServer` wiring rather than a stubbed guard:
-// what is under test is that `mountSkillRoutes` gets the guard every other verb
-// gets, which is a wiring property no unit test of `assertWritable` can see.
-describe("the edit lock", () => {
-  beforeEach(() => {
-    commitSkill("The good version.", "seed the skill");
-    commitSkill("The bad edit.", "break it");
-  });
-
-  it("refuses the rollback with 423 when the other party holds it", async () => {
-    const docId = docIdOf(PATH) ?? "";
-    const taken = await acquire(docId, "user");
-    expect(taken.status).toBe(201);
-    const lock = LockSchema.parse(await taken.json());
-    const before = ws.read(PATH);
-    const head = ws.head();
-    keys.length = 0;
-
-    const { status, payload } = await rollback(SKILL, undefined, "agent");
-
-    expect(status).toBe(423);
-    expect(LockedErrorSchema.parse(payload)).toEqual({
-      code: "locked",
-      message: `${docId} is being edited by user; the lock was acquired at ${lock.acquired}`,
-      lock,
-    });
-    // Refused before anything was restored: file, history and the bus are
-    // byte-for-byte what they were.
-    expect(ws.read(PATH)).toBe(before);
-    expect(ws.head()).toBe(head);
-    expect(keys).toEqual([]);
-  });
-
-  it("refuses an explicit `--to` rollback too", async () => {
-    const docId = docIdOf(PATH) ?? "";
-    const oldest = ws.git("log", "--format=%H", "--", PATH).trim().split("\n")[1] ?? "";
-    expect((await acquire(docId, "user")).status).toBe(201);
-    const before = ws.read(PATH);
-
-    const { status } = await rollback(SKILL, { to: oldest }, "agent");
-
-    expect(status).toBe(423);
-    expect(ws.read(PATH)).toBe(before);
-  });
-
-  it("never blocks the lease's own holder", async () => {
-    const docId = docIdOf(PATH) ?? "";
-    expect((await acquire(docId, "agent")).status).toBe(201);
-
-    const { status } = await rollback(SKILL, undefined, "agent");
-
-    expect(status).toBe(200);
-    expect(ws.read(PATH)).toBe(skill("The good version."));
-  });
-
-  it("hands the rollback back once the lease is released", async () => {
-    const docId = docIdOf(PATH) ?? "";
-    expect((await acquire(docId, "user")).status).toBe(201);
-    expect((await rollback(SKILL, undefined, "agent")).status).toBe(423);
-
-    expect((await release(docId, "user")).status).toBe(200);
-
-    expect((await rollback(SKILL, undefined, "agent")).status).toBe(200);
-    expect(ws.read(PATH)).toBe(skill("The good version."));
-  });
-
-  // SERVER-022 finding 7, for this verb: the guard runs *inside* the lane, so a
-  // rollback that waited behind another write is judged against the lock state
-  // at the moment it runs, not the one it queued under.
-  it("refuses a rollback that was already queued when the lease was taken", async () => {
-    const docId = docIdOf(PATH) ?? "";
-    const hooks = join(ws.root, ".git", "hooks");
-    mkdirSync(hooks, { recursive: true });
-    const started = join(ws.root, ".git", "corpus-hook-started");
-    const gate = join(ws.root, ".git", "corpus-hook-gate");
-    writeFileSync(
-      join(hooks, "pre-commit"),
-      [
-        "#!/bin/sh",
-        `: > "${started}"`,
-        "i=0",
-        `while [ ! -f "${gate}" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i+1)); done`,
-        "exit 0",
-      ].join("\n"),
-      "utf8",
-    );
-    chmodSync(join(hooks, "pre-commit"), 0o755);
-
-    // A save on the same document parks inside its own commit, holding the lane.
-    const holding = putDoc(ws, docId, { body: "the save that holds the lane" });
-    for (let attempt = 0; attempt < 500 && !existsSync(started); attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    expect(existsSync(started)).toBe(true);
-
-    const queued = rollback(SKILL, undefined, "agent");
-    // The lease is taken while the rollback sits in the lane — after the point a
-    // guard outside the lane would have consulted it.
-    expect((await acquire(docId, "user")).status).toBe(201);
-    const before = ws.read(PATH);
-
-    writeFileSync(gate, "", "utf8");
-    expect((await holding).status).toBe(200);
-
-    const { status } = await queued;
-    expect(status).toBe(423);
-    expect(ws.read(PATH)).toBe(before);
   });
 });
 

@@ -21,8 +21,8 @@
  * counted; a mid-line closer was accepted). "Alters the rows a reader would
  * see" includes how a stored value is computed, not only its column.
  *
- * 5 → 6 (SERVER-030): `events.blocked_on` — the document whose edit lock a
- * `deferred` event is waiting for (SPEC.md §7, CONTRACT-021). It is read
+ * 5 → 6 (SERVER-030): `events.blocked_on` — the document a `deferred` event is
+ * waiting on (SPEC.md §7, CONTRACT-021). It is read
  * straight off the event file, so an existing projection needs nothing but the
  * rebuild this bump triggers.
  *
@@ -91,8 +91,18 @@
  * migration. **No backfill and no guessing**: a turn written before the record
  * existed has no entry, and the rebuild writes `NULL` for it — the same nothing
  * §11 asks a reader to show, never an attribution reconstructed after the fact.
+ *
+ * 13 → 14 (SERVER-099): the `locks` table is **dropped**. SPEC.md §7's key
+ * replaced the per-document edit lock, and §7's own words are "nothing to
+ * acquire, nothing to release, nothing to break" — so there is no state left to
+ * keep. This is the one bump so far that removes rather than adds, and the wipe
+ * is exactly the right migration for it: an upgrading workspace has a populated
+ * `locks` table and a `.corpus/locks/` directory full of leases, and the rebuild
+ * this bump triggers drops the whole table with the database it lived in. A key
+ * is derived from the document and the editing signal is in memory, so nothing
+ * replaces the rows.
  */
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -107,7 +117,6 @@ export const PROJECTION_TABLES = [
   "events",
   "seen",
   "jobs",
-  "locks",
   "links",
   "search",
   "chunks",
@@ -147,7 +156,6 @@ export const REPOPULATED_TABLES = [
   "events",
   "seen",
   "jobs",
-  "locks",
 ] as const satisfies readonly ProjectionTable[];
 
 /**
@@ -322,13 +330,6 @@ CREATE TABLE jobs (
   started TEXT,
   updated TEXT,
   last_line TEXT
-);
-
-CREATE TABLE locks (
-  doc_id TEXT PRIMARY KEY,
-  holder TEXT NOT NULL,
-  acquired TEXT NOT NULL,
-  ttl INTEGER NOT NULL
 );
 
 CREATE TABLE links (

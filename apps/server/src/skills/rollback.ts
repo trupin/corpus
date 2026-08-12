@@ -40,12 +40,12 @@
 //   it, and folding would amend that edit's commit away — deleting the history
 //   the restoration is reading from.
 //
-// And one on ordering, which the two locks make easy to get wrong. **The
-// document lane is outermost**, exactly as it is on every other write verb
-// (`docs/update.ts`, `docs/delete.ts`): the lane is entered first, the edit lock
-// is asserted inside it, and only then is the git lock taken — released again
-// before `runMutation` takes it for the commit. Nothing anywhere takes the git
-// lock and then waits for a document lane, so the two can never close a cycle.
+// And one on ordering, which two serialization mechanisms make easy to get
+// wrong. **The document lane is outermost**, exactly as it is on every other
+// write verb (`docs/update.ts`, `docs/delete.ts`): the lane is entered first,
+// and only then is the git lock taken — released again before `runMutation`
+// takes it for the commit. Nothing anywhere takes the git lock and then waits
+// for a document lane, so the two can never close a cycle.
 // Everything that decides *what* to restore — the file on disk, the candidate
 // walk, the validation — happens inside the lane too, because a rollback chosen
 // against bytes a concurrent save has since replaced would silently overwrite
@@ -139,10 +139,9 @@ async function findLastKnownGood(
 
 /**
  * The document this rollback is about: the id of whatever occupies `path` right
- * now. It is the lane the write serializes under, the key the edit lock is
- * asserted on, and the `docId` the response and the invalidation carry — one id,
- * decided before anything is read, because a lane cannot be entered after the
- * read it is supposed to protect.
+ * now. It is the lane the write serializes under and the `docId` the response
+ * and the invalidation carry — one id, decided before anything is read, because
+ * a lane cannot be entered after the read it is supposed to protect.
  *
  * Never derived from the restored bytes. §5 makes ids immutable, so the id a
  * restoration writes under is the one the document already has; an old revision
@@ -244,12 +243,6 @@ export async function rollbackSkill(
   const docId = documentIdFor(workspace, path);
 
   const result = await mutex.run(docId, async () => {
-    // §7's edit lock, inside the lane and before this verb reads or writes
-    // anything — the same one call per verb `docs/update.ts` makes. A rollback
-    // rewrites `SKILL.md`, so it is a document write path and §9.2 admits no
-    // carve-out: rolling back under the other party's lease would discard
-    // whatever that party is mid-way through writing (PR #11 review finding 1).
-    await (workspace.assertWritable ?? (() => undefined))(docId, actor);
     assertInstalled();
 
     // What the file holds right now, which is what "restores nothing" is

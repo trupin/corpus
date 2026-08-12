@@ -61,7 +61,6 @@ export {
 export type { DocumentCounts, DocumentIdentity, ProjectionOutcome } from "./project-document.js";
 export {
   JOBS_DIR,
-  LOCKS_DIR,
   QUEUE_DIR,
   SEEN_FILE,
   isEventFile,
@@ -70,14 +69,11 @@ export {
   projectEventFile,
   projectJob,
   projectJobsDir,
-  projectLock,
-  projectLocksDir,
   projectQueueDir,
   projectRuntime,
   projectSeen,
   removeEvent,
   removeJob,
-  removeLock,
 } from "./project-runtime.js";
 export type { RuntimeCounts } from "./project-runtime.js";
 export { createProjectionQueueMirror } from "./queue-mirror.js";

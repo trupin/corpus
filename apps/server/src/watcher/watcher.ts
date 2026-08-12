@@ -26,12 +26,10 @@ import { folderTreeSignature } from "../docs/tree.js";
 import {
   DOCS_KEY,
   JOBS_KEY,
-  LOCKS_KEY,
   QUEUE_KEY,
   TREE_KEY,
   docKey,
   jobKey,
-  lockKey,
   threadKey,
   type InvalidationBus,
 } from "../events/index.js";
@@ -41,13 +39,11 @@ import {
   projectDocument,
   projectEventFile,
   projectJob,
-  projectLock,
   projectSeen,
   readDocumentIdentity,
   removeDocument,
   removeEvent,
   removeJob,
-  removeLock,
   workspaceRelativePath,
   type DocumentRoot,
   type ProjectionDb,
@@ -154,7 +150,7 @@ export interface StartWatcherOptions {
  * signature of the tree the route itself would return, re-project, compare. It
  * is a measurement rather than a prediction, so it cannot disagree with
  * `docs/tree.ts` about what moves a folder badge — and it is taken lazily,
- * because a batch of queue events or lock files can never move one.
+ * because a batch of queue events or job logs can never move one.
  */
 interface FlushContext {
   /** Keys the batch has accumulated, deduped by the bus on the way out. */
@@ -353,11 +349,6 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         keys.push(QUEUE_KEY, JOBS_KEY, DOCS_KEY);
         return;
       }
-      case "lock":
-        if (effective === "unlink") removeLock(db, target.docId);
-        else projectLock(db, corpusDir, target.docId);
-        keys.push(LOCKS_KEY, lockKey(target.docId));
-        return;
       case "job":
         if (effective === "unlink") removeJob(db, target.eventId);
         else projectJob(db, corpusDir, target.eventId);

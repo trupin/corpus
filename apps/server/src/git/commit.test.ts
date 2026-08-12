@@ -166,34 +166,6 @@ describe("createAutoCommitter", () => {
     expect(body).toContain("Corpus-Anchors: remapped=1 orphaned=2");
   });
 
-  it("appends a caller's own trailers, and commits with nothing staged when asked", async () => {
-    const r = makeRepo("extra-trailers");
-    const base = r.git("rev-parse", "HEAD").trim();
-
-    // The shape SERVER-009's force break needs: `.corpus/` is gitignored, so the
-    // audit entry stages no path at all and has to be an explicit empty commit,
-    // carrying the one fact the standard trailers cannot express.
-    const outcome = await r.committer.commit({
-      docId: "doc_aaaa1111",
-      actor: "user",
-      subject: "lock: force-break on doc_aaaa1111 (was agent) by user",
-      paths: [],
-      trailers: ["Corpus-Lock-Holder: agent"],
-      allowEmpty: true,
-      squash: false,
-    });
-
-    expect(outcome.kind).toBe("committed");
-    expect(r.log("%an|%s")[0]).toBe("user|lock: force-break on doc_aaaa1111 (was agent) by user");
-    // Appended after the standard ones, never in place of them.
-    expect(r.git("log", "-1", "--format=%b")).toBe(
-      "Corpus-Doc: doc_aaaa1111\nCorpus-Actor: user\nCorpus-Lock-Holder: agent\n\n",
-    );
-    // Empty in the git sense: a commit on top of the seed that changes no file.
-    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(base);
-    expect(r.git("show", "--stat", "--format=", "HEAD").trim()).toBe("");
-  });
-
   it("folds two rapid saves of one document by one party into one commit", async () => {
     const r = makeRepo("squash");
     const base = r.git("rev-parse", "HEAD").trim();
@@ -785,52 +757,27 @@ describe("createAutoCommitter", () => {
     expect(outcome).toEqual({ kind: "skipped", reason: "nothing to commit" });
   });
 
-  it("makes an empty commit when one is asked for, and never folds it", async () => {
-    const r = makeRepo("empty");
-    r.touch(DOC, "one");
-    await r.committer.commit({
+  it("takes no later save into a `squash: false` commit — it opens no window", async () => {
+    // The other half of "a commit that stands alone is its own event, never part
+    // of an edit". It was only ever enforced against folding *into* a preceding
+    // window; the commit still opened one of its own, so the next save amended
+    // it and replaced its subject (SERVER-091). The callers are
+    // `skills/rollback.ts` and `threads/reattach.ts`.
+    const r = makeRepo("standalone-opens-no-window");
+    r.touch(DOC, "the restored version");
+    const standalone = await r.committer.commit({
       docId: "doc_aaaa1111",
       actor: "user",
-      subject: "doc edit",
+      subject: "skill rollback: comment (doc_aaaa1111) by user",
       paths: [DOC],
-    });
-    r.clock += 100;
-    const outcome = await r.committer.commit({
-      docId: "doc_aaaa1111",
-      actor: "user",
-      subject: "lock force-break: doc_aaaa1111 held by agent, broken by user",
-      paths: [],
-      allowEmpty: true,
       squash: false,
     });
-
-    expect(outcome.kind).toBe("committed");
-    expect(r.log("%s")[0]).toContain("lock force-break");
-    expect(r.git("show", "--stat", "--format=", "HEAD").trim()).toBe("");
-  });
-
-  it("takes no later save into an audit entry either — `squash: false` opens no window", async () => {
-    // The other half of "an audit entry is its own event, never part of an
-    // edit". It was only ever enforced against folding *into* a preceding
-    // window; the entry still opened one of its own, so the next save amended
-    // it — replacing its subject and dropping the trailer that says whose lease
-    // was broken, which no other trailer expresses (SERVER-091).
-    const r = makeRepo("audit-opens-no-window");
-    const audit = await r.committer.commit({
-      docId: "doc_aaaa1111",
-      actor: "user",
-      subject: "lock: force-break on doc_aaaa1111 (was agent) by user",
-      paths: [],
-      trailers: ["Corpus-Lock-Holder: agent"],
-      allowEmpty: true,
-      squash: false,
-    });
-    expect(audit.kind).toBe("committed");
-    const auditSha = audit.kind === "committed" ? audit.sha : "";
+    expect(standalone.kind).toBe("committed");
+    const standaloneSha = standalone.kind === "committed" ? standalone.sha : "";
 
     // Same party, no clock movement — everything an ordinary save needs to fold.
     r.clock += 100;
-    r.touch(DOC, "typed right after the break");
+    r.touch(DOC, "typed right after the rollback");
     const save = await r.committer.commit({
       docId: "doc_aaaa1111",
       actor: "user",
@@ -839,11 +786,10 @@ describe("createAutoCommitter", () => {
     });
 
     expect(save.kind).toBe("committed");
-    expect(r.git("rev-parse", "HEAD^").trim()).toBe(auditSha);
-    expect(r.git("log", "-1", "--format=%s", auditSha).trim()).toBe(
-      "lock: force-break on doc_aaaa1111 (was agent) by user",
+    expect(r.git("rev-parse", "HEAD^").trim()).toBe(standaloneSha);
+    expect(r.git("log", "-1", "--format=%s", standaloneSha).trim()).toBe(
+      "skill rollback: comment (doc_aaaa1111) by user",
     );
-    expect(r.git("log", "-1", "--format=%b", auditSha)).toContain("Corpus-Lock-Holder: agent");
   });
 
   it("commits with a fallback identity when the repository configures none", async () => {

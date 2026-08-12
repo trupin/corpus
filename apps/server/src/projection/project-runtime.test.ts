@@ -10,14 +10,11 @@ import {
   projectEvent,
   projectJob,
   projectJobsDir,
-  projectLock,
-  projectLocksDir,
   projectQueueDir,
   projectRuntime,
   projectSeen,
   removeEvent,
   removeJob,
-  removeLock,
 } from "./project-runtime.js";
 
 let root: string;
@@ -43,7 +40,6 @@ beforeEach(() => {
     writeFileSync(join(corpusDir, "queue", status, ".gitkeep"), "", "utf8");
   }
   mkdirSync(join(corpusDir, "jobs"), { recursive: true });
-  mkdirSync(join(corpusDir, "locks"), { recursive: true });
   db = openProjection({ workspaceRoot: ws, corpusDir });
 });
 
@@ -124,14 +120,14 @@ describe("projectQueueDir", () => {
     writeJson("queue/deferred/evt_abc123def456.json", {
       ...EVENT,
       status: "deferred",
-      blockedOn: "doc_locked01",
+      blockedOn: "doc_edited01",
       deferReason: "the user is editing it",
     });
     writeJson("queue/pending/evt_zzz999888777.json", { ...EVENT, id: "evt_zzz999888777" });
 
     expect(projectQueueDir(db, corpusDir)).toBe(2);
     expect(db.prepare("SELECT id, status, blocked_on FROM events ORDER BY id").all()).toEqual([
-      { id: "evt_abc123def456", status: "deferred", blocked_on: "doc_locked01" },
+      { id: "evt_abc123def456", status: "deferred", blocked_on: "doc_edited01" },
       { id: "evt_zzz999888777", status: "pending", blocked_on: null },
     ]);
   });
@@ -149,15 +145,15 @@ describe("projectQueueDir", () => {
   });
 
   it("clears the blocking document when the event is re-projected out of deferred/", () => {
-    projectEvent(db, EVENT, "deferred", "doc_locked01");
+    projectEvent(db, EVENT, "deferred", "doc_edited01");
     expect(db.prepare("SELECT blocked_on FROM events").get()).toEqual({
-      blocked_on: "doc_locked01",
+      blocked_on: "doc_edited01",
     });
 
     projectEvent(db, EVENT, "pending");
 
     // An `ON CONFLICT` clause that only ever *set* the column would leave a
-    // running job still claiming to be waiting for a lock.
+    // running job still claiming to be waiting on a document.
     expect(db.prepare("SELECT blocked_on FROM events").get()).toEqual({ blocked_on: null });
   });
 
@@ -239,88 +235,6 @@ describe("projectJobsDir", () => {
   });
 });
 
-describe("projectLocksDir", () => {
-  // Fixed lease, fixed clock: a lock's row exists only while its lease runs, so
-  // every assertion here has to say *when* it is being read (SPEC.md §7).
-  const ACQUIRED = "2026-07-06T09:00:00Z";
-  const LEASE_START = Date.parse(ACQUIRED);
-  const LOCK = { docId: "doc_a1b2c3", holder: "agent", acquired: ACQUIRED, ttl: 300 };
-  const DURING_LEASE = LEASE_START + 60_000;
-  const AFTER_LEASE = LEASE_START + 301_000;
-
-  it("projects every live lock file", () => {
-    writeJson("locks/doc_a1b2c3.json", LOCK);
-    expect(projectLocksDir(db, corpusDir, DURING_LEASE)).toBe(1);
-    expect(db.prepare("SELECT * FROM locks").get()).toEqual({
-      doc_id: "doc_a1b2c3",
-      holder: "agent",
-      acquired: ACQUIRED,
-      ttl: 300,
-    });
-  });
-
-  it("drops an expired lease even though its file is still there", () => {
-    writeJson("locks/doc_a1b2c3.json", LOCK);
-    // Expiry is evaluated on read, everywhere: a lease that has run out refuses
-    // nothing, so a banner drawn from this table would be a lie.
-    expect(projectLocksDir(db, corpusDir, AFTER_LEASE)).toBe(0);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
-
-    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 1 });
-    projectLock(db, corpusDir, "doc_a1b2c3", AFTER_LEASE);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
-  });
-
-  it("drops a lock whose file became malformed or disappeared", () => {
-    projectLock(db, corpusDir, "doc_a1b2c3");
-    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
-
-    writeJson("locks/doc_a1b2c3.json", LOCK);
-    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
-    writeFileSync(join(corpusDir, "locks", "doc_a1b2c3.json"), '{"holder":"nobody"}', "utf8");
-    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
-  });
-
-  it("keys the row by the filename, so a disagreeing `docId` field cannot strand it", () => {
-    // SERVER-022 finding 9. The row was inserted under the lock file's *own*
-    // `docId` field while every removal — the watcher's unlink, `projectLock`'s
-    // own miss path, `removeLock` — addresses it by the filename. A file whose
-    // two disagree therefore inserted one row and deleted another, and the
-    // orphan made its document render read-only forever, naming a holder that
-    // had released. `locks/store.ts` already corrects exactly this on the
-    // service path.
-    writeJson("locks/doc_a1b2c3.json", { ...LOCK, docId: "doc_someother" });
-
-    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
-    expect(db.prepare("SELECT doc_id FROM locks").all()).toEqual([{ doc_id: "doc_a1b2c3" }]);
-
-    // Released: the file goes, and the row goes with it.
-    rmSync(join(corpusDir, "locks", "doc_a1b2c3.json"));
-    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
-  });
-
-  it("rebuilds the directory under filename ids too", () => {
-    writeJson("locks/doc_a1b2c3.json", { ...LOCK, docId: "doc_someother" });
-
-    expect(projectLocksDir(db, corpusDir, DURING_LEASE)).toBe(1);
-    expect(db.prepare("SELECT doc_id FROM locks").all()).toEqual([{ doc_id: "doc_a1b2c3" }]);
-    // And the id the API addresses is the one that removes it.
-    removeLock(db, "doc_a1b2c3");
-    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
-  });
-
-  it("ignores files that are not <docId>.json and supports explicit removal", () => {
-    writeFileSync(join(corpusDir, "locks", "notes.json"), "{}", "utf8");
-    writeJson("locks/doc_a1b2c3.json", LOCK);
-    expect(projectLocksDir(db, corpusDir, DURING_LEASE)).toBe(1);
-    removeLock(db, "doc_a1b2c3");
-    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
-  });
-});
-
 describe("projectSeen", () => {
   it("projects the flat thread-id → instant map", () => {
     writeJson("seen.json", {
@@ -350,24 +264,16 @@ describe("projectSeen", () => {
 });
 
 describe("projectRuntime", () => {
-  it("projects events, jobs, locks and seen in one pass", () => {
+  it("projects events, jobs and seen in one pass", () => {
     writeJson("queue/pending/evt_abc123def456.json", EVENT);
     writeFileSync(
       join(corpusDir, "jobs", `${EVENT.id}.jsonl`),
       `${JSON.stringify({ ts: "2026-07-06T09:00:01Z", line: "go" })}\n`,
       "utf8",
     );
-    // A live lease: `projectRuntime` reads the wall clock, and only a lock that
-    // has not expired earns a row (SPEC.md §7).
-    writeJson("locks/doc_a1b2c3.json", {
-      docId: "doc_a1b2c3",
-      holder: "user",
-      acquired: `${new Date().toISOString().slice(0, 19)}Z`,
-      ttl: 300,
-    });
     writeJson("seen.json", { th_x9y8: "2026-07-06T09:00:00Z" });
 
-    expect(projectRuntime(db)).toEqual({ events: 1, jobs: 1, locks: 1, seen: 1 });
+    expect(projectRuntime(db)).toEqual({ events: 1, jobs: 1, seen: 1 });
     // `jobs` joins the status the events pass just wrote — order matters.
     expect(db.prepare("SELECT status FROM jobs").get()).toEqual({ status: "pending" });
   });

@@ -3,6 +3,7 @@ import { AGENT_TURN_DELETE_MESSAGE } from "./cascade.js";
 import {
   appendTurn,
   createDoc,
+  putDoc,
   createThread,
   createThreadWorkspace,
   frontmatterOf,
@@ -203,25 +204,21 @@ describe("DELETE /api/threads/{id}/turns/{ts}", () => {
     expect(response.status).toBe(404);
   });
 
-  it("refuses the cascade while the other party holds the parent's lock", async () => {
+  it("cascades while the other party is writing the parent: nothing refuses it", async () => {
+    // The lock used to refuse this (sprint-006 Adjudication 1); SPEC.md §7
+    // removed it, and a cascade names its own delta — the anchor entry it
+    // removes — so it needs no key either (SERVER-099).
     const { parent, id, anchorId, stamps } = await anchoredThread(1);
     expect(
-      (await ws.post(`/api/locks/${parent.id}`, {}, { "x-corpus-author": "agent" })).status,
-    ).toBe(201);
+      (await putDoc(ws, parent.id, { body: "the agent writes on" }, { "x-corpus-author": "agent" }))
+        .status,
+    ).toBe(200);
 
     const response = await del(`/api/threads/${id}/turns/${encoded(stamps[0] ?? "")}`);
 
-    expect(response.status).toBe(423);
-    expect(ws.exists(threadPath(id))).toBe(true);
-    expect(Object.keys(anchorsOf(parent.path))).toEqual([anchorId]);
-  });
-
-  it("never refuses a middle-turn deletion, which writes one file", async () => {
-    const { parent, id, stamps } = await anchoredThread(3);
-    expect(
-      (await ws.post(`/api/locks/${parent.id}`, {}, { "x-corpus-author": "agent" })).status,
-    ).toBe(201);
-    expect((await del(`/api/threads/${id}/turns/${encoded(stamps[1] ?? "")}`)).status).toBe(200);
+    expect(response.status).toBe(200);
+    expect(ws.exists(threadPath(id))).toBe(false);
+    expect(Object.keys(anchorsOf(parent.path))).not.toContain(anchorId);
   });
 });
 
@@ -264,14 +261,5 @@ describe("DELETE /api/docs/{id} on a thread — the same cascade (Open Conflict 
 
     expect(payload.orphanedThreadIds).toEqual([created.id]);
     expect(ws.exists(threadPath(created.id))).toBe(true);
-  });
-
-  it("refuses while the other party holds the parent's lock", async () => {
-    const { parent, id } = await anchoredThread(1);
-    expect(
-      (await ws.post(`/api/locks/${parent.id}`, {}, { "x-corpus-author": "agent" })).status,
-    ).toBe(201);
-    expect((await del(`/api/docs/${id}`)).status).toBe(423);
-    expect(ws.exists(threadPath(id))).toBe(true);
   });
 });

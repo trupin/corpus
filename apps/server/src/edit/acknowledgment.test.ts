@@ -801,3 +801,86 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     }
   });
 });
+
+// SPEC.md §7 (SHARED-041, SERVER-099): "the deferral … re-enters the queue on
+// its own once the session ends. … What changed is only the trigger: the agent
+// defers because it saw, not because it was refused."
+//
+// Driven through the real server rather than the tracker, because what is under
+// test is the wiring `app.ts` owns — the tracker knows nothing about the queue,
+// and the queue knows nothing about sessions. It is one line, and it is the only
+// automatic way out of `deferred` now that the lock's release, break and reap
+// are gone.
+describe("a deferred event re-enters the queue when the session it waited on ends", () => {
+  const queueFilesIn = (ws: WriteWorkspace, status: string): string[] => {
+    const dir = join(ws.root, ".corpus", "queue", status);
+    return existsSync(dir) ? readdirSync(dir).filter((name) => name.startsWith("evt_")) : [];
+  };
+
+  async function deferOn(ws: WriteWorkspace, docId: string): Promise<string> {
+    const event = await ws.server.queue.enqueue({
+      type: "comment.created",
+      source: "cli",
+      payload: { docId },
+    });
+    const claimed = await ws.request("/api/queue/claim-all", { method: "POST", headers: AUTH });
+    expect(claimed.status).toBe(200);
+    const deferred = await ws.request(`/api/queue/${event.id}/defer`, {
+      method: "POST",
+      headers: { ...AUTH, "content-type": "application/json" },
+      body: JSON.stringify({ blockedOn: docId, reason: "someone is editing it" }),
+    });
+    expect(deferred.status).toBe(200);
+    expect(queueFilesIn(ws, "deferred")).toEqual([`${event.id}.json`]);
+    return event.id;
+  }
+
+  it("returns it to pending when the reader closes the document", async () => {
+    const ws = workspace("defer-flush");
+    const doc = await createDoc(ws, { type: "note", title: "Contended", body: "one\n" });
+    pastTheSquashWindow(ws);
+    // The person is editing — which is what the agent saw before deferring.
+    await edit(ws, doc.id, "the person is typing\n");
+    expect(ws.server.editSessions?.isOpen(doc.id)).toBe(true);
+
+    const eventId = await deferOn(ws, doc.id);
+
+    expect((await flush(ws, doc.id)).status).toBe(204);
+    await vi.waitFor(() => {
+      expect(queueFilesIn(ws, "pending")).toContain(`${eventId}.json`);
+    });
+    expect(queueFilesIn(ws, "deferred")).toEqual([]);
+  });
+
+  it("returns it to pending when the session simply goes idle", async () => {
+    const ws = workspace("defer-idle", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "note", title: "Contended", body: "one\n" });
+    pastTheSquashWindow(ws);
+    await edit(ws, doc.id, "the person is typing\n");
+
+    const eventId = await deferOn(ws, doc.id);
+    ws.advance(IDLE_MS * 2);
+
+    await vi.waitFor(() => {
+      expect(queueFilesIn(ws, "pending")).toContain(`${eventId}.json`);
+    });
+    expect(queueFilesIn(ws, "deferred")).toEqual([]);
+  });
+
+  it("leaves a deferral on a different document alone", async () => {
+    // The trigger is per document: a session ending on one document says nothing
+    // about work parked on another.
+    const ws = workspace("defer-other-doc");
+    const edited = await createDoc(ws, { type: "note", title: "Edited", body: "one\n" });
+    const other = await createDoc(ws, { type: "note", title: "Other", body: "two\n" });
+    pastTheSquashWindow(ws);
+    await edit(ws, edited.id, "the person is typing\n");
+
+    const eventId = await deferOn(ws, other.id);
+
+    expect((await flush(ws, edited.id)).status).toBe(204);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(queueFilesIn(ws, "deferred")).toEqual([`${eventId}.json`]);
+    expect(queueFilesIn(ws, "pending")).not.toContain(`${eventId}.json`);
+  });
+});

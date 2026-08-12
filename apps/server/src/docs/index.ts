@@ -51,7 +51,6 @@ export {
   SEEN_LANE,
   WARNING_DETAIL_LENGTH,
   WARNING_DETAIL_LINES,
-  allowAllWrites,
   applyOperations,
   checkSave,
   checkSeams,
@@ -75,7 +74,6 @@ export type {
   MutationResult,
   MutationTail,
   SaveCheck,
-  WriteGuard,
 } from "./write.js";
 export {
   MAX_QUERY_TOKENS,

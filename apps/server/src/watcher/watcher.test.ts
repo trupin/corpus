@@ -395,30 +395,37 @@ describe("the watcher — runtime roots", () => {
     }, WAIT);
   });
 
-  it("projects a lock appearing and disappearing", async () => {
+  it("ignores a `.corpus/locks/` an upgraded workspace left behind (SERVER-099)", async () => {
+    // SPEC.md §7 replaced the edit lock with a key, so the directory is neither
+    // removed nor watched — it is inert. Proved by ordering rather than by a
+    // sleep: the lease is written *first*, then a real queue event, so once the
+    // event's key has arrived the lease's chance to announce anything is over.
     await startWatching();
 
     write(
       ".corpus/locks/doc_mortgage.json",
       JSON.stringify({
         docId: "doc_mortgage",
-        // A live lease: an expired one projects no row at all (SPEC.md §7), so a
-        // fixed past instant would be testing the wrong thing here.
         holder: "user",
         acquired: `${new Date().toISOString().slice(0, 19)}Z`,
         ttl: 300,
       }),
     );
+    write(
+      ".corpus/queue/pending/evt_after0000000.json",
+      JSON.stringify({
+        id: "evt_after0000000",
+        type: "comment.created",
+        created: "2026-07-19T10:00:00Z",
+        source: "cli",
+        payload: {},
+      }),
+    );
 
-    await waitForKey(["locks", "doc_mortgage"]);
-    expect(rows("SELECT doc_id, holder FROM locks")).toEqual([
-      { doc_id: "doc_mortgage", holder: "user" },
-    ]);
-
-    unlinkSync(abs(".corpus/locks/doc_mortgage.json"));
-    await vi.waitFor(() => {
-      expect(rows("SELECT doc_id FROM locks")).toEqual([]);
-    }, WAIT);
+    await waitForKey(["queue"]);
+    expect(flat().filter((key) => key.includes("lock"))).toEqual([]);
+    // And the table it used to project is gone from the schema entirely.
+    expect(() => rows("SELECT * FROM locks")).toThrow(/no such table/);
   });
 
   it("summarizes a job log as it grows", async () => {

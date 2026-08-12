@@ -295,7 +295,6 @@ describe("the auth exemption", () => {
     // not get the agent's console output.
     expect(await bare(`/api/jobs/${id}/log`)).toBe(401);
     expect(await bare("/api/jobs")).toBe(401);
-    expect(await bare("/api/locks")).toBe(401);
     expect(await bare("/api/queue/status")).toBe(401);
   });
 

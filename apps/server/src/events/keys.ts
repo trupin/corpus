@@ -22,12 +22,10 @@ export {
   DOCS_KEY,
   INDEX_KEY,
   JOBS_KEY,
-  LOCKS_KEY,
   QUEUE_KEY,
   TREE_KEY,
   docKey,
   jobKey,
-  lockKey,
   threadKey,
 } from "@corpus/contract";
 

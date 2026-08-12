@@ -107,12 +107,12 @@ describe("retry", () => {
   });
 
   it("puts a deferred job back in pending — the manual override §7 names", async () => {
-    // SERVER-030: automatic re-entry on lock release, break and reap
-    // supplements `job retry`, it does not delete it. The operator still needs
-    // a way to pull back a deferral automatic re-entry did not reach.
+    // SERVER-030, re-based by SERVER-099: automatic re-entry when the person's
+    // edit session ends supplements `job retry`, it does not delete it. The
+    // operator still needs a way to pull back a deferral it never reached.
     const id = await enqueue();
     await queue.claimAll();
-    await queue.defer(id, { blockedOn: "doc_locked01", deferReason: "waiting" });
+    await queue.defer(id, { blockedOn: "doc_edited01", deferReason: "waiting" });
 
     const job = await jobs.retry(id);
 

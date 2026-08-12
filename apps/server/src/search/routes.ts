@@ -20,7 +20,7 @@ export interface SearchRoutesOptions {
  *
  * A pure projection read, like the collection query and the folder tree: it
  * needs nothing from the request beyond its validated query, touches no file,
- * takes no lock and has no acting party. Parameters are parsed by
+ * has no acting party. Parameters are parsed by
  * `SearchQuerySchema` in the zod-openapi hook, which is what makes a missing
  * `q` a 400 rather than an unranked everything.
  */

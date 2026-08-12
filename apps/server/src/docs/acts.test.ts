@@ -311,13 +311,16 @@ describe("what does not close a window (§4)", () => {
     expect(commitCount()).toBe(before + 1);
   });
 
-  it("acquiring, renewing or releasing an edit lock", async () => {
-    const doc = await createDoc(ws, { type: "note", title: "Locked", body: "x" }, "user");
+  it("reading a document's key (SPEC.md §7 — a read, and it is all a key is)", async () => {
+    // The line §4 used to spend on the edit lock (SHARED-041 item 4). Nothing
+    // replaces it: reading a key is a read, and "any read that does not touch
+    // git history" already covers it — so this asserts that, rather than a rule
+    // of its own.
+    const doc = await createDoc(ws, { type: "note", title: "Keyed", body: "x" }, "user");
     const before = await windowAround(async () => {
-      expect((await ws.post(`/api/locks/${doc.id}`, {}, asUser)).status).toBe(201);
-      // A second acquire by the same holder is the renewal.
-      expect([200, 201]).toContain((await ws.post(`/api/locks/${doc.id}`, {}, asUser)).status);
-      expect((await ws.del(`/api/locks/${doc.id}`, asUser)).status).toBe(200);
+      const read = await ws.request(`/api/docs/${doc.id}`);
+      expect(read.status).toBe(200);
+      expect(((await read.json()) as { key: string }).key).toMatch(/^[0-9a-f]{64}$/);
     });
     expect(commitCount()).toBe(before + 1);
   });
@@ -363,16 +366,16 @@ describe("what does not close a window (§4)", () => {
   it("all of them at once, interleaved through one editing session", async () => {
     // The acceptance criterion, spelled as §4 spells it: "N body saves across M
     // documents by one party inside the idle window are still one commit, with a
-    // lock acquire/release, a projection pass and a seen-mark interleaved".
+    // key read, a projection pass and a seen-mark interleaved".
     const doc = await createDoc(ws, { type: "note", title: "Marked", body: "x" }, "user");
     const thread = await createThread(ws, { parent: doc.id, body: "?" });
     const before = await windowAround(async () => {
-      expect((await ws.post(`/api/locks/${doc.id}`, {}, asUser)).status).toBe(201);
-      expect((await putDoc(ws, doc.id, { body: "under my own lock" }, asUser)).status).toBe(200);
+      expect((await ws.request(`/api/docs/${doc.id}`)).status).toBe(200);
+      expect((await putDoc(ws, doc.id, { body: "with my own key" }, asUser)).status).toBe(200);
       ws.reproject();
       expect((await ws.post(`/api/threads/${thread.id}/seen`, {}, asUser)).status).toBe(200);
       expect((await ws.request("/api/docs")).status).toBe(200);
-      expect((await ws.del(`/api/locks/${doc.id}`, asUser)).status).toBe(200);
+      expect((await ws.request(`/api/docs/${doc.id}`)).status).toBe(200);
     });
     expect(commitCount()).toBe(before + 1);
 
@@ -386,7 +389,8 @@ describe("what does not close a window (§4)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// §4's "three acts commit alone".
+// §4's "two acts commit alone". (It said three until SHARED-041 struck the
+// force unlock with the lock it broke — SERVER-099.)
 // ---------------------------------------------------------------------------
 
 describe("a deletion closes the window and then commits alone (§4)", () => {
@@ -481,45 +485,5 @@ describe("a staged bulk Save flushes first and then lands alone (§4)", () => {
     );
     for (const doc of staged) expect(ws.read(doc.path)).toContain("status: open");
     expect(ws.read(edited.path)).toContain("underway");
-  });
-});
-
-describe("a force unlock flushes before its audit entry (§4, §7)", () => {
-  it("puts the agent's work in git under the agent's name, before the break", async () => {
-    const doc = await settledDoc("Contended", "one");
-    expect((await ws.post(`/api/locks/${doc.id}`, {}, asAgent)).status).toBe(201);
-    const before = commitCount();
-
-    // The agent works under its own lease; the window is open when the break
-    // arrives, with no clock movement at all.
-    expect((await putDoc(ws, doc.id, { body: "the agent's work" }, asAgent)).status).toBe(200);
-    expect(commitCount()).toBe(before + 1);
-
-    expect((await ws.post(`/api/locks/${doc.id}/break`, {}, asUser)).status).toBe(200);
-
-    // The audit entry stands alone, on top of the agent's own commit.
-    expect(commitCount()).toBe(before + 2);
-    expect(subjectOf("HEAD")).toBe(`lock: force-break on ${doc.id} (was agent) by user`);
-    expect(authorOf("HEAD")).toBe("user");
-    expect(filesIn("HEAD")).toEqual([]);
-    expect(authorOf("HEAD^")).toBe("agent");
-    expect(subjectOf("HEAD^")).toBe(editingSessionSubject(1, "agent"));
-    expect(ws.git("show", `HEAD^:${doc.path}`)).toContain("the agent's work");
-
-    // `git log --author` still answers exactly: the break is the user's, the
-    // work under it is the agent's, and neither is attributed to the other.
-    expect(ws.git("log", "--author=agent", "--format=%s")).toContain("editing session: 1 document");
-    expect(ws.git("log", "--author=agent", "--format=%s")).not.toContain("lock: force-break");
-  });
-
-  it("takes no later save into the audit entry", async () => {
-    const doc = await settledDoc("Contended", "one");
-    expect((await ws.post(`/api/locks/${doc.id}`, {}, asAgent)).status).toBe(201);
-    expect((await putDoc(ws, doc.id, { body: "agent work" }, asAgent)).status).toBe(200);
-    expect((await ws.post(`/api/locks/${doc.id}/break`, {}, asUser)).status).toBe(200);
-    const audit = ws.head();
-
-    expect((await putDoc(ws, doc.id, { body: "the user carries on" }, asUser)).status).toBe(200);
-    expect(ws.git("rev-parse", "HEAD^").trim()).toBe(audit);
   });
 });

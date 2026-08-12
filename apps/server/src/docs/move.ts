@@ -107,10 +107,6 @@ export async function moveDocument(
   folder: string,
 ): Promise<MoveOutcome> {
   return mutex.run(id, async () => {
-    // Inside the lane, so a lease acquired while this move waited its turn still
-    // refuses it (SERVER-022 finding 7).
-    await (workspace.assertWritable ?? (() => undefined))(id, actor);
-
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
     // The location check runs before `resolveFolder`, so a thread sent to a bad
     // folder still reports the reason it could never be moved at all.

@@ -425,7 +425,7 @@ describe("POST /api/queue/{id}/defer", () => {
     const [id = ""] = await seed(1);
     await request("/api/queue/claim-all", { method: "POST" });
 
-    const response = await defer(id, { blockedOn: "doc_locked01", reason: "user is editing" });
+    const response = await defer(id, { blockedOn: "doc_edited01", reason: "user is editing" });
 
     expect(response.status).toBe(200);
     const body: unknown = await response.json();
@@ -449,7 +449,7 @@ describe("POST /api/queue/{id}/defer", () => {
     );
     expect(onDisk).toMatchObject({
       status: "deferred",
-      blockedOn: "doc_locked01",
+      blockedOn: "doc_edited01",
       deferReason: "user is editing",
     });
   });
@@ -458,23 +458,23 @@ describe("POST /api/queue/{id}/defer", () => {
     const [id = ""] = await seed(1);
     await request("/api/queue/claim-all", { method: "POST" });
 
-    expect((await defer(id, { blockedOn: "doc_locked01" })).status).toBe(200);
+    expect((await defer(id, { blockedOn: "doc_edited01" })).status).toBe(200);
   });
 
   it("409s an event that was never claimed, and a second defer", async () => {
     const [id = ""] = await seed(1);
 
-    const unclaimed = await defer(id, { blockedOn: "doc_locked01" });
+    const unclaimed = await defer(id, { blockedOn: "doc_edited01" });
     expect(unclaimed.status).toBe(409);
     expect(ApiErrorSchema.safeParse(await unclaimed.json()).success).toBe(true);
 
     await request("/api/queue/claim-all", { method: "POST" });
-    expect((await defer(id, { blockedOn: "doc_locked01" })).status).toBe(200);
-    expect((await defer(id, { blockedOn: "doc_locked01" })).status).toBe(409);
+    expect((await defer(id, { blockedOn: "doc_edited01" })).status).toBe(200);
+    expect((await defer(id, { blockedOn: "doc_edited01" })).status).toBe(409);
   });
 
   it("404s an unknown id", async () => {
-    const response = await defer("evt_missing00000", { blockedOn: "doc_locked01" });
+    const response = await defer("evt_missing00000", { blockedOn: "doc_edited01" });
 
     expect(response.status).toBe(404);
     const parsed = ApiErrorSchema.safeParse(await response.json());
@@ -483,11 +483,11 @@ describe("POST /api/queue/{id}/defer", () => {
 
   it.each([
     ["a missing blockedOn", {}],
-    // A thread id *is* a document id (`doc_`/`th_`) and a thread can be locked,
-    // so `th_abcd1234` is deliberately not in this list.
-    ["a blockedOn that is not a document id", { blockedOn: "locked" }],
-    ["a blank reason", { blockedOn: "doc_locked01", reason: "" }],
-    ["an unknown key", { blockedOn: "doc_locked01", until: "later" }],
+    // A thread id *is* a document id (`doc_`/`th_`) and a person can be editing
+    // one, so `th_abcd1234` is deliberately not in this list.
+    ["a blockedOn that is not a document id", { blockedOn: "nope" }],
+    ["a blank reason", { blockedOn: "doc_edited01", reason: "" }],
+    ["an unknown key", { blockedOn: "doc_edited01", until: "later" }],
   ])("rejects %s without moving the event", async (_label, body) => {
     const [id = ""] = await seed(1);
     await request("/api/queue/claim-all", { method: "POST" });

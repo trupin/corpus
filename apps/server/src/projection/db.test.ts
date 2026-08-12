@@ -80,7 +80,6 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
   events: ["id", "type", "status", "created", "payload_json", "blocked_on"],
   seen: ["thread_id", "last_seen_ts"],
   jobs: ["event_id", "status", "started", "updated", "last_line"],
-  locks: ["doc_id", "holder", "acquired", "ttl"],
   links: ["from_id", "to_id"],
   // §9.1's "semantic index" bullet, in three tables (SERVER-042): the chunks a
   // document splits into, their chunk-granular FTS copy — used to address a
@@ -271,6 +270,15 @@ function writeV6Database(config: ProjectionConfig): void {
         NULL, '{}')`,
     )
     .run();
+  // And a held lease, because the table SERVER-099 drops is one an upgrading
+  // workspace has **rows** in — the case the migration has to be exercised
+  // against, not merely a fresh database.
+  sqlite
+    .prepare(
+      `INSERT INTO locks (doc_id, holder, acquired, ttl)
+       VALUES ('doc_v6', 'agent', '2026-01-01T00:00:00Z', 300)`,
+    )
+    .run();
   sqlite.close();
 }
 
@@ -398,6 +406,11 @@ describe("openProjection", () => {
     expect(
       (before.prepare("PRAGMA table_info(turns)").all() as { name: string }[]).map((r) => r.name),
     ).toEqual(["thread_id", "idx", "author", "ts", "body_md", "has_form"]);
+    // The state SERVER-099 migrates away from, asserted before the rebuild so
+    // the assertion after it is about a table that genuinely had rows.
+    expect(before.prepare("SELECT doc_id, holder FROM locks").all()).toEqual([
+      { doc_id: "doc_v6", holder: "agent" },
+    ]);
     before.close();
 
     const db = openProjection(config);
@@ -427,8 +440,66 @@ describe("openProjection", () => {
           .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
           .get("turns_unanswered_form"),
       ).toEqual({ name: "turns_unanswered_form" });
+      // 13 → 14: the table is dropped with the database it lived in, rows and
+      // all. Nothing replaces it — a key is derived from the document, and the
+      // editing signal is in memory (SPEC.md §7, SERVER-099).
+      expect(
+        db.prepare("SELECT name FROM sqlite_master WHERE name = 'locks'").get(),
+      ).toBeUndefined();
+      expect(() => db.prepare("SELECT * FROM locks").all()).toThrow(/no such table/);
     } finally {
       db.close();
+    }
+  });
+
+  // SERVER-099, the migration this issue *is*: the immediate predecessor version,
+  // with the table it drops populated the way an upgrading workspace's is. Built
+  // by re-creating the table on a current database and stamping it back rather
+  // than by pasting a second full DDL — what a v13 database has that a v14 does
+  // not is exactly this table and this stamp, and a copy of eighty lines of
+  // unrelated schema would only rot beside the real one.
+  it("drops a populated `locks` table when a v13 database is opened (13 \u2192 14)", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_kept");
+
+    const v13 = openProjection(config);
+    v13.sqlite.exec(
+      `CREATE TABLE locks (
+         doc_id TEXT PRIMARY KEY,
+         holder TEXT NOT NULL,
+         acquired TEXT NOT NULL,
+         ttl INTEGER NOT NULL
+       )`,
+    );
+    v13.sqlite.exec(
+      `INSERT INTO locks (doc_id, holder, acquired, ttl) VALUES
+         ('doc_kept', 'agent', '2026-08-10T09:00:00Z', 300),
+         ('th_stale1', 'user', '2026-08-10T08:00:00Z', 300)`,
+    );
+    expect(v13.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 2 });
+    v13.prepare("UPDATE meta SET value = ? WHERE key = ?").run("13", META_SCHEMA_VERSION);
+    v13.close();
+
+    const migrated = openProjection(config);
+    try {
+      expect(
+        (
+          migrated.prepare("SELECT value FROM meta WHERE key = ?").get(META_SCHEMA_VERSION) as {
+            value: string;
+          }
+        ).value,
+      ).toBe(String(SCHEMA_VERSION));
+      // The rows are gone because the table is, and the table is gone because
+      // the schema no longer declares it — not because anything deleted rows.
+      expect(
+        migrated.prepare("SELECT name FROM sqlite_master WHERE name = 'locks'").get(),
+      ).toBeUndefined();
+      expect([...PROJECTION_TABLES]).not.toContain("locks");
+      // Everything derived from files is back, so the drop cost the workspace
+      // nothing it could not rebuild.
+      expect(migrated.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
+    } finally {
+      migrated.close();
     }
   });
 

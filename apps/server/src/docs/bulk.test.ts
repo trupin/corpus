@@ -31,7 +31,7 @@ import {
   type BulkActionResult,
 } from "@corpus/contract";
 import { createThread, putDoc } from "../threads/thread-fixture.js";
-import { AUTH, createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
 
@@ -98,14 +98,6 @@ const filesIn = (sha: string): string[] =>
 const pathOf = (id: string): string =>
   (ws.db.prepare("SELECT path FROM documents WHERE id = ?").get(id) as { path: string }).path;
 
-const acquireLock = async (id: string, actor: "user" | "agent"): Promise<void> => {
-  const response = await ws.server.app.request(`/api/locks/${id}`, {
-    method: "POST",
-    headers: { ...AUTH, [ACTOR_HEADER]: actor },
-  });
-  expect(response.status).toBe(201);
-};
-
 const idAt = (path: string): string =>
   (ws.db.prepare("SELECT id FROM documents WHERE path = ?").get(path) as { id: string }).id;
 
@@ -148,8 +140,6 @@ const seed = async (count: number, prefix = "Note"): Promise<{ id: string; path:
 describe("one act, one commit", () => {
   it("archives twenty documents as one commit whose files are exactly `changed`", async () => {
     const docs = await seed(20);
-    const locked = docs.slice(0, 3);
-    for (const doc of locked) await acquireLock(doc.id, "agent");
 
     const commitsBefore = ws.log("%H").length;
     const { status, result } = await bulk(
@@ -159,17 +149,13 @@ describe("one act, one commit", () => {
       ),
     );
 
-    // A locked document is a per-document outcome, never a verdict on the
-    // request (§11): seventeen still archive.
     expect(status).toBe(200);
-    expect(idsOf(result.changed)).toHaveLength(17);
+    expect(idsOf(result.changed)).toHaveLength(20);
     // Every outcome names what was done to it — carried per document because a
     // Save carries a mix, so no report has to be paired back to its request.
     expect(new Set(result.changed.map((outcome) => outcome.action))).toEqual(new Set(["archive"]));
     expect(idsOf(result.alreadyInState)).toEqual([]);
-    expect(
-      result.refused.map((entry) => [entry.id, entry.action, entry.reason, entry.lock?.holder]),
-    ).toEqual(locked.map((doc) => [doc.id, "archive", "locked", "agent"]));
+    expect(result.refused).toEqual([]);
 
     // One commit. Not seventeen.
     expect(ws.log("%H")).toHaveLength(commitsBefore + 1);
@@ -181,17 +167,11 @@ describe("one act, one commit", () => {
     // notes, no §6 cascade, no §7 folder move.
     expect(filesIn(result.commit ?? "")).toEqual(idsOf(result.changed).map(pathOf).sort());
 
-    // And the three refused documents left nothing in it — `git log` never
-    // records an effect the caller was told did not happen.
-    for (const doc of locked) {
-      expect(filesIn(result.commit ?? "")).not.toContain(doc.path);
-      expect(ws.read(doc.path)).not.toContain("status: archived");
-    }
     for (const { id } of result.changed) {
       expect(ws.read(pathOf(id))).toContain("status: archived");
     }
-    // Twenty documents through the real write path, three real lock
-    // acquisitions and a real commit. Measured at ~4.3 s alone and over the 5 s
+    // Twenty documents through the real write path and a real commit.
+    // Measured at ~4.3 s alone and over the 5 s
     // default under a full-suite run, so it failed on the clock rather than on
     // an assertion. Given room rather than trimmed: the twenty is the point of
     // the test, and a bulk act that got slower should show up as this test
@@ -458,16 +438,22 @@ describe("the eight acts", () => {
     // stops being an orphan. One that was refused did survive.
     const [parent] = await seed(1);
     const thread = await createThread(ws, { parent: parent?.id ?? null, body: "kept" });
-    await acquireLock(thread.id, "agent");
+    // A read-only `data/threads` is what refuses the unlink — a real per-document
+    // failure, since SPEC.md §7's key left no way to refuse one document's share
+    // of an act by holding something (SERVER-099).
+    chmodSync(join(ws.root, "data", "threads"), 0o500);
+    try {
+      const { result } = await bulk(staged([thread.id, parent?.id ?? ""], { action: "delete" }));
 
-    const { result } = await bulk(staged([thread.id, parent?.id ?? ""], { action: "delete" }));
-
-    expect(idsOf(result.changed)).toEqual([parent?.id]);
-    expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([
-      [thread.id, "locked"],
-    ]);
-    expect(result.orphanedThreadIds).toEqual([thread.id]);
-    expect(ws.exists(`data/threads/${thread.id}.md`)).toBe(true);
+      expect(idsOf(result.changed)).toEqual([parent?.id]);
+      expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([
+        [thread.id, "write-failed"],
+      ]);
+      expect(result.orphanedThreadIds).toEqual([thread.id]);
+      expect(ws.exists(`data/threads/${thread.id}.md`)).toBe(true);
+    } finally {
+      chmodSync(join(ws.root, "data", "threads"), 0o700);
+    }
   });
 
   it("archives a skill by moving its folder, not by flipping `status`", async () => {
@@ -834,20 +820,27 @@ describe("a mixed staged set is one act (SPEC.md §4, SHARED-032)", () => {
     for (const { id } of result.changed) expect(body).toContain(`Corpus-Doc: ${id}`);
   });
 
-  it("keeps a lock and an unknown id per-document while the other verbs go through", async () => {
-    const docs = await seed(3);
+  it("keeps an unwritable document and an unknown id per-document while the other verbs go through", async () => {
+    const docs = await seed(2);
     const thread = await createThread(ws, { parent: null, body: "one" });
-    await acquireLock(docs[1]?.id ?? "", "agent");
+    const stuck = await createDoc(ws, { type: "note", title: "Stuck", folder: "vault" });
 
-    const { status, result } = await bulk({
-      entries: [
-        { id: docs[0]?.id ?? "", action: { action: "archive" } },
-        { id: docs[1]?.id ?? "", action: { action: "tag", add: ["q3"] } },
-        { id: "doc_deadbeef", action: { action: "resolve" } },
-        { id: thread.id, action: { action: "resolve" } },
-        { id: docs[2]?.id ?? "", action: { action: "review" } },
-      ],
-    });
+    chmodSync(join(ws.root, "data", "docs", "vault"), 0o500);
+    let status: number;
+    let result: BulkActionResult;
+    try {
+      ({ status, result } = await bulk({
+        entries: [
+          { id: docs[0]?.id ?? "", action: { action: "archive" } },
+          { id: stuck.id, action: { action: "tag", add: ["q3"] } },
+          { id: "doc_deadbeef", action: { action: "resolve" } },
+          { id: thread.id, action: { action: "resolve" } },
+          { id: docs[1]?.id ?? "", action: { action: "review" } },
+        ],
+      }));
+    } finally {
+      chmodSync(join(ws.root, "data", "docs", "vault"), 0o700);
+    }
 
     // §11: never refuse the whole set because of one document — and every
     // refusal says which act it was refusing, which is the only way a mixed
@@ -856,19 +849,18 @@ describe("a mixed staged set is one act (SPEC.md §4, SHARED-032)", () => {
     expect(pairsOf(result.changed)).toEqual([
       [docs[0]?.id, "archive"],
       [thread.id, "resolve"],
-      [docs[2]?.id, "review"],
+      [docs[1]?.id, "review"],
     ]);
     expect(result.refused.map((entry) => [entry.id, entry.action, entry.reason])).toEqual([
-      [docs[1]?.id, "tag", "locked"],
+      [stuck.id, "tag", "write-failed"],
       ["doc_deadbeef", "resolve", "not-found"],
     ]);
-    expect(result.refused[0]?.lock?.holder).toBe("agent");
     // The refused rows left nothing in the commit.
     expect(filesIn(result.commit ?? "")).toEqual(idsOf(result.changed).map(pathOf).sort());
     // Read the parsed tags, never the raw file: a generated id containing the
     // substring `q3` (`doc_q36ik5up` really occurred) failed a `toContain` over
     // the whole document for a reason that has nothing to do with tagging.
-    expect(tagsOf(docs[1]?.path ?? "")).not.toContain("q3");
+    expect(tagsOf(stuck.path)).not.toContain("q3");
   });
 
   it("refuses the whole Save when the agent stages a delete on one row of five", async () => {
@@ -1054,18 +1046,16 @@ describe("per-document outcomes", () => {
         action: "archive",
         reason: "not-found",
         message: "no document with id doc_deadbeef",
-        lock: null,
       },
     ]);
     expect(filesIn(result.commit ?? "")).toEqual(docs.map((doc) => doc.path).sort());
   });
 
   it("partitions the request: every id appears exactly once", async () => {
-    const docs = await seed(3);
+    const docs = await seed(2);
     await ws.post(`/api/docs/${docs[1]?.id ?? ""}/archive`, {});
-    await acquireLock(docs[2]?.id ?? "", "agent");
 
-    const ids = docs.map((doc) => doc.id);
+    const ids = [...docs.map((doc) => doc.id), "doc_deadbeef"];
     const { result } = await bulk(staged(ids, { action: "archive" }));
 
     const named = [
@@ -1130,41 +1120,6 @@ describe("per-document outcomes", () => {
     }
   });
 
-  it("refuses a deletion whose parent is locked, and says the parent is the locked one", async () => {
-    const [parent] = await seed(1);
-    const parentId = parent?.id ?? "";
-    const anchored = await createThread(ws, {
-      parent: parentId,
-      selector: { exact: "Note 0", prefix: "", suffix: "" },
-      body: "about the title",
-    });
-    // The lock that can refuse the cascade is the one on the file being
-    // rewritten — the parent's (sprint-006 Adjudication 1).
-    await acquireLock(parentId, "agent");
-    const head = ws.head();
-
-    const { status, result } = await bulk(staged([anchored.id], { action: "delete" }));
-
-    expect(status).toBe(200);
-    expect(idsOf(result.changed)).toEqual([]);
-    expect(result.commit).toBeNull();
-    expect(ws.head()).toBe(head);
-    expect(ws.exists(`data/threads/${anchored.id}.md`)).toBe(true);
-
-    // The row is filed under the thread's id — the three parts partition the
-    // requested ids, and the parent was not requested — but everything in it
-    // that names a document names the **parent**, which is the document that is
-    // locked and the lock a person has to clear. Clearing the thread's own lock
-    // would change nothing.
-    const refusal = result.refused[0];
-    expect(refusal?.id).toBe(anchored.id);
-    expect(refusal?.reason).toBe("locked");
-    expect(refusal?.lock?.docId).toBe(parentId);
-    expect(refusal?.lock?.holder).toBe("agent");
-    expect(refusal?.message).toContain(parentId);
-    expect(refusal?.message).toContain("the lock to clear is");
-  });
-
   it("reports a filename collision as a write that could not happen", async () => {
     const first = await createDoc(ws, { type: "note", title: "Budget", folder: "inbox" });
     const second = await createDoc(ws, { type: "note", title: "Budget", folder: "plans" });
@@ -1177,8 +1132,8 @@ describe("per-document outcomes", () => {
     // Not `not-applicable`: that reason's published meaning is "the corpus
     // changed between selecting and acting", i.e. refresh the board — when the
     // board is perfectly current and the remedy is to rename a document.
-    expect(result.refused.map((entry) => [entry.id, entry.reason, entry.lock])).toEqual([
-      [second.id, "write-failed", null],
+    expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([
+      [second.id, "write-failed"],
     ]);
     // And the message says which name is taken, which is what §11's third part
     // means by carrying the specifics.
@@ -1209,30 +1164,6 @@ describe("per-document outcomes", () => {
     expect(result.commit).toBeNull();
     expect(ws.head()).toBe(head);
     expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
-  });
-
-  it("refuses a skill whose folder move would rewrite a locked nested skill", async () => {
-    // The act writes a carried skill's file — it stamps the id the move would
-    // otherwise re-mint — so a lease on that skill refuses this document's share
-    // of the act, exactly as a cascade parent's does (PR #38, finding 3).
-    const { outer, nested } = seedSkills();
-    await acquireLock(nested, "agent");
-    const head = ws.head();
-
-    const { result } = await bulk(staged([outer], { action: "archive" }), {
-      [ACTOR_HEADER]: "user",
-    });
-
-    expect(idsOf(result.changed)).toEqual([]);
-    expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([[outer, "locked"]]);
-    // The row is filed under the requested id, and every id *in* it is the
-    // locked one — the same correction SERVER-077's review made for a cascade
-    // parent, now shared by both.
-    expect(result.refused[0]?.message).toContain(`the lock to clear is ${nested}'s`);
-    expect(result.refused[0]?.lock?.docId).toBe(nested);
-    expect(result.commit).toBeNull();
-    expect(ws.head()).toBe(head);
-    expect(ws.exists(".claude/skills/demo/nested/SKILL.md")).toBe(true);
   });
 });
 

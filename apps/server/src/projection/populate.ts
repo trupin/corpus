@@ -24,7 +24,6 @@ export type PopulateReport = {
   readonly links: number;
   readonly events: number;
   readonly jobs: number;
-  readonly locks: number;
   readonly seen: number;
   readonly durationMs: number;
   readonly skipped: readonly SkippedFile[];
@@ -134,7 +133,6 @@ export function populateFromFiles(db: ProjectionDb): PopulateReport {
     links,
     events: runtime.events,
     jobs: runtime.jobs,
-    locks: runtime.locks,
     seen: runtime.seen,
     durationMs: Date.now() - startedAt,
     skipped,

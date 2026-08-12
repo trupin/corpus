@@ -11,8 +11,9 @@
 // client can act on. The state the caller asked for is the state that holds,
 // which is what idempotent means.
 //
-// **No lock guard** (sprint-006 Adjudication 1): nothing in the parent is
-// touched, and `resolveThread` / `reopenThread` declare no `423`.
+// **Nothing refuses a status flip for another writer** (sprint-006
+// Adjudication 1): nothing in the parent is touched, and the flip names its own
+// delta, so SPEC.md §7 asks it for no key either.
 
 import type { Actor, ThreadStatus, ThreadSummary } from "@corpus/contract";
 import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";

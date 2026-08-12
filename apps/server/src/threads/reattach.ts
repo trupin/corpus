@@ -83,9 +83,8 @@ export const RANGE_CHANGED_MESSAGE =
   "again";
 
 /**
- * The route's `409`, narrowed by a machine-readable `reason` exactly as
- * `LockConflictError` narrows the same envelope with `lock`: an extra field on
- * `{code, message}`, never an eighth `ERROR_CODES` member, so every consumer that
+ * The route's `409`, narrowed by a machine-readable `reason`: an extra field on
+ * `{code, message}`, never a new `ERROR_CODES` member, so every consumer that
  * switches on `code` keeps working unchanged.
  */
 export function reattachConflict(reason: ReattachRefusalReason, message: string): HttpError {
@@ -143,13 +142,6 @@ export async function reattachThread(
     const thread = loadThread(workspace, id);
     const { anchorId, parentId } = requireAnchored(thread);
     const parent = loadDocument(workspace.workspaceRoot, workspace.projection, parentId);
-
-    // §7's edit lock, on the **parent's** id: the parent is the file this repair
-    // writes, and the route declares the `423` for exactly that reason. Taken
-    // inside the lane so a lease acquired while this request was queued still
-    // refuses it, and before the state refusals below because "the right party,
-    // wrong moment" is not something re-reading and choosing again can fix.
-    await (workspace.assertWritable ?? ((): void => undefined))(parentId, actor);
 
     const body = parent.parsed.body;
 

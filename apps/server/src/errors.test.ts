@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { ApiErrorSchema, ERROR_CODES, type Lock } from "@corpus/contract";
+import { ApiErrorSchema, ERROR_CODES, type Doc } from "@corpus/contract";
 import {
   ConfigError,
   CorpusError,
@@ -14,18 +14,42 @@ import {
   errorResponse,
   forbidden,
   internalError,
-  locked,
   notFound,
+  staleKey,
   toHttpError,
   toValidationIssues,
   unauthorized,
 } from "./errors.js";
 
-const LOCK: Lock = {
-  docId: "doc_abc",
-  holder: "user",
-  acquired: "2026-07-26T10:00:00.000Z",
-  ttl: 300,
+/**
+ * The document a `stale_key` refusal carries: SPEC.md §7's "a refusal is never
+ * bare", so the factory takes the document as it now stands and the body has to
+ * parse as one.
+ */
+const CURRENT_DOC: Doc = {
+  frontmatter: {
+    id: "doc_a1b2c3",
+    type: "note",
+    title: "Mortgage options",
+    created: "2026-07-19T10:00:00Z",
+    updated: "2026-07-19T10:42:00Z",
+    tags: [],
+    status: "open",
+    anchors: {},
+    due: null,
+    reviewed: null,
+    evergreen: false,
+    pinned: false,
+    order: null,
+    query: null,
+    column: null,
+    extra: {},
+  },
+  body: "Body.",
+  path: "data/docs/mortgage.md",
+  anchors: [],
+  key: "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcde",
+  userEditing: false,
 };
 
 /** One error from every factory the server exposes. */
@@ -34,8 +58,8 @@ const ALL_FACTORY_ERRORS = [
   unauthorized("u"),
   forbidden("f"),
   notFound("n"),
-  conflict("c", LOCK),
-  locked("l", LOCK),
+  conflict("c"),
+  staleKey("s", CURRENT_DOC),
   internalError(),
 ];
 
@@ -67,7 +91,7 @@ describe("error factories", () => {
     [forbidden("not yours"), 403, "forbidden"],
     [notFound("gone"), 404, "not_found"],
     [conflict("already held"), 409, "conflict"],
-    [locked("held", LOCK), 423, "locked"],
+    [staleKey("moved on", CURRENT_DOC), 409, "stale_key"],
     [internalError(), 500, "internal_error"],
   ] as const)("maps %#: status %s / code %s", (error, status, code) => {
     expect(error.status).toBe(status);
@@ -250,14 +274,29 @@ describe("describeThrown", () => {
 });
 
 describe("conflict", () => {
-  it("carries the blocking lock when there is one, and omits the key when there is not", () => {
-    expect(conflict("already held", LOCK).body).toEqual({
+  it("is bare: SPEC.md §7's key removed the lock it used to carry (SERVER-099)", () => {
+    // The refusal that *does* carry state is `staleKey`, which answers with the
+    // document as it now stands. A 409 `conflict` names no lease, because there
+    // is no lease to name.
+    expect(conflict("already held").body).toEqual({
       code: "conflict",
       message: "already held",
-      lock: LOCK,
     });
-    // Omitted rather than `undefined`: `JSON.stringify` would drop it either
-    // way, but an absent key is what the contract's optional field means.
-    expect("lock" in conflict("plain").body).toBe(false);
+  });
+});
+
+describe("staleKey", () => {
+  it("carries the document as it now stands, whose own `key` is the fresh one", () => {
+    // §7: "A refused write comes back with the document as it now stands and a
+    // fresh key for it — not merely 'no'." The fresh key is `doc.key` and not a
+    // sibling field, because two copies of one value are two things that can
+    // disagree.
+    const error = staleKey("you never read this version", CURRENT_DOC);
+    expect(error.status).toBe(409);
+    expect(error.body).toEqual({
+      code: "stale_key",
+      message: "you never read this version",
+      doc: CURRENT_DOC,
+    });
   });
 });

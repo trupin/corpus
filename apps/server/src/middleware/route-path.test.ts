@@ -6,7 +6,7 @@ import { createContractPathMatcher, methodOnly, toHonoPath } from "./route-path.
 describe("toHonoPath", () => {
   it("rewrites OpenAPI parameters into Hono's spelling", () => {
     expect(toHonoPath("/api/jobs/{id}/log")).toBe("/api/jobs/:id/log");
-    expect(toHonoPath("/api/locks/{docId}")).toBe("/api/locks/:docId");
+    expect(toHonoPath("/api/docs/{id}/archive")).toBe("/api/docs/:id/archive");
     expect(toHonoPath("/api/health")).toBe("/api/health");
   });
 

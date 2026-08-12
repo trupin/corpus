@@ -408,18 +408,6 @@ describe("POST /api/threads/{id}/reattach — refusals the document's state make
     });
     expect(response.status).toBe(404);
   });
-
-  it("refuses the repair while the other party holds the parent's edit lock", async () => {
-    const { parent, threadId } = await seedOrphan();
-    const chosen = quarterChoice(await docBody(parent.id), "Q2");
-    expect(
-      (await ws.post(`/api/locks/${parent.id}`, {}, { "x-corpus-author": "agent" })).status,
-    ).toBe(201);
-
-    const response = await reattach(threadId, chosen);
-    expect(response.status).toBe(423);
-    expect((await soleAnchor(parent.id)).orphaned).toBe(true);
-  });
 });
 
 describe("POST /api/threads/{id}/reattach — who may ask", () => {

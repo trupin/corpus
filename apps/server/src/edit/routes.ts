@@ -20,8 +20,8 @@ import type { EditSessionTracker } from "./sessions.js";
  * skill rollback already had to be handed `gitCommands` separately for exactly
  * this reason.
  *
- * **The route writes nothing and still touches git.** No acting party, no lock
- * guard, no file mutation — but it closes §4's open commit window before it
+ * **The route writes nothing and still touches git.** No acting party, no file
+ * mutation — but it closes §4's open commit window before it
  * reads, which where no act named that window relabels its commit. A `GET` that
  * moves a sha is exactly what a reviewer should stop at, so the reason is
  * written where it happens: see the block comment in {@link readDocDiff}. The

@@ -146,7 +146,7 @@ describe("POST /api/db/rebuild", () => {
     const after = statSync(cacheDbPath(server.config)).ino;
     expect(after).not.toBe(before);
     expect(idsOnDisk()).toEqual(["doc_bbb"]);
-    // The captured handle — the same object the docs routes, the lock and job
+    // The captured handle — the same object the docs routes and the job
     // services and the watcher hold — now reads that same file.
     expect(projectedIds()).toEqual(["doc_bbb"]);
   });
@@ -195,8 +195,8 @@ describe("POST /api/db/rebuild", () => {
 
     await rebuildRequest();
 
-    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"], ["locks"]]]);
-    expect(REBUILD_QUERY_KEYS).toHaveLength(5);
+    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"]]]);
+    expect(REBUILD_QUERY_KEYS).toHaveLength(4);
   });
 
   it("names the tree even when the rebuild leaves it byte-identical, by design", async () => {
@@ -230,7 +230,7 @@ describe("POST /api/db/rebuild", () => {
     const after = await (await request("/api/tree")).text();
     expect(after).toBe(before);
     expect(JSON.parse(after)).toMatchObject({ folders: [{ path: "finance", count: 1 }] });
-    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"], ["locks"]]]);
+    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"]]]);
   });
 
   it("takes the actor header without making it an author", async () => {

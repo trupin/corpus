@@ -34,9 +34,10 @@
 // the agent never answers a form, including its own" — and `409` when this form
 // is **already answered**, because a form is answered once, as a whole, and
 // changing your mind is an ordinary reply. The route declares
-// `201 / 400 / 401 / 403 / 404 / 409` and nothing else — in particular **no
-// `423`**: sprint-006 Adjudication 1 settled that commenting is not editing, and
-// answering a question the agent asked is commenting (`turns.ts`).
+// `201 / 400 / 401 / 403 / 404 / 409` and nothing else — and nothing refuses an
+// answer for another writer: sprint-006 Adjudication 1 settled that commenting
+// is not editing, and answering a question the agent asked is commenting
+// (`turns.ts`).
 //
 // **The prose is a contract artefact, and this module does not spell it.** The
 // answer turn is the only durable record of what was answered — the

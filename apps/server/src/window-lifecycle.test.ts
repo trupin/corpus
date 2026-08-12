@@ -21,7 +21,7 @@ import {
   putDoc,
 } from "./docs/write-fixture.js";
 import type { AutoCommitter } from "./git/index.js";
-import { createRecordingCommitter } from "./locks/git-fixture.js";
+import { createRecordingCommitter } from "./git/git-fixture.js";
 import { openProjection, type ProjectionDb } from "./projection/index.js";
 
 let workspace: WriteWorkspace | undefined;

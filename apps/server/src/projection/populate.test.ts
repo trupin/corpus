@@ -80,7 +80,6 @@ describe("populateFromFiles", () => {
       links: 1,
       events: 1,
       jobs: 0,
-      locks: 0,
       seen: 0,
     });
     expect(report.durationMs).toBeGreaterThanOrEqual(0);

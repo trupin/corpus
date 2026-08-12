@@ -234,10 +234,10 @@ function assertExtraWithinBound(
  * - **Only a real change.** `changedFields` has already dropped a `status` equal
  *   to the file's, so re-sending `archived` on an archived document — which is
  *   what an autosave of an untouched form does — never reaches this.
- * - **400, not 409.** The route declares `200/400/401/404/423` and no `409`
- *   (`packages/contract/src/routes/docs.ts`); this is the same situation as the
- *   archive route's "destination already exists", settled as a 400 by sprint-005
- *   Open Conflict 4. It is also genuinely a statement about the request body.
+ * - **400, not 409.** The route's `409` is §7's stale-key refusal and nothing
+ *   else (`packages/contract/src/routes/docs.ts`); this is the same situation as
+ *   the archive route's "destination already exists", settled as a 400 by
+ *   sprint-005 Open Conflict 4. It is also genuinely a statement about the request body.
  *
  * The archived-ness is read from the file *and* from the projection row, because
  * they can disagree in exactly the case this guard is about: a `SKILL.md` sitting
@@ -283,9 +283,9 @@ export async function updateDocument(
  * do something *else* inside the lane — the plugin context's atomic
  * read-modify-write, whose callback must see the document this save is about to
  * overwrite (CONTRACT-019, SERVER-034) — cannot re-enter a mutex it is already
- * holding without deadlocking it. Everything the verb does, including the lock
- * guard, lives here, so no caller can reach the write pipeline having skipped a
- * step.
+ * holding without deadlocking it. Everything the verb does — §7's key check
+ * included — lives here, so no caller can reach the write pipeline having
+ * skipped a step.
  */
 export async function updateDocumentLocked(
   workspace: DocsWorkspace,
@@ -293,13 +293,6 @@ export async function updateDocumentLocked(
   id: string,
   patch: UpdateDocRequest,
 ): Promise<UpdateOutcome> {
-  // §7's edit lock, checked **inside** the lane: a write queued behind another
-  // operation on the same document can wait arbitrarily long, and a lease the
-  // other party acquires in that interval has to refuse it (SERVER-022
-  // finding 7). Still exactly one call per verb, and still before this verb
-  // reads or writes anything.
-  await (workspace.assertWritable ?? (() => undefined))(id, actor);
-
   const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
   const { parsed } = loaded;
 

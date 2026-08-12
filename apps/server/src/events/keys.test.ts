@@ -3,13 +3,11 @@ import { InvalidatePayloadSchema, QueryKeySchema } from "@corpus/contract";
 import {
   DOCS_KEY,
   JOBS_KEY,
-  LOCKS_KEY,
   QUEUE_KEY,
   TREE_KEY,
   dedupeKeys,
   docKey,
   jobKey,
-  lockKey,
   threadKey,
 } from "./keys.js";
 
@@ -21,8 +19,6 @@ const VOCABULARY = [
   QUEUE_KEY,
   JOBS_KEY,
   jobKey("evt_9z8y7x"),
-  LOCKS_KEY,
-  lockKey("doc_a1b2c3"),
 ];
 
 describe("the invalidation key vocabulary", () => {
@@ -43,8 +39,6 @@ describe("the invalidation key vocabulary", () => {
       ["queue"],
       ["jobs"],
       ["jobs", "evt_9z8y7x"],
-      ["locks"],
-      ["locks", "doc_a1b2c3"],
     ]);
   });
 

@@ -59,8 +59,8 @@ export interface ProjectionDb {
    * This is the seam `POST /api/db/rebuild` needs. A rebuild commits by renaming
    * a new database over `cache.db`, so every connection open at that moment is
    * left bound to an inode the rename unlinked. Opening a *new* handle would not
-   * help: `createServer` hands this one object to the document routes, the lock
-   * service, the job service, the watcher and the queue's mirror at mount time,
+   * help: `createServer` hands this one object to the document routes, the job
+   * service, the watcher and the queue's mirror at mount time,
    * and a second object would leave all of them reading a file that no longer
    * has a name. So the object stays and the connection under it moves.
    *

@@ -92,7 +92,7 @@ export interface ObservedCommit {
    * The workspace-relative path of the document when — and only when — this
    * write is the **editor's save** (`PUT /api/docs/{id}`, which is also where
    * the plugin read-modify-write lands). `null` for every other mutation: a
-   * create, a move, an archive, a delete, a thread turn, a lock audit entry.
+   * create, a move, an archive, a delete, a thread turn.
    * §4's sessions are the reader's editor, so none of those opens a session or
    * extends one — though any of them can still *seal* one (see
    * {@link OpenSession.sealed}).
@@ -174,11 +174,7 @@ export interface EditSessionTracker {
    * emits every session open on this document.
    *
    * Reached by `POST /api/docs/{id}/edit-session/flush` (CONTRACT-031, mounted
-   * by SERVER-057) and by {@link close}. It is deliberately *not* reached by
-   * §7's edit-lock release, which CONTRACT-028 §7 first proposed as the close
-   * signal: the shipped editor drops the lease on blur and after ten seconds of
-   * not typing (`useUserLock.ts`), which would end a session inside every pause
-   * and make §4's three-minute window unreachable.
+   * by SERVER-057) and by {@link close}.
    *
    * Idempotent, which is what lets the route publish itself that way: a document
    * with no open session is a loop over nothing.
@@ -213,6 +209,19 @@ export interface EditSessionTrackerOptions {
    * output can see that.
    */
   readonly endSquashSession: (sha: string) => void;
+  /**
+   * SPEC.md §7 (SHARED-041): "the deferral … re-enters the queue on its own once
+   * the session ends". Called once per session end, with the document it was on,
+   * whichever of §4's two ends fired — before the emitter's first git read, so a
+   * queue event the agent parked is on its way back to `pending` without waiting
+   * on history the acknowledgment happens to need.
+   *
+   * Optional, and synchronous by contract: `end` is reached from the write path's
+   * observer as well as from the timer, so anything slow here has to detach
+   * itself. `app.ts` hands it `QueueService.requeueDeferredFor`, which is the
+   * whole of what replaced the lock's release, break and reap.
+   */
+  readonly onSessionEnded?: ((docId: string) => void) | undefined;
   readonly logger?: Logger | undefined;
   readonly now?: (() => number) | undefined;
   readonly idleMs?: number | undefined;
@@ -304,7 +313,7 @@ const touches = (commit: ObservedCommit, session: OpenSession): boolean =>
   commit.paths.some((path) => session.path === path || session.path.startsWith(`${path}/`));
 
 export function createEditSessionTracker(options: EditSessionTrackerOptions): EditSessionTracker {
-  const { git, enqueue, endSquashSession } = options;
+  const { git, enqueue, endSquashSession, onSessionEnded } = options;
   const logger = options.logger ?? silentLogger;
   const now = options.now ?? Date.now;
   const idleMs = options.idleMs ?? EDIT_ACK_IDLE_MS;
@@ -406,6 +415,14 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
     // following: a session that ended is a boundary in the history either way,
     // and being wrong costs one commit that did not fold.
     endSquashSession(session.lastSha);
+    // §7's deferral trigger, and it fires here rather than after the emit for two
+    // reasons: the agent is waiting on the *person having stopped*, which is
+    // already true; and a session whose range turns out to be empty — an edit and
+    // its undo — produces no event at all, but has to release the deferral just
+    // the same, or the parked work would wait for an acknowledgment that is never
+    // coming. Failures are the callee's to absorb (`app.ts` logs and moves on):
+    // a session ending must not depend on the queue being writable.
+    onSessionEnded?.(session.docId);
     const pending = emit(session, endedBy)
       .catch((error: unknown) => {
         // An acknowledgment that could not be enqueued is a lost wake-up, never

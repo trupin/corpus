@@ -54,7 +54,7 @@ export type DeleteOutcome = {
  * The parent whose `anchors` map this document's deletion would rewrite, or
  * `null` when the deletion touches one file. Answered from the document's own
  * frontmatter, which is the only thing that decides it — so a caller can pick
- * its lanes and run the lock guard before entering them.
+ * its lanes before entering them.
  */
 export function anchoredThreadParent(
   loaded: LoadedDocument,
@@ -140,8 +140,8 @@ export function planDelete(workspace: DocsWorkspace, loaded: LoadedDocument): De
 }
 
 /**
- * The deletion itself, with the caller already holding the lanes and having run
- * the lock guard. Split out so turn deletion — whose last-turn cascade *is* a
+ * The deletion itself, with the caller already holding the lanes. Split out so
+ * turn deletion — whose last-turn cascade *is* a
  * thread deletion (§6) — reaches the same code without re-entering a mutex it
  * already holds, which would deadlock.
  */
@@ -214,27 +214,18 @@ export async function deleteDocument(
   actor: Actor,
   id: string,
 ): Promise<DeleteOutcome> {
-  // Before the lock guard and before any read: an agent may not delete, and
-  // finding out whether the document exists is not information the refusal
-  // depends on.
+  // Before any read: an agent may not delete, and finding out whether the
+  // document exists is not information the refusal depends on.
   if (actor === "agent") throw forbidden(AGENT_DELETE_MESSAGE);
-  const guard = workspace.assertWritable ?? ((): void => undefined);
 
   // Read before entering the lanes, because which lanes to hold is a question
   // only the document's own frontmatter answers. Re-read inside; this copy
-  // decides lanes and guards, never content.
+  // decides lanes, never content.
   const anchored = anchoredThreadParent(
     loadDocument(workspace.workspaceRoot, workspace.projection, id),
   );
 
-  return runInLanes(mutex, [id, anchored?.parentId], async () => {
-    // Inside the lanes, so a lease acquired while this deletion waited its turn
-    // still refuses it (SERVER-022 finding 7). The parent's frontmatter is
-    // genuinely rewritten, so the other party's edit lock on it refuses this
-    // deletion too — sprint-006 Adjudication 1.
-    await guard(id, actor);
-    if (anchored !== null) await guard(anchored.parentId, actor);
-
-    return deleteDocumentLocked(workspace, actor, id);
-  });
+  return runInLanes(mutex, [id, anchored?.parentId], () =>
+    deleteDocumentLocked(workspace, actor, id),
+  );
 }

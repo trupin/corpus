@@ -1,4 +1,4 @@
-// Runtime-state projectors: the `events`, `jobs`, `locks` and `seen` tables,
+// Runtime-state projectors: the `events`, `jobs` and `seen` tables,
 // derived from `.corpus/` (SPEC.md §7, §9.1).
 //
 // Runtime state is not the corpus — it is gitignored, rebuildable, and a
@@ -11,7 +11,6 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   DocumentIdSchema,
-  LockSchema,
   QUEUE_EVENT_STATUSES,
   QueueEventSchema,
   ThreadIdSchema,
@@ -24,7 +23,6 @@ import type { ProjectionDb } from "./db.js";
 
 export const QUEUE_DIR = "queue";
 export const JOBS_DIR = "jobs";
-export const LOCKS_DIR = "locks";
 export const SEEN_FILE = "seen.json";
 
 /**
@@ -74,7 +72,7 @@ export function listQueueEventFiles(
  * `blockedOn` is the document a `deferred` event waits on (SERVER-030). It is
  * always written, `null` included: an event that leaves `deferred/` has to
  * *clear* the column, and an `ON CONFLICT` clause that only ever set it would
- * leave a processed job still claiming to be waiting for a lock.
+ * leave a processed job still claiming to be waiting on a document.
  */
 export function projectEvent(
   db: ProjectionDb,
@@ -225,79 +223,6 @@ export function projectJobsDir(db: ProjectionDb, corpusDir: string): number {
   return projected;
 }
 
-const LOCK_FILE = /^((?:doc|th)_[A-Za-z0-9]+)\.json$/;
-
-/**
- * An expired lease is treated as absent everywhere it is read (SPEC.md §7), and
- * the projection is no exception: a row for a lock that can no longer refuse
- * anything would put a banner on a document nobody is editing. The file stays
- * until `POST /api/locks/reap` unlinks it; the row goes now.
- */
-function isLeaseExpired(acquired: string, ttlSeconds: number, nowMs: number): boolean {
-  // Negated "still live" rather than a comparison: every comparison with `NaN`
-  // is false, so an undateable `acquired` reads as expired — a lock nobody can
-  // date must not be able to wedge a document.
-  return !(nowMs < Date.parse(acquired) + ttlSeconds * 1000);
-}
-
-export function projectLock(
-  db: ProjectionDb,
-  corpusDir: string,
-  docId: string,
-  nowMs: number = Date.now(),
-): void {
-  let parsed: unknown;
-  try {
-    parsed = readJsonFile(join(corpusDir, LOCKS_DIR, `${docId}.json`));
-  } catch {
-    removeLock(db, docId);
-    return;
-  }
-  const lock = LockSchema.safeParse(parsed);
-  if (!lock.success) {
-    db.logger.info("skipping malformed lock", { docId });
-    removeLock(db, docId);
-    return;
-  }
-  if (isLeaseExpired(lock.data.acquired, lock.data.ttl, nowMs)) {
-    removeLock(db, docId);
-    return;
-  }
-  // Keyed by the **filename**, never by the file's own `docId` field — the same
-  // correction `locks/store.ts` makes on the service path, and for the same
-  // reason: the path is the addressing the API uses. A file whose two disagree
-  // used to insert one row and delete another, so the row outlived its file and
-  // the document rendered read-only forever, naming a holder that had released
-  // (SERVER-022 finding 9). Only a full `db rebuild` cleared it.
-  db.prepare(
-    `INSERT INTO locks (doc_id, holder, acquired, ttl)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(doc_id) DO UPDATE SET
-       holder = excluded.holder, acquired = excluded.acquired, ttl = excluded.ttl`,
-  ).run(docId, lock.data.holder, lock.data.acquired, lock.data.ttl);
-}
-
-export function removeLock(db: ProjectionDb, docId: string): void {
-  db.prepare("DELETE FROM locks WHERE doc_id = ?").run(docId);
-}
-
-/** Rebuilds `locks` from `.corpus/locks/*.json`; the count is of rows, not files. */
-export function projectLocksDir(
-  db: ProjectionDb,
-  corpusDir: string,
-  nowMs: number = Date.now(),
-): number {
-  db.sqlite.exec("DELETE FROM locks");
-  for (const name of listFiles(join(corpusDir, LOCKS_DIR))) {
-    const match = LOCK_FILE.exec(name);
-    const docId = match?.[1];
-    if (docId === undefined) continue;
-    projectLock(db, corpusDir, docId, nowMs);
-  }
-  const row = db.prepare("SELECT COUNT(*) AS n FROM locks").get() as { n: number };
-  return row.n;
-}
-
 /**
  * `.corpus/seen.json` is a flat map of thread id → last-seen instant, written by
  * `POST /api/threads/{id}/seen` (`threads/seen.ts`) and followed by the watcher
@@ -336,7 +261,6 @@ export function projectSeen(db: ProjectionDb, corpusDir: string): number {
 export type RuntimeCounts = {
   readonly events: number;
   readonly jobs: number;
-  readonly locks: number;
   readonly seen: number;
 };
 
@@ -345,7 +269,6 @@ export function projectRuntime(db: ProjectionDb): RuntimeCounts {
   const corpusDir = db.config.corpusDir;
   const events = projectQueueDir(db, corpusDir);
   const jobs = projectJobsDir(db, corpusDir);
-  const locks = projectLocksDir(db, corpusDir);
   const seen = projectSeen(db, corpusDir);
-  return { events, jobs, locks, seen };
+  return { events, jobs, seen };
 }
