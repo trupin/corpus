@@ -53,16 +53,16 @@ This project uses a multi-domain architecture with an orchestrator pattern.
 
 ### Agents
 
-| Agent                  | Domain                 | Description                                                               |
-| ---------------------- | ---------------------- | ------------------------------------------------------------------------- |
-| **Orchestrator** (you) | root                   | Reads the plan, finds ready issues, spawns domain agents, tracks progress |
-| **contract-dev**       | packages/contract      | API contract: zod-openapi routes, OpenAPI generation, typed client        |
-| **server-dev**         | apps/server            | Hono server: write paths, projection, queue, locks, SSE, git auto-commit  |
-| **cli-dev**            | apps/cli               | `corpus` CLI: server lifecycle, queue verbs, agent-facing commands        |
-| **ui-dev**             | apps/ui + packages/kit | React board, document/thread views, @corpus/kit                           |
-| **agent-runtime-dev**  | assets/workspace       | Product agent skills (orchestrate/comment), workspace template            |
-| **plugins-dev**        | plugins/               | Plugin system extension points, todos reference plugin                    |
-| **infra-dev**          | root tooling           | Monorepo config, hooks, CI, packaging/release                             |
+| Agent                  | Domain                 | Description                                                                      |
+| ---------------------- | ---------------------- | -------------------------------------------------------------------------------- |
+| **Orchestrator** (you) | root                   | Reads the plan, finds ready issues, spawns domain agents, tracks progress        |
+| **contract-dev**       | packages/contract      | API contract: zod-openapi routes, OpenAPI generation, typed client               |
+| **server-dev**         | apps/server            | Hono server: write paths, projection, queue, document keys, SSE, git auto-commit |
+| **cli-dev**            | apps/cli               | `corpus` CLI: server lifecycle, queue verbs, agent-facing commands               |
+| **ui-dev**             | apps/ui + packages/kit | React board, document/thread views, @corpus/kit                                  |
+| **agent-runtime-dev**  | assets/workspace       | Product agent skills (orchestrate/comment), workspace template                   |
+| **plugins-dev**        | plugins/               | Plugin system extension points, todos reference plugin                           |
+| **infra-dev**          | root tooling           | Monorepo config, hooks, CI, packaging/release                                    |
 
 Agent definitions live in `.claude/agents/`. Each has a **Domain Knowledge** section — the durable home for domain-specific facts, decisions, and gotchas. When you or a domain agent learns something domain-specific worth keeping, record it there.
 
@@ -104,7 +104,7 @@ Implementation work defaults to **Opus** — don't spend Fable on tasks that don
 ### When to Spawn Which Agent
 
 - API shape changes (routes, schemas, client) → **contract-dev** first; server/cli/ui consume afterward.
-- Anything touching workspace files, git auto-commit, projection, queue, locks, SSE → **server-dev**.
+- Anything touching workspace files, git auto-commit, projection, queue, document keys, SSE → **server-dev**.
 - Command surface, output formatting, server lifecycle management, long-poll parking → **cli-dev**.
 - Board, readers, editors, threads UI, kit components → **ui-dev**.
 - Product skills, stewardship rules, workspace scaffolding content → **agent-runtime-dev**.

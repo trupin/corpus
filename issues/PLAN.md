@@ -572,6 +572,7 @@ changes behaviour and nothing below waits on them.
 | SERVER-095 | Resizing a board column wakes the agent to reflect on it (user report) | done | P0 | — |
 | SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | todo | P2 | — |
 | SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | todo | P1 | — |
+| SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | todo | P1 | — |
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P1 | — |
 
 ## Phase 30 — A key instead of a lock (2026-08-11)
