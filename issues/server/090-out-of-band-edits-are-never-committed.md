@@ -320,6 +320,136 @@ favourable ordering; the test does not.
 - [x] Self-review
 - [x] Acceptance criteria verified
 
+## Round 2 — PR #43 review finding (deletion inside an open window)
+
+**Model: opus** (`claude-opus-5[1m]`), 2026-08-12. Scratch workspaces under
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/e2e-090b` and `-090c`, real
+`corpus` server on ports 8793 / 8794 (never 8765 / 5173).
+
+### The finding, and how §4 was read
+
+The reviewer's sequence — edit A, create B, delete B, all out of band inside one
+30 s window — folded the deletion into the window commit and left B's bytes in no
+commit at all. Two §4 paragraphs bear on it and they do **not** conflict: "nothing
+about it is an act and nothing announces it" governs whether a change *closes* a
+window and takes a subject naming what it did (history legibility), while "a
+deletion ... commits by itself: a document created and deleted inside one window
+would otherwise leave nothing in git to recover from" governs whether the content
+a removal takes away stays *recoverable* (data safety). The second names no verb
+and no actor, and the §7 claim it protects ("git preserves history") is about the
+workspace, so it reaches an out-of-band removal.
+
+But the fix does **not** belong in the out-of-band path. Recoverability is a
+property of the **amend**, not of the caller — and the amend already had a guard
+for one instance of it, `amendWouldEmptyHead`, whose own comment names "a document
+created and deleted inside the same idle window" as its canonical trigger. It only
+ever fired when the window held *nothing else*. `git/commit.ts` now asks the
+general question (`amendWouldOrphanContent`): a fold is refused when it would stage
+the removal of a path `HEAD`'s parent does not carry.
+
+**The same hole was blessed in-band**, at `commit.test.ts:688` ("still amends when
+the previous commit says more than this save touches"): `DOC` created in the window
+commit alongside a neighbour, then deleted, amend allowed, `DOC` in no commit. That
+test was rewritten to seed both files *before* the window opens, so it now tests
+folding a removal that is safe. Two tests added: the orphan refusal, and a removal
+whose content the parent holds still folding (the rename).
+
+**Reverted after measurement, and why.** `squash: false` on out-of-band removals
+plus a batch-level rename coalescer both made a removal unfoldable. On a real
+server one `mv` split across two watcher batches and became `doc delete: Mortgage`
+followed by `doc edit: Mortgage` — a subject asserting a deletion that never
+happened. A removal has to stay foldable; the add folding into the unlink's commit
+is what produces `R100`.
+
+### Anti-vacuity
+
+With `amendWouldOrphanContent` disabled and everything else in place, exactly the
+two new tests fail, with the reviewer's own symptom:
+
+```
+FAIL commit.test.ts > refuses a fold that would take the window's only copy of what it removes
+  AssertionError: expected 'amended' to be 'committed'
+FAIL commit-out-of-band.test.ts > keeps a document created and deleted inside one window recoverable
+  Error: Command failed: git show HEAD~1:data/docs/scratch.md
+  fatal: path 'data/docs/scratch.md' does not exist in 'HEAD~1'
+Tests  2 failed | 60 passed (62)
+```
+
+### E2E — the reviewer's exact sequence, real server (port 8794)
+
+`corpus doc create --title Mortgage` → `doc create: Mortgage (doc_oh6na2sk)`, then
+35 s idle. Three changes made **only on disk**, inside one window:
+
+```
+$ perl -pi -e 's/Rate is 6.1%./Rate is 6.4%./' data/docs/inbox/mortgage.md   # edit A
+$ cat > data/docs/inbox/scratch.md <<'EOF' ... EOF                            # create B
+  → HEAD 'doc edit: Scratch' trailers: Corpus-Doc: doc_oh6na2sk  Corpus-Doc: doc_scratchzz   (folded)
+$ rm data/docs/inbox/scratch.md                                               # delete B
+
+$ git log --format='%h %an | %s' -4
+91ed7f2 user | doc delete: Scratch (doc_scratchzz) by user
+fd74d58 user | editing session: 2 documents by user
+065d85a user | editing session: 1 document by user
+43023e9 user | workspace: initialize corpus workspace by user
+
+$ git show HEAD~1:data/docs/inbox/scratch.md
+---
+id: doc_scratchzz
+...
+The only copy of this paragraph exists here.
+```
+
+B is recoverable. And no message names a document its commit does not contain:
+
+```
+fd74d58 'editing session: 2 documents by user'  trailers=[doc_oh6na2sk doc_scratchzz]
+  M data/docs/inbox/mortgage.md
+  A data/docs/inbox/scratch.md
+91ed7f2 'doc delete: Scratch (doc_scratchzz) by user'  trailers=[doc_scratchzz]
+  D data/docs/inbox/scratch.md
+```
+
+`git status --porcelain -- data` empty throughout.
+
+### E2E — an out-of-band rename is unregressed
+
+```
+$ mv data/docs/inbox/mortgage.md data/docs/mortgage.md
+$ git show --name-status --format= HEAD
+R100    data/docs/inbox/mortgage.md      data/docs/mortgage.md
+```
+
+One commit, `R100` — the removal still folds, because the parent carries the old
+path.
+
+### E2E — the documented conservative false positive
+
+In-band `doc create` then `doc move` inside one window: the guard refuses the fold
+(the old path is not in the parent), so the move takes its own commit instead of
+joining the create's. Costs one commit, loses nothing, and the move is still `R100`
+inside it:
+
+```
+5a45e78 'editing session: 1 document by user'   A data/docs/inbox/fresh.md
+9234794 'doc move: ... (doc_ayukxvfw) by user'  R100 data/docs/inbox/fresh.md -> data/docs/archive/fresh.md
+```
+
+### Checks
+
+- `npm run build`; `npx vitest run apps/server` (`VITEST_MAX_THREADS=4`) — **3726
+  passed**, twice consecutively.
+- `eslint` + `prettier --check` + `tsc --noEmit` clean on all four touched files.
+- The 13 pre-existing tests in `commit-out-of-band.test.ts` pass unchanged.
+
+### Flake found and fixed while doing this
+
+The first full-suite run after adding the integration test failed once in five on
+`waitForLog` (fsevents delivery under dozens of concurrent watchers, not a logic
+fault — the assertion saw the *previous* subject). `waitForLog` took an optional
+patience argument (default unchanged, so the 13 existing calls are untouched), the
+two new tests use a 60 s budget and a `quiesce()` between a create and the deletion
+of the same file. Eight consecutive green full-suite runs since.
+
 ## Completion Checklist (orchestrator)
 
 - [ ] Committed with `[ISSUE-ID]` prefix

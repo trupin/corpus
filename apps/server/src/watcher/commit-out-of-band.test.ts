@@ -110,12 +110,38 @@ async function startWatching(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 300));
 }
 
-/** Waits until the batch a change belongs to has been flushed *and* its commit has landed. */
-async function waitForLog(assert: (lines: string[]) => void): Promise<void> {
+/**
+ * Waits until the batch a change belongs to has been flushed *and* its commit
+ * has landed.
+ *
+ * `patience` is for a test that waits on several changes in a row: what is being
+ * waited on is fsevents delivering to chokidar, and under a full suite — dozens
+ * of watchers across four workers, each spawning git — that delivery has been
+ * measured taking longer than {@link WAIT}'s budget for one change in five runs.
+ * Nothing about the assertion changes; it is given more room to arrive.
+ */
+async function waitForLog(
+  assert: (lines: string[]) => void,
+  patience: { timeout: number; interval: number } = WAIT,
+): Promise<void> {
   await vi.waitFor(async () => {
     await watcher?.settled();
     assert(log());
-  }, WAIT);
+  }, patience);
+}
+
+/** {@link waitForLog}'s budget for a test that waits on a sequence of changes. */
+const PATIENT = { timeout: 60_000, interval: 100 } as const;
+
+/**
+ * Lets chokidar drain what it has before the test makes its next change, so a
+ * create and the deletion of the same file are not handed to fsevents inside one
+ * coalescing window.
+ */
+async function quiesce(): Promise<void> {
+  await watcher?.settled();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await watcher?.settled();
 }
 
 beforeEach(() => {
@@ -304,6 +330,98 @@ describe("an out-of-band edit is committed for itself (SPEC.md §4, SERVER-090)"
     // §7: git preserves history — the seed commit still holds the file.
     expect(git("show", "HEAD~1:data/threads/th_aaa111.md")).toContain("Why?");
   });
+
+  it(
+    "keeps a document created and deleted inside one window recoverable",
+    { timeout: 200_000 },
+    async () => {
+      write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%."));
+      seedCommit("seed");
+      await startWatching();
+      const before = git("rev-parse", "HEAD").trim();
+
+      // PR #43's review, verbatim: three ordinary out-of-band changes inside one
+      // window. Folding the third used to amend the second away — `scratch.md`
+      // was created and deleted while the same commit was open, so its bytes
+      // ended up in no commit at all. §4 names this exact case as the reason a
+      // deletion commits alone.
+      write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.4%."));
+      await waitForLog((lines) => {
+        expect(lines[0]).toBe("user|doc edit: Mortgage (doc_mortgage) by user");
+      }, PATIENT);
+
+      write("data/docs/scratch.md", doc("doc_scratch", "Scratch", "The only copy of this."));
+      await waitForLog((lines) => {
+        expect(lines[0]).toBe("user|doc edit: Scratch (doc_scratch) by user");
+      }, PATIENT);
+      // It folded, which is what makes the next step dangerous: one open commit
+      // now holds both the neighbour's edit and this document's whole existence.
+      expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+      expect(git("log", "-1", "--format=%b")).toContain("Corpus-Doc: doc_scratch");
+
+      await quiesce();
+      unlinkSync(abs("data/docs/scratch.md"));
+      // Asserted together so a failure says which it was: a deletion committed
+      // under the wrong subject, or one the watcher has not committed at all.
+      await waitForLog((lines) => {
+        expect({ subject: lines[0], uncommitted: porcelain() }).toEqual({
+          subject: "user|doc delete: Scratch (doc_scratch) by user",
+          uncommitted: "",
+        });
+      }, PATIENT);
+
+      // §7: "deletion is user-only, git preserves history". The deletion stood
+      // alone, so the window commit that holds the file was closed and left
+      // behind rather than amended out from under it.
+      expect(git("show", "HEAD~1:data/docs/scratch.md")).toContain("The only copy of this.");
+      expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("2");
+
+      // Neither message names a document its commit does not contain. The window
+      // closed with no act to name it, so it says what it was and how many it
+      // holds; the deletion says what it deleted and holds only that.
+      expect(log()[1]).toBe("user|editing session: 2 documents by user");
+      expect(git("show", "--name-only", "--format=", "HEAD~1").trim().split("\n").sort()).toEqual([
+        "data/docs/mortgage.md",
+        "data/docs/scratch.md",
+      ]);
+      expect(git("show", "--name-only", "--format=", "HEAD").trim()).toBe("data/docs/scratch.md");
+      const deletionBody = git("log", "-1", "--format=%b");
+      expect(deletionBody).toContain("Corpus-Doc: doc_scratch");
+      expect(deletionBody).not.toContain("doc_mortgage");
+    },
+  );
+
+  it(
+    "keeps a deletion recoverable across the saves that follow it",
+    { timeout: 200_000 },
+    async () => {
+      write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%."));
+      write("data/docs/scratch.md", doc("doc_scratch", "Scratch", "The only copy of this."));
+      seedCommit("seed");
+      await startWatching();
+
+      unlinkSync(abs("data/docs/scratch.md"));
+      await waitForLog((lines) => {
+        expect(lines[0]).toBe("user|doc delete: Scratch (doc_scratch) by user");
+      }, PATIENT);
+
+      // A removal out of band is an ordinary save, so the next one folds into it
+      // — §4's "nothing about it is an act". What may not happen is the fold
+      // carrying the deleted file's last revision off with it, and it cannot:
+      // that revision is in the commit *before* the one being amended.
+      await quiesce();
+      write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.4%."));
+      await waitForLog(() => {
+        expect(git("show", "HEAD:data/docs/mortgage.md")).toContain("Rate is 6.4%.");
+      }, PATIENT);
+
+      expect(
+        git("log", "--diff-filter=D", "--format=%h", "--", "data/docs/scratch.md").trim(),
+      ).not.toBe("");
+      expect(git("show", "HEAD~1:data/docs/scratch.md")).toContain("The only copy of this.");
+      expect(porcelain()).toBe("");
+    },
+  );
 
   it("says nothing about a path the projection names no document for", async () => {
     write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%."));

@@ -688,15 +688,21 @@ describe("createAutoCommitter", () => {
   it("still amends when the previous commit says more than this save touches", async () => {
     const r = makeRepo("amend-wider-head");
     const other = "data/docs/inbox/other.md";
+    // Both files exist *before* the window opens, so neither is a document the
+    // window itself introduced and the amend below takes nothing out of git.
     r.touch(DOC, "one");
     r.touch(other, "kept");
+    r.git("add", "-A");
+    r.git("commit", "-q", "-m", "seed");
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    r.touch(DOC, "edited");
     await r.committer.commit({
       docId: "doc_aaaa1111",
       actor: "user",
-      subject: "doc create",
+      subject: "doc edit",
       paths: [DOC, other],
     });
-    const base = r.git("rev-parse", "HEAD~1").trim();
 
     r.clock += 100;
     rmSync(join(r.root, DOC));
@@ -712,6 +718,91 @@ describe("createAutoCommitter", () => {
     expect(r.git("rev-parse", "HEAD~1").trim()).toBe(base);
     expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).toContain(other);
     expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain(DOC);
+  });
+
+  it("refuses a fold that would take the window's only copy of what it removes", async () => {
+    const r = makeRepo("amend-would-orphan");
+    const other = "data/docs/inbox/other.md";
+    // PR #43's review, in the shape every caller can reach it: the window has
+    // gathered a neighbour, so `amendWouldEmptyHead` is satisfied — HEAD still
+    // says something after the amend — while the document created inside this
+    // very window has its only revision amended away with it.
+    r.touch(other, "neighbour");
+    await r.committer.commit({
+      docId: "doc_bbbb2222",
+      actor: "user",
+      subject: "doc edit: Other",
+      paths: [other],
+    });
+    // Named by position, never by sha: the fold below amends this commit, so a
+    // sha captured here is rewritten under the test (SERVER-091).
+    const beforeWindow = r.git("rev-parse", "HEAD~1").trim();
+
+    r.clock += 100;
+    r.touch(DOC, "the only copy of this");
+    const created = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create: Note",
+      paths: [DOC],
+    });
+    expect(created.kind).toBe("amended");
+    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(beforeWindow);
+
+    r.clock += 100;
+    rmSync(join(r.root, DOC));
+    const deleted = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete: Note",
+      paths: [DOC],
+    });
+
+    // A fresh commit, so the window's commit — which is the only place the
+    // file's bytes ever landed — is closed and left behind rather than rewritten.
+    expect(deleted.kind).toBe("committed");
+    expect(r.git("show", `HEAD~1:${DOC}`)).toBe("the only copy of this");
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain(DOC);
+    expect(r.git("log", "--diff-filter=D", "--format=%s", "--", DOC).trim()).toBe(
+      "doc delete: Note",
+    );
+  });
+
+  it("still folds a removal whose content the parent commit already holds", async () => {
+    const r = makeRepo("amend-removal-safe");
+    const other = "data/docs/inbox/other.md";
+    // The move a real `mv` produces out of band: unlink and add reach the
+    // watcher in different batches, so the add folds into the removal's commit
+    // and git reports one rename. The removal is foldable because the parent
+    // still holds the old path — nothing is being taken out of git.
+    r.touch(DOC, "carried across");
+    r.git("add", "-A");
+    r.git("commit", "-q", "-m", "seed");
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    rmSync(join(r.root, DOC));
+    const removed = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete: Note",
+      paths: [DOC],
+    });
+    expect(removed.kind).toBe("committed");
+
+    r.clock += 100;
+    r.touch(other, "carried across");
+    const added = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note",
+      paths: [other],
+    });
+
+    expect(added.kind).toBe("amended");
+    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(base);
+    expect(r.git("show", "--name-status", "--format=", "HEAD").trim()).toBe(
+      `R100\t${DOC}\t${other}`,
+    );
   });
 
   it("amends under the latest verb's subject, so a folded commit never mislabels itself", async () => {

@@ -695,18 +695,69 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     }
   };
 
-  /** The subset git can be asked about: present on disk, or tracked (so a removal stages). */
-  const stageablePaths = async (paths: readonly string[]): Promise<string[]> => {
+  /**
+   * The subset git can be asked about: present on disk, or tracked (so a removal
+   * stages) — and, separately, which of them this save **removes**.
+   *
+   * `removed` is a by-product rather than a second question: a path gone from
+   * disk but known to git is exactly a path this commit stages as a deletion,
+   * and the walk that decides stageability has already established both halves.
+   * Free where it matters, too — a save whose every path is on disk answers
+   * `removed: []` without spawning anything, which is every autosave.
+   */
+  const stageablePaths = async (
+    paths: readonly string[],
+  ): Promise<{ paths: string[]; removed: string[] }> => {
     const candidates = [...new Set(paths)];
     const missing = candidates.filter((path) => !existsSync(resolve(git.root, path)));
-    if (missing.length === 0) return candidates;
+    if (missing.length === 0) return { paths: candidates, removed: [] };
     const tracked = await git.exec(["ls-files", "--", ...missing]);
     const trackedPaths = tracked.ok
       ? tracked.stdout.split("\n").filter((line) => line.trim() !== "")
       : [];
     const isTracked = (path: string): boolean =>
       trackedPaths.some((entry) => entry === path || entry.startsWith(`${path}/`));
-    return candidates.filter((path) => !missing.includes(path) || isTracked(path));
+    return {
+      paths: candidates.filter((path) => !missing.includes(path) || isTracked(path)),
+      removed: missing.filter(isTracked),
+    };
+  };
+
+  /**
+   * Would folding this save into `HEAD` drop content that `HEAD` alone holds?
+   *
+   * {@link amendWouldEmptyHead} is the same question asked narrowly, and its own
+   * comment names the case both exist for: "a document created and deleted
+   * inside the same idle window". It only catches that when the window holds
+   * *nothing else* — the moment a neighbour's save has folded into the same
+   * commit, `HEAD` still says something after the amend and the guard passes,
+   * while the created-and-deleted document's only revision goes with it. PR #43's
+   * review found it out of band (edit A, create B, delete B, all in one window),
+   * but nothing about it is out of band: it is reachable from any caller whose
+   * window gathered a neighbour, and `commit.test.ts` blessed it in-band.
+   *
+   * Asked of the paths this save **removes**, and of `HEAD`'s parent, because a
+   * path the parent already carries survives the amend in the parent — it is only
+   * a path the window itself introduced that has nowhere else to be. `HEAD` as a
+   * root commit has no parent to survive in, so nothing it holds may be amended
+   * away.
+   *
+   * Deliberately about paths rather than blobs. A move stages its old path as a
+   * removal while the same bytes arrive at the new one, so a content-level
+   * question would allow that fold where this one refuses it — at the cost of one
+   * extra commit in the rare case where the moved document was *also* created
+   * inside the same window. Refusing a fold is always safe (it is what every
+   * other `amendTarget` condition does) and costs a commit; allowing a wrong one
+   * costs the document. The bias goes to the cheap mistake.
+   */
+  const amendWouldOrphanContent = async (removed: readonly string[]): Promise<boolean> => {
+    if (removed.length === 0) return false;
+    const parent = await git.exec(["rev-parse", "--quiet", "--verify", "HEAD^"]);
+    if (!parent.ok || parent.stdout.trim() === "") return true;
+    for (const path of removed) {
+      if (!(await git.exec(["cat-file", "-e", `HEAD^:${path}`])).ok) return true;
+    }
+    return false;
   };
 
   /**
@@ -747,7 +798,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // legitimately names a path that no longer exists (and a never-committed
     // skill folder names one git has never heard of). Filtering keeps one such
     // path from failing the commit for the paths that are real.
-    const paths = await stageablePaths(request.paths);
+    const { paths, removed } = await stageablePaths(request.paths);
     const head = await headSha();
     if (paths.length > 0) {
       // `-A` so a removal (a delete, or a move's old path) stages as a removal
@@ -768,9 +819,15 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     }
 
     const candidate = head === null ? null : await amendTarget(request, head);
-    // An amend that would empty the commit is refused by git; make the fresh
-    // commit that records this save instead of losing it to that refusal.
-    const target = candidate !== null && (await amendWouldEmptyHead(paths)) ? null : candidate;
+    // Two reasons a fold that git would accept must not happen anyway: an amend
+    // that would *empty* the commit git refuses outright, and one that would
+    // take the open window's only copy of what this save removes leaves nothing
+    // to recover from (§4). Both answer "make a fresh commit instead", which is
+    // what the history should record in either case.
+    const unfoldable =
+      candidate !== null &&
+      ((await amendWouldEmptyHead(paths)) || (await amendWouldOrphanContent(removed)));
+    const target = unfoldable ? null : candidate;
     // A save that cannot fold is a save the open window did not take, which is
     // exactly what "the window closed" means — because the other party wrote,
     // because it went quiet, because it aged out, or because this write is one of

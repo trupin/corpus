@@ -622,7 +622,7 @@ const THREADS = {
     quote: "file captures without renaming them", on: "skill_comment", status: "open",
     turns: [
       { who: "user", when: "Jul 21", body: "This is wrong — I *want* captures retitled. My titles are throwaway; give them proper ones when filing." },
-      { who: "agent", when: "Jul 21", body: "Updated the instruction: captures get a descriptive title on filing, original text preserved in the body. Also added an example.", trace: "edited skill: comment · rollback available" },
+      { who: "agent", when: "Jul 21", body: "Updated the instruction: captures get a descriptive title on filing, original text preserved in the body. Also added an example.", trace: "edited skill: comment" },
     ],
     reply: "The retitling rule has applied to 4 captures since — spot-check Inbox and comment here if any title misses.",
   },
@@ -836,7 +836,7 @@ const DOCS = {
       "h2:Stewardship",
       "p:While handling any comment: update stale linked docs you touch, write durable knowledge into documents, and say what you changed in the reply. Archive, never delete.",
       "h2:Recovery",
-      "p:If an edit to this skill breaks the loop: corpus skill rollback comment — restores last-known-good from git.",
+      "p:If an edit to this skill breaks the loop, the repair does not go through the agent — there is none running. Halt the queue, restore the file from git in the workspace, and resume; the watcher commits it as the out-of-band user edit it is (§7).",
     ],
     backlinks: [],
   },
@@ -1130,7 +1130,7 @@ function readerHTML(docId) {
   }
   if (d.type === "skill") {
     return fm + changeNoticeHTML(docId) + `<h1 class="doc-title" contenteditable="true" spellcheck="false">${esc(d.title)}</h1>
-      <div class="skill-fm"><b>name:</b> ${d.skillMeta.name} · <b>description:</b> ${esc(d.skillMeta.description)}<br><b>rollback:</b> corpus skill rollback ${d.skillMeta.name} <span class="chip good" style="margin-left:6px">last-known-good ✓</span></div>
+      <div class="skill-fm"><b>name:</b> ${d.skillMeta.name} · <b>description:</b> ${esc(d.skillMeta.description)}</div>
       <div class="doc-body">${bodyHTML(d)}</div>` + backlinksHTML(d);
   }
   const edT = ` contenteditable="true" spellcheck="false"`;

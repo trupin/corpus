@@ -37,17 +37,45 @@
 // the author. It is `user`, because the watcher cannot know it was anyone else
 // and a person editing their own files is the only actor §2 rule 1 describes.
 //
-// **A removal is not §4's "deletion that commits alone" either.** §4 gives a
-// deletion its own commit so that "a document created and deleted inside one
-// window" still leaves something in git; that rule is about the *verb*
-// `DELETE /api/docs/{id}`, and §4's out-of-band paragraph says in as many words
-// that nothing the watcher picks up is an act. Folding is also what makes a
-// rename come out right: `mv` reaches chokidar as unlink-then-add, and the two
-// halves folding into one commit is what git reports as `R100` rather than as a
-// deletion followed by an unrelated creation. What the fold costs is narrow and
-// strictly better than what preceded it: a file **created and deleted while the
-// same window was open** leaves no revision behind — but before this module
-// existed it left none either, having never been committed at all.
+// **A removal here is an ordinary save, and that is now safe (PR #43 review).**
+// This module used to argue the point at length: §4's "a **deletion** closes the
+// open window, lets that commit land, and then commits the deletion by itself"
+// sits in a list of *acts*, and §4's out-of-band paragraph says in as many words
+// that nothing the watcher picks up is one, so a removal folded like any save.
+// The review found what that costs. Three ordinary out-of-band changes inside one
+// window — edit A (commit `C1` holds A), create B (`C1` amended, holds A+B),
+// delete B — folded the third into `C1`, and `C1` then held A alone. B's bytes
+// were in no commit at all. That is §4's own stated reason ("a document created
+// and deleted inside one window would otherwise leave nothing in git to recover
+// from"), reached by a different door than the verb.
+//
+// The two paragraphs turn out not to be in tension, because they answer different
+// questions. "Nothing about it is an act and nothing announces it" is about how
+// the history **reads** — whether the change closes a window and takes a subject
+// naming what it did — and it still holds here in full. "A deletion ... commits
+// by itself" is about whether the content a removal takes away stays
+// **recoverable**; its reason names no verb and no actor, only a window, a create
+// and a delete, and §7's claim it protects ("deletion is user-only, git preserves
+// history") is a claim about the workspace rather than about
+// `DELETE /api/docs/{id}`.
+//
+// So the fix is not here. Recoverability is a property of the **amend**, not of
+// the caller, and the amend already had a guard for one instance of it —
+// `amendWouldEmptyHead`, whose own comment names "a document created and deleted
+// inside the same idle window" as its canonical trigger. It only ever caught the
+// case where the window held nothing else. `git/commit.ts` now asks the general
+// question (`amendWouldOrphanContent`), which covers every caller and leaves this
+// one saying exactly what §4 says it is: an ordinary save.
+//
+// Two things that were tried and reverted, because they belong to the act rule
+// and not to the data rule: passing `squash: false` on a removal, and joining a
+// rename's halves before git sees them. Both made a removal unfoldable, and a
+// removal has to stay foldable — `mv` reaches chokidar as unlink-then-add, and
+// on a real server the two halves land in **different** batches, so what makes
+// git report `R100` rather than a deletion followed by an unrelated creation is
+// precisely the add folding into the unlink's commit. Measured live: with the
+// removal standing alone, one `mv` became `doc delete: Mortgage` followed by
+// `doc edit: Mortgage` — a subject asserting a deletion that never happened.
 //
 // **Nothing here writes a file.** A commit takes the working tree as it stands,
 // which is what makes the anchor reconciliation's rewrite and the person's own
@@ -121,11 +149,16 @@ export interface OutOfBandCommitterOptions {
  *
  * One `commit` call per document rather than one per batch, because that is what
  * a window *is*: each call folds into the party's open window, so a batch of
- * three documents is one commit carrying three `Corpus-Doc` trailers — the same
- * commit three separate saves a second apart would have produced. Handing the
- * committer a set of documents instead would mean `docIds`, which is how a caller
- * declares an **act** (§4's "One action, one commit"), and an external editor
- * saving three files is not one act.
+ * three edited documents is one commit carrying three `Corpus-Doc` trailers —
+ * the same commit three separate saves a second apart would have produced.
+ * Handing the committer a set of documents instead would mean `docIds`, which is
+ * how a caller declares an **act** (§4's "One action, one commit"), and an
+ * external editor saving three files is not one act.
+ *
+ * A **removal** is the one change in a batch that does not fold, in either
+ * direction (§4's "Two acts commit alone"; see the header). Deleting three
+ * documents out of band is therefore three commits, exactly as deleting them
+ * through `DELETE /api/docs/{id}` is.
  *
  * Sequential and awaited: `AutoCommitter.commit` serializes on the git lock
  * anyway, and folding depends on each call seeing the window the previous one
