@@ -19,6 +19,7 @@ import { applyBulkAction } from "./bulk.js";
 import { createDocument } from "./create.js";
 import { deleteDocument } from "./delete.js";
 import { moveDocument } from "./move.js";
+import { patchDocument } from "./patch.js";
 import { loadDocument, toWireDoc } from "./read.js";
 import { updateDocument } from "./update.js";
 import {
@@ -123,6 +124,24 @@ export function mountDocWriteRoutes(
     );
     reportWarnings(workspace, id, result);
     return c.json({ doc, anchors, warnings: serializeWarnings(result) }, 200);
+  });
+
+  // SPEC.md §9.2's anchored edit, mounted immediately after the whole-body one
+  // because it exists to be preferred over it (SERVER-079). It shares this
+  // route's `mutex`: matching `old` and writing the result have to be one
+  // critical section, and they contend with every other writer of the same file.
+  app.openapi(contractRoutes.patchDoc, async (c) => {
+    const { id } = c.req.valid("param");
+    const actor = actorOf(c.req.valid("header"));
+    const { doc, anchors, result, replaced } = await patchDocument(
+      workspace,
+      mutex,
+      actor,
+      id,
+      c.req.valid("json"),
+    );
+    reportWarnings(workspace, id, result);
+    return c.json({ doc, anchors, warnings: serializeWarnings(result), replaced }, 200);
   });
 
   app.openapi(contractRoutes.moveDoc, async (c) => {

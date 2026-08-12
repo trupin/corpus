@@ -30,6 +30,16 @@ export type { DeleteOutcome, DeletePlan } from "./delete.js";
 export { assertDocumentKey, documentKey } from "./key.js";
 export { assertMovable, moveDocument, planMove } from "./move.js";
 export type { MovePlan } from "./move.js";
+// SPEC.md §9.2's anchored patch: locate and splice, then the ordinary save.
+export {
+  findOccurrences,
+  multipleMatchesMessage,
+  noMatchMessage,
+  patchConflict,
+  patchDocument,
+  spliceAt,
+} from "./patch.js";
+export type { PatchOutcome } from "./patch.js";
 export {
   anchorClaimantIds,
   findDocumentRow,
