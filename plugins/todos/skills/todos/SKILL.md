@@ -53,13 +53,20 @@ A new todo document starts from the todo template's starter lines; a list with
 nothing on it is a valid list, not a broken one. Do not create a second list
 for something an existing one covers.
 
-`add` and `check` take the document's edit lock, so the write is refused with a
-`423` while the person has that document open. That one is **not** a refusal you
-report and finish: reply saying the change is ready and will land as soon as the
-document is free, then hand the event back to the orchestrate skill naming the
-locked document, exactly as the comment skill teaches. Never retry it, never
-break the lock, and never complete the event — a completed write nobody made is
-the one outcome the person cannot see.
+`add` and `check` each name their own delta — one line of one list — so they
+need no document key and are never refused for someone else editing the
+document. What they do check is the item they were pointed at: the request
+carries the text the CLI just read at that index, so an item that moved under
+you is refused with a `409` saying it "changed under you; nothing was written"
+rather than toggling whatever slid into its place. That refusal is a re-read,
+not a report: run `corpus todos list "<list>"` again, find the item in the list
+as it now stands, and re-run the command against it.
+
+Where a person has an edit session open on the list — which a read tells you,
+and nothing refuses — the courteous move is the comment skill's: stand aside,
+say the change is ready and lands once they are done, and hand the event back to
+the orchestrate skill naming that document. Never complete the event on a write
+nobody made.
 
 If `corpus todos add` or `check` refuses with "has malformed `items`" or
 "carries items in its body _and_ in its `items` frontmatter", the document is a

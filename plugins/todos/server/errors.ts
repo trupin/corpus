@@ -15,11 +15,12 @@ import { TodoItemError } from "../items.js";
  * - a {@link TodoItemError} is this plugin's own refusal, with the status it
  *   chose (`400` for a malformed or out-of-range write, `409` for the
  *   concurrency guard);
- * - anything the plugin **context** threw — a `404` from `getDoc`, a `423` from
- *   a locked `updateDoc`, a `400` from the write path's own validation — is
+ * - anything the plugin **context** threw — a `404` from `getDoc`, a `409`
+ *   `stale_key` refusal from a write whose key no longer names the document's
+ *   version (SPEC.md §7), a `400` from the write path's own validation — is
  *   already an HTTP-shaped error, recognised structurally and passed through
- *   with its status and body intact, so a locked document still reads as
- *   `423 locked` and not as an opaque plugin failure;
+ *   with its status and body intact, so a refused write still reads as
+ *   `409 stale_key` and not as an opaque plugin failure;
  * - anything else is re-thrown, so the server's `onError` logs it as the
  *   genuine `500` it is instead of this module inventing a friendly message for
  *   a bug.

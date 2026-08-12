@@ -41,7 +41,14 @@ const NOW = Date.parse("2026-07-21T10:00:00.000Z");
 
 interface Recorded {
   readonly keys: (readonly QueryKeySegment[])[];
-  readonly updates: { id: string; actor: Actor; extra: unknown; body: string | undefined }[];
+  readonly updates: {
+    id: string;
+    actor: Actor;
+    extra: unknown;
+    body: string | undefined;
+    /** SPEC.md §7's key, as the patch presented it — `undefined` is a refusal. */
+    key: string | undefined;
+  }[];
 }
 
 /**
@@ -80,9 +87,41 @@ function httpish(status: number, code: string, message: string): unknown {
 }
 
 /**
+ * SPEC.md §7's key, as this fake derives it: 64 lowercase hexadecimal
+ * characters over everything the fake actually stores — the body and `extra`
+ * together.
+ *
+ * The real server takes a SHA-256 of the document file's stored bytes
+ * (`apps/server/src/docs/key.ts`); nothing here can, because there is no file,
+ * and a plugin may not import a hash from outside its allowed surface anyway
+ * (`imports.test.ts`). What matters is the property the check rests on and not
+ * the algorithm: the key **changes iff the stored document changes**, so a key
+ * computed from a document that has since been written no longer matches —
+ * which is the only thing the routes under test can be right or wrong about.
+ */
+function keyOf(body: string, extra: Readonly<Record<string, unknown>>): string {
+  const stored = `${JSON.stringify(extra)}\n${body}`;
+  let hash = 0x811c9dc5;
+  const parts: string[] = [];
+  for (let round = 0; round < 8; round += 1) {
+    for (let at = 0; at < stored.length; at += 1) {
+      hash ^= stored.charCodeAt(at) + round;
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    parts.push(hash.toString(16).padStart(8, "0"));
+  }
+  return parts.join("");
+}
+
+/**
  * A todo document, body-backed since PLUGINS-005. `extra` is only ever the
  * *legacy* `items` key — a document that has not been migrated yet — which is
  * why it is a separate, explicit argument rather than the default.
+ *
+ * It carries a `key` and a `userEditing` flag because **every read of a whole
+ * document does** (SPEC.md §7): the key is what a body-replacing write has to
+ * present back, and a fixture without one would let this suite pass while the
+ * routes wrote blind.
  */
 function docFixture(
   id: string,
@@ -93,7 +132,12 @@ function docFixture(
     readonly status?: "open" | "archived";
   } = {},
 ): Doc {
+  const extra: Record<string, unknown> = "legacy" in options ? { items: options.legacy } : {};
   return {
+    key: keyOf(body, extra),
+    // The advisory signal, never a gate: nothing in these routes reads it, and
+    // §11 is explicit that the board is never read-only.
+    userEditing: false,
     frontmatter: {
       id,
       type: options.type ?? TODO_DOC_TYPE,
@@ -110,7 +154,7 @@ function docFixture(
       order: null,
       query: null,
       column: null,
-      extra: "legacy" in options ? { items: options.legacy } : {},
+      extra,
     },
     body,
     path: `data/docs/todos/${id}.md`,
@@ -148,15 +192,48 @@ interface Harness {
   readonly docs: Map<string, Doc>;
 }
 
+/** The body an out-of-band write leaves behind, so an assertion can name it. */
+const ELSEWHERE_BODY = "## Notes\n\n- [ ] someone else got here first\n";
+
+/**
+ * **Another writer lands a change between the read the patch was computed from
+ * and the write** — the editor saving, the agent's CLI call, a second browser.
+ *
+ * The one interleaving a whole-body patch cannot survive on its own, and
+ * therefore the one SPEC.md §7's key exists to refuse. Written as an `onWrite`
+ * hook because that is the only point inside the lane a test can reach.
+ * Idempotent: a batch verb calls it once per document, and a second overwrite
+ * would refuse a retry that was never attempted.
+ */
+function overwriteFromElsewhere(
+  id: string,
+  docs: Map<string, Doc>,
+  only?: ReadonlySet<string>,
+): void {
+  if (only !== undefined && !only.has(id)) return;
+  const current = docs.get(id);
+  if (current === undefined || current.body === ELSEWHERE_BODY) return;
+  docs.set(id, {
+    ...current,
+    body: ELSEWHERE_BODY,
+    key: keyOf(ELSEWHERE_BODY, current.frontmatter.extra),
+  });
+}
+
 interface HarnessOptions {
   /**
-   * Fails the write. Invoked inside the lane, *after* any mutation callback
-   * has run — where the real context's edit-lock refusal happens, which is why
-   * the seam requires the callback to be a pure recompute. It is handed the
+   * Runs inside the lane, *after* any mutation callback has run and *before*
+   * the write — where the real context's own refusals land, which is why the
+   * seam requires the callback to be a pure recompute. It is handed the
    * document id so a batch verb can be driven past a failure on **one** of the
    * documents it walks.
+   *
+   * Throwing fails the write. Writing into the store it is handed is the other
+   * use: it is the one way a test can move the document out from under a patch
+   * that has already been computed, which is what makes SPEC.md §7's stale-key
+   * refusal reachable at all.
    */
-  readonly onWrite?: (id: string) => void;
+  readonly onWrite?: (id: string, docs: Map<string, Doc>) => void;
 }
 
 function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harness {
@@ -170,19 +247,35 @@ function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harne
     return doc;
   };
 
-  /** The write half of both write verbs — the lane is the caller's business. */
+  /**
+   * The write half of both write verbs — the lane is the caller's business.
+   *
+   * §7's key check sits here, against the document *as the write is about to
+   * overwrite it*, exactly like `assertDocumentKey` in `apps/server`: comparing
+   * against a copy read earlier would refuse nothing. The missing-key half of
+   * the check is {@link parsePatch}'s, because the contract's own refinement
+   * answers it before any of this runs.
+   */
   const write = async (actor: Actor, id: string, patch: UpdateDocRequest): Promise<Doc> => {
+    options.onWrite?.(id, docs);
     const doc = read(id);
-    options.onWrite?.(id);
+    if (patch.key !== undefined && patch.key !== doc.key) {
+      throw httpish(
+        409,
+        "stale_key",
+        `the key presented for ${id} names a version this document no longer is`,
+      );
+    }
     await writeWindow();
-    recorded.updates.push({ id, actor, extra: patch.extra, body: patch.body });
+    recorded.updates.push({ id, actor, extra: patch.extra, body: patch.body, key: patch.key });
+    const body = patch.body ?? doc.body;
+    const extra = mergeExtra(doc.frontmatter.extra, patch.extra);
     const next: Doc = {
       ...doc,
-      body: patch.body ?? doc.body,
-      frontmatter: {
-        ...doc.frontmatter,
-        extra: mergeExtra(doc.frontmatter.extra, patch.extra),
-      },
+      body,
+      // Every write that lands hands out a fresh key for the next one (§7).
+      key: keyOf(body, extra),
+      frontmatter: { ...doc.frontmatter, extra },
     };
     docs.set(id, next);
     return next;
@@ -736,46 +829,50 @@ describe("migration", () => {
 
 /**
  * FIX 3. Only `TodoItemError` used to be caught, so the first document whose
- * write failed for any other reason — an edit lock, a document deleted between
- * the listing and the write, a git failure — aborted the whole run: the
- * successes already on disk were never named, never broadcast, and the user was
- * given no way to tell how far it got. A migration is a batch, and a batch
- * reports per item.
+ * write failed for any other reason — a §7 stale-key refusal, a document
+ * deleted between the listing and the write, a git failure — aborted the whole
+ * run: the successes already on disk were never named, never broadcast, and the
+ * user was given no way to tell how far it got. A migration is a batch, and a
+ * batch reports per item.
  */
 describe("migrate past a failure it does not own", () => {
-  const withLock = (locked: ReadonlySet<string>): Harness =>
+  /**
+   * A run in which the named documents are written by someone else between the
+   * migration's read and its write — the ordinary way one document of a batch
+   * is refused now that §7's key is what stops a blind overwrite.
+   */
+  const withRefusal = (refused: ReadonlySet<string>): Harness =>
     harness(
       [
         docFixture("doc_a", "## Notes\n", { legacy: [{ text: "a", done: false }] }),
         docFixture("doc_held", "## Notes\n", { legacy: [{ text: "held", done: false }] }),
         docFixture("doc_c", "## Notes\n", { legacy: [{ text: "c", done: false }] }),
       ],
-      {
-        onWrite: (id) => {
-          if (locked.has(id)) throw httpish(423, "locked", `${id} is locked by user`);
-        },
-      },
+      { onWrite: (id, docs) => overwriteFromElsewhere(id, docs, refused) },
     );
 
-  it("records the locked document as a conflict and converts the rest", async () => {
-    const m = withLock(new Set(["doc_held"]));
+  it("records the refused document as a conflict and converts the rest", async () => {
+    const m = withRefusal(new Set(["doc_held"]));
     const report = (await (await call(m, "POST", "/migrate")).json()) as {
       migrated: { docId: string }[];
-      conflicts: { docId: string; reason: string }[];
+      conflicts: { docId: string; title: string; reason: string }[];
     };
     expect(report.migrated.map((entry) => entry.docId)).toEqual(["doc_a", "doc_c"]);
-    expect(report.conflicts).toEqual([
-      { docId: "doc_held", title: "List doc_held", reason: "doc_held is locked by user" },
-    ]);
+    expect(report.conflicts).toHaveLength(1);
+    expect(report.conflicts[0]).toMatchObject({ docId: "doc_held", title: "List doc_held" });
+    // The write path's own sentence, not "[object Object]" and not a friendly
+    // message this plugin invented for a refusal it does not own.
+    expect(report.conflicts[0]?.reason).toContain("names a version this document no longer is");
     // And the two that did convert are on disk, not merely reported.
     expect(m.docs.get("doc_c")?.body).toBe("## Notes\n\n- [ ] c\n");
+    // The refused one still has its items where they were: nothing was written.
     expect(m.docs.get("doc_held")?.frontmatter.extra).toEqual({
       items: [{ text: "held", done: false }],
     });
   });
 
   it("still broadcasts the documents that did convert", async () => {
-    const m = withLock(new Set(["doc_held"]));
+    const m = withRefusal(new Set(["doc_held"]));
     await call(m, "POST", "/migrate");
     expect(m.recorded.keys).toEqual([["lists"]]);
   });
@@ -877,21 +974,22 @@ describe("POST /migrate?dryRun=true", () => {
 });
 
 describe("failures the plugin does not own", () => {
-  it("passes a locked document's 423 through with its body intact", async () => {
-    // The refusal lands after the mutation callback ran, exactly where the real
-    // context's lock guard is — and nothing must be written or broadcast.
-    const locked = harness([docFixture("doc_week", "## Notes\n")], {
+  it("passes the write path's own refusal through with its body intact", async () => {
+    // The refusal lands after the mutation callback ran, which is exactly why
+    // the seam requires that callback to be a pure recompute — and nothing must
+    // be written or broadcast.
+    const refused = harness([docFixture("doc_week", "## Notes\n")], {
       onWrite: () => {
-        throw httpish(423, "locked", "doc_week is locked by user");
+        throw httpish(507, "internal_error", "the disk is full");
       },
     });
-    const response = await call(locked, "POST", "/doc_week/items", { text: "a" });
-    expect(response.status).toBe(423);
+    const response = await call(refused, "POST", "/doc_week/items", { text: "a" });
+    expect(response.status).toBe(507);
     expect(await response.json()).toEqual({
-      code: "locked",
-      message: "doc_week is locked by user",
+      code: "internal_error",
+      message: "the disk is full",
     });
-    expect(locked.recorded.keys).toEqual([]);
+    expect(refused.recorded.keys).toEqual([]);
   });
 
   it("never invents a friendly body for a failure it does not own", async () => {
@@ -924,6 +1022,119 @@ describe("failures the plugin does not own", () => {
     });
     expect(response.status).toBe(500);
     expect(inert.recorded.keys).toEqual([]);
+  });
+});
+
+/**
+ * SPEC.md §7 "A key, not a lock" — PLUGINS-017.
+ *
+ * Every write in this plugin replaces the document's whole body, which is
+ * exactly the write §7 refuses to let anyone make blind. The plugin was already
+ * *correct* — `mutateDoc` hands the callback the document read inside the lane,
+ * so the version it recomputes from is by construction the version it
+ * overwrites — but nothing checked it, and "correct because of where the read
+ * happens" is a property that survives only until someone moves the read.
+ *
+ * So the patch presents `doc.key`, and these tests are what makes the guarantee
+ * an assertion instead of a coincidence: the key presented is the one the
+ * callback was handed (not one re-derived just before writing, which would name
+ * a version nobody read), and a patch whose key has gone stale is refused with
+ * nothing written.
+ */
+describe("§7's key on every body write", () => {
+  const currentKey = (subject: Harness, id: string): string | undefined =>
+    subject.docs.get(id)?.key;
+
+  /** Every route that rewrites a body — which here is every route that writes. */
+  const bodyWrites = [
+    { verb: "append", method: "POST", path: "/doc_week/items", body: { text: "Book dentist" } },
+    {
+      verb: "update",
+      method: "PUT",
+      path: "/doc_week/items/0",
+      body: { done: true, expectedText: "Renew passport" },
+    },
+    {
+      verb: "delete",
+      method: "DELETE",
+      path: "/doc_week/items/0",
+      body: { expectedText: "Renew passport" },
+    },
+  ];
+
+  it.each(bodyWrites)(
+    "presents the key of the document the callback was handed ($verb)",
+    async ({ method, path, body }) => {
+      const before = currentKey(h, "doc_week");
+      const response = await call(h, method, path, body);
+      expect(response.status).toBeLessThan(300);
+      expect(h.recorded.updates).toHaveLength(1);
+      expect(h.recorded.updates[0]?.key).toBe(before);
+      // And the write handed out a fresh one, as §7 requires of every write that
+      // lands — so the pre-write key is not still valid afterwards.
+      expect(currentKey(h, "doc_week")).not.toBe(before);
+    },
+  );
+
+  it("presents a key on the migration's write too", async () => {
+    const m = harness([
+      docFixture("doc_legacy", "## Notes\n", { legacy: [{ text: "old", done: false }] }),
+    ]);
+    const before = currentKey(m, "doc_legacy");
+    expect((await call(m, "POST", "/migrate")).status).toBe(200);
+    expect(m.recorded.updates[0]?.key).toBe(before);
+  });
+
+  /**
+   * The refusal this issue exists for: the document is written by someone else
+   * between the read the patch was computed from and the write itself. Nothing
+   * in the plugin can prevent that interleaving — the key is what turns it from
+   * a silent overwrite into a refusal the caller is told about.
+   */
+  it("is refused when the document changed under a patch already computed", async () => {
+    const raced = harness([docFixture("doc_week", WEEK_BODY)], {
+      onWrite: (id, docs) => {
+        overwriteFromElsewhere(id, docs);
+      },
+    });
+    const response = await call(raced, "POST", "/doc_week/items", { text: "Book dentist" });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "stale_key" });
+    // Nothing written: the other writer's body stands, untouched, and the item
+    // the caller tried to add is theirs to resend.
+    expect(raced.docs.get("doc_week")?.body).toBe(ELSEWHERE_BODY);
+    expect(raced.recorded.updates).toEqual([]);
+    expect(raced.recorded.keys).toEqual([]);
+  });
+
+  it("is refused on the migration's write for the same reason", async () => {
+    const raced = harness(
+      [docFixture("doc_legacy", "## Notes\n", { legacy: [{ text: "old", done: false }] })],
+      {
+        onWrite: (id, docs) => {
+          overwriteFromElsewhere(id, docs);
+        },
+      },
+    );
+    const report = (await (await call(raced, "POST", "/migrate")).json()) as {
+      migrated: unknown[];
+      conflicts: { reason: string }[];
+    };
+    expect(report.migrated).toEqual([]);
+    expect(report.conflicts[0]?.reason).toContain("names a version this document no longer is");
+    // The legacy key survives, because the migration that would have cleared it
+    // never happened.
+    expect(raced.docs.get("doc_legacy")?.frontmatter.extra).toEqual({
+      items: [{ text: "old", done: false }],
+    });
+  });
+
+  it("lands a second write, because the first handed out a fresh key", async () => {
+    expect((await call(h, "POST", "/doc_week/items", { text: "one" })).status).toBe(201);
+    expect((await call(h, "POST", "/doc_week/items", { text: "two" })).status).toBe(201);
+    const keys = h.recorded.updates.map((entry) => entry.key);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys.every((key) => key !== undefined)).toBe(true);
   });
 });
 

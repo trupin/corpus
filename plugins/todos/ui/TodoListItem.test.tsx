@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { DocRow, Lock } from "@corpus/contract";
+import type { DocRow } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -44,13 +44,11 @@ interface MountOptions {
   readonly items?: readonly Item[];
   readonly lists?: readonly Record<string, unknown>[] | null;
   readonly onOpen?: (row: DocRow) => void;
-  readonly locks?: readonly Lock[];
 }
 
 function mountRow(row: DocRow, options: MountOptions = {}): ReturnType<typeof transport> {
   const wire = transport({
     docs: [row],
-    locks: options.locks ?? [],
     lists: options.lists ?? [listPayload(row.id, row.title, options.items ?? DEFAULT_ITEMS)],
   });
   render(<TodoListItem row={row} now={NOW} onOpen={options.onOpen} />, {
@@ -167,13 +165,23 @@ describe("TodoListItem", () => {
     }).not.toThrow();
   });
 
-  it("keeps the row's own signals: the lock chip", async () => {
-    mountRow(todoRow(), {
-      locks: [{ docId: "doc_week", holder: "agent", acquired: NOW.toISOString(), ttl: 300 }],
-    });
+  /**
+   * SPEC.md §7 replaced the per-document lock with a key, and §11 says the board
+   * is never read-only. So this row asks no lock service anything and draws no
+   * chip announcing that another writer holds the document — the assertion is
+   * the inverse of the one that used to stand here, and it is the one worth
+   * keeping: a row that quietly re-grew such a chip would be the read-only
+   * banner in miniature.
+   */
+  it("asks for no lock and draws no holder chip", async () => {
+    const wire = mountRow(todoRow());
     await waitFor(() => {
-      expect(document.querySelector(".row-lock")).toBeTruthy();
+      expect(previews()).toHaveLength(2);
     });
+    expect(wire.calls.some((call) => new URL(call.url).pathname.startsWith("/api/locks"))).toBe(
+      false,
+    );
+    expect(document.querySelector(".row-lock")).toBeNull();
   });
 
   it("keeps the row's own signals: the working dot and the unread pill", () => {
