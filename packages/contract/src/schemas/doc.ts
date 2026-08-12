@@ -392,8 +392,26 @@ export const DocMutationResponseSchema = z
   .object({ doc: DocSchema, warnings: warningsField })
   .openapi("DocMutationResponse");
 
+/**
+ * What a write that changes a document's **content** answers with — the saved
+ * document (carrying its fresh key), what reconciliation did to the anchors, and
+ * §14's warnings.
+ *
+ * Shared verbatim between `PUT /api/docs/{id}` and `POST /api/docs/{id}/patch`
+ * (`./doc-patch.js`) rather than restated, so the two cannot describe the same
+ * outcome differently: a patch is an ordinary write once applied, and "ordinary"
+ * has to be true of the response as well as of the commit. Spread rather than
+ * `.extend()`-ed, for the reason `docRowBaseShape` documents — zod-to-openapi
+ * carries a registered component name onto anything derived from it.
+ */
+export const docWriteResponseShape = {
+  doc: DocSchema,
+  anchors: AnchorReconciliationSchema,
+  warnings: warningsField,
+} as const;
+
 export const UpdateDocResponseSchema = z
-  .object({ doc: DocSchema, anchors: AnchorReconciliationSchema, warnings: warningsField })
+  .object({ ...docWriteResponseShape })
   .openapi("UpdateDocResponse");
 
 /**

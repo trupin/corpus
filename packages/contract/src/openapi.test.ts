@@ -2369,6 +2369,7 @@ describe("a key on every read, and on every write that overwrites", () => {
     ["/api/docs/{id}/move", "post", "200"],
     ["/api/docs/{id}/archive", "post", "200"],
     ["/api/docs/{id}/unarchive", "post", "200"],
+    ["/api/docs/{id}/patch", "post", "200"],
   ])("hands a key back from %s %s", (path, method, status) => {
     const named = JSON.stringify(operation(path, method).responses?.[status]).match(
       /#\/components\/schemas\/(\w+)/,
@@ -2392,7 +2393,12 @@ describe("a key on every read, and on every write that overwrites", () => {
     const carriers = Object.entries(componentSchemas ?? {})
       .filter(([name, schema]) => name !== "Doc" && JSON.stringify(schema).includes(DOC_REF))
       .map(([name]) => name);
-    expect(carriers.sort()).toEqual(["DocMutationResponse", "StaleKeyError", "UpdateDocResponse"]);
+    expect(carriers.sort()).toEqual([
+      "DocMutationResponse",
+      "PatchDocResponse",
+      "StaleKeyError",
+      "UpdateDocResponse",
+    ]);
   });
 
   /**
@@ -2450,14 +2456,30 @@ describe("a key on every read, and on every write that overwrites", () => {
   });
 
   /**
-   * `409` is taken by the re-attach refusal, and the two must stay tellable
-   * apart where clients branch — the `code`. `stale_key` takes the seat `locked`
-   * vacated, so `ERROR_CODES` still has seven members.
+   * `409` is taken by the re-attach refusal and the patch refusal, and all three
+   * must stay tellable apart where clients branch — the `code`, then `reason`.
+   * `stale_key` takes the seat `locked` vacated, so `ERROR_CODES` still has
+   * seven members: the two state refusals narrow `conflict` with a `reason`
+   * rather than each claiming a code of its own, and one `code` never means two
+   * things.
    */
-  it("gives the two 409s distinguishable codes", () => {
+  it("gives the three 409s distinguishable codes", () => {
     expect(componentSchemas?.["ReattachConflictError"]?.properties?.["code"]?.enum).toEqual([
       "conflict",
     ]);
+    expect(componentSchemas?.["PatchConflictError"]?.properties?.["code"]?.enum).toEqual([
+      "conflict",
+    ]);
+    // Two `conflict` bodies, told apart by a `reason` vocabulary that does not
+    // overlap — so a caller that reaches the wrong route's narrowing gets a
+    // failed match rather than a plausible wrong answer.
+    const reasonsOf = (name: string) =>
+      componentSchemas?.[name]?.properties?.["reason"]?.enum ?? [];
+    expect(
+      reasonsOf("PatchConflictError").filter((reason) =>
+        reasonsOf("ReattachConflictError").includes(reason),
+      ),
+    ).toEqual([]);
     expect(componentSchemas?.["StaleKeyError"]?.properties?.["code"]?.enum).toEqual(["stale_key"]);
     expect([...ERROR_CODES]).toEqual([
       "bad_request",
@@ -2483,6 +2505,7 @@ describe("a key on every read, and on every write that overwrites", () => {
     ["/api/threads", "post"],
     ["/api/threads/{id}/turns/{ts}", "delete"],
     ["/api/threads/{id}/reattach", "post"],
+    ["/api/docs/{id}/patch", "post"],
   ])("takes no key on %s %s, and says why", (path, method) => {
     const op = operation(path, method);
     expect(op.description).toContain("no key");
@@ -2823,6 +2846,10 @@ describe("§14 warnings reach every mutation response", () => {
     // so a hook that rejects it leaves every one of them on disk and
     // uncommitted — the widest reach any single `commit_failed` has.
     "BulkActionResult",
+    // CONTRACT-046: an applied patch is an ordinary write (SPEC.md §9.2) —
+    // validated, reconciled, auto-committed — so it reaches §14's warnings by
+    // exactly the routes `UpdateDocResponse` does, and shares its shape.
+    "PatchDocResponse",
   ];
 
   /**
@@ -3607,7 +3634,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(16);
+    expect(bodies).toHaveLength(17);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -3660,6 +3687,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/docs": true,
       "POST /api/docs/bulk": true,
       "POST /api/docs/{id}/move": true,
+      "POST /api/docs/{id}/patch": true,
       "POST /api/jobs/{id}/log": true,
       "POST /api/threads": true,
       "POST /api/threads/{id}/reattach": true,

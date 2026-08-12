@@ -258,11 +258,15 @@ export const documentKeyRequestField = DocumentKeySchema.optional().describe(
  * individually, which is literally a write that names its own delta. If one is
  * ever added, it belongs in this list.
  *
- * `POST /api/docs/{id}/patch` (§7's anchored patch) takes **no** key when it
- * lands: it names the text it expects to find, which is the same check by
- * another route, and a patch whose text has moved is refused on its own terms.
- * The route does not exist in this contract yet; the rule is recorded here so
- * that whoever adds it does not add a key to it out of symmetry.
+ * `POST /api/docs/{id}/patch` (§7's anchored patch, `./doc-patch.ts`) takes
+ * **no** key: it names the text it expects to find, which is the same check by
+ * another route, and a patch whose text has moved is refused on its own terms —
+ * with a better message than a key mismatch could give, since it says *which*
+ * text is gone rather than *that* the document changed. This paragraph predates
+ * the route by design, so that whoever added it would not add a key out of
+ * symmetry; CONTRACT-046 landed it in 2026-08-12 without one. The rule stays
+ * recorded for the next writer with the same instinct: a request that already
+ * states the content it is replacing has stated which version it read.
  */
 export const KEYED_UPDATE_FIELDS = ["body"] as const;
 

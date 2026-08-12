@@ -4,6 +4,7 @@ import { capture } from "./capture.js";
 import { checkDocuments } from "./check.js";
 import { doctorDb, rebuildDb } from "./db.js";
 import { getDocDiff } from "./doc-diff.js";
+import { patchDoc } from "./doc-patch.js";
 import { flushEditSession } from "./edit-session.js";
 import {
   archiveDoc,
@@ -55,6 +56,7 @@ export * from "./capture.js";
 export * from "./check.js";
 export * from "./db.js";
 export * from "./doc-diff.js";
+export * from "./doc-patch.js";
 export * from "./docs.js";
 export * from "./edit-session.js";
 export * from "./events.js";
@@ -96,8 +98,13 @@ export * from "./upgrade.js";
  * here. `flushEditSession` follows `getDocDiff` for the same readability
  * reason: SPEC.md §4's edit-acknowledgment surface is those two routes — the
  * signal that ends a session and the read that explains it — and keeping them
- * adjacent is how the pair is found. `searchCorpus` follows the document group,
- * where §9.2 lists it.
+ * adjacent is how the pair is found. `patchDoc` follows `updateDoc` for the same
+ * reason and in §9.2's own bullet order: the whole-body write and the anchored
+ * one belong side by side, because the second exists to be preferred over the
+ * first. Nothing competes with it for a position either — it is one segment
+ * deeper than `/api/docs/{id}`, where the routes at that depth are `POST`s with
+ * distinct static segments. `searchCorpus` follows the document group, where
+ * §9.2 lists it.
  *
  * `applyBulkAction` is registered **before** the parameterised document routes
  * for the ordering reason above: `/api/docs/bulk` is a static segment where
@@ -125,6 +132,7 @@ export const contractRoutes = {
   getDocDiff,
   flushEditSession,
   updateDoc,
+  patchDoc,
   deleteDoc,
   moveDoc,
   archiveDoc,

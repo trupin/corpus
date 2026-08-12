@@ -716,6 +716,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/{id}/patch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Edit a document's body by anchored exact string replacement
+         * @description Edits the body by naming the text to replace rather than by sending a new body: `old` (an excerpt of the body), `new` (its replacement, possibly empty), and `all` (default `false`). **Prefer it over `PUT /api/docs/{id}` for any bounded change.** The whole-body write prices a one-line edit at the length of the document, and — more than the cost — a body the caller never saw cannot survive a body the caller sends: an edit that never carries the rest of the document cannot destroy the rest of the document.
+         *
+         *     **`old` must match the body exactly and uniquely.** Matching is **byte-exact against the body as stored** — the same bytes `GET /api/docs/{id}` returned in `body` — with no normalisation, no trimming, no line-ending translation and no regular expressions, so what you read is what you quote. It is a **body** operation: `body` excludes the frontmatter block, so an excerpt quoting frontmatter matches nothing, and frontmatter is changed by naming its fields on `PUT /api/docs/{id}`.
+         *
+         *     **Zero matches and multiple matches are separate refusals that name the count** — both `409`, distinguished by `reason` and quantified by `matches` — because the recoveries are opposite: re-read the document, versus quote more context. A single *it did not apply* would collapse them and leave the caller guessing. `all: true` lifts the uniqueness requirement and replaces **every occurrence left to right without overlap**; it does not lift the requirement to match at all, so zero occurrences is still refused.
+         *
+         *     **It presents no key** (SPEC.md §7). It names the text it expects to find, which is the same staleness check by another route — and a better one here, since a patch whose text has moved is told *which* text is gone rather than *that* the document changed. Requiring a key would also refuse a perfectly well-anchored patch because an unrelated paragraph moved.
+         *
+         *     **An ordinary write once applied**: validated before writing (SPEC.md §14), anchors reconciled with remapped and orphaned anchors reported (§6), and one auto-commit attributed to the acting party (§4) — the same response shape `PUT /api/docs/{id}` answers with, plus `replaced`. **A patch whose result is the unchanged body is a no-op that writes nothing**: `new` equal to `old` answers `200` with no file change and no commit, rather than a refusal.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description The text to find and what to put in its place. Mandatory: a patch that names no text is not an edit. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PatchDocRequest"];
+                };
+            };
+            responses: {
+                /** @description The saved document — carrying a fresh `key` — the anchor reconciliation report, §14's warnings, and how many occurrences were `replaced`. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PatchDocResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The document's text refuses the patch, and `matches` says how many times `old` occurs in it. `reason: no-match` (`matches: 0`) — the text is not there; re-read the document. `reason: multiple-matches` — the text is there more than once and the patch did not ask for `all`; quote more surrounding context. The two are separate because the recoveries are opposite. Nothing was written. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PatchConflictError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/{id}/move": {
         parameters: {
             query?: never;
@@ -4234,6 +4328,52 @@ export interface components {
             extra?: {
                 [key: string]: unknown;
             };
+        };
+        PatchDocResponse: {
+            doc: components["schemas"]["Doc"];
+            anchors: components["schemas"]["AnchorReconciliation"];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
+            warnings: components["schemas"]["Warning"][];
+            /**
+             * @description How many occurrences of `old` were replaced, counted left to right without overlap. Always `1` unless the request set `all`, and never `0` — a patch that matched nothing is the `409` refusal, not a `200` that changed nothing.
+             *
+             *     A **no-op** (`new` equal to `old`) still reports the occurrences it covered and writes nothing: no file change, no commit. The caller can see that case in its own request, so nothing here has to name it separately.
+             */
+            replaced: number;
+        };
+        PatchConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+            /**
+             * @description Which state refused the patch: the status code says the document's text did, this says how. `no-match`: `old` does not occur in the body at all (`matches` is `0`) — the document is not what you last read, or the excerpt was never in the body (frontmatter is not part of it). Re-read the document and quote from what it says now. `multiple-matches`: `old` occurs more than once (`matches` says how many) and the patch did not ask for `all` — quote more surrounding context until the excerpt is unique, or send `all: true` if replacing every occurrence is genuinely what you meant.
+             * @enum {string}
+             */
+            reason: "no-match" | "multiple-matches";
+            /** @description How many times `old` occurs in the document's body, counted left to right without overlap — the count both refusals name, because the two have different recoveries and a caller must be able to tell them apart without reading English. `0` for `no-match`; two or more for `multiple-matches`. Nothing was written. */
+            matches: number;
+        };
+        PatchDocRequest: {
+            /**
+             * @description The excerpt of the document's body to replace, quoted **exactly** as it is stored — the same bytes `GET /api/docs/{id}` returned in `body`. Matching is byte-exact: no trimming, no whitespace collapsing, no line-ending translation, no case folding, and no regular expressions. Whitespace and indentation are significant.
+             *
+             *     It must match **exactly once**, or the patch is refused with `409` naming how many times it did match — `0` means re-read the document, more than one means quote more surrounding context until the excerpt is unique (or pass `all`). The body here is the markdown **without the frontmatter block**, so an excerpt that quotes frontmatter matches nothing; frontmatter is changed by naming its fields on `PUT /api/docs/{id}`.
+             */
+            old: string;
+            /**
+             * @description What to put in `old`'s place. **May be empty**, which deletes the quoted text — that is the spelling of a deletion, and it is not a refusal.
+             *
+             *     Sending it equal to `old` is a **no-op**: the resulting body is the body it started as, so nothing is written and no commit is made (SPEC.md §9.2). It is answered `200` rather than refused, because a caller that asks for a change already present has got what it asked for.
+             */
+            new: string;
+            /**
+             * @description Replace **every** occurrence of `old` instead of requiring it to be unique. Defaults to `false` — the server applies the default, so omit the field rather than sending `false`.
+             *
+             *     Occurrences are found **left to right and never overlap**: after a match, scanning resumes at the end of the text that matched, so `old: "aa"` finds one occurrence in `"aaa"` and two in `"aaaa"`. The same scan is what counts matches for a refusal, so the number the server reports and the number a caller counts for itself agree.
+             *
+             *     **It lifts uniqueness, never the requirement to match at all**: an `old` that occurs zero times is refused with `409` whether or not `all` is set.
+             */
+            all?: boolean;
         };
         DeleteDocResult: {
             /**
