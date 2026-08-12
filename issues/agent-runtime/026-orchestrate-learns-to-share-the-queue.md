@@ -22,7 +22,7 @@ fable
 ## Summary
 Amend the orchestrate skill for a shared queue. Its claim is now the **orchestrator
 lane**, not the whole queue: the "only process that claims" language is rewritten to the
-per-lane rule, unscoped verbs already mean the orchestrator lane (SERVER-107), and three
+per-lane rule, unscoped verbs already mean the orchestrator lane (SERVER-111), and three
 new behaviors arrive: route the `resident.designated` event (launch a background subagent
 running `/converse th_x` — a long-lived launch, not a job that reports and settles like
 comment work); leave live lanes alone; and pick up fallback work from lapsed lanes as
@@ -32,7 +32,7 @@ ordinary comment work, with one added courtesy — relaunch the listener.
 - [ ] `assets/workspace/claude/skills/orchestrate/SKILL.md` routing table gains `resident.designated` → launch a background subagent applying the **converse** skill with the payload's thread id and persona; the event completes when the launch is made (the listener's lifetime is not the job's); a failed launch fails the event with the reason
 - [ ] The single-consumer paragraph (SKILL.md:17-27 region) rewritten: one orchestrating session per **orchestrator lane**; residents own their lanes; the console's story is per-lane
 - [ ] "Queue state never crosses the boundary" (Delegation) scoped explicitly to the orchestrator's own lane — a resident settling its lane is the design, not a violation
-- [ ] Fallback doctrine: an event claimed unscoped that carries a foreign lane stamp (visible in the claim payload per SERVER-107) is worked as ordinary comment work **plus**: log that the lane's listener lapsed, and launch a fresh `/converse` listener for that lane once, not per event
+- [ ] Fallback doctrine: an event claimed unscoped that carries a foreign lane stamp (visible in the claim payload per SERVER-111) is worked as ordinary comment work **plus**: log that the lane's listener lapsed, and launch a fresh `/converse` listener for that lane once, not per event
 - [ ] Reflection guard extended: the resident's replies are agent turns, so the existing no-self-wake rules (no `--requests-agent`, no `@agent` in bodies) already cover them; state that a resident's `@agent`-quoting hazard lands in the *orchestrator* lane and is triaged there
 - [ ] The 10-concurrent-subagents bound restated to exclude resident listeners (they are parked, not working) or adjusted per SHARED-043's decision — whichever the signed rider says, verbatim
 - [ ] Skill's `updated` frontmatter bumped; workspace template test still passes

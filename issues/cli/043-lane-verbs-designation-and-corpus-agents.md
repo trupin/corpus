@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: [CONTRACT-051], [SERVER-107], [SERVER-108], [SERVER-109]
+- Depends on: [CONTRACT-051], [SERVER-111], [SERVER-112], [SERVER-109]
 - Blocks: [AGENT-025], [AGENT-026]
 
 ## Spec References

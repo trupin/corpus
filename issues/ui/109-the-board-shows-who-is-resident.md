@@ -13,7 +13,7 @@ P1
 opus
 
 ## Dependencies
-- Depends on: [CONTRACT-051], [SERVER-108]
+- Depends on: [CONTRACT-051], [SERVER-112]
 - Blocks: —
 
 ## Spec References
@@ -54,7 +54,7 @@ here and mark UI-097's criteria accordingly in a PR note, per the no-two-mechani
 
 ### Edge Cases
 - Designation while a pending indicator is showing: wording flips on invalidation; the elapsed clock keeps its original start, per the queued-vs-working rider's clock rule (in flight with UI-097 — coordinate with its wording, don't cite it as landed spec)
-- A resident answering a summoned message on a foreign thread: that thread's indicator names the picked resident too (`recipient` is on the event; the outstanding-jobs row carries the lane per SERVER-107's mirror)
+- A resident answering a summoned message on a foreign thread: that thread's indicator names the picked resident too (`recipient` is on the event; the outstanding-jobs row carries the lane per SERVER-111's mirror)
 
 ## Testing Strategy
 Component tests: badge states, indicator wording matrix (live/lapsed/waiting ×

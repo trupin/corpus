@@ -92,6 +92,18 @@ failure to classify rather than as `done`.
       loosens
 - [ ] An issue file with no PLAN row, and a PLAN row with no issue file, are
       both reported — the second is how a renumbered issue goes missing
+- [ ] **Two issue files claiming one ID fail the check.** Not hypothetical: on
+      2026-08-12, `SERVER-107` and `SERVER-108` each named two unrelated issues
+      at once — Phase 31's (done, shipped in v0.7.0) and Phase 32's (todo) —
+      because Phase 32 was planned on a branch while Phase 31 held the same
+      numbers in flight, and each branch was internally consistent. Nothing
+      caught it; it was found by eye. This is the shape that costs the most,
+      because a dependency edge naming `SERVER-107` resolves to whichever file
+      the reader opens first, and an agent handed the wrong one implements the
+      wrong issue against a done issue's acceptance criteria. Parallel branches
+      allocating IDs makes it recurrent, not a one-off. Renumbered to
+      `SERVER-111`/`SERVER-112` (the collision is already repaired; the check
+      must keep it from happening unseen again)
 
 ## Technical Design
 

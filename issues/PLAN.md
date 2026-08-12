@@ -678,11 +678,11 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | CONTRACT-051 | Lanes, designation, and the roster on the wire | todo | P0 | SHARED-043 |
 | SERVER-110 | Stamp a document with the thread it came from | todo | P0 | CONTRACT-050 |
 | SERVER-109 | Designate a resident, and dissolve it cleanly | todo | P0 | CONTRACT-051 |
-| SERVER-107 | The queue learns lanes | todo | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
-| SERVER-108 | Presence is a parked request — liveness and the roster | todo | P0 | SERVER-107 |
+| SERVER-111 | The queue learns lanes | todo | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
+| SERVER-112 | Presence is a parked request — liveness and the roster | todo | P0 | SERVER-111 |
 | CLI-044 | Mutating verbs carry the job they serve | todo | P0 | CONTRACT-050, SERVER-110 |
-| CLI-043 | Lane verbs, designation, and `corpus agents` | todo | P0 | CONTRACT-051, SERVER-107, SERVER-108, SERVER-109 |
+| CLI-043 | Lane verbs, designation, and `corpus agents` | todo | P0 | CONTRACT-051, SERVER-111, SERVER-112, SERVER-109 |
 | AGENT-025 | The converse skill — a resident's own loop | todo | P0 | SHARED-043, CLI-044, CLI-043 |
 | AGENT-026 | Orchestrate learns to share the queue | todo | P0 | AGENT-025, CLI-043 |
-| UI-108 | The composer offers the recipient | todo | P0 | CONTRACT-051, SERVER-107, SERVER-108 |
-| UI-109 | The board shows who is resident, and who is live | todo | P1 | CONTRACT-051, SERVER-108 |
+| UI-108 | The composer offers the recipient | todo | P0 | CONTRACT-051, SERVER-111, SERVER-112 |
+| UI-109 | The board shows who is resident, and who is live | todo | P1 | CONTRACT-051, SERVER-112 |

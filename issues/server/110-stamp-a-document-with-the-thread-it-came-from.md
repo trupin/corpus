@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: [CONTRACT-050]
-- Blocks: [SERVER-107], [CLI-044]
+- Blocks: [SERVER-111], [CLI-044]
 
 ## Spec References
 - SPEC.md §7 as amended by SHARED-043 — provenance and `origin`
@@ -25,7 +25,7 @@ event, walk its payload to an origin thread (the same first-of `threadId, parent
 resolution the held-report already uses, `apps/server/src/jobs/project.ts:30-35`), and
 stamp the created or edited document's frontmatter with `origin: th_…`. Origin is recorded
 **unconditionally** — whether or not the thread is designated — because scope membership is
-computed at enqueue time from the origin chain (SERVER-107), never stored. This also makes
+computed at enqueue time from the origin chain (SERVER-111), never stored. This also makes
 the `↳` trace line verifiable and gives the job console a real artifact list.
 
 ## Acceptance Criteria
@@ -39,7 +39,7 @@ the `↳` trace line verifiable and gives the job console a real artifact list.
 ## Technical Design
 
 ### Files to Create/Modify
-- `apps/server/src/core/provenance.ts` — new: `resolveOrigin(event): th_… | null`, shared with SERVER-107's lane resolution
+- `apps/server/src/core/provenance.ts` — new: `resolveOrigin(event): th_… | null`, shared with SERVER-111's lane resolution
 - `apps/server/src/docs/*` (create/edit paths) and `apps/server/src/threads/create.ts` — accept `job`, stamp frontmatter
 - `apps/server/src/projection/project-document.ts` — read `origin` field-by-field like the rest
 - `apps/server/src/queue/store.ts` — a read-by-id that does not move the event (exists as the transition read; expose it)

@@ -1,4 +1,4 @@
-# [SERVER-108] Presence is a parked request — liveness and the roster
+# [SERVER-112] Presence is a parked request — liveness and the roster
 
 ## Domain
 server
@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: [SERVER-107]
+- Depends on: [SERVER-111]
 - Blocks: [CLI-043], [UI-108], [UI-109]
 
 ## Spec References
@@ -24,7 +24,7 @@ A lane's listener is **live** when a scoped `idle` is parked on it, and for a gr
 after the park releases (the listener is mid-work between parks). Track that in-memory —
 the same shape as the edit-session tracker (`apps/server/src/edit/sessions.ts`: map, sweep
 timer, synchronous end hook), not persisted, rebuilt by the next park after a restart.
-Liveness drives two consumers: SERVER-107's fallback predicate, and the new
+Liveness drives two consumers: SERVER-111's fallback predicate, and the new
 `GET /api/agents` roster, whose rows carry a derived one-line summary of what each lane is
 doing.
 
@@ -41,7 +41,7 @@ doing.
 
 ### Files to Create/Modify
 - `apps/server/src/queue/liveness.ts` — new: `LaneTracker` (map lane → {parkedCount, lastSeen, graceTimer}), modeled on `EditSessionTracker`'s sweep discipline
-- `apps/server/src/queue/waiters.ts` — park/release callbacks into the tracker (SERVER-107 already lane-keyed it)
+- `apps/server/src/queue/waiters.ts` — park/release callbacks into the tracker (SERVER-111 already lane-keyed it)
 - `apps/server/src/agents/roster.ts` + `apps/server/src/agents/routes.ts` — new: roster assembly and route
 - `apps/server/src/app.ts` — wire tracker → notify + invalidate
 
@@ -86,4 +86,4 @@ _[Agent fills]_
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0)
-- [ ] Committed with `[SERVER-108]` prefix
+- [ ] Committed with `[SERVER-112]` prefix

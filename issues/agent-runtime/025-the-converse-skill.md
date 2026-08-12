@@ -58,7 +58,7 @@ rules orchestrate states.
 
 ### Edge Cases
 - Two listeners on one lane (operator error): the `corpus agents` check at start; if a live listener already holds the lane, say so and exit rather than split the story
-- A person editing a scope artifact the resident wants to write: same courtesy as everywhere — reply, `defer --blocked-on <docId>`, re-park; deferral semantics are lane-preserving (SERVER-107)
+- A person editing a scope artifact the resident wants to write: same courtesy as everywhere — reply, `defer --blocked-on <docId>`, re-park; deferral semantics are lane-preserving (SERVER-111)
 - `resident.designated` re-fired for a lane that already has this listener (re-designation with the same name): treated as a no-op report, not a second loop
 
 ## Testing Strategy

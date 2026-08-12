@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: [CONTRACT-051]
-- Blocks: [SERVER-107], [CLI-043]
+- Blocks: [SERVER-111], [CLI-043]
 
 ## Spec References
 - SPEC.md §8 as amended by SHARED-043 — designation, dissolution
@@ -27,16 +27,16 @@ write `resident: {name, docId}` into the thread's frontmatter, enqueue a
 `resident.designated` event on the **orchestrator lane** (that is how the orchestrator
 learns to launch the listener, AGENT-026), and invalidate. `DELETE` dissolves: clear the
 field, notify the lane's waiters so a parked listener unparks and sees its lane is gone,
-and let SERVER-107's claim-time fallback route everything to the orchestrator from then on.
+and let SERVER-111's claim-time fallback route everything to the orchestrator from then on.
 Thread resolution dissolves the same way.
 
 ## Acceptance Criteria
 - [ ] Designation: user actor only (403 for agent — pinning is the person's act); standalone threads only (409 otherwise, per contract); unknown name → 404; archived agent-def → designates with `status: "archived"` surfaced in the response (consistent with mention doctrine: never silently ignore, never silently refuse)
 - [ ] `resident` written in §6 frontmatter key order beside `agent`/`turnModels` (`threads/create.ts:182-212` region); read back leniently (`threads/read.ts:93-128`); on the wire per CONTRACT-051
-- [ ] `resident.designated` enqueued with payload `{threadId, resident: {name, docId}}` through the ordinary `enqueue` path — it lands on the orchestrator lane per SERVER-107's type-based exception (that rule is SERVER-107's to implement and test; this issue only asserts the event exists and names its payload)
+- [ ] `resident.designated` enqueued with payload `{threadId, resident: {name, docId}}` through the ordinary `enqueue` path — it lands on the orchestrator lane per SERVER-111's type-based exception (that rule is SERVER-111's to implement and test; this issue only asserts the event exists and names its payload)
 - [ ] Dissolution (`DELETE`, idempotent 204) and thread `resolve` both: clear/ignore the field, `notify(th_x)` so a parked scoped idle returns promptly (it re-parks against a lane that no longer routes, and its next scoped claim is legitimately empty forever — the converse skill reads the roster and exits, AGENT-025)
 - [ ] Re-designation with a different name is legal (user-only): one call, field replaced, a fresh `resident.designated` enqueued
-- [ ] Designation state readable cheaply by the queue: projection carries `resident` so SERVER-107's per-turn lookup is one SQLite read; changes invalidate `["threads", id]` and `["agents"]`
+- [ ] Designation state readable cheaply by the queue: projection carries `resident` so SERVER-111's per-turn lookup is one SQLite read; changes invalidate `["threads", id]` and `["agents"]`
 
 ## Technical Design
 

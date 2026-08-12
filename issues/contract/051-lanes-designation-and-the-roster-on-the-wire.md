@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: [SHARED-043]
-- Blocks: [SERVER-107], [SERVER-109], [CLI-043], [UI-108], [UI-109]
+- Blocks: [SERVER-111], [SERVER-109], [CLI-043], [UI-108], [UI-109]
 
 ## Spec References
 - SPEC.md §7/§8 as amended by SHARED-043 — lanes, designation, recipient, roster
@@ -23,7 +23,7 @@ opus
 The wire shapes for everything lane-related, in one issue so the vocabulary cannot drift
 across routes: a `recipient` field on posting requests, scope parameters on the queue
 verbs, a designation surface on threads, the `GET /api/agents` roster route, and the
-`["agents"]` invalidate key. SERVER-107/108/109 implement against these shapes; the UI and
+`["agents"]` invalidate key. SERVER-111/112/109 implement against these shapes; the UI and
 CLI consume them through the generated client.
 
 ## Acceptance Criteria
@@ -48,7 +48,7 @@ CLI consume them through the generated client.
 
 ### Key Implementation Details
 `recipient` follows the `weight`/`model` pattern: defined once, spread into each posting
-request. The roster's `summary` is a plain string the server derives (SERVER-108) — the
+request. The roster's `summary` is a plain string the server derives (SERVER-112) — the
 contract makes no promise about its source, only its bound (cap at 200 chars, trim
 server-side). `since` is when the lane's listener was last seen parked; null when never.
 Designation body takes the **invocable name** (the same resolution surface mentions use,

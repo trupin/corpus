@@ -1,4 +1,4 @@
-# [SERVER-107] The queue learns lanes
+# [SERVER-111] The queue learns lanes
 
 ## Domain
 server
@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: [CONTRACT-051], [SERVER-110], [SERVER-109]
-- Blocks: [SERVER-108], [CLI-043], [UI-108]
+- Blocks: [SERVER-112], [CLI-043], [UI-108]
 
 ## Spec References
 - SPEC.md §7 as amended by SHARED-043 — lanes; one consumer per lane
@@ -37,7 +37,7 @@ a scoped park is not woken by another lane's arrival.
 - [ ] `claimAll({scope})` moves only that lane's pending events; the held report (`held.ts:119-151`) is scoped the same way — a resident never sees the orchestrator's held list and vice versa
 - [ ] `idle({scope})` parks per lane: `WaiterRegistry` keys settles by lane; `notify(lane)` wakes that lane and the 500ms re-probe checks only the parked lanes' pending sets
 - [ ] `reapStale` is lane-blind (staleness is staleness) but preserves the lane on requeue; `requeueDeferredFor` likewise
-- [ ] **Lane fallback**: when a lane's listener is lapsed (SERVER-108 exposes liveness), that lane's pending events are visible to the orchestrator's unscoped claim — the fallback is computed at claim time, not by rewriting events, so a returning listener finds its lane intact
+- [ ] **Lane fallback**: when a lane's listener is lapsed (SERVER-112 exposes liveness), that lane's pending events are visible to the orchestrator's unscoped claim — the fallback is computed at claim time, not by rewriting events, so a returning listener finds its lane intact
 - [ ] Halt/resume apply to all lanes (one halt switch, unchanged semantics)
 - [ ] `recipient: th_…` naming an undesignated thread → 422 at post time (contract's refusal, enforced here)
 
@@ -94,4 +94,4 @@ _[Agent fills]_
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0, security-sensitive routing)
-- [ ] Committed with `[SERVER-107]` prefix
+- [ ] Committed with `[SERVER-111]` prefix
