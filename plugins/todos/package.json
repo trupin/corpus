@@ -1,7 +1,7 @@
 {
   "name": "corpus-plugin-todos",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "The v1 reference plugin (SPEC.md §12): the `todo` document type, its renderers, an aggregating board column, server routes, CLI verbs and an agent skill.",
   "scripts": {
