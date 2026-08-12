@@ -58,7 +58,6 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus server stop`](#corpus-server-stop)
 - [`corpus skill`](#corpus-skill)
   - [`corpus skill create`](#corpus-skill-create)
-  - [`corpus skill rollback`](#corpus-skill-rollback)
 - [`corpus thread`](#corpus-thread)
   - [`corpus thread context`](#corpus-thread-context)
   - [`corpus thread create`](#corpus-thread-create)
@@ -278,7 +277,7 @@ Upgrades the **tool**, and everything that has to move with it (SPEC.md §2.4). 
 
 **Interrupting it.** Between stopping the server and restarting it there is a window the command cannot leave cleanly. The first Ctrl-C (or `SIGTERM`) inside it is handled: the npm child is killed — processes npm had itself spawned may briefly outlive it — the server is started again, the report is written, and the command exits 8 with `upgrade_interrupted`. A second one is **not** handled — it kills corpus outright — and neither is `kill -9` or a machine going to sleep, either of which can leave the server stopped and the global package half-replaced. To recover from that: `corpus server start`, then `corpus upgrade` again once `corpus --version` has told you what you actually have.
 
-**The workspace half is not optional.** `corpus init` copies the agent's skills into the workspace and from that moment they are the workspace's own documents, so a tool update that ignored them would leave the loop running last version's instructions. The sync is the same three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a file the workspace never touched is updated, a file the workspace edited is **never** overwritten, and everything written lands in one attributed commit, so `corpus skill rollback` undoes a bad upgrade like any other change.
+**The workspace half is not optional.** `corpus init` copies the agent's skills into the workspace and from that moment they are the workspace's own documents, so a tool update that ignored them would leave the loop running last version's instructions. The sync is the same three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a file the workspace never touched is updated, a file the workspace edited is **never** overwritten, and everything written lands in **one** attributed commit — so a bad upgrade is undone the way any change is: `git revert` that one commit in the workspace, and the watcher picks the result up as the out-of-band edit it is.
 
 **A conflict is unresolved work, not a notice.** A file this workspace edited that the tool also changed is reported apart from everything that merely happened, each entry naming `corpus workspace diff <path>` — the verb that shows what moved upstream. Corpus never merges them: a skill is prose that instructs the agent, and a plausible-looking auto-merge would corrupt the instructions the loop runs on. Under `--json` they are the `conflicts` array, so an agent can tell what it still owes without reading prose. Conflicts do not fail the run: the upgrade succeeded, and exits 0 with the list.
 
@@ -1605,19 +1604,21 @@ corpus server stop --json
 
 ## `corpus skill`
 
-Create a skill, and recover one: restore its last-known-good version.
+Create a skill: the one skill operation no document verb can express.
 
-Skills are documents, so reading, editing and archiving one is `corpus doc …` like anything else. These two verbs are what has no document equivalent. `create` is SPEC.md §7's skill genesis — a recurring pattern becomes a skill, written under `.claude/skills/` rather than `data/docs/`, which is the one thing `corpus doc create` cannot do. `rollback` is its safety net: the agent's skills are the workspace's memory and its loop, and a bad edit to `orchestrate` can break the very loop that would otherwise repair it. Both are performed by the server and land as normal attributed commits.
+Skills are documents, so reading, editing, archiving — and reverting — one is `corpus doc …` like anything else. `create` is what has no document equivalent: it is SPEC.md §7's skill genesis, a recurring pattern becoming a skill written under `.claude/skills/` rather than `data/docs/`, which is the one thing `corpus doc create` cannot do. It is performed by the server and lands as a normal attributed commit.
+
+**Undoing a bad edit to a skill is not a verb here.** It is an ordinary write whose content came from history: read what changed with `corpus doc diff <id>`, work out the content you want back, and write it with `corpus doc edit <id> --key <key>`. That path reconciles anchors, validates the frontmatter, commits under `--from` and refuses a stale key — none of which a file-restoring shortcut did. When it is the agent's own loop that is broken and no agent is running to do that, revert in the workspace with git directly; the server's watcher sees it as the out-of-band `user` edit it is and commits it for itself.
 
 ### `corpus skill create`
 
 Create a skill through the server.
 
-Calls `POST /api/skills`, which writes `.claude/skills/<name>/SKILL.md` through the ordinary mutation pipeline — validation, atomic write, git auto-commit attributed to `--from`, synchronous re-projection and SSE invalidation. The skill is therefore live immediately: on the board, in `corpus doc list --type skill`, and rollback-able, with no server restart. The CLI writes nothing itself; the server is the sole writer.
+Calls `POST /api/skills`, which writes `.claude/skills/<name>/SKILL.md` through the ordinary mutation pipeline — validation, atomic write, git auto-commit attributed to `--from`, synchronous re-projection and SSE invalidation. The skill is therefore live immediately: on the board and in `corpus doc list --type skill`, with no server restart. The CLI writes nothing itself; the server is the sole writer.
 
 The created file carries **both** frontmatter vocabularies, which is what makes a skill simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory name) and `description` for discovery, then the document keys the server assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`. `--description` is required rather than optional: a skill without one is installed but never invoked.
 
-The name is the traversal guard and it is checked by the server, not here — lowercase letters, digits and single hyphens, at most 64 characters. A name with a slash, a `..` segment or an uppercase letter is the server's `400`; a name already installed, or held by an archived skill, is its `409`. Both are exit 5, and neither writes anything. Everything after creation is ordinary document work: edit with `corpus doc edit`, disable with `corpus doc archive`, recover with `corpus skill rollback`.
+The name is the traversal guard and it is checked by the server, not here — lowercase letters, digits and single hyphens, at most 64 characters. A name with a slash, a `..` segment or an uppercase letter is the server's `400`; a name already installed, or held by an archived skill, is its `409`. Both are exit 5, and neither writes anything. Everything after creation is ordinary document work: edit with `corpus doc edit`, disable with `corpus doc archive`, and undo a bad edit by writing back the content you want — read the history with `corpus doc diff <id>`, then `corpus doc edit <id> --key <key>`.
 
 ```
 corpus skill create <name> [flags]
@@ -1661,50 +1662,6 @@ One JSON value — `{"doc":{"frontmatter":{"id":"doc_wy3a54lf","type":"skill",�
 
 ```
 corpus skill create triage --description "Triage the inbox." --json
-```
-
-### `corpus skill rollback`
-
-Restore a skill's last-known-good version through the server.
-
-Calls `POST /api/skills/{name}/rollback`, which restores `.claude/skills/<name>/SKILL.md` from git and commits the restoration as a normal auto-commit attributed to `--from` — so `git log` stays the whole audit trail and the board re-projects like it does for any other write. Prints the restored path and the **new** commit, not the revision the content came from. `--to` steps further back to any revision git resolves.
-
-A `commit` of `null` is reported as _uncommitted_ rather than dressed up: the workspace's own git hooks rejected the auto-commit (or there is no git), the file was restored anyway (SPEC.md §14), and the reason is printed as a warning. A skill nobody installed — including one that was archived, which moves it out of `.claude/skills/` — is the server's `404`, which is exit 5.
-
-```
-corpus skill rollback <name> [flags]
-```
-
-**Arguments**
-
-| Argument | Required | Description                                                                                       |
-| -------- | -------- | ------------------------------------------------------------------------------------------------- |
-| `name`   | yes      | The skill's directory name under `.claude/skills/`: lowercase letters, digits and single hyphens. |
-
-**Flags**
-
-| Flag         | Type   | Default | Description                                                                                                            |
-| ------------ | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `--to <ref>` | string | —       | Restore from this revision — a commit sha, a tag, anything git resolves. Omitted, the last-known-good version is used. |
-
-**Examples**
-
-Undo a bad edit to the core loop skill and record the agent as its author.
-
-```
-corpus skill rollback orchestrate --from agent
-```
-
-Step a skill back to a specific commit rather than the last-known-good one.
-
-```
-corpus skill rollback comment --to 9f3c1ab
-```
-
-One JSON value: `{"name":"orchestrate","docId":"doc_skill1a2b3c4d","commit":"9f3c1ab","path":".claude/skills/orchestrate/SKILL.md","warnings":[]}`.
-
-```
-corpus skill rollback orchestrate --json
 ```
 
 ## `corpus thread`
@@ -2212,7 +2169,7 @@ corpus workspace maintain --json
 
 Refresh the workspace's template files after a tool update, without clobbering edits.
 
-`corpus init` copies the agent's skills into the workspace, and from that moment they are the workspace's own documents — the agent evolves them, and they are its memory (SPEC.md §2.1). A later tool update therefore cannot re-copy them blindly. This verb three-way compares each file the tool installs: the baseline `corpus init` recorded, the copy in the workspace now, and the copy the installed tool carries. A file the workspace never touched is **updated**; a file the workspace changed is **kept and reported**, never overwritten; a file new to the template is **installed**; a file the workspace deleted is reported and reinstalled only under `--restore`; a file the template dropped is reported as retired, its copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old and new tool versions, so `corpus skill rollback` undoes a bad upgrade like any other skill change. A run with nothing to do prints `already up to date.` and makes no commit.
+`corpus init` copies the agent's skills into the workspace, and from that moment they are the workspace's own documents — the agent evolves them, and they are its memory (SPEC.md §2.1). A later tool update therefore cannot re-copy them blindly. This verb three-way compares each file the tool installs: the baseline `corpus init` recorded, the copy in the workspace now, and the copy the installed tool carries. A file the workspace never touched is **updated**; a file the workspace changed is **kept and reported**, never overwritten; a file new to the template is **installed**; a file the workspace deleted is reported and reinstalled only under `--restore`; a file the template dropped is reported as retired, its copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old and new tool versions — so a bad upgrade is undone in one move, by reverting that commit in the workspace with git. A run with nothing to do prints `already up to date.` and makes no commit.
 
 Only template-provenance paths are touched — `.claude/` skills and personas, the workspace `README.md` and `.gitignore`, the seed documents under `data/docs/` the template and plugins install — and nothing under `.corpus/` except the manifest itself and a missing queue status directory. Plugin-installed skills **and seed templates** are refreshed from **their plugin**, not from the template.
 

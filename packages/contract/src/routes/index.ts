@@ -34,7 +34,7 @@ import {
   resumeQueue,
 } from "./queue.js";
 import { searchCorpus } from "./search.js";
-import { createSkill, rollbackSkill } from "./skills.js";
+import { createSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
 import { reattachThread } from "./thread-reattach.js";
 import {
@@ -172,7 +172,6 @@ export const contractRoutes = {
   rebuildIndex,
 
   createSkill,
-  rollbackSkill,
 
   checkUpgrade,
   startUpgrade,

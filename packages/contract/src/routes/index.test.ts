@@ -693,25 +693,6 @@ function createStubApp() {
       201,
     );
   });
-  app.openapi(contractRoutes.rollbackSkill, (c) => {
-    const { name } = c.req.valid("param");
-    return c.json(
-      {
-        name,
-        docId: "doc_a1b2c3",
-        commit: "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456",
-        path: `.claude/skills/${name}/SKILL.md`,
-        // The revert is an auto-commit like any other, so the hook-rejection
-        // channel has to be expressible here (SPEC.md §14).
-        warnings:
-          c.req.valid("json")?.to === undefined
-            ? []
-            : [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
-      },
-      200,
-    );
-  });
-
   // The check reaches GitHub only when called and keeps nothing between calls,
   // so a stub is a whole implementation of its contract minus the fetch.
   app.openapi(contractRoutes.checkUpgrade, (c) =>

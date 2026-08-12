@@ -3305,7 +3305,7 @@ export interface paths {
          *
          *     **The created file carries both frontmatter vocabularies**, which is what makes a skill simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory name) and `description` for Claude Code's discovery, plus the core document keys the server assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`.
          *
-         *     **The skill is named in the body rather than in the path** because the path names a resource that does not exist yet; this is `POST /api/docs`'s convention, not a departure from the rollback route's. The name doubles as the traversal guard: it is validated against the same pattern the rollback path parameter uses, which admits no `/`, `.` or whitespace, so a traversal attempt is a `400` naming `body.name` and never reaches the filesystem.
+         *     **The skill is named in the body rather than in the path** because the path names a resource that does not exist yet; this is `POST /api/docs`'s convention. The name doubles as the traversal guard: it is validated against a pattern that admits no `/`, `.` or whitespace, so a traversal attempt is a `400` naming `body.name` and never reaches the filesystem.
          *
          *     **The creation lands as a normal auto-commit** (SPEC.md §9.2) and is projected and broadcast like any other write, so the new skill appears on the board and in `GET /api/docs?type=skill` without a restart. If the workspace's git hooks reject the commit, the file stands anyway and the rejection comes back in `warnings` (SPEC.md §14).
          *
@@ -3364,91 +3364,6 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ConflictError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/skills/{name}/rollback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Restore a skill's last-known-good version
-         * @description Restores `.claude/skills/{name}/SKILL.md` from git and commits the restoration — the targeted revert SPEC.md §7 names as the loop-safety escape hatch. Skills are ordinary documents and are edited like ordinary documents, so a bad edit to a core-loop skill (`orchestrate`, `comment`) can break the very loop that would otherwise fix it; this is the operator's way back, and the orchestrate skill documents it.
-         *
-         *     **The body is optional in full.** A bare `POST` restores the last-known-good version — the newest committed revision of the file that validates. `to` overrides that with any revision git resolves, for stepping further back.
-         *
-         *     **The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway, `commit` is `null` and the rejection comes back in `warnings` (§14).
-         *
-         *     `404` means no skill of that name is installed — there is no `.claude/skills/{name}/` directory. A skill that was archived (`corpus doc archive` moves it to `.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: unarchive it first.
-         *
-         *     A skill is an ordinary document, but this write names a revision rather than replacing a block, so it presents no key (SPEC.md §7 — see the module docblock).
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
-                    "x-corpus-author"?: "user" | "agent";
-                };
-                path: {
-                    /** @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound. */
-                    name: string;
-                };
-                cookie?: never;
-            };
-            /** @description Optional revision override; omit the body entirely to restore the last-known-good version. */
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["SkillRollbackRequest"];
-                };
-            };
-            responses: {
-                /** @description The skill is restored; `commit` is the auto-commit that restored it, or `null` when that commit failed or was skipped and the restoration stands uncommitted. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SkillRollbackResult"];
-                    };
-                };
-                /** @description The request failed schema validation; `issues` names the offending fields. */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ValidationError"];
-                    };
-                };
-                /** @description Missing or invalid workspace bearer token. */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["UnauthorizedError"];
-                    };
-                };
-                /** @description No such resource. */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["NotFoundError"];
                     };
                 };
             };
@@ -5171,28 +5086,6 @@ export interface components {
             /** @description Defaults to no tags. */
             tags?: string[];
         };
-        SkillRollbackResult: {
-            /**
-             * @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound.
-             * @example orchestrate
-             */
-            name: string;
-            /**
-             * @description Id of the restored skill document. Unchanged by the rollback — ids are immutable (§5), so this is the id the board, the projection and every thread anchored to the skill already use.
-             * @example doc_a1b2c3
-             */
-            docId: string;
-            /** @description Sha of the commit the server made to restore the file — the new HEAD, not the ref the content came from. `git show <commit>` is the audit trail entry for this rollback. `null` means the file was restored but not committed: the auto-commit failed or was skipped, the file write stands regardless (SPEC.md §14), and the reason — the workspace's own hook output for `commit_failed`, or `commit_skipped` for a workspace with no git — is in `warnings`. A rollback that reports `null` has still changed the file on disk. */
-            commit: string | null;
-            /** @description Workspace-relative path of the restored file, e.g. `.claude/skills/orchestrate/SKILL.md`. */
-            path: string;
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
-            warnings: components["schemas"]["Warning"][];
-        };
-        SkillRollbackRequest: {
-            /** @description Git ref to restore the skill from — a commit sha, tag or any revision git resolves. Omit it (or send null) to restore the last-known-good version, which is the newest committed revision of the file that validates (SPEC.md §7). */
-            to?: string | null;
-        };
         UpgradeCheck: {
             /** @description The version of the tool this server is running — the same value `GET /api/health` reports as `version`. Always known, including when the check could not reach GitHub: it is a fact about this process, not about the release list. */
             installed: string;
@@ -5215,7 +5108,7 @@ export interface components {
              * @enum {boolean}
              */
             started: true;
-            /** @description Workspace-relative path of the file the detached upgrade writes its output to, e.g. `.corpus/upgrade.log` — the same spelling convention `POST /api/skills/{name}/rollback` uses for the file it restored. This is where SPEC.md §2.4's report lands: what the tool install did, what the workspace template sync updated, what it left alone, and — listed apart from all of that, because a conflict is unresolved work rather than a notice — every file the workspace edited and the tool also changed, each naming `corpus workspace diff <path>`. The connection this response arrives on does not survive to carry any of it: the upgrade outlives the server it restarts. A client that shows an upgrade as finished without pointing at this file has told the operator less than the upgrade knows. */
+            /** @description Workspace-relative path of the file the detached upgrade writes its output to, e.g. `.corpus/upgrade.log` — workspace-relative, the spelling every path on this surface uses. This is where SPEC.md §2.4's report lands: what the tool install did, what the workspace template sync updated, what it left alone, and — listed apart from all of that, because a conflict is unresolved work rather than a notice — every file the workspace edited and the tool also changed, each naming `corpus workspace diff <path>`. The connection this response arrives on does not survive to carry any of it: the upgrade outlives the server it restarts. A client that shows an upgrade as finished without pointing at this file has told the operator less than the upgrade knows. */
             logPath: string;
         };
     };

@@ -69,7 +69,10 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
           "The semantic index behind retrieval's second half (SPEC.md §9.1): its health, and the " +
           "rebuild that re-queues it. Derived runtime state only — no files, no commits.",
       },
-      { name: "skills", description: "Skills as documents: loop-safety rollback." },
+      {
+        name: "skills",
+        description: "Skills as documents: genesis, the one write no document route can express.",
+      },
       {
         name: "upgrade",
         description:

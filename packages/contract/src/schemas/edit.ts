@@ -54,20 +54,19 @@ export const EMPTY_TREE_OBJECT_ID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
  * A git commit sha: 7–64 lowercase hex characters, abbreviated or full.
  *
  * **Deliberately not the wider revision DSL**, and this is a security boundary
- * rather than a convenience. `SkillRollbackRequest.to` accepts "a commit sha, tag
- * or any revision git resolves" because a human names a restore point by hand
- * there; here the ranges a caller has come from `doc.edited` events, which carry
- * shas, so accepting more would buy nothing and cost the server a git argv built
- * from an arbitrary operator-supplied token. `HEAD~1`, `--output=/tmp/x`,
- * `-C/etc` and every other leading-dash or DSL string is a `400` naming the
- * parameter, before a handler — and therefore before a `git` process — exists.
+ * rather than a convenience. Every range a caller has comes from `doc.edited`
+ * events, which carry shas, so accepting `HEAD~1` or a tag would buy nothing and
+ * cost the server a git argv built from an arbitrary caller-supplied token.
+ * `HEAD~1`, `--output=/tmp/x`, `-C/etc` and every other leading-dash or DSL
+ * string is a `400` naming the parameter, before a handler — and therefore
+ * before a `git` process — exists.
  *
- * The same pattern is spelled inline in `SkillRollbackResult.commit` and is left
- * there: that one is a *nullable* response field, and a registered or shared
- * schema used through `.nullable()` is exactly the derivation that rewrites a
- * component under its own name (see the note atop `./id.ts`). Two inline
- * primitives with one documented shape, rather than one shared component with a
- * hazard.
+ * The same pattern is spelled inline in `DoctorWarning.commit` and is
+ * left there: that one is a *nullable* response field, and a registered or
+ * shared schema used through `.nullable()` is exactly the derivation that
+ * rewrites a component under its own name (see the note atop `./id.ts`). Two
+ * inline primitives with one documented shape, rather than one shared component
+ * with a hazard.
  */
 export const CommitShaSchema = z
   .string()

@@ -21,8 +21,8 @@ import { gitExitCode, gitFailure, runGit, type GitRunner } from "../init/git.js"
  * the only recovery for a deletion, and §5 makes the files on disk the source of
  * truth; CLAUDE.md's Architecture Decision 2 makes the server their **sole
  * writer**. A repository with exactly one writer, which serializes its own
- * commits and reads them straight back (`corpus doc diff`, skill rollback, the
- * watcher's HEAD comparison), must not also have a second writer that Corpus
+ * commits and reads them straight back (`corpus doc diff`, the watcher's HEAD
+ * comparison), must not also have a second writer that Corpus
  * never scheduled, cannot observe, and cannot wait for. SERVER-089 measured what
  * the race costs when it lands: a permanently corrupt object store — `git fsck`
  * reporting a missing commit, `git log` dying with `cannot simplify commit` —

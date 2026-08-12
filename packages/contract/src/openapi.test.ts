@@ -2483,7 +2483,6 @@ describe("a key on every read, and on every write that overwrites", () => {
     ["/api/threads", "post"],
     ["/api/threads/{id}/turns/{ts}", "delete"],
     ["/api/threads/{id}/reattach", "post"],
-    ["/api/skills/{name}/rollback", "post"],
   ])("takes no key on %s %s, and says why", (path, method) => {
     const op = operation(path, method);
     expect(op.description).toContain("no key");
@@ -2545,24 +2544,27 @@ describe("routes declare only the codes they can return", () => {
 
 /**
  * CONTRACT-008. The validation surface §14 requires ("`corpus doc check` exposes
- * the same validator on demand") and the loop-safety revert §7 requires
- * ("`corpus skill rollback <name>` — a targeted git revert, performed by the
- * server"). No handler serves either yet: SERVER-019 registers against exactly
- * these definitions, so what is pinned here is the shape it inherits.
+ * the same validator on demand"), and the skill-creation surface §7's genesis
+ * clause requires.
+ *
+ * CONTRACT-008's other half, `POST /api/skills/{name}/rollback`, is **gone**
+ * (rider signed 2026-08-12): §7's loop safety is a write whose content came from
+ * history, made through `PUT /api/docs/{id}` with a key, so there is no rollback
+ * operation left to pin — and the inventory assertion below is what keeps it
+ * that way.
  */
-describe("the validation and skill-rollback surface", () => {
+describe("the validation and skill surface", () => {
   const CHECK_PATH = "/api/check";
-  const ROLLBACK_PATH = "/api/skills/{name}/rollback";
 
-  it("adds exactly two endpoints to the inventory", () => {
+  it("adds the check endpoint to the inventory, and no rollback beside it", () => {
     expect(ENDPOINT_INVENTORY).toContain("POST /api/check");
-    expect(ENDPOINT_INVENTORY).toContain("POST /api/skills/{name}/rollback");
+    expect(ENDPOINT_INVENTORY).not.toContain("POST /api/skills/{name}/rollback");
   });
 
-  /** Both are ordinary authenticated routes: neither joins the §2.1 exception list. */
-  it.each([CHECK_PATH, ROLLBACK_PATH])("requires the workspace bearer token on %s", (path) => {
-    expect(operation(path, "post").security).toBeUndefined();
-    expect(operation(path, "post").responses?.["401"]).toBeDefined();
+  /** An ordinary authenticated route: it does not join the §2.1 exception list. */
+  it("requires the workspace bearer token on the check", () => {
+    expect(operation(CHECK_PATH, "post").security).toBeUndefined();
+    expect(operation(CHECK_PATH, "post").responses?.["401"]).toBeDefined();
   });
 
   it("declares only the codes a check can produce", () => {
@@ -2573,13 +2575,12 @@ describe("the validation and skill-rollback surface", () => {
     ]);
   });
 
-  it("declares only the codes a rollback can produce", () => {
-    expect(Object.keys(operation(ROLLBACK_PATH, "post").responses ?? {})).toEqual([
-      "200",
-      "400",
-      "401",
-      "404",
-    ]);
+  /** The removal, asserted as a removal: no path, no schemas, no leftover prose. */
+  it("publishes no rollback path and no rollback schemas", () => {
+    expect(document.paths?.["/api/skills/{name}/rollback"]).toBeUndefined();
+    expect(componentSchemas?.["SkillRollbackRequest"]).toBeUndefined();
+    expect(componentSchemas?.["SkillRollbackResult"]).toBeUndefined();
+    expect(JSON.stringify(document)).not.toContain("rollback");
   });
 
   describe("the check request", () => {
@@ -2729,15 +2730,12 @@ describe("the validation and skill-rollback surface", () => {
     });
 
     /**
-     * The length bound is published on both routes that take a name, from one
-     * definition — a client generating a form, or a server translating an
-     * `ENAMETOOLONG`, reads it off the document rather than guessing.
+     * The length bound is published rather than only enforced — a client
+     * generating a form, or a server translating an `ENAMETOOLONG`, reads it off
+     * the document rather than guessing.
      */
-    it("publishes the name length bound on the body and on the rollback path alike", () => {
+    it("publishes the name length bound on the body", () => {
       expect(componentSchemas?.["SkillCreateRequest"]?.properties?.["name"]).toMatchObject({
-        maxLength: SKILL_NAME_MAX_LENGTH,
-      });
-      expect(parameter("/api/skills/{name}/rollback", "post", "name")?.schema).toMatchObject({
         maxLength: SKILL_NAME_MAX_LENGTH,
       });
     });
@@ -2796,85 +2794,6 @@ describe("the validation and skill-rollback surface", () => {
       expect(description).toContain("refusing it is this same `409`, allowing it is a plain `201`");
     });
   });
-
-  describe("the rollback", () => {
-    it("names the skill in the path, as every other resource route does", () => {
-      const parameters = operation(ROLLBACK_PATH, "post").parameters ?? [];
-      expect(parameters.filter((entry) => entry.in === "path").map((entry) => entry.name)).toEqual([
-        "name",
-      ]);
-      expect(componentSchemas?.["SkillRollbackRequest"]?.properties?.["name"]).toBeUndefined();
-    });
-
-    it("carries the acting party, since the revert is an auto-commit", () => {
-      const header = operation(ROLLBACK_PATH, "post").parameters?.find(
-        (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
-      );
-      expect(header?.required).toBe(false);
-      expect(operation(ROLLBACK_PATH, "post").description).toContain("normal auto-commit");
-    });
-
-    it("takes an optional revision and nothing else", () => {
-      expect(Object.keys(componentSchemas?.["SkillRollbackRequest"]?.properties ?? {})).toEqual([
-        "to",
-      ]);
-      expect(componentSchemas?.["SkillRollbackRequest"]?.required).toBeUndefined();
-    });
-
-    it("returns the restored commit and path, plus the skill's name and id", () => {
-      const result = componentSchemas?.["SkillRollbackResult"];
-      expect(Object.keys(result?.properties ?? {})).toEqual([
-        "name",
-        "docId",
-        "commit",
-        "path",
-        "warnings",
-      ]);
-      for (const field of ["name", "docId", "commit", "path"] as const) {
-        expect(result?.properties?.[field]?.description, field).toBeTruthy();
-      }
-    });
-
-    /**
-     * CONTRACT-016. §14 keeps the file write when the auto-commit is rejected,
-     * so the response has to be able to say "restored, uncommitted". A
-     * non-nullable `commit` made that outcome undescribable on the wire, and the
-     * available shortcut — echoing the pre-existing HEAD — would have written a
-     * commit that is not this restoration into the field the audit trail reads.
-     */
-    it("lets `commit` be null, since §14 keeps the write when the commit fails", () => {
-      const commit = componentSchemas?.["SkillRollbackResult"]?.properties?.["commit"];
-      expect(commit).toMatchObject({ type: ["string", "null"], pattern: "^[0-9a-f]{7,64}$" });
-      expect(commit?.description).toContain("`null` means the file was restored but not committed");
-      expect(commit?.description).toContain("the file write stands regardless (SPEC.md §14)");
-      expect(commit?.description).toContain("is in `warnings`");
-    });
-
-    it("keeps `commit` required — nullable is not optional", () => {
-      expect(componentSchemas?.["SkillRollbackResult"]?.required).toContain("commit");
-    });
-
-    it("states the null outcome in the route's own prose, not only in the schema", () => {
-      expect(operation(ROLLBACK_PATH, "post").description).toContain(
-        "the file is restored anyway, `commit` is `null`",
-      );
-      expect(
-        JSON.stringify(operation(ROLLBACK_PATH, "post").responses?.["200"]?.description),
-      ).toContain("or `null` when that commit failed or was skipped");
-    });
-
-    it("uses the shipped 404 envelope and states the condition", () => {
-      expect(JSON.stringify(operation(ROLLBACK_PATH, "post").responses?.["404"])).toContain(
-        "NotFoundError",
-      );
-      expect(componentSchemas?.["NotFoundError"]?.properties?.["code"]?.enum).toEqual([
-        "not_found",
-      ]);
-      expect(operation(ROLLBACK_PATH, "post").description).toContain(
-        "no skill of that name is installed",
-      );
-    });
-  });
 });
 
 /**
@@ -2896,10 +2815,6 @@ describe("§14 warnings reach every mutation response", () => {
     // warnings the server already computed for them could only be logged.
     "ThreadMutationResponse",
     "FormAnswerResponse",
-    // CONTRACT-008: a skill rollback is a git revert the server performs and
-    // auto-commits (§7), so the workspace's hooks can reject it exactly as they
-    // can reject any other write.
-    "SkillRollbackResult",
     // CONTRACT-041: a re-attach rewrites one `anchors` entry in the **parent
     // document's** frontmatter and auto-commits it, so a rejected hook is
     // exactly as reachable here as it is on a create.
@@ -3692,7 +3607,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(17);
+    expect(bodies).toHaveLength(16);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -3752,7 +3667,6 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/skills": true,
       "POST /api/queue/halt": false,
       "POST /api/queue/{id}/fail": false,
-      "POST /api/skills/{name}/rollback": false,
       "POST /api/threads/{id}/seen": false,
       "POST /api/threads/{id}/turns": true,
       "POST /api/threads/{id}/turns/{ts}/form": true,

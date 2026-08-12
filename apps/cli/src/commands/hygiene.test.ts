@@ -313,7 +313,6 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "server/stop.ts",
       "skill/create.ts",
       "skill/index.ts",
-      "skill/rollback.ts",
       "thread/context.ts",
       "thread/create.ts",
       "thread/index.ts",

@@ -208,9 +208,8 @@ export const DoctorWarningSchema = z
           "`ProjectionDrift.detail` and `Warning.detail`, so the render-verbatim string has one " +
           "name across the whole contract.",
       ),
-    // Nullable for the same reason `SkillRollbackResult.commit` is: there are
-    // honest outcomes with no sha. Inline (never a registered component), so
-    // `.nullable()` cannot rewrite a shared schema.
+    // Nullable because there are honest outcomes with no sha. Inline (never a
+    // registered component), so `.nullable()` cannot rewrite a shared schema.
     commit: z
       .string()
       .regex(/^[0-9a-f]{7,64}$/)

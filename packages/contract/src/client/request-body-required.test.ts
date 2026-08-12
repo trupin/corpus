@@ -43,11 +43,6 @@ const MANDATORY = {
   // CONTRACT-008. Mandatory because *both* branches of the check's request XOR
   // demand a key: there is no bodiless whole-workspace form to fall back to.
   "POST /api/check": true satisfies BodyIsMandatory<paths["/api/check"]["post"]>,
-  // Omittable: a bare POST restores the last-known-good version, which is the
-  // call an operator recovering a broken loop actually makes.
-  "POST /api/skills/{name}/rollback": false satisfies BodyIsMandatory<
-    paths["/api/skills/{name}/rollback"]["post"]
-  >,
   // CONTRACT-020. A creation names the thing it creates: `name` and
   // `description` are both mandatory, so there is no bodiless form.
   "POST /api/skills": true satisfies BodyIsMandatory<paths["/api/skills"]["post"]>,
@@ -70,7 +65,6 @@ describe("the generated client types demand every mandatory body", () => {
       "POST /api/queue/{id}/fail": false,
       "POST /api/jobs/{id}/log": true,
       "POST /api/check": true,
-      "POST /api/skills/{name}/rollback": false,
       "POST /api/skills": true,
     });
   });

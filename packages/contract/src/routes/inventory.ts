@@ -2,15 +2,19 @@
  * The pinned method+path inventory of the Corpus HTTP API — every endpoint
  * SPEC.md §9.2 lists, plus the queue and job verbs §7 requires, the
  * projection-maintenance pair behind §2.2's `corpus db rebuild` / `db doctor`,
- * and the validation and loop-safety pair `POST /api/check` and
- * `POST /api/skills/{name}/rollback`. Those two were derived from the
- * behavioural sections before §9.2 listed them (§14's "`corpus doc check`
- * exposes the same validator on demand", §7's "`corpus skill rollback <name>` —
- * a targeted git revert, performed by the server"); the amendment CONTRACT-008
- * drafted for them is signed off and applied — §9.2 now names both in their own
- * bullets (SHARED-002). Bullets are cited by the route they name, never by line
- * number: §9.2 has been amended repeatedly since, and a line reference here goes
- * stale silently while still reading as a checkable citation.
+ * and the validation route `POST /api/check`. That one was derived from a
+ * behavioural section before §9.2 listed it (§14's "`corpus doc check` exposes
+ * the same validator on demand"); the amendment CONTRACT-008 drafted for it is
+ * signed off and applied — §9.2 now names it in its own bullet (SHARED-002).
+ * Bullets are cited by the route they name, never by line number: §9.2 has been
+ * amended repeatedly since, and a line reference here goes stale silently while
+ * still reading as a checkable citation.
+ *
+ * CONTRACT-008's other half, `POST /api/skills/{name}/rollback`, is **gone**
+ * (rider signed 2026-08-12): §7's loop safety is now a write whose content came
+ * from history, performed through `PUT /api/docs/{id}` with a key, so the
+ * inventory is the record that the endpoint is absent by decision rather than by
+ * oversight.
  *
  * `POST /api/skills` (CONTRACT-020) was derived the same way, from §7's skill
  * genesis: the agent creates a skill, and it can only reach the workspace
@@ -207,7 +211,6 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/index/rebuild",
 
   "POST /api/skills",
-  "POST /api/skills/{name}/rollback",
 
   "GET /api/upgrade/check",
   "POST /api/upgrade",
