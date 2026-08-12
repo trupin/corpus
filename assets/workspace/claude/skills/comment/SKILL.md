@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-08T00:00:00Z
+updated: 2026-08-12T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -295,6 +295,29 @@ meant — your edit applied to the current text rather than to the text you read
 same command again with the fresh key. That retry is the mechanism working, not a failure to
 report, and it is yours to do here rather than to hand back. Never resend the same body
 unchanged: what came back is somebody's edit, and ignoring it erases it.
+
+**Putting an older version back is this same loop.** There is no revert command and none is
+needed: **a revert is a write whose content came from history**, so it reconciles anchors,
+validates and commits exactly as every other write does. Read the history:
+`corpus doc diff <id>` prints the document's path and its last committed change, and
+`git log --oneline -- <path>` then `git show <sha>:<path>` go further back. Work out the
+content you want back, which is rarely the whole old file — the version you are going back to
+predates everything since, and some of that should stay. Then write it with
+`corpus doc edit <id> --key <the key that read printed> --from agent`, like any other change,
+and say in the reply what you put back. Three things decide whether that is a repair or a
+second act of damage:
+
+- **Read from git, never write to it.** `git log`, `git show` and `git diff` are reads. Never
+  `git checkout`, `git restore`, `git revert` or `git commit` — the server is the sole writer
+  and every change you make goes through the CLI, this one included.
+- **Git hands you the whole file; the write takes the body.** Everything down to and
+  including the closing `---` is frontmatter the server owns — id, timestamps, tags,
+  `anchors` — so pasting the file in as a body writes that frontmatter into the document
+  again, as text. Send only what follows it.
+- **The key is what makes a revert safe.** The content came from history, but the key you
+  present names the version you just read, so a revert that would clobber a change made since
+  that read is refused with exit `9` rather than landing on top of it. The age of the content
+  is never the question; what happened after your read is.
 
 **Someone is editing this — stand aside, do not push through.** When a person has an edit
 session open on the document, the read says so:
@@ -738,8 +761,9 @@ about behavior.
   written by the server — `name`/`description` for Claude Code, `id`/`type`/`title`/`tags`/
   `status` for Corpus — live immediately, findable on the board, and editable like any
   document as long as a later `corpus doc edit` keeps both field sets intact. The ways back
-  are cheap: `corpus skill rollback <name>` undoes a genesis that misbehaves, and
-  `corpus doc archive` disables a skill that stopped earning its place.
+  are cheap and are the ordinary ones: `corpus doc archive` disables a skill that misbehaves
+  or that stopped earning its place, and a wording you regret is reverted like any other
+  document — read the history, write the old text back with the key (*Doing the work*).
 
 **The conflict rule.** A correction that contradicts an existing skill is an **edit to that
 skill**, never a second skill saying the opposite. Two rules in disagreement is worse than the
@@ -766,8 +790,9 @@ takes effect on the **next** run of the loop, not in the session that is running
   it, and say in the reply when something was durable enough to write down and when it was not.
 - **The thread is about a skill document** — someone selected an instruction in a skill and
   commented on it. That is the workspace's feedback loop working as designed, not an intrusion:
-  edit the skill through the CLI, announce the change prominently, and name
-  `corpus skill rollback <name>` as the undo in case the new wording misbehaves.
+  edit the skill through the CLI, announce the change prominently, and say that the previous
+  wording is one read of the history and one write away if the new one misbehaves — a skill is
+  reverted like any other document (*Doing the work*), by no special command.
 - **Long work handed to a subagent.** Acknowledge immediately; never go silent until the
   handoff comes back.
 

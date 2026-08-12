@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-08T00:00:00Z
+updated: 2026-08-12T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -539,6 +539,54 @@ Reconcile; never resend unchanged. The text that came back is somebody's edit, a
 that ignores it erases it just as surely as the write the refusal prevented. The refusal
 exists so that you get to decide, and deciding means reading what it printed.
 
+**Putting an older version back is this same loop.** There is no revert command and there is
+none to look for: **a revert is a write whose content came from history**, so it goes down
+the path every other write goes down — anchors reconciled, frontmatter validated, committed
+under you, refused on a stale key. Three steps, and only the last one writes.
+
+1. **Read the history.** `corpus doc diff <id>` prints the document's path and its last
+   committed change, and for a small change that diff already carries the old text. To go
+   further back, read git directly: `git log --oneline -- <path>` lists the revisions that
+   touched that one file, `git show <sha>:<path>` prints the file as of one of them.
+2. **Work out the content you want back.** Rarely the whole old file: the version you are
+   going back to predates everything that happened since, some of which should stay. Decide
+   what the body should now say, exactly as you would for any other edit.
+3. **Write it.** Read the document for its current key, then `corpus doc edit` with that key
+   and that body — the ordinary write it always was.
+
+```bash
+corpus doc diff doc_a1b2c3
+git log --oneline -- data/docs/finance/mortgage-options.md
+git show 8509044:data/docs/finance/mortgage-options.md
+corpus doc show doc_a1b2c3
+key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
+corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
+The body as it read before the change you are undoing.
+EOF
+```
+
+**Read from git, never write to it.** `git log`, `git show` and `git diff` are reads, and
+you are good at them. `git checkout`, `git restore`, `git revert`, `git add` and `git commit`
+are writes into the workspace behind the server's back, and the server is the sole writer —
+every change you make goes through the CLI, this one included.
+
+**What git hands you is the whole file; what the write takes is the body.** Everything down
+to and including the closing `---` is frontmatter the server owns — the id, the timestamps,
+the tags, the `anchors` map — so pasting the file in as a body writes that frontmatter into
+the document a second time, as text. Send only what follows it.
+
+**The key is what makes a revert safe**, and it is the whole difference between this and a
+command that puts an old file back. The content came from history, but the write still
+presents the key of the version you *just read* — so a revert that would clobber a change
+made since that read is refused with exit `9` and the current text in front of you, instead
+of landing on top of it. The age of the content is never the question; what happened after
+your read is. Reverting is a change like any other, so say so in the reply: name the
+document, what you put back, and what it said before.
+
+The same loop puts back a skill you edited badly — a skill is a document (below). It works
+as long as the loop is still running. When the loop itself is what broke, nobody is there to
+run this, and the way back is the operator's: see *If the loop breaks*.
+
 **Someone is editing this — a courtesy, with a named response.** A read also says when a
 person has an edit session open on the document:
 
@@ -1019,9 +1067,11 @@ addressable as `@<name>`. Two consequences:
 - An edit to **this** skill or to the comment skill takes effect on the **next**
   `/orchestrate`, not in the running session — say exactly that in the reply whenever you
   change one.
-- A bad edit to a core-loop skill can break the loop that would otherwise fix it. That is
-  why the recovery section below exists, and why a change to `orchestrate` or `comment` is
-  always named prominently in your reply.
+- A bad edit to any other skill you undo yourself, the way you undo a bad edit to any
+  document: read its history, work out the wording you want back, write it with the key
+  (*Writing a document*). A bad edit to a **core-loop** skill can break the loop that would
+  otherwise fix it — that is why the recovery section below exists, and why a change to
+  `orchestrate` or `comment` is always named prominently in your reply.
 
 ## If the loop breaks (operator recovery)
 
@@ -1033,16 +1083,32 @@ arriving while the pending indicator keeps escalating. The way back:
 
 ```bash
 corpus queue halt
-corpus skill rollback orchestrate
+git log --oneline -- .claude/skills/orchestrate/SKILL.md
+git restore --source=<sha> -- .claude/skills/orchestrate/SKILL.md
 corpus queue resume
 ```
 
-`corpus skill rollback <name>` restores that skill's last-known-good version from git
-history — use `comment` in place of `orchestrate` when that is the broken one. Halt first
-so a half-working loop cannot claim events mid-repair; resume last and the loop picks up
-everything that queued while you fixed it, without restarting the session. To turn a skill
-off entirely rather than revert it, `corpus doc archive` it: its folder moves to
-`.claude/skills-archived/`, it stays indexed and restorable on the board, and it is no
+**This is the one repair that does not go through the agent**, and that is why it is git and
+not a command: the agent reverts a document by reading history and writing it back, but when
+the broken document is the loop there is no agent running to do it. So the operator does it
+by hand, in the workspace — use `comment` in place of `orchestrate` when that is the broken
+one. `git log` lists the revisions of that one file and `git restore --source=<sha>` puts one
+of them back in the working tree, staging nothing. Restore the **file**, not the commit: a
+commit here belongs to an editing session rather than to a save, so it gathers everything
+that party changed while its window was open, and `git revert <sha>` would take neighbouring
+documents back with it.
+
+Halt first so a half-working loop cannot claim events mid-repair; resume last and the loop
+picks up everything that queued while you fixed it, without restarting the server. The
+restored skill takes effect at the next `/orchestrate`, which is a fresh read of the file.
+
+Nothing needs telling about the edit and the server stays up: it watches the workspace, so it
+re-projects the restored skill within moments — the board shows the good text back — and
+commits the change as the out-of-band `user` edit it is, which is what keeps `git log` a
+complete account of the workspace even for the one change the agent did not make.
+
+To turn a skill off entirely rather than revert it, `corpus doc archive` it: its folder moves
+to `.claude/skills-archived/`, it stays indexed and restorable on the board, and it is no
 longer discovered as a skill.
 
 ## Worked example

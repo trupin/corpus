@@ -613,3 +613,22 @@ mechanism rather than waste.
 | UI-107 | The board presents a key, and never goes read-only | done | P0 | CONTRACT-049, SERVER-098 |
 | AGENT-022 | The skills teach keys, and stop teaching locks | done | P0 | CLI-038 |
 | PLUGINS-017 | The todos plugin writes from a captured read, and still reaches for a lock | done | P0 | CONTRACT-049, SERVER-098, UI-107 |
+
+
+### Phase 30 addendum — a revert is a write like any other (SHARED-042, 2026-08-12)
+
+PR #43's review found `corpus skill rollback` destroys uncommitted edits
+unrecoverably. The user's answer — revert rather than overwrite — led further: a
+revert is a write whose content came from history, so the verb goes and the skill
+teaches the loop. **SERVER-090 is promoted from P1 tidiness to load-bearing**:
+with no verb, the operator's recovery is a hand `git restore`, and §7 now
+guarantees the watcher commits it as the `user` edit it is.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-042 | A revert is a write like any other (applied 2026-08-12) | done | P0 | SHARED-041 |
+| CLI-040 | Remove `corpus skill rollback` — the route and the verb | done | P0 | SHARED-042 |
+| AGENT-023 | Teach the revert loop, and the operator's git path | done | P0 | SHARED-042 |
+| SERVER-104 | Delete the server's rollback module | todo | P0 | SHARED-042 |
+| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P0 | SHARED-042 |
+| CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |

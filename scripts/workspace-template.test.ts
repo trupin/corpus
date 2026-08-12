@@ -697,6 +697,92 @@ describe("skills", () => {
     });
   });
 
+  /**
+   * SHARED-042, SPEC.md §7's "Loop safety" bullet as amended 2026-08-12.
+   *
+   * `corpus skill rollback` is deleted rather than fixed: it overwrote a whole
+   * file with an old revision and destroyed uncommitted edits at exit 0. There
+   * is no replacement verb, because **a revert is a write whose content came
+   * from history** — through the ordinary write path it reconciles anchors,
+   * validates, commits under the acting party and is protected by the key.
+   *
+   * So what the skills gain is the teaching the verb stood in for, and — as with
+   * AGENT-022 — it has to be a *loop* rather than a command to recall: read the
+   * history, work out the content, write it with the key. Three pins here that
+   * are easy to lose in a rewrite:
+   *
+   * - **Reading git is a read.** The agent may run `git log`/`git show`; it may
+   *   never write to git, because the server is the sole writer.
+   * - **Git hands back the whole file, the write takes the body.** Skipping this
+   *   duplicates the frontmatter into the document as text.
+   * - **The broken-loop case is the operator's.** No agent is running, so it is
+   *   the one path that does not go through the CLI, and the skill must say so
+   *   plainly or an agent will try to run a repair it is not alive for.
+   */
+  describe("a revert is a write like any other", () => {
+    it.each(skills)("$name teaches the revert as a loop, not a verb", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      const flat = body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/a revert is a write whose content came from history/i);
+      expect(flat).toMatch(/there is no revert command/i);
+      // The three steps, each naming what performs it.
+      expect(body).toMatch(/corpus doc diff <id>/);
+      expect(body).toMatch(/git log --oneline -- <path>/);
+      expect(body).toMatch(/git show <sha>:<path>/);
+      expect(flat).toMatch(/content you want back/i);
+      expect(flat).toMatch(/rarely the whole old file/i);
+    });
+
+    it.each(skills)("$name reads git and never writes to it", ({ relPath }) => {
+      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/read from git, never write to it/i);
+      for (const verb of ["git log", "git show", "git checkout", "git restore", "git commit"]) {
+        expect(flat, `does not name \`${verb}\``).toContain(`\`${verb}\``);
+      }
+      expect(flat).toMatch(/sole writer/i);
+      // The frontmatter trap: the file in git is not the body the write takes.
+      expect(flat).toMatch(/whole file.{0,80}(?:body|write)|body.{0,80}whole file/i);
+      expect(flat).toMatch(/closing `---`/);
+    });
+
+    it.each(skills)("$name says what makes a revert safe", ({ relPath }) => {
+      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+      // Not "be careful": the key of the version just read is presented, so a
+      // revert over somebody's newer change is refused rather than landed.
+      expect(flat).toMatch(/the key is what makes (?:a|this) revert safe/i);
+      expect(flat).toMatch(/version you \*?just read\*?/i);
+      expect(flat).toMatch(/exit `9`/);
+    });
+
+    it("hands the broken loop to the operator, with git and not the CLI", () => {
+      const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      expect(body).toMatch(/\*This section is for the operator, not the agent\.\*/);
+      expect(body).toMatch(/git log --oneline -- \.claude\/skills\/orchestrate\/SKILL\.md/);
+      expect(body).toMatch(
+        /git restore --source=<sha> -- \.claude\/skills\/orchestrate\/SKILL\.md/,
+      );
+      // Why it is git here and a CLI write everywhere else.
+      const flat = body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/one repair that does not go through the agent/i);
+      expect(flat).toMatch(/no agent running/i);
+      // The trace the operator's edit still leaves (SPEC.md §9.1, SERVER-090).
+      expect(flat).toMatch(/out-of-band `user` edit/i);
+      // Restore the file, not the commit: a window commit gathers neighbours.
+      expect(flat).toMatch(/`git revert <sha>` would take neighbouring documents/i);
+      // The halt/resume bracket survives the rewrite.
+      expect(body).toMatch(/corpus queue halt/);
+      expect(body).toMatch(/corpus queue resume/);
+    });
+
+    it("tells the operator the same thing in the workspace README", () => {
+      const readme = documentAt("README.md").body;
+      expect(readme).toMatch(/git log --oneline -- \.claude\/skills\/orchestrate\/SKILL\.md/);
+      expect(readme).toMatch(/git restore --source=<sha>/);
+      expect(readme.replace(/\s+/g, " ")).toMatch(/no rollback command/i);
+      expect(readme).toMatch(/corpus doc archive/);
+    });
+  });
+
   it("leaves queue terminal-state handling to the orchestrate skill", () => {
     expect(documentAt("claude/skills/comment/SKILL.md").body).not.toMatch(
       /corpus queue (?:complete|fail)/,
@@ -757,7 +843,6 @@ describe("orchestrate skill body", () => {
       "corpus queue resume",
       'corpus job log <eventId> "<line>"',
       "corpus job retry",
-      "corpus skill rollback",
       "corpus doc archive",
       "export CORPUS_FROM=agent",
       "--from agent",
@@ -1820,7 +1905,6 @@ describe("comment skill body", () => {
       "corpus thread reply",
       "corpus thread resolve",
       "corpus job log",
-      "corpus skill rollback",
       "--from agent",
       "export CORPUS_FROM=agent",
     ];
@@ -2115,7 +2199,11 @@ describe("comment skill body", () => {
     expect(body).toMatch(/`--description` is required/);
     expect(body).toContain(".claude/skills/<name>/SKILL.md");
     expect(body).toMatch(/\*\*both\*\* frontmatter vocabularies\s+written by the server/i);
-    expect(body).toMatch(/corpus skill rollback <name>/);
+    // SHARED-042: the ways back are the ordinary ones. Archiving disables a
+    // skill; a wording it regrets is reverted the way any document is, so the
+    // branch points at the revert loop rather than at a verb that no longer
+    // exists.
+    expect(body).toMatch(/read the history, write the old text back with the key/i);
     expect(body).toMatch(/corpus doc archive/);
     expect(body).toMatch(/do not pre-check/i);
   });
@@ -2164,7 +2252,8 @@ describe("comment skill body", () => {
       /note-only/i,
       /standalone thread stays trivial/i,
       /thread is about a skill document/i,
-      /corpus skill rollback <name>/,
+      // SHARED-042: the undo it offers the person is the revert loop, not a verb.
+      /one read of the history and one write away/i,
       /Acknowledge immediately/i,
     ]) {
       expect(body, `no edge case matching ${String(rule)}`).toMatch(rule);
@@ -2578,6 +2667,42 @@ describe("cli command references", () => {
     }
   });
 
+  /**
+   * Verbs the CLI **used to have**. `docs/cli.md` is generated from the CLI, so
+   * once a verb is deleted the test above catches a skill that still names it —
+   * but only after the reference is regenerated, and only while both land in the
+   * same change. This guard is independent of the reference: it fails on the
+   * template alone, so a skill can never quietly outlive the command it teaches.
+   *
+   * `corpus skill rollback` (SHARED-042, SPEC.md §7): it overwrote a whole file
+   * with an old revision and destroyed uncommitted edits unrecoverably. It has
+   * no replacement verb by design — a revert is a write whose content came from
+   * history, so the skills teach the loop (read the history, work out the
+   * content, write it with the key) instead of naming a command.
+   */
+  const REMOVED_VERBS = ["skill rollback"] as const;
+
+  it("names no verb the CLI no longer has", () => {
+    for (const relPath of templateFiles.filter((file) => file.endsWith(".md"))) {
+      const invoked = new Set(
+        extractCorpusInvocations(readTemplateFile(relPath)).map((tokens) =>
+          normalizeInvocation(tokens, surface),
+        ),
+      );
+      for (const verb of REMOVED_VERBS) {
+        expect(invoked.has(verb), `${relPath} still invokes \`corpus ${verb}\``).toBe(false);
+      }
+    }
+  });
+
+  it("catches a removed verb wherever it is named", () => {
+    // The guard above is only worth its line if it would actually fire.
+    const invoked = extractCorpusInvocations(
+      "Recover with `corpus skill rollback orchestrate`.\n",
+    ).map((tokens) => normalizeInvocation(tokens, surface));
+    expect(invoked).toContain(REMOVED_VERBS[0]);
+  });
+
   it("fails on a command docs/cli.md does not document", () => {
     const skill = readTemplateFile("claude/skills/orchestrate/SKILL.md");
     expect(unresolvedIn(`${skill}\nRun \`corpus doc frobnicate doc_a1b2c3\` twice.\n`)).toEqual([
@@ -2592,10 +2717,13 @@ describe("cli command references", () => {
     expect([...CLI_COMMANDS_PENDING_CLI_006]).toEqual([]);
   });
 
-  it("resolves the two formerly-allowlisted verbs against docs/cli.md itself", () => {
-    for (const command of ["doc check", "skill rollback"]) {
-      expect(surface.commands.has(command), `\`corpus ${command}\` is documented`).toBe(true);
-    }
+  it("resolves the formerly-allowlisted verb that still exists against docs/cli.md itself", () => {
+    // `corpus doc check` shipped and stayed. Its companion `corpus skill
+    // rollback` shipped and was then **deleted** (SHARED-042): a revert is a
+    // write whose content came from history, so it needs no verb. Asserting the
+    // one and not the other is the whole difference, and the deletion is
+    // guarded positively by "names no verb the CLI no longer has" above.
+    expect(surface.commands.has("doc check"), "`corpus doc check` is documented").toBe(true);
   });
 
   it("expires the allowlist the moment CLI-006 lands in docs/cli.md", () => {

@@ -245,4 +245,13 @@ skill that must name a verb before it ships. It is **empty**: it once held
 skill's recovery documentation had to name them before CLI-006 shipped them, and it was
 self-invalidating — a companion test asserted each entry was still absent from
 `docs/cli.md`, so the suite went red the moment those verbs landed. It stays as the
-mechanism, not as a leftover.
+mechanism, not as a leftover. (`corpus skill rollback` has since been removed from the
+product altogether — SHARED-042, 2026-08-12 — so that entry names a verb the CLI no
+longer has at all, rather than one it had not shipped yet.)
+
+`REMOVED_VERBS` is the mirror of that hatch, added by AGENT-023: verbs a skill must
+**stop** naming. It is checked against the extracted template text rather than against
+`docs/cli.md`, deliberately — a template that still teaches a deleted verb is wrong on
+its own terms, whatever the CLI reference happens to say at that moment, and tying the
+two together would let the guard go quiet during the window where the reference has been
+regenerated but the skill has not.
