@@ -114,14 +114,48 @@ describe("archive and unarchive", () => {
     expect(await list("?status=archived")).toContain(created.id);
     expect(await list("")).not.toContain(created.id);
 
+    // SPEC.md §5 (SHARED-031, signed 2026-08-12): unarchiving returns the
+    // document to `resolved` — "the state archiving already implied" — and not
+    // to `open`. The document above was created `open`, which is the case worth
+    // pinning: there is no memory of a previous status and §5 asks for none,
+    // because archiving is itself what settled it.
     const restored = await ws.post(`/api/docs/${created.id}/unarchive`, {});
     expect(restored.status).toBe(200);
     expect(DocMutationResponseSchema.parse(await restored.json()).doc.frontmatter.status).toBe(
-      "open",
+      "resolved",
     );
-    expect(parseDocument(ws.read(created.path)).data["status"]).toBe("open");
+    expect(parseDocument(ws.read(created.path)).data["status"]).toBe("resolved");
+    // And it is back in the default list: §5 keeps a resolved document exactly
+    // as visible as it was, so restoring the status is the whole of restoring.
     expect(await list("")).toContain(created.id);
     expect(await list("?status=archived")).not.toContain(created.id);
+  });
+
+  /**
+   * The other end of the same rule (SERVER-108): a document that is **not**
+   * archived is not restored at all.
+   *
+   * `open` → `open` was a harmless unconditional write; `open` → `resolved`
+   * would not be — unarchiving something nobody archived would silently declare
+   * it finished. It is the mirror of the wave-3 audit's FIX 11, which caught
+   * this route quietly *re*opening a `resolved` document, and the CLI's
+   * `isSettled` is a second line rather than the only one.
+   */
+  it("writes nothing when the document was not archived", async () => {
+    ws = createWriteWorkspace("archive-noop");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Never archived" });
+    const before = ws.read(created.path);
+    const head = ws.head();
+    ws.advance(60_000);
+
+    const response = await ws.post(`/api/docs/${created.id}/unarchive`, {});
+    expect(response.status).toBe(200);
+    expect(DocMutationResponseSchema.parse(await response.json()).doc.frontmatter.status).toBe(
+      "open",
+    );
+    expect(ws.read(created.path)).toBe(before);
+    expect(ws.head()).toBe(head);
   });
 
   it("moves a skill's whole folder and keeps its id and index entry", async () => {
@@ -156,7 +190,9 @@ describe("archive and unarchive", () => {
     const response = await ws.post(`/api/docs/${skillId}/unarchive`, {});
     expect(response.status).toBe(200);
     const doc = DocMutationResponseSchema.parse(await response.json()).doc;
-    expect(doc.frontmatter.status).toBe("open");
+    // `resolved`, by §5's ladder — and the skill is enabled again either way,
+    // because §7 makes that the folder's business rather than the key's.
+    expect(doc.frontmatter.status).toBe("resolved");
     expect(doc.frontmatter.id).toBe(skillId);
 
     expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
@@ -560,11 +596,15 @@ describe("a skill's frontmatter never contradicts the root it lands in", () => {
     ws.advance(60_000);
     expect((await ws.post(`/api/docs/${outer}/unarchive`, {})).status).toBe(200);
 
+    // `resolved`, by the same rule the *named* document is restored under
+    // (SERVER-108): being swept back to the enabled root is being unarchived,
+    // implicitly rather than by name but by the same act, so one folder move
+    // must not hand the two skills different states.
     expect(pathOf(nested)).toBe(".claude/skills/demo/nested/SKILL.md");
     expect(parseDocument(ws.read(".claude/skills/demo/nested/SKILL.md")).data["status"]).toBe(
-      "open",
+      "resolved",
     );
-    expect(statusOf(nested)).toBe("open");
+    expect(statusOf(nested)).toBe("resolved");
     expect(await list("?type=skill")).toContain(nested);
     expect(await list("?type=skill&status=archived")).not.toContain(nested);
     // The system's keys and nothing else: `updated` is still the instant this
@@ -727,11 +767,12 @@ describe("the response says which documents the move carried", () => {
     expect(codes(restored)).toEqual(["carried_skill", "carried_reconciliation"]);
     expect(detailOf(restored, "carried_reconciliation")).toBe(
       `${nested} (.claude/skills/demo/nested/SKILL.md) still said \`status: archived\` under ` +
-        `the enabled skills root, so its status was reconciled to \`open\``,
+        `the enabled skills root, so its status was reconciled to \`resolved\``,
     );
-    // The report and the write are one story (§4): the key really did change.
+    // The report and the write are one story (§4): the key really did change,
+    // and to the state the warning names.
     expect(parseDocument(ws.read(".claude/skills/demo/nested/SKILL.md")).data["status"]).toBe(
-      "open",
+      "resolved",
     );
   });
 

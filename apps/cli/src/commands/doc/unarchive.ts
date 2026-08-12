@@ -38,13 +38,14 @@ export const unarchiveCommand: WorkspaceCommandSpec = {
   name: "unarchive",
   summary: "Bring an archived document back.",
   description:
-    "The reverse of `corpus doc archive`, and the whole of it: `status` goes back to `open` and a " +
+    "The reverse of `corpus doc archive`, and the whole of it: `status` goes back to `resolved` and a " +
     "`type: skill` document's folder moves back from `.claude/skills-archived/` to " +
     "`.claude/skills/`, which re-enables the skill **and frees its name** — a `409` from " +
     "`corpus skill create` saying the name belongs to an archived skill is telling you to run " +
-    "this verb. Note that the status it restores is `open`, not a memory of what the status was " +
-    "before archiving, which the server does not keep — so a document archived while `resolved` " +
-    "comes back `open`. A document that is **not** archived is left exactly as it is: the verb " +
+    "this verb. Note that the status it restores is `resolved` — the state archiving already implied " +
+    "(SPEC.md §5) — not a memory of what the status was before archiving, which the server does " +
+    "not keep: a document archived while `open` also comes back `resolved`. A document that is " +
+    "**not** archived is left exactly as it is: the verb " +
     "reports that and exits 0 without sending anything, mirroring `archive`'s treatment of an " +
     "already-archived document, so a retried loop is harmless and a `resolved` document is never " +
     "quietly reopened by one. The one exception is a `type: skill` document whose folder is " +

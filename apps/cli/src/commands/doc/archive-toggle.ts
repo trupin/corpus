@@ -42,8 +42,8 @@ const SKILLS_ARCHIVED_PREFIX = ".claude/skills-archived/";
  * something different each way:
  *
  * - **Sending anyway** is how `unarchive` used to silently reopen a `resolved`
- *   document: the route sets `status: open` unconditionally, so "unarchive a
- *   document that was never archived" quietly *changed* it (wave-3 audit,
+ *   document: the route used to set `status: open` unconditionally, so "unarchive a
+ *   document that was never archived" quietly *changed* it; the server now refuses that write outright, and this guard is the second line rather than the only one (wave-3 audit,
  *   FIX 11). Nobody asked for that and the old output line called it a no-op.
  * - **Skipping on status alone** would give up the only repair this CLI has for
  *   the half-state a raw `PUT` or the UI can still reach until SERVER-039 lands

@@ -645,3 +645,5 @@ it was false until the skills knew the verb existed.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | AGENT-024 | The skills reach for a patch when the change is bounded | done | P0 | CLI-035 |
+| SERVER-107 | A resolved document does not age — and the ramp never heard about it (PR #44 review) | done | P0 | SHARED-031 |
+| SERVER-108 | Unarchiving returns a document to `resolved`, not to `open` (PR #44 review) | done | P1 | SHARED-031 |
