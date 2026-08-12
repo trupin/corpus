@@ -6,7 +6,16 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-todo — **DRAFTED, awaiting sign-off**
+done — **SIGNED 2026-08-12 and applied to SPEC.md §11**
+
+All three open questions were settled at sign-off. **Column readers are excluded**
+as drafted — a persistent bar costs vertical space a column cannot spare.
+**Undo/redo are not on the toolbar**: the editor has history and `⌘Z` works, so
+buttons would spend the bar's room on the one thing nobody has to discover; the
+applied text says so explicitly rather than leaving it to be re-litigated.
+**`design/index.html` first** was not made a gate — the rider is precise enough
+about the bar's contents and bounds to implement from, and the mockup is the
+implementing issue's first step rather than a prerequisite for the signature.
 
 ## Priority
 
