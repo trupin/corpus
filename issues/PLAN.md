@@ -633,3 +633,46 @@ guarantees the watcher commits it as the `user` edit it is.
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
 | SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | todo | P1 | — |
+
+
+## Phase 32 — A resident agent for a conversation (2026-08-12)
+
+A top-level (standalone) thread can designate a **resident**: a long-lived agent
+that owns the thread's whole **scope** — the thread, its subthreads, and every
+artifact whose provenance walks back to it — and runs its own claim → work →
+settle → park loop on a **lane** of the queue. Messages in the scope reach the
+resident directly, warm, with no dispatch hop, which is what makes a Corpus
+conversation stop feeling async. Users see who is running (`corpus agents`, the
+composer's roster) and pick a recipient per message; the default is computed from
+where they post, and an override routes one message without rewiring anything.
+
+This deliberately revokes three standing doctrines, which is why SHARED-043 gates
+everything: the single-consumer assumption becomes **one consumer per lane**,
+"queue state never crosses the subagent boundary" becomes **a lane's owner settles
+its own lane**, and §7's "every event is delegated — the orchestrator never works
+a job inline" is scoped to the orchestrator's lane: **a resident works its
+conversation inline**. Fallback keeps the revocation safe: presence is the parked scoped
+`idle`, and a lane whose listener lapses falls back to the orchestrator at claim
+time — slower, never silent, nothing rewritten.
+
+Provenance (CONTRACT-050/SERVER-110/CLI-044) is the load-bearing first step and is
+independently valuable: `CORPUS_JOB` makes every write name the job it serves, the
+`↳` trace line verifiable, and scope membership computable rather than stored.
+**AGENT-025 is the one that decides whether this works** — the converse skill is
+where "direct conversation with a subagent" either feels synchronous or doesn't.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-043 | A resident agent for a conversation (rider — needs signature) | todo | P0 | — |
+| CONTRACT-050 | Every write can name the job it serves | todo | P0 | SHARED-043 |
+| CONTRACT-051 | Lanes, designation, and the roster on the wire | todo | P0 | SHARED-043 |
+| SERVER-110 | Stamp a document with the thread it came from | todo | P0 | CONTRACT-050 |
+| SERVER-109 | Designate a resident, and dissolve it cleanly | todo | P0 | CONTRACT-051 |
+| SERVER-107 | The queue learns lanes | todo | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
+| SERVER-108 | Presence is a parked request — liveness and the roster | todo | P0 | SERVER-107 |
+| CLI-044 | Mutating verbs carry the job they serve | todo | P0 | CONTRACT-050, SERVER-110 |
+| CLI-043 | Lane verbs, designation, and `corpus agents` | todo | P0 | CONTRACT-051, SERVER-107, SERVER-108, SERVER-109 |
+| AGENT-025 | The converse skill — a resident's own loop | todo | P0 | SHARED-043, CLI-044, CLI-043 |
+| AGENT-026 | Orchestrate learns to share the queue | todo | P0 | AGENT-025, CLI-043 |
+| UI-108 | The composer offers the recipient | todo | P0 | CONTRACT-051, SERVER-107, SERVER-108 |
+| UI-109 | The board shows who is resident, and who is live | todo | P1 | CONTRACT-051, SERVER-108 |
