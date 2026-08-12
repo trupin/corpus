@@ -18,6 +18,7 @@ import {
   createWriteWorkspace,
   TOKEN,
   type WriteWorkspace,
+  putDoc,
 } from "./docs/write-fixture.js";
 import type { AutoCommitter } from "./git/index.js";
 import { createRecordingCommitter } from "./locks/git-fixture.js";
@@ -101,16 +102,8 @@ describe("a clean stop closes the open commit window (SPEC.md §4)", () => {
     // §4 will not relabel a commit a published range already names. The agent's
     // edits emit no acknowledgment, so nothing pins the window.
     const created = await createDoc(ws, { type: "note", title: "Recovery notes" }, "agent");
-    await ws.put(
-      `/api/docs/${created.id}`,
-      { body: "a first save" },
-      { "x-corpus-author": "agent" },
-    );
-    await ws.put(
-      `/api/docs/${created.id}`,
-      { body: "a second save" },
-      { "x-corpus-author": "agent" },
-    );
+    await putDoc(ws, created.id, { body: "a first save" }, { "x-corpus-author": "agent" });
+    await putDoc(ws, created.id, { body: "a second save" }, { "x-corpus-author": "agent" });
     expect(ws.log("%s")[0]).not.toContain("editing session");
 
     await ws.server.close();
@@ -125,8 +118,8 @@ describe("a clean stop closes the open commit window (SPEC.md §4)", () => {
     const created = await createDoc(ws, { type: "note", title: "Recovery notes" }, "user");
     // `editPath` is what opens §4's edit session, so this is the path whose
     // acknowledgment publishes the window's sha at shutdown.
-    await ws.put(`/api/docs/${created.id}`, { body: "a first save" });
-    await ws.put(`/api/docs/${created.id}`, { body: "a second save" });
+    await putDoc(ws, created.id, { body: "a first save" });
+    await putDoc(ws, created.id, { body: "a second save" });
 
     await ws.server.close();
 

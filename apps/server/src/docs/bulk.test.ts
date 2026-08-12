@@ -30,7 +30,7 @@ import {
   type BulkActionOutcome,
   type BulkActionResult,
 } from "@corpus/contract";
-import { createThread } from "../threads/thread-fixture.js";
+import { createThread, putDoc } from "../threads/thread-fixture.js";
 import { AUTH, createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
@@ -261,7 +261,7 @@ describe("the bulk commit stands alone in both directions (§4)", () => {
     const [doc] = await seed(1);
     const id = doc?.id ?? "";
 
-    const edited = await ws.put(`/api/docs/${id}`, { body: "the user's first draft" });
+    const edited = await putDoc(ws, id, { body: "the user's first draft" });
     expect(edited.status).toBe(200);
     const sessionCommit = ws.head();
     const sessionTree = ws.git("rev-parse", `${sessionCommit}^{tree}`).trim();
@@ -290,7 +290,7 @@ describe("the bulk commit stands alone in both directions (§4)", () => {
     const commits = ws.log("%H").length;
     const bulkTree = ws.git("rev-parse", `${bulkCommit}^{tree}`).trim();
 
-    const saved = await ws.put(`/api/docs/${id}`, { body: "typed right after the act" });
+    const saved = await putDoc(ws, id, { body: "typed right after the act" });
     expect(saved.status).toBe(200);
 
     expect(ws.head()).not.toBe(bulkCommit);
@@ -307,9 +307,9 @@ describe("the bulk commit stands alone in both directions (§4)", () => {
     // The guard against fixing the two directions above by disabling squashing.
     const [doc] = await seed(1);
     const id = doc?.id ?? "";
-    await ws.put(`/api/docs/${id}`, { body: "first" });
+    await putDoc(ws, id, { body: "first" });
     const commits = ws.log("%H").length;
-    await ws.put(`/api/docs/${id}`, { body: "second" });
+    await putDoc(ws, id, { body: "second" });
     expect(ws.log("%H")).toHaveLength(commits);
   });
 });

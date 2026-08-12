@@ -11,7 +11,7 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
-import type { ApiError, Lock, ValidationIssue } from "@corpus/contract";
+import type { ApiError, Doc, Lock, ValidationIssue } from "@corpus/contract";
 
 /**
  * Base class for every deliberate server failure. Startup failures (workspace
@@ -110,6 +110,24 @@ export function conflict(message: string, lock?: Lock): HttpError {
 
 export function locked(message: string, lock: Lock): HttpError {
   return new HttpError(423, { code: "locked", message, lock });
+}
+
+/**
+ * SPEC.md §7's refusal: the key presented names a version this document no
+ * longer is.
+ *
+ * **Never bare.** It carries the document *as it now stands*, whose own `key` is
+ * the fresh one — one exchange rather than two, so the writer can see what
+ * changed, reconcile and write again. The fresh key is deliberately not a
+ * sibling field: it is `doc.key`, the same field every read publishes, because
+ * two copies of one value are two things that can disagree.
+ *
+ * A code of its own rather than `conflict`, because `409` already carries the
+ * re-attach conflict and the two must stay tellable apart at the `code` a client
+ * branches on (`StaleKeyErrorSchema`).
+ */
+export function staleKey(message: string, doc: Doc): HttpError {
+  return new HttpError(409, { code: "stale_key", message, doc });
 }
 
 /**

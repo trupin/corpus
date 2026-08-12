@@ -26,6 +26,8 @@ export {
   planDelete,
 } from "./delete.js";
 export type { DeleteOutcome, DeletePlan } from "./delete.js";
+// SPEC.md §7's key: the one derivation, and the one check.
+export { assertDocumentKey, documentKey } from "./key.js";
 export { assertMovable, moveDocument, planMove } from "./move.js";
 export type { MovePlan } from "./move.js";
 export {
@@ -39,7 +41,7 @@ export {
   toWireDoc,
   wireFrontmatter,
 } from "./read.js";
-export type { DocumentRow, LoadedDocument } from "./read.js";
+export type { DocReadContext, DocumentRow, LoadedDocument } from "./read.js";
 export { findTemplate } from "./templates.js";
 export type { TemplatePrefill } from "./templates.js";
 export { changedFields, updateDocument, updateDocumentLocked } from "./update.js";

@@ -20,7 +20,13 @@ import {
   type DocumentMutex,
   type DocsWorkspace,
 } from "../docs/index.js";
-import { AUTH, createWriteWorkspace, type WriteWorkspace } from "../docs/write-fixture.js";
+import {
+  AUTH,
+  createWriteWorkspace,
+  keyOnDisk,
+  putDoc,
+  type WriteWorkspace,
+} from "../docs/write-fixture.js";
 import { createAutoCommitter, createGit, REVISION_SEARCH_LIMIT } from "../git/index.js";
 import { silentLogger } from "../logger.js";
 import { skillDocumentPath } from "./paths.js";
@@ -392,8 +398,9 @@ describe("the restoration is an ordinary mutation", () => {
     // is satisfied here, and the restored content differs from HEAD's parent, so
     // the amend would go through — deleting the bad edit from history and
     // leaving no record that a rollback happened at all.
-    const edited = await ws.put(
-      `/api/docs/${docId ?? ""}`,
+    const edited = await putDoc(
+      ws,
+      docId ?? "",
       { body: "Version three — the bad edit.\n" },
       { "x-corpus-author": "agent" },
     );
@@ -559,7 +566,7 @@ describe("the edit lock", () => {
     chmodSync(join(hooks, "pre-commit"), 0o755);
 
     // A save on the same document parks inside its own commit, holding the lane.
-    const holding = ws.put(`/api/docs/${docId}`, { body: "the save that holds the lane" });
+    const holding = putDoc(ws, docId, { body: "the save that holds the lane" });
     for (let attempt = 0; attempt < 500 && !existsSync(started); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
@@ -622,6 +629,7 @@ describe("choosing the revision inside the lane", () => {
 
     const save = updateDocument(skills, mutex, "user", docId, {
       body: "Version three — the concurrent save.\n",
+      key: keyOnDisk(ws, PATH),
     });
     // Registered while the save is still queued. The pre-fix code read the file
     // here, synchronously, before the save had written a byte — and then chose
@@ -649,7 +657,10 @@ describe("choosing the revision inside the lane", () => {
     });
     void mutex.run(docId, () => held);
 
-    const save = updateDocument(skills, mutex, "user", docId, { body: "Version two.\n" });
+    const save = updateDocument(skills, mutex, "user", docId, {
+      body: "Version two.\n",
+      key: keyOnDisk(ws, PATH),
+    });
     const rolled = rollbackSkill(skills, mutex, "agent", SKILL, null);
 
     release();
@@ -670,7 +681,7 @@ describe("closing §4's commit window before the revision is resolved", () => {
   /** A good version saved through the server's own write path, leaving its window open. */
   async function saveThroughTheWritePath(body: string): Promise<{ docId: string; bytes: string }> {
     const docId = docIdOf(PATH) ?? "";
-    const response = await ws.put(`/api/docs/${docId}`, { body }, { "x-corpus-author": "user" });
+    const response = await putDoc(ws, docId, { body }, { "x-corpus-author": "user" });
     expect(response.status).toBe(200);
     return { docId, bytes: ws.read(PATH) };
   }
@@ -710,7 +721,7 @@ describe("closing §4's commit window before the revision is resolved", () => {
     // And the window really is closed: the next save opens a fresh commit
     // rather than amending the one the rollback just read.
     const docId = docIdOf(PATH) ?? "";
-    await ws.put(`/api/docs/${docId}`, { body: "Version four.\n" }, { "x-corpus-author": "user" });
+    await putDoc(ws, docId, { body: "Version four.\n" }, { "x-corpus-author": "user" });
     expect(ws.log("%H").length).toBe(commits + 1);
   });
 
@@ -749,7 +760,7 @@ describe("closing §4's commit window before the revision is resolved", () => {
 
     expect(ws.log("%H").length).toBe(commits);
     expect(ws.log("%s")[0]).toBe("editing session: 1 document by user");
-    await ws.put(`/api/docs/${docId}`, { body: "Version three.\n" }, { "x-corpus-author": "user" });
+    await putDoc(ws, docId, { body: "Version three.\n" }, { "x-corpus-author": "user" });
     expect(ws.log("%H").length).toBe(commits + 1);
   });
 });

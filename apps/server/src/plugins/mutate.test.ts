@@ -289,6 +289,10 @@ describe("parity with updateDoc", () => {
     ws.advance(600_000); // past §4's squash window, so the write gets its own commit
     const doc = await context.mutateDoc("agent", docId, (current) => ({
       body: "recomputed by the plugin",
+      // SPEC.md §7: a body-replacing write presents the key of the version it
+      // recomputed from — here, the document the lane just handed the callback,
+      // which is by construction the one this write is about to overwrite.
+      key: current.key,
       extra: { counter: counterOf(current) + 41 },
     }));
 

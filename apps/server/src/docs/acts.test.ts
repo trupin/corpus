@@ -22,7 +22,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "@corpus/contract";
 import { editingSessionSubject } from "../git/index.js";
-import { createThread, threadPath } from "../threads/thread-fixture.js";
+import { createThread, threadPath, putDoc } from "../threads/thread-fixture.js";
 import { AUTH, createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
@@ -84,15 +84,17 @@ describe("the agent's stewardship for one event is one commit (§4)", () => {
     const before = commitCount();
 
     for (const [index, doc] of docs.slice(0, 3).entries()) {
-      const edited = await ws.put(
-        `/api/docs/${doc.id}`,
+      const edited = await putDoc(
+        ws,
+        doc.id,
         { body: `rewritten by the agent ${String(index)}` },
         asAgent,
       );
       expect(edited.status).toBe(200);
     }
-    const changelog = await ws.put(
-      `/api/docs/${docs[3]?.id ?? ""}`,
+    const changelog = await putDoc(
+      ws,
+      docs[3]?.id ?? "",
       { body: "history\n\n## 2026-08-10\n\nthree documents revised" },
       asAgent,
     );
@@ -114,7 +116,7 @@ describe("the agent's stewardship for one event is one commit (§4)", () => {
     expect(filesIn("HEAD")).toEqual([...docs.map((doc) => doc.path), threadPath(thread.id)].sort());
 
     // And it is closed: the next save by the same party cannot fold into it.
-    const later = await ws.put(`/api/docs/${parent}`, { body: "a later thought" }, asAgent);
+    const later = await putDoc(ws, parent, { body: "a later thought" }, asAgent);
     expect(later.status).toBe(200);
     expect(commitCount()).toBe(before + 2);
     expect(subjectOf("HEAD^")).toBe(`comment: turn on ${thread.id} by agent`);
@@ -138,11 +140,7 @@ describe("each act closes the window and names its commit (§4)", () => {
     expected = 200,
   ): Promise<number> {
     const headers = actor === "agent" ? asAgent : asUser;
-    const saved = await ws.put(
-      `/api/docs/${docId}`,
-      { body: `underway, by the ${actor}` },
-      headers,
-    );
+    const saved = await putDoc(ws, docId, { body: `underway, by the ${actor}` }, headers);
     expect(saved.status).toBe(200);
     // The save's own commit is the window; the act must not add a second.
     const before = commitCount() - 1;
@@ -177,7 +175,7 @@ describe("each act closes the window and names its commit (§4)", () => {
     const thread = await createThread(ws, { parent: doc.id, body: "?" });
     ws.advance(QUIET);
 
-    const saved = await ws.put(`/api/docs/${doc.id}`, { body: "underway" }, asUser);
+    const saved = await putDoc(ws, doc.id, { body: "underway" }, asUser);
     expect(saved.status).toBe(200);
     const before = commitCount() - 1;
 
@@ -190,7 +188,7 @@ describe("each act closes the window and names its commit (§4)", () => {
 
     // And closed it: the next save by the same party opens a fresh commit
     // rather than folding into the one the turn named.
-    const later = await ws.put(`/api/docs/${doc.id}`, { body: "still typing" }, asUser);
+    const later = await putDoc(ws, doc.id, { body: "still typing" }, asUser);
     expect(later.status).toBe(200);
     expect(commitCount()).toBe(before + 2);
   });
@@ -256,7 +254,7 @@ describe("each act closes the window and names its commit (§4)", () => {
     ws.advance(QUIET);
 
     const before = await saveThenAct(neighbour.id, "agent", () =>
-      ws.put(`/api/docs/${subject.id}`, { reviewed: "2026-08-10T09:00:00Z" }, asAgent),
+      putDoc(ws, subject.id, { reviewed: "2026-08-10T09:00:00Z" }, asAgent),
     );
 
     expect(commitCount()).toBe(before + 1);
@@ -266,7 +264,7 @@ describe("each act closes the window and names its commit (§4)", () => {
     expect(ws.read(subject.path)).toContain("reviewed: 2026-08-10T09:00:00Z");
 
     // The window is closed: the next save is a commit of its own.
-    const later = await ws.put(`/api/docs/${neighbour.id}`, { body: "after" }, asAgent);
+    const later = await putDoc(ws, neighbour.id, { body: "after" }, asAgent);
     expect(later.status).toBe(200);
     expect(commitCount()).toBe(before + 2);
   });
@@ -283,12 +281,10 @@ describe("what does not close a window (§4)", () => {
     const second = await createDoc(ws, { type: "note", title: "Second", body: "two" }, "user");
     ws.advance(QUIET);
 
-    expect((await ws.put(`/api/docs/${first.id}`, { body: "draft" }, asUser)).status).toBe(200);
+    expect((await putDoc(ws, first.id, { body: "draft" }, asUser)).status).toBe(200);
     const before = commitCount() - 1;
     await between();
-    expect((await ws.put(`/api/docs/${second.id}`, { body: "draft too" }, asUser)).status).toBe(
-      200,
-    );
+    expect((await putDoc(ws, second.id, { body: "draft too" }, asUser)).status).toBe(200);
     return before;
   }
 
@@ -301,9 +297,7 @@ describe("what does not close a window (§4)", () => {
           { type: "note", title: `Extra ${String(index)}`, body: "x" },
           "user",
         );
-        expect(
-          (await ws.put(`/api/docs/${doc.id}`, { body: `x${String(index)}` }, asUser)).status,
-        ).toBe(200);
+        expect((await putDoc(ws, doc.id, { body: `x${String(index)}` }, asUser)).status).toBe(200);
       }
     });
     expect(commitCount()).toBe(before + 1);
@@ -374,9 +368,7 @@ describe("what does not close a window (§4)", () => {
     const thread = await createThread(ws, { parent: doc.id, body: "?" });
     const before = await windowAround(async () => {
       expect((await ws.post(`/api/locks/${doc.id}`, {}, asUser)).status).toBe(201);
-      expect(
-        (await ws.put(`/api/docs/${doc.id}`, { body: "under my own lock" }, asUser)).status,
-      ).toBe(200);
+      expect((await putDoc(ws, doc.id, { body: "under my own lock" }, asUser)).status).toBe(200);
       ws.reproject();
       expect((await ws.post(`/api/threads/${thread.id}/seen`, {}, asUser)).status).toBe(200);
       expect((await ws.request("/api/docs")).status).toBe(200);
@@ -387,7 +379,7 @@ describe("what does not close a window (§4)", () => {
     // Still open, so it still carries the last save's subject. Let it go quiet
     // and the close labels it for what it was: three documents, no act.
     ws.advance(QUIET);
-    expect((await ws.put(`/api/docs/${doc.id}`, { body: "much later" }, asUser)).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { body: "much later" }, asUser)).status).toBe(200);
     expect(commitCount()).toBe(before + 2);
     expect(subjectOf("HEAD^")).toBe(editingSessionSubject(3, "user"));
   });
@@ -444,7 +436,7 @@ describe("a deletion closes the window and then commits alone (§4)", () => {
     expect(commitCount()).toBe(before + 1);
 
     // Same party, same instant — an ordinary save would fold. This must not.
-    expect((await ws.put(`/api/docs/${keeper.id}`, { body: "after" }, asUser)).status).toBe(200);
+    expect((await putDoc(ws, keeper.id, { body: "after" }, asUser)).status).toBe(200);
     expect(commitCount()).toBe(before + 2);
     expect(subjectOf("HEAD^")).toBe(`doc delete: Doomed (${doomed.id}) by user`);
   });
@@ -459,7 +451,7 @@ describe("a staged bulk Save flushes first and then lands alone (§4)", () => {
     ];
     ws.advance(QUIET);
 
-    expect((await ws.put(`/api/docs/${edited.id}`, { body: "underway" }, asUser)).status).toBe(200);
+    expect((await putDoc(ws, edited.id, { body: "underway" }, asUser)).status).toBe(200);
     const before = commitCount() - 1;
 
     // No clock movement: the act meets a window that is wide open.
@@ -500,9 +492,7 @@ describe("a force unlock flushes before its audit entry (§4, §7)", () => {
 
     // The agent works under its own lease; the window is open when the break
     // arrives, with no clock movement at all.
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { body: "the agent's work" }, asAgent)).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { body: "the agent's work" }, asAgent)).status).toBe(200);
     expect(commitCount()).toBe(before + 1);
 
     expect((await ws.post(`/api/locks/${doc.id}/break`, {}, asUser)).status).toBe(200);
@@ -525,13 +515,11 @@ describe("a force unlock flushes before its audit entry (§4, §7)", () => {
   it("takes no later save into the audit entry", async () => {
     const doc = await settledDoc("Contended", "one");
     expect((await ws.post(`/api/locks/${doc.id}`, {}, asAgent)).status).toBe(201);
-    expect((await ws.put(`/api/docs/${doc.id}`, { body: "agent work" }, asAgent)).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { body: "agent work" }, asAgent)).status).toBe(200);
     expect((await ws.post(`/api/locks/${doc.id}/break`, {}, asUser)).status).toBe(200);
     const audit = ws.head();
 
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { body: "the user carries on" }, asUser)).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { body: "the user carries on" }, asUser)).status).toBe(200);
     expect(ws.git("rev-parse", "HEAD^").trim()).toBe(audit);
   });
 });

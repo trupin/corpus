@@ -22,6 +22,7 @@ import {
   populateFromFiles,
   type ProjectionDb,
 } from "../projection/index.js";
+import { documentKey } from "./key.js";
 
 export const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 export const AUTH: Record<string, string> = { Authorization: `Bearer ${TOKEN}` };
@@ -216,6 +217,59 @@ export function createWriteWorkspace(
     },
   };
   return workspace;
+}
+
+/**
+ * The key of the document stored at `relativePath` (SPEC.md §7), for the tests
+ * that call a write verb **in process** and so never see a read response to take
+ * one from.
+ *
+ * It calls the server's own derivation rather than restating it: a fixture that
+ * hashed the bytes its own way would pass against a server that published a key
+ * it does not check. Everything that goes over HTTP uses {@link readDocKey}.
+ */
+export const keyOnDisk = (ws: WriteWorkspace, relativePath: string): string =>
+  documentKey(ws.read(relativePath));
+
+/**
+ * The key `GET /api/docs/{id}` currently hands out (SPEC.md §7) — what a
+ * body-replacing `PUT` has to present back.
+ *
+ * Read over HTTP rather than derived from the file, deliberately: a fixture that
+ * hashed the bytes itself would be a second implementation of the derivation,
+ * and every keyed test would then pass against a server that published a
+ * different key from the one it checks.
+ */
+export async function readDocKey(ws: WriteWorkspace, id: string): Promise<string> {
+  const response = await ws.request(`/api/docs/${id}`, { headers: AUTH });
+  const payload = (await response.json()) as Record<string, unknown>;
+  if (response.status !== 200) {
+    throw new Error(`read failed: ${response.status} ${JSON.stringify(payload)}`);
+  }
+  const key = payload["key"];
+  if (typeof key !== "string") throw new Error(`no key on ${id}: ${JSON.stringify(payload)}`);
+  return key;
+}
+
+/**
+ * `PUT /api/docs/{id}` the way a well-behaved client writes: read the document,
+ * then present the key it carried (SPEC.md §7).
+ *
+ * Fills the key in only when the patch does not already name one, so a test
+ * about the mechanism itself — a stale key, an absent one — still says exactly
+ * what it sends by calling `ws.put` or passing `key` explicitly.
+ */
+export async function putDoc(
+  ws: WriteWorkspace,
+  id: string,
+  patch: Record<string, unknown>,
+  headers: Record<string, string> = {},
+): Promise<Response> {
+  const keyed =
+    patch["body"] === undefined || patch["key"] !== undefined
+      ? patch
+      : { ...patch, key: await readDocKey(ws, id) };
+  return ws.put(`/api/docs/${id}`, keyed, headers);
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   createWriteWorkspace,
   type WriteWorkspace,
   type WriteWorkspaceOptions,
+  putDoc,
 } from "../docs/write-fixture.js";
 
 /** Short enough to watch a session idle out; the shipped window is three minutes. */
@@ -64,7 +65,7 @@ function acknowledgments(ws: WriteWorkspace): DocEditedPayload[] {
 }
 
 const edit = (ws: WriteWorkspace, id: string, body: string, actor: "user" | "agent" = "user") =>
-  ws.put(`/api/docs/${id}`, { body }, { "x-corpus-author": actor });
+  putDoc(ws, id, { body }, { "x-corpus-author": actor });
 
 /**
  * The flush as a real caller makes it: `POST`, no body, no acting party header.
@@ -552,7 +553,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     pastTheSquashWindow(ws);
     const before = ws.head();
 
-    expect((await ws.put(`/api/docs/${doc.id}`, patch)).status).toBe(200);
+    expect((await putDoc(ws, doc.id, patch)).status).toBe(200);
 
     ws.advance(IDLE_MS * 4);
     await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
@@ -578,9 +579,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     pastTheSquashWindow(ws);
     const before = ws.head();
 
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n", tags: ["retagged"] })).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { body: "one\ntwo\n", tags: ["retagged"] })).status).toBe(200);
     expect(ws.head()).not.toBe(before);
     expect(ws.read(doc.path)).toContain("retagged");
 
@@ -599,7 +598,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
     pastTheSquashWindow(ws);
 
-    expect((await ws.put(`/api/docs/${doc.id}`, { title: "Refinance options" })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { title: "Refinance options" })).status).toBe(200);
 
     ws.advance(IDLE_MS * 2);
     await vi.waitFor(() => {
@@ -617,9 +616,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
     pastTheSquashWindow(ws);
 
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { title: "Mortgage options", tags: ["m"] })).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { title: "Mortgage options", tags: ["m"] })).status).toBe(200);
 
     ws.advance(IDLE_MS * 4);
     await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
@@ -632,9 +629,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
     pastTheSquashWindow(ws);
 
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n", tags: ["mortgage"] })).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { body: "one\ntwo\n", tags: ["mortgage"] })).status).toBe(200);
 
     ws.advance(IDLE_MS * 2);
     await vi.waitFor(() => {
@@ -655,9 +650,9 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     pastTheSquashWindow(ws);
 
     await edit(ws, doc.id, "one\ntwo\n");
-    expect((await ws.put(`/api/docs/${doc.id}`, { extra: { width: 444 } })).status).toBe(200);
-    expect((await ws.put(`/api/docs/${doc.id}`, { extra: { width: 725 } })).status).toBe(200);
-    expect((await ws.put(`/api/docs/${doc.id}`, { pinned: true })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { extra: { width: 444 } })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { extra: { width: 725 } })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { pinned: true })).status).toBe(200);
 
     ws.advance(IDLE_MS * 2);
     await vi.waitFor(() => {
@@ -747,9 +742,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
 
     it("covers both edits across a frontmatter-only save — the board's own write", async () => {
       const { ws, payload, path } = await sitting("ack-base-fm", async (workspaceUnderTest, id) => {
-        expect(
-          (await workspaceUnderTest.put(`/api/docs/${id}`, { extra: { width: 725 } })).status,
-        ).toBe(200);
+        expect((await putDoc(workspaceUnderTest, id, { extra: { width: 725 } })).status).toBe(200);
       });
       expectBothEditsInRange(ws, payload, path);
     });
@@ -782,8 +775,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
       // this carried an `editPath` too; it never mattered, because the tracker
       // discards a non-`user` actor's path before it looks at it.
       expect(
-        (await ws.put(`/api/docs/${doc.id}`, { tags: ["filed"] }, { "x-corpus-author": "agent" }))
-          .status,
+        (await putDoc(ws, doc.id, { tags: ["filed"] }, { "x-corpus-author": "agent" })).status,
       ).toBe(200);
       await edit(ws, doc.id, "line one\nuser line\nuser again\n");
 

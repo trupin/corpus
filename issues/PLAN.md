@@ -605,7 +605,7 @@ mechanism rather than waste.
 | --- | --- | --- | --- | --- |
 | SHARED-041 | A key you must present, not a lock you can forget (AUTHORIZED 2026-08-11, applied) | done | P0 | — |
 | CONTRACT-049 | A key on every read, and on every write that overwrites | done | P0 | SHARED-041 |
-| SERVER-098 | Derive the key, verify it, and refuse with the document | todo | P0 | CONTRACT-049 |
+| SERVER-098 | Derive the key, verify it, and refuse with the document | done | P0 | CONTRACT-049 |
 | SERVER-099 | Remove the lock subsystem | todo | P0 | SERVER-098 |
 | CLI-038 | `corpus doc read` hands you a key; the write verbs demand one | todo | P0 | CONTRACT-049, SERVER-098 |
 | UI-107 | The board presents a key, and never goes read-only | todo | P0 | CONTRACT-049, SERVER-098 |

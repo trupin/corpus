@@ -54,7 +54,6 @@ import { createJobService, createStatedWeightRecorder, mountJobRoutes } from "./
 import {
   createLockGuard,
   createLockService,
-  mountLockRoutes,
   type LockGuard,
   type LockService,
 } from "./locks/index.js";
@@ -462,7 +461,11 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     const guard = createLockGuard(lockService);
     locks = lockService;
     lockGuard = guard;
-    mountLockRoutes(app, lockService);
+    // The lock *routes* are not mounted: CONTRACT-049 deleted their definitions
+    // when SPEC.md §7's key replaced the edit lock, so `app.openapi` would be
+    // handed `undefined` and the server would not boot. The rest of `locks/`
+    // survives until SERVER-099 removes the subsystem in this same PR — this one
+    // line is the minimum that lets a server with keys in it start at all.
 
     // §4's edit acknowledgment (SERVER-052). Built before the write pipeline
     // because the pipeline takes it as a constructor argument, exactly like the

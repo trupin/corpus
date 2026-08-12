@@ -118,7 +118,7 @@ export async function moveDocument(
 
     const plan = planMove(workspace, loaded, resolveFolder(folder));
     if (plan === null) {
-      return { doc: toWireDoc(workspace.projection, loaded), result: emptyResult() };
+      return { doc: toWireDoc(workspace, loaded), result: emptyResult() };
     }
 
     const result = await runMutation(workspace, {
@@ -144,10 +144,7 @@ export async function moveDocument(
     });
 
     return {
-      doc: toWireDoc(
-        workspace.projection,
-        loadDocument(workspace.workspaceRoot, workspace.projection, id),
-      ),
+      doc: toWireDoc(workspace, loadDocument(workspace.workspaceRoot, workspace.projection, id)),
       result,
     };
   });

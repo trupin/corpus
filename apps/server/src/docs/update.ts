@@ -24,6 +24,7 @@ import {
 } from "../core/index.js";
 import { badRequest } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
+import { assertDocumentKey } from "./key.js";
 import { loadDocument, readAnchorsMap, toWireDoc } from "./read.js";
 import {
   runMutation,
@@ -302,6 +303,14 @@ export async function updateDocumentLocked(
   const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
   const { parsed } = loaded;
 
+  // SPEC.md §7's key, against the bytes just read, **inside the lane**, and
+  // before this verb computes or writes anything. Placed after `loadDocument`
+  // deliberately: a document that does not exist is a `404` and the key question
+  // never arises. A refusal from here has therefore written nothing — no file
+  // touched, no commit, no re-projection, no invalidation — which is what makes
+  // §7's "a refusal is never a lost edit" true rather than merely intended.
+  assertDocumentKey(id, loaded.text, patch, () => toWireDoc(workspace, loaded));
+
   const nextBody = patch.body ?? parsed.body;
   const bodyChanged = nextBody !== parsed.body;
   const fields = changedFields(parsed.data, patch);
@@ -344,7 +353,7 @@ export async function updateDocumentLocked(
   // idle minute into the audit trail.
   if (text === loaded.text) {
     return {
-      doc: toWireDoc(workspace.projection, loaded),
+      doc: toWireDoc(workspace, loaded),
       anchors: report,
       result: { changed: false, warnings: [], commit: null },
     };
@@ -425,10 +434,7 @@ export async function updateDocumentLocked(
   });
 
   return {
-    doc: toWireDoc(
-      workspace.projection,
-      loadDocument(workspace.workspaceRoot, workspace.projection, id),
-    ),
+    doc: toWireDoc(workspace, loadDocument(workspace.workspaceRoot, workspace.projection, id)),
     anchors: report,
     result,
   };

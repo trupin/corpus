@@ -143,6 +143,33 @@ export interface EditSessionTracker {
    */
   observeRewrite(from: string, to: string): void;
   /**
+   * SPEC.md §7's advisory **someone is editing this**: does a *person* have an
+   * edit session open on this document right now?
+   *
+   * The signal §7 asks for is this module's existing state, exposed — not a
+   * second tracker. §7 names it "§4's edit session — the same one that ends in an
+   * acknowledgment", and that is literally what {@link sessions} holds, so
+   * anything else would be a second answer to one question.
+   *
+   * **It reports; it never refuses.** Nothing consults this before a write, there
+   * is nothing to acquire or release, and no document is ever read-only.
+   * Correctness is the key's job (`docs/key.ts`); this is politeness, and the
+   * asymmetry §7 makes deliberately: forgetting the key cannot cost correctness
+   * because the write does not happen, while ignoring this costs only manners.
+   *
+   * A **sealed** session still counts. Sealing freezes a *range* because the
+   * other party wrote (see {@link OpenSession.sealed}); it says nothing about
+   * whether the person is still at the document, and answering `false` there
+   * would tell the agent it had the document to itself precisely because it had
+   * just written to it.
+   *
+   * Reports the **person** only, and never the agent: an agent's writing is a
+   * sequence of one-shot commands with no session to report, and the person sees
+   * those writes land live instead (§9.4). Free by construction —
+   * `observeCommit` opens a session for no other actor.
+   */
+  isOpen(docId: string): boolean;
+  /**
    * §4's **close** path: the reader closed and the session is flushed. Ends and
    * emits every session open on this document.
    *
@@ -499,6 +526,13 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
         if (session.firstSha === from) session.firstSha = to;
         if (session.lastSha === from) session.lastSha = to;
       }
+    },
+
+    isOpen(docId) {
+      for (const session of sessions.values()) {
+        if (session.docId === docId) return true;
+      }
+      return false;
     },
 
     flush(docId) {

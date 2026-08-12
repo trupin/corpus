@@ -889,3 +889,67 @@ describe("the acknowledgment window", () => {
     expect(h.git.calls).toEqual([]);
   });
 });
+
+// SPEC.md §7's advisory "someone is editing this", which is this tracker's own
+// state exposed rather than a second tracker. It reports; it never refuses —
+// `docs/key.test.ts` is where that is asserted against the write path.
+describe("is a person editing this document (SPEC.md §7)", () => {
+  const graph = (): FakeRepo => ({
+    parents: new Map([
+      ["ba5e001", null],
+      ["c0ffee1", "ba5e001"],
+      ["c0ffee2", "c0ffee1"],
+    ]),
+  });
+
+  it("is false until a person's editor save opens a session, and false again once it ends", async () => {
+    const h = harness(graph());
+    expect(h.tracker.isOpen(DOC)).toBe(false);
+
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    expect(h.tracker.isOpen(DOC)).toBe(true);
+
+    // Both of §4's ends, one after the other: idling out, then a flush.
+    await h.advance(IDLE_MS);
+    expect(h.tracker.isOpen(DOC)).toBe(false);
+
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee2") }));
+    expect(h.tracker.isOpen(DOC)).toBe(true);
+    h.tracker.flush(DOC);
+    await h.settle();
+    expect(h.tracker.isOpen(DOC)).toBe(false);
+  });
+
+  it("answers about the document asked, not about any session anywhere", () => {
+    const h = harness(graph());
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    expect(h.tracker.isOpen(DOC)).toBe(true);
+    expect(h.tracker.isOpen(OTHER_DOC)).toBe(false);
+  });
+
+  it("never reports the agent: its writing is one-shot commands with no session", () => {
+    const h = harness(graph());
+    h.tracker.observeCommit(save({ actor: "agent", outcome: committed("c0ffee1") }));
+    expect(h.tracker.isOpen(DOC)).toBe(false);
+  });
+
+  it("reports nothing for a write that is not the editor's save", () => {
+    const h = harness(graph());
+    // A move, an archive, a thread turn: §4 opens no session for any of them.
+    h.tracker.observeCommit(save({ editPath: null, outcome: committed("c0ffee1") }));
+    expect(h.tracker.isOpen(DOC)).toBe(false);
+  });
+
+  it("still reports a **sealed** session: the person has not put the document down", () => {
+    const h = harness(graph());
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    // The other party wrote here, which freezes the session's *range*. It says
+    // nothing about whether the person is still editing — and answering `false`
+    // would tell the agent it had the document to itself precisely because it
+    // had just written to it.
+    h.tracker.observeCommit(
+      save({ actor: "agent", editPath: null, outcome: committed("c0ffee2") }),
+    );
+    expect(h.tracker.isOpen(DOC)).toBe(true);
+  });
+});

@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { DocListSchema, type DocList, type DocRow } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { createDoc, createWriteWorkspace, type WriteWorkspace, putDoc } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
 
@@ -231,7 +231,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
     const beforeLines = frontmatterLines(before);
 
     ws.advance(60_000);
-    const response = await ws.put(`/api/docs/${created.id}`, {
+    const response = await putDoc(ws, created.id, {
       extra: { items: [{ text: "Call the broker", done: true }] },
     });
     expect(response.status).toBe(200);
@@ -266,7 +266,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       extra: { items: [{ text: "A" }], lane: "doing" },
     });
     ws.advance(60_000);
-    expect((await ws.put(`/api/docs/${created.id}`, { extra: { items: null } })).status).toBe(200);
+    expect((await putDoc(ws, created.id, { extra: { items: null } })).status).toBe(200);
     const text = ws.read(created.path);
     expect(text).not.toContain("items:");
     expect(text).toContain("lane: doing");
@@ -299,7 +299,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       // the merged result still fits.
       for (const key of ["b", "c"]) {
         ws.advance(60_000);
-        const response = await ws.put(`/api/docs/${created.id}`, { extra: { [key]: CHUNK } });
+        const response = await putDoc(ws, created.id, { extra: { [key]: CHUNK } });
         expect([key, response.status]).toEqual([key, 200]);
       }
 
@@ -310,7 +310,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       // The fourth crosses it. Same request shape, same 20 KiB — what changed is
       // the file it lands in.
       ws.advance(60_000);
-      const refused = await ws.put(`/api/docs/${created.id}`, { extra: { d: CHUNK } });
+      const refused = await putDoc(ws, created.id, { extra: { d: CHUNK } });
       const payload = (await refused.json()) as {
         code: string;
         issues: { path: string; message: string }[];
@@ -350,13 +350,13 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       ws.reproject();
 
       ws.advance(60_000);
-      const shrunk = await ws.put(`/api/docs/${created.id}`, { extra: { e: null } });
+      const shrunk = await putDoc(ws, created.id, { extra: { e: null } });
       expect(shrunk.status).toBe(200);
       expect(ws.read(created.path)).not.toContain("\ne: ");
 
       // Still over the bound, so growing it further is still refused.
       ws.advance(60_000);
-      expect((await ws.put(`/api/docs/${created.id}`, { extra: { f: CHUNK } })).status).toBe(400);
+      expect((await putDoc(ws, created.id, { extra: { f: CHUNK } })).status).toBe(400);
     });
 
     it("leaves a patch that names no extra key alone, whatever the file holds", async () => {
@@ -371,7 +371,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       ws.reproject();
 
       ws.advance(60_000);
-      expect((await ws.put(`/api/docs/${created.id}`, { body: "Two.\n" })).status).toBe(200);
+      expect((await putDoc(ws, created.id, { body: "Two.\n" })).status).toBe(200);
       expect(ws.read(created.path)).toContain("Two.");
     });
   });
@@ -391,7 +391,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
 
     ws.advance(60_000);
     // Same values, and the query's keys in the other order — one value, not two.
-    const response = await ws.put(`/api/docs/${created.id}`, {
+    const response = await putDoc(ws, created.id, {
       pinned: true,
       query: { status: "open", type: "thread" },
       extra: { lane: "doing", gone: null },
@@ -412,9 +412,9 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       column: "todos/board",
     });
     ws.advance(60_000);
-    expect(
-      (await ws.put(`/api/docs/${created.id}`, { order: null, column: null, due: null })).status,
-    ).toBe(200);
+    expect((await putDoc(ws, created.id, { order: null, column: null, due: null })).status).toBe(
+      200,
+    );
 
     const text = ws.read(created.path);
     expect(text).not.toContain("order:");
@@ -437,7 +437,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       order: 30,
     });
     ws.advance(60_000);
-    expect((await ws.put(`/api/docs/${created.id}`, { pinned: false })).status).toBe(200);
+    expect((await putDoc(ws, created.id, { pinned: false })).status).toBe(200);
     expect(ws.read(created.path)).toContain("pinned: false");
     expect(rowOf(await list("pinned=false"), created.id)?.pinned).toBe(false);
     expect(rowOf(await list("pinned=true"), created.id)).toBeUndefined();
@@ -447,7 +447,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
     ws = createWriteWorkspace("extra-shadow", { sprint: "s026" });
     const created = await createDoc(ws, { type: "todo", title: "Errands" });
     const before = ws.read(created.path);
-    const response = await ws.put(`/api/docs/${created.id}`, { extra: { status: "archived" } });
+    const response = await putDoc(ws, created.id, { extra: { status: "archived" } });
     expect(response.status).toBe(400);
     expect(ws.read(created.path)).toBe(before);
   });

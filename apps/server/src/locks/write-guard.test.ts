@@ -18,6 +18,7 @@ import {
   createDoc,
   createWriteWorkspace,
   type WriteWorkspace,
+  putDoc,
 } from "../docs/write-fixture.js";
 
 let ws: WriteWorkspace;
@@ -55,7 +56,7 @@ describe("a document held by the other party", () => {
     const headBefore = ws.head();
     const fileBefore = ws.read(`data/docs/inbox/mortgage-options.md`);
 
-    const refused = await ws.put(`/api/docs/${docId}`, { body: "the user's edit" });
+    const refused = await putDoc(ws, docId, { body: "the user's edit" });
 
     expect(refused.status).toBe(423);
     // The body is the contract's `LockedError`, carrying the live lock — holder,
@@ -72,7 +73,7 @@ describe("a document held by the other party", () => {
 
     expect((await release(docId, "agent")).status).toBe(200);
 
-    const accepted = await ws.put(`/api/docs/${docId}`, { body: "the user's edit" });
+    const accepted = await putDoc(ws, docId, { body: "the user's edit" });
 
     expect(accepted.status).toBe(200);
     expect(ws.read(`data/docs/inbox/mortgage-options.md`)).toContain("the user's edit");
@@ -85,9 +86,7 @@ describe("a document held by the other party", () => {
     expect((await acquire(docId, "agent")).status).toBe(201);
 
     // The holder edits freely — holding the lock is what the lock is for.
-    expect((await ws.put(`/api/docs/${docId}`, { body: "the agent's edit" }, asAgent)).status).toBe(
-      200,
-    );
+    expect((await putDoc(ws, docId, { body: "the agent's edit" }, asAgent)).status).toBe(200);
     // And a read is never guarded: §7 locks editing, not looking.
     expect((await ws.request(`/api/docs/${docId}`, { headers: AUTH })).status).toBe(200);
   });
@@ -96,7 +95,7 @@ describe("a document held by the other party", () => {
     expect((await acquire(docId, "agent")).status).toBe(201);
 
     const verbs: { name: string; run: () => Promise<Response> }[] = [
-      { name: "update", run: () => ws.put(`/api/docs/${docId}`, { body: "x" }) },
+      { name: "update", run: () => putDoc(ws, docId, { body: "x" }) },
       { name: "move", run: () => ws.post(`/api/docs/${docId}/move`, { folder: "finance" }) },
       { name: "archive", run: () => ws.post(`/api/docs/${docId}/archive`, {}) },
       { name: "unarchive", run: () => ws.post(`/api/docs/${docId}/unarchive`, {}) },
@@ -120,7 +119,7 @@ describe("a document held by the other party", () => {
 
     // The lock file is still on disk — nothing has unlinked it — but a lease
     // that has run out refuses nothing.
-    const response = await ws.put(`/api/docs/${docId}`, { body: "after the lease" });
+    const response = await putDoc(ws, docId, { body: "after the lease" });
 
     expect(response.status).toBe(200);
   });
@@ -182,7 +181,7 @@ describe("a lease acquired while a write is queued", () => {
     queued: () => Promise<Response>,
   ): Promise<{ readonly response: Response; readonly fileBefore: string }> {
     const { started, gate } = installParkingHook();
-    const holding = ws.put(`/api/docs/${lane.docId}`, { body: "the save that holds the lane" });
+    const holding = putDoc(ws, lane.docId, { body: "the save that holds the lane" });
     await waitForFile(started);
 
     const waiting = queued();
@@ -201,7 +200,7 @@ describe("a lease acquired while a write is queued", () => {
   }
 
   it.each([
-    ["update", (): Promise<Response> => ws.put(`/api/docs/${docId}`, { body: "the queued save" })],
+    ["update", (): Promise<Response> => putDoc(ws, docId, { body: "the queued save" })],
     ["move", (): Promise<Response> => ws.post(`/api/docs/${docId}/move`, { folder: "finance" })],
     ["archive", (): Promise<Response> => ws.post(`/api/docs/${docId}/archive`, {})],
     ["delete", (): Promise<Response> => ws.del(`/api/docs/${docId}`)],
@@ -297,9 +296,9 @@ describe("a lease acquired while a write is queued", () => {
     // ordinary answer. Re-running the guard must not double a side effect.
     const commitsBefore = ws.log("%H").length;
     const { started, gate } = installParkingHook();
-    const holding = ws.put(`/api/docs/${docId}`, { body: "first" });
+    const holding = putDoc(ws, docId, { body: "first" });
     await waitForFile(started);
-    const queued = ws.put(`/api/docs/${docId}`, { body: "second" });
+    const queued = putDoc(ws, docId, { body: "second" });
     writeFileSync(gate, "", "utf8");
 
     expect((await holding).status).toBe(200);

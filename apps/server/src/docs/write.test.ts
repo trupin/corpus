@@ -27,7 +27,13 @@ import {
   type DocsWorkspace,
   type WriteGuard,
 } from "./write.js";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import {
+  createDoc,
+  createWriteWorkspace,
+  keyOnDisk,
+  putDoc,
+  type WriteWorkspace,
+} from "./write-fixture.js";
 
 let ws: WriteWorkspace;
 
@@ -169,7 +175,7 @@ describe("the mutation pipeline", () => {
     expect(rowsAtFrame[0]).toBe(1);
 
     ws.advance(60_000);
-    await ws.put(`/api/docs/${created.id}`, { body: "edited" });
+    await putDoc(ws, created.id, { body: "edited" });
     expect(frames[1]).toEqual([["docs"], ["docs", created.id]]);
 
     ws.advance(60_000);
@@ -214,7 +220,10 @@ describe("the mutation pipeline", () => {
     const workspace = workspaceFor(ws, { guard });
     const mutex = createDocumentMutex();
 
-    await updateDocument(workspace, mutex, "user", id, { body: "one" });
+    await updateDocument(workspace, mutex, "user", id, {
+      body: "one",
+      key: keyOnDisk(ws, created.path),
+    });
     await moveDocument(workspace, mutex, "agent", id, "finance");
     await setArchived(workspace, mutex, "user", id, true);
     await setArchived(workspace, mutex, "agent", id, false);
@@ -243,7 +252,10 @@ describe("the mutation pipeline", () => {
       },
     });
     await expect(
-      updateDocument(workspace, createDocumentMutex(), "user", created.id, { body: "nope" }),
+      updateDocument(workspace, createDocumentMutex(), "user", created.id, {
+        body: "nope",
+        key: keyOnDisk(ws, created.path),
+      }),
     ).rejects.toThrow("held by the other party");
 
     expect(ws.read(created.path)).toBe(before);
@@ -266,6 +278,7 @@ describe("the mutation pipeline", () => {
     const workspace = workspaceFor(ws);
     const outcome = await updateDocument(workspace, createDocumentMutex(), "user", created.id, {
       body: "after the hook refused",
+      key: keyOnDisk(ws, created.path),
     });
     off();
 
@@ -292,7 +305,7 @@ describe("the mutation pipeline", () => {
     expect(ws.exists(created.path)).toBe(true);
 
     for (const call of [
-      () => ws.put(`/api/docs/${created.id}`, { body: "edited" }),
+      () => putDoc(ws, created.id, { body: "edited" }),
       () => ws.post(`/api/docs/${created.id}/move`, { folder: "finance" }),
       () => ws.post(`/api/docs/${created.id}/archive`, {}),
       () => ws.post(`/api/docs/${created.id}/unarchive`, {}),

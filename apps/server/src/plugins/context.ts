@@ -104,10 +104,7 @@ export function createPluginContext(deps: PluginContextDeps): PluginServerContex
 
   /** The document as `getDoc` would return it — the shape the callback is handed. */
   const readDoc = (id: string): Doc =>
-    toWireDoc(
-      workspace.projection,
-      loadDocument(workspace.workspaceRoot, workspace.projection, id),
-    );
+    toWireDoc(workspace, loadDocument(workspace.workspaceRoot, workspace.projection, id));
 
   const namespaced = (parts: readonly QueryKeySegment[]): QueryKey => {
     const first = parts[0];

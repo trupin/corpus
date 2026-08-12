@@ -9,7 +9,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type CorpusServer } from "../app.js";
 import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 import type { ServerConfig } from "../config.js";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "../docs/write-fixture.js";
+import {
+  createDoc,
+  createWriteWorkspace,
+  type WriteWorkspace,
+  putDoc,
+} from "../docs/write-fixture.js";
 import { createLogger, silentLogger } from "../logger.js";
 import { attachProjection, openProjection } from "../projection/index.js";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -96,7 +101,7 @@ describe("attachEmbedWorker — the write path never waits (TEST-852)", () => {
     await vi.waitFor(() => expect(stub.calls.length).toBeGreaterThan(0));
 
     const started = Date.now();
-    const response = await workspace.put(`/api/docs/${created.id}`, {
+    const response = await putDoc(workspace, created.id, {
       body: ["## One", "First section prose, edited.", "", "## Two", "Second."].join("\n"),
     });
     const elapsed = Date.now() - started;

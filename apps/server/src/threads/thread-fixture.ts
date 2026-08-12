@@ -17,7 +17,15 @@ import {
 } from "../docs/write-fixture.js";
 import { parseDocument, parseThreadBody } from "../core/index.js";
 
-export { AUTH, JSON_HEADERS, FIXTURE_NOW, TOKEN, createDoc } from "../docs/write-fixture.js";
+export {
+  AUTH,
+  JSON_HEADERS,
+  FIXTURE_NOW,
+  TOKEN,
+  createDoc,
+  putDoc,
+  readDocKey,
+} from "../docs/write-fixture.js";
 export type { WriteWorkspace } from "../docs/write-fixture.js";
 
 /** SERVER-006's own scratch label, so leftovers name their owner. */

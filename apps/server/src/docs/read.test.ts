@@ -5,6 +5,7 @@ import {
   createDoc,
   createWriteWorkspace,
   JSON_HEADERS,
+  putDoc,
   type WriteWorkspace,
 } from "./write-fixture.js";
 
@@ -556,8 +557,9 @@ describe("GET /api/docs/{id} — the §6 ladder against an edited body", () => {
       "a 30-year fixed at 6.1%",
       "a 30-year fixed-rate at 6.1%, reviewed quarterly",
     );
-    const response = await ws.put(
-      `/api/docs/${DOC_ID}`,
+    const response = await putDoc(
+      ws,
+      DOC_ID,
       { body: saved },
       { ...JSON_HEADERS, "x-corpus-actor": "user" },
     );

@@ -599,7 +599,7 @@ export async function setArchived(
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
     const plan = planSetArchived(workspace, loaded, archived, new Set([id, ...carried]));
     if (plan === null) {
-      return { doc: toWireDoc(workspace.projection, loaded), result: emptyResult() };
+      return { doc: toWireDoc(workspace, loaded), result: emptyResult() };
     }
 
     // §14's findings about the bytes being written, then §7's about the
@@ -642,10 +642,7 @@ export async function setArchived(
     });
 
     return {
-      doc: toWireDoc(
-        workspace.projection,
-        loadDocument(workspace.workspaceRoot, workspace.projection, id),
-      ),
+      doc: toWireDoc(workspace, loadDocument(workspace.workspaceRoot, workspace.projection, id)),
       result,
     };
   });
