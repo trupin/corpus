@@ -33,7 +33,7 @@ an override only when touched.
 - [ ] Default resolution client-side from what the board already holds: the current thread's root (walking `origin`/`parent` up the thread/doc chain) → if that root carries `resident`, it is the default; else orchestrator; the computed default sends **no** `recipient` field (server default and UI default must be the same rule, and omission is how they cannot drift)
 - [ ] Only an explicit pick sends `recipient`; picking the default back sends nothing again
 - [ ] Rows render liveness honestly: live (summary line), lapsed (`last seen <relative> — the orchestrator will answer until it returns`), waiting (`no listener yet`); a lapsed pick is legal (contract routes it; fallback covers it)
-- [ ] The composer's existing "sending will ask the agent…" affordance (SPEC.md:525) names the picked recipient; mention chips are unchanged (persona directives compose with lanes, and the affordance line says both when both are present)
+- [ ] The composer's existing "sending will ask the agent…" affordance (§8: every composer says, while typing, whether sending will ask the agent) names the picked recipient; mention chips are unchanged (persona directives compose with lanes, and the affordance line says both when both are present)
 - [ ] Weight control, attachments, and autocomplete are untouched; the picker follows the weight control's composer-row pattern (`UI-082`'s placement)
 - [ ] Keyboard accessible per the composer key contract (UI-052/053 conventions)
 

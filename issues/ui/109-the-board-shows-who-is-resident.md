@@ -53,7 +53,7 @@ duplicating: if UI-097 is unimplemented when this lands, implement the composed 
 here and mark UI-097's criteria accordingly in a PR note, per the no-two-mechanisms rule.
 
 ### Edge Cases
-- Designation while a pending indicator is showing: wording flips on invalidation, elapsed clock keeps its original start (SPEC.md:398 — clock runs from when the request was written)
+- Designation while a pending indicator is showing: wording flips on invalidation; the elapsed clock keeps its original start, per the queued-vs-working rider's clock rule (in flight with UI-097 — coordinate with its wording, don't cite it as landed spec)
 - A resident answering a summoned message on a foreign thread: that thread's indicator names the picked resident too (`recipient` is on the event; the outstanding-jobs row carries the lane per SERVER-107's mirror)
 
 ## Testing Strategy

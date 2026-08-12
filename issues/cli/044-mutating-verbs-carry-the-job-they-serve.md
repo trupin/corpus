@@ -1,4 +1,4 @@
-# [CLI-042] Mutating verbs carry the job they serve
+# [CLI-044] Mutating verbs carry the job they serve
 
 ## Domain
 cli
@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: [CONTRACT-050], [SERVER-106]
+- Depends on: [CONTRACT-050], [SERVER-110]
 - Blocks: [AGENT-025]
 
 ## Spec References
@@ -82,4 +82,4 @@ _[Agent fills]_
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0)
-- [ ] Committed with `[CLI-042]` prefix
+- [ ] Committed with `[CLI-044]` prefix

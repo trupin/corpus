@@ -13,7 +13,7 @@ P0
 fable
 
 ## Dependencies
-- Depends on: [SHARED-043], [CLI-042], [CLI-043]
+- Depends on: [SHARED-043], [CLI-044], [CLI-043]
 - Blocks: [AGENT-026]
 
 ## Spec References

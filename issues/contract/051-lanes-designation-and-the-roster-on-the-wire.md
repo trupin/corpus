@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: [SHARED-043]
-- Blocks: [SERVER-107], [SERVER-108], [SERVER-109], [CLI-043], [UI-108], [UI-109]
+- Blocks: [SERVER-107], [SERVER-109], [CLI-043], [UI-108], [UI-109]
 
 ## Spec References
 - SPEC.md §7/§8 as amended by SHARED-043 — lanes, designation, recipient, roster
@@ -29,7 +29,7 @@ CLI consume them through the generated client.
 ## Acceptance Criteria
 - [ ] Posting requests (thread create, turn append, form respond) accept `recipient: z.union([z.literal("orchestrator"), z.string().regex(/^th_/)]).optional()` — omitted means "default routing"
 - [ ] `POST /api/queue/claim-all` and `GET /api/queue/idle` accept optional `scope: th_… | "orchestrator"`; omitted means the orchestrator lane (backward compatible: today's callers keep today's meaning)
-- [ ] Thread wire shape gains `resident: { name, docId } | null`; designation routes exist: `POST /api/threads/{id}/resident` (body `{ name }`) and `DELETE /api/threads/{id}/resident`, both declaring 409 for non-standalone threads and 404 for an unknown agent-def name
+- [ ] Thread wire shape gains `resident: { name, docId } | null`; designation routes exist: `POST /api/threads/{id}/resident` (body `{ name }`) and `DELETE /api/threads/{id}/resident`, declaring 403 for the agent actor (user-only, like `thread-reattach.ts` does), 409 for non-standalone threads, and 404 for an unknown agent-def name
 - [ ] `GET /api/agents` returns `{ agents: [{ lane, resident, live, since, summary, origin }] }` where `lane` is `"orchestrator" | th_…`, `resident` is `{name, docId} | null`, `live: boolean`, `since: ISO instant | null`, `summary: string | null`, `origin: { id, title } | null`
 - [ ] `AGENTS_QUERY_KEYS` added to `packages/contract/src/query-keys.ts` within the closed vocabulary (`["agents"]`), exported alongside the existing eight shapes
 - [ ] Queue event wire shape is **unchanged** — the lane is server-side bookkeeping (like `status`/`attempts` in the store), surfaced only through the scoped verbs and the roster

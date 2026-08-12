@@ -13,8 +13,8 @@ P0
 opus
 
 ## Dependencies
-- Depends on: [CONTRACT-051], [SERVER-106], [SERVER-109]
-- Blocks: [SERVER-108], [CLI-043]
+- Depends on: [CONTRACT-051], [SERVER-110], [SERVER-109]
+- Blocks: [SERVER-108], [CLI-043], [UI-108]
 
 ## Spec References
 - SPEC.md §7 as amended by SHARED-043 — lanes; one consumer per lane
@@ -22,7 +22,7 @@ opus
 ## Summary
 Partition the queue into lanes at enqueue time. `QueueService.enqueue`
 (`apps/server/src/queue/service.ts:325-347`) resolves each event's lane before the file is
-written: walk the event's origin to its root thread (origin chain via SERVER-106's
+written: walk the event's origin to its root thread (origin chain via SERVER-110's
 `resolveOrigin` plus thread `origin`/`parent` frontmatter), and if that root is designated
 (SERVER-109), stamp `lane: th_…`; otherwise `lane: null` (the orchestrator lane). An
 explicit `recipient` on the posting request overrides the walk for that one event.
@@ -32,7 +32,8 @@ a scoped park is not woken by another lane's arrival.
 
 ## Acceptance Criteria
 - [ ] Lane stored as server-only bookkeeping on the event file (beside `status`/`attempts`, `store.ts:44-51`) and mirrored into the SQLite `events` table; never on the wire event shape
-- [ ] Lane resolution: explicit `recipient` wins; else walk origin → root; a designated root routes to its lane; everything else (including `doc.edited` on unscoped docs, captures, plugin events) routes to the orchestrator lane
+- [ ] Lane resolution: explicit `recipient` wins; else walk origin → root; a designated root routes to its lane; everything else (including `doc.edited` on unscoped docs, captures, plugin events) routes to the orchestrator lane — `doc.edited` on a *scoped* doc walks the document's `origin` (SERVER-110's rule) and reaches the resident
+- [ ] **One type-based exception, owned here:** `resident.designated` always routes to the orchestrator lane, never to the lane it announces — whatever the walk says. Without this, re-designating a live lane delivers the launch instruction to the *old* resident and the new one is never started
 - [ ] `claimAll({scope})` moves only that lane's pending events; the held report (`held.ts:119-151`) is scoped the same way — a resident never sees the orchestrator's held list and vice versa
 - [ ] `idle({scope})` parks per lane: `WaiterRegistry` keys settles by lane; `notify(lane)` wakes that lane and the 500ms re-probe checks only the parked lanes' pending sets
 - [ ] `reapStale` is lane-blind (staleness is staleness) but preserves the lane on requeue; `requeueDeferredFor` likewise

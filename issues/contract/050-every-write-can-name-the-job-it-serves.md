@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: [SHARED-043]
-- Blocks: [SERVER-106], [CLI-042]
+- Blocks: [SERVER-110], [CLI-044]
 
 ## Spec References
 - SPEC.md §7 as amended by SHARED-043 — provenance, `origin`, job attribution
@@ -24,11 +24,11 @@ Add job attribution and provenance to the wire. Mutating requests gain an option
 field naming the queue event the work serves (`evt_…`); documents gain a read-only
 `origin` field naming the thread their creating job came from (`th_…` or null). This is
 the contract half of provenance stamping: the server resolves `job → event → origin
-thread` at write time (SERVER-106), and everything downstream — scope membership, the
+thread` at write time (SERVER-110), and everything downstream — scope membership, the
 verifiable trace line, richer job console rows — reads `origin`.
 
 ## Acceptance Criteria
-- [ ] `job: z.string().regex(/^evt_/).optional()` accepted on every mutating request body that creates or edits a document or thread: doc create/edit/patch/move/archive, thread create, turn append, form respond
+- [ ] `job: z.string().regex(/^evt_/).optional()` accepted on every mutating request body that creates or edits a document or thread: doc create/edit/patch/move/archive/unarchive, thread create, turn append, form respond
 - [ ] `DocumentSchema` (and the summary shape if it carries frontmatter-derived fields) gains `origin: z.string().regex(/^th_/).nullable()`
 - [ ] `origin` is server-assigned: no request shape accepts it directly; the one exception is the detach affordance — doc edit accepts `origin: null` (clear only, never set), user actor only, enforced server-side
 - [ ] An unknown or settled `job` id is defined as a 422 in the route contract, not silently ignored
@@ -44,14 +44,14 @@ verifiable trace line, richer job console rows — reads `origin`.
 
 ### Key Implementation Details
 Follow the pattern `weight` set: one exported field definition (like `requestedWeightField`
-/ `turnModelRequestField` in `schemas/thread.ts:…`) reused across every mutating route, so
+/ `turnModelRequestField` in `schemas/thread.ts`) reused across every mutating route, so
 the flag cannot drift between routes. `origin` is frontmatter-backed (server writes it into
 the document's frontmatter like `agent`/`turnModels`), so add it to the frontmatter key
-order the projector reads — coordinate the key name with SERVER-106.
+order the projector reads — coordinate the key name with SERVER-110.
 
 ### Edge Cases
 - `job` on a request whose actor is `user` — legal (the UI could attribute a form answer), but origin stamping still derives from the *event's* origin, never the actor
-- A `job` naming a `doc.edited` event: its origin is a document, not a thread — origin stamps null; the contract text should say the field is "the origin *thread*"
+- A `job` naming a `doc.edited` event resolves through the edited document's own `origin` — the scope the document belongs to — and null when it has none (SERVER-110 owns the rule)
 
 ## Testing Strategy
 Contract tests: schema round-trips for `job` and `origin`; multipart twin parses `"false"`

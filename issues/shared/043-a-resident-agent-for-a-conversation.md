@@ -14,7 +14,7 @@ fable
 
 ## Dependencies
 - Depends on: —
-- Blocks: [CONTRACT-050], [CONTRACT-051], [SERVER-106], [SERVER-107], [SERVER-108], [SERVER-109], [CLI-042], [CLI-043], [AGENT-025], [AGENT-026], [UI-108], [UI-109]
+- Blocks: [CONTRACT-050], [CONTRACT-051], [AGENT-025] (directly; the whole phase transitively)
 
 ## Spec References
 - SPEC.md §7 — the agent loop, the queue, and the single-consumer assumption this rider revokes
@@ -27,9 +27,12 @@ the thread's whole **scope** — the thread, its subthreads, and every artifact 
 provenance walks back to it — and runs its own claim → work → settle → park loop on a
 **lane** of the queue partitioned to that scope. Users see a live roster and pick a
 recipient per message; the default is computed from where they post. This deliberately
-revokes two standing doctrines, and the rider must say so in so many words: §7's "one
-orchestrating session is the only process that claims queue events", and orchestrate's
-"queue state never crosses the subagent boundary" (a resident settles its own lane).
+revokes three standing doctrines, and the rider must name each where it actually lives:
+§7's "every event is delegated — the orchestrator never works a job inline" is scoped to
+the orchestrator's lane (a resident works its conversation inline); the orchestrate
+skill's "this session is the only process that claims queue events" becomes one consumer
+per lane, with §7's concurrent-claims wording amended to match; and orchestrate's "queue
+state never crosses the subagent boundary" becomes a lane's owner settles its own lane.
 
 ## Acceptance Criteria
 - [ ] Rider drafted as real spec text, presented for signature one section at a time (per the standing rider discipline), and applied to SPEC.md only after authorization
@@ -40,7 +43,8 @@ orchestrating session is the only process that claims queue events", and orchest
 - [ ] Defines **recipient**: default computed from posting location; per-message override via the composer; an override routes one message and never rewires a scope; a summoned agent replies where it was asked, not at home
 - [ ] Defines **provenance**: mutating requests may name the job (event) they serve; the server stamps the document's origin thread at write time; origin is recorded unconditionally (scoping is computed, not stored) and is user-clearable (detach)
 - [ ] States the mention/lane composition rule: `@mention` and `/skill` directives bind whichever lane consumes the event, unchanged
-- [ ] Reconciles §8's reply-in-parent rule and the pending-indicator rider (SPEC.md:398) with lane routing
+- [ ] Adds `resident.designated` to §7's core event-type vocabulary (today a closed set: `comment.created`, `form.respond`, `doc.edited`, reserved `agent.done`, plus plugin types) — the designation event is ordinary queue vocabulary, not a side channel
+- [ ] Reconciles §8's reply-in-parent rule and the queued-vs-working pending-indicator rider (in flight with UI-097) with lane routing
 - [ ] PLAN.md Phase 32 narrative updated with "(AUTHORIZED <date>, applied)" once signed
 
 ## Technical Design
@@ -73,7 +77,8 @@ single-consumer assumption (grep for "only process that claims").
 
 ### Verification Steps
 1. `grep -n "resident\|lane\|recipient" SPEC.md` — the vocabulary appears in §7/§8 and nowhere contradicts it
-2. `grep -n "only process that claims" SPEC.md` — zero hits, or hits rewritten to the per-lane rule
+2. `grep -n "works a job inline\|Every event is delegated" SPEC.md` — every hit is inside text that scopes the rule to the orchestrator's lane; none asserts it queue-wide
+3. The orchestrate and converse skills' single-claimant language matches the rider's per-lane rule verbatim (checked when AGENT-025/026 land, but the rider's wording is what they quote)
 
 ## E2E Verification Log
 _Filled in by the implementing agent as proof-of-work._

@@ -48,7 +48,7 @@ doing.
 ### Key Implementation Details
 Parked-count, not boolean: a lane can briefly hold two parks during a rearm overlap. The
 orchestrator lane gets liveness for free from the same tracker (`lane: null` rows).
-`agent.done` (reserved, `SPEC.md:319`) stays reserved — the lapse hook wakes the
+`agent.done` (§7's reserved event type) stays reserved — the lapse hook wakes the
 orchestrator via the waiter registry, not by enqueueing an event, so nothing new enters the
 queue's vocabulary. Roster assembly is a read: designation list from the projection,
 liveness from the tracker, summary from jobs — no caching beyond the request.
