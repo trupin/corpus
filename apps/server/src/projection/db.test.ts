@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -500,6 +501,135 @@ describe("openProjection", () => {
       expect(migrated.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
     } finally {
       migrated.close();
+    }
+  });
+
+  // PR #43 review, MAJOR 2. The bump above is what exposed this: a schema change
+  // that drops a table nothing reads used to cost an upgrading workspace its
+  // whole semantic index, because only `corpus db rebuild` carried embeddings
+  // across and boot deleted `cache.db` where it stood. Every assertion here is
+  // about the *boot* path — nothing calls `rebuild()`.
+  it("carries semantic embeddings across a schema change, which files cannot rebuild in ms", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_kept");
+    const vec = Buffer.from(new Float32Array([0.25, -0.5, 0.75]).buffer);
+
+    const previous = openProjection(config);
+    previous
+      .prepare(
+        `INSERT INTO chunk_embeddings
+           (chunk_id, identity, dim, vec, state, failures, updated_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("chunk_expensive", "model-v1", 3, vec, "ready", 0, 1_760_000_000_000);
+    previous.prepare("UPDATE meta SET value = ? WHERE key = ?").run("13", META_SCHEMA_VERSION);
+    previous.close();
+
+    const migrated = openProjection(config);
+    try {
+      expect(
+        (
+          migrated.prepare("SELECT value FROM meta WHERE key = ?").get(META_SCHEMA_VERSION) as {
+            value: string;
+          }
+        ).value,
+      ).toBe(String(SCHEMA_VERSION));
+      // The row, byte for byte: a carried embedding that lost its vector would
+      // have to be recomputed, which is the cost this exists to avoid.
+      expect(
+        migrated.prepare("SELECT chunk_id, identity, dim, state FROM chunk_embeddings").all(),
+      ).toEqual([{ chunk_id: "chunk_expensive", identity: "model-v1", dim: 3, state: "ready" }]);
+      expect(
+        (migrated.prepare("SELECT vec FROM chunk_embeddings").get() as { vec: Buffer }).vec.equals(
+          vec,
+        ),
+      ).toBe(true);
+      // And the replacement is still a replacement: everything derived from
+      // files was re-derived, not migrated.
+      expect(migrated.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
+    } finally {
+      migrated.close();
+    }
+  });
+
+  it("leaves no staging database behind once the schema change lands", () => {
+    const config = makeConfig();
+    const previous = openProjection(config);
+    previous.prepare("UPDATE meta SET value = ? WHERE key = ?").run("13", META_SCHEMA_VERSION);
+    previous.close();
+
+    const migrated = openProjection(config);
+    migrated.close();
+    expect(readdirSync(config.corpusDir).filter((name) => name.includes("superseding"))).toEqual(
+      [],
+    );
+  });
+
+  // A crash between building the replacement and renaming it into place leaves
+  // one behind. It must not accumulate, and — because it is a database of this
+  // build's own schema — it must not be mistaken for the thing being replaced.
+  it("sweeps a staging database left by an interrupted schema change", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_kept");
+    const previous = openProjection(config);
+    previous.prepare("UPDATE meta SET value = ? WHERE key = ?").run("13", META_SCHEMA_VERSION);
+    previous.close();
+
+    const orphan = `${cacheDbPath(config)}.superseding-999999`;
+    writeFileSync(orphan, "not even a database", "utf8");
+
+    const migrated = openProjection(config);
+    try {
+      expect(existsSync(orphan)).toBe(false);
+      expect(migrated.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
+    } finally {
+      migrated.close();
+    }
+  });
+
+  // The carry-over reads a table written by a *different build*, so its columns
+  // are not this build's to assume. Losing the cache is the correct cost; losing
+  // the boot is not.
+  it("opens anyway when the previous `chunk_embeddings` does not fit this schema", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_kept");
+
+    const previous = openProjection(config);
+    previous.sqlite.exec("DROP TABLE chunk_embeddings");
+    previous.sqlite.exec("CREATE TABLE chunk_embeddings (chunk_id TEXT PRIMARY KEY, ancient TEXT)");
+    previous.sqlite.prepare("INSERT INTO chunk_embeddings VALUES (?, ?)").run("chunk_old", "x");
+    previous.prepare("UPDATE meta SET value = ? WHERE key = ?").run("13", META_SCHEMA_VERSION);
+    previous.close();
+
+    const migrated = openProjection(config);
+    try {
+      expect(migrated.prepare("SELECT COUNT(*) AS n FROM chunk_embeddings").get()).toEqual({
+        n: 0,
+      });
+      expect(migrated.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
+    } finally {
+      migrated.close();
+    }
+  });
+
+  // An unstamped file is not a projection anyone wrote — it is an empty or a
+  // corrupt one — so it is deleted rather than read from. Asserted because the
+  // two branches now differ.
+  it("deletes an unstamped database instead of carrying anything out of it", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_kept");
+    mkdirSync(config.corpusDir, { recursive: true });
+    const unstamped = new Database(cacheDbPath(config));
+    unstamped.exec("CREATE TABLE chunk_embeddings (chunk_id TEXT PRIMARY KEY)");
+    unstamped.prepare("INSERT INTO chunk_embeddings VALUES (?)").run("chunk_orphan");
+    unstamped.close();
+
+    const opened = openProjection(config);
+    try {
+      expect(opened.prepare("SELECT COUNT(*) AS n FROM chunk_embeddings").get()).toEqual({ n: 0 });
+      expect(opened.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
+    } finally {
+      opened.close();
     }
   });
 

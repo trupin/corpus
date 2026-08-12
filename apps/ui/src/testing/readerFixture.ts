@@ -404,10 +404,6 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       );
     }
 
-    if (url.pathname.endsWith("/break")) {
-      return json({ docId: url.pathname.split("/")[3] ?? "", released: true, holder: "agent" });
-    }
-
     return json({});
   };
 

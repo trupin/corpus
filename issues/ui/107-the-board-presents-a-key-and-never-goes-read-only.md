@@ -205,6 +205,101 @@ handed over and it belongs to plugins-dev. Until it lands it fails
 plugin e2e specs with it. Nothing in `apps/ui` or `packages/kit` can fix it from
 this side: the chip and the hook are gone because the mechanism is.
 
+### Follow-up: PR #43 review findings (2026-08-12)
+
+**Model: opus** (`claude-opus-5[1m]`). Two MAJORs and five MINORs (three named in
+the review, two of the same class found in the sweep).
+
+#### MAJOR 1 — the mockup still implemented the lock UI
+
+`design/index.html` is authoritative for look & feel, so leaving the lock banner
+in it would have handed the removed design back to the next agent that opened it.
+Removed: `.lock-banner` CSS, `lockBannerHTML()`, the `locked` field on
+`doc_cashflow`, the `contenteditable` gating in `bodyHTML()`/`readerHTML()`, the
+`data-force-unlock` handler and its `Lock broken…` toast, and the `?.locked`
+guard that suppressed the selection toolbar.
+
+**What replaced it**: a `.change-notice` — a past-tense report shown *only* after
+an adopt-then-retry, i.e. when the person's save went on top of a change they
+never read. Copy: *"the agent edited this while you were typing — your save went
+on top of it. its version is in the history."*, with `see what it wrote` (selects
+that job in the console) and a dismiss. Nothing is shown for an agent write that
+lands while nobody is typing: that is §9.4's live landing, and the text changing
+*is* the event. Nothing anywhere says another writer "has" the document — that is
+the banner in miniature, rejected in PLUGINS-017, and false besides. The mockup
+now simulates the whole path on `doc_cashflow`: type in it, and the agent's
+`doc.edit` job appears in the console, the save takes a round trip longer, and
+the notice lands with the document still editable underneath.
+
+Verified in a real browser (headless Chromium via Playwright, `file://`, no
+server, so no port was bound):
+
+```
+before typing   { editable: 'true', notice: 0, lockBanner: 0 }
+during          save chip 'saving…' — never 'save failed'
+after           notice '↯ the agent edited this while you were typing — your save
+                went on top of it. its version is in the history. see what it wrote ✕'
+                editable 'true' · caret still in the body · lock banner 0
+                chip settles to 'committed · git ✓'
+'see what it wrote' → console opens on job 'doc.edit · Cashflow 2026':
+                claimed evt_key1 (doc.edit)
+                corpus doc edit --key 2a683cd0 --from agent
+                committed 4b68ec8 · key now 4b68ec83
+dismiss         notices 0, document still editable
+page errors     []
+```
+
+Looked at, not just parsed: screenshots in column view, full-screen (focus) view
+and dark theme. The notice's copy takes the full width with its actions beneath,
+right-aligned, so it does not squeeze into a ragged column in a narrow reader.
+
+#### MAJOR 2 — published docs advertised removed API
+
+`packages/kit/README.md`: deleted the `["locks"]`/`["locks","<docId>"]` rows,
+corrected *"The ten core shapes"* → **eight** (`QUERY_KEY_NAMES`), corrected
+*"Two entry points"* → three code entry points plus five CSS subpaths (`./plugin`
+was undocumented), added the missing `["attachments","<target>"]` row, added a
+**Writes present a key** section (key on every `Doc`; required only when the patch
+carries `body`, per `KEYED_UPDATE_FIELDS`, `400` if omitted; `409 stale_key`
+carries the document as it now stands; `staleKeyDoc(error)`; adopt-then-retry with
+the same buffer), and a **What else is in here** map of the row / markdown /
+autocomplete / composer / weight families.
+
+`apps/ui/README.md`: `useLocks` gone from the probe (the real set is `useDocs`,
+`useTree`, `useJobs`, `useQueueStatus`, `useConnectionState`, plus the `?thread=`
+half); React 18 → **19**; the proxy is `/api`, `/attachments` **and** `/events`,
+with `CORPUS_SERVER_ORIGIN`; the auth exemption is **two** routes (health, and the
+loopback job-log ingest); the token precedence (injected beats
+`VITE_CORPUS_TOKEN`) stated rather than left as a forward reference to SERVER-024;
+and `npm test -w apps/ui` corrected — this workspace declares no `test` script, so
+that command **fails**.
+
+#### MINORs
+
+- `apps/ui/src/testing/readerFixture.ts` — deleted the `POST /api/locks/{id}/break`
+  branch. Nothing referenced it.
+- `plugins/todos/ui/TodoItemComposer.test.tsx` — the refusal fixture was
+  `423 / code: "locked"`, neither of which the system can produce. Now `404 /
+  not_found`, which `POST /api/threads` actually declares (400, 401, 404). One
+  fixture changed, nothing else.
+- `packages/contract/src/client/index.test.ts` — dropped `locks: 0` from the
+  mocked `RebuildResult`.
+- `packages/kit/src/client/queryClient.test.ts` — `isClientError(of(423))` →
+  `of(409)`; 423 is on no operation, 409 is the refusal the system does produce.
+- `packages/kit/src/query/retrievalHooks.test.tsx` — the "some other shape" frame
+  was `["locks"]`; now `["queue"]`, a shape that exists.
+
+#### What was run
+
+- `npm run build` — clean.
+- `VITEST_MAX_THREADS=4 npx vitest run packages/contract plugins` — **2835 passed**.
+- `VITEST_MAX_THREADS=4 npx vitest run packages/kit` — **757 passed**.
+- `VITEST_MAX_THREADS=4 npx vitest run apps/ui` — **2956 passed**.
+- `npx eslint` on every touched source file — clean. `npx prettier --check` on
+  every touched file — clean (the two READMEs were formatted).
+- The mockup drill above. No dev server and no Playwright suite was started, so
+  neither 5173 nor 8765 was touched; the user's live server stayed bound.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

@@ -235,7 +235,6 @@ function createServer() {
         links: 0,
         events: 0,
         jobs: 0,
-        locks: 0,
         seen: 0,
         durationMs: 12,
         skipped: [],

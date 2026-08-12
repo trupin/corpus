@@ -190,7 +190,7 @@ describe("the frames the server already sends", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    harness.eventSource.latest().invalidate(["tree"], ["locks"], ["docs", "doc_other"]);
+    harness.eventSource.latest().invalidate(["tree"], ["queue"], ["docs", "doc_other"]);
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(transport.urls).toHaveLength(1);

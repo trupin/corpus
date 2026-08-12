@@ -6,8 +6,8 @@
 // inline after writing and before responding (§9.1's read-your-write
 // consistency). No projector may ever become `async`.
 
-import { mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { CorpusError } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
@@ -140,38 +140,193 @@ function applySchema(sqlite: SqliteDatabase): void {
     .run(META_SCHEMA_VERSION, String(SCHEMA_VERSION));
 }
 
+/** A brand-new database at `path`, with the §9.1 schema and this build's stamp. */
+function createProjectionFile(path: string): SqliteDatabase {
+  const sqlite = new Database(path);
+  applyPragmas(sqlite);
+  applySchema(sqlite);
+  return sqlite;
+}
+
+/**
+ * Copies `chunk_embeddings` out of the projection being replaced and into the
+ * one replacing it (SPEC.md §9.1; sprint-021, Open Conflict 5).
+ *
+ * Every other table a replacement produces is re-derived from files in
+ * milliseconds. An embedding cannot be: it costs a model inference, and a
+ * corpus of any size is minutes of CPU. But a chunk's id is a hash of its
+ * document, heading path and content, so an embedding computed before the
+ * replacement describes the identical chunk after it — which is what makes
+ * §2.2 rule 1's "restores everything else synchronously and queues semantic
+ * re-indexing" a cheap promise rather than an expensive one. `corpus index
+ * rebuild` stays the verb that genuinely discards.
+ *
+ * **Both replacements of a projection go through here**, because both destroy
+ * the same thing for the same reason: `corpus db rebuild`, which builds into a
+ * temp database and renames it over `cache.db`, and a **schema change noticed
+ * at boot** ({@link openProjectionDatabase}), which now does the same rather
+ * than deleting `cache.db` where it stands. Boot is the path that matters most:
+ * `db rebuild` is a thing an operator chose to run, while a schema bump is
+ * something an upgrade does to a workspace unasked — and before this, a bump as
+ * small as dropping a table nothing reads cost every upgrading user their whole
+ * semantic index.
+ *
+ * A replacement always builds a *fresh* database, so the carry-over has to be
+ * explicit: ATTACH the previous file, copy, DETACH — all before the rename,
+ * inside the same connection that owns the replacement.
+ *
+ * Every reason the previous database might not yield the table is a no-op
+ * rather than an error, because the replacement's job — reconstructing from
+ * files — is unaffected and losing a cache is the correct cost. There may be no
+ * previous database at all; it may be unreadable; it may predate the semantic
+ * index (any stamp below 9); and — reachable only from the boot path, where the
+ * previous database was written by a *different build* — its `chunk_embeddings`
+ * may not have the columns this schema reads, which fails on the copy rather
+ * than on the lookup.
+ *
+ * The count it returns is **logged, not reported**: `RebuildReport` is the wire
+ * shape of `POST /api/db/rebuild`, and the contract does not carry this field.
+ */
+export function carryOverEmbeddings(
+  target: SqliteDatabase,
+  previousPath: string,
+  logger: Logger = silentLogger,
+): number {
+  if (!existsSync(previousPath)) return 0;
+  try {
+    target.prepare("ATTACH DATABASE ? AS prev").run(previousPath);
+  } catch (error) {
+    logger.info("skipping embedding carry-over; previous projection unreadable", {
+      path: previousPath,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  }
+  try {
+    const table = target
+      .prepare("SELECT name FROM prev.sqlite_master WHERE type = 'table' AND name = ?")
+      .get("chunk_embeddings");
+    if (table === undefined) return 0;
+    return target
+      .prepare(
+        `INSERT OR IGNORE INTO chunk_embeddings
+           (chunk_id, identity, dim, vec, state, failures, updated_ms)
+         SELECT chunk_id, identity, dim, vec, state, failures, updated_ms FROM prev.chunk_embeddings`,
+      )
+      .run().changes;
+  } catch (error) {
+    logger.info("skipping embedding carry-over; previous `chunk_embeddings` does not fit", {
+      path: previousPath,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  } finally {
+    target.exec("DETACH DATABASE prev");
+  }
+}
+
+/**
+ * Suffix of the fresh database a schema change builds *beside* the one it
+ * supersedes, before renaming it into place.
+ */
+const SUPERSEDING_SUFFIX = ".superseding-";
+
+/** Removes leftovers from schema changes interrupted before their rename. */
+function cleanStaleSuperseding(path: string): void {
+  const directory = dirname(path);
+  const prefix = `${basename(path)}${SUPERSEDING_SUFFIX}`;
+  let names: string[];
+  try {
+    names = readdirSync(directory);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (name.startsWith(prefix)) rmSync(join(directory, name), { force: true });
+  }
+}
+
+/**
+ * Replaces a database this build cannot read with an empty one it can, keeping
+ * what a replacement is not entitled to throw away.
+ *
+ * Built beside the old file and renamed over it, rather than deleting in place,
+ * for one reason: {@link carryOverEmbeddings} needs the previous database to
+ * still exist when the new one is ready to receive from it. The rename is also
+ * the commit point — a crash before it leaves the old database untouched and
+ * the operator no worse off than a retry, and a crash after it leaves a
+ * complete new database — where a delete-then-create had a window in which the
+ * workspace had no projection at all.
+ */
+function supersedeProjectionFile(path: string, logger: Logger): void {
+  cleanStaleSuperseding(path);
+  const staging = `${path}${SUPERSEDING_SUFFIX}${String(process.pid)}`;
+  try {
+    const fresh = createProjectionFile(staging);
+    let carried: number;
+    try {
+      carried = carryOverEmbeddings(fresh, path, logger);
+    } finally {
+      fresh.close();
+    }
+    renameSync(staging, path);
+    // The superseded database's WAL, now sitting beside a file it no longer
+    // describes — the same sidecar sweep a rebuild's rename does.
+    removeDatabaseSidecars(path);
+    if (carried > 0) {
+      logger.info("carried semantic embeddings across the schema change", { carried, path });
+    }
+  } catch (error) {
+    removeDatabaseFiles(staging);
+    throw error;
+  }
+}
+
 /**
  * Opens the database at `path` with the §9.1 schema in place.
  *
- * A database stamped with a different {@link SCHEMA_VERSION} is **wiped and
- * rebuilt, never migrated**: the projection is derived, so schema evolution
+ * A database stamped with a different {@link SCHEMA_VERSION} is **replaced and
+ * repopulated, never migrated**: the projection is derived, so schema evolution
  * costs a rebuild rather than migration code. That rule is what enforces the
  * invariant behind it — nothing durable may ever live only in SQLite.
+ *
+ * **`chunk_embeddings` is the one thing that invariant does not cover, and it
+ * is carried across** (see {@link carryOverEmbeddings}). An embedding is
+ * derived from a chunk, but not in milliseconds, so "rebuildable" is not the
+ * same as "cheap to lose" for it — which is why `POST /api/db/rebuild` has
+ * carried them since sprint-021 and why a boot-time schema change, the
+ * replacement nobody asked for, must not be the destructive one.
+ *
+ * An **unstamped** database is deleted rather than superseded: no build of
+ * corpus has ever written one, so it is an empty file or a corrupt one, and
+ * there is nothing in it to name.
  */
 export function openProjectionDatabase(
   path: string,
   logger: Logger = silentLogger,
 ): SqliteDatabase {
-  let sqlite = new Database(path);
+  const sqlite = new Database(path);
   applyPragmas(sqlite);
   assertFts5Available(sqlite);
 
   const version = readSchemaVersion(sqlite);
   if (version === SCHEMA_VERSION) return sqlite;
-
-  if (version !== null) {
-    logger.info("projection schema changed; rebuilding from files", {
-      from: version,
-      to: SCHEMA_VERSION,
-      path,
-    });
-  }
   sqlite.close();
-  removeDatabaseFiles(path);
-  sqlite = new Database(path);
-  applyPragmas(sqlite);
-  applySchema(sqlite);
-  return sqlite;
+
+  if (version === null) {
+    removeDatabaseFiles(path);
+    return createProjectionFile(path);
+  }
+
+  logger.info("projection schema changed; rebuilding from files", {
+    from: version,
+    to: SCHEMA_VERSION,
+    path,
+  });
+  supersedeProjectionFile(path, logger);
+  const reopened = new Database(path);
+  applyPragmas(reopened);
+  return reopened;
 }
 
 /**

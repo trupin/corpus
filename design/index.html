@@ -159,10 +159,22 @@
   .sel-toolbar .comment-btn { color: var(--accent-ink); font-weight: 600; }
   .sel-toolbar .divider { width: 1px; background: var(--line); margin: 3px 4px; }
 
-  .lock-banner { display: flex; align-items: center; gap: 10px; border: 1px solid var(--sepia-wash-2); background: var(--sepia-wash); color: var(--sepia-ink); border-radius: 10px; padding: 9px 13px; margin-bottom: 14px; font-size: 12.5px; font-family: var(--sans); max-width: 62ch; }
-  .lock-banner .working-dot { background: var(--sepia); }
-  .lock-banner button { margin-left: auto; font-family: var(--mono); font-size: 11px; border: 1px solid var(--sepia-wash-2); border-radius: 6px; padding: 3px 9px; color: var(--sepia-ink); white-space: nowrap; }
-  .lock-banner button:hover { background: var(--sepia-wash-2); }
+  /* The change notice — a past-tense report, never a state. It appears after the
+     board's save was refused for a stale key, adopted the server's version and
+     re-sent (SPEC.md §7). It says the one thing the person cannot otherwise see:
+     their save went on top of a change they never read. It grants nobody a claim,
+     disables nothing, and can always be dismissed — the document stays editable
+     underneath it, because the board is never read-only (SPEC.md §11). */
+  .change-notice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px 9px; border: 1px solid var(--sepia-wash-2); background: var(--sepia-wash); color: var(--sepia-ink); border-radius: 10px; padding: 9px 13px; margin-bottom: 14px; font-size: 12.5px; font-family: var(--sans); max-width: 62ch; }
+  .change-notice .cn-mark { font-family: var(--mono); font-size: 11px; color: var(--sepia); margin-right: 4px; }
+  /* The sentence gets the full width and the actions sit under it, right-aligned:
+     the same shape at every reader width, and copy that is never squeezed into a
+     ragged column beside two buttons. */
+  .change-notice .cn-text { flex: 1 1 100%; }
+  .change-notice .cn-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; flex: none; }
+  .change-notice button { font-family: var(--mono); font-size: 11px; border: 1px solid var(--sepia-wash-2); border-radius: 6px; padding: 3px 9px; color: var(--sepia-ink); white-space: nowrap; }
+  .change-notice button:hover { background: var(--sepia-wash-2); }
+  .change-notice .cn-dismiss { border: none; padding: 3px 4px; font-size: 12px; }
 
   /* collapsed comment chips (narrow/column mode) */
   .thread-slot { margin: 4px 0 10px; }
@@ -694,7 +706,6 @@ const DOCS = {
   },
   doc_cashflow: {
     type: "note", title: "Cashflow 2026", folder: "finance/", tags: [], status: "open",
-    locked: { note: "updating monthly numbers from the statement drop" },
     updated: "5d ago", excerpt: "Monthly in/out, savings rate, and the honest discretionary number.",
     body: [
       "p:Living document, agent-updated monthly from the statement drop. Savings rate holding at 32%.",
@@ -1042,7 +1053,9 @@ function turnHTML(t, tid, idx) {
 }
 
 function bodyHTML(doc) {
-  const ed = doc.locked ? "" : ` contenteditable="true" spellcheck="false"`;
+  // Unconditional: no document is ever rendered read-only (SPEC.md §11) — not
+  // while the agent is writing it, not while a save is in flight.
+  const ed = ` contenteditable="true" spellcheck="false"`;
   return doc.body.map(block => {
     const [kind, ...rest] = block.split(":");
     const content = rest.join(":");
@@ -1059,10 +1072,36 @@ function bodyHTML(doc) {
   }).join("");
 }
 
-function lockBannerHTML(docId) {
-  const d = DOCS[docId];
-  if (!d.locked) return "";
-  return `<div class="lock-banner"><span class="working-dot"></span><span><b>agent is editing</b> — ${esc(d.locked.note)} · document is read-only</span><button data-force-unlock="${docId}">Force unlock</button></div>`;
+/* ── The change notice (SPEC.md §7 "A key, not a lock", §11 "never read-only") ──
+ *
+ * There is no lock, so there is nothing to hold, break or announce. What the
+ * person still cannot see for themselves is a *collision*: the agent wrote the
+ * document while they were typing, their save was refused for naming a version
+ * that had moved on, and the board adopted the server's version and re-sent —
+ * so what they typed landed on top of a change they never read. §7 guarantees
+ * "no change is lost without someone being told"; on the board, this is the
+ * telling.
+ *
+ * Deliberately NOT shown: that another writer "has" the document. That is the
+ * lock banner in miniature (rejected in PLUGINS-017), and it is false — nobody
+ * holds anything. An agent write that lands while nobody is typing gets no
+ * notice either: it appears in the text, live, which is the event itself (§9.4).
+ *
+ * Past tense, dismissible, and purely informational — the body underneath stays
+ * editable throughout, and the caret is never taken.
+ */
+const NOTICES = {}; // docId → { jobId } · runtime only, never document state
+
+function changeNoticeHTML(docId) {
+  const n = NOTICES[docId];
+  if (!n) return "";
+  return `<div class="change-notice" data-change-notice="${docId}" role="status">
+    <span class="cn-text"><span class="cn-mark">↯</span><b>the agent edited this while you were typing</b> — your save went on top of it. its version is in the history.</span>
+    <span class="cn-actions">
+      <button data-notice-job="${n.jobId}">see what it wrote</button>
+      <button class="cn-dismiss" data-notice-dismiss="${docId}" aria-label="Dismiss">✕</button>
+    </span>
+  </div>`;
 }
 
 function readerHTML(docId) {
@@ -1090,12 +1129,12 @@ function readerHTML(docId) {
         `<div class="check${i.done ? " done" : ""}" data-check="${docId}:${idx}"><span class="box">${i.done ? "☑" : "☐"}</span><span>${esc(i.t)}</span>${i.due ? `<span class="due">${esc(i.due)}</span>` : ""}</div>`).join("")}</div>`;
   }
   if (d.type === "skill") {
-    return fm + lockBannerHTML(docId) + `<h1 class="doc-title" contenteditable="true" spellcheck="false">${esc(d.title)}</h1>
+    return fm + changeNoticeHTML(docId) + `<h1 class="doc-title" contenteditable="true" spellcheck="false">${esc(d.title)}</h1>
       <div class="skill-fm"><b>name:</b> ${d.skillMeta.name} · <b>description:</b> ${esc(d.skillMeta.description)}<br><b>rollback:</b> corpus skill rollback ${d.skillMeta.name} <span class="chip good" style="margin-left:6px">last-known-good ✓</span></div>
       <div class="doc-body">${bodyHTML(d)}</div>` + backlinksHTML(d);
   }
-  const edT = d.locked ? "" : ` contenteditable="true" spellcheck="false"`;
-  return fm + lockBannerHTML(docId) + `<h1 class="doc-title"${edT}>${esc(d.title)}</h1><div class="doc-body">${bodyHTML(d)}</div>` + backlinksHTML(d);
+  const edT = ` contenteditable="true" spellcheck="false"`;
+  return fm + changeNoticeHTML(docId) + `<h1 class="doc-title"${edT}>${esc(d.title)}</h1><div class="doc-body">${bodyHTML(d)}</div>` + backlinksHTML(d);
 }
 
 function backlinksHTML(d) {
@@ -1809,11 +1848,20 @@ document.addEventListener("click", (e) => {
   const dmAct = e.target.closest("[data-dm-act]");
   if (dmAct) { docMenuAction(dmAct); return; }
 
-  const fu = e.target.closest("[data-force-unlock]");
-  if (fu) {
-    delete DOCS[fu.dataset.forceUnlock].locked;
-    refreshReaders();
-    toast("Lock broken — recorded in the audit trail; the agent's pending edit was re-queued.");
+  // The change notice's two actions. Neither changes anyone's right to write:
+  // one shows what the agent did, the other puts the notice away.
+  const nj = e.target.closest("[data-notice-job]");
+  if (nj) {
+    selectedJobId = nj.dataset.noticeJob;
+    renderConsole();
+    document.getElementById("console").classList.add("open");
+    state.console = true; saveState();
+    return;
+  }
+  const nd = e.target.closest("[data-notice-dismiss]");
+  if (nd) {
+    delete NOTICES[nd.dataset.noticeDismiss];
+    nd.closest(".change-notice").remove();
     return;
   }
 
@@ -2034,8 +2082,39 @@ function simulateInline(card, tid) {
   }, 2400);
 }
 
-/* ── Always-on editing: autosave simulation ── */
+/* ── Always-on editing: autosave simulation ──
+ *
+ * Every save presents the key the board got from its last read or write. A save
+ * naming a version the server has moved past is refused — and comes back with
+ * the document as it now stands plus a fresh key (SPEC.md §7), never with a bare
+ * "no". The board adopts the key and re-sends the very same buffer, so the chip
+ * never goes red and not one keystroke is discarded. The refusal costs a round
+ * trip and nothing else; its only lasting trace is the change notice.
+ */
 let saveTimer, commitTimer;
+
+/* The demo collision. Cashflow is the document the agent updates monthly from
+   the statement drop, so it is where a person's typing and an agent's write
+   realistically meet. Armed once: type in it and watch the agent's write land,
+   the refusal, the adoption and the retry play out. Cleared when it has. */
+let collisionDoc = "doc_cashflow", collisionJob = null;
+
+function scopeDocId(scope) {
+  if (!scope) return null;
+  return scope.id === "focus-overlay" ? state.focus : state.open[scope.id.replace("col-", "")];
+}
+
+/* Inserted in place rather than through refreshReaders(): re-rendering the
+   reader would take the caret out of a sentence the person is still writing,
+   which is the exact harm the key mechanism exists to prevent. */
+function showChangeNotice(scope, docId, jobId) {
+  NOTICES[docId] = { jobId };
+  const host = scope.querySelector(".reader-scroll") || document.getElementById("focus-inner");
+  const title = host && host.querySelector(".doc-title");
+  if (!host || !title || host.querySelector(".change-notice")) return;
+  title.insertAdjacentHTML("beforebegin", changeNoticeHTML(docId));
+}
+
 document.addEventListener("input", (e) => {
   if (!e.target.closest("[contenteditable]")) return;
   const scope = e.target.closest("#focus-overlay") || e.target.closest(".col");
@@ -2044,6 +2123,35 @@ document.addEventListener("input", (e) => {
   chip.textContent = "saving…";
   chip.className = "save-chip saving";
   clearTimeout(saveTimer); clearTimeout(commitTimer);
+
+  const docId = scopeDocId(scope);
+  if (docId && docId === collisionDoc) {
+    // The agent's write, on its way while the person types. Started once, not
+    // per keystroke — the save below is debounced, the collision is not.
+    if (!collisionJob) {
+      collisionJob = { id: "evt_key1", status: "running", started: "now", docId,
+        title: "doc.edit · " + DOCS[docId].title,
+        log: ["claimed evt_key1 (doc.edit)", "corpus doc edit --key 2a683cd0 --from agent"] };
+      JOBS.unshift(collisionJob); renderConsole();
+    }
+    saveTimer = setTimeout(() => {
+      const job = collisionJob;
+      collisionDoc = null;
+      job.status = "done";
+      job.log.push("committed 4b68ec8 · key now 4b68ec83");
+      renderConsole();
+      // The board's save: refused for a stale key, adopted, re-sent. The chip
+      // stays on "saving…" throughout — from the person's side this is one save
+      // that took a round trip longer, and no keystroke of theirs was touched.
+      showChangeNotice(scope, docId, job.id);
+      commitTimer = setTimeout(() => {
+        chip.textContent = "committed · git ✓";
+        chip.className = "save-chip saved";
+      }, 900);
+    }, 1300);
+    return;
+  }
+
   saveTimer = setTimeout(() => {
     chip.textContent = "saved · anchors ✓";
     chip.className = "save-chip saved";
@@ -2067,7 +2175,7 @@ document.addEventListener("mouseup", (e) => {
     if (!body || range.toString().trim().length < 2) { selToolbar.classList.remove("open"); return; }
     const focusEl = body.closest("#focus-overlay");
     selDocId = focusEl ? state.focus : state.open[body.closest(".col")?.id.replace("col-", "")];
-    if (!selDocId || DOCS[selDocId]?.locked) return;
+    if (!selDocId) return;
     selRange = range.cloneRange();
     selToolbar.classList.add("open");
     const r = range.getBoundingClientRect();

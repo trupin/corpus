@@ -226,10 +226,16 @@ describe("TodoItemComposer", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * The refusal is one `POST /api/threads` actually declares — a `404` for a
+   * parent document that went away while the popover was open (the route's
+   * responses are `400`, `401`, `404`). A payload the system cannot produce
+   * would prove only that this composer treats every failure alike.
+   */
   it("keeps the words and reports the refusal when the server says no", async () => {
     const { onCreated } = mount({
-      status: 423,
-      body: { code: "locked", message: "doc_week is being edited", issues: [] },
+      status: 404,
+      body: { code: "not_found", message: "no document doc_week" },
     });
     fireEvent.change(input(), { target: { value: "who was the plumber again?" } });
     fireEvent.click(send());
