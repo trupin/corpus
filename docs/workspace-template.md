@@ -103,7 +103,6 @@ their parents) arrive with the copy and are not listed here.
 - `.corpus/queue/` — the `pending/`, `in-progress/`, `deferred/`, `processed/`, `failed/`
   and `abandoned/` directories, each holding a `.gitkeep` so the skeleton survives a clone.
   The event files inside them are runtime state and stay ignored.
-- `.corpus/locks/` — per-document edit locks, one `<docId>.json` each (SPEC.md §4, §7).
 - `.corpus/jobs/` — per-job log streams for the console, one `<eventId>.jsonl` each
   (SPEC.md §4, §7).
 - `.corpus/attachments/` — attachment bytes, under `<thread-id>/<turn-ts>/` (SPEC.md §4).
@@ -119,9 +118,11 @@ their parents) arrive with the copy and are not listed here.
   installed tree. Every later mutation auto-commits on top of it with the acting party as
   git author (SPEC.md §4).
 
-The three `.corpus/` runtime directories are created empty and stay that way until the server
+The two `.corpus/` runtime directories are created empty and stay that way until the server
 uses them; `cache.db`, `server.pid`, `server.log`, `seen.json` and `HALT` (SPEC.md §4) are
-server- or lifecycle-created, not `init`-created, and so are not listed.
+server- or lifecycle-created, not `init`-created, and so are not listed. There is no
+`locks/`: SPEC.md §7's key is derived from a document's content rather than stored, so there
+is nothing to keep, nothing to reap, and no directory a crashed session could wedge.
 
 The manifest, as `corpus init` writes it:
 

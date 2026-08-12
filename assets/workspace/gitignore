@@ -5,7 +5,7 @@
 
 # Runtime state. Everything under .corpus/ is secret (config.json holds the
 # bearer token), derived (cache.db rebuilds from the files), or transient
-# (server.pid, server.log, jobs/, locks/, attachments/, seen.json, HALT).
+# (server.pid, server.log, jobs/, attachments/, seen.json, HALT).
 .corpus/*
 
 # ...except the install manifest, which is none of those three. It records which

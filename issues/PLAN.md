@@ -609,5 +609,5 @@ mechanism rather than waste.
 | SERVER-099 | Remove the lock subsystem | done | P0 | SERVER-098 |
 | CLI-038 | `corpus doc read` hands you a key; the write verbs demand one | done | P0 | CONTRACT-049, SERVER-098 |
 | UI-107 | The board presents a key, and never goes read-only | done | P0 | CONTRACT-049, SERVER-098 |
-| AGENT-022 | The skills teach keys, and stop teaching locks | todo | P0 | CLI-038 |
+| AGENT-022 | The skills teach keys, and stop teaching locks | done | P0 | CLI-038 |
 | PLUGINS-017 | The todos plugin writes from a captured read, and still reaches for a lock | done | P0 | CONTRACT-049, SERVER-098, UI-107 |

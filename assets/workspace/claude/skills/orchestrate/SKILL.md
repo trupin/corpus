@@ -35,18 +35,19 @@ everything after depends on them.
    shell redirection — and never call the HTTP API directly. The server is the sole writer:
    it is what commits every change with the right author, keeps thread anchors attached
    through edits, and keeps the board live.
-2. **Attribution is explicit.** `--from` defaults to `user` on every mutating verb,
-   including `corpus lock acquire`. Run `export CORPUS_FROM=agent` once at the start of the
-   session, and still pass `--from agent` on mutating commands the way the examples below
-   do — a change attributed to the wrong party is a corrupted audit trail.
+2. **Attribution is explicit.** `--from` defaults to `user` on every mutating verb. Run
+   `export CORPUS_FROM=agent` once at the start of the session, and still pass
+   `--from agent` on mutating commands the way the examples below do — a change attributed
+   to the wrong party is a corrupted audit trail.
 3. **You archive; you never delete.** Deletion (`corpus doc delete`) belongs to the user
    alone, and the CLI refuses it from you. Where a person would delete, run
    `corpus doc archive` — reversible, still indexed, still in git.
 4. **Every claimed event is settled** — `corpus queue complete`, `corpus queue fail`, or
-   `corpus queue defer` — on success, on error, on a blocking lock, and on interruption
-   alike. Complete and fail reach a terminal state; a deferred event is settled
+   `corpus queue defer` — on success, on error, on a document somebody is editing, and on
+   interruption alike. Complete and fail reach a terminal state; a deferred event is settled
    accounting, not a dangling one — it leaves `in-progress/` and returns to `pending/` on
-   its own when the lock it names clears. Work may fail or wait; accounting may not. The
+   its own when the editing session it names ends. Work may fail or wait; accounting may
+   not. The
    way this invariant actually breaks is that you finish a job and forget the settling
    call, which nothing in the work itself reveals — so every claim reports what the server
    still holds, and reading that report is a step of the loop (Claiming and batching).
@@ -61,6 +62,13 @@ everything after depends on them.
    with the corpus. Reading a body is a separate, deliberate act on an id retrieval handed
    you: `corpus doc show <id>`. The rule crosses the subagent boundary intact — a dispatch
    carries anchors, never documents (Delegation).
+7. **A write presents the key its read gave you.** Replacing a document's body or rewriting
+   its frontmatter wholesale means passing the `--key` that `corpus doc show` printed, and
+   the write prints a fresh key for the next edit. This adds no step to anything: you
+   already read a document before rewriting it, and that read is where the key comes from.
+   Nothing is acquired and nothing is released, so nothing can be forgotten, leaked or
+   wedged. *Writing a document* below has the loop, the two refusals, and what to do when a
+   person is editing.
 
 ## The loop
 
@@ -96,7 +104,7 @@ in the console to show for it. Run these steps in order, indefinitely:
 8. **Settle every event whose subagent has reported** — one of
    `corpus queue complete evt_7c1d9a`,
    `corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"`, or
-   `corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "waiting for the user's edit lock"`
+   `corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "a person is editing doc_a1b2c3"`
    — and then repeat from step 2.
 
 The order is claim → dispatch → park. You return to `corpus queue idle` **as soon as the
@@ -199,7 +207,7 @@ row below is failed with a reason and is never silently completed.
 
 Thread handling itself — reading context, honoring mentions, filing inbox captures, wording
 the reply, skill genesis — belongs to the comment skill, applied inside the subagent. This
-skill routes and dispatches, and owns queue state, ordering, locks, logging, and the halt
+skill routes and dispatches, and owns queue state, ordering, deferral, logging, and the halt
 switch.
 
 - **Structured targets.** The payload carries structured `mentions` and `skills` fields,
@@ -413,8 +421,12 @@ than assuming them:
   `corpus search` and `corpus doc related`, opens a body only with `corpus doc show` on an
   id one of them returned, and never lists or sweeps the corpus. It works from the anchors
   the dispatch gave it and is never handed — and never asks for — a corpus dump.
-- Locks are respected exactly as the edit verbs enforce them: a refused write is reported
-  back, never retried blind, never broken.
+- A write presents the key its read gave it, exactly as *Writing a document* prescribes: the
+  read before a rewrite is where the key comes from, a write that lands prints the next one,
+  and a stale-key refusal (exit `9`) is **the subagent's own to handle** — re-read what the
+  refusal printed, reconcile, write again. That is not a block and is never reported as one.
+  What **is** reported back is a person with an edit session open on the document: the
+  subagent leaves that document alone and says so, and you defer the event.
 - Progress lines go to **the dispatching event's job** — `corpus job log <eventId>
   "<line>"` with the same event id you dispatched — so the console watches delegated work
   exactly as it would watch you. Same discipline: name the object and the change.
@@ -463,11 +475,116 @@ claim-all`, `corpus queue complete`, `corpus queue fail`, or `corpus queue defer
   loop's opening `corpus queue reap-stale` returns it to `pending` after the staleness
   window. Nothing to do in the moment; nothing lost.
 
-**A blocked subagent defers — through you.** A subagent that hits a user-held lock
-reports the block with the document id and stops. Confirm the waiting thread got its
-one-line reply (the comment skill has the subagent post it; post it yourself if it is
-missing), then defer exactly as Locks and deferral below prescribes — never
-`corpus queue fail` for a lock, never a retry loop against it.
+**A subagent that stands aside defers — through you.** A subagent that finds a person editing
+the document it was about to write reports that with the document id and stops. Confirm the
+waiting thread got its one-line reply (the comment skill has the subagent post it; post it
+yourself if it is missing), then defer exactly as *Writing a document* prescribes — never
+`corpus queue fail` for it, and never a loop of re-reads against somebody still typing. A
+stale-key refusal is a different thing and never reaches you: the subagent re-reads and
+writes again on its own, and reports the finished work.
+
+## Writing a document
+
+**Read → work → write with the key you were given → keep the key the write returned.** That
+is the whole discipline, and every step of it is something you were doing anyway. Reading a
+document prints its **key**; a write that replaces the body presents that key; the write
+prints a fresh key on the line after its confirmation, which is the key the next edit
+presents. There is nothing to acquire, nothing to release, and nothing left behind if you
+stop halfway.
+
+```bash
+corpus doc show doc_a1b2c3
+Mortgage options
+doc_a1b2c3 · note · open
+key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
+corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
+The revised body, in full.
+EOF
+edited doc_a1b2c3
+key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
+```
+
+The key names the version you read, so presenting it says *this edit is written against what
+I saw* — and a key the document has moved past is exactly the statement *I am about to
+overwrite something I never read*. That is why the write is refused rather than landed.
+Because every write hands back the next key, **a chain of edits costs one read at the
+start**, not a read between every pair: carry the printed key forward and keep going. Read
+the key as opaque and echo it back exactly — never shorten it, never build one, never reuse
+one across two different documents.
+
+**What needs a key, and what never will.** A write that replaces a block needs one, because
+it says nothing about what it changes and is the write that can destroy silently: the body
+(`-m`, `--file`, a heredoc) and a wholesale frontmatter rewrite.
+A write that **names its own delta** needs none, and never will: `--add-tag`, `--remove-tag`,
+`--title`, `--status`, `--reviewed`, `--pinned`, `--order`, `--query`, `--extra`, along with
+`corpus doc move`, `corpus doc archive`, `corpus doc unarchive`, `corpus thread reply` and
+`corpus thread resolve`. Each of those says what it changes, so it merges with whatever else
+happened rather than overwriting it. A key is still accepted and still checked on them, which
+is worth passing on the rare edit you would rather have refused than merged.
+
+**Two refusals, and only the first is a mistake.**
+
+- **Exit `2` — no key, or a malformed one.** You asked to replace a body without saying which
+  version you were replacing. The CLI refuses before it sends anything, so nothing reached
+  the server: read the document and write again with the key it prints.
+- **Exit `9` — the key is stale.** The document changed after the read that handed you that
+  key. **Nothing was written, and the text you tried to save is still yours to resend.** The
+  refusal prints the document as it now stands *and* its fresh key, so no second read is
+  needed. Do three things with it, in order: read what changed, reconcile that against what
+  you meant to write — your edit applied to the current text, not the text you read — and run
+  the same command again with the fresh key. **That retry is the mechanism working**, not a
+  failure to report and not a reason to give up on the edit.
+
+Reconcile; never resend unchanged. The text that came back is somebody's edit, and a body
+that ignores it erases it just as surely as the write the refusal prevented. The refusal
+exists so that you get to decide, and deciding means reading what it printed.
+
+**Someone is editing this — a courtesy, with a named response.** A read also says when a
+person has an edit session open on the document:
+
+```
+someone is editing this — a person has an edit session open on doc_a1b2c3 right now.
+```
+
+Nothing is refused for it and a write would land. It is information, not a gate, and what it
+asks for is politeness rather than obedience: a document somebody is typing in is about to
+change, so a write beside them answers a version that is already going, and it arrives under
+their cursor while they are mid-sentence. Prefer to leave the document alone and come back —
+and where the work is a claimed event, coming back has a name: **defer it**, in this order.
+
+```bash
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+You're editing [[doc_a1b2c3]] right now, so I've left it alone. The change is
+ready and lands on its own once you're done in there.
+EOF
+# nothing changed, so that reply carries no trace line
+corpus queue defer evt_7c1d9a --blocked-on doc_a1b2c3 --reason "a person is editing doc_a1b2c3"
+```
+
+Reply first — a person is watching a pending indicator — then defer. When the subagent found
+the session, the sequence is unchanged: it has normally posted that reply already and
+reported what it saw; you make the defer call. A deferral is a postponement, not a failure:
+the event moves to `deferred/`, `corpus queue status` counts it under `deferred`, never
+`failed`, and the console shows it waiting rather than broken. Say it that way in the reply
+too — you stood aside, you were not stopped, and telling a person their editing blocked you
+is both untrue and an invitation to close a document they are still using.
+
+`--blocked-on` is required, and it is load-bearing: it names the **document being edited** —
+never the thread — because that session ending on exactly that document is what returns the
+event to `pending`. Name the wrong document and the event parks forever, waiting on a session
+nobody is in. The right value is always the id of the document you stood aside from.
+
+Re-entry is automatic. When the editing session on the blocked-on document **ends**, the
+server returns the event to `pending` by itself and a parked `corpus queue idle` unparks — no
+operator action, no retry, nothing for you to watch. `corpus job retry` remains only as the
+by-hand override for a deferral automatic re-entry did not reach: a session that ended out of
+band, or a deferral that named the wrong document.
+
+Deferring is a judgement, so it has an edge. A trivial delta on a document somebody is
+reworking — a tag, a status, an archive — merges and is fine to land; a body rewrite is what
+the courtesy is about. And where there is no claimed event to defer, there is nothing to
+park: finish the rest of the work, leave that one document, and say in the reply what is
+waiting on it.
 
 ## Reflecting on a user edit
 
@@ -562,8 +679,8 @@ go two ways with nothing in the corpus to pick between them. That is one thread 
 document the decision is about —
 `corpus thread create --parent doc_7e3a91 --from agent --model <name> --quote "<the passage that is now wrong>"`
 when you can quote the span exactly, because that is what makes it findable, and the same
-command without `--quote` when the passage is not one span or when the anchoring write is
-refused by the user's lock — and it asks with a **form**: a fenced block whose info string is
+command without `--quote` when the passage is not one span — and it asks with a **form**: a
+fenced block whose info string is
 `form`, last in the turn body, one field per question, asked once. The comment skill's
 **Forms** section is the whole grammar and binds here unchanged. Stop at three documents: past
 that, name what looks affected in the entry on the edited document instead of spraying entries
@@ -596,9 +713,12 @@ what you deliberately left alone. A date and two sentences is the size of it. Th
 body text rather than a turn, so it carries no trace arrow.
 
 **Append; never rewrite the section.** There is no append verb — `corpus doc edit` replaces
-the body — so it is `corpus doc show doc_a1b2c3` for the body as it now stands, then one
-`corpus doc edit doc_a1b2c3 --from agent` sending that body back with the new entry after the
-last one, every other byte reproduced exactly. The person writes in this section too:
+the body — so it is `corpus doc show doc_a1b2c3` for the body as it now stands **and for its
+key**, then one `corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent`
+sending that body back with the new entry after the last one, every other byte reproduced
+exactly. The key is what makes the append safe rather than hopeful: a document that moved
+between the read and the write refuses the write instead of taking a body that never saw the
+move (*Writing a document*). The person writes in this section too:
 re-wording, re-ordering, re-dating, merging or condensing an existing entry is how their
 writing disappears — and every thread anchored into an entry you rewrote comes loose, which
 the edit reports as an orphan after the fact rather than refusing beforehand. No reason for
@@ -617,12 +737,14 @@ end the body, so the anchor sitting on that text has its trailing context rewrit
 reported as remapped while staying exactly where it was. Later appends land past the section
 and report nothing at all.
 
-**This write takes an edit lock, where posting a thread would not have.** The person's session
-ended, but their editor can be open again by the time you write, and a refused write comes
-back as exit `5` with the holder named. Defer on it exactly as Locks and deferral says, with
-`--blocked-on` naming the edited document; the event returns to `pending` by itself once the
-lock clears, and the entry lands then. Never retry it blind, and never drop the entry because
-the document was busy.
+**This write replaces the body, so it presents a key — where posting a thread would have
+needed none.** The read one paragraph above is where that key comes from, and two things can
+have happened since. The document moved: the write is refused at exit `9` carrying the
+current text and a fresh key, so append your entry to *that* body and write again — the
+session you are reflecting on is over, so what moved is somebody else's change and your entry
+belongs after it either way. Or the person's editor is open again: leave the document alone
+and defer with `--blocked-on` naming it, and the entry lands when the event comes back. Never
+drop the entry because the document was busy.
 
 **Length is never a reason to prune.** Past a threshold the reader clips the section and says
 how many entries sit behind the control, and expanding shows them whole; the entries
@@ -662,14 +784,16 @@ doc_7e3a91  linked  Refinance plan — every projection here assumes 6.1% for th
 corpus search "rate assumption 6.1%" --limit 5
 doc_7e3a91  Refinance plan › Costs  …every projection here assumes 6.1% for the whole term…
 corpus doc show doc_7e3a91
+key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa
 ```
 
 One document, one figure, one way to write the new one — mechanical and entailed, so it is
-an update rather than a question. The update carries its own entry, because with no thread
+an update rather than a question. That last read is the one the write is written against, so
+its key goes straight into the edit. The update carries its own entry, because with no thread
 opened anywhere nothing else would tell a reader of that document why its figure moved:
 
 ```bash
-corpus doc edit doc_7e3a91 --from agent <<'EOF'
+corpus doc edit doc_7e3a91 --key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa --from agent <<'EOF'
 # Refinance plan
 
 Every projection here assumes 6.4% for the whole term, following the rate
@@ -681,15 +805,20 @@ assumption in [[doc_a1b2c3]].
   correction in [[doc_a1b2c3]]. Every projection here reads that one figure, so the change
   is arithmetic and takes no decision.
 EOF
+edited doc_7e3a91
+key 401056da72e89508679079c53bb06a0f4db1601033ed1d3139545d83119f7895
 corpus job log evt_7c1d9a "edited [[doc_7e3a91]] — carried the 6.4% rate assumption across"
 ```
 
-Then the entry on the edited document itself, appended to the body exactly as `corpus doc show`
-printed it — the July 14th entry was already there and is passed back through untouched:
+That write printed a fresh key, which is the one any further edit to `doc_7e3a91` would
+present — no second read for it. The entry on the edited document itself is a different
+document, so it takes its own read: appended to the body exactly as `corpus doc show` printed
+it, the July 14th entry already there and passed back through untouched.
 
 ```bash
 corpus doc show doc_a1b2c3
-corpus doc edit doc_a1b2c3 --from agent <<'EOF'
+key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70
+corpus doc edit doc_a1b2c3 --key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70 --from agent <<'EOF'
 # Mortgage options
 
 The working rate assumption is 6.4% as of 2026-07-28.
@@ -738,49 +867,6 @@ workspace agent's** bound, set by the product's contract — it is unrelated to 
 concurrency limit the operator's own tooling enforces elsewhere, and neither number
 constrains the other.
 
-## Locks and deferral
-
-The CLI's edit verbs (`corpus doc edit`, `corpus doc move`, `corpus doc archive`) acquire
-the document's edit lock implicitly and release it after the write — a routine edit never
-needs `corpus lock acquire`. When the **user** holds the lock (their editor is open on that
-document), the write is refused with the holder named, reported as a server error (exit
-`5`), and never retried blind. Defer instead — in exactly this order:
-
-```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
-You're editing [[doc_a1b2c3]] right now, so I haven't touched it. The change is
-ready and will land on its own once the document is free.
-EOF
-# nothing changed, so that reply carries no trace line
-corpus queue defer evt_7c1d9a --blocked-on doc_a1b2c3 --reason "waiting for the user's edit lock on doc_a1b2c3"
-```
-
-Reply first — a person is watching a pending indicator — then defer. When the refusal
-happened inside a subagent, the sequence is unchanged: the subagent has normally posted
-that reply already and reported the block; you make the defer call. A deferral is a
-postponement, not a failure: the event moves to `deferred/`, `corpus queue status` counts
-it under `deferred`, never `failed`, and the console shows it waiting rather than broken.
-
-`--blocked-on` is required, and it is load-bearing: it names the **locked document** —
-never the thread — because clearing the lock on exactly that document is what returns the
-event to `pending`. Name the wrong document and the event parks forever, waiting on a lock
-that will never clear. The right value is always the id of the document whose write was
-refused.
-
-Re-entry is automatic. When the lock on the blocked-on document is **released**,
-**force-broken**, or **reaped**, the server returns the event to `pending` by itself and a
-parked `corpus queue idle` unparks — no operator action, no retry, nothing for you to
-watch. `corpus job retry` remains only as the by-hand override for a deferral automatic
-re-entry did not reach: a lock that cleared out of band, or a deferral that named the
-wrong document.
-
-- **Never force a lock.** `corpus lock break` is the human's escape hatch, and the CLI
-  refuses it from you (exit `2`). That refusal is correct: contention you could break
-  yourself is no contention at all.
-- A lock left behind by your own crashed earlier run expires on its TTL, and
-  `corpus lock reap` clears expired locks. That is the whole recovery — you do not break
-  locks, not even your own.
-
 ## Progress and job logs
 
 Every event is a job whose log the console tails live. Append lines with
@@ -815,8 +901,8 @@ argument (or piped stdin). Log at these moments, and only these:
 - **acted** — each notable action, named concretely. These lines come from **inside the
   subagent**, appended to the same event id it was dispatched for — never to a job of its
   own.
-- **settled** — done, failed with the reason repeated, or deferred naming the blocking
-  document.
+- **settled** — done, failed with the reason repeated, or deferred naming the document it is
+  waiting on.
 
 A delegated job's log is one story in one file: your claimed and dispatched lines, the
 subagent's acted lines, your recorded outcome — the operator watches delegated work
@@ -834,7 +920,7 @@ exactly one of:
 ```bash
 corpus queue complete evt_7c1d9a
 corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"
-corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "waiting for the user's edit lock"
+corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "a person is editing doc_a1b2c3"
 ```
 
 The reason is a `--reason` flag, never a positional. A good reason is one short sentence
@@ -850,7 +936,7 @@ is waiting on, then settle the event. A pending indicator that silently becomes 
 the agent hanging; a one-line reply resolves it honestly.
 
 The invariant, restated: every claimed event ends settled — in `processed/`, in `failed/`,
-or in `deferred/` waiting on a named lock and coming back to `pending/` on its own —
+or in `deferred/` waiting on a named document and coming back to `pending/` on its own —
 including when your own handling throws: catch, log, reply if a thread waits, fail with a
 reason, move on to the next event. If the session dies mid-batch, events stay in
 `in-progress/`; the next session's opening `corpus queue reap-stale` returns them to
@@ -996,12 +1082,15 @@ Inside the subagent, the comment skill briefs itself on the one thread that matt
 `corpus thread context th_4b8e2c`, one bounded pack carrying the anchored passage with its
 enclosing section and whatever else bears on it, the second line never opened at all — reads
 the turns with `corpus thread show`, escalates to `corpus doc show doc_a1b2c3` because the
-edit below replaces the whole body, and does the work: every mutation through the CLI, every
-progress line on the dispatched event's id.
+edit below replaces the whole body — the same read that hands it the key that edit presents,
+and where a person's open session would have shown up had there been one — and does the work:
+every mutation through the CLI, every progress line on the dispatched event's id.
 
 ```bash
 export CORPUS_FROM=agent
-corpus doc edit doc_a1b2c3 --from agent <<'EOF'
+corpus doc show doc_a1b2c3
+key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
+corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
 # Mortgage options
 
 The working rate assumption is 6.4% as of 2026-07-28 — see [[th_4b8e2c]].

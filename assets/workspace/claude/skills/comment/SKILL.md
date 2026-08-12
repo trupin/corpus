@@ -85,8 +85,11 @@ authority. Read them as binding, and go there when a detail is missing.
    below do.
 3. **You archive; you never delete.** Where a person would delete, run `corpus doc archive`.
    Deletion belongs to the user alone, and the CLI refuses it from you.
-4. **A user-held lock means defer, not force.** Never break a lock; the deferral protocol is
-   in *Doing the work* below.
+4. **A write presents the key its read gave you.** Replacing a document's body means passing
+   the `--key` that `corpus doc show` printed, and the write prints a fresh key for the next
+   edit. Where a person has an edit session open on the document, prefer to stand aside and
+   let the event be deferred rather than write beside them. Both are in *Doing the work*
+   below.
 5. **Progress is logged.** Append a line with `corpus job log <eventId> "<line>"` at each
    notable step — what you read, what you changed, what you deferred. The console tails it
    live while the person waits.
@@ -127,7 +130,9 @@ Two rules still govern where any read comes from, pack or no pack:
 - **State goes through the CLI.** A thread's turns, status, participation and anchoring come
   from `corpus thread show <id>`. A document's frontmatter, body and **anchor resolution**
   come from `corpus doc show <id>` — anchors resolve against the current body server-side, so
-  the file on disk cannot answer that question. Lock state and job state are CLI reads too.
+  the file on disk cannot answer that question. That same read is where a document's **key**
+  comes from and where you learn a person has an edit session open on it, which is the second
+  reason a rewrite always reads first. Job state is a CLI read too.
   Never parse anything under `.corpus/`; it is runtime state, not a source.
 - **Locating goes through retrieval.** The pack *is* retrieval — ranked, bounded, one frugal
   line per hit — and so are `corpus search "<query>"` and `corpus doc related <id>` when you
@@ -146,7 +151,8 @@ same doctrine as invariant 6, not an exception to it. The pack is insufficient w
 - **You are about to rewrite a body.** `corpus doc edit` with a heredoc replaces the
   document's whole body, so an edit that must preserve the headings, order and passages around
   your change needs all of them in hand first. Rewriting a parent from its section alone
-  deletes the rest of the document.
+  deletes the rest of the document. The read is also what hands you the **key** that edit
+  presents, so this escalation and the write discipline are one act, not two.
 - **The pack says it truncated.** When the parent-side prose was cut to fit the bounds, the
   pack prints a `#` line saying so and naming the escalation. Read that line, and take it:
 
@@ -233,9 +239,10 @@ Pick the smallest shape that actually answers the request.
   to tell them something — a decision, a preference, a missing fact, a go/no-go before you
   start. Every question you need answered to proceed goes into that **one** form, as fields, in
   **one** turn. *Forms* below carries the grammar and the batching rule.
-- **Edit the parent** with `corpus doc edit <id> --from agent` and a heredoc body when the
-  request is about the document's content. The heredoc *is* the document's whole new body, so
-  this is the escalation of *Gather context*: read the document whole before you rewrite it.
+- **Edit the parent** with `corpus doc edit <id> --key <the key that read printed> --from agent`
+  and a heredoc body when the request is about the document's content. The heredoc *is* the
+  document's whole new body, so this is the escalation of *Gather context*: read the document
+  whole before you rewrite it, and present the key that read printed.
   The write path reconciles every anchor on save —
   threads follow their text automatically — so **never hand-maintain the `anchors` map** and
   never mention anchor ids in an edit. Read the command's anchor report: it names any thread
@@ -256,24 +263,63 @@ Pick the smallest shape that actually answers the request.
   plugin's documents field by field from here. The plugin's skill knows the shape; you know
   the conversation.
 
-**A user-held lock is a deferral, not a failure.** The edit verbs take the document's lock
-implicitly; when the person has their editor open on that document the write is refused with a
-`423`, reported as a server error (exit `5`). Do not retry, and do not break the lock. In this
-order:
+**Writing is a loop with nothing extra in it: read → work → write with the key you were
+given → keep the key the write returned.** Reading a document prints its **key**; a write
+that replaces the body presents that key; the write prints a fresh one on the line after its
+confirmation, which the next edit presents. So a chain of edits costs one read at the start
+rather than a read between every pair, and no step here is one you were not already taking —
+you read a document before rewriting it. Nothing is acquired and nothing is released.
+
+```bash
+corpus doc show doc_a1b2c3
+key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
+corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
+The revised body, in full.
+EOF
+edited doc_a1b2c3
+key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
+```
+
+The key names the version you read, so a key the document has moved past is exactly the
+statement *I am about to overwrite something I never read* — which is what the refusal
+prevents. A write that **names its own delta** needs no key at all and never will:
+`--add-tag`, `--title`, `--status`, `--reviewed`, `corpus doc move`, `corpus doc archive`,
+`corpus thread reply`, `corpus thread resolve`. Those merge rather than overwrite.
+
+**Two refusals, and only the first is a mistake.** Exit `2` means no key or a malformed one:
+the CLI refuses before sending anything, so read the document and write again. Exit `9` means
+the key is stale — the document changed after your read. **Nothing was written and your text
+is still yours to resend**, and the refusal prints the document as it now stands *plus* its
+fresh key, so no second read is needed: read what changed, reconcile it against what you
+meant — your edit applied to the current text rather than to the text you read — and run the
+same command again with the fresh key. That retry is the mechanism working, not a failure to
+report, and it is yours to do here rather than to hand back. Never resend the same body
+unchanged: what came back is somebody's edit, and ignoring it erases it.
+
+**Someone is editing this — stand aside, do not push through.** When a person has an edit
+session open on the document, the read says so:
+
+```
+someone is editing this — a person has an edit session open on doc_a1b2c3 right now.
+```
+
+Nothing refuses the write and it would land. It is a courtesy, and the response is to leave
+that document alone rather than write beside somebody mid-sentence:
 
 ```bash
 corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
-You're editing [[doc_a1b2c3]] right now, so I haven't touched it. The change is
-ready and will land as soon as the document is free.
+You're editing [[doc_a1b2c3]] right now, so I've left it alone. The change is
+ready and lands on its own once you're done in there.
 EOF
-corpus job log evt_7c1d9a "waiting on [[doc_a1b2c3]] — the user holds its edit lock"
+corpus job log evt_7c1d9a "stood aside on [[doc_a1b2c3]] — a person has an edit session open"
 ```
 
 That reply changed nothing, so it carries no trace line. Then **hand the event back to the
-orchestrate skill**, naming the locked document: queue state belongs to that skill, and it
-is what parks the event on the document's lock. The work re-enters by itself the moment the
-lock clears — nobody retries anything by hand, so never tell the person to. Reply *before*
-you defer: a pending indicator that goes quiet reads as the agent hanging.
+orchestrate skill**, naming the document you stood aside from: queue state belongs to that
+skill, and it is what parks the event until that session ends. The work re-enters by itself
+the moment it does — nobody retries anything by hand, so never tell the person to, and never
+tell them their editing blocked you, because it did not. Reply *before* the hand-back: a
+pending indicator that goes quiet reads as the agent hanging.
 
 ## Inbox filing
 
@@ -282,8 +328,8 @@ new document in `data/docs/inbox/` and open a whole-document thread asking you t
 capture's id is the event's `parentId`. File it end to end:
 
 1. **Read it whole** — `corpus doc show <parentId>`. The pack briefed you on the capture; step
-   3 rewrites its body, which is the escalation earning the full read. One line of text is
-   normal.
+   3 rewrites its body, which is the escalation earning the full read — and the read is where
+   the key that write presents comes from. One line of text is normal.
 2. **Give it a real title.** "Mortgage rates?" becomes "Mortgage rate assumptions for the 2026
    refinance". The title is what makes it findable.
 3. **Expand it into something usable.** Add the structure a reader needs: a heading or two, the
@@ -499,8 +545,8 @@ just closed — but that there **is** a turn changes everything. A bare
 a resolved thread holding nothing unseen: the conversation would fold away without the person
 ever seeing it end. So state the closing in the prose, in words, and name the resolve in the
 trace line as the change to a document that it is. Resolving writes the thread, not the parent,
-so a lock on the parent document does not stand in its way; a refused write is reported, never
-retried blind.
+and it names its own delta, so it needs no key and nothing about the parent stands in its way —
+neither a person editing it nor a key of yours that has gone stale.
 
 **Resolving cascades nowhere.** A child thread is its own document with its own status: closing
 a subthread leaves its parent open, and closing a parent leaves its children open. Resolve
@@ -664,10 +710,12 @@ about behavior.
 - **Extend an existing skill when one fits.** Find the skill whose job the pattern belongs to
   the way you find anything else — `corpus search "<the pattern>" --type skill`, since a
   skill is indexed like every other document — and edit it, including this one, whose
-  subject is exactly how threads are handled. A skill is a document:
-  `corpus doc edit <skillDocId> --from agent` with a heredoc body, keeping **both** frontmatter
-  field sets intact — `name` and `description` for Claude Code, `id`/`type`/`title`/`tags`/
-  `status` for Corpus — so both readers keep seeing it.
+  subject is exactly how threads are handled. A skill is a document, so it is read and
+  written like one: `corpus doc show <skillDocId>` for its body and its key, then
+  `corpus doc edit <skillDocId> --key <the key that read printed> --from agent` with a
+  heredoc body, keeping **both** frontmatter field sets intact — `name` and `description` for
+  Claude Code, `id`/`type`/`title`/`tags`/`status` for Corpus — so both readers keep seeing
+  it.
 - **Create a genuinely new skill when nothing installed fits** —
   `corpus skill create <name> --description "<one line>" --from agent` with a heredoc body:
 
@@ -744,7 +792,8 @@ doc_7e3a91  Refinance plan › Costs  linked  every projection here assumes 6.1%
 corpus thread show th_4b8e2c
 corpus job log evt_7c1d9a "briefed on th_4b8e2c from its context pack"
 corpus doc show doc_a1b2c3  # escalation: the edit below replaces the whole body
-corpus doc edit doc_a1b2c3 --from agent <<'EOF'
+key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
+corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
 # Mortgage options
 
 The working rate assumption is 6.4% as of 2026-07-28.
@@ -752,6 +801,8 @@ The working rate assumption is 6.4% as of 2026-07-28.
 Thirty-year fixed offers currently cluster between 6.1% and 6.6%; every
 projection in this document now uses 6.4%.
 EOF
+edited doc_a1b2c3
+key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"
 corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 Not any more — 6.4% is the representative 30-year fixed rate today. Updated the
@@ -791,7 +842,8 @@ EOF
 
 ```bash
 corpus doc show doc_5c8b2f
-corpus doc edit doc_5c8b2f --title "Quarterly insurance review" --from agent <<'EOF'
+key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa
+corpus doc edit doc_5c8b2f --key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa --title "Quarterly insurance review" --from agent <<'EOF'
 # Quarterly insurance review
 
 Check the home and auto policies against current replacement costs each quarter.
@@ -814,6 +866,10 @@ it: I don't know which quarter the policy renews in.
 ↳ retitled, expanded and filed [[doc_5c8b2f]] into finance/, tagged insurance and review
 EOF
 ```
+
+Only the first write there carried a key, and that is not an oversight: it replaced the
+body. The move and the two tags name their own deltas, so they merge with anything else that
+touched the document while the filing was under way and need no key at all.
 
 **4 — A `form.respond` continuation.** The three-field form above was answered on `th_6c0a18`:
 `finance` for the destination, `insurance` and `review` for the tags, the renewal quarter left
