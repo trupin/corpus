@@ -794,7 +794,7 @@ describe("when it is interrupted mid-install", () => {
 
   it("does not fail a run whose install had already finished when the signal arrived", async () => {
     // The opposite lie: an upgrade that completed is not a partial failure, and
-    // reporting one would send an agent chasing a rollback that never happened.
+    // reporting one would send an agent chasing an undo that never happened.
     const template = makeTemplate();
     const root = await makeWorkspace(template);
     const signals = fakeSignals();

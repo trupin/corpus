@@ -22,7 +22,6 @@ import {
   setFrontmatterFields,
   type ParsedDocument,
 } from "../core/index.js";
-import { HttpError, locked } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { DOCUMENT_ROOTS, SKILL_FILENAME } from "../projection/index.js";
 import { findDocumentRowByPath, loadDocument, toWireDoc, type LoadedDocument } from "./read.js";
@@ -37,7 +36,6 @@ import {
   type DocumentMutex,
   type FileOperation,
   type MutationResult,
-  type WriteGuard,
 } from "./write.js";
 
 const rootPath = (key: "skills" | "skills-archived"): string => {
@@ -159,12 +157,12 @@ function planFolderMove(loaded: LoadedDocument, archived: boolean): FolderMove |
  *
  * Exported because it answers a question that has to be settled *before* the
  * act takes a single lane: this verb writes those documents' files (it stamps
- * their ids, §5), so it must hold their write lanes for its whole length and
- * consult their locks, exactly as `bulk.ts` holds a cascaded parent's lane and
- * `delete.ts` holds an anchored thread's parent's (PR #38, finding 3). Before,
- * a `PUT` to a nested skill and its neighbour's archive were serialized against
- * nothing, so one could land inside the other's read-plan-write and be reverted,
- * relocated out from under itself, or written past an active lease.
+ * their ids, §5), so it must hold their write lanes for its whole length,
+ * exactly as `bulk.ts` holds a cascaded parent's lane and `delete.ts` holds an
+ * anchored thread's parent's (PR #38, finding 3). Before, a `PUT` to a nested
+ * skill and its neighbour's archive were serialized against nothing, so one
+ * could land inside the other's read-plan-write and be reverted or relocated out
+ * from under itself.
  *
  * Read from the current tree, so it can in principle disagree with the plan made
  * inside the lanes — a `SKILL.md` created under the folder in between. That is
@@ -535,41 +533,6 @@ export function planSetArchived(
   };
 }
 
-/**
- * The lock guard on a document this act only **carries** — reported so the
- * refusal says which document is actually locked.
- *
- * The sibling of `bulk.ts`'s `guardCascadeParent`, and for the same reason: the
- * `423` is raised while the caller asked about a different id, so everything in
- * it that names a document has to name the carried one, or a person reads
- * "locked" beside the skill they archived and clears *its* lease, which changes
- * nothing.
- */
-async function assertCarriedWritable(
-  guard: WriteGuard,
-  verb: string,
-  id: string,
-  carriedId: string,
-  actor: Actor,
-): Promise<void> {
-  try {
-    await guard(carriedId, actor);
-  } catch (error) {
-    if (error instanceof HttpError && error.status === 423 && "lock" in error.body) {
-      const lock = error.body.lock;
-      if (lock !== undefined) {
-        throw locked(
-          `to ${verb} ${id} its whole skill folder moves (SPEC.md §7), which rewrites ` +
-            `${carriedId}'s file in the same commit, and ${carriedId} is being edited by ` +
-            `${lock.holder}; the lock to clear is ${carriedId}'s, not ${id}'s`,
-          lock,
-        );
-      }
-    }
-    throw error;
-  }
-}
-
 export async function setArchived(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,
@@ -578,28 +541,19 @@ export async function setArchived(
   archived: boolean,
 ): Promise<ArchiveOutcome> {
   const verb = archived ? "archive" : "unarchive";
-  const guard = workspace.assertWritable ?? ((): void => undefined);
 
   // §7's folder move carries — and this verb therefore *writes* — every other
-  // `SKILL.md` under the folder, so their lanes are held for the whole act and
-  // their leases are consulted, exactly as `delete.ts` holds an anchored
-  // thread's parent (PR #38, finding 3). Read before any lane is taken, because
-  // which lanes to hold is a question only the current tree answers; an id that
-  // fails to load here fails inside too, on the read that reports.
+  // `SKILL.md` under the folder, so their lanes are held for the whole act (PR
+  // #38, finding 3). Read before any lane is taken, because which lanes to hold
+  // is a question only the current tree answers; an id that fails to load here
+  // fails inside too, on the read that reports.
   const carried = prospectiveCarriedIds(workspace, id, archived);
 
   return runInLanes(mutex, [id, ...carried], async () => {
-    // Inside the lanes, so a lease acquired while this verb waited its turn still
-    // refuses it (SERVER-022 finding 7).
-    await guard(id, actor);
-    for (const carriedId of carried) {
-      await assertCarriedWritable(guard, verb, id, carriedId, actor);
-    }
-
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
     const plan = planSetArchived(workspace, loaded, archived, new Set([id, ...carried]));
     if (plan === null) {
-      return { doc: toWireDoc(workspace.projection, loaded), result: emptyResult() };
+      return { doc: toWireDoc(workspace, loaded), result: emptyResult() };
     }
 
     // §14's findings about the bytes being written, then §7's about the
@@ -642,10 +596,7 @@ export async function setArchived(
     });
 
     return {
-      doc: toWireDoc(
-        workspace.projection,
-        loadDocument(workspace.workspaceRoot, workspace.projection, id),
-      ),
+      doc: toWireDoc(workspace, loadDocument(workspace.workspaceRoot, workspace.projection, id)),
       result,
     };
   });

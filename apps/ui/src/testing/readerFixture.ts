@@ -1,4 +1,4 @@
-import type { Doc, DocRow, Job, Lock, RelatedDoc, Thread, Warning } from "@corpus/contract";
+import type { Doc, DocRow, Job, RelatedDoc, Thread, Warning } from "@corpus/contract";
 import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
@@ -29,7 +29,17 @@ export interface ReaderTransport {
   readonly of: (method: string, path?: string) => ReaderCall[];
   /** Replaces a document mid-test, for out-of-band edits arriving over SSE. */
   readonly put: (doc: Doc) => void;
-  readonly setLocks: (locks: readonly Lock[]) => void;
+  /**
+   * **The other writer** (SPEC.md §7): rewrites a document behind the page's
+   * back and moves its key, exactly as the agent writing the file does.
+   *
+   * The document the page is holding therefore names a version that no longer
+   * exists, and the next body write it sends is refused with a `409` carrying
+   * this new document and its fresh key — which is the state a conflict test
+   * needs and the one no `put` of a hand-written `Doc` can produce, because a
+   * fixture that also chose the key would be choosing the answer.
+   */
+  readonly writeAsOther: (docId: string, body: string) => Doc;
   /** Settles or raises a job mid-test, for a queue transition arriving over SSE. */
   readonly setJobs: (jobs: readonly Job[]) => void;
 }
@@ -46,7 +56,6 @@ export interface ReaderTransportOptions {
    * relates to.
    */
   readonly related?: Readonly<Record<string, readonly RelatedDoc[]>>;
-  readonly locks?: readonly Lock[];
   /**
    * The console's job rows `GET /api/jobs` answers with — the queue, which is
    * where "does the agent still owe this thread an answer?" is decided (SPEC.md
@@ -78,12 +87,32 @@ export type DocOverrides = Omit<Partial<Doc>, "frontmatter"> & {
   readonly frontmatter?: Partial<Doc["frontmatter"]>;
 };
 
+/**
+ * A distinct, well-formed document key per call (SPEC.md §7): 64 lowercase hex
+ * characters, which is the only thing about a key a client may know.
+ *
+ * A counter rather than a hash of the body, deliberately. The key is *derived*
+ * server-side and *opaque* client-side; a fixture that hashed the content would
+ * let a test accidentally reproduce the server's derivation and then assert
+ * against a key it computed — which is precisely the thing §7 forbids a client
+ * to do, and the assertion would keep passing after the client started doing it.
+ */
+let documentKeys = 0;
+export function nextDocumentKey(): string {
+  documentKeys += 1;
+  return documentKeys.toString(16).padStart(64, "0");
+}
+
 export function docFixture(overrides: DocOverrides = {}): Doc {
   const frontmatterOverrides = overrides.frontmatter ?? {};
   return {
     body: "",
     path: "data/docs/finance/fixture.md",
     anchors: [],
+    key: nextDocumentKey(),
+    // SPEC.md §7's advisory signal, and never a gate: no document is read-only
+    // because of it.
+    userEditing: false,
     ...overrides,
     frontmatter: {
       id: "doc_fixture",
@@ -170,7 +199,6 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
   const calls: ReaderCall[] = [];
   const docs = new Map((options.docs ?? []).map((doc) => [doc.frontmatter.id, doc]));
   const threads = new Map((options.threads ?? []).map((thread) => [thread.id, thread]));
-  let locks = options.locks ?? [];
   let jobs = options.jobs ?? [];
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -206,7 +234,6 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       return new Response("bytes", { status: 200, headers: { "content-type": "image/png" } });
     }
 
-    if (url.pathname === "/api/locks") return json({ locks });
     if (url.pathname === "/api/jobs") return json({ jobs: answerJobs(jobs, url) });
     if (url.pathname === "/api/tree") return json({ folders: [] });
 
@@ -251,7 +278,28 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       const doc = docs.get(id);
       if (doc === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
       if (request.method === "PUT") {
-        return json({ doc, anchors: { remapped: [], orphaned: [] }, warnings: [] });
+        const changes = (call.body ?? {}) as { body?: string; key?: string };
+        /*
+         * SPEC.md §7's check, in the shape the server performs it: a write that
+         * replaces the body presents the key of the version it read, and a key
+         * naming any other version is refused with the document **as it now
+         * stands**, carrying a fresh key. Answering `200` to a stale key would
+         * make every conflict test pass against a client that never sent one.
+         */
+        if (changes.body !== undefined && changes.key !== doc.key) {
+          return json(
+            {
+              code: "stale_key",
+              message: "the key names a version this document no longer is",
+              doc,
+            },
+            409,
+          );
+        }
+        const written: Doc =
+          changes.body === undefined ? doc : { ...doc, body: changes.body, key: nextDocumentKey() };
+        docs.set(id, written);
+        return json({ doc: written, anchors: { remapped: [], orphaned: [] }, warnings: [] });
       }
       return json(doc);
     }
@@ -356,10 +404,6 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       );
     }
 
-    if (url.pathname.endsWith("/break")) {
-      return json({ docId: url.pathname.split("/")[3] ?? "", released: true, holder: "agent" });
-    }
-
     return json({});
   };
 
@@ -371,8 +415,12 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     put: (doc) => {
       docs.set(doc.frontmatter.id, doc);
     },
-    setLocks: (next) => {
-      locks = next;
+    writeAsOther: (docId, body) => {
+      const subject = docs.get(docId);
+      if (subject === undefined) throw new Error(`writeAsOther: no ${docId}`);
+      const written: Doc = { ...subject, body, key: nextDocumentKey() };
+      docs.set(docId, written);
+      return written;
     },
     setJobs: (next) => {
       jobs = next;

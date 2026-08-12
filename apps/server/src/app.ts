@@ -51,13 +51,6 @@ import {
   type AutoCommitter,
 } from "./git/index.js";
 import { createJobService, createStatedWeightRecorder, mountJobRoutes } from "./jobs/index.js";
-import {
-  createLockGuard,
-  createLockService,
-  mountLockRoutes,
-  type LockGuard,
-  type LockService,
-} from "./locks/index.js";
 import { createLogger, type Logger } from "./logger.js";
 import { mountPluginRoutes, type DiscoveredPlugin } from "./plugins/index.js";
 import { createBearerAuth } from "./middleware/auth.js";
@@ -80,7 +73,12 @@ import {
 } from "./queue/index.js";
 import { createHealthHandler } from "./routes/health.js";
 import { mountStaticUi } from "./static-ui.js";
-import { createSelfWriteRegistry, type SelfWriteRegistry } from "./watcher/index.js";
+import {
+  createOutOfBandCommitter,
+  createSelfWriteRegistry,
+  type CommitOutOfBandChanges,
+  type SelfWriteRegistry,
+} from "./watcher/index.js";
 
 /**
  * Server-local introspection: the live OpenAPI document. Deliberately outside
@@ -128,14 +126,6 @@ export interface CorpusServer {
    */
   readonly selfWrites: SelfWriteRegistry;
   /**
-   * Per-document edit locks (SPEC.md §7), and the guard the document write path
-   * calls before every write verb. `undefined` when the server was built without
-   * a projection — a lock is per-document, and "does this document exist?" is a
-   * question only the projection can answer.
-   */
-  readonly locks: LockService | undefined;
-  readonly lockGuard: LockGuard | undefined;
-  /**
    * Retrieval's semantic half (SERVER-045): hybrid ranking for `/api/search`,
    * `similar` neighbours for `/api/docs/{id}/related`, and the one
    * `semanticIndex` word both envelopes carry. `undefined` when the server was
@@ -162,15 +152,28 @@ export interface CorpusServer {
   /**
    * SPEC.md §4's edit acknowledgment (SERVER-052): what decides a *user* edit
    * session has ended and enqueues the one `doc.edited` for it. `undefined`
-   * alongside {@link locks} — without a projection there is no write pipeline to
-   * observe and no git writer to name a range from.
+   * alongside {@link semantic} — without a projection there is no write pipeline
+   * to observe and no git writer to name a range from.
    *
-   * Exposed because the **close** path has no HTTP route yet: `flush(docId)` is
-   * the entry point UI-044's reader-close will bind to once the contract carries
-   * a call for it, and `close()` is what shutdown runs. See the type's own
-   * docstrings for why §7's edit-lock release is not that signal.
+   * It is also §7's "someone is editing this" signal (`isOpen`) and, since
+   * SERVER-099, what returns a deferred queue event to `pending`: a session
+   * ending is the trigger the lock's release used to be.
    */
   readonly editSessions: EditSessionTracker | undefined;
+  /**
+   * SPEC.md §4's out-of-band half (SERVER-090): commits what an outside editor
+   * changed, authored `user`. `undefined` alongside the rest of the
+   * projection-backed subsystems — without a projection there is no watcher to
+   * call it and no git writer behind it.
+   *
+   * Exposed for the same reason {@link semantic} is: the watcher is attached by
+   * `lifecycle.ts` after `createServer` returns, and this is how it reaches the
+   * server's one git writer without being handed the writer itself. The writer
+   * is deliberately *not* on this surface — every other subsystem reaches git
+   * through the write pipeline, and a second door onto `AutoCommitter.commit`
+   * would be an invitation to open a third.
+   */
+  readonly commitOutOfBand: CommitOutOfBandChanges | undefined;
   /**
    * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
    * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
@@ -224,9 +227,8 @@ export interface CreateServerDeps {
    * Open Conflict 12) — and injected by tests that assert what would have been
    * committed without needing a repository.
    *
-   * Exactly one per server: the document write path and the lock service's
-   * force-break audit entry share this instance, which is what serializes every
-   * commit the server makes on a single `.git/index` lock.
+   * Exactly one per server: every write path shares this instance, which is what
+   * serializes every commit the server makes on a single `.git/index` lock.
    */
   readonly git?: AutoCommitter | undefined;
 }
@@ -358,9 +360,9 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     disposers.push(dispose);
   };
 
-  let locks: LockService | undefined;
-  let lockGuard: LockGuard | undefined;
   let editSessions: EditSessionTracker | undefined;
+  /** SPEC.md §4's out-of-band commit (SERVER-090); bound with the git writer below. */
+  let commitOutOfBand: CommitOutOfBandChanges | undefined;
   let semantic: SemanticRetrieval | undefined;
   let indexMaintenance: IndexMaintenance | undefined;
   /**
@@ -378,11 +380,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // dep `lifecycle.ts` opened, and the git module is a pure function of the
     // root — constructing a command builder opens no handle and touches no
     // filesystem, so it does not compromise `createServer`'s purity.
-    // The command builder is kept beside the committer, not swallowed by it: the
-    // skill rollback needs the same repository for *reads* (`rev-parse`, `log`,
-    // `show`) that the committer owns for writes, and `AutoCommitter` exposes
-    // only its lock. A test that injects `deps.git` replaces the writer; the
-    // reader still addresses the workspace the config names.
+    // The command builder is kept beside the committer, not swallowed by it:
+    // `GET /api/docs/{id}/diff` and the edit acknowledgment need the same
+    // repository for *reads* (`rev-parse`, `log`, `show`) that the committer
+    // owns for writes, and `AutoCommitter` exposes only its lock. A test that
+    // injects `deps.git` replaces the writer; the reader still addresses the
+    // workspace the config names.
     const gitCommands = createGit(config.workspaceRoot);
     const git =
       deps.git ??
@@ -402,6 +405,11 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
           editSessions?.observeRewrite(from, to);
         },
       });
+
+    // SPEC.md §4's out-of-band half (SERVER-090). Built here rather than inside
+    // `attachWatcher` for the reason everything else in this block is: `git` is
+    // the server's one writer and it does not leave this scope.
+    commitOutOfBand = createOutOfBandCommitter({ git, logger });
 
     // SPEC.md §4: "a queue event finished, however it finished" closes the open
     // commit window (SERVER-092). Late-bound because the queue is built above,
@@ -442,32 +450,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       });
     };
 
-    // Locks are built *before* the document routes, because the write pipeline
-    // takes the guard as a constructor argument: `assertWritable` is the seam
-    // SERVER-005 left in `DocsWorkspace`, and mounting it here is what turns a
-    // held lease into the contract's 423 on every write verb at once, rather
-    // than one route at a time.
-    const lockService = createLockService({
-      corpusDir: config.corpusDir,
-      projection: deps.projection,
-      queue,
-      git,
-      invalidate: deps.invalidate ?? invalidate,
-      observeWrite: (path, content) => {
-        selfWrites.record(path, content);
-      },
-      logger,
-      now,
-    });
-    const guard = createLockGuard(lockService);
-    locks = lockService;
-    lockGuard = guard;
-    mountLockRoutes(app, lockService);
-
     // §4's edit acknowledgment (SERVER-052). Built before the write pipeline
-    // because the pipeline takes it as a constructor argument, exactly like the
-    // lock guard above: every mutation has to reach it, and threading it through
-    // one workspace object is what makes that true of verbs written later.
+    // because the pipeline takes it as a constructor argument: every mutation
+    // has to reach it, and threading it through one workspace object is what
+    // makes that true of verbs written later.
     // It enqueues through `queue.enqueue` and not a file drop, because that is
     // the only path that also wakes a parked `corpus queue idle` (SPEC.md §7).
     editSessions = createEditSessionTracker({
@@ -478,6 +464,24 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       // range dangles and the next session re-announces the same change.
       endSquashSession: (sha) => {
         git.endSquashSession(sha);
+      },
+      // SPEC.md §7, SHARED-041: an agent that found a person editing may defer
+      // its claimed event, and the deferral "re-enters the queue on its own once
+      // the session ends". This is that trigger — the whole of what replaced the
+      // lock's release/break/reap, and the only reason the queue's `deferred`
+      // state still has an automatic way out. It fires whichever way a session
+      // ended (the reader closed, or it went idle), because the person having
+      // put the document down is the fact the agent was waiting on, not the
+      // acknowledgment that may or may not follow.
+      onSessionEnded: (docId) => {
+        void queue.requeueDeferredFor(docId).catch((error: unknown) => {
+          // Never fatal to a session ending: the deferral simply stays visible
+          // in the console, where §7's `corpus job retry` is the manual override.
+          logger.error("could not re-enter deferred events for an ended edit session", {
+            docId,
+            ...describeThrown(error),
+          });
+        });
       },
       logger,
       now,
@@ -505,7 +509,6 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       bus,
       logger,
       now,
-      assertWritable: (docId, actor) => guard.assertWritable(docId, actor),
       attachmentsRoot: attachmentsRootOf(config.corpusDir),
       editSessions,
     };
@@ -586,16 +589,16 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       index: indexMaintenance,
     });
 
-    // §14's validator over HTTP, and §7's skill rollback. Both need the
+    // §14's validator over HTTP, and §7's skill creation. Both need the
     // projection — the check resolves ids and answers "does this `[[ref]]`
-    // target exist", the rollback resolves a skill's path to its document id —
-    // so both live in this block, and both are mounted before the plugin
-    // routers like every other core route.
+    // target exist", a create mints an id against it — so both live in this
+    // block, and both are mounted before the plugin routers like every other
+    // core route.
     mountCheckRoutes(app, {
       workspaceRoot: config.workspaceRoot,
       projection: deps.projection,
     });
-    mountSkillRoutes(app, { ...docsWorkspace, gitCommands }, mutex);
+    mountSkillRoutes(app, docsWorkspace, mutex);
 
     // Plugin routers, last of the API surface (SPEC.md §10): every core mount
     // above wins any path dispute by construction, the `/api/*` bearer guard
@@ -610,7 +613,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   }
 
   // Outside the projection block on purpose: serving bytes reads the filesystem
-  // and nothing else — no rows, no locks, no git — so a server built without a
+  // and nothing else — no rows, no git — so a server built without a
   // database still hands out attachments rather than 404ing them.
   mountAttachmentRoutes(app, { attachmentsRoot: attachmentsRootOf(config.corpusDir) });
 
@@ -750,11 +753,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     projection: deps.projection,
     bus,
     selfWrites,
-    locks,
-    lockGuard,
     semantic,
     indexMaintenance,
     editSessions,
+    commitOutOfBand,
     registerDisposer,
     start,
     close,

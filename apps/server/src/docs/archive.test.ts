@@ -1,11 +1,6 @@
 import { chmodSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import {
-  ACTOR_HEADER,
-  DocListSchema,
-  DocMutationResponseSchema,
-  type Warning,
-} from "@corpus/contract";
+import { DocListSchema, DocMutationResponseSchema, type Warning } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument } from "../core/index.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
@@ -13,8 +8,8 @@ import { silentLogger } from "../logger.js";
 import { createThread } from "../threads/thread-fixture.js";
 import { carriedWarnings, planSetArchived, setArchived } from "./archive.js";
 import { loadDocument } from "./read.js";
-import { AUTH, createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
-import { allowAllWrites, createDocumentMutex, type DocsWorkspace } from "./write.js";
+import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { createDocumentMutex, type DocsWorkspace } from "./write.js";
 
 let ws: WriteWorkspace;
 
@@ -96,16 +91,7 @@ const docsWorkspace = (): DocsWorkspace => ({
   bus: ws.server.bus,
   logger: silentLogger,
   now: () => ws.clock,
-  assertWritable: allowAllWrites,
 });
-
-const acquireLock = async (id: string, actor: "user" | "agent"): Promise<void> => {
-  const response = await ws.server.app.request(`/api/locks/${id}`, {
-    method: "POST",
-    headers: { ...AUTH, [ACTOR_HEADER]: actor },
-  });
-  expect(response.status).toBe(201);
-};
 
 const list = async (query: string): Promise<string[]> => {
   const response = await ws.request(`/api/docs${query}`);
@@ -612,27 +598,9 @@ describe("a skill's frontmatter never contradicts the root it lands in", () => {
 
 // Finding 3: the carried stamp writes another document's file, so this verb owes
 // that document what every other cross-document write here already gives it —
-// its write lane for the act's whole length, and its lease consulted.
-describe("a folder move holds the lanes and the leases of what it carries", () => {
-  it("refuses when the other party holds a lease on a carried skill", async () => {
-    const { outer, nested } = withNestedSkill("archive-carried-lock");
-    await acquireLock(nested, "agent");
-    const head = ws.head();
-
-    const response = await ws.post(`/api/docs/${outer}/archive`, {}, { [ACTOR_HEADER]: "user" });
-
-    expect(response.status).toBe(423);
-    const body = (await response.json()) as { message: string; lock: { docId: string } };
-    // Everything that names a document names the locked one, or a person clears
-    // the lease on the skill they archived and nothing changes.
-    expect(body.message).toContain(nested);
-    expect(body.message).toContain("the lock to clear is");
-    expect(body.lock.docId).toBe(nested);
-    expect(ws.exists(".claude/skills/demo/nested/SKILL.md")).toBe(true);
-    expect(ws.exists(".claude/skills-archived/demo")).toBe(false);
-    expect(ws.head()).toBe(head);
-  });
-
+// its write lane for the act's whole length. (It used to owe it a lease check
+// too; SPEC.md §7's key removed the lease, SERVER-099.)
+describe("a folder move holds the lanes of what it carries", () => {
   it("waits for a carried skill's write lane before it touches the folder", async () => {
     const { outer } = withNestedSkill("archive-carried-lane");
     const nested = idAt(".claude/skills/demo/nested/SKILL.md");
@@ -648,8 +616,8 @@ describe("a folder move holds the lanes and the leases of what it carries", () =
     const archiving = setArchived(docsWorkspace(), mutex, "user", outer, true);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    // `applyOperations` is synchronous and runs in the first turn after the
-    // guard, so without the carried lane the folder would already have moved.
+    // `applyOperations` is synchronous and runs in the first turn, so without
+    // the carried lane the folder would already have moved.
     expect(ws.exists(".claude/skills-archived/demo")).toBe(false);
     expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
 

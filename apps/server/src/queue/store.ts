@@ -56,11 +56,11 @@ export type StoredEvent = z.infer<typeof StoredEventSchema> & {
 
 /**
  * The deferral bookkeeping, carried on the event because a deferral is a
- * property of the *work*, not of the lock (CONTRACT-021, SPEC.md §7).
+ * property of the *work*, not of the document (CONTRACT-021, SPEC.md §7).
  *
- * `blockedOn` is what makes automatic re-entry implementable: releasing,
- * breaking or reaping that document's lock is what returns the event to
- * `pending`. It is supplied by the caller that just tried the edit rather than
+ * `blockedOn` is what makes automatic re-entry implementable: the end of a
+ * person's edit session on that document is what returns the event to
+ * `pending` (SERVER-099). It is supplied by the caller that just tried the edit rather than
  * inferred from the payload, because the payload cannot always carry it —
  * `comment.created` has `parentId`, `form.respond` names no document at all,
  * and plugin event types own their own shapes.

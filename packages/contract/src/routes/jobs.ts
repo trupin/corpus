@@ -114,9 +114,9 @@ export const retryJob = createRoute({
     "Returns the event to `pending/` so the agent picks it up again — the retry action in the " +
     "console's detail header (SPEC.md §11).\n\n" +
     "It works on a **deferred** job too, and stays the manual override once deferrals re-enter " +
-    "on their own (SPEC.md §7, CONTRACT-021): automatic re-entry handles the lock being released, " +
-    "broken or reaped, and this handles everything it did not reach — a lock released out of " +
-    "band, or a deferral an operator simply wants back now.",
+    "on their own (SPEC.md §7, CONTRACT-021): automatic re-entry handles the edit session ending, " +
+    "and this handles everything it did not reach — a deferral an operator simply wants back " +
+    "now, or one whose document was put down in a way the server never saw.",
   request: { params: JobIdParamSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(JobSchema, "The job, queued again."),

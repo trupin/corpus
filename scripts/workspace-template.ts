@@ -75,7 +75,9 @@ export const INIT_GENERATED: readonly string[] = [
   ".claude/skills-archived/",
   ".claude/agents/",
   ".corpus/queue/",
-  ".corpus/locks/",
+  // No `.corpus/locks/`: SPEC.md §7's key is derived from a document's content
+  // rather than stored, so there is nothing to keep and nothing to reap
+  // (SHARED-041, and `WORKSPACE_DIRECTORIES` says the same next to the code).
   ".corpus/jobs/",
   ".corpus/attachments/",
   ".corpus/config.json",

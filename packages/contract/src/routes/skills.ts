@@ -1,45 +1,30 @@
-import { createRoute, z } from "@hono/zod-openapi";
+import { createRoute } from "@hono/zod-openapi";
 import { ActorHeaderSchema } from "../schemas/actor.js";
 import { DocMutationResponseSchema } from "../schemas/doc.js";
-import {
-  SkillCreateRequestSchema,
-  SkillNameSchema,
-  SkillRollbackRequestSchema,
-  SkillRollbackResultSchema,
-} from "../schemas/skill.js";
+import { SkillCreateRequestSchema } from "../schemas/skill.js";
 import {
   CONFLICT_RESPONSE,
   jsonContent,
-  LOCKED_RESPONSE,
-  NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
 
 /**
- * Skill rollback (SPEC.md §7) — `corpus skill rollback <name>`.
+ * The skills surface is **one route wide**, and that is the whole design.
  *
- * The skill is identified in the **path**, not in the body: every other resource
- * route in this contract addresses its resource that way (`/api/docs/{id}`,
- * `/api/locks/{docId}`, `/api/threads/{id}/…`), the `404` gets its natural home,
- * and a rollback reads as what it is — an action on a named skill rather than a
- * free-floating verb that happens to take a name.
+ * A skill is an ordinary document (SPEC.md §7), so it is read, edited, archived
+ * and reverted through the document routes. Creation is the only operation with
+ * no document equivalent, because a skill is the one document that lives outside
+ * `data/docs/`.
  *
- * The revert itself is git's, performed by the server because the server is the
- * sole writer (SPEC.md §9.1): a CLI that ran `git checkout` on a skill file
- * would bypass validation, the projection and the watcher all at once.
- *
- * It carries `423` for the same reason: a rollback rewrites
- * `.claude/skills/{name}/SKILL.md`, so it is a document write path, and §9.2's
- * "document write paths refuse edits to a document locked by the other party"
- * admits no carve-out for it. Rolling a skill back under the other party's edit
- * lock would discard whatever that party is mid-way through writing — precisely
- * the loss the lock exists to prevent (CONTRACT-018).
+ * **There is no rollback route.** §7's loop safety is a write whose content came
+ * from history — the caller reads the history and `PUT /api/docs/{id}`s the
+ * content it wants back, presenting the key of the version it read. A dedicated
+ * revert route would have to reimplement anchor reconciliation (§6), validation
+ * (§14), attributed commit (§4) and the key (§7), and would restore a whole file
+ * rather than revert a path, silently discarding anything not yet committed.
+ * _(Rider signed 2026-08-12 — replaces `POST /api/skills/{name}/rollback`.)_
  */
-
-const SkillNameParamSchema = z.object({
-  name: SkillNameSchema.openapi({ param: { name: "name", in: "path", required: true } }),
-});
 
 /**
  * Skill creation (SPEC.md §7) — `corpus skill create <name>`, the verb that
@@ -58,9 +43,9 @@ const SkillNameParamSchema = z.object({
  * Everything downstream of the write is the ordinary pipeline, because a skill
  * is an ordinary document (SPEC.md §7): validation, atomic write, git
  * auto-commit authored by `x-corpus-author`, synchronous re-projection and SSE
- * invalidation. The skill is therefore on the board, in `GET /api/docs?type=skill`
- * and available to `corpus skill rollback` without a restart, and it is edited
- * afterwards through `PUT /api/docs/{id}` like anything else.
+ * invalidation. The skill is therefore on the board and in
+ * `GET /api/docs?type=skill` without a restart, and it is edited — and reverted
+ * — afterwards through `PUT /api/docs/{id}` like anything else.
  */
 export const createSkill = createRoute({
   method: "post",
@@ -76,10 +61,9 @@ export const createSkill = createRoute({
     "name) and `description` for Claude Code's discovery, plus the core document keys the server " +
     "assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`.\n\n" +
     "**The skill is named in the body rather than in the path** because the path names a resource " +
-    "that does not exist yet; this is `POST /api/docs`'s convention, not a departure from the " +
-    "rollback route's. The name doubles as the traversal guard: it is validated against the same " +
-    "pattern the rollback path parameter uses, which admits no `/`, `.` or whitespace, so a " +
-    "traversal attempt is a `400` naming `body.name` and never reaches the filesystem.\n\n" +
+    "that does not exist yet; this is `POST /api/docs`'s convention. The name doubles as the " +
+    "traversal guard: it is validated against a pattern that admits no `/`, `.` or whitespace, so " +
+    "a traversal attempt is a `400` naming `body.name` and never reaches the filesystem.\n\n" +
     "**The creation lands as a normal auto-commit** (SPEC.md §9.2) and is projected and " +
     "broadcast like any other write, so the new skill appears on the board and in " +
     "`GET /api/docs?type=skill` without a restart. If the workspace's git hooks reject the " +
@@ -89,10 +73,9 @@ export const createSkill = createRoute({
     "`corpus doc archive` moves one) is likewise taken is answered by the server, and both " +
     "answers are already describable here: refusing it is this same `409`, allowing it is a " +
     "plain `201`.\n\n" +
-    "There is no `423`: an edit lock is held on a document, and this call's document does not " +
-    "exist until the call succeeds, so nothing can be holding it. A name that is already taken " +
-    "is a conflict, not a lock — and editing the skill afterwards goes through " +
-    "`PUT /api/docs/{id}`, which does refuse under the other party's lock.",
+    "It presents no key (SPEC.md §7): this call's document does not exist until the call " +
+    "succeeds, so there is no version anyone could have read. Editing the skill afterwards goes " +
+    "through `PUT /api/docs/{id}`, which does demand a key for a body write.",
   request: {
     headers: ActorHeaderSchema,
     body: {
@@ -111,55 +94,5 @@ export const createSkill = createRoute({
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     409: CONFLICT_RESPONSE,
-  },
-});
-
-export const rollbackSkill = createRoute({
-  method: "post",
-  path: "/api/skills/{name}/rollback",
-  tags: ["skills"],
-  summary: "Restore a skill's last-known-good version",
-  description:
-    "Restores `.claude/skills/{name}/SKILL.md` from git and commits the restoration — the " +
-    "targeted revert SPEC.md §7 names as the loop-safety escape hatch. Skills are ordinary " +
-    "documents and are edited like ordinary documents, so a bad edit to a core-loop skill " +
-    "(`orchestrate`, `comment`) can break the very loop that would otherwise fix it; this is the " +
-    "operator's way back, and the orchestrate skill documents it.\n\n" +
-    "**The body is optional in full.** A bare `POST` restores the last-known-good version — the " +
-    "newest committed revision of the file that validates. `to` overrides that with any revision " +
-    "git resolves, for stepping further back.\n\n" +
-    "**The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every " +
-    "other mutation (§9.2), so `git log` remains the complete audit trail and the projection and " +
-    "SSE stream follow as they do for any write. `commit` in the response is that new commit, not " +
-    "the revision the content came from; `path` is the file it rewrote; `docId` is the skill " +
-    "document's id, which a rollback never changes (ids are immutable, §5). If the workspace's " +
-    "git hooks reject the commit, the file is restored anyway, `commit` is `null` and the " +
-    "rejection comes back in `warnings` (§14).\n\n" +
-    "`404` means no skill of that name is installed — there is no `.claude/skills/{name}/` " +
-    "directory. A skill that was archived (`corpus doc archive` moves it to " +
-    "`.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: " +
-    "unarchive it first.\n\n" +
-    "A skill is an ordinary document, and this is an ordinary document write path: refused with " +
-    "`423` when the other party holds the document's edit lock.",
-  request: {
-    params: SkillNameParamSchema,
-    headers: ActorHeaderSchema,
-    body: {
-      required: false,
-      description:
-        "Optional revision override; omit the body entirely to restore the last-known-good version.",
-      content: { "application/json": { schema: SkillRollbackRequestSchema } },
-    },
-  },
-  responses: {
-    200: jsonContent(
-      SkillRollbackResultSchema,
-      "The skill is restored; `commit` is the auto-commit that restored it, or `null` when that " +
-        "commit failed or was skipped and the restoration stands uncommitted.",
-    ),
-    400: VALIDATION_RESPONSE,
-    401: UNAUTHORIZED_RESPONSE,
-    404: NOT_FOUND_RESPONSE,
-    423: LOCKED_RESPONSE,
   },
 });

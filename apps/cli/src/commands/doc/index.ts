@@ -15,8 +15,8 @@ import { unarchiveCommand } from "./unarchive.js";
  * The document lifecycle (SPEC.md §5, §7). Everything is a markdown document
  * with YAML frontmatter, and every one of these verbs is a thin call onto a
  * server endpoint: the CLI never opens a document file, never writes YAML and
- * never runs git. Locking, anchor reconciliation, validation and the auto-commit
- * that records who did it all happen server-side.
+ * never runs git. Key verification, anchor reconciliation, validation and the
+ * auto-commit that records who did it all happen server-side.
  *
  * `list` is the enumeration — the collection query behind the board's columns;
  * `related` is its opposite number, the one-hop expansion from a document the
@@ -35,7 +35,9 @@ export const docTopic: TopicSpec = {
     "The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the " +
     "collection query behind the board's own columns, filters, Attention and search — expands " +
     "from a document it already holds through `related`, the follow-up move to `corpus search` " +
-    "(SPEC.md §7) — reads documents through `show` — anchors " +
+    "(SPEC.md §7) — reads documents through `show`, which is also **where a key comes from**: " +
+    "replacing a body with `edit` means presenting the key that read handed out, and a write " +
+    "without a valid one does not happen (SPEC.md §7). Anchors " +
     "resolve against the current body server-side, so reading the file would answer differently " +
     "— reads what a user's edit session changed through `diff`, which is where a `doc.edited` " +
     "event's stats are cashed in for the change itself (SPEC.md §4) — and creates, edits, moves " +

@@ -11,11 +11,13 @@ import { expect, test } from "./coverage";
  * An editor needs a document, and a document needs a server.
  *
  * So the behavioural half — typing, the debounced `PUT`, the save chip driven
- * by the response, the user's edit lock, the agent lock going read-only and
- * back, `[[` autocomplete, the selection toolbar, focus mode, and the deferred
- * SSE update — is verified against a real `corpus init` workspace, a real
- * server and a real browser in the issue's E2E Verification Log, with the file
- * on disk and `git log` checked after every mutation.
+ * by the response, the key each save presents and the adopt-then-retry a
+ * refusal triggers (SPEC.md §7), `[[` autocomplete, the selection toolbar,
+ * focus mode, and the deferred SSE update — is verified against a real
+ * `corpus init` workspace, a real server and a real browser in the issue's E2E
+ * Verification Log, with the file on disk and `git log` checked after every
+ * mutation. The browser half of the conflict path lives in
+ * `key-conflict.spec.ts`.
  *
  * What is left is not nothing. Every rule below is a **stylesheet** contract
  * pinned by `design/index.html`'s "Editing (always-on, Docs-like)" block, and
@@ -68,7 +70,7 @@ test.describe("the editing surface", () => {
   test("a contenteditable body carries the accent caret and no outline", async ({ page }) => {
     const styles = await measure(
       page,
-      `<div class="doc-editor" data-editable="true">
+      `<div class="doc-editor">
          <div class="ProseMirror doc-body" contenteditable="true"><p>text</p></div>
        </div>`,
       [[".ProseMirror", ["caret-color", "outline-style"]]],
@@ -78,20 +80,6 @@ test.describe("the editing surface", () => {
     expect(styles[".ProseMirror"]?.["outline-style"]).toBe("none");
     expect(styles[".ProseMirror"]?.["caret-color"]).not.toBe("");
     expect(accent).not.toBe("");
-  });
-
-  test("a locked body is visually flat — no caret, no text cursor", async ({ page }) => {
-    const styles = await measure(
-      page,
-      `<div class="doc-editor" data-editable="false">
-         <div class="ProseMirror doc-body" contenteditable="false"><p>text</p></div>
-       </div>`,
-      [[".ProseMirror", ["caret-color", "cursor"]]],
-    );
-    // SPEC.md §7: a locked document renders read-only, and nothing about it may
-    // invite a keystroke the server would refuse.
-    expect(styles[".ProseMirror"]?.["caret-color"]).toBe("rgba(0, 0, 0, 0)");
-    expect(styles[".ProseMirror"]?.["cursor"]).toBe("default");
   });
 
   test("the editor's body is the same `.doc-body` the renderer uses", async ({ page }) => {

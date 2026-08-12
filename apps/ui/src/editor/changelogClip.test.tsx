@@ -80,7 +80,6 @@ function wire(): Wire {
       const url = new URL(request.url);
       const raw = await request.text();
       if (request.method === "PUT" && url.pathname.startsWith("/api/docs/")) writes.push(raw);
-      if (url.pathname === "/api/locks") return json({ locks: [] });
       if (url.pathname === "/api/docs") {
         return json({ items: [], page: { total: 0, limit: 50, offset: 0 } });
       }
@@ -105,7 +104,7 @@ function Host({
         <DocEditor
           docId="doc_changelog"
           body={body}
-          locked={false}
+          documentKey={"0".repeat(64)}
           onEditor={(instance) => {
             live = instance;
           }}

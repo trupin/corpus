@@ -143,7 +143,7 @@ export interface UseAutocompleteOptions {
   readonly value: string;
   /** Caret offset into `value`. */
   readonly caret: number;
-  /** False suspends detection entirely (a locked surface, a closed composer). */
+  /** False suspends detection entirely (a closed composer, a non-editing surface). */
   readonly enabled?: boolean;
   /** Applies a chosen completion; the caller owns the input's state. */
   readonly onComplete: (result: CompletionResult) => void;

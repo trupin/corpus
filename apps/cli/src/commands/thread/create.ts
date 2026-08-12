@@ -175,9 +175,10 @@ export const createCommand: WorkspaceCommandSpec = {
     "occurrence you mean, copied from the document — so that prefix, quote and suffix together " +
     "occur exactly once; framing that is itself repeated is refused the same way. The framing " +
     "only picks the occurrence and is **not** stored: the server reads the anchor's context off " +
-    "the document's own bytes. An unknown `--parent` is a `404` (exit 5), and a parent held by the other " +
-    "party's edit lock refuses an _anchored_ create with a `423`, since anchoring rewrites it " +
-    "(SPEC.md §7); a whole-document or standalone thread takes no lock. Prints the new thread's " +
+    "the document's own bytes. An unknown `--parent` is a `404` (exit 5). Anchoring rewrites the " +
+    "parent's frontmatter, but it **names its own delta** — one anchor added — so this verb " +
+    "presents no key and is never refused for a document someone else is writing (SPEC.md §7); " +
+    "an anchor whose quote has moved is refused on its own terms, above. Prints the new thread's " +
     "id, where it landed, and any enqueued event; `--json` emits the server's " +
     "`{thread, anchorId, eventId, warnings}` response unchanged.\n\n" +
     "**`--model` states what wrote the first turn**, and only an agent's turn may carry one " +

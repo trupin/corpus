@@ -177,7 +177,6 @@ function Probe({
     anchors: served.anchors,
     threads,
     threadsSettled: true,
-    locked: false,
     editable: true,
     onNotify,
   });

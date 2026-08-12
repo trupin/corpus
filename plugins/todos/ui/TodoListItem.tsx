@@ -1,6 +1,5 @@
 import {
   AgeChip,
-  LockChip,
   NeedsYouBadge,
   UnreadBadge,
   WorkingDot,
@@ -12,7 +11,6 @@ import {
   stalenessLevel,
   unreadBadgeProps,
   useAgentActivity,
-  useDocLock,
   useRowActions,
 } from "@corpus/kit";
 import type { ListItemProps } from "@corpus/kit/plugin";
@@ -26,15 +24,22 @@ import "./todos.css";
  *
  * A registered `ListItem` replaces the kit `Row` **wholesale** for its type, so
  * this component is responsible for everything a row owes the board — the
- * unread pill, the working dot, the lock chip, the attention reasons, the
- * staleness ladder and its quick actions — and adds the one thing only this
- * plugin knows about: `design/index.html`'s `.todo-items` preview and its due
- * count. Dropping the row's own signals to save code is how a whole document
- * type quietly stops showing that the agent is working on it.
+ * unread pill, the working dot, the attention reasons, the staleness ladder and
+ * its quick actions — and adds the one thing only this plugin knows about:
+ * `design/index.html`'s `.todo-items` preview and its due count. Dropping the
+ * row's own signals to save code is how a whole document type quietly stops
+ * showing that the agent is working on it.
+ *
+ * **There is no chip saying another writer holds this document, and there must
+ * not be one.** SPEC.md §7 replaced the per-document lock with a key, so there
+ * is nothing to hold; §11 is explicit that the board is never read-only, and a
+ * chip announcing someone else's claim on a row is that banner in miniature.
+ * The kit's `Row` draws no such chip either — this row matches it because both
+ * follow the same sentence, not because one copied the other.
  *
  * Everything the *row* needs is derived from what the server already computed
- * on it, plus the two live signals the kit publishes as hooks (`useDocLock`,
- * `useAgentActivity`), each backed by one shared query for the whole board.
+ * on it, plus the one live signal the kit publishes as a hook
+ * (`useAgentActivity`), backed by one shared query for the whole board.
  *
  * The **items** are the one thing a row cannot carry: they are body text since
  * PLUGINS-005 and bodies do not ride list rows. They come from
@@ -61,7 +66,6 @@ export function TodoListItem(props: TodoListItemProps): ReactElement {
     ...(onNotify ? { onNotify } : {}),
     ...(now ? { now: () => now } : {}),
   });
-  const lock = useDocLock(row.id);
   const activity = useAgentActivity(row);
 
   const today = now ?? new Date();
@@ -116,7 +120,6 @@ export function TodoListItem(props: TodoListItemProps): ReactElement {
           {unread === null ? null : <UnreadBadge {...unread} />}
           {due === 0 ? null : <NeedsYouBadge text={`${String(due)} due`} />}
           {activity.active ? <WorkingDot title={activity.title} /> : null}
-          {lock === null ? null : <LockChip holder={lock.holder} />}
           {showActions ? <AgeChip label={ageLabel(row, today)} /> : null}
         </span>
       </div>

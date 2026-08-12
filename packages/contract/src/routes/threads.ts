@@ -13,7 +13,6 @@ import { IsoDateTimeSchema } from "../schemas/time.js";
 import {
   FORBIDDEN_RESPONSE,
   jsonContent,
-  LOCKED_RESPONSE,
   NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
@@ -116,9 +115,9 @@ export const deleteTurn = createRoute({
     "**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent " +
     "never deletes turns (SPEC.md §6). Cascade: deleting a thread's **last** turn deletes the thread " +
     "itself, and deleting a thread removes its anchor entry from the parent's frontmatter, so no " +
-    "highlight is left pointing at an empty conversation. Git retains the deleted turn. Refused with " +
-    "`423` when the other party holds the parent document's edit lock, since the cascade may rewrite " +
-    "the parent's frontmatter.",
+    "highlight is left pointing at an empty conversation. Git retains the deleted turn. It presents " +
+    "no key (SPEC.md §7): deleting a named turn states its own change, and the cascade rewrites one " +
+    "`anchors` entry rather than replacing anything a reader was holding.",
   request: { params: TurnParamsSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(DeleteTurnResultSchema, "What the deletion cascaded to."),
@@ -126,7 +125,6 @@ export const deleteTurn = createRoute({
     401: UNAUTHORIZED_RESPONSE,
     403: FORBIDDEN_RESPONSE,
     404: NOT_FOUND_RESPONSE,
-    423: LOCKED_RESPONSE,
   },
 });
 

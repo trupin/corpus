@@ -1,4 +1,4 @@
-import type { Doc, DocRow, Lock } from "@corpus/contract";
+import type { Doc, DocRow } from "@corpus/contract";
 import {
   docWeightScope,
   hasSeenMark,
@@ -23,7 +23,6 @@ import { ThreadPanel } from "../thread/ThreadPanel";
 import { readStateOf, type ThreadReadState } from "../thread/threadCollapse";
 import { Backlinks } from "./Backlinks";
 import { FrontmatterForm } from "./FrontmatterForm";
-import { LockBanner } from "./LockBanner";
 import { RelatedPanel } from "./RelatedPanel";
 import type { ReaderDoc } from "./useReaderDoc";
 
@@ -31,15 +30,15 @@ import type { ReaderDoc } from "./useReaderDoc";
  * **The** document view. One component, two hosts (SPEC.md §11).
  *
  * The in-column reader and focus mode differ in chrome and in reading measure
- * and in nothing else: same frontmatter form, same lock banner, same ⋯ menu,
- * same 💬, same refs, same backlinks, same related panel. Forking the rendering
- * would let the two
+ * and in nothing else: same frontmatter form, same ⋯ menu, same 💬, same refs,
+ * same backlinks, same related panel. Forking the rendering would let the two
  * drift, and §11 describes one document view rendered at two sizes.
  *
  * The body branch is where UI-006 landed: a markdown-bodied document renders
- * through `DocEditor` — always, including when it is locked, which is the same
- * surface at `editable: false` rather than a second read-only renderer
- * (sprint-011 Adjudication 7).
+ * through `DocEditor`, and **there is no second branch** — §11's *the board is
+ * never read-only* means a document the agent is writing gets the same editable
+ * surface as any other. The lock banner that used to sit above it, and the
+ * read-only rendering it announced, are gone with the mechanism (SPEC.md §7).
  *
  * **Three outcomes, decided in this order** (UI-014):
  *
@@ -53,18 +52,6 @@ import type { ReaderDoc } from "./useReaderDoc";
  * `MarkdownView` is left with exactly one document: a `view`, whose content is
  * its stored query rather than its prose.
  */
-
-/**
- * The lock that makes this document read-only.
- *
- * A `user` lock is **this** session's own: the editor takes one on the first
- * keystroke so the agent's queue defers to it (SPEC.md §7), and treating it as
- * foreign would make the editor lock itself out and raise a banner announcing
- * the user to the user.
- */
-export function foreignLock(lock: Lock | null): Lock | null {
-  return lock === null || lock.holder === "user" ? null : lock;
-}
 
 /**
  * Whether a thread that **is** the open document holds a turn nobody has seen —
@@ -203,7 +190,6 @@ export function DocView({
    * what it would paint is known.
    */
   const placementKnown = !reader.threadPending && !scopeThreads.isPending;
-  const lock = foreignLock(reader.lock);
   // Subscribe to plugin discovery so an open reader swaps to a plugin `View`
   // (or back) when the registry settles after first render.
   usePluginRegistry();
@@ -287,7 +273,6 @@ export function DocView({
     anchors: doc?.anchors ?? [],
     threads: reader.threads,
     threadsSettled: reader.threadsSettled,
-    locked: lock !== null,
     editable: anchorsHost,
     flashThread,
     onNotify,
@@ -412,11 +397,9 @@ export function DocView({
           key={`frontmatter:${doc.frontmatter.id}`}
           doc={doc}
           selectTitle={selectTitle}
-          locked={lock !== null}
           onNotify={onNotify}
           banner={
             <>
-              {lock === null ? null : <LockBanner lock={lock} onNotify={onNotify} />}
               {reader.isArchived ? (
                 <div className="archived-banner" role="status">
                   This document is <b>archived</b> — it is hidden from default lists. Archiving is
@@ -492,14 +475,15 @@ export function DocView({
           /*
            * Keyed by document id: a navigation is a remount, which is what
            * flushes the outgoing document's pending save before the editor
-           * rebinds. A lock arriving, a rename or an SSE refresh changes no key
-           * and therefore keeps the caret, the scroll and the selection.
+           * rebinds. A rename, an SSE refresh or a key refused and re-presented
+           * changes no key here, and therefore keeps the caret, the scroll and
+           * the selection.
            */
           <DocEditor
             key={doc.frontmatter.id}
             docId={doc.frontmatter.id}
             body={doc.body}
-            locked={lock !== null}
+            documentKey={doc.key}
             onOpenRef={onNavigate}
             onComment={anchors.onComment}
             onAnchors={anchors.onAnchors}

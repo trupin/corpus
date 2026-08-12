@@ -159,6 +159,10 @@ async function openTodosBoard(page: Page, options: StubOptions = {}): Promise<To
         body: bodyOf(items),
         path: "data/docs/inbox/chores.md",
         anchors,
+        // SPEC.md §7: every document read carries its key and the advisory
+        // "someone is editing this" signal.
+        key: "0".repeat(64),
+        userEditing: false,
       } satisfies Doc),
     });
   });

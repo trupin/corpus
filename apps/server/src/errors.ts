@@ -11,7 +11,7 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
-import type { ApiError, Lock, ValidationIssue } from "@corpus/contract";
+import type { ApiError, Doc, ValidationIssue } from "@corpus/contract";
 
 /**
  * Base class for every deliberate server failure. Startup failures (workspace
@@ -81,9 +81,9 @@ export function unauthorized(message: string): HttpError {
 }
 
 /**
- * The acting party is not allowed to make this call at all — as opposed to 401
- * (no valid credential) or 423 (right party, wrong moment). Retrying with a
- * token does not help, so no `WWW-Authenticate` challenge is offered.
+ * The acting party is not allowed to make this call at all — as opposed to 401,
+ * which is no valid credential. Retrying with a token does not help, so no
+ * `WWW-Authenticate` challenge is offered.
  */
 export function forbidden(message: string): HttpError {
   return new HttpError(403, { code: "forbidden", message });
@@ -94,22 +94,34 @@ export function notFound(message: string): HttpError {
 }
 
 /**
- * The request conflicts with state that already exists — deliberately distinct
- * from 423, which refuses an unrelated *write* because a document is locked.
- * Acquiring a lock somebody else holds is the canonical 409 and carries that
- * lock, which is what lets a client tell "try again as a lock" from "you may not
- * write at all" (contract: `ConflictError` / `LockConflictError`).
+ * The request conflicts with state that already exists — a thread re-attach whose
+ * target moved, a create whose id is taken.
+ *
+ * The sibling case, a write refused because the version it named is no longer
+ * the document's, is {@link staleKey} below: SPEC.md §7's refusal is a 409 too,
+ * and the two stay tellable apart at the `code` a client branches on rather than
+ * at the status.
  */
-export function conflict(message: string, lock?: Lock): HttpError {
-  return new HttpError(409, {
-    code: "conflict",
-    message,
-    ...(lock === undefined ? {} : { lock }),
-  });
+export function conflict(message: string): HttpError {
+  return new HttpError(409, { code: "conflict", message });
 }
 
-export function locked(message: string, lock: Lock): HttpError {
-  return new HttpError(423, { code: "locked", message, lock });
+/**
+ * SPEC.md §7's refusal: the key presented names a version this document no
+ * longer is.
+ *
+ * **Never bare.** It carries the document *as it now stands*, whose own `key` is
+ * the fresh one — one exchange rather than two, so the writer can see what
+ * changed, reconcile and write again. The fresh key is deliberately not a
+ * sibling field: it is `doc.key`, the same field every read publishes, because
+ * two copies of one value are two things that can disagree.
+ *
+ * A code of its own rather than `conflict`, because `409` already carries the
+ * re-attach conflict and the two must stay tellable apart at the `code` a client
+ * branches on (`StaleKeyErrorSchema`).
+ */
+export function staleKey(message: string, doc: Doc): HttpError {
+  return new HttpError(409, { code: "stale_key", message, doc });
 }
 
 /**

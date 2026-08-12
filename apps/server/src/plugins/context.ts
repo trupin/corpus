@@ -104,10 +104,7 @@ export function createPluginContext(deps: PluginContextDeps): PluginServerContex
 
   /** The document as `getDoc` would return it — the shape the callback is handed. */
   const readDoc = (id: string): Doc =>
-    toWireDoc(
-      workspace.projection,
-      loadDocument(workspace.workspaceRoot, workspace.projection, id),
-    );
+    toWireDoc(workspace, loadDocument(workspace.workspaceRoot, workspace.projection, id));
 
   const namespaced = (parts: readonly QueryKeySegment[]): QueryKey => {
     const first = parts[0];
@@ -151,7 +148,7 @@ export function createPluginContext(deps: PluginContextDeps): PluginServerContex
     // `updateDoc` takes for this document (CONTRACT-019, SERVER-034). Nothing
     // here is a second write path: `updateDocumentLocked` *is* `updateDoc`'s
     // body, minus the `mutex.run` that would deadlock on a lane already held —
-    // so the lock guard, the validation, the anchor reconciliation, the commit,
+    // so §7's key check, the validation, the anchor reconciliation, the commit,
     // the re-projection and the core invalidation are the same code, reached
     // the same way.
     mutateDoc: async (actor, id, mutate) =>
@@ -169,7 +166,7 @@ export function createPluginContext(deps: PluginContextDeps): PluginServerContex
           mutate(before),
           "plugin doc mutate",
         );
-        // The lock guard lives in here, after the callback: the refusal is part
+        // §7's key check lives in here, after the callback: the refusal is part
         // of the write, which is why the contract requires the callback to be a
         // pure recompute. The re-read it does is the same document this lane
         // just handed the callback — the lane is what makes that true.

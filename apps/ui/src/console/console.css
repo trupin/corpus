@@ -254,7 +254,8 @@
 }
 
 /*
- * Deferred — waiting on a lock, not broken (CONTRACT-021). The prototype drew
+ * Deferred — parked while a person is editing, not broken (CONTRACT-021, and
+ * SPEC.md §7 as SHARED-041 re-based it). The prototype drew
  * no parked affordance, so this borrows pending's colour, which is already the
  * "hasn't run yet" hue and therefore says nothing untrue. It keeps its own
  * selector so SERVER-030's polish can restyle the state without touching the

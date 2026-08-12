@@ -31,6 +31,7 @@ import {
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { internalError, notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
+import { documentKey } from "./key.js";
 
 export type DocumentRow = {
   readonly id: string;
@@ -64,9 +65,11 @@ export function findDocumentRow(projection: ProjectionDb, id: string): DocumentR
  *
  * The by-path direction exists because a **skill's identity is its path**, not
  * its frontmatter: §7 lets a hand-written `SKILL.md` carry no Corpus id at all
- * and the projection derives one from where the file sits. `corpus skill
- * rollback <name>` therefore starts from `.claude/skills/<name>/SKILL.md` and has
- * to arrive at the document id, which is the opposite of every other read.
+ * and the projection derives one from where the file sits. Archiving a skill
+ * folder therefore starts from `.claude/skills/<name>/SKILL.md` and has to
+ * arrive at the document id, which is the opposite of every other read — and so
+ * does the watcher, which learns which document an out-of-band edit changed from
+ * the path the filesystem named.
  * `documents.path` is `TEXT NOT NULL UNIQUE`, so the answer is at most one row.
  */
 export function findDocumentRowByPath(projection: ProjectionDb, path: string): DocumentRow | null {
@@ -282,12 +285,50 @@ export function resolveDocumentAnchors(
   return resolved;
 }
 
-/** The `Doc` body of every read and every mutation response. */
-export function toWireDoc(projection: ProjectionDb, loaded: LoadedDocument): Doc {
+/**
+ * What {@link toWireDoc} needs besides the document itself.
+ *
+ * `DocsWorkspace` satisfies it structurally, so every call site passes the
+ * workspace it already holds. The editing signal is typed by the *question* it
+ * asks rather than as `EditSessionTracker` for one reason: `edit/` imports
+ * `docs/` (`edit/diff.ts`, `edit/routes.ts`), and a reader has no business
+ * knowing what else a session tracker can do.
+ */
+export interface DocReadContext {
+  readonly projection: ProjectionDb;
+  /**
+   * §4's session tracker, which already knows whether a person is editing —
+   * SPEC.md §7's advisory signal is that fact exposed, never a second tracker.
+   * Absent in the read-only wirings that have no write path at all, where no
+   * session can exist and `false` is the honest answer.
+   */
+  readonly editSessions?: { isOpen(docId: string): boolean } | undefined;
+}
+
+/**
+ * The `Doc` body of every read and every mutation response — **the one place a
+ * key is published** (SPEC.md §7).
+ *
+ * The key is derived from `loaded.text`: the file's bytes as read in *this*
+ * request. Two consequences the mechanism rests on:
+ *
+ * - **A write's response carries the key of what was stored**, not of what the
+ *   caller sent, because every verb re-loads the document after the mutation and
+ *   shapes *that*. Anchor reconciliation (§6) rewrites the frontmatter inside the
+ *   same save, so a key taken from the request's body would be stale the instant
+ *   it was minted — and the writer's own next write would be refused by its own
+ *   reconciliation, which looks exactly like a real conflict.
+ * - **An out-of-band edit invalidates a key with nothing having to notice.** The
+ *   watcher, the projection and git are not inputs; the file is.
+ */
+export function toWireDoc(context: DocReadContext, loaded: LoadedDocument): Doc {
   return {
     frontmatter: wireFrontmatter(loaded.row, loaded.parsed),
     body: loaded.parsed.body,
     path: loaded.path,
-    anchors: resolveDocumentAnchors(projection, loaded.row.id, loaded.parsed),
+    anchors: resolveDocumentAnchors(context.projection, loaded.row.id, loaded.parsed),
+    key: documentKey(loaded.text),
+    // Politeness, never a gate: nothing is refused because of it (SPEC.md §7).
+    userEditing: context.editSessions?.isOpen(loaded.row.id) ?? false,
   };
 }

@@ -2,9 +2,8 @@ import type { z } from "@hono/zod-openapi";
 import {
   ConflictErrorSchema,
   ForbiddenErrorSchema,
-  LockConflictErrorSchema,
-  LockedErrorSchema,
   NotFoundErrorSchema,
+  StaleKeyErrorSchema,
   UnauthorizedErrorSchema,
   ValidationErrorSchema,
 } from "../schemas/error.js";
@@ -60,12 +59,20 @@ export const CONFLICT_RESPONSE = jsonContent(
   "The request conflicts with state that already exists.",
 );
 
-export const LOCK_CONFLICT_RESPONSE = jsonContent(
-  LockConflictErrorSchema,
-  "Another party already holds this document's lock; `lock` identifies the holder (SPEC.md §7).",
-);
-
-export const LOCKED_RESPONSE = jsonContent(
-  LockedErrorSchema,
-  "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
+/**
+ * SPEC.md §7's refusal, declared on every write that presents a key.
+ *
+ * The `409` a stale key answers with is **never bare**: it carries the document
+ * as it now stands, whose own `key` is the fresh one, so the writer sees what
+ * changed and can write again inside one exchange. It replaced the `423` of the
+ * removed edit lock, and the difference is the point — nothing is held, so there
+ * is nothing to wait for, break or reap; there is only a version you have not
+ * read yet.
+ */
+export const STALE_KEY_RESPONSE = jsonContent(
+  StaleKeyErrorSchema,
+  "The `key` presented names a version this document no longer is: it changed since you read it, " +
+    "so the write was refused rather than overwriting something you never saw (SPEC.md §7). " +
+    "Nothing was written and nothing is lost — `doc` is the document as it now stands, `doc.key` " +
+    "is the fresh key, and the content you tried to save is yours to reconcile and resend.",
 );

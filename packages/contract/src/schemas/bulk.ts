@@ -1,7 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { ViewQuerySchema } from "./doc.js";
 import { DocumentIdSchema, ThreadIdSchema } from "./id.js";
-import { LockSchema } from "./lock.js";
 import { warningsField } from "./warning.js";
 
 /**
@@ -99,9 +98,10 @@ import { warningsField } from "./warning.js";
  * ## Partial failure is the normal case, not the error path
  *
  * A bulk act answers `200` when some documents changed and some did not. It is
- * not a `207`-shaped puzzle and not a `4xx`: a locked document is routine (the
- * agent takes locks while it works), so all-or-nothing would fail the user's
- * action for reasons that have nothing to do with the other nineteen documents —
+ * not a `207`-shaped puzzle and not a `4xx`: a document that moved under the
+ * staged set is routine (the agent writes while a person stages), so
+ * all-or-nothing would fail the user's action for reasons that have nothing to
+ * do with the other nineteen documents —
  * and "refuse the whole set" over twenty files is a guarantee the write path
  * cannot give without either checking everything first and racing anyone who
  * edits one in between, or writing some and rolling them back, a rollback that
@@ -117,8 +117,8 @@ import { warningsField } from "./warning.js";
  * The acts §11 offers on a selection, minus the one that needs nothing here:
  * "Ask the agent about these" creates one standalone thread whose first turn
  * references every selected document, through the existing `POST /api/threads`,
- * and changes none of them — which is why §11 keeps it available when some are
- * locked.
+ * and changes none of them — which is why §11 keeps it available whatever the
+ * rest of the Save could not do.
  *
  * Two of these have no dedicated single-document route either: `tag` and
  * `review` are keys of `UpdateDocRequest` on `PUT /api/docs/{id}`. They are
@@ -451,13 +451,26 @@ export const BulkActionRequestSchema = z
 
 /**
  * Why a document the act could not change did not change. Machine readable,
- * because the five refusals want different things from the person — clear a
- * lock and retry, refresh the board, fix the document, or nothing at all — and a
- * UI that had to match on prose would get it wrong the first time the prose was
- * improved. The message beside it carries the specifics; this carries the class.
+ * because the five refusals want different things from the person — look at what
+ * changed and retry, refresh the board, fix the document, or nothing at all —
+ * and a UI that had to match on prose would get it wrong the first time the
+ * prose was improved. The message beside it carries the specifics; this carries
+ * the class.
+ *
+ * **`stale` replaced `locked`** when the edit lock did (SPEC.md §7, SHARED-041).
+ * The class survived the mechanism because §11's sentence did: *"a document
+ * whose content moved under the staged Save is refused exactly as a single edit
+ * to it would be, saying so (§7)"*. What changed is what the person does about
+ * it — there is no holder to name and no lock to clear, only a version they have
+ * not seen, so the row is retried after looking rather than after waiting.
+ * Whether a bulk Save presents keys **at all** is deliberately still open
+ * (SHARED-041's remaining open question, left to the UI work): every act this
+ * route offers names its own delta, so most Saves can never go stale. The class
+ * is declared because the spec sentence requires the report to be able to say
+ * it, not because every implementation must produce it.
  */
 export const BULK_REFUSAL_REASONS = [
-  "locked",
+  "stale",
   "not-found",
   "not-applicable",
   "invalid",
@@ -466,12 +479,10 @@ export const BULK_REFUSAL_REASONS = [
 
 export const BulkRefusalReasonSchema = z.enum(BULK_REFUSAL_REASONS).openapi({
   description:
-    "Which class of refusal this is. `locked`: an edit lock stands in the way, so it is refused " +
-    "exactly as a single edit would be (SPEC.md §7) — **the lock is not always on this " +
-    "document**: an act that writes another file in the same commit is refused by *that* " +
-    "document's lock (§6's anchor cascade reaching a deleted thread's parent, §7's skill folder " +
-    "move carrying a nested skill). `lock` names the holder **and the document it is held on**, " +
-    "which is the one to clear; this is the reason a retry after clearing it fixes. `not-found`: no " +
+    "Which class of refusal this is. `stale`: this document's content moved under the staged " +
+    "Save, so it is refused exactly as a single edit to it would be (SPEC.md §7) — the staged " +
+    "action was chosen against a version the document no longer is. Nothing is held and there is " +
+    "nothing to clear: look at what it says now and retry. `not-found`: no " +
     "document has that id; the other documents are not the caller's mistake, so it is an entry " +
     "here rather than a `404` for the whole request. `not-applicable`: the act does not apply to " +
     "this document (resolving something that is not a thread) — §11 offers an action only on the " +
@@ -480,7 +491,7 @@ export const BulkRefusalReasonSchema = z.enum(BULK_REFUSAL_REASONS).openapi({
     "covering a mixed result set. `invalid`: the write would leave the document failing §14 " +
     "validation, refused with its reason. `write-failed`: the file could not be written; nothing " +
     "about this document reached the commit.",
-  example: "locked",
+  example: "stale",
 });
 
 /**
@@ -506,24 +517,17 @@ export const BulkActionOutcomeSchema = z.object(outcomeShape).openapi("BulkActio
  * One document the act did not change, and why — §11's third part, "listed apart
  * from both … each named individually with its reason".
  *
- * `lock` is nullable rather than optional, and the refinement ties it to the
- * reason in both directions: a `locked` entry without a holder would leave the
- * board saying "locked" and unable to say by whom, which is exactly the sentence
- * §7 requires a refusal to carry, and a holder on any other reason would invite
- * a client to render a lock banner over a validation failure. Stated as one
- * shape rather than a union of two because §11 describes one list of named
- * refusals, and a `oneOf` here would make every consumer narrow before it could
- * read the id it already has.
+ * **The reason and its message are the whole of an entry**, and that is what the
+ * removal of the edit lock left behind: the shape used to carry a `Lock` beside
+ * the reason, non-null exactly when the reason was `locked`, because a refusal
+ * had to name the holder a person would go and wait for. A `stale` refusal has
+ * no holder — nothing is held — so there is nothing to name, and the message
+ * carries what a person needs. One field fewer, one refinement fewer, and no
+ * shared component to accidentally make nullable.
  *
- * **`z.union([LockSchema, z.null()])`, never `LockSchema.nullable()`.** `Lock` is
- * a registered component, and zod-to-openapi propagates a registered name onto
- * anything derived from it: `.nullable()` here rewrites the *shared* `Lock`
- * definition to `type: ["object", "null"]` for every route that references it —
- * measured, not assumed, during CONTRACT-037. The union form publishes
- * `anyOf: [{$ref: Lock}, {type: null}]` and leaves the component plain, which is
- * what keeps the field genuinely nullable without paying for it elsewhere.
- * `openapi.test.ts`'s "every named component is a plain, non-nullable,
- * undefaulted object" invariant is what caught it.
+ * Stated as one shape rather than a union of two because §11 describes one list
+ * of named refusals, and a `oneOf` here would make every consumer narrow before
+ * it could read the id it already has.
  */
 export const BulkActionRefusalSchema = z
   .object({
@@ -533,24 +537,11 @@ export const BulkActionRefusalSchema = z
       .string()
       .min(1)
       .describe(
-        "Human-readable specifics for this document — the holder and when the lease expires, the " +
+        "Human-readable specifics for this document — what moved under a `stale` refusal, the " +
           "validator's own finding, the write error. Rendered verbatim beside the document's " +
           "title; never parsed. Always present: §11 requires every entry in this part to carry " +
           "its reason, and a class alone does not tell a person what to do next.",
       ),
-    lock: z
-      .union([LockSchema, z.null()])
-      .describe(
-        "The lock that refused this document, non-null **exactly when** `reason` is `locked` " +
-          "(SPEC.md §7 — a refusal identifies the holder). Read its `docId`: the lock is not " +
-          "always held on the refused document. An act that writes another file in the same " +
-          "commit is refused by that file's lock, so `docId` is the document to clear and the " +
-          "refused id is merely the one the caller asked about. Null on every other reason.",
-      ),
-  })
-  .refine(({ reason, lock }) => (reason === "locked") === (lock !== null), {
-    message: "`lock` must be present exactly when `reason` is `locked`, and absent otherwise",
-    path: ["lock"],
   })
   .openapi("BulkActionRefusal");
 
@@ -649,7 +640,7 @@ export const BulkActionResultSchema = z
       .describe(
         "Documents that **did not change, and why** — §11's third part, listed apart from both " +
           "others because it is the part worth re-reading. After the act, §11 reduces the staged " +
-          "set to exactly these, so retrying after clearing a lock is one gesture.",
+          "set to exactly these, so retrying what was refused is one gesture.",
       ),
     orphanedThreadIds: z
       .array(ThreadIdSchema)

@@ -16,6 +16,7 @@ import {
   turnsOf,
   withBrokenQueue,
   type WriteWorkspace,
+  putDoc,
 } from "./thread-fixture.js";
 
 let ws: WriteWorkspace;
@@ -311,7 +312,7 @@ describe("a turn that would fabricate the turn after it (SPEC.md §6)", () => {
     const path = threadPath(created.id);
     const edited = `${parseDocument(ws.read(path)).body}\n${FABRICATING}\n`;
 
-    const response = await ws.put(`/api/docs/${created.id}`, { body: edited });
+    const response = await putDoc(ws, created.id, { body: edited });
 
     expect(response.status).toBe(200);
     expect(parseDocument(ws.read(path)).body).toBe(edited);

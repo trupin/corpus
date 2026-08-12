@@ -36,8 +36,8 @@ export const archiveCommand: WorkspaceCommandSpec = {
     "The one exception is a `type: skill` document whose folder has not followed its status — " +
     "there the request goes out and moves the folder, because that is a real repair. " +
     "Archiving a `type: skill` document also moves its folder to `.claude/skills-archived/`, " +
-    "which disables the skill without unindexing it. A `423` from the other party's edit lock is " +
-    "a server error (exit 5).",
+    "which disables the skill without unindexing it. Archiving **names its own delta**, so it " +
+    "needs no key (SPEC.md §7) and is never refused for a document someone else is writing.",
   args: [{ name: "id", required: true, description: "The document's id." }],
   flags: [],
   examples: [

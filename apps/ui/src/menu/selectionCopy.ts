@@ -20,7 +20,7 @@ import type { Editor } from "@tiptap/react";
  * so the two can never drift.
  *
  * Outside it — a thread's conversation, a `MarkdownView` render, a document
- * under someone else's lock — there is no ProseMirror document to serialize.
+ * a `view`'s stored query — there is no ProseMirror document to serialize.
  * The rendered DOM is the document there, so the range's own
  * `cloneContents()` is the rich flavor and `selection.toString()` stays the
  * plain one, exactly as before. It is a lesser answer than markdown, and it is

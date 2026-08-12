@@ -11,9 +11,10 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
 /**
  * The depth line, in the lifecycle order `QUEUE_EVENT_STATUSES` declares.
  * `deferred` sits between the live states and the terminal ones because that is
- * what it is (SPEC.md §7, CONTRACT-021): work waiting on a user-held lock, which
- * returns to `pending` by itself. Reading it next to `failed` is the misreading
- * the separate count exists to prevent.
+ * what it is (SPEC.md §7, CONTRACT-021): work parked while a person edits the
+ * document it needs, which returns to `pending` by itself when that session
+ * ends. Reading it next to `failed` is the misreading the separate count exists
+ * to prevent.
  */
 function reportStatus(out: Output, status: QueueStatus, headline: string): void {
   out.emit(status);
@@ -103,8 +104,8 @@ export const statusCommand: WorkspaceCommandSpec = {
   description:
     "Reads `GET /api/queue/status`: whether the queue is halted, plus how many events sit in each " +
     "of `pending`, `in-progress`, `deferred`, `processed`, `failed` and `abandoned`. A non-zero " +
-    "`deferred` is **not** breakage — those events are waiting on a user-held edit lock and " +
-    "return to `pending` on their own when it is released, broken or reaped (SPEC.md §7).",
+    "`deferred` is **not** breakage — those events are waiting on a person's edit session and " +
+    "return to `pending` on their own when it ends (SPEC.md §7).",
   args: [],
   flags: [],
   examples: [

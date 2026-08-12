@@ -15,7 +15,7 @@ describe("@corpus/contract entry point", () => {
     "ThreadSchema",
     "TurnSchema",
     "QueueEventSchema",
-    "LockSchema",
+    "DocumentKeySchema",
     "JobSchema",
     "SearchResultsSchema",
     "RelatedDocsSchema",
@@ -39,7 +39,7 @@ describe("@corpus/contract entry point", () => {
 
   it("exports the query-key vocabulary the server emitter builds from", () => {
     expect(contract.DOCS_KEY).toEqual(["docs"]);
-    expect(contract.lockKey("doc_a1b2c3")).toEqual(["locks", "doc_a1b2c3"]);
+    expect(contract.jobKey("evt_7c1d")).toEqual(["jobs", "evt_7c1d"]);
     expect(Object.keys(contract.QUERY_KEY_VOCABULARY)).toEqual([...contract.QUERY_KEY_NAMES]);
   });
 

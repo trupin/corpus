@@ -94,11 +94,11 @@ export class JobService {
    * running is a conflict, not a silent no-op that would look like it worked.
    *
    * Deferred is admitted since SERVER-030, and this is the **manual override**
-   * SPEC.md §7 names — automatic re-entry on lock release, break and reap
-   * supplements it, it does not delete it. The operator still needs a way to
-   * pull back a deferral that automatic re-entry did not reach: a lock cleared
-   * out of band, a deferral that named the wrong document, a lease nobody
-   * reaped.
+   * SPEC.md §7 names — automatic re-entry when the person's edit session ends
+   * (SERVER-099) supplements it, it does not delete it. The operator still needs
+   * a way to pull back a deferral that automatic re-entry never reached: a
+   * deferral that named the wrong document, or one filed against a document
+   * whose session had already ended.
    *
    * The "which status is it?" question is asked **by the queue, inside its own
    * writer chain** (`onlyFrom`). Asked here it would be answered before the

@@ -335,8 +335,8 @@ describe("ReattachOffer — refusals", () => {
   it("falls back to the server's own sentence for a failure it does not know", async () => {
     const onNotify = vi.fn();
     const transport = wire({
-      status: 423,
-      body: { code: "locked", message: "the agent holds this document" },
+      status: 403,
+      body: { code: "forbidden", message: "the agent may not re-attach" },
     });
     render(<Host transport={transport} onNotify={onNotify} />);
     open();
@@ -346,7 +346,7 @@ describe("ReattachOffer — refusals", () => {
       expect(noticed(onNotify)).toEqual([
         {
           tone: "error",
-          message: expect.stringContaining("the agent holds this document") as unknown,
+          message: expect.stringContaining("the agent may not re-attach") as unknown,
         },
       ]);
     });

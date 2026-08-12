@@ -19,7 +19,6 @@ const counts = {
   links: 3,
   events: 0,
   jobs: 0,
-  locks: 0,
   seen: 1,
 };
 

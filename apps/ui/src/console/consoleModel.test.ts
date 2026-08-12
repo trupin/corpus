@@ -40,7 +40,7 @@ describe("the six-to-five status mapping", () => {
   it.each([
     ["pending", "pending"],
     ["in-progress", "running"],
-    // CONTRACT-021: waiting on a lock reads as waiting, under its own class.
+    // CONTRACT-021: parked while a person edits reads as waiting, under its own class.
     ["deferred", "deferred"],
     ["processed", "done"],
     ["failed", "failed"],

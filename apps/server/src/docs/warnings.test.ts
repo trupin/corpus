@@ -15,7 +15,7 @@ import {
   UpdateDocResponseSchema,
 } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { createDoc, createWriteWorkspace, type WriteWorkspace, putDoc } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
 
@@ -100,7 +100,7 @@ describe("§14 warnings on mutation responses", () => {
     ws.advance(60_000);
     refuseCommits(ws);
 
-    const response = await ws.put(`/api/docs/${created.id}`, { body: "after the hook refused" });
+    const response = await putDoc(ws, created.id, { body: "after the hook refused" });
 
     // The status code is untouched: §14's warning never turns a completed write
     // into a failure, because the file is the source of truth.
@@ -122,7 +122,7 @@ describe("§14 warnings on mutation responses", () => {
     expect(created.warnings).toEqual([]);
 
     ws.advance(60_000);
-    const edited = await ws.put(`/api/docs/${created.id}`, { body: "edited" });
+    const edited = await putDoc(ws, created.id, { body: "edited" });
     expect(edited.status).toBe(200);
     expect(UpdateDocResponseSchema.parse(await edited.json()).warnings).toEqual([]);
 
@@ -161,7 +161,7 @@ describe("§14 warnings on mutation responses", () => {
   it("warns orphaned_anchor on the PUT that detaches a thread", async () => {
     anchored("warn-orphan");
 
-    const response = await ws.put("/api/docs/doc_warnanch", {
+    const response = await putDoc(ws, "doc_warnanch", {
       body: ["Intro paragraph.", "", "Closing paragraph."].join("\n"),
     });
 
@@ -179,7 +179,7 @@ describe("§14 warnings on mutation responses", () => {
   it("does not warn when the same edit only moves the anchored text", async () => {
     anchored("warn-orphan-not");
 
-    const response = await ws.put("/api/docs/doc_warnanch", {
+    const response = await putDoc(ws, "doc_warnanch", {
       body: ["A new opening paragraph.", "", ...BODY.split("\n")].join("\n"),
     });
 
@@ -195,7 +195,7 @@ describe("§14 warnings on mutation responses", () => {
     const source = await createDoc(ws, { type: "note", title: "Source" });
 
     ws.advance(60_000);
-    const dangling = await ws.put(`/api/docs/${source.id}`, {
+    const dangling = await putDoc(ws, source.id, {
       body: "See [[doc_absent1]] for details.",
     });
     const danglingPayload = UpdateDocResponseSchema.parse(await dangling.json());
@@ -207,7 +207,7 @@ describe("§14 warnings on mutation responses", () => {
     // passes because the corpus is consulted: the target exists, just not in
     // the set being validated.
     ws.advance(60_000);
-    const resolvable = await ws.put(`/api/docs/${source.id}`, {
+    const resolvable = await putDoc(ws, source.id, {
       body: `See [[${target.id}]] for details.`,
     });
     expect(UpdateDocResponseSchema.parse(await resolvable.json()).warnings).toEqual([]);
@@ -217,7 +217,7 @@ describe("§14 warnings on mutation responses", () => {
     anchored("warn-both");
     refuseCommits(ws);
 
-    const response = await ws.put("/api/docs/doc_warnanch", {
+    const response = await putDoc(ws, "doc_warnanch", {
       body: ["Intro paragraph.", "", "Closing paragraph.", "", "See [[doc_absent1]]."].join("\n"),
     });
 

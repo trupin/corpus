@@ -9,6 +9,10 @@ import { createCorpusClient, isApiError, type FetchPaths, type paths } from "./i
 const BASE_URL = "http://127.0.0.1:8765";
 const TOKEN = "workspace-token";
 
+/** The key a read hands out, and the fresh one every write answers with (SPEC.md §7). */
+const DOC_KEY = "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcde";
+const NEXT_DOC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
 const frontmatter = {
   id: "doc_a1b2c3",
   type: "note",
@@ -72,13 +76,37 @@ function createServer() {
         body: `auth=${c.req.header("authorization") ?? ""} actor=${c.req.header(ACTOR_HEADER) ?? ""}`,
         path: "data/docs/mortgage.md",
         anchors: [],
+        key: DOC_KEY,
+        userEditing: false,
       },
       200,
     );
   });
 
+  // SPEC.md §7: a write that replaces the body presents the key it read, and the
+  // saved document comes back carrying a **fresh** one — so a writer that keeps
+  // writing never has to re-read. A stale key is refused with the document as it
+  // now stands, which is what `doc_stale1` stands in for.
   app.openapi(contractRoutes.updateDoc, (c) => {
     const actor = c.req.valid("header")[ACTOR_HEADER];
+    const { id } = c.req.valid("param");
+    if (id === "doc_stale1") {
+      return c.json(
+        {
+          code: "stale_key" as const,
+          message: "The key you presented names a version this document no longer is.",
+          doc: {
+            frontmatter,
+            body: "what it says now",
+            path: "data/docs/mortgage.md",
+            anchors: [],
+            key: NEXT_DOC_KEY,
+            userEditing: true,
+          },
+        },
+        409,
+      );
+    }
     return c.json(
       {
         doc: {
@@ -86,6 +114,8 @@ function createServer() {
           body: `saved by ${actor}`,
           path: "data/docs/mortgage.md",
           anchors: [],
+          key: NEXT_DOC_KEY,
+          userEditing: false,
         },
         anchors: { remapped: [], orphaned: [] },
         warnings: [],
@@ -130,14 +160,8 @@ function createServer() {
         refused: refused.map((row) => ({
           id: row.id,
           action: row.action,
-          reason: "locked" as const,
+          reason: "stale" as const,
           message: `${row.detail} · actor=${actor}`,
-          lock: {
-            docId: row.id,
-            holder: "agent" as const,
-            acquired: frontmatter.created,
-            ttl: 300,
-          },
         })),
         orphanedThreadIds: [],
         commit: changed.length === 0 ? null : "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456",
@@ -211,7 +235,6 @@ function createServer() {
         links: 0,
         events: 0,
         jobs: 0,
-        locks: 0,
         seen: 0,
         durationMs: 12,
         skipped: [],
@@ -500,9 +523,51 @@ describe("createCorpusClient", () => {
   it("lets a single call override the acting party", async () => {
     const { data } = await createTestClient("user").api.PUT("/api/docs/{id}", {
       params: { path: { id: "doc_a1b2c3" }, header: { [ACTOR_HEADER]: "agent" } },
-      body: { body: "new body" },
+      body: { body: "new body", key: DOC_KEY },
     });
     expect(data?.doc.body).toBe("saved by agent");
+  });
+
+  /**
+   * SPEC.md §7 end to end through the generated client: a read hands out a key,
+   * the write presents it, and the write's answer carries a fresh one — so the
+   * next write needs no second read.
+   */
+  it("carries the key from a read into a write, and hands a fresh one back", async () => {
+    const client = createTestClient();
+    const read = await client.api.GET("/api/docs/{id}", {
+      params: { path: { id: "doc_a1b2c3" } },
+    });
+    expect(read.data?.key).toBe(DOC_KEY);
+    expect(read.data?.userEditing).toBe(false);
+
+    const written = await client.api.PUT("/api/docs/{id}", {
+      params: { path: { id: "doc_a1b2c3" } },
+      body: { body: "new body", key: read.data?.key ?? "" },
+    });
+    expect(written.data?.doc.key).toBe(NEXT_DOC_KEY);
+    expect(written.data?.doc.key).not.toBe(DOC_KEY);
+  });
+
+  /**
+   * A refusal is never bare (SHARED-041 decision 5): it carries the whole
+   * document, so the writer can reconcile and retry inside one exchange. The
+   * fresh key lives on that document rather than beside it, so two copies can
+   * never disagree.
+   */
+  it("surfaces a stale-key refusal as a typed 409 carrying the document and a fresh key", async () => {
+    const { data, error, response } = await createTestClient().api.PUT("/api/docs/{id}", {
+      params: { path: { id: "doc_stale1" } },
+      body: { body: "new body", key: DOC_KEY },
+    });
+    expect(data).toBeUndefined();
+    expect(response.status).toBe(409);
+    expect(error?.code).toBe("stale_key");
+    expect(isApiError(error)).toBe(true);
+    const refusal = error?.code === "stale_key" ? error : undefined;
+    expect(refusal?.doc.body).toBe("what it says now");
+    expect(refusal?.doc.key).toBe(NEXT_DOC_KEY);
+    expect(refusal?.doc.userEditing).toBe(true);
   });
 
   it("surfaces a declared error response as typed data, not a thrown exception", async () => {
@@ -652,8 +717,9 @@ describe("the typed bulk act", () => {
     // The verb that applied travels with the document, so a mixed report reads
     // without pairing itself back against the request.
     expect(data?.refused[0]?.action).toBe("resolve");
-    // The holder is typed, so the board can name it without a cast.
-    expect(data?.refused[0]?.lock?.holder).toBe("agent");
+    // The class is typed, so the board can branch on it without a cast — and
+    // there is no holder to render, because nothing is ever held (SPEC.md §7).
+    expect(data?.refused[0]?.reason).toBe("stale");
     // One act, one commit.
     expect(data?.commit).toBe("9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456");
   });

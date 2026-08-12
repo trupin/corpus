@@ -133,8 +133,6 @@ export interface AnchorLayerOptions {
    * "no row yet" and "no row, ever" (`anchorPlacement.AnchoredThread.rowKnown`).
    */
   readonly threadsSettled: boolean;
-  /** Another party holds the lock: no selection toolbar, no comment creation (SPEC.md §7). */
-  readonly locked: boolean;
   /** The document is rendered by the editor at all — a `view` or a thread is not. */
   readonly editable: boolean;
   /** The thread the 💬 popover just jumped to; its anchor is scrolled to. */
@@ -183,7 +181,7 @@ export interface AnchorLayer {
    * "Comment on selection", which is 💬's own act reached by right-click.
    *
    * Returns `null` when there is nothing to comment on: no editor, a foreign
-   * lock, or a selection with no quotable text. The range is read here rather
+   * a selection with no quotable text. The range is read here rather
    * than when the action runs, because opening the menu moves focus out of the
    * body and the composer must anchor to the words that were right-clicked.
    */
@@ -246,7 +244,6 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     anchors,
     threads,
     threadsSettled,
-    locked,
     editable,
     flashThread = null,
     onNotify,
@@ -618,7 +615,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   const openDraft = useCallback(
     (from: number, to: number) => {
-      if (editor === null || locked) return;
+      if (editor === null) return;
       const live = traceOfDoc(editor.state.doc);
       const captured = selectorFromSelection(
         live,
@@ -644,7 +641,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       }
       setDraft({ selection: anchor, range: { from, to }, top, left });
     },
-    [body, editor, locked, onNotify, source],
+    [body, editor, onNotify, source],
   );
 
   /**
@@ -660,7 +657,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   );
 
   const captureComment = useCallback((): (() => void) | null => {
-    if (editor === null || editor.isDestroyed || locked || !editable) return null;
+    if (editor === null || editor.isDestroyed || !editable) return null;
     const { from, to, empty } = editor.state.selection;
     if (empty) return null;
     const quoted = editor.state.doc.textBetween(from, to, "\n", "");
@@ -677,7 +674,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       }
       openDraft(from, to);
     };
-  }, [editable, editor, locked, onNotify, openDraft]);
+  }, [editable, editor, onNotify, openDraft]);
 
   const onAnchors = useCallback((incoming: AnchorReport): void => {
     setReport((current) => {

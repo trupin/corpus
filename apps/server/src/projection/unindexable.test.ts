@@ -101,6 +101,8 @@ describe("collectUnindexableFiles", () => {
     // The runtime tree, which is not under `data/docs` at all.
     write(".corpus/attachments/th_x/2026/a.md", doc("doc_runtime01"));
     write(".corpus/queue/pending/evt_a.json", "{}");
+    // A lease left behind by a workspace that predates SPEC.md §7's key: not
+    // watched, not projected, not indexable (SERVER-099).
     write(".corpus/locks/doc_x.json", "{}");
     write(".corpus/jobs/job_x.json", "{}");
     write(".corpus/cache.db", "binary");

@@ -2,14 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { docRowFixture } from "../testing/docRow.js";
-import {
-  AgeChip,
-  LockChip,
-  NeedsYouBadge,
-  UnreadBadge,
-  WorkingDot,
-  unreadBadgeProps,
-} from "./badges.js";
+import { AgeChip, NeedsYouBadge, UnreadBadge, WorkingDot, unreadBadgeProps } from "./badges.js";
 
 afterEach(cleanup);
 
@@ -122,15 +115,5 @@ describe("AgeChip", () => {
   it("renders the mono age chip", () => {
     const { container } = render(<AgeChip label="stale · 8mo" />);
     expect(container.querySelector(".age")?.textContent).toBe("stale · 8mo");
-  });
-});
-
-describe("LockChip", () => {
-  it("renders the warn chip naming the holder", () => {
-    const { container } = render(<LockChip holder="agent" />);
-    const chip = container.querySelector(".chip.warn");
-    expect(chip?.textContent).toContain("🔒");
-    expect(chip?.textContent).toContain("agent editing");
-    expect(chip?.getAttribute("aria-label")).toBe("agent is editing this document");
   });
 });

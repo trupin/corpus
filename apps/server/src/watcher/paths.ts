@@ -10,12 +10,21 @@ import { classifyPath, type DocumentRoot } from "../projection/index.js";
 
 /**
  * The roots chokidar watches, workspace-relative. `data/` covers both document
- * roots under it; the three runtime roots under `.corpus/` are watched because
- * an `evt_*.json`, a lock or a job log dropped by another process is state the
- * projection has to learn about without a restart (the mirror-wiring handoff).
+ * roots under it; the two runtime roots under `.corpus/` are watched because an
+ * `evt_*.json` or a job log dropped by another process is state the projection
+ * has to learn about without a restart (the mirror-wiring handoff).
  *
  * `.corpus/attachments/` is deliberately absent: its bytes are served, never
  * projected. So is `.corpus/cache.db`, which *is* the projection.
+ *
+ * **`.corpus/locks/` is absent, and that is the whole of what an upgraded
+ * workspace needs (SERVER-099).** SPEC.md §7 replaced the edit lock with a key,
+ * so a workspace that predates the change still has a directory of `.json`
+ * leases on disk. It is left where it is rather than deleted — a server does not
+ * clear a user's workspace at boot, and the directory is gitignored runtime state
+ * that costs nothing — and it is *inert*: unwatched here, unclassified below, and
+ * unprojected, so no file in it can resurrect any behaviour. Deleting it would be
+ * a destructive write on a read path with nothing to gain.
  */
 export const WATCH_ROOTS = [
   "data",
@@ -23,7 +32,6 @@ export const WATCH_ROOTS = [
   ".claude/skills-archived",
   ".claude/agents",
   ".corpus/queue",
-  ".corpus/locks",
   ".corpus/jobs",
 ] as const;
 
@@ -42,20 +50,17 @@ export const WATCH_FILES = [".corpus/seen.json"] as const;
 
 /** `.corpus/` subdirectory names, mirroring `projection/project-runtime.ts`. */
 const QUEUE_SEGMENT = ".corpus/queue";
-const LOCKS_SEGMENT = ".corpus/locks";
 const JOBS_SEGMENT = ".corpus/jobs";
 const SEEN_PATH = ".corpus/seen.json";
 
 const EVENT_FILE = /^(evt_[A-Za-z0-9]+)\.json$/;
 const JOB_FILE = /^(evt_[A-Za-z0-9]+)\.jsonl$/;
-const LOCK_FILE = /^((?:doc|th)_[A-Za-z0-9]+)\.json$/;
 
 const EVENT_STATUSES: readonly string[] = QUEUE_EVENT_STATUSES;
 
 export type WatchTarget =
   | { readonly kind: "document"; readonly root: DocumentRoot }
   | { readonly kind: "queue-event"; readonly status: QueueEventStatus; readonly id: string }
-  | { readonly kind: "lock"; readonly docId: string }
   | { readonly kind: "job"; readonly eventId: string }
   /** `.corpus/seen.json` — read state, projected as one whole-file pass (§7). */
   | { readonly kind: "seen" };
@@ -92,11 +97,6 @@ export function classifyWatchPath(relativePath: string): WatchTarget | null {
     const id = EVENT_FILE.exec(filename)?.[1];
     if (id === undefined || status === undefined || !EVENT_STATUSES.includes(status)) return null;
     return { kind: "queue-event", status: status as QueueEventStatus, id };
-  }
-
-  if (relativePath.startsWith(`${LOCKS_SEGMENT}/`) && segments.length === 3) {
-    const docId = LOCK_FILE.exec(filename)?.[1];
-    return docId === undefined ? null : { kind: "lock", docId };
   }
 
   if (relativePath.startsWith(`${JOBS_SEGMENT}/`) && segments.length === 3) {

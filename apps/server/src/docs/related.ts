@@ -27,7 +27,7 @@
 //   threads would need a type predicate §9.2 does not authorize and would hide
 //   the corpus's most recent thinking about the document being expanded from.
 //
-// Reads two tables, writes nothing, takes no lock: a pure projection read like
+// Reads two tables and writes nothing: a pure projection read like
 // the collection query it sits beside.
 //
 // **Retrieval Phase B adds the second graph** (SPEC.md §9.1, §9.2). Beside the

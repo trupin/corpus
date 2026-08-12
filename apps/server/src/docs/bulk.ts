@@ -9,7 +9,7 @@
 // looking like it worked. What this file does instead is separate the two halves
 // the pipeline already has:
 //
-//   per document: guard → load → plan → validate → write   (N times, isolated)
+//   per document: load → plan → validate → write   (N times, isolated)
 //   once:         commit → re-project → announce           (`finishMutation`)
 //
 // so the act has exactly one commit boundary. The committer is *told* the writes
@@ -73,9 +73,8 @@
 //
 // **Per-document outcomes stay per-document** (§11: a bulk action "applies to
 // what it can and reports what it could not", and "never refuses the whole set
-// because of one document"). A lock, an unknown id, a not-applicable act and a
-// failed write are entries in `refused`; none of them is a verdict on the
-// request. The single whole-request refusal is an agent asking to `delete`, which
+// because of one document"). An unknown id, a not-applicable act and a failed
+// write are entries in `refused`; none of them is a verdict on the request. The single whole-request refusal is an agent asking to `delete`, which
 // is `403` before anything is read or written (§9.2 — the agent archives, never
 // deletes).
 //
@@ -101,7 +100,6 @@ import {
   type BulkActionRequest,
   type BulkActionResult,
   type BulkRefusalReason,
-  type Lock,
   type QueryKey,
   type Warning,
 } from "@corpus/contract";
@@ -130,7 +128,6 @@ import {
   type DocsWorkspace,
   type DocumentMutex,
   type FileOperation,
-  type WriteGuard,
 } from "./write.js";
 
 /**
@@ -284,7 +281,6 @@ class Refusal extends Error {
   constructor(
     readonly reason: BulkRefusalReason,
     message: string,
-    readonly lock: Lock | null = null,
   ) {
     super(message);
     this.name = "Refusal";
@@ -317,16 +313,11 @@ function refusalFor(
   const id = row.id;
   const action = row.action.action;
   if (error instanceof Refusal) {
-    return { id, action, reason: error.reason, message: error.message, lock: error.lock };
+    return { id, action, reason: error.reason, message: error.message };
   }
   if (error instanceof HttpError) {
-    if (error.status === 423 && "lock" in error.body && error.body.lock !== undefined) {
-      return { id, action, reason: "locked", message: error.message, lock: error.body.lock };
-    }
-    if (error.status === 404)
-      return { id, action, reason: "not-found", message: error.message, lock: null };
-    if (error.status < 500)
-      return { id, action, reason: fallback, message: error.message, lock: null };
+    if (error.status === 404) return { id, action, reason: "not-found", message: error.message };
+    if (error.status < 500) return { id, action, reason: fallback, message: error.message };
   }
   workspace.logger.error("a bulk act could not apply to a document", {
     docId: id,
@@ -339,7 +330,6 @@ function refusalFor(
     action,
     reason: fallback,
     message: error instanceof Error ? error.message : String(error),
-    lock: null,
   };
 }
 
@@ -363,54 +353,8 @@ function occupiedRefusal(row: StagedRow, error: DestinationOccupiedError): BulkA
     action: row.action.action,
     reason: "write-failed",
     message: detail === undefined ? error.message : `${error.message}: ${detail}`,
-    lock: null,
   };
 }
-
-/**
- * The lock guard on a document this act writes **without having been asked
- * about it** — §6's cascade parent, §7's carried skill — reported so the row
- * says which document is actually locked.
- *
- * The refusal stays filed under the *requested* id: the three parts partition
- * the requested ids, and neither the parent nor a carried skill need even be
- * among them. But everything in that row that names a document has to name the
- * locked one, or a person reads "locked" beside the document they acted on and
- * clears *its* lease, which changes nothing. `lock` already does (`Lock` carries
- * its own `docId`, and this is the lease whose clearing unblocks the act); the
- * message says so in words instead of leaving a reader to notice that the id in
- * the sentence is not the id in the row (SERVER-077 review, finding 5).
- */
-async function guardRelated(
-  guard: WriteGuard,
-  relatedId: string,
-  actor: Actor,
-  explain: (holder: Actor) => string,
-): Promise<void> {
-  try {
-    await guard(relatedId, actor);
-  } catch (error) {
-    if (error instanceof HttpError && error.status === 423 && "lock" in error.body) {
-      const lock = error.body.lock;
-      if (lock !== undefined) throw new Refusal("locked", explain(lock.holder), lock);
-    }
-    throw error;
-  }
-}
-
-const cascadeParentLocked =
-  (id: string, parentId: string) =>
-  (holder: Actor): string =>
-    `deleting ${id} rewrites its parent ${parentId}'s anchors in the same commit ` +
-    `(SPEC.md §6), and ${parentId} is being edited by ${holder}; the lock to clear ` +
-    `is ${parentId}'s, not ${id}'s`;
-
-const carriedSkillLocked =
-  (verb: string, id: string, carriedId: string) =>
-  (holder: Actor): string =>
-    `to ${verb} ${id} its whole skill folder moves (SPEC.md §7), which rewrites ` +
-    `${carriedId}'s file in the same commit, and ${carriedId} is being edited by ${holder}; ` +
-    `the lock to clear is ${carriedId}'s, not ${id}'s`;
 
 /**
  * Note where a plan just moved documents that are not its own, so a later id in
@@ -578,8 +522,7 @@ function lanesFor(
   readonly carried: Set<string>;
 } {
   // A deleted anchored thread rewrites its **parent's** frontmatter (§6), so the
-  // parent's lane is held too — and, per sprint-006 Adjudication 1, its lock can
-  // refuse the deletion.
+  // parent's lane is held too.
   const parents = new Map<string, string>();
   // §7's skill folder move *writes* every other `SKILL.md` under the folder — it
   // stamps the id the move would otherwise re-mint (SERVER-078) — so those
@@ -637,18 +580,15 @@ export async function applyBulkAction(
   const rows = stageRows(workspace, request);
   const { parents, carried } = lanesFor(workspace, rows);
   const held = new Set([...rows.map((row) => row.id), ...carried, ...parents.values()]);
-  return runInLanes(mutex, [...held], () => runBulk(workspace, actor, rows, parents, held));
+  return runInLanes(mutex, [...held], () => runBulk(workspace, actor, rows, held));
 }
 
 async function runBulk(
   workspace: DocsWorkspace,
   actor: Actor,
   rows: readonly StagedRow[],
-  parents: ReadonlyMap<string, string>,
   held: ReadonlySet<string>,
 ): Promise<BulkActionResult> {
-  const guard = workspace.assertWritable ?? ((): void => undefined);
-
   const changed: BulkActionOutcome[] = [];
   const alreadyInState: BulkActionOutcome[] = [];
   const refused: BulkActionRefusal[] = [];
@@ -681,31 +621,7 @@ async function runBulk(
     let loaded: LoadedDocument;
     let plan: DocumentPlan | null;
     try {
-      await guard(id, actor);
-      const parentId = parents.get(id);
-      // The lock that refuses a cascade is the one on the file being rewritten.
-      if (parentId !== undefined) {
-        await guardRelated(guard, parentId, actor, cascadeParentLocked(id, parentId));
-      }
       loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id, relocated);
-      // The same rule one lane deeper: a folder move rewrites the files of the
-      // skills it carries, so a lease on one of them refuses this document's
-      // share of the act (the refusal names the locked document, and `lock`
-      // carries its id).
-      if (action.action === "archive" || action.action === "unarchive") {
-        for (const carriedId of carriedDocumentIds(
-          workspace,
-          loaded,
-          action.action === "archive",
-        )) {
-          await guardRelated(
-            guard,
-            carriedId,
-            actor,
-            carriedSkillLocked(action.action, id, carriedId),
-          );
-        }
-      }
     } catch (error) {
       refused.push(refusalFor(workspace, row, error, "invalid"));
       continue;

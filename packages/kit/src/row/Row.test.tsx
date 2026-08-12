@@ -36,7 +36,6 @@ function renderRow(
       body: raw === "" ? undefined : (JSON.parse(raw) as unknown),
     });
     const defaults: Record<string, unknown> = {
-      "/api/locks": { locks: [] },
       "/api/jobs": { jobs: [] },
     };
     return new Response(JSON.stringify(bodies[pathname] ?? defaults[pathname] ?? {}), {
@@ -163,42 +162,21 @@ describe("badges", () => {
     expect(container.querySelector(".working-dot")).toBeNull();
   });
 
-  it("shows the lock chip when the lock projection holds this document", async () => {
-    const { container } = renderRow(
-      { row: docRowFixture({ id: "doc_cashflow" }) },
-      {
-        "/api/locks": {
-          locks: [
-            {
-              docId: "doc_cashflow",
-              holder: "agent",
-              acquired: NOW.toISOString(),
-              ttl: 300,
-            },
-          ],
-        },
-      },
-    );
-    await waitFor(() => {
-      expect(container.querySelector(".chip.warn")?.textContent).toContain("agent editing");
-    });
-  });
-
-  it("shows no lock chip for a document nobody holds", async () => {
-    const { container } = renderRow(
-      { row: docRowFixture({ id: "doc_other" }) },
-      {
-        "/api/locks": {
-          locks: [
-            { docId: "doc_cashflow", holder: "agent", acquired: NOW.toISOString(), ttl: 300 },
-          ],
-        },
-      },
-    );
+  /**
+   * SPEC.md §7 replaced the lock with a key, and §11 made the board never
+   * read-only: there is no holder to name on a row and no projection to name
+   * one from. A row therefore draws no lock chip and — the part worth pinning —
+   * **asks nobody for one**, because a row hook runs once per card and a
+   * resurrected per-row lock question would be the exact economics this module
+   * exists to avoid.
+   */
+  it("draws no lock chip, and asks the server for no lock state", async () => {
+    const { container, requests } = renderRow({ row: docRowFixture({ id: "doc_cashflow" }) });
     await waitFor(() => {
       expect(container.querySelector(".row")).not.toBeNull();
     });
     expect(container.querySelector(".chip.warn")).toBeNull();
+    expect(requests.filter((call) => call.path.includes("/locks"))).toHaveLength(0);
   });
 
   it("shows the working dot for a document with a live queue job", async () => {

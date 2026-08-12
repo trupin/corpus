@@ -10,7 +10,7 @@ import { stubCorpus } from "./stubCorpus";
  * "server unreachable", which is only true while that port is unbound. A reader
  * needs a document, and a document needs a server, so the behavioural half —
  * opening a row, following `[[refs]]`, the navigation stack, the ⋯ menu's writes,
- * the lock banner — is verified against a real `corpus init` workspace, a real
+ * the archived banner — is verified against a real `corpus init` workspace, a real
  * server and this same browser in the issue's E2E Verification Log, with the
  * disk and `git log` checked after every mutation. That is the same split
  * `board.spec.ts` documents for UI-003, and for the same reason.

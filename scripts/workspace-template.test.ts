@@ -332,7 +332,7 @@ describe("skills", () => {
             "delegation",
             "user edit",
             "concurrency",
-            "locks",
+            "writing a document",
             "job logs",
             "completing",
             "halt",
@@ -598,6 +598,191 @@ describe("skills", () => {
     });
   });
 
+  /**
+   * AGENT-022, SPEC.md §7's rider signed 2026-08-11 ("A key, not a lock").
+   *
+   * The lock did not fail because the code was wrong; it failed because the
+   * orchestrate skill told the agent to run `corpus lock acquire` by hand in
+   * four places and the agent forgot. So the pins here are about *what the text
+   * teaches*, in two directions:
+   *
+   * - **The removal is a removal.** Not a rewording. There is no verb, no
+   *   escape hatch and no recovery advice, because there is nothing to wedge —
+   *   and a skill naming a verb the CLI does not have is checked separately by
+   *   the invocation extractor, which cannot see prose like "never force a
+   *   lock".
+   * - **The key is taught as a loop with no extra action in it.** Read → work →
+   *   write with the key you were given → keep the key the write returned. The
+   *   examples are pinned hardest, because an example that replaces a body with
+   *   no `--key` teaches the opposite of the rule and beats the rule that
+   *   contradicts it (AGENT-019's bug survived rewrites exactly that way).
+   */
+  describe("a key, not a lock", () => {
+    /** Every `corpus doc edit` in the text that replaces the document's body. */
+    const bodyReplacingEdits = (body: string): readonly string[] =>
+      [...body.matchAll(/corpus doc edit [^\n`]*/g)]
+        .map((match) => match[0])
+        .filter((invocation) => /<<'EOF'$|\s-m |\s--file /.test(invocation));
+
+    it.each(installedSkills)("$label names no lock mechanism at all", ({ label, body }) => {
+      expect(body, `${label}: names a lock verb`).not.toMatch(/corpus lock\b/);
+      expect(body, `${label}: teaches an edit lock`).not.toMatch(/edit lock/i);
+      expect(body, `${label}: teaches lock breaking`).not.toMatch(
+        /break(?:ing)? a lock|force a lock/i,
+      );
+      expect(body, `${label}: teaches lock recovery`).not.toMatch(/reap(?:s|ed|ing)? .{0,20}lock/i);
+      // `423` was the lock's refusal on every write route; a `409` replaced it.
+      expect(body, `${label}: names the lock's status code`).not.toMatch(/\b423\b/);
+    });
+
+    it.each(installedSkills)("$label replaces no body without a key", ({ label, body }) => {
+      for (const invocation of bodyReplacingEdits(body)) {
+        expect(invocation, `${label}: body-replacing edit with no --key`).toMatch(/--key \S/);
+      }
+    });
+
+    it.each(skills)("$name works a body-replacing edit at all", ({ relPath }) => {
+      // Anti-vacuity: the rule above passes trivially on a skill whose examples
+      // never replace a body, which is the state this issue found them in.
+      expect(bodyReplacingEdits(documentAt(relPath).body).length).toBeGreaterThan(0);
+    });
+
+    it("works at least one full key loop, read through fresh key", () => {
+      // Anti-vacuity for the assertion above: some example has to actually do
+      // it, or "no edit without a key" passes by matching no edits.
+      const body = documentAt("claude/skills/comment/SKILL.md").body;
+      const loops = body.match(
+        /corpus doc show (doc_\w+)\n(?:[^\n]*\n)?key ([0-9a-f]{64})\ncorpus doc edit \1 --key \2/g,
+      );
+      expect(loops?.length ?? 0).toBeGreaterThan(0);
+      // And the fresh key the write hands back, which is what makes a chain of
+      // edits cost one read rather than one read per edit.
+      expect(body).toMatch(/edited doc_\w+\nkey [0-9a-f]{64}/);
+    });
+
+    it.each(skills)("$name teaches the loop rather than a rule to recall", ({ relPath }) => {
+      const body = documentAt(relPath).body.replace(/\s+/g, " ");
+      expect(body).toMatch(/read → work → write with the key you were given → keep the key/i);
+      expect(body).toMatch(/nothing is acquired and nothing is released/i);
+    });
+
+    it.each(skills)("$name answers a stale key concretely", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      // The two exits an agent branches on, and which of them is a mistake.
+      expect(body).toMatch(/exit `2`/i);
+      expect(body).toMatch(/exit `9`/i);
+      // Not "handle the error": re-read, reconcile, write again — and the
+      // refusal already carries what a re-read would have cost.
+      expect(body).toMatch(/nothing was written/i);
+      expect(body).toMatch(/reconcile/i);
+      expect(body).toMatch(/fresh key/);
+      expect(body).toMatch(/the mechanism working/);
+    });
+
+    it.each(skills)("$name treats the editing signal as a courtesy", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      expect(body).toMatch(/someone is editing this/i);
+      // The signal must not read as a gate: the write would land, and saying
+      // otherwise makes an agent defer where it should write.
+      expect(body).toMatch(/would land/);
+      expect(body).toMatch(/corpus queue defer|hand the event back/);
+    });
+
+    it("keeps the delta verbs free of a key, in both skills", () => {
+      for (const { relPath } of skills) {
+        const body = documentAt(relPath).body;
+        expect(body, `${relPath}: no delta rule`).toMatch(/names its own delta/);
+      }
+      expect(documentAt("claude/skills/orchestrate/SKILL.md").body).toMatch(/--add-tag/);
+    });
+  });
+
+  /**
+   * SHARED-042, SPEC.md §7's "Loop safety" bullet as amended 2026-08-12.
+   *
+   * `corpus skill rollback` is deleted rather than fixed: it overwrote a whole
+   * file with an old revision and destroyed uncommitted edits at exit 0. There
+   * is no replacement verb, because **a revert is a write whose content came
+   * from history** — through the ordinary write path it reconciles anchors,
+   * validates, commits under the acting party and is protected by the key.
+   *
+   * So what the skills gain is the teaching the verb stood in for, and — as with
+   * AGENT-022 — it has to be a *loop* rather than a command to recall: read the
+   * history, work out the content, write it with the key. Three pins here that
+   * are easy to lose in a rewrite:
+   *
+   * - **Reading git is a read.** The agent may run `git log`/`git show`; it may
+   *   never write to git, because the server is the sole writer.
+   * - **Git hands back the whole file, the write takes the body.** Skipping this
+   *   duplicates the frontmatter into the document as text.
+   * - **The broken-loop case is the operator's.** No agent is running, so it is
+   *   the one path that does not go through the CLI, and the skill must say so
+   *   plainly or an agent will try to run a repair it is not alive for.
+   */
+  describe("a revert is a write like any other", () => {
+    it.each(skills)("$name teaches the revert as a loop, not a verb", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      const flat = body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/a revert is a write whose content came from history/i);
+      expect(flat).toMatch(/there is no revert command/i);
+      // The three steps, each naming what performs it.
+      expect(body).toMatch(/corpus doc diff <id>/);
+      expect(body).toMatch(/git log --oneline -- <path>/);
+      expect(body).toMatch(/git show <sha>:<path>/);
+      expect(flat).toMatch(/content you want back/i);
+      expect(flat).toMatch(/rarely the whole old file/i);
+    });
+
+    it.each(skills)("$name reads git and never writes to it", ({ relPath }) => {
+      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/read from git, never write to it/i);
+      for (const verb of ["git log", "git show", "git checkout", "git restore", "git commit"]) {
+        expect(flat, `does not name \`${verb}\``).toContain(`\`${verb}\``);
+      }
+      expect(flat).toMatch(/sole writer/i);
+      // The frontmatter trap: the file in git is not the body the write takes.
+      expect(flat).toMatch(/whole file.{0,80}(?:body|write)|body.{0,80}whole file/i);
+      expect(flat).toMatch(/closing `---`/);
+    });
+
+    it.each(skills)("$name says what makes a revert safe", ({ relPath }) => {
+      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+      // Not "be careful": the key of the version just read is presented, so a
+      // revert over somebody's newer change is refused rather than landed.
+      expect(flat).toMatch(/the key is what makes (?:a|this) revert safe/i);
+      expect(flat).toMatch(/version you \*?just read\*?/i);
+      expect(flat).toMatch(/exit `9`/);
+    });
+
+    it("hands the broken loop to the operator, with git and not the CLI", () => {
+      const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      expect(body).toMatch(/\*This section is for the operator, not the agent\.\*/);
+      expect(body).toMatch(/git log --oneline -- \.claude\/skills\/orchestrate\/SKILL\.md/);
+      expect(body).toMatch(
+        /git restore --source=<sha> -- \.claude\/skills\/orchestrate\/SKILL\.md/,
+      );
+      // Why it is git here and a CLI write everywhere else.
+      const flat = body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/one repair that does not go through the agent/i);
+      expect(flat).toMatch(/no agent running/i);
+      // The trace the operator's edit still leaves (SPEC.md §9.1, SERVER-090).
+      expect(flat).toMatch(/out-of-band `user` edit/i);
+      // Restore the file, not the commit: a window commit gathers neighbours.
+      expect(flat).toMatch(/`git revert <sha>` would take neighbouring documents/i);
+      // The halt/resume bracket survives the rewrite.
+      expect(body).toMatch(/corpus queue halt/);
+      expect(body).toMatch(/corpus queue resume/);
+    });
+
+    it("tells the operator the same thing in the workspace README", () => {
+      const readme = documentAt("README.md").body;
+      expect(readme).toMatch(/git log --oneline -- \.claude\/skills\/orchestrate\/SKILL\.md/);
+      expect(readme).toMatch(/git restore --source=<sha>/);
+      expect(readme.replace(/\s+/g, " ")).toMatch(/no rollback command/i);
+      expect(readme).toMatch(/corpus doc archive/);
+    });
+  });
+
   it("leaves queue terminal-state handling to the orchestrate skill", () => {
     expect(documentAt("claude/skills/comment/SKILL.md").body).not.toMatch(
       /corpus queue (?:complete|fail)/,
@@ -658,9 +843,6 @@ describe("orchestrate skill body", () => {
       "corpus queue resume",
       'corpus job log <eventId> "<line>"',
       "corpus job retry",
-      "corpus skill rollback",
-      "corpus lock break",
-      "corpus lock reap",
       "corpus doc archive",
       "export CORPUS_FROM=agent",
       "--from agent",
@@ -686,27 +868,28 @@ describe("orchestrate skill body", () => {
     expect(body).not.toMatch(/\bset(?:Timeout|Interval)\b/);
   });
 
-  it("defers on a user lock with the defer verb; the deferred:-prefix protocol is gone", () => {
+  it("defers on an open editing session with the defer verb; the deferred:-prefix protocol is gone", () => {
     // AGENT-007 / SPEC §7 as signed 2026-07-30: a deferral is the defer
     // transition, never a `deferred:`-prefixed failure. The prefix survives
     // nowhere — not as an instruction, an example, or an explanation.
     expect(body).not.toMatch(/deferred:/);
     expect(body).not.toMatch(/retry the job from the console/i);
     // Reply first (a person watches a pending indicator), then defer, with
-    // `--blocked-on` naming the locked document.
+    // `--blocked-on` naming the document being edited.
     expect(body).toMatch(
       /# nothing changed, so that reply carries no trace line\ncorpus queue defer evt_7c1d9a --blocked-on doc_a1b2c3/,
     );
-    expect(body).toMatch(/names the \*\*locked document\*\*/);
+    expect(body).toMatch(/names the \*\*document being edited\*\*/);
     expect(body).toMatch(/parks forever/);
     // A deferral is not a failure, and the status carries the meaning.
     expect(body).toMatch(/under\s+`deferred`, never\s+`failed`/);
-    // Automatic re-entry: all three lock-clearing triggers, the parked idle
-    // unparking, and `corpus job retry` demoted to the by-hand override.
-    expect(body).toMatch(/\*\*released\*\*,\s+\*\*force-broken\*\*, or\s+\*\*reaped\*\*/);
+    // Automatic re-entry: AGENT-022 leaves one trigger where three used to be
+    // (a session ends; there is nothing to break and nothing to reap), plus the
+    // parked idle unparking and `corpus job retry` as the by-hand override.
+    expect(body).toMatch(/editing session on the blocked-on document \*\*ends\*\*/);
     expect(body).toMatch(/returns the event to `pending` by itself/);
     expect(body).toMatch(/parked `corpus queue idle` unparks/);
-    expect(body).toMatch(/`corpus job retry` remains only as the by-hand override/);
+    expect(body).toMatch(/`corpus job retry` remains only as the\s+by-hand override/);
   });
 
   it("delegates every event, parks on dispatch, and bounds concurrency at ten", () => {
@@ -743,8 +926,11 @@ describe("orchestrate skill body", () => {
     expect(body).toMatch(/from its subagent's report, never at dispatch time/);
     expect(body).toMatch(/with \*\*the subagent's reason\*\*/);
     expect(body).toMatch(/stays `in-progress`/);
-    // A blocked subagent defers through the orchestrator, never fails.
-    expect(body).toMatch(/\*\*A blocked subagent defers — through you\.\*\*/);
+    // A subagent that stood aside defers through the orchestrator, never fails
+    // — and a stale key is explicitly *not* that case (AGENT-022): the subagent
+    // re-reads and writes again itself rather than reporting a block.
+    expect(body).toMatch(/\*\*A subagent that stands aside defers — through you\.\*\*/);
+    expect(body).toMatch(/A\s+stale-key refusal is a different thing and never reaches you/);
   });
 
   /**
@@ -1304,10 +1490,13 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/\*\*Worked, end to end\.\*\*/);
       expect(body).toMatch(/corpus job log evt_7c1d9a "claimed doc\.edited on \[\[doc_a1b2c3\]\]/);
       expect(body).toMatch(/^\+The working rate assumption is 6\.4%/m);
-      expect(body).toMatch(/corpus doc edit doc_7e3a91 --from agent <<'EOF'/);
+      expect(body).toMatch(/corpus doc edit doc_7e3a91 --key [0-9a-f]{64} --from agent <<'EOF'/);
       // It ends in an entry, not in a thread: the read that makes an append
-      // possible, the write that carries it, and a job log saying so.
-      expect(body).toMatch(/corpus doc show doc_a1b2c3\ncorpus doc edit doc_a1b2c3 --from agent/);
+      // possible — and hands over the key it presents (AGENT-022) — the write
+      // that carries it, and a job log saying so.
+      expect(body).toMatch(
+        /corpus doc show doc_a1b2c3\nkey ([0-9a-f]{64})\ncorpus doc edit doc_a1b2c3 --key \1 --from agent/,
+      );
       expect(body).toContain(
         'corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"',
       );
@@ -1369,7 +1558,9 @@ describe("orchestrate skill body", () => {
         expect(body).toMatch(/There is no append verb/);
         // The read is what makes the write an append rather than a replacement.
         expect(body).toMatch(/corpus doc show doc_a1b2c3` for the body as it now stands/);
-        expect(body).toMatch(/every other byte reproduced exactly/);
+        expect(body).toMatch(/every other byte reproduced\s+exactly/);
+        // The same read hands over the key the append presents (AGENT-022).
+        expect(body).toMatch(/corpus doc edit doc_a1b2c3 --key <the key that read printed>/);
         // The reason, not only the rule: the person writes in here too, and a
         // rewrite orphans every thread anchored into what it replaced —
         // measured against a running server, which reports it only afterwards.
@@ -1415,14 +1606,17 @@ describe("orchestrate skill body", () => {
         expect(body).toMatch(/never fold two into one/);
       });
 
-      it("defers on the edit lock this write newly takes", () => {
-        // The acknowledgment thread took no lock; this write does, so the
-        // deferral path has to be reachable from here or the entry is lost.
+      it("presents a key on the write, and reaches both recoveries from here", () => {
+        // Posting a thread needed no key; this write replaces a body, so it
+        // does — and both ways it can come back have to be reachable from here
+        // or the entry is lost (AGENT-022).
         expect(body).toMatch(
-          /\*\*This write takes an edit lock, where posting a thread would not have\.\*\*/,
+          /\*\*This write replaces the body, so it presents a key — where posting a thread would\s+have\s+needed none\.\*\*/,
         );
-        expect(body).toMatch(/`--blocked-on` naming the edited document/);
-        expect(body).toMatch(/never drop the entry because\s+the document was busy/);
+        expect(body).toMatch(/refused at exit `9` carrying the\s+current text and a fresh key/);
+        expect(body).toMatch(/append your entry to \*that\* body\s+and write again/);
+        expect(body).toMatch(/defer with `--blocked-on` naming it/);
+        expect(body).toMatch(/never\s+drop the entry because the document was busy/i);
       });
 
       it("puts the rule in the stewardship charter, scoped to noticing alone", () => {
@@ -1711,7 +1905,6 @@ describe("comment skill body", () => {
       "corpus thread reply",
       "corpus thread resolve",
       "corpus job log",
-      "corpus skill rollback",
       "--from agent",
       "export CORPUS_FROM=agent",
     ];
@@ -1854,13 +2047,14 @@ describe("comment skill body", () => {
     });
   });
 
-  it("defers on a user lock without naming a queue verb", () => {
-    expect(body).toContain("423");
-    expect(body).toMatch(/Do not retry, and do not break the lock/i);
+  it("stands aside on an open editing session without naming a queue verb", () => {
+    // AGENT-022: the trigger is a person's open session, not a refusal — the
+    // write would land, and a text implying otherwise defers work it should do.
+    expect(body).toMatch(/Nothing refuses the write and it would land/);
     // The job-log line carries no `deferred:` prefix — the defer status says
     // that now (AGENT-007) — and the dead protocol survives nowhere.
     expect(body).toContain(
-      'corpus job log evt_7c1d9a "waiting on [[doc_a1b2c3]] — the user holds its edit lock"',
+      'corpus job log evt_7c1d9a "stood aside on [[doc_a1b2c3]] — a person has an edit session open"',
     );
     expect(body).not.toMatch(/deferred:/);
     // Queue state stays with orchestrate (sprint-014 Adjudication 11): the
@@ -2005,7 +2199,11 @@ describe("comment skill body", () => {
     expect(body).toMatch(/`--description` is required/);
     expect(body).toContain(".claude/skills/<name>/SKILL.md");
     expect(body).toMatch(/\*\*both\*\* frontmatter vocabularies\s+written by the server/i);
-    expect(body).toMatch(/corpus skill rollback <name>/);
+    // SHARED-042: the ways back are the ordinary ones. Archiving disables a
+    // skill; a wording it regrets is reverted the way any document is, so the
+    // branch points at the revert loop rather than at a verb that no longer
+    // exists.
+    expect(body).toMatch(/read the history, write the old text back with the key/i);
     expect(body).toMatch(/corpus doc archive/);
     expect(body).toMatch(/do not pre-check/i);
   });
@@ -2054,7 +2252,8 @@ describe("comment skill body", () => {
       /note-only/i,
       /standalone thread stays trivial/i,
       /thread is about a skill document/i,
-      /corpus skill rollback <name>/,
+      // SHARED-042: the undo it offers the person is the revert loop, not a verb.
+      /one read of the history and one write away/i,
       /Acknowledge immediately/i,
     ]) {
       expect(body, `no edge case matching ${String(rule)}`).toMatch(rule);
@@ -2174,7 +2373,6 @@ describe("install contract", () => {
       ".claude/skills-archived/",
       ".claude/agents/",
       ".corpus/queue/",
-      ".corpus/locks/",
       ".corpus/jobs/",
       ".corpus/attachments/",
     ]);
@@ -2469,6 +2667,42 @@ describe("cli command references", () => {
     }
   });
 
+  /**
+   * Verbs the CLI **used to have**. `docs/cli.md` is generated from the CLI, so
+   * once a verb is deleted the test above catches a skill that still names it —
+   * but only after the reference is regenerated, and only while both land in the
+   * same change. This guard is independent of the reference: it fails on the
+   * template alone, so a skill can never quietly outlive the command it teaches.
+   *
+   * `corpus skill rollback` (SHARED-042, SPEC.md §7): it overwrote a whole file
+   * with an old revision and destroyed uncommitted edits unrecoverably. It has
+   * no replacement verb by design — a revert is a write whose content came from
+   * history, so the skills teach the loop (read the history, work out the
+   * content, write it with the key) instead of naming a command.
+   */
+  const REMOVED_VERBS = ["skill rollback"] as const;
+
+  it("names no verb the CLI no longer has", () => {
+    for (const relPath of templateFiles.filter((file) => file.endsWith(".md"))) {
+      const invoked = new Set(
+        extractCorpusInvocations(readTemplateFile(relPath)).map((tokens) =>
+          normalizeInvocation(tokens, surface),
+        ),
+      );
+      for (const verb of REMOVED_VERBS) {
+        expect(invoked.has(verb), `${relPath} still invokes \`corpus ${verb}\``).toBe(false);
+      }
+    }
+  });
+
+  it("catches a removed verb wherever it is named", () => {
+    // The guard above is only worth its line if it would actually fire.
+    const invoked = extractCorpusInvocations(
+      "Recover with `corpus skill rollback orchestrate`.\n",
+    ).map((tokens) => normalizeInvocation(tokens, surface));
+    expect(invoked).toContain(REMOVED_VERBS[0]);
+  });
+
   it("fails on a command docs/cli.md does not document", () => {
     const skill = readTemplateFile("claude/skills/orchestrate/SKILL.md");
     expect(unresolvedIn(`${skill}\nRun \`corpus doc frobnicate doc_a1b2c3\` twice.\n`)).toEqual([
@@ -2483,10 +2717,13 @@ describe("cli command references", () => {
     expect([...CLI_COMMANDS_PENDING_CLI_006]).toEqual([]);
   });
 
-  it("resolves the two formerly-allowlisted verbs against docs/cli.md itself", () => {
-    for (const command of ["doc check", "skill rollback"]) {
-      expect(surface.commands.has(command), `\`corpus ${command}\` is documented`).toBe(true);
-    }
+  it("resolves the formerly-allowlisted verb that still exists against docs/cli.md itself", () => {
+    // `corpus doc check` shipped and stayed. Its companion `corpus skill
+    // rollback` shipped and was then **deleted** (SHARED-042): a revert is a
+    // write whose content came from history, so it needs no verb. Asserting the
+    // one and not the other is the whole difference, and the deletion is
+    // guarded positively by "names no verb the CLI no longer has" above.
+    expect(surface.commands.has("doc check"), "`corpus doc check` is documented").toBe(true);
   });
 
   it("expires the allowlist the moment CLI-006 lands in docs/cli.md", () => {

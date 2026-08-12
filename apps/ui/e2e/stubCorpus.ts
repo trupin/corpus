@@ -24,7 +24,6 @@ import {
   type FormAnswerResponse,
   type Job,
   type JobList,
-  type LockList,
   type MarkSeenResult,
   type NeedsReason,
   type NotFoundError,
@@ -36,6 +35,7 @@ import {
   type RelatedDocs,
   type ResolvedAnchor,
   type SearchResults,
+  type StaleKeyError,
   type StaleTier,
   type TextQuoteSelector,
   type TextQuoteSelectorRequest,
@@ -68,7 +68,7 @@ import {
  * This is the second. Everything above the transport is the real application —
  * real React, real TanStack cache, real DOM, real pointer and keyboard events —
  * and only `fetch` is answered from here. It is therefore **half** the
- * evidence, exactly as sprint-016 Adjudication 19 says: the disk, git, lock and
+ * evidence, exactly as sprint-016 Adjudication 19 says: the disk, git and
  * projection half comes from each issue's real-app drill against a real
  * `corpus` server, and neither half is acceptance on its own.
  */
@@ -111,13 +111,13 @@ type StubPayload =
   | FolderTree
   | FormAnswerResponse
   | JobList
-  | LockList
   | MarkSeenResult
   | NotFoundError
   | QueueStatus
   | ReattachConflictError
   | ReattachThreadResponse
   | RelatedDocs
+  | StaleKeyError
   | SearchResults
   | Thread
   | ThreadMutationResponse
@@ -245,6 +245,11 @@ interface StoredDoc {
    */
   updated: string;
   /**
+   * SPEC.md §7's key for this document's current version — moved by every write
+   * that lands, and by an out-of-band one.
+   */
+  key: string;
+  /**
    * Whether the agent is in this thread (SPEC.md §8) — `none` until a turn asks
    * for it. Meaningless on a non-thread document, and reported as `null` there.
    */
@@ -278,6 +283,22 @@ interface StoredAnchor {
 /** The seeded instant every document starts at, and the clock a write advances. */
 const SEEDED_AT = "2026-07-01T09:00:00.000Z";
 let writes = 0;
+
+/**
+ * A fresh, well-formed document key (SPEC.md §7): 64 lowercase hex characters,
+ * which is the only thing about a key any client may know.
+ *
+ * A counter, deliberately not a hash of the body. The real key is derived
+ * server-side and **opaque** client-side; a stub that hashed content would let a
+ * spec reproduce the server's derivation and assert against a key it computed —
+ * exactly the thing §7 forbids a client to do, and the spec would keep passing
+ * after the board started doing it.
+ */
+let stubKeys = 0;
+function nextStubKey(): string {
+  stubKeys += 1;
+  return stubKeys.toString(16).padStart(64, "0");
+}
 
 export interface StubRequest {
   readonly method: string;
@@ -343,6 +364,17 @@ export interface StubCorpus {
     ts: string,
     answer: FormAnswerRequest,
   ) => Promise<StubTurn>;
+  /**
+   * **The other writer** — the agent rewriting a document this page has open
+   * (SPEC.md §7's realistic conflict).
+   *
+   * The corpus moves and the page is told nothing, exactly as
+   * {@link StubCorpus.answerForm} does it: the key the board is holding now
+   * names a version that no longer exists, so its next body write is refused
+   * with a `409` carrying this document and a fresh key. Returns the key it
+   * left behind, which is the one the board's retry must present.
+   */
+  readonly writeAsAgent: (docId: string, body: string) => Promise<string>;
 }
 
 function seeded(row: StubRow): StoredDoc {
@@ -362,6 +394,7 @@ function seeded(row: StubRow): StoredDoc {
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
     updated: SEEDED_AT,
+    key: nextStubKey(),
     agent: "none",
     related: row.related ?? null,
     unread: row.unread ?? false,
@@ -525,10 +558,19 @@ function isDocStatus(value: unknown): value is DocStatus {
   return value === "open" || value === "resolved" || value === "archived";
 }
 
-/** The instant a write stamps: monotonic, so two saves never collide. */
+/**
+ * What a write stamps: a monotonic `updated`, so two saves never collide, and a
+ * fresh **key**, because the document is now a different version (SPEC.md §7).
+ *
+ * The two move together on purpose. A stub that advanced `updated` and left the
+ * key alone would hand out a key that no longer names what it was read from,
+ * which is precisely the state the mechanism exists to detect — and every
+ * conflict spec would then be testing the stub's memory rather than the board's.
+ */
 function stampUpdated(doc: StoredDoc): void {
   writes += 1;
   doc.updated = new Date(Date.parse(SEEDED_AT) + writes * 1000).toISOString();
+  doc.key = nextStubKey();
 }
 
 /**
@@ -716,6 +758,21 @@ export async function stubCorpus(
   const asDoc = (doc: StoredDoc): Doc => ({
     body: doc.body,
     path: doc.path,
+    /*
+     * SPEC.md §7's **key**, on every document read. Derived from the version the
+     * document is *at* — a counter this stub advances on every write, standing
+     * in for the server's digest of the stored bytes. What matters is the
+     * property, not the algorithm: it names the version you read and moves when
+     * the document does, and a client may only echo it.
+     */
+    key: doc.key,
+    /*
+     * §7's advisory *someone is editing this*. Always `false` here: this stub
+     * serves one page, and the signal reports a **person's** session to the
+     * *agent*, which is not a party any browser spec plays. It is information
+     * and never a gate, so no surface branches on it.
+     */
+    userEditing: false,
     anchors: doc.anchors.map((anchor) => resolveAnchor(doc, anchor)),
     frontmatter: {
       id: doc.id,
@@ -803,7 +860,6 @@ export async function stubCorpus(
       body: raw === null ? undefined : (JSON.parse(raw) as unknown),
     });
 
-    if (url.pathname === "/api/locks") return json(route, { locks: [] } satisfies LockList);
     /*
      * `GET /api/jobs` — the queue's own rows, filtered the way the server
      * filters them: `status` is the comma-separated set `useOutstandingJobs`
@@ -1428,6 +1484,32 @@ export async function stubCorpus(
       }
       if (method === "PUT") {
         const changes = (requests.at(-1)?.body ?? {}) as Record<string, unknown>;
+        /*
+         * SPEC.md §7's check, where the server performs it: a write that
+         * replaces the **body** presents the key of the version it read, and any
+         * other key is refused with the document *as it now stands*, carrying a
+         * fresh key — never a bare "no".
+         *
+         * A write that names its own delta (a title, a status, a tag, a view
+         * key) presents no key and is not checked: it merges with whatever else
+         * happened rather than overwriting it. That asymmetry is the mechanism's
+         * whole shape, so the stub reproduces it rather than checking everything
+         * — a stub that demanded a key for a tag write would make the board look
+         * correct while it broke §7's keyless half.
+         */
+        if (typeof changes["body"] === "string" && changes["key"] !== doc.key) {
+          return json(
+            route,
+            {
+              code: "stale_key",
+              message:
+                "the key names a version this document no longer is — reconcile against this " +
+                "copy and write again presenting its key",
+              doc: asDoc(doc),
+            } satisfies StaleKeyError,
+            409,
+          );
+        }
         if (typeof changes["title"] === "string") doc.title = changes["title"];
         // A status the contract does not define is not a status the server would
         // ever store, so an unrecognised one is ignored rather than written
@@ -1492,6 +1574,13 @@ export async function stubCorpus(
       return Promise.resolve(
         commitAnswerTurn(doc, formatFormAnswerBody(formAnswerRecord(form, answer))),
       );
+    },
+    writeAsAgent: (docId, body) => {
+      const doc = store.get(docId);
+      if (doc === undefined) throw new Error(`writeAsAgent: no ${docId}`);
+      doc.body = body;
+      stampUpdated(doc);
+      return Promise.resolve(doc.key);
     },
   };
 }

@@ -34,7 +34,7 @@ const ARCHIVED = docFixture({
   frontmatter: { ...DOC.frontmatter, status: "archived" },
 });
 
-function mount(options: { locked?: boolean; wire?: ReaderTransport; doc?: typeof DOC } = {}): {
+function mount(options: { wire?: ReaderTransport; doc?: typeof DOC } = {}): {
   wire: ReaderTransport;
   unmount: () => void;
 } {
@@ -42,12 +42,7 @@ function mount(options: { locked?: boolean; wire?: ReaderTransport; doc?: typeof
   const wire = options.wire ?? readerTransport({ docs: [doc] });
   const harness = createCorpusTestHarness({ fetch: wire.fetch });
   const view = render(
-    <FrontmatterForm
-      doc={doc}
-      selectTitle={false}
-      locked={options.locked ?? false}
-      onNotify={() => undefined}
-    />,
+    <FrontmatterForm doc={doc} selectTitle={false} onNotify={() => undefined} />,
     { wrapper: harness.Wrapper },
   );
   return { wire, unmount: view.unmount };
@@ -200,35 +195,36 @@ describe("FrontmatterForm", () => {
     expect(screen.queryByText("unsaved changes")).toBeNull();
   });
 
-  /** SPEC.md §7: a locked document renders read-only. */
-  it("freezes every control while the document is locked", () => {
-    mount({ locked: true });
-    expect(screen.getByLabelText("Document title")).toHaveProperty("readOnly", true);
+  /**
+   * SPEC.md §11: **the board is never read-only**, and §7's frontmatter writes
+   * are *named deltas* — a tag, a status, a due date — so they take no key at
+   * all and there is nothing that can refuse them for what another writer did.
+   * Every control stays live, on every document.
+   */
+  it("leaves every control writable — no document renders read-only", () => {
+    mount();
+    expect(screen.getByLabelText("Document title")).toHaveProperty("readOnly", false);
     fireEvent.click(screen.getByRole("button", { name: "edit" }));
-    expect(screen.getByDisplayValue("finance")).toHaveProperty("disabled", true);
-    expect(screen.getByDisplayValue("open")).toHaveProperty("disabled", true);
+    expect(screen.getByDisplayValue("finance")).toHaveProperty("disabled", false);
+    expect(screen.getByDisplayValue("open")).toHaveProperty("disabled", false);
+    expect(screen.getByLabelText("Document title")).toHaveProperty("readOnly", false);
   });
 
-  /**
-   * The lock landing mid-edit is the case that must not silently discard typed
-   * text: the draft is kept, Save is blocked, and the user is told why.
-   */
-  it("keeps a mid-edit draft when the lock lands, and warns instead of discarding it", () => {
+  /** A delta write names what it changes, so it presents no key (SPEC.md §7). */
+  it("writes tags, status and due with no key on the request", async () => {
     const wire = readerTransport({ docs: [DOC] });
-    const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const view = render(
-      <FrontmatterForm doc={DOC} selectTitle={false} locked={false} onNotify={() => undefined} />,
-      { wrapper: harness.Wrapper },
-    );
-    fireEvent.change(screen.getByLabelText("Document title"), { target: { value: "Typed" } });
+    mount({ wire });
+    fireEvent.click(screen.getByRole("button", { name: "edit" }));
+    fireEvent.change(screen.getByDisplayValue("finance"), { target: { value: "finance, tax" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    view.rerender(
-      <FrontmatterForm doc={DOC} selectTitle={false} locked onNotify={() => undefined} />,
-    );
-
-    expect(screen.getByLabelText("Document title")).toHaveProperty("value", "Typed");
-    expect(screen.getByText(/the document was locked while you were editing/)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    await waitFor(() => {
+      expect(wire.of("PUT")).toHaveLength(1);
+    });
+    const body = wire.of("PUT")[0]?.body as Record<string, unknown>;
+    expect(body["tags"]).toEqual(["finance", "tax"]);
+    expect(body).not.toHaveProperty("key");
+    expect(body).not.toHaveProperty("body");
   });
 
   /**
@@ -273,7 +269,7 @@ describe("FrontmatterForm", () => {
   it("selects the title of a just-created document", () => {
     const wire = readerTransport({ docs: [DOC] });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    render(<FrontmatterForm doc={DOC} selectTitle locked={false} onNotify={() => undefined} />, {
+    render(<FrontmatterForm doc={DOC} selectTitle onNotify={() => undefined} />, {
       wrapper: harness.Wrapper,
     });
     const title = screen.getByLabelText<HTMLTextAreaElement>("Document title");
@@ -284,13 +280,13 @@ describe("FrontmatterForm", () => {
 
   it("reports a failed save rather than clearing the draft", async () => {
     const notices: string[] = [];
-    const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 423 } });
+    const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 409 } });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     render(
       <FrontmatterForm
         doc={DOC}
         selectTitle={false}
-        locked={false}
+
         onNotify={(notice) => notices.push(`${notice.tone}:${notice.message}`)}
       />,
       { wrapper: harness.Wrapper },
@@ -309,7 +305,7 @@ describe("FrontmatterForm", () => {
     const notify = vi.fn();
     const wire = readerTransport({ docs: [DOC] });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    render(<FrontmatterForm doc={DOC} selectTitle={false} locked={false} onNotify={notify} />, {
+    render(<FrontmatterForm doc={DOC} selectTitle={false} onNotify={notify} />, {
       wrapper: harness.Wrapper,
     });
     const title = screen.getByLabelText("Document title");

@@ -1,15 +1,22 @@
 import type { TopicSpec } from "../../registry/types.js";
 import { createCommand } from "./create.js";
-import { rollbackCommand } from "./rollback.js";
 
 /**
  * Skills as documents (SPEC.md §7). A skill is `.claude/skills/<name>/SKILL.md`
  * with `type: skill`, indexed in place and edited with the ordinary document
  * verbs — `corpus doc show`, `corpus doc edit`, and `corpus doc archive`, which
- * is what disabling a skill *is*. Two things a document verb cannot express live
- * here: **genesis**, because a skill is the one document that lives outside
- * `data/docs/` and `POST /api/docs` files everything under it; and **recovery**,
- * because undoing a bad edit to the loop's own skill needs a targeted revert.
+ * is what disabling a skill *is*.
+ *
+ * **One verb, deliberately.** Only genesis has no document equivalent, because a
+ * skill is the one document that lives outside `data/docs/` and `corpus doc
+ * create` files everything under it. Recovery used to live here too, as
+ * `corpus skill rollback`; it is gone (rider signed 2026-08-12), because §7's
+ * loop safety is a write whose content came from history — read the history with
+ * `corpus doc diff`, work out the content you want back, and write it with
+ * `corpus doc edit --key`, which reconciles anchors, validates, commits under
+ * the acting party and refuses a stale key like every other write. A verb that
+ * restored a whole file from a revision did none of those and silently discarded
+ * anything not yet committed.
  *
  * A skill's name is its directory name, so nested skills (`SKILL.md` below one
  * more directory) are indexed but not addressable here — the route's name
@@ -17,14 +24,19 @@ import { rollbackCommand } from "./rollback.js";
  */
 export const skillTopic: TopicSpec = {
   name: "skill",
-  summary: "Create a skill, and recover one: restore its last-known-good version.",
+  summary: "Create a skill: the one skill operation no document verb can express.",
   description:
-    "Skills are documents, so reading, editing and archiving one is `corpus doc …` like anything " +
-    "else. These two verbs are what has no document equivalent. `create` is SPEC.md §7's skill " +
-    "genesis — a recurring pattern becomes a skill, written under `.claude/skills/` rather than " +
-    "`data/docs/`, which is the one thing `corpus doc create` cannot do. `rollback` is its safety " +
-    "net: the agent's skills are the workspace's memory and its loop, and a bad edit to " +
-    "`orchestrate` can break the very loop that would otherwise repair it. Both are performed by " +
-    "the server and land as normal attributed commits.",
-  commands: [createCommand, rollbackCommand],
+    "Skills are documents, so reading, editing, archiving — and reverting — one is `corpus doc …` " +
+    "like anything else. `create` is what has no document equivalent: it is SPEC.md §7's skill " +
+    "genesis, a recurring pattern becoming a skill written under `.claude/skills/` rather than " +
+    "`data/docs/`, which is the one thing `corpus doc create` cannot do. It is performed by the " +
+    "server and lands as a normal attributed commit.\n\n" +
+    "**Undoing a bad edit to a skill is not a verb here.** It is an ordinary write whose content " +
+    "came from history: read what changed with `corpus doc diff <id>`, work out the content you " +
+    "want back, and write it with `corpus doc edit <id> --key <key>`. That path reconciles " +
+    "anchors, validates the frontmatter, commits under `--from` and refuses a stale key — none of " +
+    "which a file-restoring shortcut did. When it is the agent's own loop that is broken and no " +
+    "agent is running to do that, revert in the workspace with git directly; the server's watcher " +
+    "sees it as the out-of-band `user` edit it is and commits it for itself.",
+  commands: [createCommand],
 };

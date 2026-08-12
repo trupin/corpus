@@ -65,14 +65,23 @@ to `orchestrate` or `comment` can break the loop that would otherwise fix it. Th
 
 ```bash
 corpus queue halt
-corpus skill rollback <name>   # e.g. orchestrate, or comment
+git log --oneline -- .claude/skills/orchestrate/SKILL.md
+git restore --source=<sha> -- .claude/skills/orchestrate/SKILL.md
 corpus queue resume
 ```
 
-`corpus skill rollback <name>` restores that skill's last-known-good version from git
-history. To turn a skill off entirely rather than revert it, `corpus doc archive` it: the
-skill moves to `.claude/skills-archived/`, stays visible and restorable in the board, and is
-no longer discovered by Claude Code.
+There is no rollback command, and here that is the point: the agent undoes a bad edit by
+reading the history and writing the old content back through the CLI, but when the broken
+document is the loop itself, there is no agent running to do it. So this one repair is yours,
+in the workspace, with git — `git log` lists that file's revisions and `git restore` puts one
+of them back. Use `comment` in place of `orchestrate` when that is the broken one. Leave the
+server running: it watches the workspace, picks the change up as the out-of-band edit it is,
+and commits it, so the recovery shows up in the history like everything else. The restored
+skill takes effect at the next `/orchestrate`.
+
+To turn a skill off entirely rather than revert it, `corpus doc archive` it: the skill moves
+to `.claude/skills-archived/`, stays visible and restorable in the board, and is no longer
+discovered by Claude Code.
 
 ## Everything else
 

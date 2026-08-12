@@ -40,12 +40,6 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus job list`](#corpus-job-list)
   - [`corpus job log`](#corpus-job-log)
   - [`corpus job retry`](#corpus-job-retry)
-- [`corpus lock`](#corpus-lock)
-  - [`corpus lock acquire`](#corpus-lock-acquire)
-  - [`corpus lock break`](#corpus-lock-break)
-  - [`corpus lock list`](#corpus-lock-list)
-  - [`corpus lock reap`](#corpus-lock-reap)
-  - [`corpus lock release`](#corpus-lock-release)
 - [`corpus queue`](#corpus-queue)
   - [`corpus queue abandon`](#corpus-queue-abandon)
   - [`corpus queue claim-all`](#corpus-queue-claim-all)
@@ -64,7 +58,6 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus server stop`](#corpus-server-stop)
 - [`corpus skill`](#corpus-skill)
   - [`corpus skill create`](#corpus-skill-create)
-  - [`corpus skill rollback`](#corpus-skill-rollback)
 - [`corpus thread`](#corpus-thread)
   - [`corpus thread context`](#corpus-thread-context)
   - [`corpus thread create`](#corpus-thread-create)
@@ -284,7 +277,7 @@ Upgrades the **tool**, and everything that has to move with it (SPEC.md §2.4). 
 
 **Interrupting it.** Between stopping the server and restarting it there is a window the command cannot leave cleanly. The first Ctrl-C (or `SIGTERM`) inside it is handled: the npm child is killed — processes npm had itself spawned may briefly outlive it — the server is started again, the report is written, and the command exits 8 with `upgrade_interrupted`. A second one is **not** handled — it kills corpus outright — and neither is `kill -9` or a machine going to sleep, either of which can leave the server stopped and the global package half-replaced. To recover from that: `corpus server start`, then `corpus upgrade` again once `corpus --version` has told you what you actually have.
 
-**The workspace half is not optional.** `corpus init` copies the agent's skills into the workspace and from that moment they are the workspace's own documents, so a tool update that ignored them would leave the loop running last version's instructions. The sync is the same three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a file the workspace never touched is updated, a file the workspace edited is **never** overwritten, and everything written lands in one attributed commit, so `corpus skill rollback` undoes a bad upgrade like any other change.
+**The workspace half is not optional.** `corpus init` copies the agent's skills into the workspace and from that moment they are the workspace's own documents, so a tool update that ignored them would leave the loop running last version's instructions. The sync is the same three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a file the workspace never touched is updated, a file the workspace edited is **never** overwritten, and everything written lands in **one** attributed commit — so a bad upgrade is undone the way any change is: `git revert` that one commit in the workspace, and the watcher picks the result up as the out-of-band edit it is.
 
 **A conflict is unresolved work, not a notice.** A file this workspace edited that the tool also changed is reported apart from everything that merely happened, each entry naming `corpus workspace diff <path>` — the verb that shows what moved upstream. Corpus never merges them: a skill is prose that instructs the agent, and a plausible-looking auto-merge would corrupt the instructions the loop runs on. Under `--json` they are the `conflicts` array, so an agent can tell what it still owes without reading prose. Conflicts do not fail the run: the upgrade succeeded, and exits 0 with the list.
 
@@ -388,13 +381,13 @@ corpus db rebuild --json
 
 List, read, check, create, edit, move, archive, unarchive and delete documents.
 
-The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — expands from a document it already holds through `related`, the follow-up move to `corpus search` (SPEC.md §7) — reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — reads what a user's edit session changed through `diff`, which is where a `doc.edited` event's stats are cashed in for the change itself (SPEC.md §4) — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
+The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — expands from a document it already holds through `related`, the follow-up move to `corpus search` (SPEC.md §7) — reads documents through `show`, which is also **where a key comes from**: replacing a body with `edit` means presenting the key that read handed out, and a write without a valid one does not happen (SPEC.md §7). Anchors resolve against the current body server-side, so reading the file would answer differently — reads what a user's edit session changed through `diff`, which is where a `doc.edited` event's stats are cashed in for the change itself (SPEC.md §4) — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
 
 ### `corpus doc archive`
 
 Archive a document (reversible; never a deletion).
 
-Flips `status` to `archived`. Nothing leaves git and nothing leaves the index: the document drops out of the default `GET /api/docs` result set and comes back with `status=archived` (SPEC.md §7). This is the verb the agent uses where a person would reach for delete — the agent archives, never deletes. Archiving a document that is already archived **sends nothing at all**: it reports “already archived” and exits 0, so a retried loop is harmless. The one exception is a `type: skill` document whose folder has not followed its status — there the request goes out and moves the folder, because that is a real repair. Archiving a `type: skill` document also moves its folder to `.claude/skills-archived/`, which disables the skill without unindexing it. A `423` from the other party's edit lock is a server error (exit 5).
+Flips `status` to `archived`. Nothing leaves git and nothing leaves the index: the document drops out of the default `GET /api/docs` result set and comes back with `status=archived` (SPEC.md §7). This is the verb the agent uses where a person would reach for delete — the agent archives, never deletes. Archiving a document that is already archived **sends nothing at all**: it reports “already archived” and exits 0, so a retried loop is harmless. The one exception is a `type: skill` document whose folder has not followed its status — there the request goes out and moves the folder, because that is a real repair. Archiving a `type: skill` document also moves its folder to `.claude/skills-archived/`, which disables the skill without unindexing it. Archiving **names its own delta**, so it needs no key (SPEC.md §7) and is never refused for a document someone else is writing.
 
 ```
 corpus doc archive <id> [flags]
@@ -626,7 +619,11 @@ corpus doc diff doc_a1b2c3 --json
 
 Edit a document's body and frontmatter.
 
-The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmatter-only edit** and the body is left exactly as it is — the CLI never sends an empty body it was not given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: remapped anchors moved with the text, orphaned ones name the threads that just became detached. `--reviewed` records the current instant as a “still current” confirmation, which is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's current tags first and `--status` reads the current document, so those flags cost one extra request; nothing else does — and because the API offers no conditional write, two tag edits racing on one document can end with only the later one's tag, and the archived check below is read from the same one-round-trip-old snapshot. **`--status` refuses to move an archived document off `archived`** and names `corpus doc unarchive <id>` instead — for a `type: skill` document because the frontmatter would say `open` while the folder stayed disabled in `.claude/skills-archived/` and its name stayed blocked, and for every other type because un-archiving is its own operation. The server refuses the same write (SERVER-039); refusing it here costs no round trip and names a **command** where the server can only name a route. `--extra` and `--extra-json` write non-core frontmatter keys — the column `width` of SPEC.md §11 among them — as a merge patch: named keys replace, `null` removes, unnamed keys are untouched. `--pinned`, `--order`, `--query` and `--column` write the four **view keys** of SPEC.md §11, which are core fields rather than `extra` ones: a board column IS a `type: view` document with `pinned: true`, so pinning, reordering and reconfiguring one is this verb, and the board follows over SSE with no reload. A `423` from the other party's edit lock is reported as a server error (exit 5) and is never retried — the orchestrate skill defers instead. An edit that names no change at all is a usage error, not an empty request.
+The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmatter-only edit** and the body is left exactly as it is — the CLI never sends an empty body it was not given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: remapped anchors moved with the text, orphaned ones name the threads that just became detached. `--reviewed` records the current instant as a “still current” confirmation, which is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's current tags first and `--status` reads the current document, so those flags cost one extra request; nothing else does — and because a tag edit names its own delta and so needs no key, two tag edits racing on one document can end with only the later one's tag, and the archived check below is read from the same one-round-trip-old snapshot. Passing `--key` closes that window at the cost of a refusal to reconcile. **`--status` refuses to move an archived document off `archived`** and names `corpus doc unarchive <id>` instead — for a `type: skill` document because the frontmatter would say `open` while the folder stayed disabled in `.claude/skills-archived/` and its name stayed blocked, and for every other type because un-archiving is its own operation. The server refuses the same write (SERVER-039); refusing it here costs no round trip and names a **command** where the server can only name a route. `--extra` and `--extra-json` write non-core frontmatter keys — the column `width` of SPEC.md §11 among them — as a merge patch: named keys replace, `null` removes, unnamed keys are untouched. `--pinned`, `--order`, `--query` and `--column` write the four **view keys** of SPEC.md §11, which are core fields rather than `extra` ones: a board column IS a `type: view` document with `pinned: true`, so pinning, reordering and reconfiguring one is this verb, and the board follows over SSE with no reload. An edit that names no change at all is a usage error, not an empty request.
+
+**Replacing the body means presenting the document's `--key`** (SPEC.md §7). Read the document with `corpus doc show <id>`, which prints the key, and present that key here: a body edit without one is refused before anything is sent (exit 2), because a write that replaces a block says nothing about what it changes and is the one that can destroy silently. If the document moved on between that read and this write, the key is stale and the write is **refused with exit 9** — carrying the document as it now stands and a fresh key, so no second read is needed: reconcile against what is printed and run the same command again with the fresh key. **That retry is the mechanism working, not a failure.** Every write that lands prints the fresh key on the line after the confirmation, so a chain of edits costs one read at the start rather than one between every pair.
+
+**A write that names its own delta needs no key**, and none of them started asking for one: `--add-tag`, `--remove-tag`, `--status`, `--due`, `--reviewed`, `--evergreen`, `--extra`, `--extra-json` and the view keys all merge with whatever else happened rather than overwriting it, as do `corpus doc move|archive|unarchive`. Presenting `--key` alongside them anyway is welcome and is still checked, so a caller that always sends what it read needs no rule about which fields are which.
 
 ```
 corpus doc edit <id> [flags]
@@ -642,6 +639,7 @@ corpus doc edit <id> [flags]
 
 | Flag                        | Type                | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | --------------------------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--key <key>`               | string              | —       | The document's **key**, exactly as `corpus doc show <id>` printed it — the version this edit is written against (SPEC.md §7). **Required when the edit replaces the body**; accepted, and still checked, on every other write. A key the document has moved past is refused with exit 9, and the refusal carries the document as it now stands with a fresh key, so the retry needs no extra read. It is opaque: echo it back exactly, and never construct, shorten, split or order one. There is nothing to acquire and nothing to release — reading gives you a key, not a claim on the document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `--title <text>`            | string              | —       | Replace the title.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `--add-tag <tag>`           | string (repeatable) | —       | Add a tag, keeping the existing ones.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `--remove-tag <tag>`        | string (repeatable) | —       | Remove a tag. A tag both added and removed is removed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -660,15 +658,16 @@ corpus doc edit <id> [flags]
 
 **Examples**
 
-Replace the body from a heredoc, attributed to the agent; the anchor report names any thread that came loose.
+The whole loop: read the document — which is both how you see what you are revising and where its key comes from — then replace the body presenting that key. The anchor report names any thread that came loose, and the write prints the fresh key for the next edit.
 
 ```
-corpus doc edit doc_a1b2c3 --from agent <<'EOF'
+corpus doc show doc_a1b2c3
+corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'EOF'
 The revised body.
 EOF
 ```
 
-A frontmatter-only edit: the title changes and the body is not touched.
+A frontmatter-only edit: the title changes, the body is not touched, and no key is needed — a title names its own delta.
 
 ```
 corpus doc edit doc_a1b2c3 --title "Mortgage options (2026)"
@@ -716,10 +715,16 @@ Store a plugin key whose value is an object; `--extra` stores scalars, and this 
 corpus doc edit doc_t0d0s1 --extra-json publish='{"target":"blog"}'
 ```
 
-One JSON value carrying `doc`, `anchors.remapped`, `anchors.orphaned` and `warnings`, exactly as the server sent them.
+One JSON value carrying `doc`, `anchors.remapped`, `anchors.orphaned` and `warnings`, exactly as the server sent them — `doc.key` is the fresh key.
 
 ```
-corpus doc edit doc_a1b2c3 --file revised.md --json
+corpus doc edit doc_a1b2c3 --file revised.md --key "$key" --json
+```
+
+A key the document has moved past: exit **9**, nothing written, and the refusal prints the document as it now stands with its fresh key — reconcile against that and run the same command again with it.
+
+```
+corpus doc edit doc_a1b2c3 --key "$stale" -m 'New text' ; echo $?
 ```
 
 ### `corpus doc list`
@@ -805,7 +810,7 @@ corpus doc list --type thread --unread --json
 
 Move a document to another folder.
 
-Rewrites the file's path and nothing else: **the id never changes**, so no reference, anchor or thread parent has to be rewritten (SPEC.md §9.2). Moving a document to the folder it is already in is a reported no-op that writes and commits nothing — the agent's loop never has to branch on it. Threads live flat under `data/threads/` and skills inside their own folder, so neither can be moved; the server says so. A `423` from the other party's edit lock is a server error (exit 5).
+Rewrites the file's path and nothing else: **the id never changes**, so no reference, anchor or thread parent has to be rewritten (SPEC.md §9.2). Moving a document to the folder it is already in is a reported no-op that writes and commits nothing — the agent's loop never has to branch on it. Threads live flat under `data/threads/` and skills inside their own folder, so neither can be moved; the server says so. A move **names its own delta** and needs no key (SPEC.md §7) — and because a key names the document's content rather than its path, a key read before a move is still good after it.
 
 ```
 corpus doc move <id> [flags]
@@ -886,9 +891,15 @@ corpus doc related doc_a1b2c3 --json
 
 ### `corpus doc show`
 
-Read a document: its frontmatter, its anchored threads, and its body.
+Read a document — and get the key that lets you write it back.
 
-Reads `GET /api/docs/{id}` and prints what the server returned — the CLI never opens the file. That matters for anchors: they are resolved against the _current_ body at read time, so each one is listed with the thread it belongs to, that thread's status, and either the character range it landed on or the fact that it is orphaned (SPEC.md §6). A timestamp the file does not carry renders as “—” rather than as an invented date. The human rendering is a summary: the whole payload — including the §11 view keys and any plugin `extra` — is what `--json` emits, unchanged. An id that names no document is the server's `404`, which is exit 5.
+Reads `GET /api/docs/{id}` and prints what the server returned — the CLI never opens the file. That matters for anchors: they are resolved against the _current_ body at read time, so each one is listed with the thread it belongs to, that thread's status, and either the character range it landed on or the fact that it is orphaned (SPEC.md §6). A timestamp the file does not carry renders as “—” rather than as an invented date.
+
+**The third line is the document's `key`** (SPEC.md §7). It names the version this read returned, and `corpus doc edit <id> --key <key>` is how you write a new body back: a write that replaces the body without one is refused, and one presenting a key the document has since moved past is refused with the document as it now stands and a fresh key (exit 9). It is printed whole and is opaque — echo it back exactly, never compute, shorten or compare parts of one. There is nothing to release: reading gives you a key, not a claim.
+
+**When a person has an edit session open**, the read says so on its own line. That is information, not a refusal — nothing is blocked, and a write would land — but the polite move is to leave the document alone and come back, or to park the claimed work with `corpus queue defer <event-id> --blocked-on <id>`, which returns to pending on its own when the session ends.
+
+The human rendering is a summary: the whole payload — including the §11 view keys and any plugin `extra` — is what `--json` emits, unchanged. An id that names no document is the server's `404`, which is exit 5.
 
 ```
 corpus doc show <id> [flags]
@@ -902,13 +913,19 @@ corpus doc show <id> [flags]
 
 **Examples**
 
-Read a document before editing or commenting on it: header, anchored threads, then the body.
+Read a document before editing or commenting on it: header, its `key`, anchored threads, then the body.
 
 ```
 corpus doc show doc_a1b2c3
 ```
 
-One JSON value: `{"frontmatter":{"id":"doc_a1b2c3","type":"note","title":"Mortgage options","created":"2026-07-28T10:00:00.000Z","updated":null,…},"body":"30-year fixed at 6.1%.\n","path":"data/docs/finance/mortgage-options.md","anchors":[{"anchorId":"anc_1","threadId":"th_x9y8","threadStatus":"open","range":{"start":12,"end":45},"orphaned":false,…}]}`.
+The key on its own — the value `corpus doc edit <id> --key …` presents back when it replaces the body.
+
+```
+corpus doc show doc_a1b2c3 --json | jq -r .key
+```
+
+One JSON value: `{"frontmatter":{"id":"doc_a1b2c3","type":"note","title":"Mortgage options","created":"2026-07-28T10:00:00.000Z","updated":null,…},"body":"30-year fixed at 6.1%.\n","path":"data/docs/finance/mortgage-options.md","key":"3b2ec1f0…","userEditing":false,"anchors":[{"anchorId":"anc_1","threadId":"th_x9y8","threadStatus":"open","range":{"start":12,"end":45},"orphaned":false,…}]}`.
 
 ```
 corpus doc show doc_a1b2c3 --json
@@ -1149,155 +1166,11 @@ Try a failed job once more.
 corpus job retry evt_9f2a
 ```
 
-## `corpus lock`
-
-Coordinate who may edit a document.
-
-Editing is coordinated by a per-document lock: the agent takes it before editing and the user's editor session holds it while typing, so a write from the other party is refused with a `423` naming the holder. Locks carry a lease, `reap` clears expired ones, and `break` is the operator's escape hatch for a lock that is stuck.
-
-### `corpus lock acquire`
-
-Take a document's edit lock.
-
-One holder at a time. Re-acquiring a lock you already hold renews its lease; a lock held by the other party answers `409` (exit 5) carrying that lock, so the caller can see who has it and until when.
-
-```
-corpus lock acquire <doc-id> [flags]
-```
-
-**Arguments**
-
-| Argument | Required | Description        |
-| -------- | -------- | ------------------ |
-| `doc-id` | yes      | The document's id. |
-
-**Flags**
-
-| Flag              | Type   | Default | Description                                                                                           |
-| ----------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------- |
-| `--ttl <seconds>` | number | —       | Lease length. The server's default is 300s; a TTL is what stops a crashed session wedging a document. |
-
-**Examples**
-
-Hold a document for the default lease.
-
-```
-corpus lock acquire doc_a1b2c3
-```
-
-One JSON value: `{"docId":"doc_a1b2c3","holder":"agent","acquired":"2026-07-27T10:00:00.000Z","ttl":60}`.
-
-```
-corpus lock acquire doc_a1b2c3 --ttl 60 --json
-```
-
-### `corpus lock break`
-
-Force-unlock a document (an operator action).
-
-Clears whoever holds the document's edit lock and records the break in the audit trail. **The agent may not run this.** `--from agent` (or `CORPUS_FROM=agent`) is refused here, before any request is sent, with exit 2: breaking a lock is a human recovery action, and an agent that could break its own contention would defeat the mechanism the lock exists to provide (SPEC.md §7). The server refuses it too; this guard exists so the agent gets the reason rather than a `403`. Idempotent by design — a document with no lock reports `no lock held` and exits 0, which also means an unknown document id exits 0 rather than 5.
-
-```
-corpus lock break <doc-id> [flags]
-```
-
-**Arguments**
-
-| Argument | Required | Description               |
-| -------- | -------- | ------------------------- |
-| `doc-id` | yes      | The locked document's id. |
-
-**Examples**
-
-Clear a lock a crashed session left behind.
-
-```
-corpus lock break doc_a1b2c3
-```
-
-One JSON value: `{"docId":"doc_a1b2c3","broken":true,"holder":"agent"}`, or `{"docId":"doc_a1b2c3","broken":false}` when nothing was held.
-
-```
-corpus lock break doc_a1b2c3 --json
-```
-
-### `corpus lock list`
-
-Show every lock currently held.
-
-Reads `GET /api/locks` — the same state the board's lock banners render, so a document that refuses a write shows up here with its holder and lease.
-
-```
-corpus lock list [flags]
-```
-
-**Examples**
-
-One line per held lock, or `no locks held.`
-
-```
-corpus lock list
-```
-
-One JSON value: `{"locks":[{"docId":"doc_a1b2c3","holder":"user",…}]}`.
-
-```
-corpus lock list --json
-```
-
-### `corpus lock reap`
-
-Clear locks that are past their lease.
-
-Releases every lock whose TTL has expired, so a crashed editor cannot wedge a document — the lock twin of `corpus queue reap-stale`. A lock still inside its lease is left alone, and a second call reports nothing cleared and exits 0.
-
-```
-corpus lock reap [flags]
-```
-
-**Examples**
-
-Clear leases left behind by a crashed session.
-
-```
-corpus lock reap
-```
-
-One JSON value: `{"reaped":["doc_a1b2c3"]}`, empty when nothing had expired.
-
-```
-corpus lock reap --json
-```
-
-### `corpus lock release`
-
-Drop a document's edit lock.
-
-Only the holder may release: a lock held by the other party answers `403` (exit 5), and a document with no lock answers `404` (exit 5). To clear somebody else's lock, break it.
-
-```
-corpus lock release <doc-id> [flags]
-```
-
-**Arguments**
-
-| Argument | Required | Description        |
-| -------- | -------- | ------------------ |
-| `doc-id` | yes      | The document's id. |
-
-**Examples**
-
-Release a lock you hold.
-
-```
-corpus lock release doc_a1b2c3
-```
-
 ## `corpus queue`
 
 Park on, claim and settle the agent's event queue.
 
-The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `defer` is the fourth, non-terminal outcome: work blocked on a user-held edit lock waits rather than failing, and returns to `pending` by itself when that lock clears. `halt` is the kill switch: it stops consumption without stopping production. The loop's two entry points — `idle` when it returns work, and `claim-all` — additionally report what the server still holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the agent can reconcile the server's view against its own memory (SPEC.md §7).
+The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `defer` is the fourth, non-terminal outcome: work the agent parked because a person is editing the document it needs waits rather than failing, and returns to `pending` by itself when that session ends (SPEC.md §7 — a judgement, not a refusal). `halt` is the kill switch: it stops consumption without stopping production. The loop's two entry points — `idle` when it returns work, and `claim-all` — additionally report what the server still holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the agent can reconcile the server's view against its own memory (SPEC.md §7).
 
 ### `corpus queue abandon`
 
@@ -1389,11 +1262,13 @@ corpus queue complete evt_9f2a --json
 
 ### `corpus queue defer`
 
-Park a claimed event on a document's edit lock.
+Park a claimed event while a person is editing a document.
 
-Moves the event to `deferred/` — **waiting, not failed** (SPEC.md §7). The agent calls it when the work it claimed needs a document the user holds the edit lock on: reply to the waiting thread, defer the event, move on. It is the successor to the interim protocol of failing the event with a `deferred:`-prefixed reason, so no prefix is needed or wanted here — the status says that now.
+Moves the event to `deferred/` — **waiting, not failed** (SPEC.md §7). The agent calls it when the work it claimed needs a document a person has an edit session open on (the “someone is editing this” line of `corpus doc show`): reply to the waiting thread, defer the event, move on. It is the successor to the interim protocol of failing the event with a `deferred:`-prefixed reason, so no prefix is needed or wanted here — the status says that now.
 
-**The event comes back on its own.** Releasing, force-breaking or reaping the lock on `--blocked-on` returns it to `pending` and unparks `corpus queue idle` — no retry call, no operator. Until then it is not claimable, and `corpus queue status` counts it under `deferred` rather than `failed`. Nothing is silently dropped: it stays on disk across a restart and stays retryable by hand with `corpus job retry`.
+**It is a judgement, not a refusal.** Nothing stopped the agent writing: a key would have let the write through, no document is ever read-only, and there is nothing to acquire or release. It defers because it saw, and because writing beside someone who is typing is impolite rather than incorrect.
+
+**The event comes back on its own** when that edit session ends: it returns to `pending` and unparks `corpus queue idle` — no retry call, no operator. Until then it is not claimable, and `corpus queue status` counts it under `deferred` rather than `failed`. Nothing is silently dropped: it stays on disk across a restart and stays retryable by hand with `corpus job retry`.
 
 `--blocked-on` is required and checked before any request — a deferral that named no document could never re-enter. Only claimed work can be deferred: an event that is not `in-progress` is a server conflict (exit 5), as is an unknown id.
 
@@ -1409,14 +1284,14 @@ corpus queue defer <event-id> [flags]
 
 **Flags**
 
-| Flag                    | Type   | Default | Description                                                                                                                                                                 |
-| ----------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--blocked-on <doc-id>` | string | —       | **Required.** The document whose edit lock the work is waiting for. Clearing that lock is what returns this event to `pending`, so naming the wrong document waits forever. |
-| `--reason <text>`       | string | —       | Why the work is waiting, shown in the console beside the blocking document. Omitted entirely when not given, never sent empty.                                              |
+| Flag                    | Type   | Default | Description                                                                                                                                                                          |
+| ----------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--blocked-on <doc-id>` | string | —       | **Required.** The document a person is editing that the work is waiting on. That session ending is what returns this event to `pending`, so naming the wrong document waits forever. |
+| `--reason <text>`       | string | —       | Why the work is waiting, shown in the console beside the blocking document. Omitted entirely when not given, never sent empty.                                                       |
 
 **Examples**
 
-Park the event until the user releases the document.
+Park the event until the person editing that document is done.
 
 ```
 corpus queue defer evt_9f2a --blocked-on doc_a1b2c3
@@ -1584,7 +1459,7 @@ corpus queue resume
 
 Show the halt state and the queue depth.
 
-Reads `GET /api/queue/status`: whether the queue is halted, plus how many events sit in each of `pending`, `in-progress`, `deferred`, `processed`, `failed` and `abandoned`. A non-zero `deferred` is **not** breakage — those events are waiting on a user-held edit lock and return to `pending` on their own when it is released, broken or reaped (SPEC.md §7).
+Reads `GET /api/queue/status`: whether the queue is halted, plus how many events sit in each of `pending`, `in-progress`, `deferred`, `processed`, `failed` and `abandoned`. A non-zero `deferred` is **not** breakage — those events are waiting on a person's edit session and return to `pending` on their own when it ends (SPEC.md §7).
 
 ```
 corpus queue status [flags]
@@ -1729,19 +1604,21 @@ corpus server stop --json
 
 ## `corpus skill`
 
-Create a skill, and recover one: restore its last-known-good version.
+Create a skill: the one skill operation no document verb can express.
 
-Skills are documents, so reading, editing and archiving one is `corpus doc …` like anything else. These two verbs are what has no document equivalent. `create` is SPEC.md §7's skill genesis — a recurring pattern becomes a skill, written under `.claude/skills/` rather than `data/docs/`, which is the one thing `corpus doc create` cannot do. `rollback` is its safety net: the agent's skills are the workspace's memory and its loop, and a bad edit to `orchestrate` can break the very loop that would otherwise repair it. Both are performed by the server and land as normal attributed commits.
+Skills are documents, so reading, editing, archiving — and reverting — one is `corpus doc …` like anything else. `create` is what has no document equivalent: it is SPEC.md §7's skill genesis, a recurring pattern becoming a skill written under `.claude/skills/` rather than `data/docs/`, which is the one thing `corpus doc create` cannot do. It is performed by the server and lands as a normal attributed commit.
+
+**Undoing a bad edit to a skill is not a verb here.** It is an ordinary write whose content came from history: read what changed with `corpus doc diff <id>`, work out the content you want back, and write it with `corpus doc edit <id> --key <key>`. That path reconciles anchors, validates the frontmatter, commits under `--from` and refuses a stale key — none of which a file-restoring shortcut did. When it is the agent's own loop that is broken and no agent is running to do that, revert in the workspace with git directly; the server's watcher sees it as the out-of-band `user` edit it is and commits it for itself.
 
 ### `corpus skill create`
 
 Create a skill through the server.
 
-Calls `POST /api/skills`, which writes `.claude/skills/<name>/SKILL.md` through the ordinary mutation pipeline — validation, atomic write, git auto-commit attributed to `--from`, synchronous re-projection and SSE invalidation. The skill is therefore live immediately: on the board, in `corpus doc list --type skill`, and rollback-able, with no server restart. The CLI writes nothing itself; the server is the sole writer.
+Calls `POST /api/skills`, which writes `.claude/skills/<name>/SKILL.md` through the ordinary mutation pipeline — validation, atomic write, git auto-commit attributed to `--from`, synchronous re-projection and SSE invalidation. The skill is therefore live immediately: on the board and in `corpus doc list --type skill`, with no server restart. The CLI writes nothing itself; the server is the sole writer.
 
 The created file carries **both** frontmatter vocabularies, which is what makes a skill simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory name) and `description` for discovery, then the document keys the server assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`. `--description` is required rather than optional: a skill without one is installed but never invoked.
 
-The name is the traversal guard and it is checked by the server, not here — lowercase letters, digits and single hyphens, at most 64 characters. A name with a slash, a `..` segment or an uppercase letter is the server's `400`; a name already installed, or held by an archived skill, is its `409`. Both are exit 5, and neither writes anything. Everything after creation is ordinary document work: edit with `corpus doc edit`, disable with `corpus doc archive`, recover with `corpus skill rollback`.
+The name is the traversal guard and it is checked by the server, not here — lowercase letters, digits and single hyphens, at most 64 characters. A name with a slash, a `..` segment or an uppercase letter is the server's `400`; a name already installed, or held by an archived skill, is its `409`. Both are exit 5, and neither writes anything. Everything after creation is ordinary document work: edit with `corpus doc edit`, disable with `corpus doc archive`, and undo a bad edit by writing back the content you want — read the history with `corpus doc diff <id>`, then `corpus doc edit <id> --key <key>`.
 
 ```
 corpus skill create <name> [flags]
@@ -1785,50 +1662,6 @@ One JSON value — `{"doc":{"frontmatter":{"id":"doc_wy3a54lf","type":"skill",�
 
 ```
 corpus skill create triage --description "Triage the inbox." --json
-```
-
-### `corpus skill rollback`
-
-Restore a skill's last-known-good version through the server.
-
-Calls `POST /api/skills/{name}/rollback`, which restores `.claude/skills/<name>/SKILL.md` from git and commits the restoration as a normal auto-commit attributed to `--from` — so `git log` stays the whole audit trail and the board re-projects like it does for any other write. Prints the restored path and the **new** commit, not the revision the content came from. `--to` steps further back to any revision git resolves.
-
-A `commit` of `null` is reported as _uncommitted_ rather than dressed up: the workspace's own git hooks rejected the auto-commit (or there is no git), the file was restored anyway (SPEC.md §14), and the reason is printed as a warning. A skill nobody installed — including one that was archived, which moves it out of `.claude/skills/` — is the server's `404`, which is exit 5.
-
-```
-corpus skill rollback <name> [flags]
-```
-
-**Arguments**
-
-| Argument | Required | Description                                                                                       |
-| -------- | -------- | ------------------------------------------------------------------------------------------------- |
-| `name`   | yes      | The skill's directory name under `.claude/skills/`: lowercase letters, digits and single hyphens. |
-
-**Flags**
-
-| Flag         | Type   | Default | Description                                                                                                            |
-| ------------ | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `--to <ref>` | string | —       | Restore from this revision — a commit sha, a tag, anything git resolves. Omitted, the last-known-good version is used. |
-
-**Examples**
-
-Undo a bad edit to the core loop skill and record the agent as its author.
-
-```
-corpus skill rollback orchestrate --from agent
-```
-
-Step a skill back to a specific commit rather than the last-known-good one.
-
-```
-corpus skill rollback comment --to 9f3c1ab
-```
-
-One JSON value: `{"name":"orchestrate","docId":"doc_skill1a2b3c4d","commit":"9f3c1ab","path":".claude/skills/orchestrate/SKILL.md","warnings":[]}`.
-
-```
-corpus skill rollback orchestrate --json
 ```
 
 ## `corpus thread`
@@ -1883,7 +1716,7 @@ The three creation shapes of SPEC.md §6, chosen by which flags are present. `--
 
 **Bytes are passed through untouched**, but two shapes are refused at write time (`400`, exit 5, nothing written) — the same two `corpus thread reply` refuses, since both write a turn. A first turn that leaves a code fence open would swallow every later turn in the thread; one carrying a bare `## user · <ts>` line reads as §6's turn delimiter and would split the message into turns signed by someone who never wrote them. Both refusals name the offending line. A fence that is properly closed, and a turn heading quoted inside a fence, an inline code span or a block quote, are ordinary content and are accepted.
 
-**The quote is not resolved here.** The CLI never reads the parent document and never computes the surrounding context: it sends the text you quoted, and the server locates it (SPEC.md §6). A quote the document **does not contain** is not a refusal — the thread is created and comes back with the `orphaned_anchor` warning appended to the printed line, because an orphaned anchor is a normal state of a living corpus. A quote the document contains **more than once** is a different matter and **is refused**, `400` (exit 5), nothing written: the request names several passages and there is nothing to choose between them, so an error you can see beats a conversation silently anchored to the wrong one. Disambiguate with `--prefix`/`--suffix` — the text immediately before and after the occurrence you mean, copied from the document — so that prefix, quote and suffix together occur exactly once; framing that is itself repeated is refused the same way. The framing only picks the occurrence and is **not** stored: the server reads the anchor's context off the document's own bytes. An unknown `--parent` is a `404` (exit 5), and a parent held by the other party's edit lock refuses an _anchored_ create with a `423`, since anchoring rewrites it (SPEC.md §7); a whole-document or standalone thread takes no lock. Prints the new thread's id, where it landed, and any enqueued event; `--json` emits the server's `{thread, anchorId, eventId, warnings}` response unchanged.
+**The quote is not resolved here.** The CLI never reads the parent document and never computes the surrounding context: it sends the text you quoted, and the server locates it (SPEC.md §6). A quote the document **does not contain** is not a refusal — the thread is created and comes back with the `orphaned_anchor` warning appended to the printed line, because an orphaned anchor is a normal state of a living corpus. A quote the document contains **more than once** is a different matter and **is refused**, `400` (exit 5), nothing written: the request names several passages and there is nothing to choose between them, so an error you can see beats a conversation silently anchored to the wrong one. Disambiguate with `--prefix`/`--suffix` — the text immediately before and after the occurrence you mean, copied from the document — so that prefix, quote and suffix together occur exactly once; framing that is itself repeated is refused the same way. The framing only picks the occurrence and is **not** stored: the server reads the anchor's context off the document's own bytes. An unknown `--parent` is a `404` (exit 5). Anchoring rewrites the parent's frontmatter, but it **names its own delta** — one anchor added — so this verb presents no key and is never refused for a document someone else is writing (SPEC.md §7); an anchor whose quote has moved is refused on its own terms, above. Prints the new thread's id, where it landed, and any enqueued event; `--json` emits the server's `{thread, anchorId, eventId, warnings}` response unchanged.
 
 **`--model` states what wrote the first turn**, and only an agent's turn may carry one (SPEC.md §11) — the same flag `corpus thread reply` takes, since both write a turn. It records what ran; it asks for nothing to run. Omit it and the turn carries no model at all, which reads as nothing rather than as a guess.
 
@@ -2336,7 +2169,7 @@ corpus workspace maintain --json
 
 Refresh the workspace's template files after a tool update, without clobbering edits.
 
-`corpus init` copies the agent's skills into the workspace, and from that moment they are the workspace's own documents — the agent evolves them, and they are its memory (SPEC.md §2.1). A later tool update therefore cannot re-copy them blindly. This verb three-way compares each file the tool installs: the baseline `corpus init` recorded, the copy in the workspace now, and the copy the installed tool carries. A file the workspace never touched is **updated**; a file the workspace changed is **kept and reported**, never overwritten; a file new to the template is **installed**; a file the workspace deleted is reported and reinstalled only under `--restore`; a file the template dropped is reported as retired, its copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old and new tool versions, so `corpus skill rollback` undoes a bad upgrade like any other skill change. A run with nothing to do prints `already up to date.` and makes no commit.
+`corpus init` copies the agent's skills into the workspace, and from that moment they are the workspace's own documents — the agent evolves them, and they are its memory (SPEC.md §2.1). A later tool update therefore cannot re-copy them blindly. This verb three-way compares each file the tool installs: the baseline `corpus init` recorded, the copy in the workspace now, and the copy the installed tool carries. A file the workspace never touched is **updated**; a file the workspace changed is **kept and reported**, never overwritten; a file new to the template is **installed**; a file the workspace deleted is reported and reinstalled only under `--restore`; a file the template dropped is reported as retired, its copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old and new tool versions — so a bad upgrade is undone in one move, by reverting that commit in the workspace with git. A run with nothing to do prints `already up to date.` and makes no commit.
 
 Only template-provenance paths are touched — `.claude/` skills and personas, the workspace `README.md` and `.gitignore`, the seed documents under `data/docs/` the template and plugins install — and nothing under `.corpus/` except the manifest itself and a missing queue status directory. Plugin-installed skills **and seed templates** are refreshed from **their plugin**, not from the template.
 
@@ -2386,14 +2219,15 @@ corpus workspace upgrade --json
 
 ## Exit codes
 
-| Code | Meaning                                                                         |
-| ---- | ------------------------------------------------------------------------------- |
-| `0`  | Success.                                                                        |
-| `1`  | Internal error — an unexpected exception.                                       |
-| `2`  | Usage error — unknown command, bad flag, missing argument.                      |
-| `3`  | Not inside a Corpus workspace, or its config is invalid.                        |
-| `4`  | The workspace server is unreachable.                                            |
-| `5`  | The server returned an error response.                                          |
-| `6`  | A check-style command reported a failure (its work succeeded).                  |
-| `7`  | Refused — a precondition was not met, and nothing was changed.                  |
-| `8`  | Failed partway — something had already been changed, so verify before retrying. |
+| Code | Meaning                                                                                                                                                                    |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success.                                                                                                                                                                   |
+| `1`  | Internal error — an unexpected exception.                                                                                                                                  |
+| `2`  | Usage error — unknown command, bad flag, missing argument.                                                                                                                 |
+| `3`  | Not inside a Corpus workspace, or its config is invalid.                                                                                                                   |
+| `4`  | The workspace server is unreachable.                                                                                                                                       |
+| `5`  | The server returned an error response.                                                                                                                                     |
+| `6`  | A check-style command reported a failure (its work succeeded).                                                                                                             |
+| `7`  | Refused — a precondition was not met, and nothing was changed.                                                                                                             |
+| `8`  | Failed partway — something had already been changed, so verify before retrying.                                                                                            |
+| `9`  | Stale key — the document changed after the read that handed you the key, so nothing was written. Re-read it, merge, and run the same command again with the fresh `--key`. |

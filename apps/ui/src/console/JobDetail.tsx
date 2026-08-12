@@ -55,8 +55,9 @@ export function JobDetail({ job, enabled }: JobDetailProps): ReactElement {
    * Retry/Abandon are offered on a deferred job as well as a failed one.
    *
    * §7 keeps `corpus job retry` as the *manual override* for a deferral that
-   * automatic re-entry did not reach — a lock released out of band, a stale
-   * deferral — and the contract widened the route to accept `deferred` for
+   * automatic re-entry did not reach — an editing session that ended without
+   * the queue noticing, a stale deferral — and the contract widened the route
+   * to accept `deferred` for
    * exactly that. A row a user can see but not act on would make the console
    * read-only precisely where the queue is stuck.
    */
@@ -105,7 +106,7 @@ export function JobDetail({ job, enabled }: JobDetailProps): ReactElement {
               type="button"
               title={
                 job.status === "deferred"
-                  ? "Re-queue this deferred job now — the manual override; it re-enters on its own when the lock clears"
+                  ? "Re-queue this deferred job now — the manual override; it re-enters on its own when the editing session ends"
                   : "Re-queue this failed job"
               }
               disabled={retry.isPending}

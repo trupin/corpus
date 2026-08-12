@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { fakeEventSourceFactory } from "../testing/index.js";
-import { createCorpusClient, CorpusRequestError, toQueryParams } from "./createCorpusClient.js";
+import {
+  createCorpusClient,
+  CorpusRequestError,
+  staleKeyDoc,
+  toQueryParams,
+} from "./createCorpusClient.js";
 
 /**
  * These assert the wire, not a stub: every call goes through the generated
@@ -120,12 +125,6 @@ describe("the operations map onto the contract's routes", () => {
     await client(recorder).listJobs({ recent: 25 });
     expect(urlOf(recorder).pathname).toBe("/api/jobs");
     expect(urlOf(recorder).searchParams.get("recent")).toBe("25");
-  });
-
-  it("reads locks from GET /api/locks", async () => {
-    const recorder = recording({ locks: [] });
-    await client(recorder).listLocks();
-    expect(urlOf(recorder).pathname).toBe("/api/locks");
   });
 
   it("reads the semantic index's report from GET /api/index/status", async () => {
@@ -255,9 +254,9 @@ describe("errors", () => {
    */
   it("speaks the server's sentence, without the route template or the status", async () => {
     const recorder = recording({ code: "unauthorized", message: "no token" }, 401);
-    await expect(client(recorder).listLocks()).rejects.toMatchObject({
+    await expect(client(recorder).getQueueStatus()).rejects.toMatchObject({
       message: "no token",
-      operation: "GET /api/locks",
+      operation: "GET /api/queue/status",
       status: 401,
     });
   });
@@ -265,8 +264,8 @@ describe("errors", () => {
   /** With no `ApiError` to speak, the request's own shape is all there is to say. */
   it("falls back to the operation and the status when the body is not an error", async () => {
     const recorder = recording("<html>gateway</html>", 502);
-    await expect(client(recorder).listLocks()).rejects.toThrow(
-      /GET \/api\/locks failed \(HTTP 502\)/,
+    await expect(client(recorder).getQueueStatus()).rejects.toThrow(
+      /GET \/api\/queue\/status failed \(HTTP 502\)/,
     );
   });
 });
@@ -297,5 +296,70 @@ describe("toQueryParams", () => {
 
   it("is empty for an empty filter", () => {
     expect(toQueryParams({})).toEqual({});
+  });
+});
+
+/**
+ * SPEC.md §7's refusal reader. What it has to get right is the *narrowness*: an
+ * adopt-then-retry path that took a half-shaped `409` for a stale key would
+ * write again against a key it had invented, which is the overwrite the whole
+ * mechanism exists to refuse.
+ */
+describe("staleKeyDoc", () => {
+  const doc = {
+    frontmatter: {
+      id: "doc_a",
+      type: "note",
+      title: "Rates",
+      created: "2026-07-01T09:00:00.000Z",
+      updated: "2026-07-02T09:00:00.000Z",
+      tags: [],
+      status: "open",
+      anchors: {},
+      due: null,
+      reviewed: null,
+      evergreen: false,
+      pinned: false,
+      order: null,
+      query: null,
+      column: null,
+      extra: {},
+    },
+    body: "the other writer's paragraph\n",
+    path: "data/docs/notes/doc_a.md",
+    anchors: [],
+    key: "b".repeat(64),
+    userEditing: false,
+  };
+
+  function refusal(payload: unknown, status = 409): CorpusRequestError {
+    return new CorpusRequestError("PUT /api/docs/{id}", status, payload);
+  }
+
+  it("hands back the document a refusal carried, fresh key and all", () => {
+    const carried = staleKeyDoc(
+      refusal({ code: "stale_key", message: "the document moved on", doc }),
+    );
+    expect(carried?.key).toBe("b".repeat(64));
+    expect(carried?.body).toBe("the other writer's paragraph\n");
+  });
+
+  it("answers null for the other 409 on this API", () => {
+    expect(
+      staleKeyDoc(refusal({ code: "conflict", message: "refused", reason: "range-changed" })),
+    ).toBeNull();
+  });
+
+  it("answers null for a stale-key shape on any other status", () => {
+    expect(staleKeyDoc(refusal({ code: "stale_key", message: "no", doc }, 400))).toBeNull();
+  });
+
+  it("answers null for a refusal missing the document, rather than a half-shaped one", () => {
+    expect(staleKeyDoc(refusal({ code: "stale_key", message: "no" }))).toBeNull();
+  });
+
+  it("answers null for a failure that is not a request error at all", () => {
+    expect(staleKeyDoc(new Error("network down"))).toBeNull();
+    expect(staleKeyDoc(null)).toBeNull();
   });
 });

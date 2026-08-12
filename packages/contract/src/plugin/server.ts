@@ -114,11 +114,14 @@ export interface PluginServerContext {
    *   route handler **unwrapped** — a plugin-defined error (todos'
    *   `TodoItemError`) arrives as itself, so the handler's own status mapping
    *   still applies. The lane is released either way.
-   * - **Edit-lock refusal is `updateDoc`'s**, unchanged: a document the other
-   *   party holds is refused with the same error, and the refusal is part of the
-   *   write, so the callback may already have run. It must therefore be a pure
-   *   recompute — that its result was computed is never evidence anything was
-   *   written.
+   * - **A stale-key refusal is `updateDoc`'s**, unchanged: a write whose `key`
+   *   no longer names the document's version is refused with the same error, and
+   *   the refusal is part of the write, so the callback may already have run. It
+   *   must therefore be a pure recompute — that its result was computed is never
+   *   evidence anything was written. **A body patch must carry the key of the
+   *   document the callback was handed** (`doc.key`, SPEC.md §7): reading and
+   *   writing happen inside one lane here, so that key is current by
+   *   construction — which is exactly the claim a key makes.
    * - **A patch failing validation is refused** the way `updateDoc` refuses one.
    * - **Not re-entrant.** The callback must not call this context's write
    *   methods. Being synchronous it could only float their promises anyway, and

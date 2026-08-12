@@ -37,9 +37,4 @@ export {
   MAX_GIT_OUTPUT_BYTES,
 } from "./git.js";
 export type { Git, GitCommandResult, GitExecOptions } from "./git.js";
-export {
-  REVISION_SEARCH_LIMIT,
-  listFileRevisions,
-  readVersionAt,
-  resolveRevision,
-} from "./show.js";
+export { listFileRevisions, resolveRevision } from "./show.js";

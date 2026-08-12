@@ -41,6 +41,8 @@ const SKILL: Doc = {
   },
   body: "# Weekly review\n",
   path: ".claude/skills/weekly-review/SKILL.md",
+  key: "a1d4e0c9b8f7a6d5c4b3a2918f7e6d5c4b3a29180f1e2d3c4b5a69788796a5b4",
+  userEditing: false,
   anchors: [],
 };
 
@@ -222,7 +224,19 @@ describe("the skill create command spec", () => {
     expect(text).toContain("64");
   });
 
-  it("is reachable as `corpus skill create`, alongside rollback", () => {
-    expect(skillTopic.commands.map((command) => command.name)).toEqual(["create", "rollback"]);
+  /**
+   * The whole topic, pinned. `rollback` left on 2026-08-12 — §7's loop safety is
+   * an ordinary write whose content came from history — so a second verb
+   * reappearing here is a decision to re-open that, not a detail.
+   */
+  it("is reachable as `corpus skill create`, and is the topic's only verb", () => {
+    expect(skillTopic.commands.map((command) => command.name)).toEqual(["create"]);
+  });
+
+  it("points a bad skill edit at the ordinary write path, not at a removed verb", () => {
+    const text = `${createCommand.description ?? ""}\n${skillTopic.description}`;
+    expect(text).not.toContain("skill rollback");
+    expect(text).toContain("corpus doc edit");
+    expect(text).toContain("corpus doc diff");
   });
 });

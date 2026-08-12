@@ -226,10 +226,8 @@ export type FileOperation =
  *   commit's subject names the act": the write folds into the open window as
  *   usual, and *then* the window closes, keeping that subject instead of being
  *   relabelled an editing session.
- * - `"commits-alone"` — a deletion and a staged bulk Save, two of §4's "three
- *   acts commit alone" (the third is the lock force break, which writes no
- *   document and so never reaches this pipeline). The order is the other way
- *   round: the window closes and lets its commit land **first**, and the act's
+ * - `"commits-alone"` — a deletion and a staged bulk Save, §4's "two acts commit
+ *   alone". The order is the other way round: the window closes and lets its commit land **first**, and the act's
  *   own commit then stands by itself, folding in neither direction.
  *
  * Getting that asymmetry backwards produces the right number of commits in the
@@ -260,11 +258,11 @@ export type MutationPlan = {
      * default — by every edit verb, because folding repeated saves of one
      * document by one author into one commit is exactly what §4 asks for.
      *
-     * The skill rollback sets it, and the reason generalises: a rollback is not
-     * a continuation of the edit that made it necessary, it is the answer to it.
-     * Folding one into the other would amend the bad edit's commit out of
-     * existence — destroying the very history the restoration is reading, and
-     * leaving `git log` with no record that a rollback happened at all.
+     * The anchor re-attach sets it, and the reason generalises to any repair: a
+     * repair is not a continuation of the edit that made it necessary, it is the
+     * answer to it. Folding one into the other would amend the bad edit's commit
+     * out of existence — destroying the very history the repair is reading, and
+     * leaving `git log` with no record that the repair happened at all.
      */
     readonly squash?: boolean | undefined;
     /**
@@ -307,8 +305,8 @@ export type MutationPlan = {
    * land.
    *
    * Left unset by every other verb on purpose. A create, a move, an archive, a
-   * delete, a thread turn and a lock audit entry are all things that *happen to*
-   * a document rather than sessions of somebody editing it; folding them in
+   * delete and a thread turn are all things that *happen to* a document rather
+   * than sessions of somebody editing it; folding them in
    * would acknowledge a document the user only filed, and would double up with
    * the `comment.created` a thread reply already enqueues. It is left unset for
    * the same reason by a `PUT` that moves only frontmatter — a column width, a
@@ -334,17 +332,6 @@ export type MutationResult = {
   readonly commit: CommitOutcome | null;
 };
 
-/**
- * The lock guard (SPEC.md §7): it throws the `423 LockedError` when the *other*
- * party holds the document's edit lock. Declared as a seam rather than an import
- * of `locks/` so the pipeline stays testable without a lock store, and so there
- * is exactly one call site per write verb — each verb calls it once, before it
- * reads or writes anything. `locks/guard.ts` is the implementation.
- */
-export type WriteGuard = (docId: string, actor: Actor) => void | Promise<void>;
-
-export const allowAllWrites: WriteGuard = () => undefined;
-
 export interface DocsWorkspace {
   readonly workspaceRoot: string;
   readonly projection: ProjectionDb;
@@ -353,12 +340,6 @@ export interface DocsWorkspace {
   readonly bus: InvalidationBus;
   readonly logger: Logger;
   readonly now: () => number;
-  /**
-   * Defaults to {@link allowAllWrites}. `createServer` supplies the real one —
-   * `locks/guard.ts`'s `assertWritable`, which turns the other party's live
-   * lease into the contract's `423` (SPEC.md §7).
-   */
-  readonly assertWritable?: WriteGuard | undefined;
   /**
    * Absolute path of `.corpus/attachments` (SPEC.md §6, SERVER-010). Present on
    * the *document* workspace rather than only the thread one because deleting a
@@ -373,9 +354,9 @@ export interface DocsWorkspace {
    * seals an open session, and a tracker that never heard about one could hand
    * the agent a range spanning the agent's own commit.
    *
-   * A seam, and optional, for the reason `assertWritable` is one: the pipeline
-   * stays testable without a queue, and a server built without a projection (and
-   * so without a git writer) has no acknowledgment to make.
+   * A seam, and optional: the pipeline stays testable without a queue, and a
+   * server built without a projection (and so without a git writer) has no
+   * acknowledgment to make.
    */
   readonly editSessions?: EditSessionTracker | undefined;
 }
@@ -457,10 +438,9 @@ export type SaveCheck = {
 /**
  * The §14 validator, run over the bytes a save would write, without throwing.
  *
- * Split out of {@link validateBeforeWrite} because the skill rollback (§7) has to
- * ask the same question about a *candidate* revision — "would saving these bytes
- * be accepted?" — while walking history for the last-known-good one, and a
- * predicate spelled with a `try`/`catch` around a throwing validator would be a
+ * Split out of {@link validateBeforeWrite} because callers legitimately need to
+ * ask "would saving these bytes be accepted?" without a save being underway, and
+ * a predicate spelled with a `try`/`catch` around a throwing validator would be a
  * second definition of "valid".
  */
 export function checkSave(projection: ProjectionDb, path: string, text: string): SaveCheck {

@@ -52,12 +52,11 @@ function renderStaleRow(
 
     if (options.failWith !== undefined && request.method !== "GET") {
       return new Response(
-        JSON.stringify({ code: "locked", message: "agent holds the edit lock" }),
+        JSON.stringify({ code: "conflict", message: "the document has moved on" }),
         { status: options.failWith, headers: { "content-type": "application/json" } },
       );
     }
     const bodies: Record<string, unknown> = {
-      "/api/locks": { locks: [] },
       "/api/jobs": { jobs: [] },
       "/api/threads": {
         thread: {
@@ -155,7 +154,7 @@ describe("Archive", () => {
   });
 
   it("leaves the row alone and surfaces the failure when the server refuses", async () => {
-    const { calls, notices } = renderStaleRow({ failWith: 423 });
+    const { calls, notices } = renderStaleRow({ failWith: 409 });
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
 
     await waitFor(() => {
@@ -167,7 +166,7 @@ describe("Archive", () => {
     expect(row?.className).not.toContain("leaving");
     // Still level 3: nothing was optimistically changed about the row's state.
     expect(row?.getAttribute("data-row-level")).toBe("3");
-    expect(screen.getByRole("alert").textContent).toContain("agent holds the edit lock");
+    expect(screen.getByRole("alert").textContent).toContain("the document has moved on");
     expect(writes(calls)).toHaveLength(1);
   });
 });
@@ -202,7 +201,7 @@ describe("Still current", () => {
   });
 
   it("reports a rejected review without changing the row", async () => {
-    const { notices } = renderStaleRow({ failWith: 423 });
+    const { notices } = renderStaleRow({ failWith: 409 });
     fireEvent.click(screen.getByRole("button", { name: "Still current" }));
     await waitFor(() => {
       expect(notices.at(-1)?.message).toContain("Still current failed");
@@ -239,7 +238,7 @@ describe("@agent triage", () => {
   });
 
   it("surfaces a rejected triage", async () => {
-    const { notices } = renderStaleRow({ failWith: 423 });
+    const { notices } = renderStaleRow({ failWith: 409 });
     fireEvent.click(screen.getByRole("button", { name: "@agent triage" }));
     await waitFor(() => {
       expect(notices.at(-1)?.message).toContain("@agent triage failed");
@@ -301,7 +300,7 @@ describe("a result that outlives the surface", () => {
     ["@agent triage", "@agent triage failed"],
   ])("%s still reports a refusal after the surface has gone", async (label, fragment) => {
     const { held, release } = gate();
-    const { notices } = renderStaleRow({ failWith: 423, holdWrites: held });
+    const { notices } = renderStaleRow({ failWith: 409, holdWrites: held });
     fireEvent.click(screen.getByRole("button", { name: label }));
 
     cleanup();
@@ -343,7 +342,7 @@ describe("click isolation", () => {
   it("works with no notifier wired up at all", async () => {
     const fetch = vi.fn(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ locks: [], jobs: [] }), {
+        new Response(JSON.stringify({ jobs: [] }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),

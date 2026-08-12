@@ -177,33 +177,31 @@ describe("corpus doc unarchive", () => {
     expect(harness.stdout()).toBe("");
   });
 
-  it("reports the other party's edit lock as a server error and never retries it", async () => {
-    // Wave-3 audit, TEST 26. `setArchived` runs inside the document mutex and
-    // re-checks the lease, so a `423` is a real outcome of this verb — and the
-    // orchestrate skill defers on it rather than looping.
+  it("presents no key and is never refused for one, because unarchiving names its own delta", async () => {
+    // SPEC.md §7: a status flip states exactly what it changes, so it merges
+    // with whatever else happened and carries no key — the write goes through
+    // while someone else is writing the same document, which is the distinction
+    // the keyed/keyless split exists to draw. (This replaces the wave-3 `423`
+    // case: there is no lock left for the route to refuse on.)
     const stub = await startStubServer((request, response) => {
       if (request.method === "GET") return sendJson(response, 200, archived(DOC));
-      sendJson(response, 423, {
-        code: "locked",
-        message: "document is locked by user",
-        lock: { docId: "doc_a1b2c3", holder: "user", acquired: "2026-07-30T10:00:00Z", ttl: 120 },
-      });
+      sendJson(response, 200, { doc: DOC, warnings: [] });
     });
     const harness = stubContext(stub, { args: ARGS, actor: "agent" });
 
-    const error: unknown = await runDocUnarchive(harness.context).catch((cause: unknown) => cause);
+    await runDocUnarchive(harness.context);
 
-    expect(exitCodeFor(error)).toBe(ExitCode.serverError);
-    expect(String(error)).toContain("locked by user");
-    expect(stub.requests.map((request) => request.method)).toEqual(["GET", "POST"]); // one attempt
-    expect(harness.stdout()).toBe("");
+    const [, post] = stub.requests;
+    expect(post?.method).toBe("POST");
+    expect(post?.body ?? "").not.toContain("key");
+    expect(harness.stdout()).toBe("unarchived doc_a1b2c3\n");
   });
 
   it("reports the route's own outcome when the document is archived between the read and the post", async () => {
     // The read is one round trip old, exactly like `doc edit`'s tag merge. If
-    // somebody archives the document in that window the route still runs — the
-    // server holds the lock, not this verb — and the line reports what the route
-    // did, not what the stale read predicted.
+    // somebody archives the document in that window the route still runs — it
+    // is the server that serialises writes, not this verb — and the line reports
+    // what the route did, not what the stale read predicted.
     const stub = await startStubServer((request, response) => {
       if (request.method === "GET") return sendJson(response, 200, archived(DOC));
       sendJson(response, 200, { doc: DOC, warnings: [] });

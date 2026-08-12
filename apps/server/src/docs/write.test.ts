@@ -1,22 +1,20 @@
-// The pipeline's own invariants: ordering, atomicity, containment, the lock
-// seam, self-write registration, and what a hook failure does and does not do.
+// The pipeline's own invariants: ordering, atomicity, containment, self-write
+// registration, and what a hook failure does and does not do.
 
 import { chmodSync, existsSync, readdirSync, symlinkSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { QueryKey } from "@corpus/contract";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { HttpError } from "../errors.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
 import { silentLogger, type LogFields } from "../logger.js";
 import { classifyPath } from "../projection/index.js";
 import { createSelfWriteRegistry, type SelfWriteRegistry } from "../watcher/index.js";
-import { setArchived } from "./archive.js";
 import { createDocument } from "./create.js";
 import { deleteDocument } from "./delete.js";
 import { moveDocument } from "./move.js";
 import { updateDocument } from "./update.js";
 import {
-  allowAllWrites,
   assertContained,
   createDocumentMutex,
   resolveFolder,
@@ -25,9 +23,14 @@ import {
   warningDetail,
   writeFileAtomically,
   type DocsWorkspace,
-  type WriteGuard,
 } from "./write.js";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import {
+  createDoc,
+  createWriteWorkspace,
+  keyOnDisk,
+  putDoc,
+  type WriteWorkspace,
+} from "./write-fixture.js";
 
 let ws: WriteWorkspace;
 
@@ -37,7 +40,7 @@ afterEach(() => {
 
 function workspaceFor(
   fixture: WriteWorkspace,
-  overrides: { guard?: WriteGuard; selfWrites?: SelfWriteRegistry } = {},
+  overrides: { selfWrites?: SelfWriteRegistry } = {},
 ): DocsWorkspace {
   return {
     workspaceRoot: fixture.root,
@@ -50,7 +53,6 @@ function workspaceFor(
     bus: fixture.server.bus,
     logger: silentLogger,
     now: () => fixture.clock,
-    assertWritable: overrides.guard ?? allowAllWrites,
   };
 }
 
@@ -169,7 +171,7 @@ describe("the mutation pipeline", () => {
     expect(rowsAtFrame[0]).toBe(1);
 
     ws.advance(60_000);
-    await ws.put(`/api/docs/${created.id}`, { body: "edited" });
+    await putDoc(ws, created.id, { body: "edited" });
     expect(frames[1]).toEqual([["docs"], ["docs", created.id]]);
 
     ws.advance(60_000);
@@ -204,52 +206,6 @@ describe("the mutation pipeline", () => {
     }
   });
 
-  it("calls the lock guard once for every write verb, before it reads or writes", async () => {
-    ws = createWriteWorkspace("guard");
-    ws.reproject();
-    const created = await createDoc(ws, { type: "note", title: "Guarded" });
-    const id = created.id;
-
-    const guard = vi.fn<WriteGuard>(() => undefined);
-    const workspace = workspaceFor(ws, { guard });
-    const mutex = createDocumentMutex();
-
-    await updateDocument(workspace, mutex, "user", id, { body: "one" });
-    await moveDocument(workspace, mutex, "agent", id, "finance");
-    await setArchived(workspace, mutex, "user", id, true);
-    await setArchived(workspace, mutex, "agent", id, false);
-    await deleteDocument(workspace, mutex, "user", id);
-
-    expect(guard.mock.calls).toEqual([
-      [id, "user"],
-      [id, "agent"],
-      [id, "user"],
-      [id, "agent"],
-      [id, "user"],
-    ]);
-  });
-
-  it("refuses the mutation when the guard does, before anything is written", async () => {
-    ws = createWriteWorkspace("guard-refuses");
-    ws.reproject();
-    const created = await createDoc(ws, { type: "note", title: "Locked" });
-    const before = ws.read(created.path);
-    ws.advance(60_000);
-    const head = ws.head();
-
-    const workspace = workspaceFor(ws, {
-      guard: () => {
-        throw new Error("held by the other party");
-      },
-    });
-    await expect(
-      updateDocument(workspace, createDocumentMutex(), "user", created.id, { body: "nope" }),
-    ).rejects.toThrow("held by the other party");
-
-    expect(ws.read(created.path)).toBe(before);
-    expect(ws.head()).toBe(head);
-  });
-
   it("keeps the file, the projection and the announcement when a hook rejects the commit", async () => {
     ws = createWriteWorkspace("hook-failure");
     ws.reproject();
@@ -266,6 +222,7 @@ describe("the mutation pipeline", () => {
     const workspace = workspaceFor(ws);
     const outcome = await updateDocument(workspace, createDocumentMutex(), "user", created.id, {
       body: "after the hook refused",
+      key: keyOnDisk(ws, created.path),
     });
     off();
 
@@ -292,7 +249,7 @@ describe("the mutation pipeline", () => {
     expect(ws.exists(created.path)).toBe(true);
 
     for (const call of [
-      () => ws.put(`/api/docs/${created.id}`, { body: "edited" }),
+      () => putDoc(ws, created.id, { body: "edited" }),
       () => ws.post(`/api/docs/${created.id}/move`, { folder: "finance" }),
       () => ws.post(`/api/docs/${created.id}/archive`, {}),
       () => ws.post(`/api/docs/${created.id}/unarchive`, {}),

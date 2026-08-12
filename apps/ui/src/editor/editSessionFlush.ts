@@ -31,12 +31,12 @@ import { onPageHide } from "../abandon/pagehide.js";
  *   does not re-open a session, so leaving it again flushes nothing: there is
  *   no landed write to acknowledge until the user types again.
  * - **Blur, alt-tab, ten seconds of not typing** — not closes, and pointedly
- *   not wired here. That is §7's *edit lock*, which is released on blur and on
- *   a ten-second idle (`useUserLock.ts`) against this session's three minutes.
- *   Binding the two together is the defect CONTRACT-031 was filed to avoid: the
- *   lock always fires first, §4's "distinct and longer window" becomes
- *   unreachable, and one sitting fragments into an acknowledgment per typing
- *   burst.
+ *   not wired here. A sitting is longer than any pause in it; binding the
+ *   session to a short idle is the defect CONTRACT-031 was filed to avoid,
+ *   because §4's "distinct and longer window" becomes unreachable and one
+ *   sitting fragments into an acknowledgment per typing burst. (The short-idle
+ *   timer this used to name was §7's edit lock, which SHARED-041 removed with
+ *   the rest of the mechanism.)
  * - **The tab going away** — a close, covered below.
  *
  * ## Why a document is only flushed after a write of its own

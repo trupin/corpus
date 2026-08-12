@@ -5,7 +5,12 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { DOC_DIFF_MAX_CHARS, EMPTY_TREE_OBJECT_ID, type DocDiff } from "@corpus/contract";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "../docs/write-fixture.js";
+import {
+  createDoc,
+  createWriteWorkspace,
+  type WriteWorkspace,
+  putDoc,
+} from "../docs/write-fixture.js";
 
 const workspaces: WriteWorkspace[] = [];
 
@@ -36,7 +41,7 @@ describe("GET /api/docs/{id}/diff", () => {
     const ws = workspace("diff-default");
     const doc = await createDoc(ws, { type: "note", title: "Rates", body: "one\n" });
     ws.advance(60_000);
-    await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n" }, { "x-corpus-author": "user" });
+    await putDoc(ws, doc.id, { body: "one\ntwo\n" }, { "x-corpus-author": "user" });
 
     const { status, body } = await diff(ws, doc.id);
     expect(status).toBe(200);
@@ -55,11 +60,11 @@ describe("GET /api/docs/{id}/diff", () => {
     const ws = workspace("diff-range");
     const doc = await createDoc(ws, { type: "note", title: "Ledger", body: "a\n" });
     ws.advance(60_000);
-    await ws.put(`/api/docs/${doc.id}`, { body: "a\nb\n" }, { "x-corpus-author": "user" });
+    await putDoc(ws, doc.id, { body: "a\nb\n" }, { "x-corpus-author": "user" });
     ws.advance(60_000);
-    await ws.put(`/api/docs/${doc.id}`, { body: "a\nb\nc\n" }, { "x-corpus-author": "user" });
+    await putDoc(ws, doc.id, { body: "a\nb\nc\n" }, { "x-corpus-author": "user" });
     ws.advance(60_000);
-    await ws.put(`/api/docs/${doc.id}`, { body: "a\nb\nc\nd\n" }, { "x-corpus-author": "user" });
+    await putDoc(ws, doc.id, { body: "a\nb\nc\nd\n" }, { "x-corpus-author": "user" });
     // Both ends are named only once their own windows have closed. A commit
     // window is amendable while it is open — that is §4's whole mechanism — so a
     // sha read off an open window is rewritten under the reader, and a range
@@ -123,7 +128,7 @@ describe("GET /api/docs/{id}/diff", () => {
     const ws = workspace("diff-open-window");
     const doc = await createDoc(ws, { type: "note", title: "Live", body: "one\n" });
     ws.advance(60_000);
-    await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n" }, { "x-corpus-author": "user" });
+    await putDoc(ws, doc.id, { body: "one\ntwo\n" }, { "x-corpus-author": "user" });
     const commitsBefore = ws.log("%H").length;
 
     // No clock advance: the window is wide open at this instant.
@@ -140,11 +145,7 @@ describe("GET /api/docs/{id}/diff", () => {
     // editing session it was, and the next save opens a fresh commit instead of
     // amending this one.
     expect(ws.log("%s")[0]).toBe("editing session: 1 document by user");
-    await ws.put(
-      `/api/docs/${doc.id}`,
-      { body: "one\ntwo\nthree\n" },
-      { "x-corpus-author": "user" },
-    );
+    await putDoc(ws, doc.id, { body: "one\ntwo\nthree\n" }, { "x-corpus-author": "user" });
     expect(ws.log("%H").length).toBe(commitsBefore + 1);
   });
 
@@ -192,7 +193,7 @@ describe("GET /api/docs/{id}/diff", () => {
     const ws = workspace("diff-untouched-reads");
     const doc = await createDoc(ws, { type: "note", title: "Untouched", body: "one\n" });
     ws.advance(60_000);
-    await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n" }, { "x-corpus-author": "user" });
+    await putDoc(ws, doc.id, { body: "one\ntwo\n" }, { "x-corpus-author": "user" });
     const head = ws.head();
     const subject = ws.log("%s")[0];
     const commits = ws.log("%H").length;
@@ -210,11 +211,7 @@ describe("GET /api/docs/{id}/diff", () => {
     expect(ws.head()).toBe(head);
     expect(ws.log("%s")[0]).toBe(subject);
     // Still foldable: the next save amends rather than committing afresh.
-    await ws.put(
-      `/api/docs/${doc.id}`,
-      { body: "one\ntwo\nthree\n" },
-      { "x-corpus-author": "user" },
-    );
+    await putDoc(ws, doc.id, { body: "one\ntwo\nthree\n" }, { "x-corpus-author": "user" });
     expect(ws.log("%H").length).toBe(commits);
     expect(ws.head()).not.toBe(head);
   });
@@ -292,7 +289,7 @@ describe("GET /api/docs/{id}/diff", () => {
       { length: 400 },
       (_, index) => `paragraph ${String(index)} ${"filler ".repeat(12)}`,
     ).join("\n\n");
-    await ws.put(`/api/docs/${doc.id}`, { body: `${long}\n` }, { "x-corpus-author": "user" });
+    await putDoc(ws, doc.id, { body: `${long}\n` }, { "x-corpus-author": "user" });
 
     const { status, body } = await diff(ws, doc.id);
     expect(status).toBe(200);

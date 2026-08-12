@@ -11,7 +11,7 @@ describe("isClientError", () => {
       });
     expect(isClientError(of(404))).toBe(true);
     expect(isClientError(of(403))).toBe(true);
-    expect(isClientError(of(423))).toBe(true);
+    expect(isClientError(of(409))).toBe(true);
     expect(isClientError(of(500))).toBe(false);
     expect(isClientError(of(503))).toBe(false);
     // A transport failure is not an answer at all.

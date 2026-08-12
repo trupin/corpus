@@ -186,9 +186,9 @@ describe("reattachRefusalReason", () => {
   it("answers null for a failure that is not a re-attach refusal", () => {
     expect(
       reattachRefusalReason(
-        new CorpusRequestError("POST /api/threads/{id}/reattach", 423, {
-          code: "locked",
-          message: "held",
+        new CorpusRequestError("POST /api/threads/{id}/reattach", 404, {
+          code: "not_found",
+          message: "no such thread",
         }),
       ),
     ).toBeNull();

@@ -1,27 +1,29 @@
 import { z } from "@hono/zod-openapi";
-import { DocIdSchema } from "./id.js";
-import { warningsField } from "./warning.js";
 
 /**
- * Skill rollback (SPEC.md §7) — the loop-safety half of "skills and agent
- * definitions are documents".
+ * Skills as documents (SPEC.md §7) — the wire shapes of the one skill operation
+ * that has no document equivalent.
  *
  * A skill is an ordinary document (`.claude/skills/<name>/SKILL.md`, `type:
- * skill`), editable in the board's editor like any other. That is the point, and
- * it is also the hazard: a bad edit to a core-loop skill (`orchestrate`,
- * `comment`) can break the loop that would otherwise fix it. §7's answer is a
- * targeted git revert **performed by the server** — `corpus skill rollback
- * <name>` — restoring the skill's last-known-good version.
+ * skill`), so reading, editing, archiving and **reverting** one all go through
+ * the document routes. Only **genesis** is skills-specific, because a skill is
+ * the one document that lives outside `data/docs/` and `POST /api/docs` files
+ * everything under it — hence `POST /api/skills` and nothing else here.
  *
- * The revert lands as a normal auto-commit, which is why the result carries
- * `warnings`: §14's rejected-hook warning has to reach every response that
- * produces a commit, or the guarantee is selectively true.
+ * There is deliberately no rollback shape. §7's loop safety is a write whose
+ * content came from history: the caller reads the history, works out the content
+ * it wants back, and sends it to `PUT /api/docs/{id}` with the key of the
+ * version it read — reconciling anchors (§6), validating (§14), committing under
+ * the acting party (§4) and refusing a stale key (§7) exactly as every other
+ * write does. _(Rider signed 2026-08-12 — replaced `POST /api/skills/{name}/rollback`,
+ * which restored a whole file from a revision and so silently discarded anything
+ * not yet committed.)_
  */
 
 /**
  * Claude Code's own constraint on a skill's name, which is also its directory
  * name under `.claude/skills/`: lowercase letters, digits and single hyphens.
- * Validated in the path so a rollback can never be aimed at a traversal segment
+ * Validated on the wire so a creation can never be aimed at a traversal segment
  * or at a directory Claude Code would not discover in the first place.
  */
 export const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -36,11 +38,6 @@ export const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * for a request that was never going to work. Sixty-four is comfortably above
  * every real skill name — the longest shipped is `orchestrate` at eleven — and
  * comfortably below any path limit, so it refuses only the absurd.
- *
- * It binds the rollback path parameter too, and that is desirable rather than
- * collateral: a name past the bound can name no installed skill, so answering
- * `400` (this input cannot be right) rather than `404` (no such skill) is the
- * more truthful of the two, and the two routes keep one definition of a name.
  */
 export const SKILL_NAME_MAX_LENGTH = 64;
 
@@ -114,64 +111,5 @@ export const SkillCreateRequestSchema = z
   })
   .openapi("SkillCreateRequest");
 
-export const SkillRollbackRequestSchema = z
-  .strictObject({
-    // Optional-in: omitted means last-known-good, which is the server's job to
-    // determine. `null` says the same thing explicitly, so a client holding a
-    // nullable ref never has to strip the key before sending.
-    to: z
-      .string()
-      .min(1)
-      .nullable()
-      .optional()
-      .describe(
-        "Git ref to restore the skill from — a commit sha, tag or any revision git resolves. " +
-          "Omit it (or send null) to restore the last-known-good version, which is the newest " +
-          "committed revision of the file that validates (SPEC.md §7).",
-      ),
-  })
-  .openapi("SkillRollbackRequest");
-
-export const SkillRollbackResultSchema = z
-  .object({
-    name: SkillNameSchema,
-    docId: DocIdSchema.describe(
-      "Id of the restored skill document. Unchanged by the rollback — ids are immutable (§5), so " +
-        "this is the id the board, the projection and every thread anchored to the skill already " +
-        "use.",
-    ),
-    // Nullable because §14 forbids the only alternative outcomes. When the
-    // workspace's git hooks reject the auto-commit — or the workspace has no git
-    // at all — the server neither rolls the restoration back nor fails the
-    // request: the write stands and the reason becomes a warning. There is then
-    // no sha for this rollback. Reporting the pre-existing HEAD instead would
-    // satisfy the regex by putting a commit that is not this restoration into a
-    // field whose whole purpose is the audit trail, so `null` is the only honest
-    // value. Inline (never a registered component), so `.nullable()` cannot
-    // rewrite a shared schema.
-    commit: z
-      .string()
-      .regex(/^[0-9a-f]{7,64}$/)
-      .nullable()
-      .describe(
-        "Sha of the commit the server made to restore the file — the new HEAD, not the ref the " +
-          "content came from. `git show <commit>` is the audit trail entry for this rollback. " +
-          "`null` means the file was restored but not committed: the auto-commit failed or was " +
-          "skipped, the file write stands regardless (SPEC.md §14), and the reason — the " +
-          "workspace's own hook output for `commit_failed`, or `commit_skipped` for a workspace " +
-          "with no git — is in `warnings`. A rollback that reports `null` has still changed the " +
-          "file on disk.",
-      ),
-    path: z
-      .string()
-      .describe(
-        "Workspace-relative path of the restored file, e.g. `.claude/skills/orchestrate/SKILL.md`.",
-      ),
-    warnings: warningsField,
-  })
-  .openapi("SkillRollbackResult");
-
 export type SkillName = z.infer<typeof SkillNameSchema>;
 export type SkillCreateRequest = z.infer<typeof SkillCreateRequestSchema>;
-export type SkillRollbackRequest = z.infer<typeof SkillRollbackRequestSchema>;
-export type SkillRollbackResult = z.infer<typeof SkillRollbackResultSchema>;

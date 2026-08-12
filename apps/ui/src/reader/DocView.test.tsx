@@ -185,7 +185,7 @@ describe("the body renderer a document gets", () => {
     await waitFor(() => {
       expect(editorFor("doc_x")).not.toBeNull();
     });
-    expect(editorFor("doc_x")?.getAttribute("data-editable")).toBe("true");
+    expect(editorFor("doc_x")?.querySelector('[contenteditable="true"]')).not.toBeNull();
     expect(screen.getByText("Prose nobody claims.")).toBeTruthy();
   });
 
@@ -210,7 +210,7 @@ describe("the body renderer a document gets", () => {
       expect(editorFor("doc_fx")).not.toBeNull();
     });
     expect(screen.queryByText(/plugin view of/)).toBeNull();
-    expect(editorFor("doc_fx")?.getAttribute("data-editable")).toBe("true");
+    expect(editorFor("doc_fx")?.querySelector('[contenteditable="true"]')).not.toBeNull();
     expect(screen.getByText("The body a plugin owns.")).toBeTruthy();
   });
 
@@ -295,7 +295,7 @@ describe("a reader open while plugin discovery is in flight", () => {
 
     setPluginRegistry(fixtureRegistry());
     await waitFor(() => {
-      expect(editorFor("doc_pn")?.getAttribute("data-editable")).toBe("true");
+      expect(editorFor("doc_pn")?.querySelector('[contenteditable="true"]')).not.toBeNull();
     });
     expect(document.querySelector("[data-fx-panel]")).toBeNull();
   });

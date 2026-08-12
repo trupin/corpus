@@ -9,7 +9,6 @@ import {
 import {
   FORBIDDEN_RESPONSE,
   jsonContent,
-  LOCKED_RESPONSE,
   NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
@@ -96,9 +95,10 @@ export const reattachThread = createRoute({
     "every edit that carries real evidence already reconciles on the save path.\n\n" +
     "**One action, one commit** (SPEC.md §4): the repair rewrites one `anchors` entry in the " +
     "parent's frontmatter and lands as a single auto-commit authored by the acting party. " +
-    "Nothing else about the thread changes — not its status, not its turns, not its body. " +
-    "`423` when the parent is held by the other party's edit lock, since the parent is what is " +
-    "written (§7).\n\n" +
+    "Nothing else about the thread changes — not its status, not its turns, not its body. It " +
+    "presents no key (§7): it rewrites one `anchors` entry, and `expectedText` is already the " +
+    "same check by another route — a range whose bytes moved is refused on its own terms below." +
+    "\n\n" +
     "**`409`, with a machine-readable `reason`.** `range-changed` — the parent no longer holds " +
     "`expectedText` at that range, or the range runs past the end of the body; the caller has to " +
     "re-read and choose again. `range-overlaps` — the range overlaps text another thread's anchor " +
@@ -133,6 +133,5 @@ export const reattachThread = createRoute({
     403: FORBIDDEN_RESPONSE,
     404: NOT_FOUND_RESPONSE,
     409: REATTACH_CONFLICT_RESPONSE,
-    423: LOCKED_RESPONSE,
   },
 });

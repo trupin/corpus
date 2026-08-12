@@ -118,7 +118,7 @@ describe("Archive and Unarchive are the two halves of one act", () => {
     const notify = vi.fn<(notice: RowNotice) => void>();
     const wire = readerTransport({
       docs: [docFixture({ frontmatter: { id: "doc_skill" } })],
-      failing: { "POST /api/docs/doc_skill/unarchive": 423 },
+      failing: { "POST /api/docs/doc_skill/unarchive": 409 },
     });
     actionsOf(ARCHIVED_SKILL, wire, notify).run("unarchive");
 

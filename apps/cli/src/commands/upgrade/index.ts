@@ -890,8 +890,9 @@ export const upgradeCommand: StandaloneCommandSpec = {
     "ignored them would leave the loop running last version's instructions. The sync is the same " +
     "three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a " +
     "file the workspace never touched is updated, a file the workspace edited is **never** " +
-    "overwritten, and everything written lands in one attributed commit, so `corpus skill " +
-    "rollback` undoes a bad upgrade like any other change.\n\n" +
+    "overwritten, and everything written lands in **one** attributed commit — so a bad upgrade is " +
+    "undone the way any change is: `git revert` that one commit in the workspace, and the " +
+    "watcher picks the result up as the out-of-band edit it is.\n\n" +
     "**A conflict is unresolved work, not a notice.** A file this workspace edited that the tool " +
     "also changed is reported apart from everything that merely happened, each entry naming " +
     "`corpus workspace diff <path>` — the verb that shows what moved upstream. Corpus never " +

@@ -77,7 +77,7 @@ export function JobMenuItems({ job, close }: JobMenuItemsProps): ReactElement {
         label: "Retry",
         meta:
           job.status === "deferred"
-            ? "the manual override — it re-enters on its own when the lock clears"
+            ? "the manual override — it re-enters on its own when the editing session ends"
             : "re-queue this failed job",
         disabled: retry.isPending,
         run: () => {

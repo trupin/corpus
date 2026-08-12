@@ -10,6 +10,7 @@ import {
   frontmatterOf,
   pendingEvents,
   postForm,
+  putDoc,
   threadFrontmatterOf,
   threadPath,
   turnsOf,
@@ -413,26 +414,28 @@ describe("POST /api/threads — titles", () => {
   });
 });
 
-describe("POST /api/threads — the edit lock (sprint-006 Adjudication 1)", () => {
-  const lock = async (docId: string): Promise<Response> =>
-    ws.post(`/api/locks/${docId}`, {}, { "x-corpus-author": "agent" });
-
-  it("refuses anchored creation while the other party holds the parent's lock", async () => {
+// SPEC.md §7 (SERVER-099): commenting is never refused for who else is writing.
+// The lock refused an anchored creation while the other party held the parent
+// (sprint-006 Adjudication 1); the key does not, because adding an anchor entry
+// names its own delta and merges with whatever else happened.
+describe("POST /api/threads — nothing refuses a comment for another writer", () => {
+  it("anchors onto a document the other party is writing, presenting no key", async () => {
     const parent = await seedParent();
-    expect((await lock(parent.id)).status).toBe(201);
+    expect(
+      (await putDoc(ws, parent.id, { body: PARENT_BODY }, { "x-corpus-author": "agent" })).status,
+    ).toBe(200);
 
     const response = await ws.post("/api/threads", {
       parent: parent.id,
       selector: SELECTOR,
       body: "?",
     });
-    expect(response.status).toBe(423);
-    expect(Object.keys(anchorsOf(parent.path))).toEqual([]);
+    expect(response.status).toBe(201);
+    expect(Object.keys(anchorsOf(parent.path))).toHaveLength(1);
   });
 
-  it("never refuses a comment that does not write the parent", async () => {
+  it("accepts a whole-document and a standalone comment the same way", async () => {
     const parent = await seedParent();
-    expect((await lock(parent.id)).status).toBe(201);
 
     expect((await ws.post("/api/threads", { parent: parent.id, body: "note" })).status).toBe(201);
     expect((await ws.post("/api/threads", { body: "standalone" })).status).toBe(201);

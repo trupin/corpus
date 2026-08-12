@@ -46,8 +46,11 @@ import { ensureMaintenanceSettings, missingMaintenanceSettings } from "./mainten
  * be asked to fix them. With the server running, the watcher sees the writes as
  * ordinary out-of-band edits and re-projects (rule 1). Nothing outside
  * template-provenance paths is touched, and everything lands in **one**
- * attributed commit, so `corpus skill rollback` undoes a bad upgrade like any
- * other skill change.
+ * attributed commit — which is what makes a bad upgrade undoable in one move:
+ * `git revert` that commit in the workspace. There is no verb for it, because
+ * SPEC.md §7's loop safety is an ordinary write whose content came from history,
+ * and with a broken loop and no server the operator's git is the only writer
+ * left anyway.
  *
  * Order matters at the end: files are written first and committed last. A commit
  * that fails leaves correct files on disk and in `git status`, which is
@@ -700,8 +703,9 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "file new to the template is **installed**; a file the workspace deleted is reported and " +
     "reinstalled only under `--restore`; a file the template dropped is reported as retired, its " +
     "copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old " +
-    "and new tool versions, so `corpus skill rollback` undoes a bad upgrade like any other skill " +
-    "change. A run with nothing to do prints `already up to date.` and makes no commit.\n\n" +
+    "and new tool versions — so a bad upgrade is undone in one move, by reverting that commit in " +
+    "the workspace with git. A run with nothing to do prints `already up to date.` and makes no " +
+    "commit.\n\n" +
     "Only template-provenance paths are touched — `.claude/` skills and personas, the workspace " +
     "`README.md` and `.gitignore`, the seed documents under `data/docs/` the template and " +
     "plugins install — and nothing under `.corpus/` except the manifest itself and a missing " +

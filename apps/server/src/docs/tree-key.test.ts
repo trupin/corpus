@@ -11,7 +11,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import type { QueryKey } from "@corpus/contract";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { createDoc, createWriteWorkspace, type WriteWorkspace, putDoc } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
 
@@ -279,7 +279,7 @@ describe("the ['tree'] invalidation key", () => {
       const doc = await withDocument("tree-key-put-status");
       ws.advance(60_000);
 
-      const archived = await observe(() => ws.put(`/api/docs/${doc}`, { status: "archived" }));
+      const archived = await observe(() => putDoc(ws, doc, { status: "archived" }));
       ws.advance(60_000);
       // Back out through the unarchive route, because that is now the only way
       // out: `PUT { status: "open" }` on an archived document is refused
@@ -287,11 +287,9 @@ describe("the ['tree'] invalidation key", () => {
       // leave the folder disabled.
       const restored = await observe(() => ws.post(`/api/docs/${doc}/unarchive`, {}));
       ws.advance(60_000);
-      const edited = await observe(() =>
-        ws.put(`/api/docs/${doc}`, { body: "a rewritten body\n" }),
-      );
+      const edited = await observe(() => putDoc(ws, doc, { body: "a rewritten body\n" }));
       ws.advance(60_000);
-      const resolved = await observe(() => ws.put(`/api/docs/${doc}`, { status: "resolved" }));
+      const resolved = await observe(() => putDoc(ws, doc, { status: "resolved" }));
 
       // `PUT` reaches the same `status` field `POST /archive` does.
       expect(countOf(archived.after, "finance")).toBe(0);

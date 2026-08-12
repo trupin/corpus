@@ -55,7 +55,7 @@ export function mountDocsRoutes(
 
   // The third pure projection read (SPEC.md §7 Retrieval discipline, §9.2):
   // expansion from a known document through the `links` graph. Reads `links`
-  // and `documents`, writes nothing, takes no lock — so it mounts here and not
+  // and `documents`, and writes nothing — so it mounts here and not
   // with the file-backed surface below.
   app.openapi(contractRoutes.relatedDocs, async (c) =>
     c.json(

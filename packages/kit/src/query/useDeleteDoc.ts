@@ -9,8 +9,8 @@ import { DOCS_KEY, docKey, threadKey } from "./keys.js";
  *
  * Not optimistic, and not even close. A document removed from the cache before
  * the server agreed would be a document the user believes is gone while it is
- * still on disk — and a `423` (someone holds the edit lock) or a `403` are both
- * ordinary answers here. The reader's confirmation is the guard; this hook's job
+ * still on disk — and a `403` (the agent may not delete, SPEC.md §7) is an
+ * ordinary answer here. The reader's confirmation is the guard; this hook's job
  * is to tell the truth about what happened afterwards.
  *
  * The threads named by the result become **orphaned records** rather than

@@ -89,6 +89,8 @@ interface SchemaNode {
   readonly default?: unknown;
   readonly minimum?: number;
   readonly required?: string[];
+  /** OpenAPI 3.1 is JSON Schema 2020-12, so a conditional requirement is publishable. */
+  readonly dependentRequired?: Record<string, string[]>;
   readonly properties?: Record<string, SchemaNode>;
   readonly items?: SchemaNode;
   readonly minItems?: number;
@@ -1595,11 +1597,11 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
     expect(outcome?.properties?.["action"]?.enum).toEqual([...BULK_ACTION_NAMES]);
   });
 
-  it("requires a reason and a message on every refusal, and carries the lock's holder", () => {
+  it("requires a reason and a message on every refusal, and nothing else", () => {
     const refusal = componentSchemas?.["BulkActionRefusal"];
-    expect(refusal?.required).toEqual(["id", "action", "reason", "message", "lock"]);
+    expect(refusal?.required).toEqual(["id", "action", "reason", "message"]);
     expect(refusal?.properties?.["reason"]?.enum).toEqual([
-      "locked",
+      "stale",
       "not-found",
       "not-applicable",
       "invalid",
@@ -1609,20 +1611,12 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   });
 
   /**
-   * `z.union([LockSchema, z.null()])` rather than `LockSchema.nullable()`:
-   * zod-to-openapi carries a registered name onto a derived schema, and the
-   * `.nullable()` form rewrote the shared `Lock` component to
-   * `type: ["object", "null"]` for every route referencing it — measured during
-   * CONTRACT-037, caught by the named-component invariant above. Pinned from
-   * both sides so the cheaper-looking spelling cannot come back.
+   * The holder went with the lock (SHARED-041): a `stale` refusal has nobody to
+   * name, because nothing is held. Pinned from the published document because
+   * the field's absence is what tells a client there is no banner to render.
    */
-  it("makes the refusal's lock nullable without making `Lock` nullable", () => {
-    const lock = componentSchemas?.["BulkActionRefusal"]?.properties?.["lock"];
-    expect(lock?.anyOf?.map((branch) => branch.$ref ?? branch.type)).toEqual([
-      "#/components/schemas/Lock",
-      "null",
-    ]);
-    expect(componentSchemas?.["Lock"]?.type).toBe("object");
+  it("carries no holder on a refusal, since nothing is ever held", () => {
+    expect(componentSchemas?.["BulkActionRefusal"]?.properties?.["lock"]).toBeUndefined();
   });
 
   /**
@@ -1644,15 +1638,15 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   });
 
   /**
-   * Partial failure is the normal case, not the error path: a lock and an
-   * unknown id are per-document outcomes here, so neither becomes a verdict on
-   * the request. Declaring `423` or `404` would invite exactly the
+   * Partial failure is the normal case, not the error path: a document whose
+   * content moved and an unknown id are per-document outcomes here, so neither
+   * becomes a verdict on the request. Declaring `404` would invite exactly the
    * all-or-nothing server §11 forbids.
    */
-  it("declares no 423 and no 404, and says why", () => {
+  it("declares no 404, and says why", () => {
     const responses = bulk().responses ?? {};
     expect(Object.keys(responses).sort()).toEqual(["200", "400", "401", "403"]);
-    expect(bulk().description).toContain("There is no `423` on this route and no `404`");
+    expect(bulk().description).toContain("There is no `404`");
   });
 
   it("carries the acting party like every other mutation", () => {
@@ -1973,7 +1967,6 @@ describe("author attribution", () => {
   it.each([
     ["/api/docs/{id}", "delete"],
     ["/api/threads/{id}/turns/{ts}", "delete"],
-    ["/api/locks/{docId}/break", "post"],
     // CONTRACT-037: the bulk route declares `403` for one of its eight acts —
     // `delete` keeps §9.2's user-only rule, and the refusal is the request's.
     ["/api/docs/bulk", "post"],
@@ -2221,7 +2214,7 @@ describe("the in-progress set reported on a claim (CONTRACT-033)", () => {
 describe("the deferred queue state (CONTRACT-021)", () => {
   const DEFER_PATH = "/api/queue/{id}/defer";
 
-  it("adds one endpoint, on the queue rather than on the lock", () => {
+  it("adds one endpoint, and it is a queue verb", () => {
     expect(ENDPOINT_INVENTORY).toContain("POST /api/queue/{id}/defer");
     expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("defer"))).toHaveLength(1);
   });
@@ -2249,7 +2242,7 @@ describe("the deferred queue state (CONTRACT-021)", () => {
     const description = JSON.stringify(componentSchemas?.["Job"]?.properties?.["status"]);
     expect(description).toContain("terminal");
     expect(description).toContain("not claimable, not failed");
-    expect(description).toContain("released, broken or reaped");
+    expect(description).toContain("returns to `pending` automatically when that session ends");
   });
 
   it("counts deferrals separately from failures on the console strip's status", () => {
@@ -2307,7 +2300,7 @@ describe("the deferred queue state (CONTRACT-021)", () => {
   it("states automatic re-entry, non-claimability and never-silently-dropped", () => {
     const description = operation(DEFER_PATH, "post").description ?? "";
     expect(description).toContain("waiting, not failed");
-    expect(description).toContain("Releasing, force-breaking or reaping");
+    expect(description).toContain("The end of that edit session");
     expect(description).toContain("`claim-all` skips deferred events");
     expect(description).toContain("Nothing is ever silently dropped");
     expect(description).toContain("survives a restart");
@@ -2315,8 +2308,8 @@ describe("the deferred queue state (CONTRACT-021)", () => {
 
   /**
    * There is deliberately no re-entry route: re-entry is the server's own
-   * reaction to a lock clearing. `job retry` stays the manual override §7's
-   * force-break bullet names, and says so.
+   * reaction to an edit session ending. `job retry` stays the manual override,
+   * and says so.
    */
   it("adds no route for the reverse transition, and names the manual override", () => {
     expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("requeue"))).toEqual([]);
@@ -2337,38 +2330,190 @@ describe("the deferred queue state (CONTRACT-021)", () => {
   });
 
   /** The invalidation story has to name the new emitters, or the console only sees it on refetch. */
-  it("names defer and every lock-clearing path among the queue key's emitters", () => {
+  it("names defer and what re-enters a deferral among the queue key's emitters", () => {
     const description = operation("/events", "get").description ?? "";
     expect(description).toContain("complete, fail, defer, abandon");
-    expect(description).toContain("lock release, break or reap that re-enters a deferred event");
+    expect(description).toContain("the end of an edit session that re-enters a deferred event");
   });
 });
 
-describe("locks distinguish 409 from 423", () => {
-  it("declares 409 carrying the existing lock on acquire, and never 423", () => {
-    const op = operation("/api/locks/{docId}", "post");
-    expect(op.responses?.["201"]).toBeDefined();
-    expect(JSON.stringify(op.responses?.["409"])).toContain("LockConflictError");
-    expect(op.responses?.["423"]).toBeUndefined();
+/**
+ * SPEC.md §7 "A key, not a lock" (CONTRACT-049, rider SHARED-041 signed
+ * 2026-08-11) — as the published document states it.
+ *
+ * The removal is asserted as a *removal*: a lock that survives anywhere is a
+ * lock that can still be forgotten, and the failure of the old mechanism was
+ * that nothing in the write path required it. So this pins the absence of every
+ * piece of it alongside the presence of the key.
+ */
+describe("a key on every read, and on every write that overwrites", () => {
+  const KEY_PATTERN = "^[0-9a-f]{64}$";
+
+  it("carries the key and the editing signal on every whole document", () => {
+    const doc = componentSchemas?.["Doc"];
+    expect(doc?.required).toContain("key");
+    expect(doc?.required).toContain("userEditing");
+    expect(doc?.properties?.["key"]?.pattern).toBe(KEY_PATTERN);
+    expect(doc?.properties?.["userEditing"]?.type).toBe("boolean");
   });
 
-  it("declares 403 on release, since only the holder may release", () => {
-    expect(operation("/api/locks/{docId}", "delete").responses?.["403"]).toBeDefined();
-  });
-
+  /**
+   * Every route that answers with a whole document answers with a key, because
+   * the key lives on `Doc` rather than beside it — a writer reads the next key
+   * off the document its own write returned, and never has to re-read.
+   */
   it.each([
-    ["/api/docs/{id}", "put"],
-    ["/api/docs/{id}", "delete"],
+    ["/api/docs/{id}", "get", "200"],
+    ["/api/docs/{id}", "put", "200"],
+    ["/api/docs", "post", "201"],
+    ["/api/docs/{id}/move", "post", "200"],
+    ["/api/docs/{id}/archive", "post", "200"],
+    ["/api/docs/{id}/unarchive", "post", "200"],
+  ])("hands a key back from %s %s", (path, method, status) => {
+    const named = JSON.stringify(operation(path, method).responses?.[status]).match(
+      /#\/components\/schemas\/(\w+)/,
+    )?.[1];
+    expect(named).toBeDefined();
+    // Either the response *is* a document, or it wraps one — and the wrapper
+    // reaches `Doc`, which is the only place a key is published.
+    const reachesDoc =
+      named === "Doc" ||
+      JSON.stringify(componentSchemas?.[named ?? ""]).includes('"#/components/schemas/Doc"');
+    expect(reachesDoc, named).toBe(true);
+  });
+
+  /**
+   * The set is closed from the other side too: every response in the whole
+   * surface that carries a document carries a key, because there is exactly one
+   * shape for a whole document and the key is on it.
+   */
+  it("has one shape for a whole document, and the key lives on it", () => {
+    const DOC_REF = '"#/components/schemas/Doc"';
+    const carriers = Object.entries(componentSchemas ?? {})
+      .filter(([name, schema]) => name !== "Doc" && JSON.stringify(schema).includes(DOC_REF))
+      .map(([name]) => name);
+    expect(carriers.sort()).toEqual(["DocMutationResponse", "StaleKeyError", "UpdateDocResponse"]);
+  });
+
+  /**
+   * A list row carries no body, so there is no version of one to have read. A
+   * key there would let a caller write a document it never opened.
+   */
+  it("puts no key on a list row", () => {
+    const row = componentSchemas?.["DocRow"];
+    expect(row?.properties?.["key"]).toBeUndefined();
+    expect(row?.properties?.["userEditing"]).toBeUndefined();
+  });
+
+  /**
+   * The distinction §7 draws, published rather than left to a server comment:
+   * `dependentRequired` says *a body write must carry a key* in JSON Schema
+   * itself, so a reader of `openapi.json` alone learns the rule. The runtime
+   * refusal is a `400` from the same schema, before any handler runs.
+   */
+  it("requires the key exactly when the write replaces the body", () => {
+    const update = componentSchemas?.["UpdateDocRequest"];
+    expect(update?.dependentRequired).toEqual({ body: ["key"] });
+    expect(update?.required).toBeUndefined();
+    expect(update?.properties?.["key"]?.pattern).toBe(KEY_PATTERN);
+  });
+
+  it("says which writes need one and which name their own delta", () => {
+    const description = operation("/api/docs/{id}", "put").description ?? "";
+    expect(description).toContain("must present the document's `key`");
+    expect(description).toContain("names its own delta needs none");
+  });
+
+  /** The key is opaque: the published document must not hand a client the recipe. */
+  it("publishes the opacity rules without publishing the derivation", () => {
+    const description = componentSchemas?.["Doc"]?.properties?.["key"]?.description ?? "";
+    expect(description).toContain("opaque");
+    expect(description).toContain("Never compute");
+    for (const leak of ["SHA-256", "sha256", "digest", "hash"]) {
+      expect(description, leak).not.toContain(leak);
+    }
+  });
+
+  /**
+   * A refusal is never bare (SHARED-041 decision 5): one round trip, not two.
+   * The fresh key is `doc.key` rather than a sibling field, so two copies can
+   * never disagree about which version it names.
+   */
+  it("refuses a stale key with 409, carrying the document and its fresh key", () => {
+    const refusal = operation("/api/docs/{id}", "put").responses?.["409"];
+    expect(JSON.stringify(refusal)).toContain("StaleKeyError");
+    const shape = componentSchemas?.["StaleKeyError"];
+    expect(shape?.required).toEqual(["code", "message", "doc"]);
+    expect(shape?.properties?.["code"]?.enum).toEqual(["stale_key"]);
+    expect(JSON.stringify(shape?.properties?.["doc"])).toContain("#/components/schemas/Doc");
+    expect(shape?.properties?.["key"]).toBeUndefined();
+  });
+
+  /**
+   * `409` is taken by the re-attach refusal, and the two must stay tellable
+   * apart where clients branch — the `code`. `stale_key` takes the seat `locked`
+   * vacated, so `ERROR_CODES` still has seven members.
+   */
+  it("gives the two 409s distinguishable codes", () => {
+    expect(componentSchemas?.["ReattachConflictError"]?.properties?.["code"]?.enum).toEqual([
+      "conflict",
+    ]);
+    expect(componentSchemas?.["StaleKeyError"]?.properties?.["code"]?.enum).toEqual(["stale_key"]);
+    expect([...ERROR_CODES]).toEqual([
+      "bad_request",
+      "unauthorized",
+      "forbidden",
+      "not_found",
+      "conflict",
+      "stale_key",
+      "internal_error",
+    ]);
+  });
+
+  /**
+   * A write that names its own delta merges with whatever else happened, so it
+   * presents nothing — and each route says so, because an omission that reads as
+   * an oversight is the one a later change quietly "fixes".
+   */
+  it.each([
     ["/api/docs/{id}/move", "post"],
     ["/api/docs/{id}/archive", "post"],
     ["/api/docs/{id}/unarchive", "post"],
+    ["/api/docs/{id}", "delete"],
     ["/api/threads", "post"],
     ["/api/threads/{id}/turns/{ts}", "delete"],
-    // A skill is an ordinary document; its rollback rewrites the file
-    // (CONTRACT-018), so it refuses under the other party's lock like the rest.
-    ["/api/skills/{name}/rollback", "post"],
-  ])("declares 423 carrying the blocking lock on %s %s", (path, method) => {
-    expect(JSON.stringify(operation(path, method).responses?.["423"])).toContain("LockedError");
+    ["/api/threads/{id}/reattach", "post"],
+  ])("takes no key on %s %s, and says why", (path, method) => {
+    const op = operation(path, method);
+    expect(op.description).toContain("no key");
+    expect(JSON.stringify(op.requestBody ?? {})).not.toContain(KEY_PATTERN);
+  });
+
+  /** Nothing is held, so nothing can refuse a write for being held. */
+  it("declares 423 on no operation at all", () => {
+    const declared: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (op?.responses?.["423"]) declared.push(endpointSignature(method, path));
+      }
+    }
+    expect(declared).toEqual([]);
+  });
+
+  it("declares no lock endpoint, and no lock component", () => {
+    expect(operations().filter((entry) => entry.includes("lock"))).toEqual([]);
+    expect(
+      Object.keys(componentSchemas ?? {}).filter((name) => name.toLowerCase().includes("lock")),
+    ).toEqual([]);
+  });
+
+  /** There is nothing to acquire, release, break or reap — so nothing says there is. */
+  it("mentions no lock anywhere in the published document", () => {
+    const published = JSON.stringify(document);
+    for (const word of ['"locked"', "edit lock", "force unlock", "/api/locks"]) {
+      expect(published, word).not.toContain(word);
+    }
   });
 });
 
@@ -2381,14 +2526,11 @@ describe("routes declare only the codes they can return", () => {
   it.each([
     ["/api/docs", "get"],
     ["/api/tree", "get"],
-    ["/api/locks", "get"],
     ["/api/jobs", "get"],
     ["/api/jobs/{id}/log", "get"],
     ["/api/threads/{id}", "get"],
-  ])("declares neither 409 nor 423 on the read-only route %s %s", (path, method) => {
-    const responses = operation(path, method).responses ?? {};
-    expect(responses["409"]).toBeUndefined();
-    expect(responses["423"]).toBeUndefined();
+  ])("declares no 409 on the read-only route %s %s", (path, method) => {
+    expect(operation(path, method).responses?.["409"]).toBeUndefined();
   });
 
   it.each([
@@ -2402,24 +2544,27 @@ describe("routes declare only the codes they can return", () => {
 
 /**
  * CONTRACT-008. The validation surface §14 requires ("`corpus doc check` exposes
- * the same validator on demand") and the loop-safety revert §7 requires
- * ("`corpus skill rollback <name>` — a targeted git revert, performed by the
- * server"). No handler serves either yet: SERVER-019 registers against exactly
- * these definitions, so what is pinned here is the shape it inherits.
+ * the same validator on demand"), and the skill-creation surface §7's genesis
+ * clause requires.
+ *
+ * CONTRACT-008's other half, `POST /api/skills/{name}/rollback`, is **gone**
+ * (rider signed 2026-08-12): §7's loop safety is a write whose content came from
+ * history, made through `PUT /api/docs/{id}` with a key, so there is no rollback
+ * operation left to pin — and the inventory assertion below is what keeps it
+ * that way.
  */
-describe("the validation and skill-rollback surface", () => {
+describe("the validation and skill surface", () => {
   const CHECK_PATH = "/api/check";
-  const ROLLBACK_PATH = "/api/skills/{name}/rollback";
 
-  it("adds exactly two endpoints to the inventory", () => {
+  it("adds the check endpoint to the inventory, and no rollback beside it", () => {
     expect(ENDPOINT_INVENTORY).toContain("POST /api/check");
-    expect(ENDPOINT_INVENTORY).toContain("POST /api/skills/{name}/rollback");
+    expect(ENDPOINT_INVENTORY).not.toContain("POST /api/skills/{name}/rollback");
   });
 
-  /** Both are ordinary authenticated routes: neither joins the §2.1 exception list. */
-  it.each([CHECK_PATH, ROLLBACK_PATH])("requires the workspace bearer token on %s", (path) => {
-    expect(operation(path, "post").security).toBeUndefined();
-    expect(operation(path, "post").responses?.["401"]).toBeDefined();
+  /** An ordinary authenticated route: it does not join the §2.1 exception list. */
+  it("requires the workspace bearer token on the check", () => {
+    expect(operation(CHECK_PATH, "post").security).toBeUndefined();
+    expect(operation(CHECK_PATH, "post").responses?.["401"]).toBeDefined();
   });
 
   it("declares only the codes a check can produce", () => {
@@ -2430,14 +2575,12 @@ describe("the validation and skill-rollback surface", () => {
     ]);
   });
 
-  it("declares only the codes a rollback can produce", () => {
-    expect(Object.keys(operation(ROLLBACK_PATH, "post").responses ?? {})).toEqual([
-      "200",
-      "400",
-      "401",
-      "404",
-      "423",
-    ]);
+  /** The removal, asserted as a removal: no path, no schemas, no leftover prose. */
+  it("publishes no rollback path and no rollback schemas", () => {
+    expect(document.paths?.["/api/skills/{name}/rollback"]).toBeUndefined();
+    expect(componentSchemas?.["SkillRollbackRequest"]).toBeUndefined();
+    expect(componentSchemas?.["SkillRollbackResult"]).toBeUndefined();
+    expect(JSON.stringify(document)).not.toContain("rollback");
   });
 
   describe("the check request", () => {
@@ -2562,9 +2705,9 @@ describe("the validation and skill-rollback surface", () => {
       ]);
     });
 
-    it("says why there is no 423, so the omission reads as a decision", () => {
+    it("says why it presents no key, so the omission reads as a decision", () => {
       const description = operation(CREATE_PATH, "post").description ?? "";
-      expect(description).toContain("There is no `423`");
+      expect(description).toContain("It presents no key");
       expect(description).toContain("does not exist until the call succeeds");
     });
 
@@ -2587,15 +2730,12 @@ describe("the validation and skill-rollback surface", () => {
     });
 
     /**
-     * The length bound is published on both routes that take a name, from one
-     * definition — a client generating a form, or a server translating an
-     * `ENAMETOOLONG`, reads it off the document rather than guessing.
+     * The length bound is published rather than only enforced — a client
+     * generating a form, or a server translating an `ENAMETOOLONG`, reads it off
+     * the document rather than guessing.
      */
-    it("publishes the name length bound on the body and on the rollback path alike", () => {
+    it("publishes the name length bound on the body", () => {
       expect(componentSchemas?.["SkillCreateRequest"]?.properties?.["name"]).toMatchObject({
-        maxLength: SKILL_NAME_MAX_LENGTH,
-      });
-      expect(parameter("/api/skills/{name}/rollback", "post", "name")?.schema).toMatchObject({
         maxLength: SKILL_NAME_MAX_LENGTH,
       });
     });
@@ -2654,85 +2794,6 @@ describe("the validation and skill-rollback surface", () => {
       expect(description).toContain("refusing it is this same `409`, allowing it is a plain `201`");
     });
   });
-
-  describe("the rollback", () => {
-    it("names the skill in the path, as every other resource route does", () => {
-      const parameters = operation(ROLLBACK_PATH, "post").parameters ?? [];
-      expect(parameters.filter((entry) => entry.in === "path").map((entry) => entry.name)).toEqual([
-        "name",
-      ]);
-      expect(componentSchemas?.["SkillRollbackRequest"]?.properties?.["name"]).toBeUndefined();
-    });
-
-    it("carries the acting party, since the revert is an auto-commit", () => {
-      const header = operation(ROLLBACK_PATH, "post").parameters?.find(
-        (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
-      );
-      expect(header?.required).toBe(false);
-      expect(operation(ROLLBACK_PATH, "post").description).toContain("normal auto-commit");
-    });
-
-    it("takes an optional revision and nothing else", () => {
-      expect(Object.keys(componentSchemas?.["SkillRollbackRequest"]?.properties ?? {})).toEqual([
-        "to",
-      ]);
-      expect(componentSchemas?.["SkillRollbackRequest"]?.required).toBeUndefined();
-    });
-
-    it("returns the restored commit and path, plus the skill's name and id", () => {
-      const result = componentSchemas?.["SkillRollbackResult"];
-      expect(Object.keys(result?.properties ?? {})).toEqual([
-        "name",
-        "docId",
-        "commit",
-        "path",
-        "warnings",
-      ]);
-      for (const field of ["name", "docId", "commit", "path"] as const) {
-        expect(result?.properties?.[field]?.description, field).toBeTruthy();
-      }
-    });
-
-    /**
-     * CONTRACT-016. §14 keeps the file write when the auto-commit is rejected,
-     * so the response has to be able to say "restored, uncommitted". A
-     * non-nullable `commit` made that outcome undescribable on the wire, and the
-     * available shortcut — echoing the pre-existing HEAD — would have written a
-     * commit that is not this restoration into the field the audit trail reads.
-     */
-    it("lets `commit` be null, since §14 keeps the write when the commit fails", () => {
-      const commit = componentSchemas?.["SkillRollbackResult"]?.properties?.["commit"];
-      expect(commit).toMatchObject({ type: ["string", "null"], pattern: "^[0-9a-f]{7,64}$" });
-      expect(commit?.description).toContain("`null` means the file was restored but not committed");
-      expect(commit?.description).toContain("the file write stands regardless (SPEC.md §14)");
-      expect(commit?.description).toContain("is in `warnings`");
-    });
-
-    it("keeps `commit` required — nullable is not optional", () => {
-      expect(componentSchemas?.["SkillRollbackResult"]?.required).toContain("commit");
-    });
-
-    it("states the null outcome in the route's own prose, not only in the schema", () => {
-      expect(operation(ROLLBACK_PATH, "post").description).toContain(
-        "the file is restored anyway, `commit` is `null`",
-      );
-      expect(
-        JSON.stringify(operation(ROLLBACK_PATH, "post").responses?.["200"]?.description),
-      ).toContain("or `null` when that commit failed or was skipped");
-    });
-
-    it("uses the shipped 404 envelope and states the condition", () => {
-      expect(JSON.stringify(operation(ROLLBACK_PATH, "post").responses?.["404"])).toContain(
-        "NotFoundError",
-      );
-      expect(componentSchemas?.["NotFoundError"]?.properties?.["code"]?.enum).toEqual([
-        "not_found",
-      ]);
-      expect(operation(ROLLBACK_PATH, "post").description).toContain(
-        "no skill of that name is installed",
-      );
-    });
-  });
 });
 
 /**
@@ -2754,10 +2815,6 @@ describe("§14 warnings reach every mutation response", () => {
     // warnings the server already computed for them could only be logged.
     "ThreadMutationResponse",
     "FormAnswerResponse",
-    // CONTRACT-008: a skill rollback is a git revert the server performs and
-    // auto-commits (§7), so the workspace's hooks can reject it exactly as they
-    // can reject any other write.
-    "SkillRollbackResult",
     // CONTRACT-041: a re-attach rewrites one `anchors` entry in the **parent
     // document's** frontmatter and auto-commits it, so a rejected hook is
     // exactly as reachable here as it is on a create.
@@ -3418,7 +3475,7 @@ describe("multipart, attachments and the stream", () => {
       "forbidden",
       "not_found",
       "conflict",
-      "locked",
+      "stale_key",
       "internal_error",
     ]);
     expect(Object.keys(componentSchemas ?? {})).not.toContain("PayloadTooLargeError");
@@ -3550,7 +3607,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(18);
+    expect(bodies).toHaveLength(16);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -3608,10 +3665,8 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/threads/{id}/reattach": true,
       "POST /api/queue/{id}/defer": true,
       "POST /api/skills": true,
-      "POST /api/locks/{docId}": false,
       "POST /api/queue/halt": false,
       "POST /api/queue/{id}/fail": false,
-      "POST /api/skills/{name}/rollback": false,
       "POST /api/threads/{id}/seen": false,
       "POST /api/threads/{id}/turns": true,
       "POST /api/threads/{id}/turns/{ts}/form": true,

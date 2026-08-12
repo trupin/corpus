@@ -21,6 +21,7 @@ import {
   createWriteWorkspace,
   type WriteWorkspace,
   type WriteWorkspaceOptions,
+  putDoc,
 } from "../docs/write-fixture.js";
 
 /** Short enough to watch a session idle out; the shipped window is three minutes. */
@@ -64,7 +65,7 @@ function acknowledgments(ws: WriteWorkspace): DocEditedPayload[] {
 }
 
 const edit = (ws: WriteWorkspace, id: string, body: string, actor: "user" | "agent" = "user") =>
-  ws.put(`/api/docs/${id}`, { body }, { "x-corpus-author": actor });
+  putDoc(ws, id, { body }, { "x-corpus-author": actor });
 
 /**
  * The flush as a real caller makes it: `POST`, no body, no acting party header.
@@ -552,7 +553,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     pastTheSquashWindow(ws);
     const before = ws.head();
 
-    expect((await ws.put(`/api/docs/${doc.id}`, patch)).status).toBe(200);
+    expect((await putDoc(ws, doc.id, patch)).status).toBe(200);
 
     ws.advance(IDLE_MS * 4);
     await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
@@ -578,9 +579,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     pastTheSquashWindow(ws);
     const before = ws.head();
 
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n", tags: ["retagged"] })).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { body: "one\ntwo\n", tags: ["retagged"] })).status).toBe(200);
     expect(ws.head()).not.toBe(before);
     expect(ws.read(doc.path)).toContain("retagged");
 
@@ -599,7 +598,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
     pastTheSquashWindow(ws);
 
-    expect((await ws.put(`/api/docs/${doc.id}`, { title: "Refinance options" })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { title: "Refinance options" })).status).toBe(200);
 
     ws.advance(IDLE_MS * 2);
     await vi.waitFor(() => {
@@ -617,9 +616,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
     pastTheSquashWindow(ws);
 
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { title: "Mortgage options", tags: ["m"] })).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { title: "Mortgage options", tags: ["m"] })).status).toBe(200);
 
     ws.advance(IDLE_MS * 4);
     await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
@@ -632,9 +629,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
     pastTheSquashWindow(ws);
 
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n", tags: ["mortgage"] })).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { body: "one\ntwo\n", tags: ["mortgage"] })).status).toBe(200);
 
     ws.advance(IDLE_MS * 2);
     await vi.waitFor(() => {
@@ -655,9 +650,9 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     pastTheSquashWindow(ws);
 
     await edit(ws, doc.id, "one\ntwo\n");
-    expect((await ws.put(`/api/docs/${doc.id}`, { extra: { width: 444 } })).status).toBe(200);
-    expect((await ws.put(`/api/docs/${doc.id}`, { extra: { width: 725 } })).status).toBe(200);
-    expect((await ws.put(`/api/docs/${doc.id}`, { pinned: true })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { extra: { width: 444 } })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { extra: { width: 725 } })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { pinned: true })).status).toBe(200);
 
     ws.advance(IDLE_MS * 2);
     await vi.waitFor(() => {
@@ -747,9 +742,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
 
     it("covers both edits across a frontmatter-only save — the board's own write", async () => {
       const { ws, payload, path } = await sitting("ack-base-fm", async (workspaceUnderTest, id) => {
-        expect(
-          (await workspaceUnderTest.put(`/api/docs/${id}`, { extra: { width: 725 } })).status,
-        ).toBe(200);
+        expect((await putDoc(workspaceUnderTest, id, { extra: { width: 725 } })).status).toBe(200);
       });
       expectBothEditsInRange(ws, payload, path);
     });
@@ -782,8 +775,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
       // this carried an `editPath` too; it never mattered, because the tracker
       // discards a non-`user` actor's path before it looks at it.
       expect(
-        (await ws.put(`/api/docs/${doc.id}`, { tags: ["filed"] }, { "x-corpus-author": "agent" }))
-          .status,
+        (await putDoc(ws, doc.id, { tags: ["filed"] }, { "x-corpus-author": "agent" })).status,
       ).toBe(200);
       await edit(ws, doc.id, "line one\nuser line\nuser again\n");
 
@@ -807,5 +799,88 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     } finally {
       ws.close();
     }
+  });
+});
+
+// SPEC.md §7 (SHARED-041, SERVER-099): "the deferral … re-enters the queue on
+// its own once the session ends. … What changed is only the trigger: the agent
+// defers because it saw, not because it was refused."
+//
+// Driven through the real server rather than the tracker, because what is under
+// test is the wiring `app.ts` owns — the tracker knows nothing about the queue,
+// and the queue knows nothing about sessions. It is one line, and it is the only
+// automatic way out of `deferred` now that the lock's release, break and reap
+// are gone.
+describe("a deferred event re-enters the queue when the session it waited on ends", () => {
+  const queueFilesIn = (ws: WriteWorkspace, status: string): string[] => {
+    const dir = join(ws.root, ".corpus", "queue", status);
+    return existsSync(dir) ? readdirSync(dir).filter((name) => name.startsWith("evt_")) : [];
+  };
+
+  async function deferOn(ws: WriteWorkspace, docId: string): Promise<string> {
+    const event = await ws.server.queue.enqueue({
+      type: "comment.created",
+      source: "cli",
+      payload: { docId },
+    });
+    const claimed = await ws.request("/api/queue/claim-all", { method: "POST", headers: AUTH });
+    expect(claimed.status).toBe(200);
+    const deferred = await ws.request(`/api/queue/${event.id}/defer`, {
+      method: "POST",
+      headers: { ...AUTH, "content-type": "application/json" },
+      body: JSON.stringify({ blockedOn: docId, reason: "someone is editing it" }),
+    });
+    expect(deferred.status).toBe(200);
+    expect(queueFilesIn(ws, "deferred")).toEqual([`${event.id}.json`]);
+    return event.id;
+  }
+
+  it("returns it to pending when the reader closes the document", async () => {
+    const ws = workspace("defer-flush");
+    const doc = await createDoc(ws, { type: "note", title: "Contended", body: "one\n" });
+    pastTheSquashWindow(ws);
+    // The person is editing — which is what the agent saw before deferring.
+    await edit(ws, doc.id, "the person is typing\n");
+    expect(ws.server.editSessions?.isOpen(doc.id)).toBe(true);
+
+    const eventId = await deferOn(ws, doc.id);
+
+    expect((await flush(ws, doc.id)).status).toBe(204);
+    await vi.waitFor(() => {
+      expect(queueFilesIn(ws, "pending")).toContain(`${eventId}.json`);
+    });
+    expect(queueFilesIn(ws, "deferred")).toEqual([]);
+  });
+
+  it("returns it to pending when the session simply goes idle", async () => {
+    const ws = workspace("defer-idle", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "note", title: "Contended", body: "one\n" });
+    pastTheSquashWindow(ws);
+    await edit(ws, doc.id, "the person is typing\n");
+
+    const eventId = await deferOn(ws, doc.id);
+    ws.advance(IDLE_MS * 2);
+
+    await vi.waitFor(() => {
+      expect(queueFilesIn(ws, "pending")).toContain(`${eventId}.json`);
+    });
+    expect(queueFilesIn(ws, "deferred")).toEqual([]);
+  });
+
+  it("leaves a deferral on a different document alone", async () => {
+    // The trigger is per document: a session ending on one document says nothing
+    // about work parked on another.
+    const ws = workspace("defer-other-doc");
+    const edited = await createDoc(ws, { type: "note", title: "Edited", body: "one\n" });
+    const other = await createDoc(ws, { type: "note", title: "Other", body: "two\n" });
+    pastTheSquashWindow(ws);
+    await edit(ws, edited.id, "the person is typing\n");
+
+    const eventId = await deferOn(ws, other.id);
+
+    expect((await flush(ws, edited.id)).status).toBe(204);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(queueFilesIn(ws, "deferred")).toEqual([`${eventId}.json`]);
+    expect(queueFilesIn(ws, "pending")).not.toContain(`${eventId}.json`);
   });
 });

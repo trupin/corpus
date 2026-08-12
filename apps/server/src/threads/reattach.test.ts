@@ -22,6 +22,7 @@ import {
   frontmatterOf,
   threadPath,
   type WriteWorkspace,
+  putDoc,
 } from "./thread-fixture.js";
 
 const PARENT_BODY = [
@@ -310,7 +311,7 @@ describe("POST /api/threads/{id}/reattach — refusals the document's state make
     const { parent, threadId } = await seedOrphan();
     const chosen = quarterChoice(await docBody(parent.id), "Q2");
 
-    const edited = await ws.put(`/api/docs/${parent.id}`, {
+    const edited = await putDoc(ws, parent.id, {
       body: `## Actions\n\n- Review the Q0 report by Friday\n${PARENT_BODY.slice("## Actions\n\n".length)}`,
     });
     expect(edited.status).toBe(200);
@@ -406,18 +407,6 @@ describe("POST /api/threads/{id}/reattach — refusals the document's state make
       expectedText: "abc",
     });
     expect(response.status).toBe(404);
-  });
-
-  it("refuses the repair while the other party holds the parent's edit lock", async () => {
-    const { parent, threadId } = await seedOrphan();
-    const chosen = quarterChoice(await docBody(parent.id), "Q2");
-    expect(
-      (await ws.post(`/api/locks/${parent.id}`, {}, { "x-corpus-author": "agent" })).status,
-    ).toBe(201);
-
-    const response = await reattach(threadId, chosen);
-    expect(response.status).toBe(423);
-    expect((await soleAnchor(parent.id)).orphaned).toBe(true);
   });
 });
 

@@ -13,8 +13,9 @@
 //
 //   1. **A commit git refused** (SPEC.md §14) — a workspace hook, a full disk, a
 //      mid-rebase repository. The mutation stood and stayed on disk.
-//   2. **Out-of-band edits** made while the server was down (or, until
-//      SERVER-090 lands, while it was up).
+//   2. **Out-of-band edits** made while the server was down. While it is up the
+//      watcher commits them for itself, authored `user` (SERVER-090), so what
+//      reaches here is what nobody was watching.
 //   3. An **operator's own file** dropped into `data/docs/` by hand. Recovery
 //      commits it, and that is correct: §5 says the file on disk is the truth,
 //      so a markdown file under a document root *is* a document of this
@@ -55,8 +56,8 @@ import { gitOutput, type Git, type GitCommandResult } from "./git.js";
  * Read off {@link DOCUMENT_ROOTS} rather than restated, because the set is not
  * `data/docs` alone: threads, installed skills, archived skills and agent
  * definitions are documents too, and a recovery that missed `.claude/skills/`
- * would quietly not cover the tree `corpus skill rollback` reads. `.corpus/` is
- * gitignored and is not a root; nor is anything else in the workspace — an
+ * would quietly not cover the tree §7's loop safety reverts through. `.corpus/`
+ * is gitignored and is not a root; nor is anything else in the workspace — an
  * operator's dirty file beside `data/` stays dirty.
  */
 export const RECOVERY_ROOTS: readonly string[] = DOCUMENT_ROOTS.map((root) => root.path);

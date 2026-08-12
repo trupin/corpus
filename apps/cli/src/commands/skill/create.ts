@@ -16,9 +16,8 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * It is a thin call onto `POST /api/skills`, and the route being skills-specific
  * is the point rather than an inconvenience: there is no wire form here for
  * writing outside `.claude/skills/`, so the CLI has nothing to guard and nothing
- * to sanitize. The name is the traversal guard, validated server-side against
- * the same pattern `corpus skill rollback` addresses a skill by; a name with a
- * slash, a `..`, an uppercase letter or 65 characters comes back as the server's
+ * to sanitize. The name is the traversal guard, validated server-side; a name
+ * with a slash, a `..`, an uppercase letter or 65 characters comes back as the server's
  * `400` naming `body.name`, and a name already installed as its `409` (both exit
  * 5). Pre-validating any of that here would only mean two definitions of a skill
  * name, one of which is wrong the day the contract's pattern changes.
@@ -66,8 +65,8 @@ export const createCommand: WorkspaceCommandSpec = {
     "Calls `POST /api/skills`, which writes `.claude/skills/<name>/SKILL.md` through the ordinary " +
     "mutation pipeline — validation, atomic write, git auto-commit attributed to `--from`, " +
     "synchronous re-projection and SSE invalidation. The skill is therefore live immediately: on " +
-    "the board, in `corpus doc list --type skill`, and rollback-able, with no server restart. The " +
-    "CLI writes nothing itself; the server is the sole writer.\n\n" +
+    "the board and in `corpus doc list --type skill`, with no server restart. The CLI writes " +
+    "nothing itself; the server is the sole writer.\n\n" +
     "The created file carries **both** frontmatter vocabularies, which is what makes a skill " +
     "simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory " +
     "name) and `description` for discovery, then the document keys the server assigns — `id`, " +
@@ -78,7 +77,8 @@ export const createCommand: WorkspaceCommandSpec = {
     "segment or an uppercase letter is the server's `400`; a name already installed, or held by " +
     "an archived skill, is its `409`. Both are exit 5, and neither writes anything. Everything " +
     "after creation is ordinary document work: edit with `corpus doc edit`, disable with " +
-    "`corpus doc archive`, recover with `corpus skill rollback`.",
+    "`corpus doc archive`, and undo a bad edit by writing back the content you want — read the " +
+    "history with `corpus doc diff <id>`, then `corpus doc edit <id> --key <key>`.",
   args: [
     {
       name: "name",

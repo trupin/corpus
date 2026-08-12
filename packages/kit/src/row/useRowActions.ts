@@ -74,9 +74,9 @@ export function useRowActions(row: RowActionSubject, options: RowActionsOptions 
 
   const failed = useCallback(
     (verb: string, error: Error) => {
-      // The row is left exactly as it was. A quick action on an agent-locked
-      // document is refused by the server (423), and a row that had already
-      // optimistically removed itself would be lying about corpus state.
+      // The row is left exactly as it was. A quick action the server refuses
+      // — validation, a `403`, an unreachable server — leaves a row that had
+      // already optimistically removed itself lying about corpus state.
       notify("error", `${verb} failed — ${error.message}`);
     },
     [notify],

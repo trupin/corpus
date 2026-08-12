@@ -166,34 +166,6 @@ describe("createAutoCommitter", () => {
     expect(body).toContain("Corpus-Anchors: remapped=1 orphaned=2");
   });
 
-  it("appends a caller's own trailers, and commits with nothing staged when asked", async () => {
-    const r = makeRepo("extra-trailers");
-    const base = r.git("rev-parse", "HEAD").trim();
-
-    // The shape SERVER-009's force break needs: `.corpus/` is gitignored, so the
-    // audit entry stages no path at all and has to be an explicit empty commit,
-    // carrying the one fact the standard trailers cannot express.
-    const outcome = await r.committer.commit({
-      docId: "doc_aaaa1111",
-      actor: "user",
-      subject: "lock: force-break on doc_aaaa1111 (was agent) by user",
-      paths: [],
-      trailers: ["Corpus-Lock-Holder: agent"],
-      allowEmpty: true,
-      squash: false,
-    });
-
-    expect(outcome.kind).toBe("committed");
-    expect(r.log("%an|%s")[0]).toBe("user|lock: force-break on doc_aaaa1111 (was agent) by user");
-    // Appended after the standard ones, never in place of them.
-    expect(r.git("log", "-1", "--format=%b")).toBe(
-      "Corpus-Doc: doc_aaaa1111\nCorpus-Actor: user\nCorpus-Lock-Holder: agent\n\n",
-    );
-    // Empty in the git sense: a commit on top of the seed that changes no file.
-    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(base);
-    expect(r.git("show", "--stat", "--format=", "HEAD").trim()).toBe("");
-  });
-
   it("folds two rapid saves of one document by one party into one commit", async () => {
     const r = makeRepo("squash");
     const base = r.git("rev-parse", "HEAD").trim();
@@ -716,15 +688,21 @@ describe("createAutoCommitter", () => {
   it("still amends when the previous commit says more than this save touches", async () => {
     const r = makeRepo("amend-wider-head");
     const other = "data/docs/inbox/other.md";
+    // Both files exist *before* the window opens, so neither is a document the
+    // window itself introduced and the amend below takes nothing out of git.
     r.touch(DOC, "one");
     r.touch(other, "kept");
+    r.git("add", "-A");
+    r.git("commit", "-q", "-m", "seed");
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    r.touch(DOC, "edited");
     await r.committer.commit({
       docId: "doc_aaaa1111",
       actor: "user",
-      subject: "doc create",
+      subject: "doc edit",
       paths: [DOC, other],
     });
-    const base = r.git("rev-parse", "HEAD~1").trim();
 
     r.clock += 100;
     rmSync(join(r.root, DOC));
@@ -740,6 +718,91 @@ describe("createAutoCommitter", () => {
     expect(r.git("rev-parse", "HEAD~1").trim()).toBe(base);
     expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).toContain(other);
     expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain(DOC);
+  });
+
+  it("refuses a fold that would take the window's only copy of what it removes", async () => {
+    const r = makeRepo("amend-would-orphan");
+    const other = "data/docs/inbox/other.md";
+    // PR #43's review, in the shape every caller can reach it: the window has
+    // gathered a neighbour, so `amendWouldEmptyHead` is satisfied — HEAD still
+    // says something after the amend — while the document created inside this
+    // very window has its only revision amended away with it.
+    r.touch(other, "neighbour");
+    await r.committer.commit({
+      docId: "doc_bbbb2222",
+      actor: "user",
+      subject: "doc edit: Other",
+      paths: [other],
+    });
+    // Named by position, never by sha: the fold below amends this commit, so a
+    // sha captured here is rewritten under the test (SERVER-091).
+    const beforeWindow = r.git("rev-parse", "HEAD~1").trim();
+
+    r.clock += 100;
+    r.touch(DOC, "the only copy of this");
+    const created = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create: Note",
+      paths: [DOC],
+    });
+    expect(created.kind).toBe("amended");
+    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(beforeWindow);
+
+    r.clock += 100;
+    rmSync(join(r.root, DOC));
+    const deleted = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete: Note",
+      paths: [DOC],
+    });
+
+    // A fresh commit, so the window's commit — which is the only place the
+    // file's bytes ever landed — is closed and left behind rather than rewritten.
+    expect(deleted.kind).toBe("committed");
+    expect(r.git("show", `HEAD~1:${DOC}`)).toBe("the only copy of this");
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain(DOC);
+    expect(r.git("log", "--diff-filter=D", "--format=%s", "--", DOC).trim()).toBe(
+      "doc delete: Note",
+    );
+  });
+
+  it("still folds a removal whose content the parent commit already holds", async () => {
+    const r = makeRepo("amend-removal-safe");
+    const other = "data/docs/inbox/other.md";
+    // The move a real `mv` produces out of band: unlink and add reach the
+    // watcher in different batches, so the add folds into the removal's commit
+    // and git reports one rename. The removal is foldable because the parent
+    // still holds the old path — nothing is being taken out of git.
+    r.touch(DOC, "carried across");
+    r.git("add", "-A");
+    r.git("commit", "-q", "-m", "seed");
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    rmSync(join(r.root, DOC));
+    const removed = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete: Note",
+      paths: [DOC],
+    });
+    expect(removed.kind).toBe("committed");
+
+    r.clock += 100;
+    r.touch(other, "carried across");
+    const added = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note",
+      paths: [other],
+    });
+
+    expect(added.kind).toBe("amended");
+    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(base);
+    expect(r.git("show", "--name-status", "--format=", "HEAD").trim()).toBe(
+      `R100\t${DOC}\t${other}`,
+    );
   });
 
   it("amends under the latest verb's subject, so a folded commit never mislabels itself", async () => {
@@ -785,52 +848,27 @@ describe("createAutoCommitter", () => {
     expect(outcome).toEqual({ kind: "skipped", reason: "nothing to commit" });
   });
 
-  it("makes an empty commit when one is asked for, and never folds it", async () => {
-    const r = makeRepo("empty");
-    r.touch(DOC, "one");
-    await r.committer.commit({
+  it("takes no later save into a `squash: false` commit — it opens no window", async () => {
+    // The other half of "a commit that stands alone is its own event, never part
+    // of an edit". It was only ever enforced against folding *into* a preceding
+    // window; the commit still opened one of its own, so the next save amended
+    // it and replaced its subject (SERVER-091). The caller is
+    // `threads/reattach.ts`.
+    const r = makeRepo("standalone-opens-no-window");
+    r.touch(DOC, "the repaired anchor block");
+    const standalone = await r.committer.commit({
       docId: "doc_aaaa1111",
       actor: "user",
-      subject: "doc edit",
+      subject: "comment: re-attach th_bbbb2222 on doc_aaaa1111 by user",
       paths: [DOC],
-    });
-    r.clock += 100;
-    const outcome = await r.committer.commit({
-      docId: "doc_aaaa1111",
-      actor: "user",
-      subject: "lock force-break: doc_aaaa1111 held by agent, broken by user",
-      paths: [],
-      allowEmpty: true,
       squash: false,
     });
-
-    expect(outcome.kind).toBe("committed");
-    expect(r.log("%s")[0]).toContain("lock force-break");
-    expect(r.git("show", "--stat", "--format=", "HEAD").trim()).toBe("");
-  });
-
-  it("takes no later save into an audit entry either — `squash: false` opens no window", async () => {
-    // The other half of "an audit entry is its own event, never part of an
-    // edit". It was only ever enforced against folding *into* a preceding
-    // window; the entry still opened one of its own, so the next save amended
-    // it — replacing its subject and dropping the trailer that says whose lease
-    // was broken, which no other trailer expresses (SERVER-091).
-    const r = makeRepo("audit-opens-no-window");
-    const audit = await r.committer.commit({
-      docId: "doc_aaaa1111",
-      actor: "user",
-      subject: "lock: force-break on doc_aaaa1111 (was agent) by user",
-      paths: [],
-      trailers: ["Corpus-Lock-Holder: agent"],
-      allowEmpty: true,
-      squash: false,
-    });
-    expect(audit.kind).toBe("committed");
-    const auditSha = audit.kind === "committed" ? audit.sha : "";
+    expect(standalone.kind).toBe("committed");
+    const standaloneSha = standalone.kind === "committed" ? standalone.sha : "";
 
     // Same party, no clock movement — everything an ordinary save needs to fold.
     r.clock += 100;
-    r.touch(DOC, "typed right after the break");
+    r.touch(DOC, "typed right after the repair");
     const save = await r.committer.commit({
       docId: "doc_aaaa1111",
       actor: "user",
@@ -839,11 +877,10 @@ describe("createAutoCommitter", () => {
     });
 
     expect(save.kind).toBe("committed");
-    expect(r.git("rev-parse", "HEAD^").trim()).toBe(auditSha);
-    expect(r.git("log", "-1", "--format=%s", auditSha).trim()).toBe(
-      "lock: force-break on doc_aaaa1111 (was agent) by user",
+    expect(r.git("rev-parse", "HEAD^").trim()).toBe(standaloneSha);
+    expect(r.git("log", "-1", "--format=%s", standaloneSha).trim()).toBe(
+      "comment: re-attach th_bbbb2222 on doc_aaaa1111 by user",
     );
-    expect(r.git("log", "-1", "--format=%b", auditSha)).toContain("Corpus-Lock-Holder: agent");
   });
 
   it("commits with a fallback identity when the repository configures none", async () => {

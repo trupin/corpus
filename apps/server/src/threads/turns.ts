@@ -8,9 +8,10 @@
 // therefore produce five distinct, increasing stamps rather than five identical
 // ones and a corrupt thread.
 //
-// **No lock guard** (sprint-006 Adjudication 1). Commenting is not editing:
-// §7's lock is the edit lock, nothing in the parent is touched by a turn, and
-// `appendTurn` declares no `423`.
+// **Nothing refuses a turn for another writer** (sprint-006 Adjudication 1,
+// standing after SPEC.md §7 replaced the lock with a key). Commenting is not
+// editing: nothing in the parent is touched by a turn, so there is no
+// block-replacing write for a key to guard.
 //
 // **A person's turn reopens a resolved thread** (SPEC.md §8, SHARED-019
 // Amendment 1). It is one write — the turn and the `status` flip in the same

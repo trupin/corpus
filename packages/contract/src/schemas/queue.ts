@@ -33,25 +33,26 @@ export const CoreQueueEventTypeSchema = z.enum(CORE_QUEUE_EVENT_TYPES);
  * The status set SPEC.md §7 pins — `pending → in-progress → processed | failed`,
  * plus `abandoned` — and the one state §7 names as its own successor.
  *
- * **`deferred` is the queue state §7's lock bullet promises** (CONTRACT-021,
- * the wire half of SERVER-030). The interim protocol it retires is written into
- * §7 as a transitional clause: the orchestrator "fails the event with a
- * `deferred:`-prefixed reason, and the work re-enters the queue via `corpus job
- * retry`… A dedicated defer/requeue queue state that re-enters automatically on
- * lock release is planned (SERVER-030); until then the deferral is visible as an
- * actionable failed job, never silently dropped." That sentence is the whole
- * specification of this value, and nothing here goes beyond it:
+ * **`deferred` is the queue state §7 names** (CONTRACT-021, the wire half of
+ * SERVER-030). What it waits on was **re-based, not removed**, when the edit
+ * lock was replaced by a key (SHARED-041, signed 2026-08-11): §7 now defines it
+ * as "claimed work the agent parked because a person was editing the document
+ * (§7 keys), returned to `pending` automatically when that session ends". The
+ * shape is unchanged and so is every property below — what changed is only the
+ * trigger, from a refusal to a judgement:
  *
- * - **Non-terminal, and not `pending`.** A deferred event is waiting for a lock
- *   it has already tried to take, so it is neither finished nor claimable —
- *   `claim-all` must not hand it out, or the agent spins against the same lock.
+ * - **Non-terminal, and not `pending`.** A deferred event is waiting on a person
+ *   who is editing, so it is neither finished nor claimable — `claim-all` must
+ *   not hand it out, or the agent comes straight back to a document somebody is
+ *   still typing in.
  * - **Not a failure.** The distinction is the point: today a deferral renders
- *   in the console as a broken job, and §7 asks for *waiting*.
- * - **It leaves on its own.** Release, force-break and reap of the blocking
- *   lock each return the event to `pending`. Which document it waits on is
- *   supplied at defer time (`DeferEventRequest.blockedOn`), because the event
- *   payload does not always carry it: `comment.created` has `parentId`,
- *   `form.respond` has no document at all.
+ *   in the console as a broken job, and §7 asks for *waiting*. Nothing refused
+ *   the work — the agent saw a session open and chose to come back.
+ * - **It leaves on its own.** The end of that edit session returns the event to
+ *   `pending`. Which document it waits on is supplied at defer time
+ *   (`DeferEventRequest.blockedOn`), because the event payload does not always
+ *   carry it: `comment.created` has `parentId`, `form.respond` has no document
+ *   at all.
  *
  * Ordered as the lifecycle runs, non-terminal states first: the constant is
  * what the server iterates to create `.corpus/queue/<status>/` and to count
@@ -70,10 +71,10 @@ export const QueueEventStatusSchema = z.enum(QUEUE_EVENT_STATUSES).openapi({
   description:
     "Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. " +
     "`pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are " +
-    "terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and could not " +
-    "proceed because the user holds the edit lock on the document it needs, so it waits — not " +
-    "claimable, not failed — and returns to `pending` automatically when that lock is released, " +
-    "broken or reaped.",
+    "terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and the agent " +
+    "parked it because a person had an edit session open on the document it needs, so it waits — " +
+    "not claimable, not failed — and returns to `pending` automatically when that session ends. " +
+    "Nothing refused it: the agent deferred because it saw, not because it was blocked.",
 });
 
 /** One event file in `.corpus/queue/<status>/<id>.json`, written and moved only by the server. */
@@ -294,7 +295,8 @@ export const QueueStatusSchema = z
       .int()
       .min(0)
       .describe(
-        "Events waiting on a user-held edit lock (SPEC.md §7). Counted separately from `failed` " +
+        "Events parked while a person is editing the document they need (SPEC.md §7). Counted " +
+          "separately from `failed` " +
           "because a deferral is not a failure — a non-zero count here is work that will resume " +
           "by itself, and the console strip must not read it as breakage.",
       ),
@@ -401,13 +403,13 @@ export const HaltQueueRequestSchema = z
  * Body of `POST /api/queue/{id}/defer` (CONTRACT-021).
  *
  * **`blockedOn` is mandatory, and it is the whole reason this is not a bodiless
- * verb.** §7 asks for a state that "re-enters automatically on lock release",
- * which is only implementable if the deferral says *which* lock — and the event
- * cannot always be asked: `comment.created` carries `parentId` in its payload,
- * `form.respond` carries `{threadId, formTs, answers, note}` and names no
- * document. The defer call is made by the party that just tried the edit and
- * knows exactly what it was blocked on, so the document is supplied here rather
- * than inferred from a payload shape that plugins are free to define.
+ * verb.** §7 asks for a state that returns to `pending` on its own when the
+ * person stops editing, which is only implementable if the deferral says *which*
+ * document — and the event cannot always be asked: `comment.created` carries
+ * `parentId` in its payload, `form.respond` carries `{threadId, formTs, answers,
+ * note}` and names no document. The defer call is made by the party that just
+ * read the document and saw the session open, so the document is supplied here
+ * rather than inferred from a payload shape that plugins are free to define.
  *
  * `reason` is the deferral's human sentence, and it replaces the `deferred:`
  * prefix the interim protocol smuggled into a failure reason: the status now
@@ -416,9 +418,9 @@ export const HaltQueueRequestSchema = z
 export const DeferEventRequestSchema = z
   .strictObject({
     blockedOn: DocumentIdSchema.describe(
-      "The document whose edit lock the work is waiting for. Releasing, breaking or reaping that " +
-        "lock returns this event to `pending` automatically (SPEC.md §7), so a deferral that " +
-        "named the wrong document would wait forever.",
+      "The document being edited that the work is waiting on. The end of that edit session " +
+        "returns this event to `pending` automatically (SPEC.md §7), so a deferral that named the " +
+        "wrong document would wait forever.",
     ),
     reason: z
       .string()

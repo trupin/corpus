@@ -5,6 +5,7 @@ import {
   createDoc,
   createThread,
   createThreadWorkspace,
+  putDoc,
   threadFrontmatterOf,
   type WriteWorkspace,
 } from "./thread-fixture.js";
@@ -126,12 +127,13 @@ describe("POST /api/threads/{id}/resolve and /reopen", () => {
     expect((await ws.post("/api/threads/th_zzzzzzzz/reopen", {})).status).toBe(404);
   });
 
-  it("is never refused by an edit lock: resolving is not editing", async () => {
+  it("is never refused for who else is writing: resolving is not editing", async () => {
     const parent = (await createDoc(ws, { type: "note", title: "Model", body: "A body.\n" })).id;
     const created = await createThread(ws, { parent, body: "first" });
-    expect((await ws.post(`/api/locks/${parent}`, {}, { "x-corpus-author": "agent" })).status).toBe(
-      201,
-    );
+    expect(
+      (await putDoc(ws, parent, { body: "the agent writes on" }, { "x-corpus-author": "agent" }))
+        .status,
+    ).toBe(200);
     expect((await ws.post(`/api/threads/${created.id}/resolve`, {})).status).toBe(200);
   });
 });

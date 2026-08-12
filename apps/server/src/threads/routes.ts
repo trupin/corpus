@@ -58,10 +58,10 @@ export function mountThreadRoutes(
     return c.json(toWireThread(loadThread(workspace, id)), 200);
   });
 
-  // A pure read like `search` and `related`: no lock, no mutation, no commit,
-  // no invalidation. It answers about a *locked* document too — a lease governs
-  // writes, and refusing to brief an agent on a conversation somebody else is
-  // editing would be the opposite of useful.
+  // A pure read like `search` and `related`: no mutation, no commit, no
+  // invalidation. It answers about a document somebody is editing too — refusing
+  // to brief an agent on a conversation somebody else is in would be the
+  // opposite of useful.
   app.openapi(contractRoutes.getThreadContext, async (c) => {
     const { id } = c.req.valid("param");
     return c.json(await threadContextPack(workspace, id, { semantic: options.semantic }), 200);

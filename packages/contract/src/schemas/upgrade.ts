@@ -173,8 +173,8 @@ export const UpgradeStartedSchema = z
       .min(1)
       .describe(
         "Workspace-relative path of the file the detached upgrade writes its output to, e.g. " +
-          "`.corpus/upgrade.log` — the same spelling convention `POST /api/skills/{name}/" +
-          "rollback` uses for the file it restored. This is where SPEC.md §2.4's report lands: " +
+          "`.corpus/upgrade.log` — workspace-relative, the spelling every path on this " +
+          "surface uses. This is where SPEC.md §2.4's report lands: " +
           "what the tool install did, what the workspace template sync updated, what it left " +
           "alone, and — listed apart from all of that, because a conflict is unresolved work " +
           "rather than a notice — every file the workspace edited and the tool also changed, " +

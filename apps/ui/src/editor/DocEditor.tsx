@@ -1,7 +1,9 @@
+import type { Doc } from "@corpus/contract";
 import { getSchema } from "@tiptap/core";
 import { Node as PmModelNode, Slice } from "@tiptap/pm/model";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
 import { useQueryClient } from "@tanstack/react-query";
+import { docKey as docQueryKey } from "@corpus/kit";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ChangelogClip } from "./changelogClip.js";
 import { cleanPastedHtml, clipboardSerializer, sliceMarkdown } from "./clipboard.js";
@@ -23,7 +25,6 @@ import { useSaveStatusPublisher } from "./SaveChip.js";
 import { buildSelection, type EditorSelection } from "./selection.js";
 import { useEditSurface } from "./editSessionFlush.js";
 import { useAutosave, type AnchorReport } from "./useAutosave.js";
-import { useUserLock } from "./useUserLock.js";
 import "./editor.css";
 
 /**
@@ -32,10 +33,14 @@ import "./editor.css";
  * There is no edit mode and no button: the body *is* the editor, you click
  * where you want to write and you write. Everything that used to be a mode is
  * now a consequence — the caret is `var(--accent)` because the surface is
- * editable, and a locked document is the same surface with `editable: false`
- * rather than a different component (sprint-011 Adjudication 7). Keeping one
- * surface is what preserves scroll, selection and — once UI-007 lands — anchor
- * decorations across the lock boundary.
+ * editable.
+ *
+ * **And there is no other state.** §11: *the board is never read-only.* A
+ * document the agent is writing is the same surface as any other; what protects
+ * the two writers from each other is the key each of them presents (§7), not a
+ * mode this component enters. The read-only branch, the banner it raised and the
+ * `editable: false` toggle underneath it are gone — the surface has one state,
+ * and it is editable.
  *
  * **The title is not here.** `FrontmatterForm` owns it, has owned it since
  * UI-005, and a second editable title would be two debounces racing on one
@@ -93,8 +98,15 @@ export interface DocEditorProps {
   readonly docId: string;
   /** The body as the server holds it. */
   readonly body: string;
-  /** Another party holds the edit lock (SPEC.md §7) — the surface goes read-only. */
-  readonly locked: boolean;
+  /**
+   * SPEC.md §7's key for the version {@link body} was read at — presented by
+   * every autosave, and refreshed by every one that lands.
+   *
+   * Not derived from `body` here, and it must never be: a key is evidence that
+   * this editor *read* a version, and one computed from the text about to be
+   * sent would be evidence of nothing.
+   */
+  readonly documentKey: string;
   /** A resolved `[[ref]]` was activated. */
   readonly onOpenRef?: ((docId: string) => void) | undefined;
   /**
@@ -119,7 +131,7 @@ export interface DocEditorProps {
 export function DocEditor({
   docId,
   body,
-  locked,
+  documentKey,
   onOpenRef,
   onComment,
   onAnchors,
@@ -146,8 +158,31 @@ export function DocEditor({
   const [suggestion, setSuggestion] = useState<RefSuggestionState | null>(null);
   const suggestionKeys = useRef<((event: KeyboardEvent) => boolean) | null>(null);
 
-  const autosave = useAutosave({ docId, savedBody: canonical, locked, onAnchors });
-  const userLock = useUserLock({ docId, enabled: !locked });
+  const queryClient = useQueryClient();
+  /**
+   * Publishes an authoritative document — a save's response, or the one a `409`
+   * refused against — where a refetch would have put it (SPEC.md §7).
+   *
+   * This is what makes a conflict reach the editor as an **external change**
+   * rather than through a mechanism of its own: `useDoc` reads this exact cache
+   * entry, so the refusal's document travels the same path an agent's write
+   * travels over SSE, and the rule below — which defers an incoming body while
+   * the person is mid-sentence — governs it unchanged.
+   */
+  const publishServerDoc = useCallback(
+    (doc: Doc): void => {
+      queryClient.setQueryData(docQueryKey(docId), doc);
+    },
+    [docId, queryClient],
+  );
+
+  const autosave = useAutosave({
+    docId,
+    savedBody: canonical,
+    savedKey: documentKey,
+    onAnchors,
+    onServerDoc: publishServerDoc,
+  });
   /*
    * SPEC.md §4's close path. This component *is* the editing surface, and its
    * teardown — a closed reader, a navigation onto another document (the reader
@@ -161,8 +196,6 @@ export function DocEditor({
 
   const change = useRef(autosave.change);
   change.current = autosave.change;
-  const touch = useRef(userLock.touch);
-  touch.current = userLock.touch;
 
   /**
    * Built once. The extension list is the schema, and rebuilding it would
@@ -202,7 +235,6 @@ export function DocEditor({
    * closes over the query cache, and rebuilding either serializer would rebuild
    * the schema underneath the live document.
    */
-  const queryClient = useQueryClient();
   const resolveRef = useRef(refResolver(queryClient));
   resolveRef.current = refResolver(queryClient);
   const clipboard = useMemo(
@@ -217,7 +249,6 @@ export function DocEditor({
     {
       extensions,
       content: asContent(parseMarkdown(canonical)),
-      editable: !locked,
       editorProps: {
         // Rich text out (`text/html`) and the document's own markdown out
         // (`text/plain`), so an external editor gets structure and a plain-text
@@ -230,10 +261,6 @@ export function DocEditor({
         attributes: {
           class: "doc-body",
           "aria-label": "Document body",
-          // Announced, because the surface looks identical when it is not
-          // writable and a caret that silently swallows keystrokes is worse
-          // than a control that says it is read-only.
-          "aria-readonly": locked ? "true" : "false",
         },
         /**
          * Escape leaves the writing surface.
@@ -245,8 +272,8 @@ export function DocEditor({
          * nothing at all: focus mode's own hint says "esc closes" and it had
          * stopped closing.
          *
-         * So the first Escape blurs — which also gives the edit lock back —
-         * and the second reaches the chain and closes the layer. Leaving the
+         * So the first Escape blurs, and the second reaches the chain and
+         * closes the layer. Leaving the
          * text before leaving the document is what a writing surface should do
          * anyway; a single press that did both would have to teach the chain
          * about text surfaces, and that is UI-010's keyboard scheme to design,
@@ -302,13 +329,12 @@ export function DocEditor({
         // comparison against the last saved body a comparison of *markdown*:
         // two different ProseMirror trees can be one markdown document.
         change.current(serializeDoc(asPmNode(instance.getJSON())));
-        touch.current();
       },
     },
     // Created once per mounted document. The reader gives this component a
     // `key` of the document id, so a navigation is a remount (and the outgoing
-    // buffer flushes in `useAutosave`'s cleanup) while a lock, a rename or an
-    // SSE refresh is not.
+    // buffer flushes in `useAutosave`'s cleanup) while a rename or an SSE
+    // refresh is not.
     [],
   );
 
@@ -321,20 +347,21 @@ export function DocEditor({
     };
   }, [editor]);
 
-  /** The lock arrived or cleared: toggle, never remount (sprint-011 TEST-33). */
-  useEffect(() => {
-    if (editor === null) return;
-    editor.setEditable(!locked, false);
-    editor.view.dom.setAttribute("aria-readonly", locked ? "true" : "false");
-  }, [editor, locked]);
-
   /**
-   * The server's copy moved on.
+   * The server's copy moved on — **an external change while the user is
+   * typing**, and the one adoption path in this component.
    *
    * Applied only when this document has no editing session: while one is open
    * the incoming body waits, and the effect re-runs when the session settles
    * because `editing` is reactive — which is what makes the deferred update
    * land exactly once rather than never (sprint-011 TEST-35).
+   *
+   * **A `409` is this path** (SPEC.md §7). A refusal's document is published
+   * into the same cache entry a refetch writes, so it arrives here as an
+   * ordinary external change and waits exactly as one — which is why a conflict
+   * landing mid-sentence cannot replace what the person is writing. The retry
+   * that follows it is `useAutosave`'s, and it carries the buffer this editor
+   * never gave up.
    *
    * **The document's own save echoes back through here, and is not adopted**
    * (PR #10 finding 18). A `PUT` invalidates the document, the refetch returns
@@ -380,7 +407,6 @@ export function DocEditor({
     <div
       className="doc-editor"
       data-doc-editor={docId}
-      data-editable={locked ? "false" : "true"}
       /*
        * The whole editor subtree opts out of SPEC.md §11's single-letter
        * bindings, not just the contenteditable node inside it (UI-010's
@@ -391,14 +417,9 @@ export function DocEditor({
        */
       data-shortcuts="off"
     >
-      <EditorContent
-        editor={editor}
-        onBlur={() => {
-          userLock.blur();
-        }}
-      />
-      <SelectionToolbar editor={editor} enabled={!locked} onComment={comment} />
-      {suggestion === null || locked ? null : (
+      <EditorContent editor={editor} />
+      <SelectionToolbar editor={editor} onComment={comment} />
+      {suggestion === null ? null : (
         <RefAutocomplete state={suggestion} keyHandler={suggestionKeys} />
       )}
     </div>

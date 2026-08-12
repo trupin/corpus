@@ -64,7 +64,7 @@ describe("useColumnOrder", () => {
   });
 
   it("surfaces a refused write instead of claiming the board moved", async () => {
-    const wire = boardTransport({ failing: { "/api/docs/doc_d": 423 } });
+    const wire = boardTransport({ failing: { "/api/docs/doc_d": 409 } });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const { result } = renderHook(() => useColumnOrder(), { wrapper: harness.Wrapper });
 

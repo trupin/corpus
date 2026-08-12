@@ -101,7 +101,7 @@ export type WindowCloseReason =
   | "act"
   /** The other party wrote: a window belongs to one party, so theirs ends first. */
   | "party-change"
-  /** A deletion, a staged bulk Save, a force unlock — §4's three acts that commit alone. */
+  /** A deletion or a staged bulk Save — §4's two acts that commit alone. */
   | "commits-alone"
   /** The window has been open longer than {@link WINDOW_MAX_MS}. */
   | "aged-out"
@@ -205,19 +205,6 @@ export interface CommitRequest {
   /** Workspace-relative paths (files or directories) this mutation touched. */
   readonly paths: readonly string[];
   readonly anchors?: AnchorChange | undefined;
-  /**
-   * Extra `Key: value` trailer lines appended after the standard ones. The
-   * document verbs need none — `Corpus-Doc` and `Corpus-Actor` say everything
-   * about an edit — but a lock force break also has to record *whose* lease it
-   * took away, which neither standard trailer expresses.
-   */
-  readonly trailers?: readonly string[] | undefined;
-  /**
-   * Commit even when the paths hold no change. The write path never needs it;
-   * SERVER-009's force-break audit entry does, because `.corpus/` is gitignored
-   * and there is no file to stage.
-   */
-  readonly allowEmpty?: boolean | undefined;
   /**
    * `false` opts out of window folding **in both directions** — an audit entry
    * is its own event, never part of an edit: it neither folds into the open
@@ -396,7 +383,6 @@ const buildTrailers = (
   actor: Actor,
   remapped: ReadonlySet<string>,
   orphaned: ReadonlySet<string>,
-  extra: readonly string[] = [],
 ): string => {
   // One `Corpus-Doc` line per document: git trailers repeat, and a bulk act's
   // subject cannot name a thousand documents on one line.
@@ -406,7 +392,7 @@ const buildTrailers = (
   if (remapped.size > 0 || orphaned.size > 0) {
     lines.push(`${TRAILER_ANCHORS}: remapped=${remapped.size} orphaned=${orphaned.size}`);
   }
-  return [...lines, ...extra].join("\n");
+  return lines.join("\n");
 };
 
 /** Union of the window's anchor ids; an anchor that later detached counts as orphaned only. */
@@ -596,9 +582,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
 
     // `--amend --only` with **no** pathspec is a message-only rewrite: it takes
     // no working-tree content and no index content, so an operator's staged work
-    // is untouched and so is a save this very commit path has just staged. A
-    // caller's extra trailers are not replayed here and do not need to be: they
-    // arrive only with `squash: false`, which opens no window to close.
+    // is untouched and so is a save this very commit path has just staged.
     const rewritten = await git.exec([
       ...(await committerFlags()),
       "commit",
@@ -711,18 +695,69 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     }
   };
 
-  /** The subset git can be asked about: present on disk, or tracked (so a removal stages). */
-  const stageablePaths = async (paths: readonly string[]): Promise<string[]> => {
+  /**
+   * The subset git can be asked about: present on disk, or tracked (so a removal
+   * stages) — and, separately, which of them this save **removes**.
+   *
+   * `removed` is a by-product rather than a second question: a path gone from
+   * disk but known to git is exactly a path this commit stages as a deletion,
+   * and the walk that decides stageability has already established both halves.
+   * Free where it matters, too — a save whose every path is on disk answers
+   * `removed: []` without spawning anything, which is every autosave.
+   */
+  const stageablePaths = async (
+    paths: readonly string[],
+  ): Promise<{ paths: string[]; removed: string[] }> => {
     const candidates = [...new Set(paths)];
     const missing = candidates.filter((path) => !existsSync(resolve(git.root, path)));
-    if (missing.length === 0) return candidates;
+    if (missing.length === 0) return { paths: candidates, removed: [] };
     const tracked = await git.exec(["ls-files", "--", ...missing]);
     const trackedPaths = tracked.ok
       ? tracked.stdout.split("\n").filter((line) => line.trim() !== "")
       : [];
     const isTracked = (path: string): boolean =>
       trackedPaths.some((entry) => entry === path || entry.startsWith(`${path}/`));
-    return candidates.filter((path) => !missing.includes(path) || isTracked(path));
+    return {
+      paths: candidates.filter((path) => !missing.includes(path) || isTracked(path)),
+      removed: missing.filter(isTracked),
+    };
+  };
+
+  /**
+   * Would folding this save into `HEAD` drop content that `HEAD` alone holds?
+   *
+   * {@link amendWouldEmptyHead} is the same question asked narrowly, and its own
+   * comment names the case both exist for: "a document created and deleted
+   * inside the same idle window". It only catches that when the window holds
+   * *nothing else* — the moment a neighbour's save has folded into the same
+   * commit, `HEAD` still says something after the amend and the guard passes,
+   * while the created-and-deleted document's only revision goes with it. PR #43's
+   * review found it out of band (edit A, create B, delete B, all in one window),
+   * but nothing about it is out of band: it is reachable from any caller whose
+   * window gathered a neighbour, and `commit.test.ts` blessed it in-band.
+   *
+   * Asked of the paths this save **removes**, and of `HEAD`'s parent, because a
+   * path the parent already carries survives the amend in the parent — it is only
+   * a path the window itself introduced that has nowhere else to be. `HEAD` as a
+   * root commit has no parent to survive in, so nothing it holds may be amended
+   * away.
+   *
+   * Deliberately about paths rather than blobs. A move stages its old path as a
+   * removal while the same bytes arrive at the new one, so a content-level
+   * question would allow that fold where this one refuses it — at the cost of one
+   * extra commit in the rare case where the moved document was *also* created
+   * inside the same window. Refusing a fold is always safe (it is what every
+   * other `amendTarget` condition does) and costs a commit; allowing a wrong one
+   * costs the document. The bias goes to the cheap mistake.
+   */
+  const amendWouldOrphanContent = async (removed: readonly string[]): Promise<boolean> => {
+    if (removed.length === 0) return false;
+    const parent = await git.exec(["rev-parse", "--quiet", "--verify", "HEAD^"]);
+    if (!parent.ok || parent.stdout.trim() === "") return true;
+    for (const path of removed) {
+      if (!(await git.exec(["cat-file", "-e", `HEAD^:${path}`])).ok) return true;
+    }
+    return false;
   };
 
   /**
@@ -763,8 +798,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // legitimately names a path that no longer exists (and a never-committed
     // skill folder names one git has never heard of). Filtering keeps one such
     // path from failing the commit for the paths that are real.
-    const allowEmpty = request.allowEmpty ?? false;
-    const paths = await stageablePaths(request.paths);
+    const { paths, removed } = await stageablePaths(request.paths);
     const head = await headSha();
     if (paths.length > 0) {
       // `-A` so a removal (a delete, or a move's old path) stages as a removal
@@ -774,27 +808,30 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
         await unstage(paths, head);
         return failure("staging failed", staged);
       }
-    } else if (!allowEmpty) {
+    } else {
       return { kind: "skipped", reason: "nothing to commit" };
     }
 
-    if (!allowEmpty) {
-      const status = await git.exec(["status", "--porcelain", "--", ...paths]);
-      if (status.ok && status.stdout.trim() === "") {
-        await unstage(paths, head);
-        return { kind: "skipped", reason: "nothing to commit" };
-      }
+    const status = await git.exec(["status", "--porcelain", "--", ...paths]);
+    if (status.ok && status.stdout.trim() === "") {
+      await unstage(paths, head);
+      return { kind: "skipped", reason: "nothing to commit" };
     }
 
     const candidate = head === null ? null : await amendTarget(request, head);
-    // An amend that would empty the commit is refused by git; make the fresh
-    // commit that records this save instead of losing it to that refusal.
-    const target =
-      candidate !== null && !allowEmpty && (await amendWouldEmptyHead(paths)) ? null : candidate;
+    // Two reasons a fold that git would accept must not happen anyway: an amend
+    // that would *empty* the commit git refuses outright, and one that would
+    // take the open window's only copy of what this save removes leaves nothing
+    // to recover from (§4). Both answer "make a fresh commit instead", which is
+    // what the history should record in either case.
+    const unfoldable =
+      candidate !== null &&
+      ((await amendWouldEmptyHead(paths)) || (await amendWouldOrphanContent(removed)));
+    const target = unfoldable ? null : candidate;
     // A save that cannot fold is a save the open window did not take, which is
     // exactly what "the window closed" means — because the other party wrote,
     // because it went quiet, because it aged out, or because this write is one of
-    // §4's three acts that commit alone. Closing it *here* is what gives it an
+    // §4's two acts that commit alone. Closing it *here* is what gives it an
     // honest subject: its commit is still HEAD at this instant and still ours to
     // rewrite, and one instruction later it will not be.
     if (target === null) await closeWindowLocked(closeReason(request));
@@ -807,7 +844,6 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
       request.actor,
       anchors.remapped,
       anchors.orphaned,
-      request.trailers,
     );
 
     const args = [
@@ -820,7 +856,6 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
       message,
     ];
     if (target !== null) args.push("--amend", `--date=${target.authorDate}`);
-    if (allowEmpty) args.push("--allow-empty");
     // `--only` commits the named paths' working-tree content and disregards
     // whatever else is staged, so an operator's staged-but-unrelated work is
     // never swallowed. It needs the paths to be known to git — which the `add`
@@ -861,12 +896,10 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // A commit that stands alone opens no window: §4 requires that no later save
     // fold into it, and the only mechanism a later save has for folding is this
     // record. Both signals count — an act over a named set (`docIds`), and the
-    // explicit `squash: false` an audit entry carries. The second half was
-    // missing: a force break opened a window, so the next save by that party
-    // amended the audit entry, replacing its subject and dropping the
-    // `Corpus-Lock-Holder` trailer that is the whole point of it. "Never part of
-    // an edit" was only ever enforced in one direction (SERVER-091, verifying
-    // the issue's `allowEmpty` edge case).
+    // explicit `squash: false` a caller passes (`threads/reattach.ts`).
+    // Enforcing only the first left "never part of an
+    // edit" true in one direction: the next save by the same party amended the
+    // standalone commit and replaced its subject (SERVER-091).
     openWindow =
       request.docIds !== undefined || request.squash === false
         ? null

@@ -159,10 +159,7 @@ export async function createDocument(
     });
 
     return {
-      doc: toWireDoc(
-        workspace.projection,
-        loadDocument(workspace.workspaceRoot, workspace.projection, id),
-      ),
+      doc: toWireDoc(workspace, loadDocument(workspace.workspaceRoot, workspace.projection, id)),
       result,
     };
   });

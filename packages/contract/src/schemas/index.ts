@@ -56,7 +56,7 @@ export * from "./health.js";
 export * from "./id.js";
 export * from "./index-maintenance.js";
 export * from "./job.js";
-export * from "./lock.js";
+export * from "./key.js";
 export * from "./pagination.js";
 export * from "./query.js";
 export * from "./queue.js";

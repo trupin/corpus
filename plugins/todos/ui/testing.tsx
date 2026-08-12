@@ -1,4 +1,4 @@
-import type { Doc, DocRow, Lock } from "@corpus/contract";
+import type { Doc, DocRow } from "@corpus/contract";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import type { ReactElement, ReactNode } from "react";
 
@@ -31,6 +31,30 @@ export function todoBody(items: readonly (readonly [string, boolean, string?])[]
 }
 
 /**
+ * SPEC.md §7's key, in the shape a read hands one out: 64 lowercase hexadecimal
+ * characters, different for every document.
+ *
+ * The **value** is a stand-in — the real one is a digest of the document's
+ * stored bytes, which only the server can take — and no board surface may ever
+ * depend on more than that. A key is opaque: the UI reads a document, keeps the
+ * key it was given, and presents it back on a body write. Nothing here parses
+ * one, and nothing here is a lock: §7 removed the thing that could be held, and
+ * §11 says the board is never read-only.
+ */
+export function fixtureKey(id: string): string {
+  let hash = 0x811c9dc5;
+  const parts: string[] = [];
+  for (let round = 0; round < 8; round += 1) {
+    for (let at = 0; at < id.length; at += 1) {
+      hash ^= id.charCodeAt(at) + round;
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    parts.push(hash.toString(16).padStart(8, "0"));
+  }
+  return parts.join("");
+}
+
+/**
  * A `Doc` with the frontmatter a `todo` document carries.
  *
  * `extra` is passed verbatim so a test can still build a **pre-migration**
@@ -43,6 +67,10 @@ export function todoDoc(
   body = "## Notes\n\nThe raw body, shown when the items cannot be read.\n",
 ): Doc {
   return {
+    key: fixtureKey(id),
+    // The advisory §7 signal that travels beside the key: information, never a
+    // gate, and nothing in this plugin reads it.
+    userEditing: false,
     frontmatter: {
       id,
       type: "todo",
@@ -72,8 +100,6 @@ export interface TransportOptions {
   readonly docs: readonly DocRow[];
   /** The document `GET /api/docs/{id}` answers with. */
   readonly doc: Doc;
-  /** Locks `GET /api/locks` answers with. */
-  readonly locks: readonly Lock[];
   /**
    * What the plugin's aggregate (`GET /api/x/todos/lists…`) answers with — the
    * one read both row surfaces share since PLUGINS-007. `null` falls through to
@@ -87,7 +113,6 @@ export interface TransportOptions {
 const DEFAULTS: TransportOptions = {
   docs: [],
   doc: todoDoc("doc_default", {}),
-  locks: [],
   lists: [],
   write: { status: 200, body: { ok: true } },
 };
@@ -128,7 +153,7 @@ const json = (value: unknown, status: number): Response =>
     headers: { "content-type": "application/json" },
   });
 
-/** Answers `/api/docs`, `/api/docs/{id}`, `/api/locks`, `/api/jobs` and `/api/x/todos/*`. */
+/** Answers `/api/docs`, `/api/docs/{id}`, `/api/jobs` and `/api/x/todos/*`. */
 export function transport(overrides: Partial<TransportOptions>): Transport {
   const options: TransportOptions = { ...DEFAULTS, ...overrides };
   const calls: RecordedCall[] = [];
@@ -146,7 +171,6 @@ export function transport(overrides: Partial<TransportOptions>): Transport {
     if (path.startsWith("/api/x/todos")) {
       return Promise.resolve(json(options.write.body, options.write.status));
     }
-    if (path === "/api/locks") return Promise.resolve(json({ locks: options.locks }, 200));
     if (path === "/api/jobs") return Promise.resolve(json({ jobs: [] }, 200));
     if (path.startsWith("/api/docs/")) return Promise.resolve(json(options.doc, 200));
     return Promise.resolve(

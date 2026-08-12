@@ -217,16 +217,30 @@ test.describe("the weight a composer may state", () => {
 
     // The workspace edits its own orchestrate skill. Nothing else changes: no
     // rebuild, no reload, no code — the composer reads that document.
-    await page.evaluate(
+    //
+    // The read before the write is not ceremony: SPEC.md §7 requires a write
+    // that replaces a **body** to present the key of the version it read, and
+    // this spec is the one caller in the suite that writes a body from inside
+    // `page.evaluate` rather than through the editor. It used to `PUT` blind and
+    // ignore the response, which after SHARED-041 is a `409` the test could not
+    // see — the guidance simply never changed, and the assertion failed four
+    // lines later on labels that had never had a chance to move. Presenting the
+    // key is what a real client does; asserting the response is what stops this
+    // failing silently again.
+    const wrote = await page.evaluate(
       async ([body]) => {
-        await fetch("/api/docs/doc_orchestrate", {
+        const read = await fetch("/api/docs/doc_orchestrate");
+        const { key } = (await read.json()) as { key: string };
+        const put = await fetch("/api/docs/doc_orchestrate", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ body }),
+          body: JSON.stringify({ body, key }),
         });
+        return put.status;
       },
       [RENAMED] as const,
     );
+    expect(wrote).toBe(200);
     await page.reload();
     await page.locator(".board").waitFor();
     await reopenedThread(page);

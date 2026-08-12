@@ -8,6 +8,7 @@ import {
   ApiErrorSchema,
   HealthSchema,
   ValidationErrorSchema,
+  buildOpenApiDocument,
 } from "@corpus/contract";
 import { OPENAPI_PATH, createServer, formatHostForUrl, mapListenError } from "./app.js";
 import { nonLoopbackBindError, type ServerConfig } from "./config.js";
@@ -145,15 +146,25 @@ describe("createServer — the mounted surface", () => {
     }
   });
 
-  it("leaves the lock surface unmounted, and unreachable, without a projection", async () => {
-    // A lock is per-document, and "does this document exist?" is a question only
-    // the projection can answer — so no projection means no lock routes, which
-    // is an honest 404 rather than a half-wired server.
+  it("has no lock surface at all: SPEC.md §7 replaced it with a key (SERVER-099)", async () => {
+    // "Nothing to acquire, nothing to release, nothing to break." The lock is
+    // *removed*, not deprecated beside the key — SHARED-041 decision 7 — so this
+    // asserts absence, which is the only thing a deletion can be proved by.
     const server = createServer(makeConfig());
 
-    expect(server.locks).toBeUndefined();
-    expect(server.lockGuard).toBeUndefined();
-    expect((await server.app.request("/api/locks", { headers: AUTH })).status).toBe(404);
+    for (const [method, path] of [
+      ["GET", "/api/locks"],
+      ["POST", "/api/locks/reap"],
+      ["POST", "/api/locks/doc_a1b2c3"],
+      ["DELETE", "/api/locks/doc_a1b2c3"],
+      ["POST", "/api/locks/doc_a1b2c3/break"],
+    ] as const) {
+      const response = await server.app.request(path, { method, headers: AUTH });
+      expect([method, path, response.status]).toEqual([method, path, 404]);
+    }
+    // And the OpenAPI document — the thing the CLI and UI clients are generated
+    // from — describes none of it either.
+    expect(JSON.stringify(buildOpenApiDocument())).not.toContain("/api/locks");
   });
 
   it("leaves the db maintenance surface unmounted without a projection", async () => {

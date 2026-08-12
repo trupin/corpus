@@ -86,19 +86,6 @@ export async function deleteThreadTurn(
     const thread = loadThread(workspace, id);
     const turn = requireTurn(thread, ts);
 
-    // The guard runs on the **parent's** id, and only when this deletion will
-    // actually rewrite the parent's frontmatter — i.e. when the turn is the last
-    // one and the thread is anchored (sprint-006 Adjudication 1). Deleting a
-    // middle turn touches one file and is never refused.
-    //
-    // Inside the lanes, and against the state read inside them: a lease the
-    // other party acquires while this deletion is queued must refuse it
-    // (SERVER-022 finding 7), and the turn count that decides whether the parent
-    // is written at all is the one this deletion will act on.
-    if (anchored !== null && thread.turns.length === 1) {
-      await (workspace.assertWritable ?? ((): void => undefined))(anchored.parentId, actor);
-    }
-
     if (thread.turns.length === 1) {
       const outcome = await deleteDocumentLocked(workspace, actor, id);
       return {

@@ -191,12 +191,12 @@ describe("parseEventFile", () => {
 
   it("keeps the deferral bookkeeping, and drops a blockedOn that is not a document id", () => {
     const good = parseEventFile(
-      JSON.stringify({ ...event(), blockedOn: "doc_locked01", deferReason: "user is editing" }),
+      JSON.stringify({ ...event(), blockedOn: "doc_edited01", deferReason: "user is editing" }),
       "evt_aaaaaaaaaaaa",
       "deferred",
     );
     expect(good.ok === true && good.event).toMatchObject({
-      blockedOn: "doc_locked01",
+      blockedOn: "doc_edited01",
       deferReason: "user is editing",
       status: "deferred",
     });
@@ -216,14 +216,14 @@ describe("parseEventFile", () => {
 describe("withoutDeferral", () => {
   it("removes both deferral fields and leaves everything else alone", () => {
     const stripped = withoutDeferral(
-      event({ status: "deferred", blockedOn: "doc_locked01", deferReason: "waiting", attempts: 2 }),
+      event({ status: "deferred", blockedOn: "doc_edited01", deferReason: "waiting", attempts: 2 }),
     );
 
     expect(stripped).not.toHaveProperty("blockedOn");
     expect(stripped).not.toHaveProperty("deferReason");
     expect(stripped).toMatchObject({ id: "evt_aaaaaaaaaaaa", attempts: 2, status: "deferred" });
     // A copy: the caller's event is what a failed transition would have to keep.
-    expect(event({ blockedOn: "doc_locked01" }).blockedOn).toBe("doc_locked01");
+    expect(event({ blockedOn: "doc_edited01" }).blockedOn).toBe("doc_edited01");
   });
 });
 

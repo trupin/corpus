@@ -37,6 +37,8 @@ const NOTE = {
   },
   body: "30-year fixed at 6.1%.\n",
   path: "data/docs/finance/mortgage-options.md",
+  key: "3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3",
+  userEditing: false,
   anchors: [
     {
       anchorId: "anc_1",
@@ -70,10 +72,14 @@ const SKILL = {
   },
   body: "Run the loop.\n",
   path: ".claude/skills/orchestrate/SKILL.md",
+  key: "9c8b7a6d5e4f30291a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f607",
+  userEditing: false,
   anchors: [],
 };
 
 const ARGS = { id: "doc_a1b2c3" };
+
+const hasNotice = (line: string): boolean => line.includes("someone is editing this");
 
 afterEach(closeStubServers);
 
@@ -90,6 +96,7 @@ describe("corpus doc show", () => {
       [
         "Mortgage options",
         "doc_a1b2c3 · note · open",
+        `key ${NOTE.key}`,
         "data/docs/finance/mortgage-options.md",
         "created 2026-07-28T10:00:00.000Z · updated 2026-07-28T11:30:00.000Z",
         "tags finance, housing",
@@ -113,6 +120,7 @@ describe("corpus doc show", () => {
       [
         "orchestrate",
         "doc_skill1a2b3c4d · skill · open",
+        `key ${SKILL.key}`,
         ".claude/skills/orchestrate/SKILL.md",
         "created — · updated —",
         "tags —",
@@ -170,6 +178,49 @@ describe("corpus doc show", () => {
     expect(harness.stdout().endsWith("\n(no body)\n")).toBe(true);
   });
 
+  it("prints the key whole, on the third line, where a writer will carry it", async () => {
+    const stub = await startStubServer(jsonResponder(200, NOTE));
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runDocShow(harness.context);
+
+    // Third line, not buried under the body: the key is the one thing this read
+    // hands over that the next command cannot do without.
+    expect(harness.stdout().split("\n")[2]).toBe(`key ${NOTE.key}`);
+    // Whole, never abbreviated — the agent copies what it reads, and half a key
+    // is not a key (the contract's opacity rules).
+    expect(NOTE.key).toHaveLength(64);
+    expect(harness.stdout()).toContain(NOTE.key);
+  });
+
+  it("says a person is editing, as an invitation rather than a refusal", async () => {
+    const stub = await startStubServer(jsonResponder(200, { ...NOTE, userEditing: true }));
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runDocShow(harness.context);
+
+    const [notice] = harness.stdout().split("\n").filter(hasNotice);
+    expect(notice).toContain("someone is editing this");
+    // §7's trade, stated where it is acted on: nothing is refused for it, and
+    // the way to be polite is named rather than implied.
+    expect(notice).toContain("Nothing is refused for it");
+    expect(notice).toContain("corpus queue defer <event-id> --blocked-on doc_a1b2c3");
+    // Nothing to release, and nothing read-only: the lock's vocabulary must not
+    // come back in through the wording.
+    // `--blocked-on` is the flag's real name, so the word boundary matters:
+    // what must not appear is a *lock*, a *release*, or a read-only document.
+    expect(notice).not.toMatch(/\block(ed|s|ing)?\b|\brelease|read-only/i);
+  });
+
+  it("says nothing about editing when nobody is", async () => {
+    const stub = await startStubServer(jsonResponder(200, NOTE));
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runDocShow(harness.context);
+
+    expect(harness.stdout()).not.toContain("someone is editing");
+  });
+
   it("collapses a long anchor quote onto its one line", async () => {
     const long = "a".repeat(120);
     const stub = await startStubServer(
@@ -202,11 +253,22 @@ describe("the doc show command spec", () => {
     expect(showCommand.flags).toEqual([]);
   });
 
-  it("carries a plain example and a --json example that inlines its shape", () => {
-    expect(showCommand.examples).toHaveLength(2);
-    const machine = showCommand.examples.find((example) => example.command.includes("--json"));
-    expect(machine?.description).toContain('{"frontmatter"');
+  it("carries a plain example, the key-extraction one, and a --json example that inlines its shape", () => {
+    expect(showCommand.examples).toHaveLength(3);
+    const machine = showCommand.examples.find((example) =>
+      example.description.includes('{"frontmatter"'),
+    );
     expect(machine?.description).toContain('"anchors"');
+    expect(machine?.description).toContain('"key"');
+  });
+
+  it("documents the key and the editing signal, because the help is where a writer learns them", () => {
+    expect(showCommand.description).toContain("`key`");
+    expect(showCommand.description).toContain("corpus doc edit <id> --key <key>");
+    expect(showCommand.description).toContain("edit session");
+    // The signal must not be published as a gate: that misreading is exactly
+    // the lock's failure re-learned one layer up.
+    expect(showCommand.description).toContain("information, not a refusal");
   });
 
   it("is reachable as `corpus doc show`", () => {

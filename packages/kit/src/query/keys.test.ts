@@ -12,8 +12,6 @@ import {
   jobKey,
   JOBS_KEY,
   jobsListKey,
-  lockKey,
-  LOCKS_KEY,
   PLUGIN_KEY_PREFIX,
   pluginKey,
   QUEUE_KEY,
@@ -33,11 +31,9 @@ describe("the core vocabulary is the contract's, not the kit's", () => {
     expect(TREE_KEY).toBe(contract.TREE_KEY);
     expect(QUEUE_KEY).toBe(contract.QUEUE_KEY);
     expect(JOBS_KEY).toBe(contract.JOBS_KEY);
-    expect(LOCKS_KEY).toBe(contract.LOCKS_KEY);
     expect(docKey).toBe(contract.docKey);
     expect(threadKey).toBe(contract.threadKey);
     expect(jobKey).toBe(contract.jobKey);
-    expect(lockKey).toBe(contract.lockKey);
   });
 
   it("spells a document key `docs` and a thread key `threads`, plural", () => {
@@ -54,9 +50,7 @@ describe("the core vocabulary is the contract's, not the kit's", () => {
     expect(TREE_KEY).toEqual(["tree"]);
     expect(QUEUE_KEY).toEqual(["queue"]);
     expect(JOBS_KEY).toEqual(["jobs"]);
-    expect(LOCKS_KEY).toEqual(["locks"]);
     expect(jobKey("evt_1")).toEqual(["jobs", "evt_1"]);
-    expect(lockKey("doc_1")).toEqual(["locks", "doc_1"]);
   });
 });
 

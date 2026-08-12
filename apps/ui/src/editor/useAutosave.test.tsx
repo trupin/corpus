@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import type { Doc } from "@corpus/contract";
 import type { CorpusClient } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -10,7 +11,7 @@ import {
   resetAbandonRegistry,
   snapshotOf,
 } from "../abandon/registry.js";
-import { docFixture } from "../testing/readerFixture";
+import { docFixture, nextDocumentKey } from "../testing/readerFixture";
 import {
   EDIT_SESSION_SETTLE_MS,
   resetEditSessionFlush,
@@ -21,6 +22,8 @@ import { editingCount, isEditing, resetEditingRegistry } from "./editingRegistry
 import { saveChipClass, saveChipText } from "./SaveChip.js";
 import {
   AUTOSAVE_DEBOUNCE_MS,
+  CONFLICT_STALLED_MESSAGE,
+  MAX_CONFLICT_RETRIES,
   EDIT_SETTLE_MS,
   RETRY_DELAY_MS,
   useAutosave,
@@ -36,6 +39,9 @@ import {
  * away mid-debounce.
  */
 
+/** The key the seeded `savedBody` was read at (SPEC.md §7). */
+const SAVED_KEY = nextDocumentKey();
+
 interface Call {
   readonly method: string;
   readonly path: string;
@@ -50,6 +56,10 @@ interface Wire {
   delayMs: number;
   remapped: string[];
   orphaned: string[];
+  /** The key the server holds for this document (SPEC.md §7). */
+  key: string;
+  /** How many more body writes are refused as stale, whatever key they carry. */
+  refuseKey: number;
 }
 
 function wire(): Wire {
@@ -62,6 +72,8 @@ function wire(): Wire {
     delayMs: 0,
     remapped: [] as string[],
     orphaned: [] as string[],
+    key: SAVED_KEY,
+    refuseKey: 0,
   };
 
   state.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -73,15 +85,29 @@ function wire(): Wire {
       path: url.pathname,
       body: raw === "" ? undefined : (JSON.parse(raw) as unknown),
     });
-    if (url.pathname === "/api/locks") return json({ locks: [] });
     if (request.method === "PUT") {
       if (state.fail > 0) {
         state.fail -= 1;
         return json({ code: "internal", message: "the server refused" }, 500);
       }
+      if (state.refuseKey > 0) {
+        state.refuseKey -= 1;
+        state.key = nextDocumentKey();
+        // SPEC.md §7: never a bare refusal — the document as it now stands,
+        // carrying the fresh key in the field every read carries it in.
+        return json(
+          {
+            code: "stale_key",
+            message: "the key names a version this document no longer is",
+            doc: docFixture({ body: "the other writer's paragraph\n", key: state.key }),
+          },
+          409,
+        );
+      }
       if (state.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, state.delayMs));
+      state.key = nextDocumentKey();
       return json({
-        doc: docFixture(),
+        doc: docFixture({ key: state.key }),
         anchors: { remapped: state.remapped, orphaned: state.orphaned },
         warnings: [],
       });
@@ -102,21 +128,30 @@ function json(payload: unknown, status = 200): Response {
 interface HostProps {
   readonly transport: Wire;
   readonly docId?: string;
-  readonly locked?: boolean;
   readonly savedBody?: string;
+  readonly savedKey?: string;
   readonly onAnchors?: (report: AnchorReport) => void;
+  readonly onServerDoc?: (doc: Doc) => void;
 }
 
 /** A surface with one control: type this text. */
-function Host({ transport, docId, locked, savedBody, onAnchors }: HostProps): ReactElement {
+function Host({
+  transport,
+  docId,
+  savedBody,
+  savedKey,
+  onAnchors,
+  onServerDoc,
+}: HostProps): ReactElement {
   const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
   return (
     <harness.Wrapper>
       <Surface
         docId={docId ?? "doc_a1b2c3"}
-        locked={locked ?? false}
         savedBody={savedBody ?? "start\n"}
+        savedKey={savedKey ?? SAVED_KEY}
         {...(onAnchors === undefined ? {} : { onAnchors })}
+        {...(onServerDoc === undefined ? {} : { onServerDoc })}
       />
     </harness.Wrapper>
   );
@@ -124,23 +159,38 @@ function Host({ transport, docId, locked, savedBody, onAnchors }: HostProps): Re
 
 interface SurfaceProps {
   readonly docId: string;
-  readonly locked: boolean;
   readonly savedBody: string;
+  readonly savedKey: string;
   readonly onAnchors?: (report: AnchorReport) => void;
+  readonly onServerDoc?: (doc: Doc) => void;
 }
 
 let type: (body: string) => void = () => undefined;
 let retry: () => void = () => undefined;
 
-function Surface({ docId, locked, savedBody, onAnchors }: SurfaceProps): ReactElement {
-  const autosave = useAutosave({ docId, savedBody, locked, onAnchors });
+function Surface({
+  docId,
+  savedBody,
+  savedKey,
+  onAnchors,
+  onServerDoc,
+}: SurfaceProps): ReactElement {
+  const autosave = useAutosave({ docId, savedBody, savedKey, onAnchors, onServerDoc });
   // In the order `DocEditor` declares them, which is the order the cleanups
   // run in: autosave sends its final `PUT`, *then* the surface count drops.
   useEditSurface(docId);
   type = autosave.change;
   retry = autosave.retry;
   return (
-    <span data-testid="chip" className={saveChipClass(autosave.state)}>
+    // `title` carries the message exactly as the real `SaveChip` does: the
+    // chip's *text* is a fixed label, and what a failure actually says lives
+    // there — so a test that read only the text could not tell one refusal from
+    // another.
+    <span
+      data-testid="chip"
+      className={saveChipClass(autosave.state)}
+      title={autosave.state.kind === "error" ? autosave.state.message : ""}
+    >
       {saveChipText(autosave.state)}
     </span>
   );
@@ -184,7 +234,10 @@ describe("debouncing", () => {
     });
 
     expect(transport.puts()).toHaveLength(1);
-    expect(transport.puts()[0]?.body).toEqual({ body: `start ${"x".repeat(15)}\n` });
+    expect(transport.puts()[0]?.body).toEqual({
+      body: `start ${"x".repeat(15)}\n`,
+      key: expect.any(String) as unknown,
+    });
     expect(transport.puts()[0]?.path).toBe("/api/docs/doc_a1b2c3");
   });
 
@@ -204,46 +257,39 @@ describe("debouncing", () => {
     expect(transport.puts()).toHaveLength(0);
   });
 
-  it("does not schedule a save while another party holds the lock", async () => {
-    const transport = wire();
-    render(<Host transport={transport} locked />);
-
-    act(() => {
-      type("start typed\n");
-    });
-    await act(async () => {
-      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS * 3);
-      await Promise.resolve();
-    });
-
-    expect(transport.puts()).toHaveLength(0);
-  });
-
   /**
-   * UI-013 rider. A buffer parked behind a foreign lock cannot be sent — the
-   * server refuses a write to a locked document — so the tab holding it is the
-   * only copy of that text. Leaving the page destroys it, and the chip that was
-   * saying so goes with it, so this is the one exit worth intercepting.
+   * The buffer a `pagehide` flush cannot rescue: a save the server refused and
+   * that has not landed since. The tab holding it is the only copy of that text,
+   * and leaving the page destroys it silently along with the chip that was
+   * saying so.
    */
-  describe("leaving the page with a buffer parked behind a lock", () => {
+  describe("leaving the page over a refused buffer", () => {
     function leave(): Event {
       const event = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(event);
       return event;
     }
 
-    it("asks the browser to confirm", () => {
+    it("asks the browser to confirm once a save has been refused", async () => {
       const transport = wire();
-      render(<Host transport={transport} locked />);
+      transport.fail = 2;
+      render(<Host transport={transport} />);
       act(() => {
-        type("text that cannot be saved yet\n");
+        type("text the server would not take\n");
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(chip().className).toBe("save-chip failed");
       });
       expect(leave().defaultPrevented).toBe(true);
     });
 
-    it("says nothing when there is no parked buffer", () => {
+    it("says nothing when there is no buffer at all", () => {
       const transport = wire();
-      render(<Host transport={transport} locked />);
+      render(<Host transport={transport} />);
       expect(leave().defaultPrevented).toBe(false);
     });
 
@@ -278,7 +324,10 @@ describe("edits typed while a save is on the wire", () => {
       await Promise.resolve();
     });
     expect(transport.puts()).toHaveLength(1);
-    expect(transport.puts()[0]?.body).toEqual({ body: "start one\n" });
+    expect(transport.puts()[0]?.body).toEqual({
+      body: "start one\n",
+      key: expect.any(String) as unknown,
+    });
 
     // The tail edit, typed while the first PUT is still out.
     act(() => {
@@ -305,7 +354,10 @@ describe("edits typed while a save is on the wire", () => {
     await waitFor(() => {
       expect(transport.puts()).toHaveLength(2);
     });
-    expect(transport.puts()[1]?.body).toEqual({ body: "start one two\n" });
+    expect(transport.puts()[1]?.body).toEqual({
+      body: "start one two\n",
+      key: expect.any(String) as unknown,
+    });
     expect(transport.puts()[1]?.path).toBe("/api/docs/doc_a1b2c3");
   });
 
@@ -394,7 +446,10 @@ describe("edits typed while a save is on the wire", () => {
     await waitFor(() => {
       expect(transport.puts()).toHaveLength(2);
     });
-    expect(transport.puts()[1]?.body).toEqual({ body: "start one two\n" });
+    expect(transport.puts()[1]?.body).toEqual({
+      body: "start one two\n",
+      key: expect.any(String) as unknown,
+    });
   });
 
   it("issues nothing extra when the buffer came back to what was just sent", async () => {
@@ -423,32 +478,153 @@ describe("edits typed while a save is on the wire", () => {
     });
     expect(transport.puts()).toHaveLength(1);
   });
+});
 
-  it("waits for a foreign lock to clear rather than reporting a save", async () => {
+/**
+ * SPEC.md §7. The key is the *only* thing standing between two writers now, so
+ * what is asserted here is the mechanism itself: what a save presents, what it
+ * keeps, and — the criterion this issue turns on — what a refusal costs the
+ * person, which must be nothing.
+ */
+describe("the key a save presents (SPEC.md §7)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  async function typeAndSettle(body: string): Promise<void> {
+    act(() => {
+      type(body);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+  }
+
+  it("presents the key its last read carried", async () => {
     const transport = wire();
-    const view = render(<Host transport={transport} />);
-    await typeThenSaveLandsLate(transport);
+    render(<Host transport={transport} savedKey={SAVED_KEY} />);
+    await typeAndSettle("start one\n");
 
-    // The agent took the lock while the save was out.
-    view.rerender(<Host transport={transport} locked />);
-    await act(async () => {
-      vi.advanceTimersByTime(2_000);
-      await Promise.resolve();
-    });
     await waitFor(() => {
-      expect(chip().className).toBe("save-chip failed");
+      expect(transport.puts()).toHaveLength(1);
     });
-    expect(transport.puts()).toHaveLength(1);
+    expect(transport.puts()[0]?.body).toEqual({ body: "start one\n", key: SAVED_KEY });
+  });
 
-    view.rerender(<Host transport={transport} locked={false} />);
-    await act(async () => {
-      vi.advanceTimersByTime(2_000);
-      await Promise.resolve();
+  /** "Every write that lands gives you a fresh key for the next one." */
+  it("keeps the key each save returns, rather than re-presenting the read's", async () => {
+    const transport = wire();
+    render(<Host transport={transport} savedKey={SAVED_KEY} />);
+    await typeAndSettle("start one\n");
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(1);
     });
+    const granted = transport.key;
+
+    await typeAndSettle("start one two\n");
     await waitFor(() => {
       expect(transport.puts()).toHaveLength(2);
     });
-    expect(transport.puts()[1]?.body).toEqual({ body: "start one two\n" });
+    expect(transport.puts()[1]?.body).toEqual({ body: "start one two\n", key: granted });
+    expect(granted).not.toBe(SAVED_KEY);
+  });
+
+  it("adopts the refusal's key and re-sends the very same text", async () => {
+    const transport = wire();
+    transport.refuseKey = 1;
+    const adopted: Doc[] = [];
+    render(
+      <Host
+        transport={transport}
+        savedKey={SAVED_KEY}
+        onServerDoc={(doc) => {
+          adopted.push(doc);
+        }}
+      />,
+    );
+    await typeAndSettle("start half a sen\n");
+
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(2);
+    });
+    const [refused, retried] = transport.puts() as [Call, Call];
+    const first = refused.body as { body: string; key: string };
+    const second = retried.body as { body: string; key: string };
+    // The person's text, byte for byte, on both attempts. Nothing was trimmed
+    // to the last whole word, merged with the other writer's copy, or dropped.
+    expect(first.body).toBe("start half a sen\n");
+    expect(second.body).toBe(first.body);
+    expect(first.key).toBe(SAVED_KEY);
+    expect(second.key).not.toBe(SAVED_KEY);
+
+    // The refusal's document — the corpus as it now stands — was handed to the
+    // host, which is what puts it where an SSE refetch would have.
+    expect(adopted[0]?.body).toBe("the other writer's paragraph\n");
+    expect(second.key).toBe(adopted[0]?.key);
+    // And the chip reports the save that landed, not the one that was refused.
+    await waitFor(() => {
+      expect(chip().className).toBe("save-chip saved");
+    });
+  });
+
+  it("stops after a bounded number of refusals, still holding the text", async () => {
+    const transport = wire();
+    transport.refuseKey = MAX_CONFLICT_RETRIES + 5;
+    render(<Host transport={transport} savedKey={SAVED_KEY} />);
+    await typeAndSettle("start irreplaceable\n");
+
+    await waitFor(() => {
+      expect(chip().className).toBe("save-chip failed");
+    });
+    expect(transport.puts()).toHaveLength(MAX_CONFLICT_RETRIES + 1);
+    expect(chip().title).toBe(CONFLICT_STALLED_MESSAGE);
+    for (const call of transport.puts()) {
+      expect((call.body as { body: string }).body).toBe("start irreplaceable\n");
+    }
+
+    // The buffer is still whole: the server stops refusing, and one retry by
+    // hand lands exactly the text that was typed.
+    transport.refuseKey = 0;
+    act(() => {
+      retry();
+    });
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(MAX_CONFLICT_RETRIES + 2);
+    });
+    expect((transport.puts().at(-1)?.body as { body: string }).body).toBe("start irreplaceable\n");
+  });
+
+  /**
+   * A frontmatter write — the person's own title edit, a tag the agent added —
+   * moves the file's key and leaves the body alone. Taking the new key then is
+   * not adopting anything unread, and refusing to take it would cost the next
+   * sentence a round trip for a change that could not have collided with it.
+   */
+  it("takes a fresh key that arrives with the body already in hand", async () => {
+    const transport = wire();
+    const view = render(<Host transport={transport} savedKey={SAVED_KEY} />);
+    act(() => {
+      type("start typed\n");
+    });
+
+    const afterFrontmatterWrite = nextDocumentKey();
+    transport.key = afterFrontmatterWrite;
+    view.rerender(
+      <Host transport={transport} savedBody={"start\n"} savedKey={afterFrontmatterWrite} />,
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(1);
+    });
+    expect(transport.puts()[0]?.body).toEqual({
+      body: "start typed\n",
+      key: afterFrontmatterWrite,
+    });
   });
 });
 
@@ -591,7 +767,10 @@ describe("failure", () => {
       expect(transport.puts()).toHaveLength(2);
     });
     // The same body, not a truncated one: the buffer was never discarded.
-    expect(transport.puts()[1]?.body).toEqual({ body: "start typed\n" });
+    expect(transport.puts()[1]?.body).toEqual({
+      body: "start typed\n",
+      key: expect.any(String) as unknown,
+    });
     await waitFor(() => {
       expect(chip().className).toBe("save-chip saved");
     });
@@ -625,7 +804,10 @@ describe("failure", () => {
     await waitFor(() => {
       expect(transport.puts()).toHaveLength(3);
     });
-    expect(transport.puts()[2]?.body).toEqual({ body: "start typed\n" });
+    expect(transport.puts()[2]?.body).toEqual({
+      body: "start typed\n",
+      key: expect.any(String) as unknown,
+    });
   });
 });
 
@@ -730,7 +912,10 @@ describe("flushing", () => {
     await settle();
 
     expect(transport.puts()).toHaveLength(1);
-    expect(transport.puts()[0]?.body).toEqual({ body: "start typed\n" });
+    expect(transport.puts()[0]?.body).toEqual({
+      body: "start typed\n",
+      key: expect.any(String) as unknown,
+    });
   });
 
   it("sends nothing for a document that is being abandoned", async () => {
@@ -786,7 +971,10 @@ describe("flushing", () => {
     expect(transport.puts()).toHaveLength(1);
     // The id in the URL is the one that was being edited, never the new one.
     expect(transport.puts()[0]?.path).toBe("/api/docs/doc_outgoing");
-    expect(transport.puts()[0]?.body).toEqual({ body: "outgoing text\n" });
+    expect(transport.puts()[0]?.body).toEqual({
+      body: "outgoing text\n",
+      key: expect.any(String) as unknown,
+    });
   });
 
   it("sends a pending save when the tab is hidden", async () => {

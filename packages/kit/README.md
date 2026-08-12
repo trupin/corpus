@@ -3,13 +3,15 @@
 The plugin contract (SPEC.md §10). Plugin UI imports **only** from `@corpus/kit`
 — never from `@corpus/contract`, never from `apps/ui`, never `fetch` directly.
 
-Two entry points:
+Three code entry points, and the stylesheets:
 
-| Import                   | What it is                                                                     |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `@corpus/kit`            | The runtime contract: client, provider, hooks, key builders, types             |
-| `@corpus/kit/tokens.css` | The design tokens (light/dark). CSS has no compile step, so it is a stylesheet |
-| `@corpus/kit/testing`    | Test doubles: `FakeEventSource`, `createCorpusTestHarness`                     |
+| Import                                                                     | What it is                                                                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `@corpus/kit`                                                              | The runtime contract: client, provider, hooks, key builders, components, types                    |
+| `@corpus/kit/plugin`                                                       | The manifest surface: `definePlugin`, `PluginManifest`, `ColumnComponentProps`, `DocPanelProps`   |
+| `@corpus/kit/testing`                                                      | Test doubles: `FakeEventSource`, `createCorpusTestHarness`                                        |
+| `@corpus/kit/tokens.css`                                                   | The design tokens (light/dark). CSS has no compile step, so it is a stylesheet, not an export     |
+| `@corpus/kit/row.css`, `/markdown.css`, `/autocomplete.css`, `/weight.css` | The anatomy stylesheets for the components that need one — import the sheet next to the component |
 
 ## The kit is the only data path
 
@@ -43,32 +45,54 @@ function Board() {
 environment variable. Provisioning belongs to whoever mounts the provider — in
 this repo, `apps/ui/src/app/apiClient.ts`.
 
+## What else is in here
+
+Beyond the data path, the kit ships the pieces that make a plugin column look
+native (SPEC.md §10) — each with its stylesheet as a subpath beside it:
+
+| Family                | Exports                                                                                                                                       | Stylesheet         |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| Rows                  | `Row` (and the `ListItem` seam a plugin replaces), `AgeChip`, `UnreadBadge`, `NeedsYouBadge`, `WorkingDot`, `stalenessLevel`, `useRowActions` | `row.css`          |
+| Markdown              | `MarkdownView`, the `[[ref]]` grammar (`parseRefs`, `remarkCorpusRefs`), `CorpusImage`, `ImageViewerProvider`                                 | `markdown.css`     |
+| Smart input           | `useAutocomplete`, `AutocompleteMenu`, `handleAutocompleteKeyDown` — the one `@` / `/` / `[[` implementation                                  | `autocomplete.css` |
+| Composer key contract | the `↵` / `⌘↵` / `⇧⌘↵` handling every composer obeys                                                                                          | —                  |
+| Weight                | `WeightPicker`, `useComposerWeight`                                                                                                           | `weight.css`       |
+
+`src/index.ts` is the authority on the surface and says why each export is on it;
+this table is a map, not a census.
+
 ## Query keys
 
 Keys are hierarchical arrays, and invalidation is **prefix-matched**: a frame
 naming `["docs"]` invalidates every entry whose key starts with `"docs"`. Build
 keys with the exported builders; never write a literal.
 
-| Key                               | Builder                | Emitted by                                                                                | Refetched by                         |
-| --------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------ |
-| `["docs"]`                        | `DOCS_KEY`             | every document or thread mutation, and every out-of-band file change the watcher projects | every `useDocs` variant              |
-| `["docs", <canonical>]`           | `docsListKey(filter)`  | — (a client-side collection variant; reached through the `["docs"]` prefix)               | that `useDocs` call                  |
-| `["docs", "<docId\|threadId>"]`   | `docKey(id)`           | a mutation of that one document; a thread mutation for both the thread and its parent     | `useDoc(id)`                         |
-| `["docs", "<docId>", "related"]`  | `relatedKey(id)`       | — (under `docKey(id)`, so both that document's frames and bare `["docs"]` reach it)       | `useRelatedDocs(id)`                 |
-| `["docs", "search", <canonical>]` | `searchKey(params)`    | — (a client-side variant under the `["docs"]` prefix)                                     | `useCorpusSearch(params)`            |
-| `["threads", "<threadId>"]`       | `threadKey(id)`        | thread creation, turn append, turn deletion, resolve/reopen, mark-seen                    | `useThread(id)`                      |
-| `["tree"]`                        | `TREE_KEY`             | anything that changes the folder hierarchy                                                | `useTree()`                          |
-| `["queue"]`                       | `QUEUE_KEY`            | every queue transition (SPEC.md §7)                                                       | the console's depth and halted state |
-| `["jobs"]`                        | `JOBS_KEY`             | every queue transition, plus any job-log append (coalesced)                               | every `useJobs` variant              |
-| `["jobs", <canonical>]`           | `jobsListKey(params)`  | — (a client-side variant under the `["jobs"]` prefix)                                     | that `useJobs` call                  |
-| `["jobs", "<eventId>"]`           | `jobKey(eventId)`      | an append to that job's log, and its retry/abandon transitions                            | the console's live log panel         |
-| `["locks"]`                       | `LOCKS_KEY`            | lock acquire, release, force-break, reap                                                  | `useLocks()`                         |
-| `["locks", "<docId>"]`            | `lockKey(docId)`       | acquire/release/force-break/reap of that one document's lock                              | the open reader's holder banner      |
-| `["index"]`                       | `INDEX_KEY`            | the embed worker's state transitions and throttled drain progress; rebuild start/end      | the console strip's index pill       |
-| `["health"]`                      | `HEALTH_KEY`           | **nothing server-side.** The SSE bridge invalidates it on every drop and every reconnect  | `useHealth()` — the console strip    |
-| `["x", "<plugin>", …]`            | `pluginKey(plugin, …)` | whatever the plugin's server routes emit                                                  | the plugin's own queries             |
+| Key                               | Builder                 | Emitted by                                                                                | Refetched by                         |
+| --------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------ |
+| `["docs"]`                        | `DOCS_KEY`              | every document or thread mutation, and every out-of-band file change the watcher projects | every `useDocs` variant              |
+| `["docs", <canonical>]`           | `docsListKey(filter)`   | — (a client-side collection variant; reached through the `["docs"]` prefix)               | that `useDocs` call                  |
+| `["docs", "<docId\|threadId>"]`   | `docKey(id)`            | a mutation of that one document; a thread mutation for both the thread and its parent     | `useDoc(id)`                         |
+| `["docs", "<docId>", "related"]`  | `relatedKey(id)`        | — (under `docKey(id)`, so both that document's frames and bare `["docs"]` reach it)       | `useRelatedDocs(id)`                 |
+| `["docs", "search", <canonical>]` | `searchKey(params)`     | — (a client-side variant under the `["docs"]` prefix)                                     | `useCorpusSearch(params)`            |
+| `["threads", "<threadId>"]`       | `threadKey(id)`         | thread creation, turn append, turn deletion, resolve/reopen, mark-seen                    | `useThread(id)`                      |
+| `["tree"]`                        | `TREE_KEY`              | anything that changes the folder hierarchy                                                | `useTree()`                          |
+| `["queue"]`                       | `QUEUE_KEY`             | every queue transition (SPEC.md §7)                                                       | the console's depth and halted state |
+| `["jobs"]`                        | `JOBS_KEY`              | every queue transition, plus any job-log append (coalesced)                               | every `useJobs` variant              |
+| `["jobs", <canonical>]`           | `jobsListKey(params)`   | — (a client-side variant under the `["jobs"]` prefix)                                     | that `useJobs` call                  |
+| `["jobs", "<eventId>"]`           | `jobKey(eventId)`       | an append to that job's log, and its retry/abandon transitions                            | the console's live log panel         |
+| `["index"]`                       | `INDEX_KEY`             | the embed worker's state transitions and throttled drain progress; rebuild start/end      | the console strip's index pill       |
+| `["health"]`                      | `HEALTH_KEY`            | **nothing server-side.** The SSE bridge invalidates it on every drop and every reconnect  | `useHealth()` — the console strip    |
+| `["attachments", "<target>"]`     | `attachmentKey(target)` | **nothing.** Attachment bytes are immutable once stored, so nothing ever invalidates them | `useAttachment(target)`              |
+| `["x", "<plugin>", …]`            | `pluginKey(plugin, …)`  | whatever the plugin's server routes emit                                                  | the plugin's own queries             |
 
-The ten core shapes come from `@corpus/contract`'s published
+There is no lock key, and there never will be one: the per-document edit lock is
+gone (SPEC.md §7 "A key, not a lock"), and with it `LOCKS_KEY`, `lockKey`,
+`useLocks` and the holder banner they fed. Nothing is acquired, held, released or
+broken, so there is no state for a query key to name. What replaced it is the
+**document key** below — carried on the document itself, not in a cache entry of
+its own.
+
+The eight core shapes come from `@corpus/contract`'s published
 vocabulary, whose set is closed and pinned by a test upstream, and are
 re-exported here rather than restated — a rename there is a compile error here,
 not a cache that silently stops updating. `["health"]` and the `x/` namespace
@@ -107,6 +131,47 @@ pluginKey("todos", "board"); // ["x", "todos", "board"]
 Plugin keys travel through exactly the same invalidation path as core keys — the
 bridge does not allowlist the core shapes, so a server route that emits
 `["x","todos","board"]` refetches the plugin's query with no kit change.
+
+## Writes present a key
+
+Two writers share every document — the person at the board and the agent — and
+they are kept from overwriting each other by a **key**, not a lock (SPEC.md §7).
+A plugin that replaces a document's body is one of those writers and takes part
+in exactly the same mechanism.
+
+- **Every document read carries its key.** `key` is a field of `Doc`, so a
+  writer reads one off the document it read.
+- **A body replacement must present it.** `PUT /api/docs/{id}` requires `key`
+  when — and only when — the patch carries `body` (the contract's
+  `KEYED_UPDATE_FIELDS`, and a `400` if you omit it). A **delta** write names
+  what it changes — `tags`, `status`, `due`, `archived`, the §11 view keys — and
+  needs no key at all, because it merges instead of overwriting.
+- **A refusal is a `409` with `code: "stale_key"`, never a bare "no".** It
+  carries the document _as it now stands_, whose own `key` is the fresh one.
+  `staleKeyDoc(error)` parses that payload with the contract's schema and returns
+  the document — or `null` for a `409` this build does not recognise, so an
+  unfamiliar refusal can never be mistaken for one you know how to retry.
+- **A refusal is not a lost edit.** Nothing was written, and what you tried to
+  save is still yours to re-send: adopt the fresh key and retry with the _same_
+  buffer.
+
+```ts
+import { staleKeyDoc } from "@corpus/kit";
+
+try {
+  await updateDoc.mutateAsync({ body, key });
+} catch (error) {
+  const fresh = staleKeyDoc(error);
+  if (fresh === null) throw error;
+  await updateDoc.mutateAsync({ body, key: fresh.key }); // same body, new key
+}
+```
+
+`apps/ui/src/editor/useAutosave.ts` is the in-repo implementation of that loop,
+and the reason a conflict arriving mid-sentence costs a round trip rather than a
+sentence. There is nothing to acquire before writing and nothing to release
+after, so a plugin that crashes mid-edit wedges no document, and no surface ever
+renders read-only (SPEC.md §11).
 
 ## Live updates
 

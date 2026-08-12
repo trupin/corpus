@@ -17,22 +17,19 @@ import type {
   Job,
   JobList,
   JobLog,
-  Lock,
-  LockList,
   MarkSeenResult,
   QueueStatus,
   ReattachRefusalReason,
   ReattachThreadRequest,
   ReattachThreadResponse,
   RelatedDocs,
-  ReleaseLockResult,
   SearchResults,
   Thread,
   ThreadMutationResponse,
   UpdateDocRequest,
   UpdateDocResponse,
 } from "@corpus/contract";
-import { ReattachConflictErrorSchema } from "@corpus/contract";
+import { ReattachConflictErrorSchema, StaleKeyErrorSchema } from "@corpus/contract";
 import {
   createCorpusClient as createContractClient,
   isApiError,
@@ -228,7 +225,6 @@ export interface CorpusClient {
    * prevents duplicates — there is no client-side line diff.
    */
   getJobLog(eventId: string, cursor: number, options?: RequestOptions): Promise<JobLog>;
-  listLocks(options?: RequestOptions): Promise<LockList>;
   /** `GET /api/queue/status` — halted flag plus per-status counts (SPEC.md §7). */
   getQueueStatus(options?: RequestOptions): Promise<QueueStatus>;
   /**
@@ -434,36 +430,6 @@ export interface CorpusClient {
    */
   markThreadSeen(id: string): Promise<MarkSeenResult>;
   /**
-   * `POST /api/locks/{docId}` — take (or renew) this document's edit lock.
-   *
-   * SPEC.md §7 gives the user's editor session a lock *while actively editing*:
-   * "acquired via the server on first keystroke, released on idle/close". It is
-   * what the orchestrator's deferral has to look at — without it the agent has
-   * no way to know a human is typing, and §7's "the work stays queued and
-   * applies when the lock clears" has nothing to wait on.
-   *
-   * Re-acquiring a lock the caller already holds **renews the lease**, which is
-   * how an editing session heartbeats. A lock held by the other party is a
-   * `409` carrying that lock — the caller's document is already read-only in
-   * that case, so the refusal is information, not an error to surface.
-   */
-  acquireLock(docId: string, ttlSeconds?: number): Promise<Lock>;
-  /**
-   * `DELETE /api/locks/{docId}` — give the lock back.
-   *
-   * Only the holder may release; releasing somebody else's is
-   * {@link CorpusClient.breakLock}, which is a different, audited act.
-   */
-  releaseLock(docId: string): Promise<ReleaseLockResult>;
-  /**
-   * `POST /api/locks/{docId}/break` — the Force unlock escape hatch (SPEC.md §7).
-   *
-   * **User-only**, and honest about it: the server records the break in the
-   * audit-trail commit and re-queues the agent's deferred edit, so a caller may
-   * report both — but only after this resolves, never optimistically.
-   */
-  breakLock(docId: string): Promise<ReleaseLockResult>;
-  /**
    * `POST /api/queue/halt` — writes the `.corpus/HALT` sentinel (SPEC.md §7).
    *
    * The halted flag is **server** state, not a console toggle: `corpus queue
@@ -569,7 +535,7 @@ export type CreateThreadInput = CreateThreadRequest;
 
 /**
  * A non-2xx response, or a 2xx with no body. Carries the parsed `ApiError` when
- * the server sent one so a caller can branch on `code` (`locked`, `forbidden`)
+ * the server sent one so a caller can branch on `code` (`stale_key`, `forbidden`)
  * without re-parsing the response.
  *
  * **The message is the server's sentence, not the request's shape** (PR #28
@@ -596,12 +562,11 @@ export class CorpusRequestError extends Error {
    * The error body exactly as the server sent it, parsed.
    *
    * `code`, `message` and `issues` are the parts of an `ApiError` every caller
-   * needs; a few responses **narrow** that envelope with a field of their own —
-   * `LockConflictError` adds `lock`, `ReattachConflictError` adds `reason` — and
-   * narrowings are deliberately not new `ERROR_CODES` members, so there is no
-   * `code` to switch on and no typed field to read them from. Keeping the
-   * payload lets the one caller that understands a given narrowing parse it with
-   * the contract's own schema, without this class growing a field per route.
+   * needs; a few responses carry **more** than that envelope —
+   * `ReattachConflictError` adds `reason`, `StaleKeyError` adds the whole `doc`
+   * — and a `code` alone cannot hand those over. Keeping the payload lets the
+   * one caller that understands a given shape parse it with the contract's own
+   * schema, without this class growing a field per route.
    */
   readonly payload: unknown;
 
@@ -620,7 +585,8 @@ export class CorpusRequestError extends Error {
 
 /**
  * Which state refused a `POST /api/threads/{id}/reattach`, or `null` when the
- * failure was not one of the three (a lock, a `404`, an unreachable server).
+ * failure was not one of the three (a moved range, a `404`, an unreachable
+ * server).
  *
  * The three refusals want three different things from the person — re-read and
  * choose again, choose somewhere else, or nothing at all — so a caller that had
@@ -633,6 +599,33 @@ export function reattachRefusalReason(error: unknown): ReattachRefusalReason | n
   if (!(error instanceof CorpusRequestError) || error.status !== 409) return null;
   const parsed = ReattachConflictErrorSchema.safeParse(error.payload);
   return parsed.success ? parsed.data.reason : null;
+}
+
+/**
+ * The document a **stale key** refusal carried, or `null` when the failure was
+ * something else (SPEC.md §7 "A key, not a lock"; `StaleKeyError`).
+ *
+ * §7's *what a refusal says*: a refused write comes back with the document as it
+ * now stands and a fresh key for it — not merely "no" — so that one exchange is
+ * enough for the writer to see what changed, decide, and write again. This is
+ * the reader for that document, and it is the whole of what a caller needs: the
+ * fresh key is `doc.key`, in the field every read carries it in, because a
+ * second copy beside it could disagree with the first.
+ *
+ * Parsed with the contract's own schema rather than by reading fields off the
+ * payload, exactly as {@link reattachRefusalReason} is: a `409` this build does
+ * not recognise reads as `null` instead of leaking a half-shaped object into an
+ * adopt-then-retry path that would then write against a key it invented.
+ *
+ * **A refusal is never a lost edit.** Nothing was written, and the content the
+ * caller tried to save is still the caller's to resend against this document's
+ * key — which is what `useAutosave` does, and why the person's in-flight
+ * sentence survives a conflict that arrives mid-word.
+ */
+export function staleKeyDoc(error: unknown): Doc | null {
+  if (!(error instanceof CorpusRequestError) || error.status !== 409) return null;
+  const parsed = StaleKeyErrorSchema.safeParse(error.payload);
+  return parsed.success ? parsed.data.doc : null;
 }
 
 interface FetchResult<T> {
@@ -808,10 +801,6 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           ...signalOf(options),
         }),
       );
-    },
-
-    async listLocks(options) {
-      return unwrap("GET /api/locks", await api.GET("/api/locks", { ...signalOf(options) }));
     },
 
     async getQueueStatus(options) {
@@ -1055,31 +1044,6 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "POST /api/threads/{id}/seen",
         await api.POST("/api/threads/{id}/seen", { params: { path: { id } } }),
-      );
-    },
-
-    async acquireLock(docId, ttlSeconds) {
-      // The body is optional on the wire, but sending `{}` rather than nothing
-      // keeps one code path: a bodyless POST would have to negotiate
-      // content-type with the route's JSON validator.
-      const body = ttlSeconds === undefined ? {} : { ttl: ttlSeconds };
-      return unwrap(
-        "POST /api/locks/{docId}",
-        await api.POST("/api/locks/{docId}", { params: { path: { docId } }, body }),
-      );
-    },
-
-    async releaseLock(docId) {
-      return unwrap(
-        "DELETE /api/locks/{docId}",
-        await api.DELETE("/api/locks/{docId}", { params: { path: { docId } } }),
-      );
-    },
-
-    async breakLock(docId) {
-      return unwrap(
-        "POST /api/locks/{docId}/break",
-        await api.POST("/api/locks/{docId}/break", { params: { path: { docId } } }),
       );
     },
 

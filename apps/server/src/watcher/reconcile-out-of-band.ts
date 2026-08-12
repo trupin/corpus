@@ -138,8 +138,13 @@ export function reconcileOutOfBandEdit(options: ReconcileOutOfBandOptions): OutO
     path: options.relativePath,
     remapped: result.report.remapped.length,
     orphaned: result.report.orphaned.length,
-    // The `reconcile:` commit is SERVER-005's; recorded here rather than faked.
-    commit: "deferred",
+    // No commit is named here, and the absence is deliberate. This used to log
+    // `commit: "deferred"` above a comment pointing at a `reconcile:` commit
+    // SERVER-007 specified and nothing ever built — which is why an out-of-band
+    // edit went uncommitted for so long without anyone noticing (SERVER-090).
+    // The commit is the *caller's*: `watcher.ts` commits the file this function
+    // has just finished rewriting, authored `user`, so the remapped `anchors`
+    // block and the person's own edit land together as the one change they are.
   });
   return { kind: "reconciled", report: result.report };
 }

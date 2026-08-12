@@ -10,8 +10,7 @@
 // The companion `context.test.ts` covers the pure half (key namespacing).
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Actor, Doc, QueryKey } from "@corpus/contract";
-import { ACTOR_HEADER, LockedErrorSchema } from "@corpus/contract";
+import type { Doc, QueryKey } from "@corpus/contract";
 import type { PluginServerContext } from "@corpus/contract/plugin";
 import { createDocumentMutex, type DocsWorkspace, type DocumentMutex } from "../docs/index.js";
 import {
@@ -20,7 +19,6 @@ import {
   createWriteWorkspace,
   type WriteWorkspace,
 } from "../docs/write-fixture.js";
-import { HttpError } from "../errors.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
 import { silentLogger } from "../logger.js";
 import { createPluginContext } from "./context.js";
@@ -33,17 +31,12 @@ let docPath: string;
 let keys: QueryKey[][];
 let unsubscribe: () => void;
 
-/**
- * The context as `mountPluginRoutes` builds it, with the *real* lock guard the
- * server wires into `DocsWorkspace` — the refusal parity `mutateDoc` promises is
- * a claim about that guard, so a fixture without it could not test it.
- */
+/** The context as `mountPluginRoutes` builds it. */
 function pluginContext(workspace: WriteWorkspace): {
   context: PluginServerContext;
   mutex: DocumentMutex;
 } {
   const workspaceRoot = workspace.server.config.workspaceRoot;
-  const guard = workspace.server.lockGuard;
   const docs: DocsWorkspace = {
     workspaceRoot,
     projection: workspace.db,
@@ -56,7 +49,6 @@ function pluginContext(workspace: WriteWorkspace): {
     bus: workspace.server.bus,
     logger: silentLogger,
     now: () => workspace.clock,
-    ...(guard === undefined ? {} : { assertWritable: guard.assertWritable.bind(guard) }),
   };
   const documentMutex = createDocumentMutex();
   return {
@@ -81,12 +73,6 @@ const currentCounter = (): number => {
   const match = /^counter: (\d+)$/m.exec(ws.read(docPath));
   return match === undefined || match === null ? 0 : Number(match[1]);
 };
-
-const acquire = async (id: string, actor: Actor): Promise<Response> =>
-  ws.server.app.request(`/api/locks/${id}`, {
-    method: "POST",
-    headers: { ...AUTH, [ACTOR_HEADER]: actor },
-  });
 
 beforeEach(async () => {
   ws = createWriteWorkspace("plugin-mutate", { sprint: "s014" });
@@ -225,40 +211,6 @@ describe("a callback that throws", () => {
 });
 
 describe("parity with updateDoc", () => {
-  it("refuses with 423 when the other party holds the edit lock", async () => {
-    expect((await acquire(docId, "agent")).status).toBe(201);
-    const before = ws.read(docPath);
-    const head = ws.head();
-    let ran = 0;
-
-    const refused = await context
-      .mutateDoc("user", docId, (doc) => {
-        ran += 1;
-        return { extra: { counter: counterOf(doc) + 1 } };
-      })
-      .catch((error: unknown) => error);
-
-    // The refusal is the write's, so the recompute may already have happened —
-    // which is exactly why the contract requires the callback to be pure.
-    expect(ran).toBe(1);
-    expect(refused).toBeInstanceOf(HttpError);
-    const error = refused as HttpError;
-    expect(error.status).toBe(423);
-    // The body is the same `LockedError` a `PUT` is refused with, so a plugin
-    // route that lets it through answers exactly what a core route answers.
-    expect(LockedErrorSchema.parse(error.body).lock.holder).toBe("agent");
-    expect(ws.read(docPath)).toBe(before);
-    expect(ws.head()).toBe(head);
-  });
-
-  it("lets the lock's own holder through", async () => {
-    expect((await acquire(docId, "agent")).status).toBe(201);
-    await context.mutateDoc("agent", docId, (doc) => ({
-      extra: { counter: counterOf(doc) + 1 },
-    }));
-    expect(currentCounter()).toBe(1);
-  });
-
   it("refuses a patch the update schema rejects, the way updateDoc refuses one", async () => {
     await expect(
       // A core key smuggled through `extra` — `updateDoc`'s own 400.
@@ -289,6 +241,10 @@ describe("parity with updateDoc", () => {
     ws.advance(600_000); // past §4's squash window, so the write gets its own commit
     const doc = await context.mutateDoc("agent", docId, (current) => ({
       body: "recomputed by the plugin",
+      // SPEC.md §7: a body-replacing write presents the key of the version it
+      // recomputed from — here, the document the lane just handed the callback,
+      // which is by construction the one this write is about to overwrite.
+      key: current.key,
       extra: { counter: counterOf(current) + 41 },
     }));
 

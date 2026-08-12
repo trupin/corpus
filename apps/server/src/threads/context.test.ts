@@ -29,7 +29,7 @@ import { headingSections } from "../core/headings.js";
 import { parseDocument } from "../core/index.js";
 import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { relatedDocs } from "../docs/index.js";
-import { createRecordingCommitter } from "../locks/git-fixture.js";
+import { createRecordingCommitter } from "../git/git-fixture.js";
 import { silentLogger } from "../logger.js";
 import { createProjectionQueueMirror, type ProjectionDb } from "../projection/index.js";
 import { searchCorpus } from "../search/index.js";
@@ -868,12 +868,7 @@ describe("GET /api/threads/{id}/context", () => {
     expect((await server.app.request("/api/threads/th_anchored/context")).status).toBe(401);
   });
 
-  it("TEST-979 — takes no lock, writes nothing and invalidates nothing", async () => {
-    const held = await server.app.request("/api/locks/doc_parent", {
-      method: "POST",
-      headers: { ...AUTH, "x-corpus-author": "agent" },
-    });
-    expect(held.status).toBe(201);
+  it("TEST-979 — writes nothing and invalidates nothing", async () => {
     keys = [];
 
     const response = await get("/api/threads/th_anchored/context");

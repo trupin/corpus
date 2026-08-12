@@ -47,7 +47,8 @@ import { useState } from "react";
  * stopped advancing sank below the cut-off while the rest of the queue moved,
  * and the `.working` row vanished while the reply was still coming. A
  * **deferred** job is the ordinary way to get there — SPEC.md §7 has a deferral
- * wait indefinitely on an edit lock — and a `pending` job behind a long backlog
+ * wait indefinitely while a person is editing (SPEC.md §7) — and a `pending`
+ * job behind a long backlog
  * reaches the same place.
  *
  * Asking the **status** on the wire is what fixes that, and it is asked once for

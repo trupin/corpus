@@ -29,7 +29,7 @@ import { useAbandonEmptyDoc } from "./useAbandonEmpty";
  * real `DELETE` on the wire rather than a row vanishing from a list, and that
  * a document with any content survives all of it (SPEC.md §11).
  *
- * The disk, git, lock and projection half of the evidence cannot come from here
+ * The disk, git and projection half of the evidence cannot come from here
  * — jsdom has no workspace — and comes from the issue's real-app drill
  * (sprint-016 Adjudication 19).
  */

@@ -41,7 +41,7 @@
 // cutting first and ranking the remainder returns the excerpts the scan happened
 // to read rather than the ones that matter.
 //
-// Reads five tables, writes nothing, takes no lock, commits nothing and
+// Reads five tables, writes nothing, commits nothing and
 // invalidates nothing: a pure projection-plus-file read, like `related` and
 // `search`.
 

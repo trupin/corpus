@@ -572,4 +572,64 @@ changes behaviour and nothing below waits on them.
 | SERVER-095 | Resizing a board column wakes the agent to reflect on it (user report) | done | P0 | — |
 | SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | todo | P2 | — |
 | SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | todo | P1 | — |
+| SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | todo | P1 | — |
+| SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P1 | — |
+
+## Phase 30 — A key instead of a lock (2026-08-11)
+
+SHARED-041, authorized and applied to §7. The per-document edit lock is
+**removed** — not deprecated beside the new mechanism, because two coexisting
+mechanisms is how the forgettable one survives.
+
+The user's report: agents forget to lock. Verified, and worse than reported — §7
+claimed the CLI's edit verbs locked implicitly, they never did, the skill told
+the agent to do it by hand, and the user's live workspace holds zero lock files
+against a git log full of agent edits. **A lock is forgettable because forgetting
+it still lets the write through.** A key cannot be, because a write without a
+valid one does not happen: enforcement moves from the agent's memory into the
+write path.
+
+CONTRACT-049 is the wire shape and everything waits on it. SERVER-098 adds keys
+and SERVER-099 removes locks — separate so each is reviewable, landing together.
+CLI-038 and UI-107 are the two writers. **AGENT-022 is the one that decides
+whether this works**: the skill instructions are what made the old mechanism
+forgettable, and a mechanism the agent cannot misuse is not the same as one it
+uses well.
+
+Two things carried forward from the rider: the key is **derived from content**
+rather than issued, so there is no registry and an out-of-band edit invalidates
+it for free; and §4's "Three acts commit alone" is now **two** — this deletes the
+force-unlock flush SERVER-092 built on 2026-08-10, which is correct under the new
+mechanism rather than waste.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-041 | A key you must present, not a lock you can forget (AUTHORIZED 2026-08-11, applied) | done | P0 | — |
+| CONTRACT-049 | A key on every read, and on every write that overwrites | done | P0 | SHARED-041 |
+| SERVER-098 | Derive the key, verify it, and refuse with the document | done | P0 | CONTRACT-049 |
+| SERVER-099 | Remove the lock subsystem | done | P0 | SERVER-098 |
+| CLI-038 | `corpus doc read` hands you a key; the write verbs demand one | done | P0 | CONTRACT-049, SERVER-098 |
+| UI-107 | The board presents a key, and never goes read-only | done | P0 | CONTRACT-049, SERVER-098 |
+| AGENT-022 | The skills teach keys, and stop teaching locks | done | P0 | CLI-038 |
+| PLUGINS-017 | The todos plugin writes from a captured read, and still reaches for a lock | done | P0 | CONTRACT-049, SERVER-098, UI-107 |
+
+
+### Phase 30 addendum — a revert is a write like any other (SHARED-042, 2026-08-12)
+
+PR #43's review found `corpus skill rollback` destroys uncommitted edits
+unrecoverably. The user's answer — revert rather than overwrite — led further: a
+revert is a write whose content came from history, so the verb goes and the skill
+teaches the loop. **SERVER-090 is promoted from P1 tidiness to load-bearing**:
+with no verb, the operator's recovery is a hand `git restore`, and §7 now
+guarantees the watcher commits it as the `user` edit it is.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-042 | A revert is a write like any other (applied 2026-08-12) | done | P0 | SHARED-041 |
+| CLI-040 | Remove `corpus skill rollback` — the route and the verb | done | P0 | SHARED-042 |
+| AGENT-023 | Teach the revert loop, and the operator's git path | done | P0 | SHARED-042 |
+| SERVER-104 | Delete the server's rollback module | done | P0 | SHARED-042 |
+| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
+| CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
+| SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | todo | P1 | — |

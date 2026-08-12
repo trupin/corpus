@@ -169,7 +169,7 @@ function toJob(db: ProjectionDb, row: JobJoinRow): Job {
     // projected from the event file (SERVER-030). Non-null exactly while the
     // event sits in `deferred/`: every transition out of it strips the field
     // (`queue/service.ts`'s `stamp`), so the console can never show a finished
-    // job still waiting for a lock.
+    // job still waiting on a document.
     blockedOn: row.blocked_on,
     blockedOnTitle: resolveBlockedOnTitle(db, row.blocked_on),
   };

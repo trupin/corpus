@@ -88,6 +88,10 @@ function createTestClient() {
           body: request.body ?? "",
           path: `data/docs/${request.folder ?? "inbox"}/mortgage-options.md`,
           anchors: [],
+          // A creation answers with a whole document, so it answers with a key
+          // (SPEC.md §7) — the one the caller presents on its first body write.
+          key: "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcde",
+          userEditing: false,
         },
         warnings: [],
       },

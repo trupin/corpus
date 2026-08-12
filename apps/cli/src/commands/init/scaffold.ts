@@ -74,7 +74,9 @@ export const WORKSPACE_DIRECTORIES: readonly string[] = [
   CONFIG_DIR,
   `${CONFIG_DIR}/queue`,
   ...QUEUE_STATUSES.map((status) => `${CONFIG_DIR}/queue/${status}`),
-  `${CONFIG_DIR}/locks`,
+  // No `locks/`: SPEC.md §7's key is derived from a document's content, so there
+  // is nothing to store, nothing to reap, and no directory for a crashed session
+  // to leave a wedged file in (SHARED-041).
   `${CONFIG_DIR}/jobs`,
   `${CONFIG_DIR}/attachments`,
 ];

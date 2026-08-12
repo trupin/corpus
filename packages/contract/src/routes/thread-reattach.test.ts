@@ -393,7 +393,6 @@ describe("the published operation", () => {
       "403",
       "404",
       "409",
-      "423",
     ]);
   });
 

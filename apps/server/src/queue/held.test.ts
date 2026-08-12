@@ -11,7 +11,12 @@ import { MAX_IN_PROGRESS_REPORTED, QUEUE_EVENT_STATUSES } from "@corpus/contract
 import { NOTHING_HELD, NO_ORIGIN, heldSince, readHeldInProgress, toInProgressSet } from "./held.js";
 import { QueueStore, type StoredEvent } from "./store.js";
 import { silentLogger, type LogFields, type Logger } from "../logger.js";
-import { createWriteWorkspace, createDoc, type WriteWorkspace } from "../docs/write-fixture.js";
+import {
+  createWriteWorkspace,
+  createDoc,
+  type WriteWorkspace,
+  putDoc,
+} from "../docs/write-fixture.js";
 
 let root: string;
 let store: QueueStore;
@@ -366,9 +371,7 @@ describe("origin, through the real projection", () => {
     expect(held.events[0]).toMatchObject({ originId: doc.id, originTitle: "The rate assumption" });
 
     // Read at response time, never stored: a rename shows through on the next call.
-    expect(
-      (await ws.put(`/api/docs/${doc.id}`, { title: "The rate assumption (revised)" })).status,
-    ).toBe(200);
+    expect((await putDoc(ws, doc.id, { title: "The rate assumption (revised)" })).status).toBe(200);
     expect((await claimOverHttp()).events[0]).toMatchObject({
       originTitle: "The rate assumption (revised)",
     });

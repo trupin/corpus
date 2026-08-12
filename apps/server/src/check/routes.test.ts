@@ -15,6 +15,7 @@ import {
   createDoc,
   AUTH,
   type WriteWorkspace,
+  putDoc,
 } from "../docs/write-fixture.js";
 import { createThread } from "../threads/thread-fixture.js";
 
@@ -322,7 +323,7 @@ describe("anchor-unused is answered against the live corpus, unioned with the re
     const subject = await anchoredDocument();
 
     // The write path accepts this document…
-    const saved = await ws.put(`/api/docs/${subject.id}`, {
+    const saved = await putDoc(ws, subject.id, {
       body: "The quick brown fox jumps over the lazy dog. Accepted by the write path.\n",
     });
     expect(saved.status).toBe(200);
@@ -474,7 +475,7 @@ describe("§7's skill-frontmatter leniency (Adjudication 6)", () => {
       .prepare("SELECT id FROM documents WHERE path = ?")
       .get(".claude/skills/hand-written/SKILL.md") as { id: string };
 
-    const saved = await ws.put(`/api/docs/${row.id}`, { body: "Do the other thing.\n" });
+    const saved = await putDoc(ws, row.id, { body: "Do the other thing.\n" });
     expect(saved.status).toBe(200);
 
     // …and so must checking it afterwards.

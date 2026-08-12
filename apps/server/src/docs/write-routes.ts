@@ -76,7 +76,7 @@ export function mountDocWriteRoutes(
   app.openapi(contractRoutes.getDoc, (c) => {
     const { id } = c.req.valid("param");
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
-    return c.json(toWireDoc(workspace.projection, loaded), 200);
+    return c.json(toWireDoc(workspace, loaded), 200);
   });
 
   app.openapi(contractRoutes.createDoc, async (c) => {

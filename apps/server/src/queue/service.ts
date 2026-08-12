@@ -74,8 +74,9 @@ export type CommitWindowCloser = () => Promise<void>;
  * however it finished — completed, failed, deferred (§7) or abandoned".
  *
  * `deferred` is on the list although §7 calls it neither live nor terminal: §4
- * states the cost explicitly — "an event deferred on a lock ends the agent's
- * window like any other ending, so one act that resumes later lands as two
+ * states the cost explicitly — "an event the agent defers while a person is
+ * editing ends the agent's window like any other ending, so one act that
+ * resumes later lands as two
  * commits — accepted, rather than hold a window open across a wait of unknown
  * length during which the other party may write".
  *
@@ -454,9 +455,9 @@ export class QueueService {
   }
 
   /**
-   * In-progress → `deferred/`: the claimed work needs a document whose edit
-   * lock somebody else holds, so it waits instead of failing (SPEC.md §7,
-   * CONTRACT-021).
+   * In-progress → `deferred/`: the agent found a **person editing** the document
+   * this work is about, so it parks rather than writing beside them (SPEC.md §7,
+   * CONTRACT-021). A judgement, not a refusal — nothing stopped it.
    *
    * **Only a claimed event can be deferred.** Nothing else has tried the edit
    * yet and terminal events are done, so anything but `in-progress` is a `409` —
@@ -465,13 +466,13 @@ export class QueueService {
    * `transition`'s `onlyFrom`, inside the writer chain, for the same reason
    * retry's does (see {@link RequeueOptions}).
    *
-   * The blocking document is recorded on the event, not on the lock: a lock is
-   * one file per document and several events can queue behind the same one, and
-   * the event file is what survives a restart (SPEC.md §7 — "never silently
-   * dropped"). No live lock on `blockedOn` is required. The contract declares
-   * exactly two refusals for this route and this is not one of them; a deferral
-   * whose lock was released in the meantime is left visible, countable and
-   * retryable by hand rather than rejected on a race the caller cannot win.
+   * The document waited on is recorded **on the event**, which is what survives
+   * a restart (SPEC.md §7 — "never silently dropped"); several events can park
+   * on the same document. No open session on `blockedOn` is required. The
+   * contract declares exactly two refusals for this route and this is not one of
+   * them; a deferral whose session ended in the meantime is left visible,
+   * countable and retryable by hand rather than rejected on a race the caller
+   * cannot win.
    */
   async defer(id: string, deferral: DeferralFields): Promise<StoredEvent> {
     return this.transition(id, "deferred", {
@@ -486,18 +487,20 @@ export class QueueService {
   /**
    * Returns every event deferred on `docId` to `pending/`. The queue's half of
    * §7's promise that a deferred edit "re-enters the queue rather than being
-   * lost": `locks/service.ts` calls it on release, force-break and reap, so the
-   * work comes back **on its own**, with no CLI call and no operator.
+   * lost": the **edit-session tracker** calls it whenever a session ends
+   * (`app.ts` wires `onSessionEnded` to it, SERVER-099), so the work comes back
+   * **on its own**, with no CLI call and no operator. That trigger replaced the
+   * lock's release, break and reap, and it is now the only automatic one —
+   * `corpus job retry` remains §7's manual override.
    *
    * Deliberately keyed on the document rather than on a single recorded event
-   * id: several events can be deferred on the same lock, and each has to come
-   * back exactly once. Already-pending events are unreachable here (only
-   * `deferred/` is scanned), which is what makes a second trigger — a break
-   * following a release, a reap of a lock nobody re-took — a no-op rather than
-   * a duplicate.
+   * id: several events can park on the same document, and each has to come back
+   * exactly once. Already-pending events are unreachable here (only `deferred/`
+   * is scanned), which is what makes a second trigger — two sessions ending on
+   * one document — a no-op rather than a duplicate.
    *
-   * A release with nothing deferred behind it touches no file, invalidates
-   * nothing and logs nothing: it is the overwhelmingly common case.
+   * A session ending with nothing deferred behind it touches no file,
+   * invalidates nothing and logs nothing: it is the overwhelmingly common case.
    */
   async requeueDeferredFor(docId: string): Promise<string[]> {
     return this.serialize(async () => {
@@ -513,9 +516,9 @@ export class QueueService {
         if (!(await this.store.move("deferred", "pending", id))) continue;
 
         // The deferral bookkeeping goes with the state that owned it; the
-        // attempt count does **not** reset, because waiting for a lock is not an
-        // attempt and a manual `job retry` is the verb that asserts a clean
-        // slate (see `requeue`).
+        // attempt count does **not** reset, because waiting for a person to stop
+        // editing is not an attempt and a manual `job retry` is the verb that
+        // asserts a clean slate (see `requeue`).
         const event = this.stamp(withoutDeferral(read.event), "pending");
         await this.store.writeEvent("pending", event);
         this.mirror.upsertEvent(event);
@@ -536,10 +539,9 @@ export class QueueService {
   /**
    * Puts an event back in `pending/` from wherever it is, with a clean slate —
    * attempts reset and any recorded error dropped, because the caller is
-   * asserting the run can start over. Two callers need it (SPEC.md §7): the
-   * console's retry of a failed job, and a force-break re-enqueueing the edit
-   * that was deferred because the lock was held. Already-pending is a no-op, so
-   * repeating either is harmless.
+   * asserting the run can start over. It is the console's retry of a failed job,
+   * and §7's manual override for a deferral the automatic trigger never reached.
+   * Already-pending is a no-op, so repeating it is harmless.
    *
    * `onlyFrom` is how a caller whose verb is defined for one status only says
    * so **inside this chain**, which is the only place the answer stays true
@@ -760,8 +762,8 @@ export class QueueService {
    * The deferral bookkeeping is stripped first and re-supplied only by the
    * transition that owns it, so `blockedOn` is present exactly while the event
    * is in `deferred/` — the invariant `Job.blockedOn` publishes (CONTRACT-021).
-   * Carrying it along would leave a processed job claiming to be waiting for a
-   * lock.
+   * Carrying it along would leave a processed job claiming to be waiting on a
+   * document.
    */
   private stamp(
     event: StoredEvent,

@@ -2,7 +2,7 @@ import { DocSchema, UpdateDocResponseSchema } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument } from "../core/index.js";
 import { SQUASH_IDLE_MS } from "../git/index.js";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { createDoc, createWriteWorkspace, type WriteWorkspace, putDoc } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
 
@@ -84,7 +84,7 @@ describe("PUT /api/docs/{id}", () => {
     const before = parseDocument(ws.read(created.path)).data["updated"];
 
     ws.advance(60_000);
-    const response = await ws.put(`/api/docs/${created.id}`, { body: "after the edit" });
+    const response = await putDoc(ws, created.id, { body: "after the edit" });
     expect(response.status).toBe(200);
     const payload = UpdateDocResponseSchema.parse(await response.json());
 
@@ -105,7 +105,7 @@ describe("PUT /api/docs/{id}", () => {
     anchored("update-above");
     const head = ws.head();
 
-    const response = await ws.put("/api/docs/doc_mortgage", {
+    const response = await putDoc(ws, "doc_mortgage", {
       body: ["A new opening paragraph.", "", BODY].join("\n"),
     });
     expect(response.status).toBe(200);
@@ -137,7 +137,7 @@ describe("PUT /api/docs/{id}", () => {
     anchored("update-inside");
 
     const edited = BODY.replace(QUOTE, "The rate is fixed for seven whole years.");
-    const response = await ws.put("/api/docs/doc_mortgage", { body: edited });
+    const response = await putDoc(ws, "doc_mortgage", { body: edited });
     const payload = UpdateDocResponseSchema.parse(await response.json());
     expect(payload.anchors.remapped).toEqual([ANCHOR]);
 
@@ -157,7 +157,7 @@ describe("PUT /api/docs/{id}", () => {
     anchored("update-delete");
     const before = anchorsBlock(ws.read("data/docs/inbox/mortgage.md"));
 
-    const response = await ws.put("/api/docs/doc_mortgage", {
+    const response = await putDoc(ws, "doc_mortgage", {
       body: ["Intro paragraph.", "", "Closing paragraph."].join("\n"),
     });
     const payload = UpdateDocResponseSchema.parse(await response.json());
@@ -176,7 +176,7 @@ describe("PUT /api/docs/{id}", () => {
     const outOfBand = `${ANCHORED_DOC}\nAn out-of-band paragraph.\n`;
     ws.write("data/docs/inbox/mortgage.md", outOfBand);
 
-    const response = await ws.put("/api/docs/doc_mortgage", {
+    const response = await putDoc(ws, "doc_mortgage", {
       title: "Mortgage options, revised",
     });
     expect(response.status).toBe(200);
@@ -191,7 +191,7 @@ describe("PUT /api/docs/{id}", () => {
     const before = parseDocument(ws.read("data/docs/inbox/mortgage.md")).data["updated"];
 
     ws.advance(120_000);
-    const response = await ws.put("/api/docs/doc_mortgage", {
+    const response = await putDoc(ws, "doc_mortgage", {
       reviewed: "2026-07-27T09:02:00Z",
     });
     expect(response.status).toBe(200);
@@ -210,7 +210,7 @@ describe("PUT /api/docs/{id}", () => {
 
     const onDisk = parseDocument(before).body;
     for (const body of [{}, { title: "Mortgage options", body: onDisk, evergreen: false }]) {
-      const response = await ws.put("/api/docs/doc_mortgage", body);
+      const response = await putDoc(ws, "doc_mortgage", body);
       expect(response.status).toBe(200);
       const payload = UpdateDocResponseSchema.parse(await response.json());
       expect(payload.anchors).toEqual({ remapped: [], orphaned: [] });
@@ -231,7 +231,7 @@ describe("PUT /api/docs/{id}", () => {
 
     const responses = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>
-        ws.put("/api/docs/doc_mortgage", { tags: [`marker-${index}`] }),
+        putDoc(ws, "doc_mortgage", { tags: [`marker-${index}`] }),
       ),
     );
     expect(responses.map((response) => response.status)).toEqual(Array(10).fill(200));
@@ -258,7 +258,7 @@ describe("PUT /api/docs/{id}", () => {
       // save sees the previous one's bytes on disk.
       for (let index = 0; index < 10; index += 1) {
         const current = parseDocument(ws.read(created.path)).body;
-        await ws.put(`/api/docs/${created.id}`, { body: `${current}\nmarker-${index}` });
+        await putDoc(ws, created.id, { body: `${current}\nmarker-${index}` });
       }
       const body = parseDocument(ws.read(created.path)).body;
       for (let index = 0; index < 10; index += 1) {
@@ -271,11 +271,13 @@ describe("PUT /api/docs/{id}", () => {
     ws = createWriteWorkspace("update-ids");
     ws.reproject();
 
-    const missing = await ws.put("/api/docs/doc_zzzzzzzz", { body: "x" });
+    // A well-formed key on a document that does not exist: SPEC.md §7's key
+    // question never arises, so the answer is the 404 and never a 409.
+    const missing = await ws.put("/api/docs/doc_zzzzzzzz", { body: "x", key: "0".repeat(64) });
     expect(missing.status).toBe(404);
     expect((await missing.json()) as { code: string }).toMatchObject({ code: "not_found" });
 
-    const malformed = await ws.put("/api/docs/not-an-id", { body: "x" });
+    const malformed = await ws.put("/api/docs/not-an-id", { body: "x", key: "0".repeat(64) });
     expect(malformed.status).toBe(400);
     const body = (await malformed.json()) as { code: string; issues: unknown[] };
     expect(body.code).toBe("bad_request");
@@ -288,7 +290,7 @@ describe("PUT /api/docs/{id}", () => {
     const created = await createDoc(ws, { type: "note", title: "Invalid" });
 
     for (const patch of [{ status: "nonsense" }, { due: "not-a-date" }]) {
-      const response = await ws.put(`/api/docs/${created.id}`, patch);
+      const response = await putDoc(ws, created.id, patch);
       expect(response.status).toBe(400);
       const body = (await response.json()) as { code: string; issues: unknown[] };
       expect(body.code).toBe("bad_request");
@@ -330,7 +332,7 @@ describe("PUT /api/docs/{id} — leaving `archived` is the unarchive route's job
     const skillId = await archivedSkill("update-unarchive-put");
     const before = ws.head();
 
-    const response = await ws.put(`/api/docs/${skillId}`, { status: "open" });
+    const response = await putDoc(ws, skillId, { status: "open" });
     expect(response.status).toBe(400);
     const [issue] = await issues(response);
     expect(issue?.path).toBe("body.status");
@@ -344,7 +346,7 @@ describe("PUT /api/docs/{id} — leaving `archived` is the unarchive route's job
 
   it("refuses every status that is not `archived`, not only `open`", async () => {
     const skillId = await archivedSkill("update-unarchive-resolved");
-    const response = await ws.put(`/api/docs/${skillId}`, { status: "resolved" });
+    const response = await putDoc(ws, skillId, { status: "resolved" });
     expect(response.status).toBe(400);
     expect((await issues(response))[0]?.message).toContain("is archived");
   });
@@ -369,17 +371,17 @@ describe("PUT /api/docs/{id} — leaving `archived` is the unarchive route's job
 
     // Into `archived` is unchanged: for a note it is exactly what the archive
     // route does, and it is the path SERVER-018's `mayChangeTree` is about.
-    const archived = await ws.put(`/api/docs/${created.id}`, { status: "archived" });
+    const archived = await putDoc(ws, created.id, { status: "archived" });
     expect(archived.status).toBe(200);
     expect(parseDocument(ws.read(created.path)).data["status"]).toBe("archived");
 
     // Re-sending the same status is a no-op, not a refusal — it is what an
     // autosave of an untouched frontmatter form does.
-    const again = await ws.put(`/api/docs/${created.id}`, { status: "archived" });
+    const again = await putDoc(ws, created.id, { status: "archived" });
     expect(again.status).toBe(200);
 
     // And an archived document stays editable in every other respect.
-    const edited = await ws.put(`/api/docs/${created.id}`, {
+    const edited = await putDoc(ws, created.id, {
       title: "Retired",
       body: "Still writable.",
     });
@@ -403,7 +405,7 @@ describe("PUT /api/docs/{id} — leaving `archived` is the unarchive route's job
     };
     expect(row.status).toBe("archived");
 
-    const response = await ws.put(`/api/docs/${row.id}`, { status: "resolved" });
+    const response = await putDoc(ws, row.id, { status: "resolved" });
     expect(response.status).toBe(400);
     expect((await issues(response))[0]?.path).toBe("body.status");
   });
@@ -417,9 +419,9 @@ describe("squash-on-idle, through the API", () => {
     const afterCreate = ws.head();
 
     ws.advance(100);
-    await ws.put(`/api/docs/${created.id}`, { body: "edit one" });
+    await putDoc(ws, created.id, { body: "edit one" });
     ws.advance(100);
-    await ws.put(`/api/docs/${created.id}`, { body: "edit one\nedit two" });
+    await putDoc(ws, created.id, { body: "edit one\nedit two" });
 
     // Sprint-005 Open Conflict 5's adjudication: a create followed by an edit
     // inside the idle window **folds** — "create the document, type into it" is
@@ -436,7 +438,7 @@ describe("squash-on-idle, through the API", () => {
     expect(ws.git("show", `HEAD:${created.path}`)).toContain("edit two");
 
     ws.advance(SQUASH_IDLE_MS);
-    await ws.put(`/api/docs/${created.id}`, { body: "a later session" });
+    await putDoc(ws, created.id, { body: "a later session" });
     const subjects = ws.log("%s");
     // The newest window is still open, so it still carries its last verb; the
     // one that went quiet closed as the new save landed and says what it was —
@@ -452,13 +454,9 @@ describe("squash-on-idle, through the API", () => {
     const created = await createDoc(ws, { type: "note", title: "Two hands", body: "start" });
 
     ws.advance(100);
-    await ws.put(`/api/docs/${created.id}`, { body: "by the user" }, { "x-corpus-author": "user" });
+    await putDoc(ws, created.id, { body: "by the user" }, { "x-corpus-author": "user" });
     ws.advance(100);
-    await ws.put(
-      `/api/docs/${created.id}`,
-      { body: "by the agent" },
-      { "x-corpus-author": "agent" },
-    );
+    await putDoc(ws, created.id, { body: "by the agent" }, { "x-corpus-author": "agent" });
 
     const authors = ws.log("%an");
     expect(authors[0]).toBe("agent");

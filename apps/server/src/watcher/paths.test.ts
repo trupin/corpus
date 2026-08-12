@@ -9,7 +9,6 @@ describe("WATCH_ROOTS", () => {
       ".claude/skills-archived",
       ".claude/agents",
       ".corpus/queue",
-      ".corpus/locks",
       ".corpus/jobs",
     ]);
   });
@@ -65,17 +64,6 @@ describe("classifyWatchPath", () => {
     });
   });
 
-  it("reads a lock's document from its filename", () => {
-    expect(classifyWatchPath(".corpus/locks/doc_a1b2c3.json")).toEqual({
-      kind: "lock",
-      docId: "doc_a1b2c3",
-    });
-    expect(classifyWatchPath(".corpus/locks/th_a1b2c3.json")).toEqual({
-      kind: "lock",
-      docId: "th_a1b2c3",
-    });
-  });
-
   it("reads a job's event from its filename", () => {
     expect(classifyWatchPath(".corpus/jobs/evt_a1b2c3.jsonl")).toEqual({
       kind: "job",
@@ -105,8 +93,13 @@ describe("classifyWatchPath", () => {
     ".corpus/queue/nowhere/evt_a1b2c3.json",
     ".corpus/queue/pending/nested/evt_a1b2c3.json",
     ".corpus/queue/pending/notes.json",
-    ".corpus/locks/notalock.json",
     ".corpus/jobs/evt_a1b2c3.json",
+    // SPEC.md §7's key replaced the edit lock (SERVER-099): `.corpus/locks/` is
+    // no longer a watch root, and a lease an upgraded workspace left behind
+    // classifies as nothing at all — so it can resurrect no behaviour.
+    ".corpus/locks/doc_a1b2c3.json",
+    ".corpus/locks/th_a1b2c3.json",
+    ".corpus/locks/notalock.json",
     "",
   ])("%s is not watched state", (path) => {
     expect(classifyWatchPath(path)).toBeNull();

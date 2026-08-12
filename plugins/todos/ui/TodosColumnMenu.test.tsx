@@ -4,7 +4,7 @@ import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openItems, parseBodyItems, updateItemInBody, type TodoItem } from "../items.js";
-import { wrapperFor, type RecordedCall, type Transport } from "./testing.js";
+import { fixtureKey, wrapperFor, type RecordedCall, type Transport } from "./testing.js";
 import { TodosColumn } from "./TodosColumn.js";
 
 afterEach(cleanup);
@@ -99,12 +99,13 @@ function statefulWire(options: WireOptions = {}): Wire {
         json({ thread: { id: "th_new1" }, anchorId: "anc_new1", warnings: [] }, 201),
       );
     }
-    if (path === "/api/locks") return Promise.resolve(json({ locks: [] }, 200));
     if (path === "/api/jobs") return Promise.resolve(json({ jobs: [] }, 200));
     if (path.startsWith("/api/docs/")) {
       return Promise.resolve(
         json(
           {
+            key: fixtureKey("doc_week"),
+            userEditing: false,
             frontmatter: {
               id: "doc_week",
               type: "todo",

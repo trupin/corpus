@@ -3,7 +3,7 @@
  * workspace server: the GitHub Releases API and the assets it points at
  * (`corpus upgrade`, SPEC.md §2.4).
  *
- * The queue and lock verbs drive a real socket (`./stub-server.ts`) because
+ * The queue and document verbs drive a real socket (`./stub-server.ts`) because
  * their behaviour *is* socket behaviour. Here it is the opposite: what matters
  * is which URL was asked for and what came back, and a suite that reached the
  * real API would be the background check §2.4 forbids, running on every

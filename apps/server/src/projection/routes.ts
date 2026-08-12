@@ -16,7 +16,7 @@ import {
   type RebuildResult as WireRebuildResult,
 } from "@corpus/contract";
 import { actorOf } from "../docs/actor.js";
-import { DOCS_KEY, JOBS_KEY, LOCKS_KEY, QUEUE_KEY, TREE_KEY } from "../events/index.js";
+import { DOCS_KEY, JOBS_KEY, QUEUE_KEY, TREE_KEY } from "../events/index.js";
 import type { Logger } from "../logger.js";
 import type { QueueService } from "../queue/index.js";
 import type { IndexMaintenance } from "../semantic/maintenance.js";
@@ -49,13 +49,7 @@ import { rebuild, type RebuildReport } from "./rebuild.js";
  * one refetch of a small structure; under-invalidating it costs the point of
  * the command. `projection/routes.test.ts` pins the decision.
  */
-export const REBUILD_QUERY_KEYS: readonly QueryKey[] = [
-  DOCS_KEY,
-  TREE_KEY,
-  QUEUE_KEY,
-  JOBS_KEY,
-  LOCKS_KEY,
-];
+export const REBUILD_QUERY_KEYS: readonly QueryKey[] = [DOCS_KEY, TREE_KEY, QUEUE_KEY, JOBS_KEY];
 
 export interface DbRoutesDeps {
   /** Where the workspace and its `.corpus` directory are; `ServerConfig` satisfies it. */
@@ -125,7 +119,7 @@ export function mountDbRoutes(app: OpenAPIHono, deps: DbRoutesDeps): void {
     // connection cannot be observed by another request: `rebuild` renames its
     // fresh database over `cache.db`, and `reopenAround` reopens on the far
     // side of the rename. Every subsystem that captured the handle — the
-    // document routes, the lock and job services, the watcher — follows,
+    // document routes, the job service, the watcher — follows,
     // because the handle object never changed.
     const report = deps.projection.reopenAround(() =>
       rebuild(deps.config, { logger: deps.logger }),

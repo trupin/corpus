@@ -7,20 +7,25 @@ import { NOT_FOUND_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "
  * into a call (CONTRACT-031).
  *
  * **Why this route exists, when CONTRACT-028 declared that it should not.** That
- * issue reasoned that §7's edit-lock release (`DELETE /api/locks/{docId}`) was
- * already the reader-close signal, so no new endpoint was needed. SERVER-052
- * measured the premise against the shipped editor and it is false:
- * `useUserLock.ts` releases the lease on blur *and* after ten seconds of not
- * typing, against the session's three minutes. The lock therefore always fires
- * first, which would make §4's explicitly "distinct and longer window" dead code
- * in every session and fragment one sitting at a document into an event per
- * typing burst. The two signals answer different questions — "may somebody else
- * write here" and "has the person put this document down" — and a lease that is
- * dropped mid-pause cannot answer the second. Hence a signal of its own, which
- * per §9.3 is a contract change rather than a server-local route.
+ * issue reasoned that the release of §7's then-current edit lock was already the
+ * reader-close signal, so no new endpoint was needed. SERVER-052 measured the
+ * premise against the shipped editor and it was false: the editor dropped its
+ * lease on blur *and* after ten seconds of not typing, against the session's
+ * three minutes, so it always fired first — which would have made §4's
+ * explicitly "distinct and longer window" dead code in every session and
+ * fragmented one sitting at a document into an event per typing burst. The two
+ * signals answered different questions ("may somebody else write here" and "has
+ * the person put this document down"), and a lease dropped mid-pause could not
+ * answer the second. Hence a signal of its own, which per §9.3 is a contract
+ * change rather than a server-local route. The lock has since been removed
+ * entirely (SHARED-041), which settles the question in the same direction: the
+ * first question is asked of nothing now, and **this session is what the
+ * `userEditing` signal on a document read reports** (SPEC.md §7), so ending it
+ * here is what makes that signal stop being true.
  *
  * The server mechanism it opens onto already exists and is under test
- * (`EditSessionTracker.flush(docId)`, SERVER-052); this declares the door.
+ * (`EditSessionTracker.flush(docId)`, SERVER-052); this declares the door. It is
+ * the same tracker `Doc.userEditing` reads.
  */
 
 const DocIdParamSchema = z.object({

@@ -30,6 +30,11 @@ function docFixture(id: string, title: string): Doc {
     body: "",
     path: `data/docs/finance/${id}.md`,
     anchors: [],
+    // SPEC.md §7: every document read carries its key and the advisory
+    // "someone is editing this" signal. Neither is optional on the wire, so
+    // neither is optional in a fixture.
+    key: "0".repeat(64),
+    userEditing: false,
   };
 }
 

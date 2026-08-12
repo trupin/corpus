@@ -108,12 +108,25 @@ function listView(doc: Doc): Record<string, unknown> {
  * the write happens can.
  *
  * `apply` therefore runs inside the callback, which the seam requires to be a
- * pure recompute: it may be reached and still write nothing (a lock refusal is
- * part of the write, after the callback), and it must not touch the context.
+ * pure recompute: it may be reached and still write nothing (the stale-key
+ * refusal is part of the write, after the callback), and it must not touch the
+ * context.
+ *
+ * **The patch presents `doc.key`** — SPEC.md §7's key, naming the version this
+ * recompute was made from. It is not a formality bolted onto a write that was
+ * already correct: a body patch replaces the whole document body, which is
+ * precisely the write §7 refuses to let anyone make blind, and the plugin's own
+ * claim that its read and its write see one version was true only because
+ * `mutateDoc` reads inside the lane — a property nothing checked. Presenting the
+ * key makes the write path check it, on every call, for free. The alternatives
+ * are both the old blind overwrite with extra steps: an optional key on this
+ * path rebuilds the forgettable lock one layer down, and re-reading just before
+ * writing computes a key for a version nobody read.
  *
  * It is also where a not-yet-migrated document converges: `planWrite` folds any
  * surviving `extra.items` into the body first, and the same patch clears the
- * key — one commit, never a document with its items in two places.
+ * legacy frontmatter key — one commit, never a document with its items in two
+ * places.
  */
 async function mutateItems(
   context: PluginServerContext,
@@ -137,7 +150,14 @@ async function mutateItems(
     // `expectedText` guard — still reaches this plugin's own status mapping.
     const body = apply(plan.body);
     next = parseBodyItems(body);
-    return { body, ...(plan.clearLegacy ? { extra: { [LEGACY_ITEMS_KEY]: null } } : {}) };
+    return {
+      body,
+      // §7: the version this body was recomputed from. Inside the lane it is
+      // current by construction — which is exactly the claim a key makes, and
+      // now the claim the write path verifies rather than assumes.
+      key: doc.key,
+      ...(plan.clearLegacy ? { extra: { [LEGACY_ITEMS_KEY]: null } } : {}),
+    };
   });
   if (next === undefined) {
     // Unreachable against a context that honours the seam: `mutateDoc` resolves
@@ -194,15 +214,16 @@ function everyTodoDoc(context: PluginServerContext, includeArchived: boolean): r
  * `POST /migrate`'s per-document work, and the two states it can end in.
  *
  * A conflict is anything that stopped *this* document — a legacy key that no
- * longer parses, items in both places, an edit lock, a document deleted between
- * the listing and the write, a git failure. All of them are recorded against
- * the document they belong to and the run continues (FIX 3): a migration that
- * aborts on the first locked document names nothing it converted, leaves the
- * successes unbroadcast, and gives the user no way to tell how far it got.
+ * longer parses, items in both places, a §7 stale-key refusal because the
+ * document was written between the read and the write, a document deleted
+ * between the listing and the write, a git failure. All of them are recorded
+ * against the document they belong to and the run continues (FIX 3): a migration
+ * that aborts on the first refused document names nothing it converted, leaves
+ * the successes unbroadcast, and gives the user no way to tell how far it got.
  */
 function reasonOf(error: unknown, docId: string): string {
-  // The same translation the route would have answered with, so a locked
-  // document reads "doc_x is locked by user" here and not "[object Object]".
+  // The same translation the route would have answered with, so a refused
+  // document reads the write path's own sentence here and not "[object Object]".
   const translated = translateThrown(error);
   if (translated !== null) return translated.body.message;
   if (error instanceof Error && error.message !== "") return error.message;
@@ -217,7 +238,7 @@ function legacyItemCount(doc: Doc): number {
 
 /**
  * What a migration *would* do to this document: the item count, or the throw
- * that a real run would refuse it with. No write, no lane, no lock taken.
+ * that a real run would refuse it with. No write, no lane, nothing held.
  */
 function plannedCount(doc: Doc, docId: string): number {
   planWrite(docSource(doc), docId);
@@ -236,7 +257,10 @@ async function migrateOne(
     // outright by a concurrent verb — since the listing that named it.
     const plan = planWrite(docSource(doc), docId);
     moved = legacyItemCount(doc);
-    return { body: plan.body, extra: { [LEGACY_ITEMS_KEY]: null } };
+    // The same §7 key {@link mutateItems} presents, and for the same reason:
+    // this is a whole-body rewrite, and the document it was computed from is the
+    // one the callback was handed inside the lane.
+    return { body: plan.body, key: doc.key, extra: { [LEGACY_ITEMS_KEY]: null } };
   });
   return moved;
 }
@@ -251,7 +275,7 @@ export default function routes(context: PluginServerContext): Hono {
    * Idempotent by construction: a document with no `extra.items` key is
    * untouched and counted as `unchanged`, so a second run reports nothing to do.
    * A document nothing can migrate safely — a malformed key, items in both
-   * places, a document someone else is holding — is reported as a conflict with
+   * places, a document another writer changed mid-run — is reported as a conflict with
    * its reason and left exactly as it was, and the run carries on to the next
    * one. The dry run is honest because it asks the same question through the
    * same function: `planWrite` is what refuses a real write, and a prediction
