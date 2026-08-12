@@ -86,9 +86,17 @@ one line rather than a redesign.
 
 - [x] Reproduce first, per the SDLC: a `PUT` changing only `extra`, only `tags`,
       or only `status` currently emits a `doc.edited`. Show it before fixing
-- [x] A user save that **does not change the body** opens no edit session and
-      emits no `doc.edited`. Column width, tags, status, folder, `reviewed`, a
-      title, `query` — none of them wake the agent
+- [x] A user save that changes neither the body **nor the title** opens no edit
+      session and emits no `doc.edited`. Column width, tags, status, folder,
+      `reviewed`, `query` — none of them wake the agent.
+
+      **Amended by user sign-off 2026-08-11**, after PR #42's re-review found the
+      case: the first cut scoped a session to the **body** alone, so someone who
+      opened the reader and renamed a document was silently never acknowledged.
+      §4 now draws the line at what the document **says** — its body, or the
+      title it goes by — against how it is *held*. `title` moved out of the
+      negative table into two cases of its own: a rename wakes the agent, a
+      re-sent identical title does not.
 - [x] A user save that **does** change the body opens a session exactly as today.
       No regression in the acknowledgment's range, stats or idle behaviour
 - [x] A save carrying a body change **and** frontmatter changes is a content

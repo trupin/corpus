@@ -539,7 +539,6 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     ["a dragged column width", { extra: { width: 725 } }],
     ["a tag", { tags: ["mortgage"] }],
     ["a status", { status: "resolved" }],
-    ["a title", { title: "Renamed on the board" }],
     ["a still-current mark", { reviewed: "2026-07-27T09:00:00Z" }],
     ["a view query", { query: { type: "thread", status: "open" } }],
     ["a board position", { order: 3, pinned: true, column: "todos/todo" }],
@@ -584,6 +583,43 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     ).toBe(200);
     expect(ws.head()).not.toBe(before);
     expect(ws.read(doc.path)).toContain("retagged");
+
+    ws.advance(IDLE_MS * 4);
+    await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
+    expect(acknowledgments(ws)).toHaveLength(0);
+  });
+
+  it("wakes the agent for a rename, which is a change to what the document says", async () => {
+    // §4, amended by user sign-off 2026-08-11 after PR #42's re-review: a
+    // session is opened by a change to what the document **says** — its body,
+    // *or the title it goes by* — against how it is held. The first cut of
+    // SERVER-095 scoped this to the body alone, and someone who opened the
+    // reader and renamed a document was silently never acknowledged.
+    const ws = workspace("ack-title", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
+    pastTheSquashWindow(ws);
+
+    expect((await ws.put(`/api/docs/${doc.id}`, { title: "Refinance options" })).status).toBe(200);
+
+    ws.advance(IDLE_MS * 2);
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+    expect(acknowledgments(ws)[0]).toMatchObject({ docId: doc.id, actor: "user" });
+  });
+
+  it("does not wake the agent for a save re-sending the stored title verbatim", async () => {
+    // The title's half of the identical-value rule. `changedFields` drops a
+    // title equal to the file's, so this needs no second comparison — but it
+    // needs the assertion, or a reader autosaving frontmatter would wake the
+    // agent on every timer tick, which is the P0 in a new costume.
+    const ws = workspace("ack-title-same", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
+    pastTheSquashWindow(ws);
+
+    expect(
+      (await ws.put(`/api/docs/${doc.id}`, { title: "Mortgage options", tags: ["m"] })).status,
+    ).toBe(200);
 
     ws.advance(IDLE_MS * 4);
     await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));

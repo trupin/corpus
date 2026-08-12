@@ -404,13 +404,23 @@ export async function updateDocumentLocked(
       // a quieter form — and a `PUT` naming no body at all (§9.2: a save that
       // names no change) is not one either, both by the same comparison.
       //
+      // **The title counts too** (user sign-off 2026-08-11, on PR #42's
+      // re-review). The first cut of this scoped a session to the body alone,
+      // and the review found the case that makes that wrong: someone who opens
+      // the reader and renames a document has plainly edited it, and was
+      // silently never acknowledged. §4 now draws the line at what the document
+      // **says** — its body, or the title it goes by — against how it is *held*.
+      // `changedFields` has already dropped a title equal to the file's, so the
+      // same "a re-sent identical value is not a change" rule covers it without
+      // a second comparison.
+      //
       // **Sealing is unaffected**, which is why this can be conditional at all:
       // `observeCommit` seals through `touches(commit, session)`, which compares
       // `docId` and the staged `paths` and never reads `editPath` — and it nulls
       // `editPath` for any non-`user` actor before it looks at it. An agent save
       // through this verb still seals a session the user has open here, whatever
       // the agent changed and whether or not it changed a body.
-      editSession: bodyChanged ? loaded.path : undefined,
+      editSession: bodyChanged || Object.hasOwn(fields, "title") ? loaded.path : undefined,
     },
   });
 
