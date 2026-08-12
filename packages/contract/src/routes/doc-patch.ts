@@ -77,7 +77,10 @@ export const patchDoc = createRoute({
   description:
     "Edits the body by naming the text to replace rather than by sending a new body: `old` (an " +
     "excerpt of the body), `new` (its replacement, possibly empty), and `all` (default `false`). " +
-    "**Prefer it over `PUT /api/docs/{id}` for any bounded change.** The whole-body write prices " +
+    "**Prefer it over `PUT /api/docs/{id}` for a change you can quote.** That is most bounded " +
+    "changes and not all of them: a patch **replaces**, so it catches a writer who changed the " +
+    "text you quoted and not one who **inserted** elsewhere — an append that another writer may " +
+    "also be appending to goes back whole under a key instead (SPEC.md §7). The whole-body write prices " +
     "a one-line edit at the length of the document, and — more than the cost — a body the caller " +
     "never saw cannot survive a body the caller sends: an edit that never carries the rest of the " +
     "document cannot destroy the rest of the document.\n\n" +

@@ -389,7 +389,7 @@ export const patchCommand: WorkspaceCommandSpec = {
   name: "patch",
   summary: "Replace an exact excerpt of a document's body, without sending the whole body.",
   description:
-    "**The verb to reach for whenever the change is bounded.** `corpus doc edit` sends a whole " +
+    "**The verb to reach for when you can quote the change.** `corpus doc edit` sends a whole " +
     "body, which prices a one-line correction at the length of the document — read it, send it " +
     "all back. A patch names the text it expects to find and what to put in its place, so it " +
     "costs the change instead; and because it never carries the rest of the body, it cannot lose " +
@@ -408,8 +408,11 @@ export const patchCommand: WorkspaceCommandSpec = {
     "an error. `--new` equal to `--old` is a no-op: it is answered normally, nothing is written " +
     "and no commit is made, and the output says so rather than claiming an edit.\n\n" +
     "**There is no `--key`** (SPEC.md §7). A patch names the text it expects to find, which is " +
-    "the same staleness check by another route — and a better one, because it says _which_ text " +
-    "is gone rather than _that_ the document changed. Everything else about a patch is an " +
+    "a staleness check by another route, and a sharper one where it applies: it says _which_ text " +
+    "is gone rather than _that_ the document changed. **It covers what you quoted and nothing " +
+    "else**, though — a patch replaces, so it catches a writer who changed your excerpt and not " +
+    "one who inserted elsewhere. An append that another writer may also be appending to goes " +
+    "back whole under a key instead. Everything else about a patch is an " +
     "ordinary write: it is validated before it lands (SPEC.md §14), anchors are reconciled with " +
     "remaps and orphans reported (SPEC.md §6), the change is committed and attributed to `--from` — " +
     "folded into the open commit window like any other save, not necessarily a commit of its own (§4) — and " +
