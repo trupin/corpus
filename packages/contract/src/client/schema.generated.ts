@@ -793,13 +793,13 @@ export interface paths {
                         "application/json": components["schemas"]["NotFoundError"];
                     };
                 };
-                /** @description The document's text refuses the patch, and `matches` says how many times `old` occurs in it. `reason: no-match` (`matches: 0`) — the text is not there; re-read the document. `reason: multiple-matches` — the text is there more than once and the patch did not ask for `all`; quote more surrounding context. The two are separate because the recoveries are opposite. Nothing was written. */
+                /** @description The document's text refuses the patch, and `matches` says how many times `old` occurs in it. `reason: no-match` (`matches: 0`) — the text is not there; re-read the document. `reason: multiple-matches` — the text is there more than once and the patch did not ask for `all`; quote more surrounding context. The two are separate because the recoveries are opposite. Nothing was written. A `stale_key` here is the other case: an external editor moved the document between the match and the write, so re-quoting against the copy this carries is the recovery. */
                 409: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["PatchConflictError"];
+                        "application/json": components["schemas"]["PatchConflictError"] | components["schemas"]["StaleKeyError"];
                     };
                 };
             };

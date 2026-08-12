@@ -5,6 +5,7 @@ import {
   PatchDocRequestSchema,
   PatchDocResponseSchema,
 } from "../schemas/doc-patch.js";
+import { StaleKeyErrorSchema } from "../schemas/error.js";
 import { DocumentIdSchema } from "../schemas/id.js";
 import {
   jsonContent,
@@ -17,14 +18,32 @@ const DocIdParamSchema = z.object({
   id: DocumentIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
 });
 
-/** The `409` of this route: a well-formed patch the document's own text refuses. */
+/**
+ * The `409` of this route. Two shapes, and the second one is not a caller's
+ * mistake at all.
+ *
+ * A patch presents **no key** — §7 exempts it, because naming the text it
+ * expects to find *is* the staleness check. But the server applies a patch by
+ * computing a new body and handing it to the ordinary write path, which does
+ * require one, so it presents the key of the bytes it just read and matched
+ * (SERVER-079). If an **external editor** rewrites the file between that read
+ * and the save's own read, that key goes stale and the refusal surfaces as
+ * `stale_key` — carrying the document as it now stands, which is exactly what a
+ * caller needs in order to re-quote.
+ *
+ * It is declared here rather than left undeclared because a route answering a
+ * shape its contract does not name is the defect this package exists to prevent
+ * (PR #43 review). `code` tells them apart: `conflict` is a patch the document's
+ * own text refuses, `stale_key` is the document having moved underneath it.
+ */
 export const PATCH_CONFLICT_RESPONSE = jsonContent(
-  PatchConflictErrorSchema,
+  z.union([PatchConflictErrorSchema, StaleKeyErrorSchema]),
   "The document's text refuses the patch, and `matches` says how many times `old` occurs in it. " +
     "`reason: no-match` (`matches: 0`) — the text is not there; re-read the document. " +
     "`reason: multiple-matches` — the text is there more than once and the patch did not ask for " +
     "`all`; quote more surrounding context. The two are separate because the recoveries are " +
-    "opposite. Nothing was written.",
+    "opposite. Nothing was written. A `stale_key` here is the other case: an external editor moved the " +
+    "document between the match and the write, so re-quoting against the copy this carries is the recovery.",
 );
 
 /**
