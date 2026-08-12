@@ -633,3 +633,13 @@ guarantees the watcher commits it as the `user` edit it is.
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
 | SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | todo | P1 | — |
+### Phase 31 — the anchored patch reaches the skills (2026-08-12)
+
+CONTRACT-046, SERVER-079 and CLI-035 shipped `corpus doc patch`. §9.2's bullet
+says **the agent's skills prefer it over a whole-body edit for bounded changes**,
+which is a promise about the workspace template rather than about the route — and
+it was false until the skills knew the verb existed.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| AGENT-024 | The skills reach for a patch when the change is bounded | done | P0 | CLI-035 |

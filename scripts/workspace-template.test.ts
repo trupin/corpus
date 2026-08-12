@@ -23,6 +23,7 @@ import {
   TEMPLATE_ROOT,
   TemplateError,
   WEIGHT_TABLE_HEADER,
+  extractCorpusInvocationUses,
   extractCorpusInvocations,
   installedPath,
   listTemplateFiles,
@@ -783,6 +784,137 @@ describe("skills", () => {
     });
   });
 
+  /**
+   * AGENT-024, SPEC.md §9.2's patch bullet signed 2026-08-12: _"the agent's
+   * skills prefer it over a whole-body edit for bounded changes"_. That sentence
+   * is a promise about **this text**, so it is pinned here rather than left to a
+   * mention.
+   *
+   * What decays first in a rewrite is not the verb — it is the three things that
+   * make reaching for it a decision rather than a habit:
+   *
+   * - **The choice rule**, legible without a table: quotable → patch, not
+   *   quotable → whole body. Stated with the cost of getting it wrong in *both*
+   *   directions, because an agent that only hears "prefer the patch" patches its
+   *   way across a document it should have rewritten.
+   * - **No key**, as a consequence of the excerpt being the staleness check
+   *   (SPEC.md §7) rather than as a flag somebody forgot. Measured: passing
+   *   `--key` to `corpus doc patch` is exit 2, unknown flag.
+   * - **The two refusals, unblurred.** Same exit `10`, opposite recoveries —
+   *   0 matches means re-read, more than one means quote more. An agent that
+   *   cannot tell them apart guesses, and both guesses cost a round trip.
+   */
+  describe("a bounded change is a patch, not a rewrite", () => {
+    /**
+     * Every `corpus doc patch` invocation in the text, continuation lines
+     * included: a patch's excerpts are routinely multi-line, and a single quote
+     * left open at the end of a line carries the command onto the next one. Cut
+     * at the line would report half a command and pin nothing.
+     */
+    const patchInvocations = (body: string): readonly string[] => {
+      const lines = body.split("\n");
+      const invocations: string[] = [];
+      for (const [index, line] of lines.entries()) {
+        const start = line.indexOf("corpus doc patch ");
+        if (start === -1) continue;
+        let text = line.slice(start);
+        for (let next = index + 1; (text.split("'").length - 1) % 2 === 1; next += 1) {
+          const continuation = lines[next];
+          if (continuation === undefined) break;
+          text += `\n${continuation}`;
+        }
+        invocations.push(text);
+      }
+      return invocations;
+    };
+
+    /** The ones that actually perform a patch, as opposed to naming the verb in prose. */
+    const workedPatches = (body: string): readonly string[] =>
+      patchInvocations(body).filter((invocation) => /--(?:old|new)\b/.test(invocation));
+
+    it.each(skills)("$name states the choice as one rule, with both costs", ({ relPath }) => {
+      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+      expect(flat).toMatch(
+        /a change you can quote is a patch; a change you cannot quote is a whole[- ]body/i,
+      );
+      // Both directions of the mistake, not only the one the spec names.
+      expect(flat).toMatch(/pays the length of the document/i);
+      expect(flat).toMatch(/patching what should have been a rewrite/i);
+    });
+
+    it.each(skills)("$name works a patch, with both halves of it", ({ relPath }) => {
+      // Anti-vacuity: a rule with no worked example is how AGENT-019's bug
+      // survived two rewrites — the example is what gets copied.
+      const invocations = workedPatches(documentAt(relPath).body);
+      expect(invocations.length).toBeGreaterThan(0);
+      for (const invocation of invocations) {
+        expect(invocation, "a patch with no --old").toMatch(/--old(?:-file)? \S/);
+        // `--new` may be empty (`--new ''`), which is how a deletion is spelled.
+        expect(invocation, "a patch with no --new").toMatch(/--new(?:-file)? /);
+      }
+    });
+
+    it.each(skills)("$name presents no key on a patch, and says why", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      for (const invocation of patchInvocations(body)) {
+        expect(invocation, "a patch carrying a --key").not.toMatch(/--key\b/);
+      }
+      const flat = body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/a patch presents no key/i);
+      expect(flat).toMatch(/consequence rather than an omission/i);
+      // The excerpt *is* the check — the reason there is nothing to pass.
+      expect(flat).toMatch(/staleness check/i);
+    });
+
+    it.each(skills)("$name matches byte for byte, body only", ({ relPath }) => {
+      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/byte for byte/i);
+      expect(flat).toMatch(/no trimming, no normalisation/i);
+      expect(flat).toMatch(/frontmatter block is not part of/i);
+      expect(flat).toMatch(/`--new ''` is how a deletion is spelled/);
+    });
+
+    it.each(skills)("$name keeps the two refusals apart", ({ relPath }) => {
+      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/exit `10`/);
+      expect(flat).toMatch(/matched 0 times/i);
+      expect(flat).toMatch(/matched more than once/i);
+      // Opposite recoveries, each named where its refusal is.
+      expect(flat).toMatch(/re-read (?:it|the document)/i);
+      expect(flat).toMatch(/quote more/i);
+      // `--all` is not the way out of an ambiguity you did not look at.
+      expect(flat).toMatch(/make a refusal go away/i);
+      // And exit 9 from this route is a third fact, not one of the two.
+      expect(flat).toMatch(/exit `9` from a patch/i);
+      expect(flat).toMatch(/wrote the file between the match and the save/i);
+    });
+
+    it.each(skills)("$name reverts a passage with a patch", ({ relPath }) => {
+      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/a passage you can quote goes back as a \*?\*?patch/i);
+      // The frontmatter trap AGENT-023 measured: a patch quotes body text, so
+      // there is no whole file in hand to paste the YAML block back in from.
+      expect(flat).toMatch(/cannot make th(?:at|is) mistake/i);
+    });
+
+    it("makes the changelog append a patch, since an append is bounded", () => {
+      const flat = documentAt("claude/skills/orchestrate/SKILL.md").body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/an append is a bounded change, so it is a patch/i);
+      // The read still comes first — a quote is bytes you have seen.
+      expect(flat).toMatch(/you cannot quote bytes you have not seen/i);
+      // And the one append that still sends a body: the first entry, which has
+      // no section to quote.
+      expect(flat).toMatch(/the one append that sends the whole body/i);
+    });
+
+    it("tells the comment skill to quote from a read, never from the pack", () => {
+      const flat = documentAt("claude/skills/comment/SKILL.md").body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/\*\*You are about to quote one\.\*\*/);
+      expect(flat).toMatch(/briefing rather than a copy of the document's bytes/i);
+      expect(flat).toMatch(/quote from `corpus doc show <id>`, never from the pack/i);
+    });
+  });
+
   it("leaves queue terminal-state handling to the orchestrate skill", () => {
     expect(documentAt("claude/skills/comment/SKILL.md").body).not.toMatch(
       /corpus queue (?:complete|fail)/,
@@ -1492,10 +1624,17 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/^\+The working rate assumption is 6\.4%/m);
       expect(body).toMatch(/corpus doc edit doc_7e3a91 --key [0-9a-f]{64} --from agent <<'EOF'/);
       // It ends in an entry, not in a thread: the read that makes an append
-      // possible — and hands over the key it presents (AGENT-022) — the write
-      // that carries it, and a job log saying so.
-      expect(body).toMatch(
-        /corpus doc show doc_a1b2c3\nkey ([0-9a-f]{64})\ncorpus doc edit doc_a1b2c3 --key \1 --from agent/,
+      // possible, the write that carries it, and a job log saying so. Since
+      // AGENT-024 that write is a patch — an append is a bounded change — so
+      // what the read hands over is the text to quote rather than a key, and
+      // the excerpt is checked against the lines the read actually printed.
+      const append =
+        /corpus doc show doc_a1b2c3\n([\s\S]{0,400}?)corpus doc patch doc_a1b2c3 --from agent --old '([^'\n]+)'/.exec(
+          body,
+        );
+      expect(append, "no worked append in the reflection example").not.toBeNull();
+      expect(append?.[1] ?? "", "the append quotes text the read never printed").toContain(
+        append?.[2] ?? "",
       );
       expect(body).toContain(
         'corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"',
@@ -1606,17 +1745,20 @@ describe("orchestrate skill body", () => {
         expect(body).toMatch(/never fold two into one/);
       });
 
-      it("presents a key on the write, and reaches both recoveries from here", () => {
-        // Posting a thread needed no key; this write replaces a body, so it
-        // does — and both ways it can come back have to be reachable from here
-        // or the entry is lost (AGENT-022).
+      it("checks the append against what it quoted, and reaches every recovery", () => {
+        // AGENT-024: an append is a bounded change, so it is a patch (SPEC.md
+        // §9.2) and the check on it is the quoted entry rather than a key. Both
+        // ways it can come back have to be reachable from here or the entry is
+        // lost (AGENT-022) — and the whole-body branch, which is still how the
+        // *first* entry creates the section, keeps its own exit `9` recovery.
         expect(body).toMatch(
-          /\*\*This write replaces the body, so it presents a key — where posting a thread would\s+have\s+needed none\.\*\*/,
+          /\*\*The check on this write is the text you quoted, not a key — and a thread post would\s+have\s+needed neither\.\*\*/,
         );
-        expect(body).toMatch(/refused at exit `9` carrying the\s+current text and a fresh key/);
-        expect(body).toMatch(/append your entry to \*that\* body\s+and write again/);
+        expect(body).toMatch(/refused at exit `10` naming the count/);
+        expect(body).toMatch(/refused at exit `9` carrying the current text and a fresh\s+key/);
+        expect(body).toMatch(/append your entry to \*that\* body/);
         expect(body).toMatch(/defer with `--blocked-on` naming it/);
-        expect(body).toMatch(/never\s+drop the entry because the document was busy/i);
+        expect(body).toMatch(/never drop\s+the entry because the document was busy/i);
       });
 
       it("puts the rule in the stewardship charter, scoped to noticing alone", () => {
@@ -2577,11 +2719,17 @@ describe("template parsing failures", () => {
 describe("corpus invocation extraction", () => {
   const surface = parseCliDoc(
     [
+      "## Global flags",
+      "| Flag | Type |",
+      "| ---- | ---- |",
+      "| `--from <user\\|agent>` | string |",
       "## `corpus init`",
+      "| `--port <n>` | number |",
       "## `corpus queue`",
       "### `corpus queue idle`",
       "## `corpus thread`",
       "### `corpus thread reply`",
+      "| `--from-file <path>` | string |",
     ].join("\n"),
   );
 
@@ -2701,6 +2849,61 @@ describe("cli command references", () => {
       "Recover with `corpus skill rollback orchestrate`.\n",
     ).map((tokens) => normalizeInvocation(tokens, surface));
     expect(invoked).toContain(REMOVED_VERBS[0]);
+  });
+
+  /**
+   * Flags the command a template invocation names does not declare, as
+   * `<command> <flag>` pairs (AGENT-024).
+   *
+   * The invocation extractor drops flags, so until now a skill could spell
+   * `corpus doc patch --key <k>` — the one flag that verb deliberately does not
+   * have — and every check in this file would pass while the agent copying the
+   * example got exit 2 and no write. A command whose name does not resolve is
+   * left to the check above; this one only answers "does that command take that
+   * flag", and the global table is merged into every command exactly as the CLI
+   * merges it.
+   */
+  const undocumentedFlagsIn = (source: string): string[] =>
+    extractCorpusInvocationUses(source).flatMap(({ tokens, flags }) => {
+      const command = normalizeInvocation(tokens, surface);
+      if (command === null) return [];
+      const declared = surface.flags.get(command);
+      return flags
+        .filter((flag) => !surface.globalFlags.has(flag) && declared?.has(flag) !== true)
+        .map((flag) => `${command} ${flag}`);
+    });
+
+  it("spells no flag docs/cli.md does not document, across the template tree", () => {
+    for (const relPath of templateFiles.filter((file) => file.endsWith(".md"))) {
+      expect(undocumentedFlagsIn(readTemplateFile(relPath)), relPath).toEqual([]);
+    }
+  });
+
+  it("spells no undocumented flag in a plugin's skill either", () => {
+    for (const { label, body } of installedSkills) {
+      expect(undocumentedFlagsIn(body), label).toEqual([]);
+    }
+  });
+
+  it("catches a flag the command does not have", () => {
+    // The regression this exists for: `corpus doc patch` takes no `--key`
+    // (SPEC.md §7 — the excerpt is the staleness check), and passing one is
+    // exit 2 against a real server.
+    expect(
+      undocumentedFlagsIn(
+        "```bash\ncorpus doc patch doc_a1b2c3 --key abc --old 'a' --new 'b'\n```",
+      ),
+    ).toEqual(["doc patch --key"]);
+  });
+
+  it("reads a flag-looking word inside a quoted value as the text it is", () => {
+    // A patch quotes prose, and prose contains dashes. Only unquoted words are
+    // flags — otherwise the check would fail on the document being edited.
+    expect(
+      undocumentedFlagsIn(
+        "```bash\ncorpus doc patch doc_a1b2c3 --old 'ship it --tomorrow' --new ''\n```",
+      ),
+    ).toEqual([]);
   });
 
   it("fails on a command docs/cli.md does not document", () => {

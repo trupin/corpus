@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -65,36 +65,36 @@ Three things the text has to get right beyond "the verb exists":
 
 ## Acceptance Criteria
 
-- [ ] Both installed skills teach `corpus doc patch` as the verb for a bounded
+- [x] Both installed skills teach `corpus doc patch` as the verb for a bounded
       change, with the literal `--old` / `--new` flags as the example — not
       `--old-file`, `--new-file` or `--stdin`, which are escape hatches
-- [ ] The choice between patch and whole-body edit is stated as one legible
+- [x] The choice between patch and whole-body edit is stated as one legible
       rule (quotable → patch; not quotable → edit), with the cost of getting it
       wrong in **both** directions
-- [ ] Matching is stated as **byte-exact against the body as stored** — no
+- [x] Matching is stated as **byte-exact against the body as stored** — no
       trimming, no normalisation — and the body is named as excluding the
       frontmatter block
-- [ ] **No `--key` on a patch**, said as a consequence rather than an omission:
+- [x] **No `--key` on a patch**, said as a consequence rather than an omission:
       the excerpt _is_ the staleness check (§7), and it is the better one because
       it says _which_ text is gone
-- [ ] The two refusals are distinguished in the agent's own decision terms, each
+- [x] The two refusals are distinguished in the agent's own decision terms, each
       with its own next move: **0 matches → re-read the document and quote what
       it says now**; **more than one → quote more context, or `--all` if every
       occurrence is what you meant**. Both are exit `10`, nothing written
-- [ ] A `stale_key` from this route (exit `9`) is named as a **different** fact:
+- [x] A `stale_key` from this route (exit `9`) is named as a **different** fact:
       something outside Corpus wrote the file
-- [ ] `--new ''` is stated as how a deletion is spelled, and an omitted `--new`
+- [x] `--new ''` is stated as how a deletion is spelled, and an omitted `--new`
       as a usage error rather than a deletion
-- [ ] The revert loop in **both** skills gains a patch step for the bounded case,
+- [x] The revert loop in **both** skills gains a patch step for the bounded case,
       saying why it is safer than pasting a file: a patch quotes body text, so
       the frontmatter cannot be written in twice
-- [ ] `scripts/workspace-template.test.ts` pins the above the way it pins the key
+- [x] `scripts/workspace-template.test.ts` pins the above the way it pins the key
       loop, and additionally checks **every flag the template names against
       `docs/cli.md`** — a flag that does not exist must fail the suite
-- [ ] Section counts unchanged: orchestrate **16**, comment **13**. No new
+- [x] Section counts unchanged: orchestrate **16**, comment **13**. No new
       heading; the teaching belongs inside `## Writing a document` and
       `## Doing the work`
-- [ ] No fence in either skill is left open (a closing run alone on its line,
+- [x] No fence in either skill is left open (a closing run alone on its line,
       AGENT-016), verified with a real CommonMark parser
 
 ## Technical Design
@@ -201,19 +201,159 @@ commands in it behave as written.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent._
+**Model: opus (claude-opus-5, 1M context).** 2026-08-12. Scratch workspaces
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s024/ws` (server on port
+**8947**) and `.../ws2` (port 8948, init only). 8765 and 5173 untouched;
+`~/cos` never written.
+
+### How "when to patch" is framed
+
+One rule, stated before either verb is named, and identically in both skills:
+**a change you can quote is a patch; a change you cannot quote is a whole-body
+edit.** Quotable means you can point at the text that is wrong — a figure, a
+sentence, a paragraph that should go. Not quotable means the document is being
+restructured, its argument rewritten, two sections folded into one, and there is
+nothing to point at. One qualifier keeps the rule from being read as "always
+patch": **several separate corrections in one pass are a rewrite by volume**.
+
+The rule carries the cost of getting it wrong in **both** directions, because
+half a rule produces the opposite failure: rewriting for one line "pays the
+length of the document for that line and puts every other line in your hands,
+where a bad paste can lose them"; patching what should have been a rewrite
+"becomes a pile of little ones … with the document sitting half migrated between
+them and a commit for every step".
+
+Three further claims, each measured against the real CLI rather than read off
+the docs:
+
+- **No key, as a consequence.** `corpus doc patch … --key <k>` → **exit 2**,
+  `unknown flag "--key" for "patch"`. So the skills say there is no flag and that
+  passing one is a usage error, and give the reason (§7): the excerpt is the
+  staleness check, and the better one, because it names *which* text has gone.
+- **The excerpt really is that check.** With a key read and then invalidated by
+  another party's write: `corpus doc edit --key <stale>` → **exit 9** carrying
+  the current document and a fresh key, while `corpus doc patch` with no key at
+  all, at the same moment, landed at **exit 0**.
+- **A patch is an ordinary write once applied.** Anchor report on the same line
+  (`— 1 anchor remapped`, `— 1 orphaned (th_p7gvdnh4)`), one commit authored
+  `agent`, fresh `key <sha256>` on the next line.
+
+### The two refusals, kept apart
+
+Both **exit 10**, nothing written, opposite recoveries — so each is stated with
+its own next move rather than with the CLI's message:
+
+```
+$ corpus doc patch doc_yt75ducv --from agent --old '30-year fixed at 6.1%.' --new 'x'
+corpus: the text --old quotes is not in the body of doc_yt75ducv — it matched 0 times…
+exit=10
+$ corpus doc patch doc_yt75ducv --from agent --old 'fixed at' --new 'fixed rate at'
+corpus: the text --old quotes occurs 2 times in the body of doc_yt75ducv…
+exit=10   (--json: {"code":"patch_multiple_matches","details":{"reason":"multiple-matches","matches":2}})
+```
+
+0 matches → **re-read and quote what it says now** (and do not go hunting for a
+normalisation; there is none). More than one → **quote more context**; quoting
+the whole line fixed the ambiguous case at exit 0, and `--all` replaced both at
+exit 0 — which is why `--all` is written as "right only when every occurrence is
+genuinely what you meant, never to make a refusal go away". Exit `9` from this
+route is named as a **third** fact (something outside Corpus wrote the file);
+it was not force-reproduced — the window is between the server's match and its
+save — so the skills state it as the CLI's own classification does.
+
+Also measured and stated: `--new ''` deleted the quoted passage and took its
+blank line with it; an omitted `--new` is **exit 2** (`needs the text to put in
+--old's place`), an empty `--old` is **exit 2**; `--new` equal to `--old` printed
+`unchanged … nothing was written`; case matters (`the Rate Sheet` matched once
+where `The Rate Sheet` was a different byte string).
+
+### What the revert loop looks like now
+
+Unchanged in shape — read the history → work out the content → write it — with
+the write step deciding the same way every other write does: *"A passage you can
+quote goes back as a **patch**: `--old` the text standing there now, `--new` the
+text you are restoring. Only a document that changed wholesale needs a read for
+its key and the whole body back through `corpus doc edit`."* The bounded case is
+placed immediately after AGENT-023's frontmatter trap, because it is the answer
+to it: **a patch cannot make that mistake** — it matches body text and writes
+body text, so the file `git show` handed you is not something either half can
+carry. Safety is stated for both branches: the key guards a whole-body revert
+(exit 9), the excerpt guards a patched one (a passage somebody has since
+rewritten is not there to match).
+
+Verified end to end on the real server: `corpus doc diff` → `git show` → patch
+the current sentence back to the old one → exit 0, and the anchor that had been
+orphaned by the original change **resolved again** (`orphaned: false`,
+`chars 108–150`) once the passage came back.
+
+### Two contradictions the rule created, and both are fixed
+
+A rule that a worked example contradicts loses (AGENT-019). Two examples became
+whole-body writes of bounded changes the moment this rule landed:
+
+- **The changelog append** (`## Reflecting on a user edit`). It was
+  `corpus doc edit` sending the whole body back, which is exactly what §9.2
+  prices out — and the section's own argument (the person writes here too; a
+  rewrite orphans anchors and loses their entries) is the argument *for* a patch.
+  It is now a patch quoting the tail of the last entry, with the read kept and
+  its reason restated (*you cannot quote bytes you have not seen*), and the
+  whole-body branch kept for the one append that has nothing to quote — the
+  first entry, which creates the section. Run verbatim against the server:
+  `patched doc_hfbmjnkm — 1 occurrence replaced`, the new entry landing under the
+  July 14th one with every byte above it untouched.
+- **The 6.1% → 6.4% rate edit**, told from both sides (comment worked example 1,
+  orchestrate's `## Worked example`). Both now patch the sentence, and both were
+  run verbatim: `patched doc_… — 1 occurrence replaced — 1 anchor remapped`, the
+  thread anchored on `6.1%` following the text into the new sentence.
+
+### Test surface
+
+`scripts/workspace-template.test.ts` gains `a bounded change is a patch, not a
+rewrite` (choice rule + both costs; a worked patch in each skill carrying both
+halves; no `--key` on any patch invocation; byte-exactness, body-only,
+`--new ''`; the two refusals with their distinct recoveries and exit `9` as a
+third thing; the revert step; the changelog append; the comment skill's
+quote-from-a-read rule). The invocation matcher joins continuation lines, since a
+patch's excerpts are routinely multi-line.
+
+The read-through the issue asks for is now mechanical: `parseCliDoc` also reads
+**flags** — each command's own table plus the global table, first cells only, so
+a description mentioning `--key` cannot document it — and
+`extractCorpusInvocationUses` reports the flags each template invocation spells.
+The new check resolves every flag in the whole template tree **and** in every
+plugin skill against `docs/cli.md`. Its anti-vacuity case is the exact
+regression: `corpus doc patch … --key abc` reports `doc patch --key`, and a
+flag-looking word inside a quoted value (`--old 'ship it --tomorrow'`) is read as
+the text it is.
+
+`npx vitest run scripts` → **596 passed, 0 failed**.
+`vitest run apps/cli/src/template apps/cli/src/commands/init` → **144 passed**
+(the install contract is unchanged: same 8 template files).
+ESLint clean, Prettier clean, `tsc --noEmit -p scripts/tsconfig.json` clean.
+
+Structural checks (AGENT-016): parsed both bodies with
+`mdast-util-from-markdown` — **16** and **13** top-level `depth: 2` headings,
+equal to the pinned `sections.size`, and **0** code nodes whose closing line is
+anything but a bare backtick run.
+
+`corpus init` into a fresh workspace (`ws2`) installed the updated skills — 6
+`corpus doc patch` invocations in orchestrate, 5 in comment — so a workspace
+created today gets the verb.
 
 ### Post-Implementation Verification
 
-_[Agent fills]_
+Commands and their observed output are quoted above; every claim in the skill
+text about `corpus doc patch` was run against the server on port 8947 rather than
+read off `docs/cli.md`. The one claim not force-reproduced is the external-editor
+`stale_key` (exit 9), noted as such above.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

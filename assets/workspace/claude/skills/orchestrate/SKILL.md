@@ -559,8 +559,8 @@ long.
 
 **The whole-body edit, and the key that protects it.** When there is nothing to quote, the
 write replaces the body, and then: **read → work → write with the key you were given → keep
-the key the write returned.** That
-is the whole discipline, and every step of it is something you were doing anyway. Reading a
+the key the write returned.** That is the whole discipline, and every step of it is something
+you were doing anyway. Reading a
 document prints its **key**; a write that replaces the body presents that key; the write
 prints a fresh key on the line after its confirmation, which is the key the next edit
 presents. There is nothing to acquire, nothing to release, and nothing left behind if you
@@ -594,9 +594,11 @@ A write that **names its own delta** needs none, and never will: `--add-tag`, `-
 `corpus doc move`, `corpus doc archive`, `corpus doc unarchive`, `corpus thread reply` and
 `corpus thread resolve`. Each of those says what it changes, so it merges with whatever else
 happened rather than overwriting it. A key is still accepted and still checked on them, which
-is worth passing on the rare edit you would rather have refused than merged.
+is worth passing on the rare edit you would rather have refused than merged. And a patch needs
+none for the third reason above: it names the text it expects to find, which is that check by
+another route.
 
-**Two refusals, and only the first is a mistake.**
+**Two refusals on a keyed write, and only the first is a mistake.**
 
 - **Exit `2` — no key, or a malformed one.** You asked to replace a body without saying which
   version you were replacing. The CLI refuses before it sends anything, so nothing reached
@@ -616,7 +618,8 @@ exists so that you get to decide, and deciding means reading what it printed.
 **Putting an older version back is this same loop.** There is no revert command and there is
 none to look for: **a revert is a write whose content came from history**, so it goes down
 the path every other write goes down — anchors reconciled, frontmatter validated, committed
-under you, refused on a stale key. Three steps, and only the last one writes.
+under you, and refused rather than landed when what it would write over has moved. Three
+steps, and only the last one writes.
 
 1. **Read the history.** `corpus doc diff <id>` prints the document's path and its last
    committed change, and for a small change that diff already carries the old text. To go
@@ -634,9 +637,9 @@ under you, refused on a stale key. Three steps, and only the last one writes.
 corpus doc diff doc_a1b2c3
 git log --oneline -- data/docs/finance/mortgage-options.md
 git show 8509044:data/docs/finance/mortgage-options.md
-corpus doc patch doc_a1b2c3 --from agent --old 'Rates are refreshed weekly, and' --new 'The rate sheet is republished every Monday, and'
+corpus doc patch doc_a1b2c3 --from agent --old 'Rates are refreshed weekly, and' --new 'The rate sheet is republished every Monday, and'  # one passage back
 patched doc_a1b2c3 — 1 occurrence replaced
-corpus doc show doc_a1b2c3
+corpus doc show doc_a1b2c3  # or, when the whole shape has to go back: a read for the key
 key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
 corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
 The body as it read before the change you are undoing.
@@ -848,13 +851,14 @@ what you deliberately left alone. A date and two sentences is the size of it. Th
 body text rather than a turn, so it carries no trace arrow.
 
 **Append; never rewrite the section.** There is no append verb and none is missing: an append
-is a bounded change, so it is a patch (*Writing a document*). `corpus doc show doc_a1b2c3` for
-the body as it now stands, then `corpus doc patch doc_a1b2c3 --from agent` quoting the tail of
-the last entry — enough of it to occur exactly once — and giving that same text back with your
-entry underneath it. The read comes first and is not optional: you cannot quote bytes you have
-not seen, and it is what tells you what the last entry says and whether the section is there
-at all. The quoted text is also what makes the append safe rather than hopeful: a section that
-moved between the read and the write refuses the patch instead of writing over the move.
+is a bounded change, so it is a patch (*Writing a document*). It is
+`corpus doc show doc_a1b2c3` for the body as it now stands, then
+`corpus doc patch doc_a1b2c3 --from agent` quoting the tail of the last entry — enough of it
+to occur exactly once — and giving that same text back with your entry underneath it. The read
+comes first and is not optional: you cannot quote bytes you have not seen, and it is what
+tells you what the last entry says and whether the section is there at all. The quoted text is
+also what makes the append safe rather than hopeful: a section that moved between the read and
+the write refuses the patch instead of writing over the move.
 
 The person writes in this section too:
 re-wording, re-ordering, re-dating, merging or condensing an existing entry is how their
@@ -865,10 +869,10 @@ puts nothing back that it did not quote. Entries run oldest first, so the
 newest goes last and the append disturbs nothing above it. Where the section is absent there
 is nothing to quote and the first entry creates it, which is the one append that sends the
 whole body: that read's **key**, then
-`corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent` with the section
-as the last thing in the body — a blank line, the heading, a blank line, the entry — and every
-other byte reproduced exactly. That heading is spelled `## Changelog` and nothing else — a
-second spelling is a second section, and the reader's clip finds neither.
+`corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent` with the section as
+the last thing in the body — a blank line, the heading, a blank line, the entry — and
+every other byte reproduced exactly. That heading is spelled `## Changelog` and nothing else —
+a second spelling is a second section, and the reader's clip finds neither.
 
 **The word to read in the anchor report is `orphaned`.** Appending at the end moves no
 earlier offset, so nothing above the section shifts and an honest append orphans nothing. An
@@ -885,9 +889,9 @@ can have happened since. The section moved — somebody appended, or re-worded t
 were quoting: the patch matches nothing, is refused at exit `10` naming the count, nothing is
 written, and you read the document again and append to *that* body. The session you are
 reflecting on is over, so what moved is somebody else's change and your entry belongs after it
-either way. Or the person's editor is open again: leave the document alone and defer with
-`--blocked-on` naming it, and the entry lands when the event comes back. Never drop the entry
-because the document was busy. Where the section did not exist and the write is the whole
+either way. Or the person's editor is open again: leave the document alone and
+defer with `--blocked-on` naming it, and the entry lands when the event comes back. Never drop
+the entry because the document was busy. Where the section did not exist and the write is the whole
 body, the key does that job instead: refused at exit `9` carrying the current text and a fresh
 key, with the same answer — append your entry to *that* body and write again.
 
@@ -1243,22 +1247,19 @@ Inside the subagent, the comment skill briefs itself on the one thread that matt
 `corpus thread context th_4b8e2c`, one bounded pack carrying the anchored passage with its
 enclosing section and whatever else bears on it, the second line never opened at all — reads
 the turns with `corpus thread show`, escalates to `corpus doc show doc_a1b2c3` because the
-edit below replaces the whole body — the same read that hands it the key that edit presents,
-and where a person's open session would have shown up had there been one — and does the work:
-every mutation through the CLI, every progress line on the dispatched event's id.
+patch below quotes that document byte for byte — a quote is bytes you have seen, and that read
+is also where a person's open session would have shown up had there been one — and does the
+work: every mutation through the CLI, every progress line on the dispatched event's id.
 
 ```bash
 export CORPUS_FROM=agent
 corpus doc show doc_a1b2c3
-key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
-corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
-# Mortgage options
-
-The working rate assumption is 6.4% as of 2026-07-28 — see [[th_4b8e2c]].
-
-Thirty-year fixed offers currently cluster between 6.1% and 6.6%; every
-projection in this document now uses 6.4%.
-EOF
+The working rate assumption is 6.1% as of 2026-05-02, and every projection in
+this document uses it.
+corpus doc patch doc_a1b2c3 --from agent --old '6.1% as of 2026-05-02, and every projection in
+this document uses it.' --new '6.4% as of 2026-07-28 — see [[th_4b8e2c]]. Thirty-year fixed
+offers currently cluster between 6.1% and 6.6%, and every projection in this document uses 6.4%.'
+patched doc_a1b2c3 — 1 occurrence replaced — 1 anchor remapped
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — updated the rate assumption to 6.4%"
 corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 Updated the rate assumption in [[doc_a1b2c3]] to 6.4% and reworded the

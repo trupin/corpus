@@ -153,6 +153,11 @@ same doctrine as invariant 6, not an exception to it. The pack is insufficient w
   your change needs all of them in hand first. Rewriting a parent from its section alone
   deletes the rest of the document. The read is also what hands you the **key** that edit
   presents, so this escalation and the write discipline are one act, not two.
+- **You are about to quote one.** `corpus doc patch` matches byte for byte, and the pack is a
+  briefing rather than a copy of the document's bytes: its parent block can be cut to fit the
+  bounds and an excerpt line is a snippet by construction. Quote from `corpus doc show <id>`,
+  never from the pack — a patch built out of a briefing is refused for text that is really
+  there, and you will go looking for the wrong mistake.
 - **The pack says it truncated.** When the parent-side prose was cut to fit the bounds, the
   pack prints a `#` line saying so and naming the escalation. Read that line, and take it:
 
@@ -329,8 +334,9 @@ prevents. A write that **names its own delta** needs no key at all and never wil
 `--add-tag`, `--title`, `--status`, `--reviewed`, `corpus doc move`, `corpus doc archive`,
 `corpus thread reply`, `corpus thread resolve`. Those merge rather than overwrite.
 
-**Two refusals, and only the first is a mistake.** Exit `2` means no key or a malformed one:
-the CLI refuses before sending anything, so read the document and write again. Exit `9` means
+**Two refusals on a keyed write, and only the first is a mistake.** Exit `2` means no key or
+a malformed one: the CLI refuses before sending anything, so read the document and write
+again. Exit `9` means
 the key is stale — the document changed after your read. **Nothing was written and your text
 is still yours to resend**, and the refusal prints the document as it now stands *plus* its
 fresh key, so no second read is needed: read what changed, reconcile it against what you
@@ -865,17 +871,13 @@ this document uses it.
 doc_7e3a91  Refinance plan › Costs  linked  every projection here assumes 6.1% for the whole term
 corpus thread show th_4b8e2c
 corpus job log evt_7c1d9a "briefed on th_4b8e2c from its context pack"
-corpus doc show doc_a1b2c3  # escalation: the edit below replaces the whole body
-key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
-corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
-# Mortgage options
-
-The working rate assumption is 6.4% as of 2026-07-28.
-
-Thirty-year fixed offers currently cluster between 6.1% and 6.6%; every
-projection in this document now uses 6.4%.
-EOF
-edited doc_a1b2c3
+corpus doc show doc_a1b2c3  # escalation: the patch below quotes this document byte for byte
+The working rate assumption is 6.1% as of 2026-05-02, and every projection in
+this document uses it.
+corpus doc patch doc_a1b2c3 --from agent --old '6.1% as of 2026-05-02, and every projection in
+this document uses it.' --new '6.4% as of 2026-07-28. Thirty-year fixed offers currently
+cluster between 6.1% and 6.6%, and every projection in this document uses 6.4%.'
+patched doc_a1b2c3 — 1 occurrence replaced — 1 anchor remapped
 key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"
 corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'

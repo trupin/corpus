@@ -385,6 +385,45 @@ export interface CliDocSurface {
   readonly commands: ReadonlySet<string>;
   /** Topic names (`queue`) — legal as bare references in prose. */
   readonly topics: ReadonlySet<string>;
+  /** Flags each command declares, keyed by the same names as `commands`. */
+  readonly flags: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Flags merged into every command by `docs/cli.md`'s _Global flags_ table. */
+  readonly globalFlags: ReadonlySet<string>;
+}
+
+/** Every flag named in one markdown table row's **first** cell. */
+function rowFlags(line: string): string[] {
+  const firstCell = line.split("|")[1] ?? "";
+  return [...firstCell.matchAll(/(?<![\w-])--?[A-Za-z][A-Za-z0-9-]*/g)].map((match) => match[0]);
+}
+
+/**
+ * The flag table under one heading, read from **first cells only**.
+ *
+ * Descriptions name other flags constantly — `corpus doc patch`'s says there is
+ * no `--key` — so scanning whole rows would document exactly the flags the
+ * skills must not use. A flag exists here only where it is the row's subject.
+ */
+function flagsUnder(block: string): Set<string> {
+  const flags = new Set<string>();
+  for (const line of block.split("\n")) {
+    if (!line.trimStart().startsWith("|")) continue;
+    for (const flag of rowFlags(line)) flags.add(flag);
+  }
+  return flags;
+}
+
+/** `docs/cli.md` split into its `## `/`### ` sections, heading line included. */
+function sectionsOf(markdown: string): { readonly heading: string; readonly block: string }[] {
+  const sections: { heading: string; lines: string[] }[] = [];
+  let current: { heading: string; lines: string[] } | undefined;
+  for (const line of markdown.split("\n")) {
+    if (/^#{2,3} /.test(line)) {
+      current = { heading: line, lines: [] };
+      sections.push(current);
+    } else current?.lines.push(line);
+  }
+  return sections.map(({ heading, lines }) => ({ heading, block: lines.join("\n") }));
 }
 
 /**
@@ -392,6 +431,12 @@ export interface CliDocSurface {
  * command is a `## `/`### ` heading of the form `` `corpus <name>` ``; a
  * heading whose name prefixes deeper headings (`db` before `db doctor`) is a
  * topic rather than an invocable command.
+ *
+ * Each command's **flags** come from its own table, and the _Global flags_
+ * section's table is merged into all of them — which is what lets a caller ask
+ * not only whether a command exists but whether the flags a skill spells on it
+ * do (AGENT-024: `corpus doc patch` takes no `--key`, and a skill that passed
+ * one would teach a usage error the command extractor cannot see).
  */
 export function parseCliDoc(markdown: string): CliDocSurface {
   const names = [...markdown.matchAll(/^#{2,3} `corpus ([^`]+)`/gm)]
@@ -403,7 +448,27 @@ export function parseCliDoc(markdown: string): CliDocSurface {
   const topics = new Set(
     names.filter((name) => names.some((other) => other.startsWith(`${name} `))),
   );
-  return { commands: new Set(names.filter((name) => !topics.has(name))), topics };
+
+  const flags = new Map<string, ReadonlySet<string>>();
+  let globalFlags: ReadonlySet<string> = new Set();
+  for (const { heading, block } of sectionsOf(markdown)) {
+    if (/^#{2,3} Global flags\s*$/.test(heading)) {
+      globalFlags = flagsUnder(block);
+      continue;
+    }
+    const name = /^#{2,3} `corpus ([^`]+)`/.exec(heading)?.[1];
+    if (name !== undefined) flags.set(name, flagsUnder(block));
+  }
+  if (globalFlags.size === 0) {
+    throw new TemplateError("cli reference: no `Global flags` table found");
+  }
+
+  return {
+    commands: new Set(names.filter((name) => !topics.has(name))),
+    topics,
+    flags,
+    globalFlags,
+  };
 }
 
 /** Read `docs/cli.md` and parse its command surface. */
@@ -424,18 +489,69 @@ const invocationTokens = (invocation: string): string[] => {
 };
 
 /**
- * Every `corpus …` invocation in a markdown document, as token arrays (the
- * words after `corpus`, flags dropped). Two sources are scanned: lines inside
- * fenced code blocks, and inline code spans in prose. Heredoc bodies inside
- * fenced blocks are content, not commands, and are skipped up to their
- * terminator — a reply that merely mentions the word corpus at the start of a
- * line is never extracted. Prose outside code is never scanned.
+ * An invocation's flags, in the order they were written and with any `=value`
+ * dropped. Only tokens **outside** quotes count: a flag-looking word inside a
+ * quoted argument is that argument's text — `--new '--all is not what I meant'`
+ * spells one flag, not two — and a value opened on the command line and closed
+ * on a later one (the multi-line excerpts a patch is written with) leaves
+ * everything after the quote unread rather than half-read.
  */
-export function extractCorpusInvocations(markdown: string): string[][] {
-  const invocations: string[][] = [];
+const invocationFlags = (invocation: string): string[] => {
+  const command = invocation.split("<<")[0]?.split(/\s#\s/)[0] ?? "";
+  const flags: string[] = [];
+  let quote: string | null = null;
+  let word = "";
+  let quoted = false;
+
+  const end = (): void => {
+    if (word.startsWith("-") && !quoted) flags.push(word.split("=")[0] ?? word);
+    word = "";
+    quoted = false;
+  };
+  for (const character of command) {
+    if (quote !== null) {
+      if (character === quote) quote = null;
+      else word += character;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      quoted = true;
+      continue;
+    }
+    if (/\s/.test(character)) end();
+    else word += character;
+  }
+  end();
+  return flags;
+};
+
+/** One `corpus …` invocation: the words after `corpus`, and the flags it spells. */
+export interface CorpusInvocation {
+  readonly tokens: readonly string[];
+  readonly flags: readonly string[];
+}
+
+/**
+ * Every `corpus …` invocation in a markdown document, with its tokens (the
+ * words after `corpus`, flags dropped) and its flags. Two sources are scanned:
+ * lines inside fenced code blocks, and inline code spans in prose. Heredoc
+ * bodies inside fenced blocks are content, not commands, and are skipped up to
+ * their terminator — a reply that merely mentions the word corpus at the start
+ * of a line is never extracted. Prose outside code is never scanned.
+ */
+export function extractCorpusInvocationUses(markdown: string): CorpusInvocation[] {
+  const invocations: CorpusInvocation[] = [];
   const proseLines: string[] = [];
   let inFence = false;
   let heredocTerminator: string | null = null;
+
+  const record = (invocation: string): void => {
+    invocations.push({
+      tokens: invocationTokens(invocation),
+      flags: invocationFlags(invocation),
+    });
+  };
 
   for (const line of markdown.split("\n")) {
     if (line.trimStart().startsWith("```")) {
@@ -453,18 +569,21 @@ export function extractCorpusInvocations(markdown: string): string[][] {
     }
     for (const segment of line.split(/&&|\|\||[|;]/)) {
       const trimmed = segment.trim();
-      if (trimmed === "corpus" || trimmed.startsWith("corpus ")) {
-        invocations.push(invocationTokens(trimmed));
-      }
+      if (trimmed === "corpus" || trimmed.startsWith("corpus ")) record(trimmed);
     }
     heredocTerminator = HEREDOC_MARKER.exec(line)?.[1] ?? null;
   }
 
   for (const match of proseLines.join("\n").matchAll(/`([^`\n]+)`/g)) {
     const span = (match[1] ?? "").trim();
-    if (span.startsWith("corpus ")) invocations.push(invocationTokens(span));
+    if (span.startsWith("corpus ")) record(span);
   }
   return invocations;
+}
+
+/** Every `corpus …` invocation as token arrays alone, flags dropped. */
+export function extractCorpusInvocations(markdown: string): string[][] {
+  return extractCorpusInvocationUses(markdown).map((invocation) => [...invocation.tokens]);
 }
 
 /**
