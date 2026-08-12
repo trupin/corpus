@@ -164,6 +164,13 @@ export async function deleteDocumentLocked(
       unproject: plan.unproject,
       commit: {
         subject: `${isThread ? "thread" : "doc"} delete: ${loaded.row.title} (${id}) by ${actor}`,
+        // SPEC.md §4's first act that commits alone: a deletion "closes the open
+        // window, lets that commit land, and then commits the deletion by
+        // itself". Without the flush, a document created and deleted inside one
+        // window leaves **nothing** in git — the deletion amends the create away,
+        // and §7's "deletion is user-only, git preserves history" becomes false
+        // rather than merely coarse (SERVER-092).
+        act: "commits-alone",
       },
       keys: plan.keys,
       // A parented thread's deletion takes a count off its parent's folder; a

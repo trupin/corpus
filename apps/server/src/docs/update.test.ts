@@ -438,8 +438,11 @@ describe("squash-on-idle, through the API", () => {
     ws.advance(SQUASH_IDLE_MS);
     await ws.put(`/api/docs/${created.id}`, { body: "a later session" });
     const subjects = ws.log("%s");
+    // The newest window is still open, so it still carries its last verb; the
+    // one that went quiet closed as the new save landed and says what it was —
+    // §4's "a window that closes with no act to name says so" (SERVER-091).
     expect(subjects[0]).toContain("doc edit: Session");
-    expect(subjects[1]).toContain("doc edit: Session");
+    expect(subjects[1]).toBe("editing session: 1 document by user");
     expect(subjects[2]).toContain("seed the workspace");
   });
 

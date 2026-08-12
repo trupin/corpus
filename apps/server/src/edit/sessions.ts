@@ -24,10 +24,10 @@
 // commit, the other whether the person has put the document down — and a shared
 // constant would make a change to either a change to both.
 //
-// **Nothing here runs on the write path.** `observeCommit` is synchronous,
-// does no I/O and issues no git command; every read the event needs happens on
-// the timer or flush side, in `emit`. §4's autosave fires on a timer, so the
-// acknowledgment must cost it nothing.
+// **Nothing here runs on the write path.** `observeCommit` and `observeRewrite`
+// are synchronous, do no I/O and issue no git command; every read the event
+// needs happens on the timer or flush side, in `emit`. §4's autosave fires on a
+// timer, so the acknowledgment must cost it nothing.
 
 import { randomBytes } from "node:crypto";
 import {
@@ -108,6 +108,41 @@ export interface EditSessionTracker {
    */
   observeCommit(commit: ObservedCommit): void;
   /**
+   * The twin of {@link observeCommit}: the open window's commit was **amended**,
+   * so its sha moved (`from` → `to`, same tree).
+   *
+   * A session records shas at the instant its saves land, and a save's commit is
+   * the open window's commit — which two things then rewrite under it:
+   *
+   * - **A close** relabels it (the other party wrote, a `corpus doc diff` read
+   *   the history, the server stopped).
+   * - **A fold** amends it — and because §4's window belongs to a *party*, the
+   *   save that folds may be to a **different document**. That write's own
+   *   `observeCommit` names only its own document, so nothing there reaches the
+   *   neighbour's session; only this does (PR #42 review). It is why two
+   *   documents edited in one window can name one commit, as §4 requires.
+   *
+   * Following the rewrite is what keeps §4's promise that a `doc.edited` range is
+   * "already in git when the agent receives it": without it the event names an
+   * object no branch holds, which still resolves for git's unreachable grace and
+   * then does not.
+   *
+   * Note the *published* case never reaches here: {@link end} calls
+   * `endSquashSession(session.lastSha)` before it emits, which forgets the
+   * window, so a commit an event has already named is never relabelled at all.
+   * That forget depends on this: it matches by sha, so a session whose sha a
+   * neighbour's fold had moved would offer one the window is no longer sitting
+   * on and silently forget nothing. Following every rewrite is what makes
+   * `lastSha` the window's *current* commit and the forget effective.
+   *
+   * This handles the window still open under a session still open — the state
+   * SERVER-091 measured and escalated.
+   *
+   * Synchronous and I/O-free by contract, exactly like `observeCommit`: it is
+   * called from inside the git lock on the commit path.
+   */
+  observeRewrite(from: string, to: string): void;
+  /**
    * §4's **close** path: the reader closed and the session is flushed. Ends and
    * emits every session open on this document.
    *
@@ -172,12 +207,24 @@ interface OpenSession {
   /** The session's newest commit — `to`. */
   lastSha: string;
   /**
-   * True while `firstSha` and `lastSha` are the same commit, which is the only
-   * state in which §4's squash can rewrite the session's *base*: `git commit
-   * --amend` only ever rewrites `HEAD`, so once a second commit sits on top, the
-   * first one's sha is fixed.
+   * Is the session's *base* — `firstSha` — still `HEAD`? That is the only state
+   * in which §4's squash can rewrite it: `git commit --amend` only ever rewrites
+   * `HEAD`, so the moment anything sits on top, the base's sha is fixed.
+   *
+   * It answers a question about **git**, and so it is maintained from the
+   * commits this tracker is told about — never from "I have seen one save of my
+   * own and no others". Those were the same statement only while every user
+   * `PUT` opened a session; SERVER-095 made a frontmatter-only save open none,
+   * and a thread creation never did. Such a write still lands a commit on top of
+   * this session's base and still opens a window the next body save folds into —
+   * so a tracker reasoning from its own saves believed the amend was rewriting
+   * *its* commit, moved `firstSha` onto the interloper, and published a range
+   * starting after the person's first edit (SERVER-096).
+   *
+   * `observeCommit` hears about **every** mutation, including the ones that open
+   * no session, which is what makes the honest answer available here at no cost.
    */
-  single: boolean;
+  baseIsHead: boolean;
   lastWriteAt: number;
   /**
    * Set when a commit by **the other party** touched this document. A sealed
@@ -392,6 +439,21 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
         }
       }
 
+      // A commit that is not an amend becomes the new `HEAD`, so every session
+      // already open is now sitting under it and none of their bases can be
+      // rewritten again. Said here — over *all* sessions, from the commit rather
+      // than from the save — because the write that lands it need not be one
+      // this tracker follows: a frontmatter-only `PUT` (SERVER-095), a thread
+      // creation, an archive, a move. Each of those also opens a window the next
+      // body save folds into, and an amend of *that* window must not be mistaken
+      // for §4's squash rewriting the session's own commit (SERVER-096).
+      //
+      // Before the session below is opened or extended, so a session this very
+      // commit starts still records a base that is `HEAD` — which it is.
+      if (!result.amended) {
+        for (const session of sessions.values()) session.baseIsHead = false;
+      }
+
       if (editPath === null) {
         rearm();
         return;
@@ -403,24 +465,40 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
           path: editPath,
           firstSha: result.sha,
           lastSha: result.sha,
-          single: true,
+          baseIsHead: true,
           lastWriteAt: now(),
           sealed: false,
         };
         sessions.set(session.id, session);
       } else {
-        // §4's squash rewrites `HEAD` in place, so an amend of a one-commit
-        // session moves the session's *base* as well as its head — the old sha
-        // no longer exists and `from` has to be read from the new one. With a
-        // second commit on top, `HEAD` is no longer the session's first commit
-        // and only the head moves.
-        if (result.amended && own.single) own.firstSha = result.sha;
-        if (!result.amended) own.single = false;
+        // §4's squash rewrites `HEAD` in place, so an amend moves the session's
+        // *base* exactly when that base is `HEAD` — the old sha no longer exists
+        // and `from` has to be read from the new one. With anything on top, be
+        // it the session's own second commit or a write that opened no session
+        // at all, `HEAD` is not the session's first commit and only the head
+        // moves. (A new commit has already cleared `baseIsHead` above; it is the
+        // same statement, made once for every session rather than only for this
+        // one.)
+        if (result.amended && own.baseIsHead) own.firstSha = result.sha;
         own.lastSha = result.sha;
         own.path = editPath;
         own.lastWriteAt = now();
       }
       rearm();
+    },
+
+    observeRewrite(from, to) {
+      if (from === to) return;
+      for (const session of sessions.values()) {
+        // Both ends, and independently: a one-commit session has the same sha at
+        // both, and that is precisely the case §4's squash can rewrite (an amend
+        // only ever touches `HEAD`). Leaving `baseIsHead` alone is deliberate —
+        // a rewrite replaces a commit in place, it adds none, so a base that was
+        // `HEAD` is still `HEAD` under its new sha and one that was not still is
+        // not.
+        if (session.firstSha === from) session.firstSha = to;
+        if (session.lastSha === from) session.lastSha = to;
+      }
     },
 
     flush(docId) {

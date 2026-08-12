@@ -190,7 +190,13 @@ describe("one act, one commit", () => {
     for (const { id } of result.changed) {
       expect(ws.read(pathOf(id))).toContain("status: archived");
     }
-  });
+    // Twenty documents through the real write path, three real lock
+    // acquisitions and a real commit. Measured at ~4.3 s alone and over the 5 s
+    // default under a full-suite run, so it failed on the clock rather than on
+    // an assertion. Given room rather than trimmed: the twenty is the point of
+    // the test, and a bulk act that got slower should show up as this test
+    // getting slower, not as this test being quietly made smaller.
+  }, 20_000);
 
   it("names the action and every document it changed in the commit message", async () => {
     const docs = await seed(3);
@@ -258,17 +264,21 @@ describe("the bulk commit stands alone in both directions (§4)", () => {
     const edited = await ws.put(`/api/docs/${id}`, { body: "the user's first draft" });
     expect(edited.status).toBe(200);
     const sessionCommit = ws.head();
+    const sessionTree = ws.git("rev-parse", `${sessionCommit}^{tree}`).trim();
     const commits = ws.log("%H").length;
 
     // No clock movement at all: the same author, the same document, well inside
-    // §4's 30 s squash window — exactly the situation an ordinary save folds in.
+    // §4's 30 s idle window — exactly the situation an ordinary save folds in.
     const { result } = await bulk(staged([id], { action: "archive" }));
 
     expect(result.commit).not.toBe(sessionCommit);
     expect(ws.log("%H")).toHaveLength(commits + 1);
-    expect(ws.git("rev-parse", "HEAD^").trim()).toBe(sessionCommit);
-    // The session's own commit still says what it said.
-    expect(ws.git("log", "-1", "--format=%s", sessionCommit).trim()).toContain("doc edit:");
+    // The act sits on top of the session's own commit, whose content is
+    // untouched. Its *sha* moved: §4 has the act close the open window first,
+    // and a window that no act named is relabelled as it closes (SERVER-091),
+    // which is an amend and so a new sha for the same tree.
+    expect(ws.git("rev-parse", "HEAD^^{tree}").trim()).toBe(sessionTree);
+    expect(ws.git("log", "-1", "--format=%s", "HEAD^").trim()).toContain("editing session:");
   });
 
   it("takes no later save into itself", async () => {
@@ -855,7 +865,10 @@ describe("a mixed staged set is one act (SPEC.md §4, SHARED-032)", () => {
     expect(result.refused[0]?.lock?.holder).toBe("agent");
     // The refused rows left nothing in the commit.
     expect(filesIn(result.commit ?? "")).toEqual(idsOf(result.changed).map(pathOf).sort());
-    expect(ws.read(docs[1]?.path ?? "")).not.toContain("q3");
+    // Read the parsed tags, never the raw file: a generated id containing the
+    // substring `q3` (`doc_q36ik5up` really occurred) failed a `toContain` over
+    // the whole document for a reason that has nothing to do with tagging.
+    expect(tagsOf(docs[1]?.path ?? "")).not.toContain("q3");
   });
 
   it("refuses the whole Save when the agent stages a delete on one row of five", async () => {
@@ -885,7 +898,8 @@ describe("a mixed staged set is one act (SPEC.md §4, SHARED-032)", () => {
     for (const doc of [...docs, ...doomed]) {
       expect(ws.exists(doc.path)).toBe(true);
       expect(ws.read(doc.path)).not.toContain("status: archived");
-      expect(ws.read(doc.path)).not.toContain("q3");
+      // The parsed tags, not the raw file — see the note above.
+      expect(tagsOf(doc.path)).not.toContain("q3");
     }
   });
 
@@ -1110,7 +1124,7 @@ describe("per-document outcomes", () => {
       ]);
       // "Nothing about this document reached the commit."
       expect(filesIn(result.commit ?? "")).toEqual([inbox?.path]);
-      expect(ws.read(vault.path)).not.toContain("q3");
+      expect(tagsOf(vault.path)).not.toContain("q3");
     } finally {
       chmodSync(join(ws.root, "data", "docs", "vault"), 0o700);
     }

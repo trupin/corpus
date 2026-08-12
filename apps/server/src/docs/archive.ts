@@ -626,6 +626,10 @@ export async function setArchived(
         unproject: plan.unproject,
         commit: {
           subject: `doc ${verb}: ${loaded.row.title} (${id}) by ${actor}`,
+          // SPEC.md §4: "a document archived, restored" is a discrete act, so it
+          // closes the open window and names its commit (SERVER-092). A document
+          // already in the requested state returned above and is no act.
+          act: "names-the-window",
         },
         keys: [DOCS_KEY, docKey(id)],
         // Archived documents are excluded from every folder count, so archiving

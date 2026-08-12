@@ -51,6 +51,44 @@ export interface QueueServiceOptions {
   readonly maxAttempts?: number | undefined;
 }
 
+/**
+ * Closes the open commit window (SPEC.md §4), which for this service means: an
+ * event has **finished**, so the stewardship it caused stops gathering saves and
+ * the commit holding it is final.
+ *
+ * A seam rather than the `AutoCommitter` itself, and late-bound through
+ * {@link QueueService.attachWindowCloser}, for the reason
+ * {@link QueueEnqueueObserver} is: the queue is built by `createServer` before
+ * the git writer exists (the writer needs the projection; the queue does not),
+ * and a queue built without one — a test, a server with no projection — simply
+ * closes nothing.
+ *
+ * The queue writes only to `.corpus/queue/`, which is gitignored. It therefore
+ * commits nothing and opens no window of its own: this call **only** closes
+ * (SERVER-092).
+ */
+export type CommitWindowCloser = () => Promise<void>;
+
+/**
+ * The statuses an event *finishes* in — SPEC.md §4's "a queue event finished,
+ * however it finished — completed, failed, deferred (§7) or abandoned".
+ *
+ * `deferred` is on the list although §7 calls it neither live nor terminal: §4
+ * states the cost explicitly — "an event deferred on a lock ends the agent's
+ * window like any other ending, so one act that resumes later lands as two
+ * commits — accepted, rather than hold a window open across a wait of unknown
+ * length during which the other party may write".
+ *
+ * `pending` and `in-progress` are absent because neither is an ending: claiming
+ * an event begins the work, and a retry puts it back at the start of it.
+ */
+const FINISHED_STATUSES: ReadonlySet<QueueEventStatus> = new Set([
+  "processed",
+  "failed",
+  "deferred",
+  "abandoned",
+]);
+
 export interface EnqueueInput {
   readonly type: string;
   readonly source: string;
@@ -165,6 +203,8 @@ export class QueueService {
   private mirror: QueueMirror;
   /** Late-bound: see {@link observeEnqueued}. */
   private enqueueObserver: QueueEnqueueObserver | undefined;
+  /** Late-bound: see {@link attachWindowCloser}. Closes nothing until bound. */
+  private closeCommitWindow: CommitWindowCloser = () => Promise.resolve();
   private readonly invalidate: QueueInvalidate;
   private readonly now: () => number;
   private readonly staleAfterMs: number;
@@ -217,6 +257,15 @@ export class QueueService {
    */
   observeEnqueued(observer: QueueEnqueueObserver): void {
     this.enqueueObserver = observer;
+  }
+
+  /**
+   * Binds the one {@link CommitWindowCloser}, which `createServer` does as soon
+   * as the git writer exists. A queue built without one closes nothing, which is
+   * the right behaviour for a server that commits nothing.
+   */
+  attachWindowCloser(close: CommitWindowCloser): void {
+    this.closeCommitWindow = close;
   }
 
   /**
@@ -674,6 +723,18 @@ export class QueueService {
       await this.store.writeEvent(to, event);
       this.mirror.upsertEvent(event);
       this.invalidate(QUEUE_QUERY_KEYS);
+      // SPEC.md §4: "a queue event finished, however it finished" closes the
+      // open commit window, so the agent's stewardship for one event is one
+      // commit rather than one per document it touched (SERVER-092). Only here,
+      // and only for an ending: `claim` begins the work and `retry` puts it back
+      // at the start of it, and neither may end a window the agent is still
+      // filling. Reached only past the `from === to` return above, so a second
+      // `fail` on an already-failed event closes nothing — nothing finished.
+      //
+      // Nothing is committed either way: `.corpus/queue/` is gitignored, and a
+      // close that finds no window open is a silent no-op — which is what a
+      // deferral of an event that changed nothing gets.
+      if (FINISHED_STATUSES.has(to)) await this.closeCommitWindow();
       return event;
     });
   }

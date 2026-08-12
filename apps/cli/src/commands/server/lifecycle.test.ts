@@ -9,6 +9,7 @@ import { createTestContext } from "../../registry/fixtures.js";
 import { run } from "../../run.js";
 import { ephemeralPort, makeTempDir, removeTempDirs } from "../../testing/temp.js";
 import { resolveWorkspace, type Workspace } from "../../workspace.js";
+import { runGit } from "../init/git.js";
 import { runInit } from "../init/index.js";
 import { isPortFree } from "../init/port.js";
 import { isProcessAlive, readPidfile, writePidfile } from "./daemon.js";
@@ -473,5 +474,56 @@ describe("the server lifecycle, end to end", () => {
 
     expect(exitCodeFor(error)).toBe(ExitCode.serverUnreachable);
     expect((error as Error).message).toContain("is alive but is not answering");
+  }, 30_000);
+});
+
+/**
+ * CLI-037. Git's own background maintenance is off in a Corpus workspace, and
+ * the packing it would have done is rescheduled to `corpus server start` — the
+ * one instant when the sole writer is provably absent. These are the two
+ * halves of that: an existing workspace is repaired by its next start, and a
+ * start that spawns nothing maintains nothing.
+ */
+describe("a start maintains the workspace's repository", () => {
+  it("repairs a workspace that predates the setting, and says so", async () => {
+    const harness = await makeWorkspace("life-maintenance");
+    // What `corpus init` produced before CLI-037: git will spawn a detached
+    // `git maintenance run --auto` after every commit the server makes.
+    await runGit(["config", "--local", "--unset", "maintenance.auto"], harness.root);
+    await runGit(["config", "--local", "--unset", "gc.auto"], harness.root);
+
+    const start = context(harness);
+    await runStart(start.ctx, stubEntry(harness));
+
+    expect(
+      (
+        await runGit(["config", "--local", "--get", "maintenance.auto"], harness.root)
+      ).stdout.trim(),
+    ).toBe("false");
+    expect(start.harness.stdout()).toContain("turned off git's own background maintenance");
+    // Reported before the server came up, because that is when it happened.
+    const lines = start.harness.stdout().split("\n");
+    expect(lines[0]).toContain("background maintenance");
+    expect(lines[1]).toContain("listening on");
+
+    await stopCommand.handler(context(harness).ctx);
+  }, 30_000);
+
+  it("says nothing on the next start, and maintains nothing when one is already running", async () => {
+    const harness = await makeWorkspace("life-maintenance-quiet");
+
+    const first = context(harness);
+    await runStart(first.ctx, stubEntry(harness));
+    // `runInit` already applied the settings, so a start has nothing to say.
+    expect(first.harness.stdout().split("\n")[0]).toContain("listening on");
+
+    const again = context(harness, { json: true });
+    await runStart(again.ctx, stubEntry(harness));
+    expect(JSON.parse(again.harness.stdout())).toMatchObject({
+      alreadyRunning: true,
+      maintenance: null,
+    });
+
+    await stopCommand.handler(context(harness).ctx);
   }, 30_000);
 });

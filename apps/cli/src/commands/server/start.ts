@@ -4,6 +4,7 @@ import type { Health } from "@corpus/contract";
 import { ServerUnreachableError } from "../../errors.js";
 import { serverLogPath, serverPidfilePath } from "../../paths.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { maintainOrWarn } from "../workspace/maintenance.js";
 import {
   removePidfile,
   resolveServerEntry,
@@ -61,6 +62,10 @@ export async function runStart(
       port: state.record.port,
       url,
       version: state.health.version,
+      // An already-running server is the sole writer, so nothing was maintained
+      // — the field is present and null rather than absent, so one reader shape
+      // covers both answers.
+      maintenance: null,
     });
     out.line(
       `already running on :${String(state.record.port)} (pid ${String(state.record.pid)}) — ${url}`,
@@ -89,6 +94,18 @@ export async function runStart(
   // only possible fate is `EADDRINUSE` — and, before this check existed, a
   // pidfile naming that child after it died.
   await refuseAnOccupiedPort(context);
+
+  // The one instant in a workspace's life when its repository provably has no
+  // writer: the server is the sole writer (CLAUDE.md Architecture Decision 2),
+  // every way one could be running has just been ruled out above, and the child
+  // that will become the next one has not been spawned yet. That is why Corpus's
+  // own maintenance lives here and not in the server (CLI-037) — and why it must
+  // stay below `refuseAnOccupiedPort` rather than above it.
+  const maintenance = await maintainOrWarn({ dir: workspace.root });
+  // Reported as it happens rather than folded into the success line: it is
+  // finished by the time the daemon is spawned, and a start that then fails
+  // should still say what it did to the repository first.
+  for (const line of maintenance.lines) out.line(line);
 
   const entry = dependencies.entry ?? resolveServerEntry();
   mkdirSync(dirname(logPath), { recursive: true });
@@ -143,6 +160,7 @@ export async function runStart(
       port: record.port,
       url,
       version: ready.payload.version,
+      maintenance: maintenance.outcome,
     });
     out.line(`corpus ${ready.payload.version} listening on ${url} (pid ${String(record.pid)})`);
     out.line("  logs: corpus server logs -f");
@@ -222,7 +240,16 @@ export const startCommand: WorkspaceCommandSpec = {
     "and the command exits 0. A port that another workspace's server already holds is refused " +
     "before anything is spawned (exit 4) — its health answer is never mistaken for this " +
     "workspace's, and no pidfile is written. If the daemon never becomes ready, the tail of the " +
-    "log is printed rather than a silent failure.",
+    "log is printed rather than a silent failure.\n\n" +
+    "**A start is also when Corpus maintains the workspace's git repository** (`corpus workspace " +
+    "maintain`). Git's own background maintenance is off in a Corpus workspace, because a " +
+    "detached repack racing the server's commits can leave the object store permanently corrupt; " +
+    "the packing is rescheduled to here, the one instant when the sole writer is provably absent " +
+    "— after every running server has been ruled out and before the next one is spawned. It " +
+    "packs only when the loose-object count is past git's own `gc.auto` threshold, so most " +
+    "starts say nothing about it, and a workspace that predates this behaviour is brought under " +
+    "it by its next start. Maintenance never blocks the start: a failure is reported as a " +
+    "warning and the server comes up anyway.",
   args: [],
   flags: [],
   examples: [

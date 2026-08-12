@@ -275,6 +275,35 @@ describe("corpus init", () => {
     expect(initCommand.requiresWorkspace).toBe(false);
   });
 
+  /**
+   * CLI-037. Every `git commit` since git 2.29 ends by spawning a detached
+   * `git maintenance run --auto`, which repacks the object store at a moment of
+   * its own choosing — measured on git 2.54 racing the server's commits into a
+   * permanently corrupt repository. A workspace must not be created in that
+   * configuration, and the settings must be in place *before* the very first
+   * commit, which is itself a commit that would spawn one.
+   */
+  it("creates a repository git will not maintain behind our back", async () => {
+    const root = makeTempDir("init-maintenance");
+    const report = await initWithFreePort(root);
+
+    expect(report.maintenanceSettings).toEqual(["maintenance.auto", "gc.auto"]);
+    expect((await runGit(["config", "--local", "--get", "maintenance.auto"], root)).stdout.trim())
+      // The one that is the fix: it short-circuits the dispatcher, so no child
+      // is spawned at all.
+      .toBe("false");
+    expect((await runGit(["config", "--local", "--get", "gc.auto"], root)).stdout.trim()).toBe("0");
+  });
+
+  it("configures a repository it reused under --force too", async () => {
+    const root = await makeRepoWithCommit("init-existing-repo-maintenance");
+
+    const report = await initWithFreePort(root, undefined, { force: true });
+
+    expect(report.repository).toBe("reused");
+    expect(report.maintenanceSettings).toEqual(["maintenance.auto", "gc.auto"]);
+  });
+
   it("prints a human summary naming the port and what happened to the repository", async () => {
     const root = makeTempDir("init-human");
     const harness = createTestContext({ cwd: root, flags: { port: await ephemeralPort() } });

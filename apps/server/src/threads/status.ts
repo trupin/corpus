@@ -67,6 +67,11 @@ export async function setThreadStatus(
         unproject: [],
         commit: {
           subject: `thread ${status === "resolved" ? "resolve" : "reopen"}: ${thread.title} (${id}) by ${actor}`,
+          // SPEC.md §4: "a thread resolved or reopened" is a discrete act — a
+          // change someone else can act on — so it closes the open window and
+          // its subject is what that window's commit keeps (SERVER-092). Only a
+          // real change reaches here: an unchanged status returned above.
+          act: "names-the-window",
         },
         keys,
       },

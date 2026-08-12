@@ -145,8 +145,9 @@ already explains why only the first iteration needs an `add`.
   repository half. Both are exported from `apps/server/src/git/index.ts`.
 - The other known load-sensitive failures — `soft-wrap.spec.ts:193` (UI-105) and
   `todos.spec.ts` — are caret/selection races and are **not** this. Do not fold
-  them in. (But see "Escalated" below: the e2e suite drives a real `corpus init`
-  workspace whose repository has no such setting.)
+  them in. (This issue's "Escalated" section below claimed the e2e suite drives a
+  real `corpus init` workspace and might therefore explain them. **That claim was
+  wrong** — corrected 2026-08-10 by CLI-037; see there.)
 
 ## Testing Strategy
 
@@ -274,9 +275,20 @@ children are spawned.
 
 The same git behaviour reaches **real user workspaces**. The server commits on
 every mutation and reads git back immediately; `corpus init`
-(`apps/cli/src/commands/init/git.ts`) sets no such config, and the e2e suite
-drives exactly that — a real `corpus init` workspace on the runner's git 2.54.
-Ten commits is a short session. Whether Corpus should turn off automatic
+(`apps/cli/src/commands/init/git.ts`) sets no such config. Ten commits is a short
+session.
+
+> **Correction, 2026-08-10 (CLI-037).** This paragraph originally continued "and
+> the e2e suite drives exactly that — a real `corpus init` workspace on the
+> runner's git 2.54", offered as a lead on the standing flakes. **It is false.**
+> `apps/ui/playwright.config.ts`'s `webServer` starts Vite alone, and
+> `apps/ui/e2e/stubCorpus.ts` answers every `**/api/**` route from an in-memory
+> map: the suite creates no workspace, runs no server and makes no commit. So
+> this defect does not explain the e2e flakes — not "probably not", but
+> structurally cannot — and the recorded ones (UI-105, UI-047, INFRA-020, UI-040,
+> UI-077, UI-033, UI-037) are caret/hydration/pointer/SSE-stub/timeout shaped.
+> Left in place rather than deleted: an escalation that sent the next agent
+> looking in the wrong place is worth seeing corrected. Whether Corpus should turn off automatic
 maintenance in a workspace it commits into dozens of times an hour (and, if so,
 what maintains it instead) is a product decision spanning `apps/cli`, not a
 fixture fix. Non-server fixtures (`apps/cli`, `scripts/`) make at most six

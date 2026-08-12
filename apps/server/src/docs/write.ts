@@ -215,6 +215,35 @@ export type FileOperation =
       readonly documents: readonly string[];
     };
 
+/**
+ * How a plan that **is one of SPEC.md §4's acts** meets the open commit window
+ * (SERVER-092). An act is "a change someone else can act on, as against a body
+ * edit that is merely underway", and §4 gives it one of two shapes:
+ *
+ * - `"names-the-window"` — an agent turn, a thread resolved or reopened, a
+ *   document archived, restored, moved, renamed or marked still current. "The
+ *   act's own change is the **last thing in the window's commit**, and the
+ *   commit's subject names the act": the write folds into the open window as
+ *   usual, and *then* the window closes, keeping that subject instead of being
+ *   relabelled an editing session.
+ * - `"commits-alone"` — a deletion and a staged bulk Save, two of §4's "three
+ *   acts commit alone" (the third is the lock force break, which writes no
+ *   document and so never reaches this pipeline). The order is the other way
+ *   round: the window closes and lets its commit land **first**, and the act's
+ *   own commit then stands by itself, folding in neither direction.
+ *
+ * Getting that asymmetry backwards produces the right number of commits in the
+ * wrong order, so both directions are asserted rather than assumed
+ * (`acts.test.ts`).
+ *
+ * Declared on the plan rather than called at each verb because `MutationPlan`
+ * is where the subject that names the act already lives: eleven scattered
+ * `closeWindow()` calls would drift the moment someone adds a verb, and a
+ * reviewer checking §4's two lists against the diff would have eleven places to
+ * look instead of one.
+ */
+export type ActCommit = "names-the-window" | "commits-alone";
+
 export type MutationPlan = {
   readonly operations: readonly FileOperation[];
   /** Workspace-relative paths (files or directories) the commit stages. */
@@ -238,6 +267,13 @@ export type MutationPlan = {
      * leaving `git log` with no record that a rollback happened at all.
      */
     readonly squash?: boolean | undefined;
+    /**
+     * Set by the plans that are one of SPEC.md §4's *acts*, and by nothing else
+     * — see {@link ActCommit}. Left unset by an ordinary save of a document
+     * body, whichever document it is to, which is the first entry on §4's "what
+     * does **not** close a window" list.
+     */
+    readonly act?: ActCommit | undefined;
   } | null;
   readonly keys: readonly QueryKey[];
   /**
@@ -265,15 +301,19 @@ export type MutationPlan = {
   /**
    * The workspace-relative path of the document this plan is the **editor's
    * save** of (SPEC.md §4's edit acknowledgment; SERVER-052). Set by
-   * `PUT /api/docs/{id}` and by nothing else — a user save through that verb is
-   * what §4 means by an edit session, and it is where the reader's autosave and
-   * the plugin read-modify-write both land.
+   * `PUT /api/docs/{id}`, and only when that save changes the **body** — a user
+   * save of a document's prose is what §4 means by an edit session, and that
+   * verb is where the reader's autosave and the plugin read-modify-write both
+   * land.
    *
    * Left unset by every other verb on purpose. A create, a move, an archive, a
    * delete, a thread turn and a lock audit entry are all things that *happen to*
    * a document rather than sessions of somebody editing it; folding them in
    * would acknowledge a document the user only filed, and would double up with
-   * the `comment.created` a thread reply already enqueues.
+   * the `comment.created` a thread reply already enqueues. It is left unset for
+   * the same reason by a `PUT` that moves only frontmatter — a column width, a
+   * tag, a status — which is a thing that happens to a document too, and has no
+   * prose for §4's reflection to be about (SERVER-095).
    *
    * Carrying the path rather than a boolean is what lets the tracker report
    * stats path-scoped to this file and follow a document renamed between saves.
@@ -1069,6 +1109,20 @@ export async function finishMutation(
   },
 ): Promise<CommitOutcome | null> {
   const { plan } = request;
+  const act = plan.commit?.act;
+
+  // §4's "three acts commit alone": a deletion and a staged bulk Save "close the
+  // open window, let that commit land, and then commit by themselves". The close
+  // is *first* and it is what the flush buys — for a deletion, the create commit
+  // of a document created and deleted inside one window stops being something
+  // this deletion can amend away, which is what leaves the create recoverable
+  // (`git cat-file`) and makes §7's "git preserves history" true.
+  if (act === "commits-alone") await workspace.git.closeWindow("commits-alone");
+
+  // An act that commits alone folds in neither direction. `docIds` already says
+  // that for an act over a named set (SERVER-077); a deletion names no set, so
+  // the same thing is said in the other way the committer understands.
+  const squash = act === "commits-alone" ? false : plan.commit?.squash;
   const commit =
     plan.commit === null
       ? null
@@ -1079,7 +1133,11 @@ export async function finishMutation(
           subject: plan.commit.subject,
           paths: plan.stage,
           ...(plan.commit.anchors === undefined ? {} : { anchors: plan.commit.anchors }),
-          ...(plan.commit.squash === undefined ? {} : { squash: plan.commit.squash }),
+          ...(squash === undefined ? {} : { squash }),
+          // Tells the committer this commit's subject *names* an act, so the
+          // close below leaves it alone rather than relabelling it an editing
+          // session. It does not itself close anything.
+          ...(act === "names-the-window" ? { act: true } : {}),
         });
 
   // §4's edit acknowledgment (SERVER-052). Told about *every* mutation, not only
@@ -1094,6 +1152,19 @@ export async function finishMutation(
     editPath: plan.editSession ?? null,
     outcome: commit,
   });
+
+  // §4: "the act's own change is the last thing in the window's commit, and the
+  // commit's subject names the act" — so the close comes **after** the commit,
+  // and unconditionally. An act whose commit git skipped or refused (§14) still
+  // happened, and a close that finds no window open is a no-op; making it
+  // conditional on the commit landing would leave a window open across an act
+  // for exactly the workspaces whose hooks already make history unreliable.
+  //
+  // Placed after `observeCommit` so the acknowledgment still sees commits in the
+  // order they were made, and safe there because a window an act named is never
+  // rewritten by its close — the sha the acknowledgment may have just published
+  // cannot move under it.
+  if (act === "names-the-window") await workspace.git.closeWindow("act");
 
   // After the commit and before the response — a hook failure must not cost the
   // projection its update, or the UI would stop showing a change that is on disk.

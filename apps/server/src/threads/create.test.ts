@@ -47,6 +47,10 @@ const anchorsOf = (path: string): Record<string, Record<string, string>> =>
 describe("POST /api/threads — anchored creation", () => {
   it("writes both files in one commit and answers with the anchor", async () => {
     const parent = await seedParent();
+    // Past §4's idle window, so the parent's own creation is a settled commit
+    // rather than an open window this creation would fold into (SERVER-091: the
+    // window is scoped to the party, so a neighbour document folds in too).
+    ws.advance(60_000);
     const before = ws.log("%H").length;
 
     const created = await createThread(ws, {
@@ -177,6 +181,9 @@ describe("POST /api/threads — whole-document and standalone creation", () => {
       body: "anchored",
     });
     const parentBefore = ws.read(parent.path);
+    // Past §4's idle window: the setup above is its own commit, not a window
+    // this creation would join.
+    ws.advance(60_000);
     const before = ws.log("%H").length;
 
     const created = await createThread(ws, { parent: parent.id, body: "general note" });
@@ -479,6 +486,8 @@ describe("POST /api/threads — the dual-media body (CONTRACT-009)", () => {
 
   it("carries the selector as one JSON-encoded part and anchors the parent atomically", async () => {
     const parent = await seedParent();
+    // Past §4's idle window, so the count below is this creation's own commit.
+    ws.advance(60_000);
     const before = ws.log("%H").length;
 
     const response = await postForm(ws, "/api/threads", [

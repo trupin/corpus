@@ -398,15 +398,20 @@ describe("the restoration is an ordinary mutation", () => {
       { "x-corpus-author": "agent" },
     );
     expect(edited.status).toBe(200);
-    const afterEdit = ws.head();
+    const afterEditTree = ws.git("rev-parse", `${ws.head()}^{tree}`).trim();
     const heightBefore = ws.log("%H").length;
 
     const { status } = await rollback(SKILL, { to: oldest }, "agent");
     expect(status).toBe(200);
     expect(ws.read(PATH)).toBe(skill("Version one."));
-    // A commit was *added*, and the bad edit's own commit is still reachable.
+    // A commit was *added*, and the bad edit is still in the history under the
+    // restoration rather than amended away. Its sha moved — §4 has the
+    // restoration close the edit's still-open window first, and a window no act
+    // named is relabelled as it closes (SERVER-091) — so the tree is what
+    // identifies it, not the sha.
     expect(ws.log("%H")).toHaveLength(heightBefore + 1);
-    expect(ws.log("%H")).toContain(afterEdit);
+    expect(ws.git("rev-parse", "HEAD^^{tree}").trim()).toBe(afterEditTree);
+    expect(ws.git("show", "HEAD^:" + PATH)).toContain("Version three — the bad edit.");
   });
 
   it("refuses to write bytes that would not pass a save", async () => {
@@ -653,5 +658,98 @@ describe("choosing the revision inside the lane", () => {
     // "Version one." — reached without ever having seen the pre-save file.
     await rolled;
     expect(ws.read(PATH)).toBe(skill("Version one."));
+  });
+});
+
+// SPEC.md §4's read-back rule (SERVER-093): "Any operation that names, reads or
+// reverts a commit closes the open window before it runs." A rollback does both
+// — it names a revision and reverts to it — so it is the verb the rule was
+// written for, and the flush belongs before the read rather than beside the
+// write (`squash: false` is a different promise and does not flush).
+describe("closing §4's commit window before the revision is resolved", () => {
+  /** A good version saved through the server's own write path, leaving its window open. */
+  async function saveThroughTheWritePath(body: string): Promise<{ docId: string; bytes: string }> {
+    const docId = docIdOf(PATH) ?? "";
+    const response = await ws.put(`/api/docs/${docId}`, { body }, { "x-corpus-author": "user" });
+    expect(response.status).toBe(200);
+    return { docId, bytes: ws.read(PATH) };
+  }
+
+  it("chooses against a settled history, not one the window is still holding", async () => {
+    // §7's headline case: the good version is the open window's commit, and the
+    // bad edit came from an outside editor and was never committed. The walk
+    // therefore picks HEAD itself — which, while the window is open, is a commit
+    // the server intends to keep amending.
+    commitSkill("Version one.", "seed the skill");
+    const { bytes: good } = await saveThroughTheWritePath("Version two — good.\n");
+    const openWindowSha = ws.head();
+    const commits = ws.log("%H").length;
+
+    // No clock advance: the window is wide open at this instant.
+    ws.write(PATH, skill("Version three — broken."));
+    ws.reproject();
+
+    const { status, payload } = await rollback(SKILL, undefined, "user");
+    expect(status).toBe(200);
+    expect(ws.read(PATH)).toBe(good);
+    // Nothing to commit — the restored bytes are what git already records for
+    // this path — so §14's explanation stands in for a commit.
+    const result = SkillRollbackResultSchema.parse(payload);
+    expect(result.commit).toBeNull();
+    expect(result.warnings.map((warning) => warning.code)).toContain("commit_skipped");
+
+    // The proof that the close ran *before* the walk: the window's commit has
+    // been relabelled as the editing session it was, and its sha has moved. Nor
+    // did the close add a commit — the window's content was already in git.
+    expect(ws.log("%H").length).toBe(commits);
+    expect(ws.log("%s")[0]).toBe("editing session: 1 document by user");
+    expect(ws.head()).not.toBe(openWindowSha);
+    expect(ws.log("%H")).not.toContain(openWindowSha);
+    expect(ws.git("show", `HEAD:${PATH}`)).toBe(good);
+
+    // And the window really is closed: the next save opens a fresh commit
+    // rather than amending the one the rollback just read.
+    const docId = docIdOf(PATH) ?? "";
+    await ws.put(`/api/docs/${docId}`, { body: "Version four.\n" }, { "x-corpus-author": "user" });
+    expect(ws.log("%H").length).toBe(commits + 1);
+  });
+
+  it("leaves the editing work as its own commit beneath the restoration", async () => {
+    // The other half of §4's E2E claim: the window's commit lands *before* the
+    // rollback's, never swept into it (`squash: false`), and the restoration
+    // names a revision `git log` finds.
+    const seed = commitSkill("Version one.", "seed the skill");
+    const { bytes: good } = await saveThroughTheWritePath("Version two — good.\n");
+
+    const { status, payload } = await rollback(SKILL, { to: seed }, "user");
+    expect(status).toBe(200);
+    expect(ws.read(PATH)).toBe(skill("Version one."));
+    expect(SkillRollbackResultSchema.parse(payload).commit).toBe(ws.head());
+
+    // HEAD is the restoration; its parent is the editing session, relabelled as
+    // it closed and still holding the version that was on screen.
+    expect(ws.log("%s")[0]).toContain("skill rollback: orchestrate");
+    expect(ws.log("%s")[1]).toBe("editing session: 1 document by user");
+    expect(ws.git("show", `HEAD^:${PATH}`)).toBe(good);
+    // The sha the subject prints is one the branch holds.
+    const named = /\bto ([0-9a-f]{7,})\b/.exec(ws.log("%s")[0] ?? "")?.[1] ?? "";
+    expect(named).not.toBe("");
+    expect(ws.log("%H").some((sha) => sha.startsWith(named))).toBe(true);
+  });
+
+  it("closes the window even when the revision does not resolve", async () => {
+    // The close is owed by the read, not by the write: the window ends because
+    // its content is about to be named, whether or not a restoration follows.
+    commitSkill("Version one.", "seed the skill");
+    const { docId } = await saveThroughTheWritePath("Version two.\n");
+    const commits = ws.log("%H").length;
+
+    const { status } = await rollback(SKILL, { to: "0".repeat(40) }, "user");
+    expect(status).toBe(400);
+
+    expect(ws.log("%H").length).toBe(commits);
+    expect(ws.log("%s")[0]).toBe("editing session: 1 document by user");
+    await ws.put(`/api/docs/${docId}`, { body: "Version three.\n" }, { "x-corpus-author": "user" });
+    expect(ws.log("%H").length).toBe(commits + 1);
   });
 });

@@ -20,7 +20,15 @@ import type { EditSessionTracker } from "./sessions.js";
  * skill rollback already had to be handed `gitCommands` separately for exactly
  * this reason.
  *
- * The route is a pure read: no acting party, no lock guard, no write.
+ * **The route writes nothing and still touches git.** No acting party, no lock
+ * guard, no file mutation — but it closes §4's open commit window before it
+ * reads, which where no act named that window relabels its commit. A `GET` that
+ * moves a sha is exactly what a reviewer should stop at, so the reason is
+ * written where it happens: see the block comment in {@link readDocDiff}. The
+ * short of it is that an open window is a commit the server intends to keep
+ * amending, so reading a range against it answers about a change that is still
+ * growing. The close adds no commit — the window's content has been in git since
+ * its first save — only a boundary.
  */
 export function mountDocDiffRoutes(app: OpenAPIHono, deps: DocDiffDeps): void {
   app.openapi(contractRoutes.getDocDiff, async (c) =>

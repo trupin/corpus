@@ -13,6 +13,16 @@
 // because the watcher's `flush()` is synchronous and its time budget
 // (`WATCH_FLUSH_BUDGET_MS`) is measured against exactly this call. Two spellings
 // of one question because they answer it for two schedulers — not a copy.
+//
+// **It does not close §4's commit window, and must not** (SERVER-093's sweep).
+// The read-back rule is about operations that *name, read or revert a commit*;
+// this names none — it asks for a path's bytes at `HEAD`, and a window close
+// rewrites a subject, never a tree, so closing could not change the answer by a
+// single byte. §4 also says the opposite in as many words: an out-of-band edit
+// "closes the agent's window if one is open, then joins — or opens — the user's",
+// so ending the window here would defeat the very paragraph this module serves.
+// And it is structurally impossible besides: `withClosedWindow` is async and this
+// runs inside a synchronous flush with a 100 ms budget.
 
 import { execFileSync } from "node:child_process";
 import { sanitizeGitEnv } from "../git/env.js";

@@ -101,6 +101,9 @@ describe("DELETE /api/threads/{id}/turns/{ts}", () => {
       selector: { exact: "may be stale" },
       body: "sibling",
     });
+    // Past the auto-commit's window, so this deletion is a commit of its own
+    // rather than an amend of the setup above.
+    ws.advance(31_000);
     const before = ws.log("%H").length;
 
     const response = await del(`/api/threads/${id}/turns/${encoded(stamps[0] ?? "")}`);
@@ -179,6 +182,12 @@ describe("DELETE /api/threads/{id}/turns/{ts}", () => {
   it("keeps what it deleted in git history (§6)", async () => {
     const { id, stamps } = await anchoredThread(1);
     const text = ws.read(threadPath(id));
+    // Past the auto-commit's window, so the thread's creation has landed as a
+    // commit before the deletion is asked for. A thread created and deleted
+    // *inside* one window is the same guarantee reached the other way — §4's
+    // "three acts commit alone", where the deletion closes the window first —
+    // and it is asserted directly in `docs/acts.test.ts` (SERVER-092).
+    ws.advance(31_000);
     await del(`/api/threads/${id}/turns/${encoded(stamps[0] ?? "")}`);
     expect(ws.git("show", `HEAD~1:${threadPath(id)}`)).toBe(text);
   });
@@ -219,6 +228,8 @@ describe("DELETE /api/threads/{id}/turns/{ts}", () => {
 describe("DELETE /api/docs/{id} on a thread — the same cascade (Open Conflict 6)", () => {
   it("removes the thread file and its anchor entry in one commit", async () => {
     const { parent, id } = await anchoredThread(3);
+    // Past the auto-commit's window, so this deletion is a commit of its own.
+    ws.advance(31_000);
     const before = ws.log("%H").length;
 
     const response = await del(`/api/docs/${id}`);

@@ -54,6 +54,36 @@ export type GitRunner = (args: readonly string[], cwd: string) => Promise<GitRes
 const execFileAsync = promisify(execFile);
 
 /**
+ * Every git child the CLI spawns is bounded (PR #42 review). Without it, §4's
+ * "Maintenance never prevents a server from starting: a failure is reported and
+ * the start proceeds" is false in the one case it most needs to hold: a
+ * `git gc` that *hangs* — a wedged `gc.pid` lock, a stalled network filesystem —
+ * is not a failure, so nothing catches it, and `corpus server start` waits
+ * forever. A timeout turns the hang into the failure the sentence already
+ * promises to handle.
+ *
+ * Generous on purpose, and the server's own `GIT_TIMEOUT_MS` is deliberately
+ * *not* reused: that one budgets a commit's user-written hooks, where 30 s is
+ * already suspicious. This one has to cover a real repack of a large corpus.
+ * The measured pack of 7028 loose objects took 0.16 s (CLI-037), so two minutes
+ * is three orders of magnitude of headroom — a bound on pathology, not a
+ * performance budget.
+ *
+ * **What the bound does not cover, stated because the first draft of this
+ * comment overclaimed it** (PR #42 re-review, finding 5). `execFile` sends
+ * `SIGTERM` to the direct child only. `git gc` spawns `git repack` and
+ * `pack-objects` as its own children, and those are not in the signalled set —
+ * so on expiry the `gc` process dies while a repack may still be running, and
+ * `corpus server start` then spawns the server beside it: the concurrent-writer
+ * condition CLI-037 exists to remove, reached through the pathological door
+ * rather than the ordinary one. Strictly better than hanging forever, and not
+ * the whole fix. The killed process itself is safe — `gc` builds new packs and
+ * swaps at the end, and a dead `gc.pid` is stolen by the next run — but that is
+ * a claim about `gc`, not about its children.
+ */
+export const GIT_TIMEOUT_MS = 120_000;
+
+/**
  * The child environment is sanitized, not inherited: git exports `GIT_DIR`,
  * `GIT_INDEX_FILE`, `GIT_AUTHOR_*` and friends to the hooks it runs, so
  * `corpus init` from inside one would otherwise initialize, stage and commit
@@ -66,6 +96,7 @@ export const runGit: GitRunner = async (args, cwd) => {
     cwd,
     encoding: "utf8",
     env: sanitizeGitEnv(),
+    timeout: GIT_TIMEOUT_MS,
   });
   return { stdout, stderr };
 };

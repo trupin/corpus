@@ -327,6 +327,8 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "upgrade/release.ts",
       "workspace/diff.ts",
       "workspace/index.ts",
+      "workspace/maintain.ts",
+      "workspace/maintenance.ts",
       "workspace/unified-diff.ts",
       "workspace/upgrade.ts",
     ]);

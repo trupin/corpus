@@ -17,6 +17,9 @@ import {
 const IDLE_MS = 60_000;
 const DOC = "doc_aaaaaaaa";
 const PATH = "data/docs/notes.md";
+/** A second document, for the cases where one window commit holds two of them. */
+const OTHER_DOC = "doc_bbbbbbbb";
+const OTHER_PATH = "data/docs/other.md";
 
 const ok = (stdout: string): GitCommandResult => ({
   ok: true,
@@ -234,6 +237,107 @@ describe("edit session tracker — the idle path (SPEC.md §4)", () => {
     expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "c0ffeea" });
   });
 
+  it("follows a window close that relabelled the session's only commit", async () => {
+    // SERVER-093's escalated item. Closing a window rewrites its subject where
+    // no act named it, which is an amend: same tree, new sha. Nothing about that
+    // reaches `observeCommit` — no save happened — so the commit path says it
+    // separately, and a session sitting on the old sha follows.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["relabe1", "ba5e001"],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeRewrite("c0ffee1", "relabe1");
+
+    await h.advance(IDLE_MS);
+    // Both ends move: a one-commit session has the same sha at each, and the
+    // relabel replaced it.
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "relabe1" });
+    // And the sealed sha is the one that exists, so §4's squash is told about
+    // the commit the event actually published.
+    expect(h.sealed).toEqual(["relabe1"]);
+  });
+
+  it("moves only the head when a relabel rewrites a multi-commit session's last commit", async () => {
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["c0ffee2", "c0ffee1"],
+        ["relabe2", "c0ffee1"],
+      ]),
+      counts: new Map([["ba5e001..relabe2", "2"]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee2") }));
+    h.tracker.observeRewrite("c0ffee2", "relabe2");
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "relabe2" });
+  });
+
+  it("ignores a rewrite of a commit no session is holding", async () => {
+    // The ordinary case: a window closing under a document nobody is editing.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeRewrite("deadbee", "f00d001");
+    h.tracker.observeRewrite("c0ffee1", "c0ffee1");
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "c0ffee1" });
+  });
+
+  it("moves every session sitting on the rewritten commit, not only the one just written", async () => {
+    // PR #42's review. §4's window belongs to a *party*, so a save to document B
+    // folds into — and therefore amends — the commit document A's session is
+    // sitting on. Nothing about that reaches A through `observeCommit`: that
+    // call names B. So the commit path announces the move separately and every
+    // session holding the old sha follows, which is how §4's "each document's
+    // acknowledgment names that same commit" comes true.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["c0ffee2", "ba5e001"],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    // The announcement lands *before* the fold's own `observeCommit`, because
+    // the committer makes it while still holding the git lock — at which instant
+    // B has no session at all.
+    h.tracker.observeRewrite("c0ffee1", "c0ffee2");
+    h.tracker.observeCommit(
+      save({
+        docId: OTHER_DOC,
+        paths: [OTHER_PATH],
+        editPath: OTHER_PATH,
+        outcome: amended("c0ffee2"),
+      }),
+    );
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued).toHaveLength(2);
+    const payloads = h.enqueued.map((event) =>
+      parseDocEditedPayload({ type: event.type, payload: event.payload }),
+    );
+    expect(new Set(payloads.map((payload) => payload?.docId))).toEqual(new Set([DOC, OTHER_DOC]));
+    // One commit, named by both — and both ends move, since each session holds
+    // its one commit at each end.
+    expect(payloads.map((payload) => payload?.to)).toEqual(["c0ffee2", "c0ffee2"]);
+    expect(payloads.map((payload) => payload?.from)).toEqual(["ba5e001", "ba5e001"]);
+    // And §4's squash is handed the sha that exists, for both — so the forget
+    // matches the window rather than no-opping against a sha it has left behind.
+    expect(h.sealed).toEqual(["c0ffee2", "c0ffee2"]);
+  });
+
   it("keeps the base fixed when an amend rewrites a later commit", async () => {
     const h = harness({
       parents: new Map([
@@ -250,6 +354,69 @@ describe("edit session tracker — the idle path (SPEC.md §4)", () => {
 
     await h.advance(IDLE_MS);
     expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "c0ffeeb" });
+  });
+
+  it("keeps the base fixed when a commit that opened no session lands on top of it", async () => {
+    // SERVER-096. Not every write this tracker is told about opens a session —
+    // a frontmatter-only `PUT` (SERVER-095) and a thread creation carry no
+    // `editPath`. Both still land a commit and still open a window, so the next
+    // body save folds into *that* commit and reports an amend. The session's own
+    // base is untouched by it, and reading "amend" as "§4's squash rewriting my
+    // one commit" moved the range's start past the person's first edit.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["fmonly1", "c0ffee1"],
+        ["fmonlyb", "c0ffee1"],
+      ]),
+      counts: new Map([["ba5e001..fmonlyb", "2"]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    // The interloper: observed, but no editor save — it opens no session.
+    h.tracker.observeCommit(save({ editPath: null, outcome: committed("fmonly1") }));
+    // The next body save folds into the window that commit opened.
+    h.tracker.observeRewrite("fmonly1", "fmonlyb");
+    h.tracker.observeCommit(save({ outcome: amended("fmonlyb") }));
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued[0]?.payload).toMatchObject({
+      from: "ba5e001",
+      to: "fmonlyb",
+      stats: { commits: 2 },
+    });
+  });
+
+  it("keeps the base fixed when the interloping commit is another document's", async () => {
+    // The same hazard reached through the other door: §4's window belongs to a
+    // *party*, so a save to a neighbour document lands the commit that ends this
+    // session's claim on `HEAD` — and it is announced under the neighbour's id.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["bbbb001", "c0ffee1"],
+        ["bbbb00b", "c0ffee1"],
+      ]),
+      counts: new Map([["ba5e001..bbbb00b", "2"]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeCommit(
+      save({
+        docId: OTHER_DOC,
+        paths: [OTHER_PATH],
+        editPath: OTHER_PATH,
+        outcome: committed("bbbb001"),
+      }),
+    );
+    h.tracker.observeRewrite("bbbb001", "bbbb00b");
+    h.tracker.observeCommit(save({ outcome: amended("bbbb00b") }));
+
+    await h.advance(IDLE_MS);
+    const first = h.enqueued
+      .map((event) => parseDocEditedPayload({ type: event.type, payload: event.payload }))
+      .find((payload) => payload?.docId === DOC);
+    expect(first).toMatchObject({ from: "ba5e001", to: "bbbb00b" });
   });
 
   it("tracks documents independently", async () => {

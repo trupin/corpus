@@ -13,9 +13,19 @@
 //
 // Every git invocation here is read-only plumbing against object names
 // (`rev-parse`, `rev-list`, `log`, `diff <tree-ish> <tree-ish>`). None of them
-// touches `.git/index`, so none takes `AutoCommitter.withGitLock`: holding the
-// commit lock to answer a read would queue an emission behind an autosave for no
-// benefit, and would put a timer-driven caller into the write path's contention.
+// touches `.git/index`, and the two exported readers above take no lock of their
+// own — which is what lets `sessions.ts` call them from a timer without queueing
+// an emission behind an autosave.
+//
+// The **route** is the exception, and it is §4's read-back rule rather than an
+// inconsistency: "Any operation that names, reads or reverts a commit closes the
+// open window before it runs." `readDocDiff` therefore runs inside
+// `AutoCommitter.withClosedWindow`, which closes the window and holds the git
+// lock across the whole read. The acknowledgment path needs none of that because
+// it already closed its window a different way — `end()` calls
+// `endSquashSession` before the first git read — and closing again there would
+// amend a commit the event has already published, which is the one thing that
+// must not happen (SERVER-052 review, PR #22).
 
 import {
   DOC_DIFF_MAX_CHARS,
@@ -26,7 +36,7 @@ import {
 } from "@corpus/contract";
 import { findDocumentRow } from "../docs/index.js";
 import { badRequest, notFound } from "../errors.js";
-import { listFileRevisions, resolveRevision, type Git } from "../git/index.js";
+import { listFileRevisions, resolveRevision, type AutoCommitter, type Git } from "../git/index.js";
 import type { ProjectionDb } from "../projection/index.js";
 
 /** What a range with nothing in it reports — and what a never-committed document answers. */
@@ -227,6 +237,12 @@ export function truncateDiff(text: string, max: number = DOC_DIFF_MAX_CHARS): Bo
 export interface DocDiffDeps {
   readonly git: Git;
   readonly projection: ProjectionDb;
+  /**
+   * The committer, for {@link AutoCommitter.withClosedWindow} alone — this route
+   * writes nothing. It is here because §4's read-back rule makes closing the
+   * open commit window part of *answering a read*: see {@link readDocDiff}.
+   */
+  readonly committer: AutoCommitter;
 }
 
 /**
@@ -256,45 +272,82 @@ const unknownRevision = (parameter: "from" | "to", ref: string): never => {
  * across the range therefore shows what git shows for its current path, which is
  * the same answer `git log -- <path>` gives and the only one that needs no
  * rename-detection heuristic in a route whose job is to report, not to infer.
+ *
+ * **Everything except the document lookup is path-scoped**, and under §4's
+ * party-scoped commit window that is load-bearing rather than tidy. One window
+ * commit now holds every document its party touched while it was open, so "the
+ * diff of this commit" and "the diff of this document" are no longer the same
+ * bytes: `readRangeStats` and `readRangeDiff` both end in `-- <path>`, and
+ * `newestCommitFor` asks `git log -- <path>`, so a range spanning a neighbour's
+ * save reports nothing for a document that neighbour did not touch. Before the
+ * window was party-scoped a commit-wide answer would have been right by
+ * accident; it would be wrong now.
  */
 export async function readDocDiff(
   deps: DocDiffDeps,
   id: string,
   query: DocDiffQuery,
 ): Promise<DocDiff> {
+  // Outside the critical section on purpose: an unknown id is answered from the
+  // projection, and a `404` must not close anyone's commit window.
   const row = findDocumentRow(deps.projection, id);
   if (row === null) throw notFound(`no document with id ${id}`);
   const { git } = deps;
   const path = row.path;
 
-  // `to` names the *head* of the range, which the contract defines as a commit —
-  // so the empty tree is not admissible here even though it is for `from`.
-  const to =
-    query.to === undefined
-      ? await newestCommitFor(git, path)
-      : ((await resolveRevision(git, query.to)) ?? unknownRevision("to", query.to));
+  // ─────────────────────────────────────────────────────────────────────────
+  // Yes: a `GET` closes the commit window, and that can rewrite a commit. It is
+  // deliberate, and it is SPEC.md §4 — "Nothing reads a history the window is
+  // still holding. Any operation that names, reads or reverts a commit closes
+  // the open window before it runs."
+  //
+  // The reason is that an open window is not a finished commit: it is a commit
+  // the server intends to keep amending, so its boundary and its sha are both
+  // provisional. A diff read against it answers about a change that is still
+  // growing — `corpus doc diff` would show a truncated version of the edit it
+  // was asked about, and would name a sha that has moved by the time the caller
+  // quotes it back.
+  //
+  // What the close costs is bounded and is *not* a new commit: the window's
+  // content has been in git since its first save, so closing only stops later
+  // saves folding in and relabels the subject where no act named it (one amend,
+  // same tree). A diff therefore adds a commit *boundary* to the history — the
+  // person's next keystroke starts a fresh window — and never a commit.
+  //
+  // The close and the read are one critical section for the same reason the
+  // rule exists at all: released in between, an autosave lands and opens a new
+  // window under the read.
+  // ─────────────────────────────────────────────────────────────────────────
+  return deps.committer.withClosedWindow("read-back", async () => {
+    // `to` names the *head* of the range, which the contract defines as a commit
+    // — so the empty tree is not admissible here even though it is for `from`.
+    const to =
+      query.to === undefined
+        ? await newestCommitFor(git, path)
+        : ((await resolveRevision(git, query.to)) ?? unknownRevision("to", query.to));
 
-  // A document the workspace has never committed — a file not yet committed, or
-  // a workspace with no git at all (SPEC.md §14). An answer, not an error.
-  if (to === null) {
-    return {
-      id,
-      path,
-      from: null,
-      to: null,
-      stats: NO_CHANGE_STATS,
-      diff: "",
-      truncated: false,
-      totalChars: 0,
-    };
-  }
+    // A document the workspace has never committed — a file not yet committed,
+    // or a workspace with no git at all (SPEC.md §14). An answer, not an error.
+    if (to === null) {
+      return {
+        id,
+        path,
+        from: null,
+        to: null,
+        stats: NO_CHANGE_STATS,
+        diff: "",
+        truncated: false,
+        totalChars: 0,
+      };
+    }
 
-  const from =
-    query.from === undefined
-      ? ((await parentOf(git, to)) ?? EMPTY_TREE_OBJECT_ID)
-      : ((await resolveRangeEnd(git, query.from)) ?? unknownRevision("from", query.from));
+    const from =
+      query.from === undefined
+        ? ((await parentOf(git, to)) ?? EMPTY_TREE_OBJECT_ID)
+        : ((await resolveRangeEnd(git, query.from)) ?? unknownRevision("from", query.from));
 
-  const stats = await readRangeStats(git, from, to, path);
-  const bounded = truncateDiff(await readRangeDiff(git, from, to, path));
-  return { id, path, from, to, stats, ...bounded };
+    const stats = await readRangeStats(git, from, to, path);
+    const bounded = truncateDiff(await readRangeDiff(git, from, to, path));
+    return { id, path, from, to, stats, ...bounded };
+  });
 }
