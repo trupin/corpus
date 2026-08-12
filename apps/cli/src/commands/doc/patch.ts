@@ -39,7 +39,10 @@ import { keyLine } from "./render.js";
  * ## No `--key`, and that is not an omission
  *
  * SPEC.md §7 exempts a patch from presenting a key: it names the text it expects
- * to find, which is the same staleness check by another route. The contract is
+ * to find, which is a staleness check by another route — but it covers what the
+ * patch quotes and nothing else, so it is not the key by another name. A patch
+ * replaces, so it catches a writer who changed the quoted text and not one who
+ * inserted elsewhere. The contract is
  * strict and has no `key` field, so there is no flag to add — and if a
  * `stale_key` ever does come back from this route it means something *outside*
  * Corpus wrote the file between the server's match and its save. That is a

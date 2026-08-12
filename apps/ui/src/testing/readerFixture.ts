@@ -264,7 +264,11 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
           ...subject,
           frontmatter: {
             ...subject.frontmatter,
-            status: verb === "archive" ? "archived" : "open",
+            // SPEC.md §5: unarchiving returns a document to `resolved` — the
+            // state archiving already implied — not to `open` (SERVER-108).
+            // This double claims to answer as the server answers, so it has
+            // to move with it even where nothing reads the result today.
+            status: verb === "archive" ? "archived" : "resolved",
           },
         };
         docs.set(docId, flipped);
