@@ -207,8 +207,8 @@ export async function reattachThread(
           // reconciliation, and the `Corpus-Anchors` trailer is deliberately not
           // set: that is reconciliation's vocabulary for what a *diff* moved.
           subject: `comment: re-attach ${id} on ${parentId} by ${actor}`,
-          // Out of §4's session folding, for the reason skill rollback is: a
-          // repair is not a continuation of the edit that made it necessary, it
+          // Out of §4's session folding: a repair is not a continuation of the
+          // edit that made it necessary, it
           // is the answer to it. Folding two repairs of one thread into one
           // commit would erase the first decision from history — and a write
           // whose evidence is unrecoverable is the last one whose record should

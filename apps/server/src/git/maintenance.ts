@@ -9,9 +9,9 @@
  * 2.54 — what `CI / validate` runs — that decision comes out "yes" from the
  * tenth commit into a fresh repository (about seventy loose objects), and the
  * repack then runs concurrently with the commits that follow it and with any
- * `git log` beside them. Measured under git 2.54 on the fifty-one-commit loop
- * in `skills/rollback.test.ts`, that race left the repository **permanently
- * corrupt** in 8 of 25 runs — `git fsck` reporting a missing commit, and
+ * `git log` beside them. Measured under git 2.54 on a fifty-one-commit loop in
+ * a server test (since removed with §7's rollback verb), that race left the
+ * repository **permanently corrupt** in 8 of 25 runs — `git fsck` reporting a missing commit, and
  * `git log -- <path>` dying with `cannot simplify commit X (because of Y)`
  * partway down the history — and in one run broke a `git commit` outright
  * ("failed to insert into database"). Git 2.37 never crosses the threshold in

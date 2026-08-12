@@ -16,9 +16,8 @@ import type { EditSessionTracker } from "./sessions.js";
  * shares its whole implementation with the other half (`edit/diff.ts` computes
  * the stats a `doc.edited` carries *and* the body this route bounds). It also
  * needs the raw `Git` command builder, which `DocsWorkspace` deliberately does
- * not carry — that surface exposes only the committer and its lock, and the
- * skill rollback already had to be handed `gitCommands` separately for exactly
- * this reason.
+ * not carry — that surface exposes only the committer and its lock, so a reader
+ * of history is handed `gitCommands` separately.
  *
  * **The route writes nothing and still touches git.** No acting party, no file
  * mutation — but it closes §4's open commit window before it

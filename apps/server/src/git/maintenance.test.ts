@@ -1,5 +1,6 @@
-// SERVER-089. `CI / validate` failed twice in `skills/rollback.test.ts` with
-// git refusing to walk a history the test had just built — `error: Could not
+// SERVER-089. `CI / validate` failed twice in a server test that built a
+// fifty-one-commit history (since removed with §7's rollback verb), with git
+// refusing to walk the history it had just built — `error: Could not
 // read <sha>` / `fatal: cannot simplify commit X (because of Y)` — and it never
 // reproduced on a developer's machine. The cause is in `./maintenance.ts`: git
 // spawns a *detached background* maintenance process after every commit, and on
@@ -95,8 +96,8 @@ describe("automatic maintenance in the repositories these tests create", () => {
   it("leaves the object store exactly as the commits left it", () => {
     ws = createWriteWorkspace("maintenance-burst", { sprint: "s028" });
     // Past the point where git 2.54 starts repacking a fresh repository — it
-    // packed at the tenth commit of `rollback.test.ts`'s loop, which writes six
-    // objects a commit, so this writes the same shape with margin.
+    // packed at the tenth commit of that loop, which wrote six objects a
+    // commit, so this writes the same shape with margin.
     for (let index = 0; index < 15; index += 1) {
       ws.write(
         ".claude/skills/orchestrate/SKILL.md",

@@ -1,17 +1,17 @@
-// Where the skills surface's two verbs address the filesystem (SPEC.md §7).
+// Where the skills surface addresses the filesystem (SPEC.md §7).
 //
-// One derivation, shared, because the rollback and the create must agree about
-// what `<name>` means: the rollback resolves a name to the file it restores and
-// the create resolves the same name to the file it writes, and a second copy of
-// the rule is how a skill could be created at one path and be un-rollbackable at
-// another. Pure string arithmetic — no filesystem access, no existence checks —
-// exactly as `core/paths.ts` is for the document roots.
+// One derivation, shared, because everything that resolves a skill by name must
+// agree about what `<name>` means: the create resolves it to the file it writes,
+// the archive to the folder it parks, and a second copy of the rule is how a
+// skill could be created at one path and be un-findable at another. Pure string
+// arithmetic — no filesystem access, no existence checks — exactly as
+// `core/paths.ts` is for the document roots.
 //
 // **The name is not sanitized here, it is validated at the boundary.**
-// `SkillNameSchema` (the contract's, shared with the rollback route's path
-// parameter) admits no `/`, no `.` and no whitespace, so there is no traversal
-// for this module to strip; a caller that skipped the schema is a bug, and the
-// create path re-parses rather than trusting the string (defence in depth).
+// `SkillNameSchema` (the contract's) admits no `/`, no `.` and no whitespace, so
+// there is no traversal for this module to strip; a caller that skipped the
+// schema is a bug, and the create path re-parses rather than trusting the string
+// (defence in depth).
 
 import { SKILLS_ARCHIVED_ROOT, SKILLS_ROOT } from "../docs/index.js";
 import { SKILL_FILENAME } from "../projection/index.js";

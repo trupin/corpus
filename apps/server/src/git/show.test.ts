@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sanitizeGitEnv } from "./env.js";
 import { disableAutoMaintenance } from "./maintenance.js";
 import { createGit, type Git } from "./git.js";
-import { listFileRevisions, readVersionAt, resolveRevision } from "./show.js";
+import { listFileRevisions, resolveRevision } from "./show.js";
 
 let root: string;
 let git: Git;
@@ -78,35 +78,13 @@ describe("resolveRevision", () => {
   });
 });
 
-describe("readVersionAt", () => {
-  it("reads a path's bytes at a given revision", async () => {
-    const first = commit("docs/a.md", "one\n", "first");
-    const second = commit("docs/a.md", "two\n", "second");
-
-    await expect(readVersionAt(git, first, "docs/a.md")).resolves.toBe("one\n");
-    await expect(readVersionAt(git, second, "docs/a.md")).resolves.toBe("two\n");
-  });
-
-  it("answers null for a path absent from that revision", async () => {
-    const first = commit("docs/a.md", "one\n", "first");
-    commit("docs/b.md", "bee\n", "second");
-    await expect(readVersionAt(git, first, "docs/b.md")).resolves.toBeNull();
-    await expect(readVersionAt(git, first, "docs/nope.md")).resolves.toBeNull();
-  });
-
-  it("preserves the bytes exactly, trailing newline included", async () => {
-    const sha = commit("docs/a.md", "line\n\n  indented  \n", "first");
-    await expect(readVersionAt(git, sha, "docs/a.md")).resolves.toBe("line\n\n  indented  \n");
-  });
-});
-
 describe("listFileRevisions", () => {
   it("lists the commits that touched a path, newest first", async () => {
     const first = commit("docs/a.md", "one\n", "first");
     commit("docs/other.md", "unrelated\n", "unrelated");
     const third = commit("docs/a.md", "two\n", "third");
 
-    await expect(listFileRevisions(git, "docs/a.md")).resolves.toEqual([third, first]);
+    await expect(listFileRevisions(git, "docs/a.md", 50)).resolves.toEqual([third, first]);
   });
 
   it("honours its limit", async () => {
@@ -118,11 +96,11 @@ describe("listFileRevisions", () => {
 
   it("is empty for an untracked path, and outside a repository", async () => {
     commit("docs/a.md", "one\n", "first");
-    await expect(listFileRevisions(git, "docs/never.md")).resolves.toEqual([]);
+    await expect(listFileRevisions(git, "docs/never.md", 50)).resolves.toEqual([]);
 
     const bare = mkdtempSync(join(tmpdir(), "corpus-s013-git-show-bare-"));
     try {
-      await expect(listFileRevisions(createGit(bare), "docs/a.md")).resolves.toEqual([]);
+      await expect(listFileRevisions(createGit(bare), "docs/a.md", 50)).resolves.toEqual([]);
     } finally {
       rmSync(bare, { recursive: true, force: true });
     }

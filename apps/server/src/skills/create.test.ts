@@ -4,7 +4,7 @@
 // four surfaces that claim is about — the file on disk, `git log`, the
 // projection, and the invalidation bus.
 
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DocMutationResponseSchema, type QueryKey } from "@corpus/contract";
@@ -101,7 +101,8 @@ describe("creating a skill", () => {
     expect(author).toBe("user <user@corpus.local>");
     expect(subject).toBe(`skill create: ${NAME} (${id}) by user`);
     // The file is committed, not merely written: `.claude/` is tracked in a
-    // workspace, which is what makes `corpus skill rollback` possible at all.
+    // workspace, which is what makes §7's loop safety — reading a skill's
+    // history and writing an old version back — possible at all.
     expect(ws.git("show", "--name-only", "--format=", "HEAD").trim()).toBe(PATH);
   });
 
@@ -292,32 +293,5 @@ describe("refusing a name that could escape the skills root", () => {
       }),
     ).rejects.toMatchObject({ status: 400 });
     expect(ws.exists(".claude/skills")).toBe(false);
-  });
-});
-
-describe("what a created skill composes with", () => {
-  it("is rollbackable: the verb §7 promises works on a skill the server created", async () => {
-    const { payload } = await create({
-      name: NAME,
-      description: "Run the weekly review.",
-      body: "Version one.\n",
-    });
-    const id = DocMutationResponseSchema.parse(payload).doc.frontmatter.id;
-    const original = ws.read(PATH);
-
-    // An out-of-band edit, committed — the case §7's escape hatch is for.
-    writeFileSync(join(ws.root, PATH), original.replace("Version one.", "Broken."), "utf8");
-    ws.git("add", "-A", "--", PATH);
-    ws.git("commit", "-m", "break the skill");
-    ws.reproject();
-
-    const response = await ws.server.app.request(`/api/skills/${NAME}/rollback`, {
-      method: "POST",
-      headers: { ...AUTH, "x-corpus-author": "agent" },
-    });
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ name: NAME, docId: id, path: PATH });
-    expect(ws.read(PATH)).toBe(original);
   });
 });

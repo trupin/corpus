@@ -761,14 +761,14 @@ describe("createAutoCommitter", () => {
     // The other half of "a commit that stands alone is its own event, never part
     // of an edit". It was only ever enforced against folding *into* a preceding
     // window; the commit still opened one of its own, so the next save amended
-    // it and replaced its subject (SERVER-091). The callers are
-    // `skills/rollback.ts` and `threads/reattach.ts`.
+    // it and replaced its subject (SERVER-091). The caller is
+    // `threads/reattach.ts`.
     const r = makeRepo("standalone-opens-no-window");
-    r.touch(DOC, "the restored version");
+    r.touch(DOC, "the repaired anchor block");
     const standalone = await r.committer.commit({
       docId: "doc_aaaa1111",
       actor: "user",
-      subject: "skill rollback: comment (doc_aaaa1111) by user",
+      subject: "comment: re-attach th_bbbb2222 on doc_aaaa1111 by user",
       paths: [DOC],
       squash: false,
     });
@@ -777,7 +777,7 @@ describe("createAutoCommitter", () => {
 
     // Same party, no clock movement — everything an ordinary save needs to fold.
     r.clock += 100;
-    r.touch(DOC, "typed right after the rollback");
+    r.touch(DOC, "typed right after the repair");
     const save = await r.committer.commit({
       docId: "doc_aaaa1111",
       actor: "user",
@@ -788,7 +788,7 @@ describe("createAutoCommitter", () => {
     expect(save.kind).toBe("committed");
     expect(r.git("rev-parse", "HEAD^").trim()).toBe(standaloneSha);
     expect(r.git("log", "-1", "--format=%s", standaloneSha).trim()).toBe(
-      "skill rollback: comment (doc_aaaa1111) by user",
+      "comment: re-attach th_bbbb2222 on doc_aaaa1111 by user",
     );
   });
 

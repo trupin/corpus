@@ -629,6 +629,6 @@ guarantees the watcher commits it as the `user` edit it is.
 | SHARED-042 | A revert is a write like any other (applied 2026-08-12) | done | P0 | SHARED-041 |
 | CLI-040 | Remove `corpus skill rollback` — the route and the verb | done | P0 | SHARED-042 |
 | AGENT-023 | Teach the revert loop, and the operator's git path | done | P0 | SHARED-042 |
-| SERVER-104 | Delete the server's rollback module | todo | P0 | SHARED-042 |
-| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P0 | SHARED-042 |
+| SERVER-104 | Delete the server's rollback module | done | P0 | SHARED-042 |
+| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |

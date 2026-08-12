@@ -65,9 +65,11 @@ export function findDocumentRow(projection: ProjectionDb, id: string): DocumentR
  *
  * The by-path direction exists because a **skill's identity is its path**, not
  * its frontmatter: §7 lets a hand-written `SKILL.md` carry no Corpus id at all
- * and the projection derives one from where the file sits. `corpus skill
- * rollback <name>` therefore starts from `.claude/skills/<name>/SKILL.md` and has
- * to arrive at the document id, which is the opposite of every other read.
+ * and the projection derives one from where the file sits. Archiving a skill
+ * folder therefore starts from `.claude/skills/<name>/SKILL.md` and has to
+ * arrive at the document id, which is the opposite of every other read — and so
+ * does the watcher, which learns which document an out-of-band edit changed from
+ * the path the filesystem named.
  * `documents.path` is `TEXT NOT NULL UNIQUE`, so the answer is at most one row.
  */
 export function findDocumentRowByPath(projection: ProjectionDb, path: string): DocumentRow | null {

@@ -258,11 +258,11 @@ export type MutationPlan = {
      * default — by every edit verb, because folding repeated saves of one
      * document by one author into one commit is exactly what §4 asks for.
      *
-     * The skill rollback sets it, and the reason generalises: a rollback is not
-     * a continuation of the edit that made it necessary, it is the answer to it.
-     * Folding one into the other would amend the bad edit's commit out of
-     * existence — destroying the very history the restoration is reading, and
-     * leaving `git log` with no record that a rollback happened at all.
+     * The anchor re-attach sets it, and the reason generalises to any repair: a
+     * repair is not a continuation of the edit that made it necessary, it is the
+     * answer to it. Folding one into the other would amend the bad edit's commit
+     * out of existence — destroying the very history the repair is reading, and
+     * leaving `git log` with no record that the repair happened at all.
      */
     readonly squash?: boolean | undefined;
     /**
@@ -438,10 +438,9 @@ export type SaveCheck = {
 /**
  * The §14 validator, run over the bytes a save would write, without throwing.
  *
- * Split out of {@link validateBeforeWrite} because the skill rollback (§7) has to
- * ask the same question about a *candidate* revision — "would saving these bytes
- * be accepted?" — while walking history for the last-known-good one, and a
- * predicate spelled with a `try`/`catch` around a throwing validator would be a
+ * Split out of {@link validateBeforeWrite} because callers legitimately need to
+ * ask "would saving these bytes be accepted?" without a save being underway, and
+ * a predicate spelled with a `try`/`catch` around a throwing validator would be a
  * second definition of "valid".
  */
 export function checkSave(projection: ProjectionDb, path: string, text: string): SaveCheck {

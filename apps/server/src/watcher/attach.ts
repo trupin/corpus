@@ -26,6 +26,11 @@ export function attachWatcher(server: CorpusServer): WatcherHandle | undefined {
     bus: server.bus,
     selfWrites: server.selfWrites,
     logger: server.logger,
+    // SPEC.md §4, SERVER-090. Built beside the git writer in `app.ts` under the
+    // same condition this function is called under, so in practice it is always
+    // present here; the option stays optional because `startWatcher` is also
+    // constructed directly by tests that have no repository.
+    ...(server.commitOutOfBand === undefined ? {} : { commitOutOfBand: server.commitOutOfBand }),
   });
   let stopped = false;
   server.registerDisposer(async () => {

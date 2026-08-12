@@ -33,6 +33,7 @@ import {
   threadKey,
   type InvalidationBus,
 } from "../events/index.js";
+import type { AnchorChange } from "../git/index.js";
 import { silentLogger, type Logger } from "../logger.js";
 import {
   QUEUE_DIR,
@@ -48,6 +49,7 @@ import {
   type DocumentRoot,
   type ProjectionDb,
 } from "../projection/index.js";
+import type { CommitOutOfBandChanges, OutOfBandChange } from "./commit-out-of-band.js";
 import type { ReadHeadVersion } from "./git-head.js";
 import { WATCH_FILES, WATCH_ROOTS, classifyWatchPath, isIgnoredEntry } from "./paths.js";
 import { reconcileOutOfBandEdit } from "./reconcile-out-of-band.js";
@@ -118,6 +120,16 @@ export interface WatcherHandle {
    * necessarily when the batch is drained.
    */
   flush(): void;
+  /**
+   * Resolves once every commit the flushes so far handed to the committer has
+   * landed (SPEC.md §4, SERVER-090).
+   *
+   * A flush is synchronous — projecting rows and reconciling anchors both are —
+   * and committing is not, so the commit for a batch is chained *after* the
+   * flush that found it rather than inside it. This is how a caller waits for
+   * that chain: `close()` awaits it, and a test that asserts on `git log` has to.
+   */
+  settled(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -131,6 +143,13 @@ export interface StartWatcherOptions {
   /** Defaults to {@link WATCH_FLUSH_BUDGET_MS}. */
   readonly flushBudgetMs?: number | undefined;
   readonly readHead?: ReadHeadVersion | undefined;
+  /**
+   * Commits what an outside editor changed, authored `user` (SPEC.md §4,
+   * SERVER-090). Omitted on a server built without a git writer, which is the
+   * same condition every other filesystem-backed subsystem is built under; the
+   * watcher then projects and announces exactly as it always did.
+   */
+  readonly commitOutOfBand?: CommitOutOfBandChanges | undefined;
 }
 
 /**
@@ -157,13 +176,27 @@ interface FlushContext {
   readonly keys: QueryKey[];
   /** Snapshots the tree, once per batch, before its first row is touched. */
   captureTree(): void;
+  /**
+   * Documents this batch saw change on disk without the server having written
+   * them — committed after the flush, authored `user` (SERVER-090). Order is the
+   * order they were processed, which puts removals first (see `flush`), so a
+   * rename's two halves reach git in the order that makes it a rename.
+   */
+  readonly commits: OutOfBandChange[];
 }
 
 const isEnoent = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 
+/** What the projection knows about the document at a path — the trailer's `docId`, and the subject's words. */
+interface DocumentIdentity {
+  readonly id: string;
+  readonly type: string;
+  readonly title: string;
+}
+
 export function startWatcher(options: StartWatcherOptions): WatcherHandle {
-  const { db, bus, selfWrites } = options;
+  const { db, bus, selfWrites, commitOutOfBand } = options;
   const logger = options.logger ?? silentLogger;
   const debounceMs = options.debounceMs ?? WATCH_DEBOUNCE_MS;
   const maxBatchMs = options.maxBatchMs ?? WATCH_MAX_BATCH_MS;
@@ -200,11 +233,58 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let batchDeadline = 0;
   let closed = false;
+  /**
+   * The tail of the out-of-band commit chain (SERVER-090). Always settled, never
+   * rejected: `handleCommitFailure` swallows, because §14 already rules that a
+   * change stands on disk when its commit does not, and an unhandled rejection
+   * here would take the process down over a workspace hook.
+   */
+  let settling: Promise<void> = Promise.resolve();
+  const handleCommitFailure = (error: unknown): void => {
+    logger.error("committing an out-of-band edit failed; the change stands on disk", {
+      error: String(error),
+    });
+  };
 
   /** Rows for the document currently projected at `relativePath`, before it is removed. */
-  const documentAt = (relativePath: string): { id: string; type: string } | undefined =>
-    db.prepare("SELECT id, type FROM documents WHERE path = ?").get(relativePath) as
-      { id: string; type: string } | undefined;
+  const documentAt = (relativePath: string): DocumentIdentity | undefined =>
+    db.prepare("SELECT id, type, title FROM documents WHERE path = ?").get(relativePath) as
+      DocumentIdentity | undefined;
+
+  /**
+   * Records the batch's out-of-band change to one document (SERVER-090).
+   *
+   * `identity` is the projection's answer for that path — after the row is
+   * rebuilt for a write, from before it is dropped for a removal. A path the
+   * projection names no document for records nothing: `Corpus-Doc` has no id to
+   * carry and the window has no document to hold, and naming a guess would be
+   * worse than the boot recovery that covers the case (`git/recovery.ts`). What
+   * lands there is exactly the file that has never been a document of this
+   * workspace — unparseable frontmatter, or a hand-dropped file with no id.
+   */
+  const recordOutOfBand = (
+    context: FlushContext,
+    paths: readonly string[],
+    identity: DocumentIdentity | undefined,
+    removed: boolean,
+    anchors: AnchorChange | undefined,
+  ): void => {
+    if (commitOutOfBand === undefined) return;
+    if (identity === undefined) {
+      logger.debug("an out-of-band change to a path the projection names no document for", {
+        paths: [...paths],
+      });
+      return;
+    }
+    context.commits.push({
+      docId: identity.id,
+      paths: [...paths],
+      title: identity.title,
+      type: identity.type,
+      removed,
+      ...(anchors === undefined ? {} : { anchors }),
+    });
+  };
 
   // No `["tree"]` here, deliberately: whether the folder tree moved is measured
   // once per batch in `flush()`, not guessed per event. See {@link FlushContext}.
@@ -219,17 +299,27 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
    * rename whose halves reached us out of order (a split batch, or a move the
    * server was down for). Retiring the dead row and retrying converges; leaving
    * it would drop the document from the projection until the next restart.
+   *
+   * Returns the path it retired, because that path is also **the other half of
+   * the commit** (SERVER-090): the old name's removal has to be staged with the
+   * new name's arrival or git records a creation and leaves a deletion behind.
+   * The unlink half cannot record it once this has run — the row it would have
+   * read is the row this just retired — so it is recorded here.
    */
-  const retireStaleHolder = (root: DocumentRoot, relativePath: string, text: string): boolean => {
+  const retireStaleHolder = (
+    root: DocumentRoot,
+    relativePath: string,
+    text: string,
+  ): string | null => {
     const identity = readDocumentIdentity(root, relativePath, text);
-    if (identity.kind !== "id") return false;
+    if (identity.kind !== "id") return null;
     const holder = db.prepare("SELECT path FROM documents WHERE id = ?").get(identity.id) as
       { path: string } | undefined;
-    if (holder === undefined || holder.path === relativePath) return false;
+    if (holder === undefined || holder.path === relativePath) return null;
     const holderAbs = join(workspaceRoot, ...holder.path.split("/"));
-    if (existsSync(holderAbs)) return false;
+    if (existsSync(holderAbs)) return null;
     removeDocument(db, holderAbs);
-    return true;
+    return holder.path;
   };
 
   const collectDocument = (
@@ -251,14 +341,21 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
       // No row means nothing was projected from that path — an unparseable file,
       // or one deleted before it was ever indexed.
       if (row !== undefined) keys.push(...documentKeys(row.id, row.type));
+      recordOutOfBand(context, [relativePath], row, true, undefined);
       return;
     }
 
     // §6 catch-all, before projecting: the anchors on disk still describe the
     // committed body, so remap them first and let the projection index the
     // reconciled file.
+    //
+    // It runs before the commit as well as before the projection, and that is
+    // load-bearing rather than incidental: the commit takes the working tree as
+    // it stands, so the remapped `anchors` block and the person's own edit land
+    // in one commit as the single change to the file they are (SERVER-090).
+    let anchors: AnchorChange | undefined;
     try {
-      reconcileOutOfBandEdit({
+      const reconciled = reconcileOutOfBandEdit({
         workspaceRoot,
         absPath,
         relativePath,
@@ -267,6 +364,9 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         logger,
         ...(options.readHead === undefined ? {} : { readHead: options.readHead }),
       });
+      if (reconciled.kind === "reconciled") {
+        anchors = { remapped: reconciled.report.remapped, orphaned: reconciled.report.orphaned };
+      }
     } catch (error) {
       // Reconciliation is a repair, not a precondition: an unwritable file or a
       // git that will not answer must not also cost the document its rows. The
@@ -279,24 +379,32 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
 
     const existing = documentAt(relativePath);
     let outcome = projectDocument(db, absPath);
-    if (
-      outcome.kind === "skipped" &&
-      retireStaleHolder(root, relativePath, content.toString("utf8"))
-    ) {
-      outcome = projectDocument(db, absPath);
+    let retired: string | null = null;
+    if (outcome.kind === "skipped") {
+      retired = retireStaleHolder(root, relativePath, content.toString("utf8"));
+      if (retired !== null) outcome = projectDocument(db, absPath);
     }
+    // The old name goes into the same commit as the new one when a rename's
+    // halves reached us in the order that hides the removal (SERVER-090).
+    const paths = retired === null ? [relativePath] : [relativePath, retired];
     if (outcome.kind === "projected") {
-      const type = db.prepare("SELECT type FROM documents WHERE id = ?").get(outcome.id) as
-        { type: string } | undefined;
-      keys.push(...documentKeys(outcome.id, type?.type ?? "note"));
+      const projected = documentAt(relativePath);
+      keys.push(...documentKeys(outcome.id, projected?.type ?? "note"));
+      recordOutOfBand(context, paths, projected, false, anchors);
       return;
     }
+    // The file is still on disk in both branches below — the projection declined
+    // it, which is a statement about the rows and not about the workspace (§5:
+    // the file is the truth). So it is still a change someone made out of band,
+    // and it is still committed, under whatever document that path last was.
     if (outcome.kind === "removed" && existing !== undefined) {
       keys.push(...documentKeys(existing.id, existing.type));
+      recordOutOfBand(context, paths, existing, false, anchors);
       return;
     }
     if (outcome.kind === "skipped") {
       logger.info("watcher skipped a document", { path: relativePath, reason: outcome.reason });
+      recordOutOfBand(context, paths, existing, false, anchors);
     }
   };
 
@@ -378,9 +486,11 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     pending.clear();
 
     const keys: QueryKey[] = [];
+    const commits: OutOfBandChange[] = [];
     let treeBefore: string | null = null;
     const context: FlushContext = {
       keys,
+      commits,
       captureTree() {
         treeBefore ??= folderTreeSignature(db);
       },
@@ -422,6 +532,17 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     // is the only kind of change that can move a folder badge.
     if (treeBefore !== null && folderTreeSignature(db) !== treeBefore) keys.push(TREE_KEY);
     if (keys.length > 0) bus.invalidate(keys);
+
+    // SPEC.md §4, SERVER-090: an out-of-band edit is committed for itself,
+    // authored `user`. Chained rather than awaited — `flush()` is synchronous by
+    // necessity (see {@link WATCH_FLUSH_BUDGET_MS}) and a commit is not — and
+    // chained rather than fired, because folding into §4's open window depends on
+    // each commit seeing what the previous one left. The invalidation goes out
+    // first: a client refetches rows, and the rows are already current.
+    if (commits.length > 0 && commitOutOfBand !== undefined) {
+      const run = commitOutOfBand;
+      settling = settling.then(() => run(commits)).catch(handleCommitFailure);
+    }
 
     if (deferred > 0 && !closed) {
       logger.debug("watcher deferred the rest of a batch", {
@@ -487,6 +608,7 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
       return pending.size;
     },
     flush,
+    settled: () => settling,
     async close() {
       closed = true;
       if (timer !== undefined) {
@@ -494,6 +616,11 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         timer = undefined;
       }
       pending.clear();
+      // Before chokidar, and therefore before the shutdown's `closeWindow`
+      // disposer, which is registered earlier and so runs later: a commit still
+      // in flight has to land inside the window it opened, or §4's clean stop
+      // would close a window that gains a commit right after.
+      await settling;
       await watcher.close();
     },
   };

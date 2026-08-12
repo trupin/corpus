@@ -12,7 +12,7 @@
 // never written). Both writes are one {@link MutationPlan}, so `runMutation`
 // rolls the parent back if the thread file fails, and one auto-commit stages
 // both paths. The parent is written **first** deliberately: it is the write that
-// can be undone, and undoing it is what the rollback exists for.
+// can be undone, and undoing it is what the undo stack below exists for.
 //
 // **Resolution is not a write-time gate.** A selector whose text is absent from
 // the parent still creates the thread — §6 resolves anchors at projection/render

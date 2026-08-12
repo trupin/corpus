@@ -839,8 +839,8 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // A commit that stands alone opens no window: §4 requires that no later save
     // fold into it, and the only mechanism a later save has for folding is this
     // record. Both signals count — an act over a named set (`docIds`), and the
-    // explicit `squash: false` a caller passes (`skills/rollback.ts`,
-    // `threads/reattach.ts`). Enforcing only the first left "never part of an
+    // explicit `squash: false` a caller passes (`threads/reattach.ts`).
+    // Enforcing only the first left "never part of an
     // edit" true in one direction: the next save by the same party amended the
     // standalone commit and replaced its subject (SERVER-091).
     openWindow =

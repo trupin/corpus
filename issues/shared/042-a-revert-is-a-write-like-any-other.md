@@ -99,7 +99,41 @@ N/A — spec text.
 
 ## E2E Verification Log
 
-_N/A — spec rider._
+_Spec rider — but the removal it mandates is code, so the server half is verified
+here. **Model: opus** (`claude-opus-5[1m]`), 2026-08-12._
+
+**Deleted from `apps/server`:** `src/skills/rollback.ts` and its
+`rollback.test.ts`; the `POST /api/skills/{name}/rollback` mount in
+`src/skills/routes.ts`; the `rollbackSkill` / `SkillsWorkspace` exports in
+`src/skills/index.ts`; `mountSkillRoutes`'s extra `gitCommands` argument in
+`src/app.ts` (it now takes the plain `DocsWorkspace`); and `readVersionAt` /
+`REVISION_SEARCH_LIMIT` in `src/git/show.ts`, which had no other caller —
+`listFileRevisions` now takes a required bound. Every comment that asserted the
+verb still exists was corrected rather than left to rot (`docs/read.ts`,
+`docs/write.ts`, `git/recovery.ts`, `git/show.ts`, `git/maintenance.ts`,
+`threads/reattach.ts`, `threads/create.ts`, `skills/paths.ts`,
+`skills/create.test.ts`, `git/commit.test.ts`).
+
+**Verified as a removal**, against a real server on a fresh workspace (port 8792,
+never 8765/5173):
+
+```
+$ curl -o /dev/null -w '%{http_code}\n' -X POST -H 'authorization: Bearer …' \
+    http://127.0.0.1:8792/api/skills/orchestrate/rollback
+404
+$ curl -s .../api/openapi.json | python3 -c "…[p for p in d['paths'] if 'rollback' in p]"
+no rollback path
+```
+
+**And the replacement path works.** §7's loop-safety case, end to end, with no
+verb and no agent running: the operator breaks the orchestrate skill in an
+external editor (committed `7b11407 user doc edit: Orchestrate …`), then reverts
+it with `git checkout HEAD~1 -- .claude/skills/orchestrate/SKILL.md`. The watcher
+picks it up as the out-of-band `user` edit it is and commits it — `7190e81
+author=user`, working tree clean. Full log in SERVER-090's entry.
+
+`vitest run apps/server`: 178 files, 3722 tests passing. `eslint`,
+`prettier --check` and `tsc --noEmit` clean over `apps/server`.
 
 ## Completion Checklist (orchestrator)
 

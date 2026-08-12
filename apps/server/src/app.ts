@@ -73,7 +73,12 @@ import {
 } from "./queue/index.js";
 import { createHealthHandler } from "./routes/health.js";
 import { mountStaticUi } from "./static-ui.js";
-import { createSelfWriteRegistry, type SelfWriteRegistry } from "./watcher/index.js";
+import {
+  createOutOfBandCommitter,
+  createSelfWriteRegistry,
+  type CommitOutOfBandChanges,
+  type SelfWriteRegistry,
+} from "./watcher/index.js";
 
 /**
  * Server-local introspection: the live OpenAPI document. Deliberately outside
@@ -155,6 +160,20 @@ export interface CorpusServer {
    * ending is the trigger the lock's release used to be.
    */
   readonly editSessions: EditSessionTracker | undefined;
+  /**
+   * SPEC.md §4's out-of-band half (SERVER-090): commits what an outside editor
+   * changed, authored `user`. `undefined` alongside the rest of the
+   * projection-backed subsystems — without a projection there is no watcher to
+   * call it and no git writer behind it.
+   *
+   * Exposed for the same reason {@link semantic} is: the watcher is attached by
+   * `lifecycle.ts` after `createServer` returns, and this is how it reaches the
+   * server's one git writer without being handed the writer itself. The writer
+   * is deliberately *not* on this surface — every other subsystem reaches git
+   * through the write pipeline, and a second door onto `AutoCommitter.commit`
+   * would be an invitation to open a third.
+   */
+  readonly commitOutOfBand: CommitOutOfBandChanges | undefined;
   /**
    * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
    * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
@@ -342,6 +361,8 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   };
 
   let editSessions: EditSessionTracker | undefined;
+  /** SPEC.md §4's out-of-band commit (SERVER-090); bound with the git writer below. */
+  let commitOutOfBand: CommitOutOfBandChanges | undefined;
   let semantic: SemanticRetrieval | undefined;
   let indexMaintenance: IndexMaintenance | undefined;
   /**
@@ -359,11 +380,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // dep `lifecycle.ts` opened, and the git module is a pure function of the
     // root — constructing a command builder opens no handle and touches no
     // filesystem, so it does not compromise `createServer`'s purity.
-    // The command builder is kept beside the committer, not swallowed by it: the
-    // skill rollback needs the same repository for *reads* (`rev-parse`, `log`,
-    // `show`) that the committer owns for writes, and `AutoCommitter` exposes
-    // only its lock. A test that injects `deps.git` replaces the writer; the
-    // reader still addresses the workspace the config names.
+    // The command builder is kept beside the committer, not swallowed by it:
+    // `GET /api/docs/{id}/diff` and the edit acknowledgment need the same
+    // repository for *reads* (`rev-parse`, `log`, `show`) that the committer
+    // owns for writes, and `AutoCommitter` exposes only its lock. A test that
+    // injects `deps.git` replaces the writer; the reader still addresses the
+    // workspace the config names.
     const gitCommands = createGit(config.workspaceRoot);
     const git =
       deps.git ??
@@ -383,6 +405,11 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
           editSessions?.observeRewrite(from, to);
         },
       });
+
+    // SPEC.md §4's out-of-band half (SERVER-090). Built here rather than inside
+    // `attachWatcher` for the reason everything else in this block is: `git` is
+    // the server's one writer and it does not leave this scope.
+    commitOutOfBand = createOutOfBandCommitter({ git, logger });
 
     // SPEC.md §4: "a queue event finished, however it finished" closes the open
     // commit window (SERVER-092). Late-bound because the queue is built above,
@@ -562,16 +589,16 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       index: indexMaintenance,
     });
 
-    // §14's validator over HTTP, and §7's skill rollback. Both need the
+    // §14's validator over HTTP, and §7's skill creation. Both need the
     // projection — the check resolves ids and answers "does this `[[ref]]`
-    // target exist", the rollback resolves a skill's path to its document id —
-    // so both live in this block, and both are mounted before the plugin
-    // routers like every other core route.
+    // target exist", a create mints an id against it — so both live in this
+    // block, and both are mounted before the plugin routers like every other
+    // core route.
     mountCheckRoutes(app, {
       workspaceRoot: config.workspaceRoot,
       projection: deps.projection,
     });
-    mountSkillRoutes(app, { ...docsWorkspace, gitCommands }, mutex);
+    mountSkillRoutes(app, docsWorkspace, mutex);
 
     // Plugin routers, last of the API surface (SPEC.md §10): every core mount
     // above wins any path dispute by construction, the `/api/*` bearer guard
@@ -729,6 +756,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     semantic,
     indexMaintenance,
     editSessions,
+    commitOutOfBand,
     registerDisposer,
     start,
     close,
