@@ -29,6 +29,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus doc edit`](#corpus-doc-edit)
   - [`corpus doc list`](#corpus-doc-list)
   - [`corpus doc move`](#corpus-doc-move)
+  - [`corpus doc patch`](#corpus-doc-patch)
   - [`corpus doc related`](#corpus-doc-related)
   - [`corpus doc show`](#corpus-doc-show)
   - [`corpus doc unarchive`](#corpus-doc-unarchive)
@@ -840,6 +841,102 @@ One JSON value — `{"doc":{…},"warnings":[]}` — carrying the document at it
 
 ```
 corpus doc move doc_a1b2c3 --folder archive-notes --json
+```
+
+### `corpus doc patch`
+
+Replace an exact excerpt of a document's body, without sending the whole body.
+
+**The verb to reach for whenever the change is bounded.** `corpus doc edit` sends a whole body, which prices a one-line correction at the length of the document — read it, send it all back. A patch names the text it expects to find and what to put in its place, so it costs the change instead; and because it never carries the rest of the body, it cannot lose the rest of the body to a stale read or to a marker the writer did not understand.
+
+`--old` must match the body **exactly and once**. Matching is byte-exact against the body as `corpus doc show <id>` printed it: no trimming, no whitespace collapsing, no case folding, no regular expressions — quote what you read. The body is the markdown **without the frontmatter block**, so an excerpt quoting frontmatter matches nothing; frontmatter is changed by naming its fields on `corpus doc edit`.
+
+**The two refusals are different problems, and each says which it is** (exit 10, nothing written). Matching **0 times** means the text is not there: re-read the document, because it is not what you last read or the excerpt was never in the body. Matching **more than once** means the excerpt is ambiguous: quote more of the surrounding text until it is unique, or pass `--all` and mean it. Both name the count.
+
+`--new ''` **deletes** the quoted text — that is how a deletion is spelled, and it is not an error. `--new` equal to `--old` is a no-op: it is answered normally, nothing is written and no commit is made, and the output says so rather than claiming an edit.
+
+**There is no `--key`** (SPEC.md §7). A patch names the text it expects to find, which is the same staleness check by another route — and a better one, because it says _which_ text is gone rather than _that_ the document changed. Everything else about a patch is an ordinary write: it is validated before it lands (SPEC.md §14), anchors are reconciled with remaps and orphans reported (SPEC.md §6), one commit is made attributed to `--from`, and the fresh key is printed on the line after the confirmation.
+
+**Three ways to supply the text**, because both halves are routinely multi-line. `--old` and `--new` are the literal form and the one to use by default — a shell's single quotes span lines. `--old-file` and `--new-file` read a file verbatim and are the route with no escaping anywhere. `--stdin` takes the whole request as one JSON object, and therefore takes no other patch flag. Naming two sources for the same side is a usage error rather than a silent precedence: an ignored source would patch text you never quoted. Note that a file and a heredoc both end in a newline and a newline is text like any other — an excerpt that should obviously match and reports 0 matches is usually one trailing newline long.
+
+```
+corpus doc patch <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `id`     | yes      | The document's id. |
+
+**Flags**
+
+| Flag                | Type    | Default | Description                                                                                                                                                                                                                                                                                                                            |
+| ------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--old <text>`      | string  | —       | The excerpt to replace, quoted **exactly** as the body holds it — the same bytes `corpus doc show <id>` printed. Whitespace and indentation are significant. It must occur exactly once unless `--all` is passed; anything else is refused with exit 10, naming the count. Cannot be combined with `--old-file`.                       |
+| `--new <text>`      | string  | —       | What to put in `--old`'s place. **Required, and may be empty**: `--new ''` deletes the quoted text, which is why an omitted flag is a usage error rather than a deletion. Equal to `--old` it is a no-op — answered normally, nothing written, no commit. Cannot be combined with `--new-file`.                                        |
+| `--old-file <path>` | string  | —       | Read the excerpt from this file, byte for byte — the route with no shell quoting and no JSON escaping in it at all. The file is only read. Its trailing newline is part of the excerpt.                                                                                                                                                |
+| `--new-file <path>` | string  | —       | Read the replacement from this file, byte for byte. The file is only read, and its trailing newline is part of the replacement.                                                                                                                                                                                                        |
+| `--stdin`           | boolean | `false` | Read the whole request from stdin as one JSON object — `{"old": "…", "new": "…"}`, optionally with `"all": true`. It is the request rather than a third spelling of one field, so it takes no other patch flag. Newlines inside the strings are `\n`; when that escaping is the awkward part, `--old-file` and `--new-file` need none. |
+| `--all`             | boolean | `false` | Replace **every** occurrence instead of requiring the excerpt to be unique. Occurrences are found left to right and never overlap, and the success line says how many were replaced. It lifts uniqueness, never the requirement to match: an excerpt occurring zero times is refused whether or not this is set.                       |
+
+**Examples**
+
+The loop: read the document, quote one line of it back exactly, replace it. One request, and the cost is the length of the change rather than the length of the document.
+
+```
+corpus doc show doc_a1b2c3
+corpus doc patch doc_a1b2c3 --from agent --old '30-year fixed at 6.1%.' --new '30-year fixed at 5.8%.'
+```
+
+Multi-line is the normal case, and single quotes span lines in every shell. Quoting the heading above the line that changed is also how an otherwise ambiguous excerpt is made unique.
+
+```
+corpus doc patch doc_a1b2c3 --from agent --old '## Rates
+
+- 30-year: 6.1%' --new '## Rates
+
+- 30-year: 5.8%'
+```
+
+A deletion: quote the text and give an empty replacement. Quoting the newlines around it takes the blank line with it instead of leaving a hole.
+
+```
+corpus doc patch doc_a1b2c3 --from agent --old '
+> Draft: do not circulate.
+' --new ''
+```
+
+Every occurrence, when replacing them all is genuinely what you meant. Without --all, an excerpt occurring more than once is refused with the count.
+
+```
+corpus doc patch doc_a1b2c3 --from agent --old 'the Rate Sheet' --new 'the rate sheet' --all
+```
+
+The whole request as JSON on stdin, for text whose quotes and backticks would fight the shell. It carries `all` itself, so it takes no other patch flag.
+
+```
+corpus doc patch doc_a1b2c3 --from agent --stdin <<'EOF'
+{"old": "It's the lender's `rate` figure.\n", "new": "It is the lender's published rate.\n"}
+EOF
+```
+
+Two files, read byte for byte: no shell quoting and no JSON escaping anywhere. Each file's trailing newline is part of its text.
+
+```
+corpus doc patch doc_a1b2c3 --from agent --old-file /tmp/old.md --new-file /tmp/new.md
+```
+
+A refused patch: exit **10**, nothing written, and the message names how many times the excerpt matched — 0 means re-read the document, more than one means quote more context or pass --all.
+
+```
+corpus doc patch doc_a1b2c3 --old 'a line that occurs twice' --new 'x' ; echo $?
+```
+
+One JSON value carrying `doc` (whose `key` is the fresh one), `anchors.remapped`, `anchors.orphaned`, `warnings` and `replaced`. A refusal is `{"error":{…}}` on stderr, with `details.reason` and `details.matches`.
+
+```
+corpus doc patch doc_a1b2c3 --from agent --old 'old text' --new 'new text' --json
 ```
 
 ### `corpus doc related`
@@ -2219,15 +2316,16 @@ corpus workspace upgrade --json
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                                                    |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Success.                                                                                                                                                                   |
-| `1`  | Internal error — an unexpected exception.                                                                                                                                  |
-| `2`  | Usage error — unknown command, bad flag, missing argument.                                                                                                                 |
-| `3`  | Not inside a Corpus workspace, or its config is invalid.                                                                                                                   |
-| `4`  | The workspace server is unreachable.                                                                                                                                       |
-| `5`  | The server returned an error response.                                                                                                                                     |
-| `6`  | A check-style command reported a failure (its work succeeded).                                                                                                             |
-| `7`  | Refused — a precondition was not met, and nothing was changed.                                                                                                             |
-| `8`  | Failed partway — something had already been changed, so verify before retrying.                                                                                            |
-| `9`  | Stale key — the document changed after the read that handed you the key, so nothing was written. Re-read it, merge, and run the same command again with the fresh `--key`. |
+| Code | Meaning                                                                                                                                                                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success.                                                                                                                                                                                                                                                       |
+| `1`  | Internal error — an unexpected exception.                                                                                                                                                                                                                      |
+| `2`  | Usage error — unknown command, bad flag, missing argument.                                                                                                                                                                                                     |
+| `3`  | Not inside a Corpus workspace, or its config is invalid.                                                                                                                                                                                                       |
+| `4`  | The workspace server is unreachable.                                                                                                                                                                                                                           |
+| `5`  | The server returned an error response.                                                                                                                                                                                                                         |
+| `6`  | A check-style command reported a failure (its work succeeded).                                                                                                                                                                                                 |
+| `7`  | Refused — a precondition was not met, and nothing was changed.                                                                                                                                                                                                 |
+| `8`  | Failed partway — something had already been changed, so verify before retrying.                                                                                                                                                                                |
+| `9`  | Stale key — the document changed after the read that handed you the key, so nothing was written. Re-read it, merge, and run the same command again with the fresh `--key`.                                                                                     |
+| `10` | Patch refused by the document's own text — `--old` matched zero times or more than once, so nothing was written. The message names the count and which of the two it was: zero means re-read the document, several means quote more context (or pass `--all`). |

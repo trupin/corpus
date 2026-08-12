@@ -7,6 +7,7 @@ import { diffCommand } from "./diff.js";
 import { editCommand } from "./edit.js";
 import { listCommand } from "./list.js";
 import { moveCommand } from "./move.js";
+import { patchCommand } from "./patch.js";
 import { relatedCommand } from "./related.js";
 import { showCommand } from "./show.js";
 import { unarchiveCommand } from "./unarchive.js";
@@ -25,8 +26,14 @@ import { unarchiveCommand } from "./unarchive.js";
  * is the read of a *change* rather than a state, and the one call a `doc.edited`
  * event's frugal payload is meant to be escalated into (SPEC.md §4); `check`
  * is the validator (SPEC.md §14) reported rather than run here; `create`,
- * `edit`, `move`, `archive` and `unarchive` are the agent's own initiative;
- * `delete` is the user's alone.
+ * `edit`, `patch`, `move`, `archive` and `unarchive` are the agent's own
+ * initiative; `delete` is the user's alone.
+ *
+ * `edit` and `patch` are the same write from two ends. `edit` replaces a block
+ * and therefore presents a key; `patch` names the excerpt it expects to find,
+ * which is the same staleness check by another route (SPEC.md §7) and prices a
+ * bounded change at the size of the change rather than the size of the document
+ * (SPEC.md §9.2). Bounded edits go through `patch`.
  */
 export const docTopic: TopicSpec = {
   name: "doc",
@@ -55,6 +62,7 @@ export const docTopic: TopicSpec = {
     checkCommand,
     createCommand,
     editCommand,
+    patchCommand,
     moveCommand,
     archiveCommand,
     unarchiveCommand,

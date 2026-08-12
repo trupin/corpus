@@ -16,6 +16,7 @@ export const ExitCode = {
   refused: 7,
   partialFailure: 8,
   staleKey: 9,
+  patchRefused: 10,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
@@ -51,6 +52,13 @@ export const EXIT_CODES: readonly { readonly code: ExitCode; readonly meaning: s
     meaning:
       "Stale key — the document changed after the read that handed you the key, so nothing was " +
       "written. Re-read it, merge, and run the same command again with the fresh `--key`.",
+  },
+  {
+    code: ExitCode.patchRefused,
+    meaning:
+      "Patch refused by the document's own text — `--old` matched zero times or more than once, " +
+      "so nothing was written. The message names the count and which of the two it was: zero " +
+      "means re-read the document, several means quote more context (or pass `--all`).",
   },
 ];
 
@@ -265,6 +273,62 @@ export class StaleKeyError extends CliError {
 
   constructor(message: string, options: CliErrorOptions & { readonly status: number }) {
     super(message, options);
+    this.status = options.status;
+  }
+}
+
+/**
+ * SPEC.md §9.2's refusal: **the excerpt `corpus doc patch` quoted did not match
+ * the document's body exactly once**, so nothing was written.
+ *
+ * ## Why it is its own code, and which neighbour it is not
+ *
+ * The argument is {@link StaleKeyError}'s, one route over — an agent branches on
+ * exit codes, and this outcome's right next move is specific:
+ *
+ * - **Not `serverError` (5).** Nothing went wrong. The document declined to
+ *   contain what the patch said it contained, which is the operation's whole
+ *   safety property working: an excerpt that matches nowhere, or matches in two
+ *   places, is exactly the patch that would otherwise land somewhere the caller
+ *   did not mean.
+ * - **Not `usageError` (2).** The invocation was well-formed and every local
+ *   check passed. What is wrong is the *quote*, and the fix comes from re-reading
+ *   the document — not from re-reading the help. (An `--old` that was never given
+ *   at all, or was empty, *is* a usage error, and those are caught before any
+ *   request is sent.)
+ * - **Not `refused` (7).** 7 means "your preconditions were not met, stop and
+ *   reconsider". Here retrying is the expected path — re-quote and send the same
+ *   patch again — so sharing a code with `corpus upgrade`'s dead ends would make
+ *   the recoverable failure indistinguishable from the ones that are not.
+ * - **Not `staleKey` (9) either**, though it is the closest: 9's recovery is
+ *   "read the fresh key off the document the refusal brought you and resend
+ *   unchanged", and this one's is "change what you quoted". A caller that treated
+ *   them alike would retry a patch that cannot ever apply.
+ *
+ * ## Why one code for two refusals
+ *
+ * The two recoveries differ — re-read versus quote more — and the CLI says which
+ * in the message, the hint, and `details.reason`. But they are one *class* of
+ * outcome for a caller branching on the exit status ("the text refused it,
+ * nothing was written, fix the quote"), and `code` is where this CLI already
+ * distinguishes within a class: {@link RefusedError} does exactly that for
+ * `corpus upgrade`'s several dead ends. So the two arrive as `patch_no_match`
+ * and `patch_multiple_matches` on one exit code, and `details.matches` carries
+ * the count as a number rather than as a sentence a caller has to parse.
+ */
+export class PatchRefusedError extends CliError {
+  override readonly exitCode = ExitCode.patchRefused;
+  override readonly code: string;
+  /** Nothing was written — the refusal happens before the save is even attempted. */
+  override readonly changed = false;
+  readonly status: number;
+
+  constructor(
+    message: string,
+    options: CliErrorOptions & { readonly code: string; readonly status: number },
+  ) {
+    super(message, options);
+    this.code = options.code;
     this.status = options.status;
   }
 }

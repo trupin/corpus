@@ -230,8 +230,22 @@ export function responseError(response: Response, body: unknown): CliError {
   );
 }
 
+/**
+ * What of a typed problem survives as `details`.
+ *
+ * `issues` is the validation report a `400` carries. `reason` is the other kind:
+ * a `409` that narrows `ConflictError` with a machine-readable reason — the
+ * contract's `PatchConflictError` and `ReattachConflictError` — puts the whole
+ * body through, because **`reason` is the recovery**. Both of those refusals
+ * exist precisely so a client can tell apart outcomes that want opposite things
+ * from the caller (re-read the document, or quote more of it), and a transport
+ * that dropped the field would force every consumer back onto matching the
+ * server's English. The verb that knows what the reason means turns it into its
+ * own error class; this layer only declines to throw the fact away.
+ */
 function detailsFor(body: { readonly code: string }): { details?: unknown } {
   if ("issues" in body) return { details: body.issues };
+  if ("reason" in body) return { details: body };
   return {};
 }
 
