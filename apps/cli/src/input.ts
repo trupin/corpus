@@ -153,7 +153,7 @@ export const MODEL_FLAG: FlagSpec = {
  * too — this refusal is the same answer, one round trip earlier, with nothing
  * written.
  *
- * The actor guard is the same shape `doc delete` and `lock break` use: the
+ * The actor guard is the same shape `doc delete` uses: the
  * server's `400` ("only an agent turn names the model that wrote it") stays the
  * backstop, and this exists so the caller who forgot `--from agent` is told what
  * to do instead of being handed a status code. Refused before the flag's value

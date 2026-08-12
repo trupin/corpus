@@ -19,8 +19,9 @@ export const queueTopic: TopicSpec = {
     "and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → " +
     "`corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, " +
     "and every transition is idempotent so a retried call is never a crash. `defer` is the " +
-    "fourth, non-terminal outcome: work blocked on a user-held edit lock waits rather than " +
-    "failing, and returns to `pending` by itself when that lock clears. `halt` is the kill " +
+    "fourth, non-terminal outcome: work the agent parked because a person is editing the " +
+    "document it needs waits rather than failing, and returns to `pending` by itself when that " +
+    "session ends (SPEC.md §7 — a judgement, not a refusal). `halt` is the kill " +
     "switch: it stops consumption without stopping production. The loop's two entry points — " +
     "`idle` when it returns work, and `claim-all` — additionally report what the server still " +
     "holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the " +

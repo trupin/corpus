@@ -3,21 +3,28 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
 
 /**
  * The fourth transition of a claimed event, and the only non-terminal one
- * (SPEC.md §7, CONTRACT-021/SERVER-030): work the agent claimed and cannot do
- * because the **user** holds the edit lock on a document it needs.
+ * (SPEC.md §7, CONTRACT-021/SERVER-030): work the agent claimed and chose not to
+ * do yet, because a **person** has an edit session open on a document it needs.
+ *
+ * **A judgement, not a refusal** (SHARED-041). Nothing stopped the agent — a key
+ * would have let the write through, and no document is ever read-only. It
+ * deferred because `corpus doc show` told it someone was editing, which is
+ * information the agent acts on politely rather than a gate it ran into. That is
+ * the trade §7 makes deliberately: ignoring the signal costs politeness, where
+ * forgetting the old lock cost correctness.
  *
  * Two things make it unlike its three siblings in `transitions.ts`:
  *
  * - **It names a document, and that is not optional.** Re-entry is the server's
- *   reaction to a lock clearing, so a deferral that named no lock could never
- *   come back. The event payload cannot supply it either — `comment.created`
- *   happens to carry `parentId`, `form.respond` names no document at all, and
- *   plugin payloads are their own shapes — so the party that just took the
- *   `423` supplies what it was blocked on. A missing `--blocked-on` is refused
- *   here, before anything is sent: the server would answer `400`, but a usage
- *   error costs no round trip and says which flag.
- * - **There is no reverse verb.** Nothing asks for the event back; releasing,
- *   breaking or reaping the lock on `--blocked-on` returns it to `pending` by
+ *   reaction to that editing session ending, so a deferral that named no
+ *   document could never come back. The event payload cannot supply it either —
+ *   `comment.created` happens to carry `parentId`, `form.respond` names no
+ *   document at all, and plugin payloads are their own shapes — so the party
+ *   that saw the session names what it is waiting for. A missing `--blocked-on`
+ *   is refused here, before anything is sent: the server would answer `400`, but
+ *   a usage error costs no round trip and says which flag.
+ * - **There is no reverse verb.** Nothing asks for the event back; the person
+ *   closing their edit session on `--blocked-on` returns it to `pending` by
  *   itself and unparks `corpus queue idle`. `corpus job retry` stays the manual
  *   override for a deferral automatic re-entry never reached.
  *
@@ -32,9 +39,9 @@ export async function runDefer(context: WorkspaceCommandContext): Promise<void> 
   if (blockedOn === undefined || blockedOn === "") {
     throw new UsageError("`corpus queue defer` requires --blocked-on <doc-id>.", {
       hint:
-        "Name the document whose edit lock the work is waiting for — that lock clearing is what " +
-        "returns the event to pending. Nothing was sent to the server. " +
-        "`corpus lock list` shows what is held.",
+        "Name the document the work is waiting on — that person's edit session ending is what " +
+        "returns the event to pending. `corpus doc show <id>` is what reports an open session. " +
+        "Nothing was sent to the server.",
     });
   }
 
@@ -53,15 +60,20 @@ export async function runDefer(context: WorkspaceCommandContext): Promise<void> 
 
 export const deferCommand: WorkspaceCommandSpec = {
   name: "defer",
-  summary: "Park a claimed event on a document's edit lock.",
+  summary: "Park a claimed event while a person is editing a document.",
   description:
     "Moves the event to `deferred/` — **waiting, not failed** (SPEC.md §7). The agent calls it " +
-    "when the work it claimed needs a document the user holds the edit lock on: reply to the " +
-    "waiting thread, defer the event, move on. It is the successor to the interim protocol of " +
+    "when the work it claimed needs a document a person has an edit session open on (the " +
+    "“someone is editing this” line of `corpus doc show`): reply to the waiting thread, defer the " +
+    "event, move on. It is the successor to the interim protocol of " +
     "failing the event with a `deferred:`-prefixed reason, so no prefix is needed or wanted here " +
     "— the status says that now.\n\n" +
-    "**The event comes back on its own.** Releasing, force-breaking or reaping the lock on " +
-    "`--blocked-on` returns it to `pending` and unparks `corpus queue idle` — no retry call, no " +
+    "**It is a judgement, not a refusal.** Nothing stopped the agent writing: a key would have " +
+    "let the write through, no document is ever read-only, and there is nothing to acquire or " +
+    "release. It defers because it saw, and because writing beside someone who is typing is " +
+    "impolite rather than incorrect.\n\n" +
+    "**The event comes back on its own** when that edit session ends: it returns to `pending` " +
+    "and unparks `corpus queue idle` — no retry call, no " +
     "operator. Until then it is not claimable, and `corpus queue status` counts it under " +
     "`deferred` rather than `failed`. Nothing is silently dropped: it stays on disk across a " +
     "restart and stays retryable by hand with `corpus job retry`.\n\n" +
@@ -81,8 +93,9 @@ export const deferCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "doc-id",
       description:
-        "**Required.** The document whose edit lock the work is waiting for. Clearing that lock " +
-        "is what returns this event to `pending`, so naming the wrong document waits forever.",
+        "**Required.** The document a person is editing that the work is waiting on. That " +
+        "session ending is what returns this event to `pending`, so naming the wrong document " +
+        "waits forever.",
     },
     {
       name: "reason",
@@ -96,7 +109,7 @@ export const deferCommand: WorkspaceCommandSpec = {
   examples: [
     {
       command: "corpus queue defer evt_9f2a --blocked-on doc_a1b2c3",
-      description: "Park the event until the user releases the document.",
+      description: "Park the event until the person editing that document is done.",
     },
     {
       command:

@@ -5,7 +5,8 @@ import {
   type Actor,
   type CorpusApi,
 } from "@corpus/contract/client";
-import { ServerResponseError, ServerUnreachableError } from "./errors.js";
+import { staleKeyError } from "./commands/doc/render.js";
+import { ServerResponseError, ServerUnreachableError, type CliError } from "./errors.js";
 import type { Workspace } from "./workspace.js";
 
 /**
@@ -14,6 +15,13 @@ import type { Workspace } from "./workspace.js";
  * transport-failure classification and typed-problem rendering. It never
  * re-declares paths, re-wraps `fetch`, or hand-builds a request — the contract
  * owns the wire shapes, the CLI owns the exit codes.
+ *
+ * It reaches into one command module, deliberately: SPEC.md §7's stale-key
+ * refusal carries a *document*, and rendering one is `commands/doc/render.ts`'s
+ * job rather than something to reimplement here in a second, drifting form.
+ * The dependency is a leaf — that module imports the contract and this CLI's
+ * error classes and nothing else — and classification stays where every other
+ * status is classified, so no verb has to remember to translate a `409`.
  */
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
@@ -79,8 +87,7 @@ export function createClient(options: CreateClientOptions): CliClient {
       token: workspace.token,
       // Attribution travels with the client, not with each call: a verb that had
       // to remember to set the header could forget to, and the git author is the
-      // audit trail (SPEC.md §2.2, §7). A verb that is inherently one party's —
-      // `lock break` — still overrides it per call.
+      // audit trail (SPEC.md §2.2, §7).
       actor: options.actor ?? DEFAULT_ACTOR,
       fetch: transportFetch,
     }).api;
@@ -195,9 +202,16 @@ function collectCauses(error: unknown, depth = 0): CauseFacts {
   return { codes, names };
 }
 
-export function responseError(response: Response, body: unknown): ServerResponseError {
+export function responseError(response: Response, body: unknown): CliError {
   const status = response.status;
   if (isApiError(body)) {
+    // SPEC.md §7's refusal is the one response whose body is the *recovery*
+    // rather than a diagnostic — the document as it now stands, carrying a fresh
+    // key — so it becomes an error class of its own (exit 9) with its own
+    // rendering, instead of a `409` whose payload the caller has to go and dig
+    // out of a JSON dump.
+    if (body.code === "stale_key") return staleKeyError(status, body.doc);
+
     return new ServerResponseError(`${String(status)} ${body.code}: ${body.message}`, {
       code: body.code,
       status,
@@ -218,7 +232,6 @@ export function responseError(response: Response, body: unknown): ServerResponse
 
 function detailsFor(body: { readonly code: string }): { details?: unknown } {
   if ("issues" in body) return { details: body.issues };
-  if ("lock" in body) return { details: body.lock };
   return {};
 }
 
@@ -226,14 +239,6 @@ function hintFor(status: number): { hint?: string } {
   if (status === 401) {
     return {
       hint: "The workspace bearer token was rejected — check `token` in .corpus/config.json, or the CORPUS_TOKEN override.",
-    };
-  }
-  if (status === 423) {
-    // The message names the holder; what the caller needs on top of that is
-    // what to do about it. Retrying in a loop is the wrong answer: a lock is
-    // held by a person typing, and the write was not applied (SPEC.md §7).
-    return {
-      hint: "The write was not applied. The other party holds this document's edit lock — defer and come back to it, rather than retrying in a loop.",
     };
   }
   return {};

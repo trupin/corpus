@@ -1,6 +1,6 @@
 import { RESERVED_FRONTMATTER_KEYS } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
-import { ExitCode, exitCodeFor, isCliError } from "../../errors.js";
+import { ExitCode, exitCodeFor, isCliError, renderError, toProblem } from "../../errors.js";
 import {
   closeStubServers,
   jsonResponder,
@@ -18,11 +18,25 @@ import {
   parseExtraValue,
   runDocEdit,
 } from "./edit.js";
-import { ARCHIVED_SKILL, archived, DOC, SKILL } from "./fixtures.js";
+import { ARCHIVED_SKILL, archived, DOC, rekeyed, SKILL } from "./fixtures.js";
 
 const ARGS = { id: "doc_a1b2c3" };
 const SKILL_ARGS = { id: "doc_gqyrzvto" };
 const UPDATED = { doc: DOC, anchors: { remapped: [], orphaned: [] }, warnings: [] };
+
+/**
+ * The key a caller presents on a body write (SPEC.md §7). It is `DOC`'s own, so
+ * a test that sends it is spelling out the real loop — read, then write back the
+ * version you read — rather than passing a token the fixture never handed out.
+ */
+const KEY = DOC.key;
+
+/** The line every successful edit ends with: the fresh key for the next write. */
+const FRESH_KEY_LINE = `key ${DOC.key}\n`;
+
+/** The document a refusal comes back with: the same one, moved on, with a new key. */
+const FRESH_KEY = "c0ffee11223344556677889900aabbccddeeff00112233445566778899aabbcc";
+const MOVED_ON = rekeyed({ ...DOC, body: "30-year fixed at 6.4%, survey booked.\n" }, FRESH_KEY);
 
 const bodyOf = (raw: string | undefined): Record<string, unknown> =>
   JSON.parse(raw ?? "{}") as Record<string, unknown>;
@@ -33,9 +47,9 @@ const errorHint = (error: unknown): string => (isCliError(error) ? (error.hint ?
 afterEach(closeStubServers);
 
 describe("corpus doc edit", () => {
-  it("sends the piped body and prints one line", async () => {
+  it("sends the piped body with the key it was given, and prints the fresh one back", async () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
-    const harness = stubContext(stub, { args: ARGS, actor: "agent" });
+    const harness = stubContext(stub, { args: ARGS, flags: { key: KEY }, actor: "agent" });
 
     await runDocEdit(harness.context, { stdin: pipe("new body\n"), stdinIsBodySource: true });
 
@@ -43,8 +57,11 @@ describe("corpus doc edit", () => {
     expect(request?.method).toBe("PUT");
     expect(request?.path).toBe("/api/docs/doc_a1b2c3");
     expect(request?.headers["x-corpus-author"]).toBe("agent");
-    expect(bodyOf(request?.body)).toEqual({ body: "new body\n" });
-    expect(harness.stdout()).toBe("edited doc_a1b2c3\n");
+    // Echoed verbatim: the CLI never derives, shortens or reshapes a key.
+    expect(bodyOf(request?.body)).toEqual({ key: KEY, body: "new body\n" });
+    // The fresh key on its own line is what makes a chain of edits need one read
+    // at the start rather than one between every pair (SPEC.md §7).
+    expect(harness.stdout()).toBe(`edited doc_a1b2c3\n${FRESH_KEY_LINE}`);
   });
 
   it("sends NO body key for a frontmatter-only edit — an empty body would wipe the document", async () => {
@@ -144,7 +161,10 @@ describe("corpus doc edit", () => {
     });
     const harness = stubContext(stub, {
       args: SKILL_ARGS,
-      flags: { status: "open", title: "Back in play" },
+      // The key is present so that the guard under test is the archived-skill
+      // one: without it the write would be refused a step earlier, for a
+      // different reason, and this test would pass while proving nothing.
+      flags: { status: "open", title: "Back in play", key: KEY },
     });
 
     const error: unknown = await runDocEdit(harness.context, {
@@ -153,6 +173,7 @@ describe("corpus doc edit", () => {
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("is an archived skill");
     expect(stub.requests.filter((request) => request.method === "PUT")).toHaveLength(0);
   });
 
@@ -240,8 +261,10 @@ describe("corpus doc edit", () => {
 
       await runDocEdit(harness.context, { stdinIsBodySource: false });
 
+      // A status flip names its own delta: no key is sent, and none was asked
+      // for (SPEC.md §7).
       expect(bodyOf(stub.requests[1]?.body)).toEqual({ status });
-      expect(harness.stdout()).toBe("edited doc_a1b2c3\n");
+      expect(harness.stdout()).toBe(`edited doc_a1b2c3\n${FRESH_KEY_LINE}`);
     }
   });
 
@@ -280,25 +303,154 @@ describe("corpus doc edit", () => {
     expect(bodyOf(stub.requests[1]?.body)).toEqual({ tags: ["housing"] });
   });
 
-  it("issues exactly one request when no tag flag is used, so a lock conflict is not retried", async () => {
+  it("issues exactly one request when no tag flag is used, so a refusal is one round trip", async () => {
     const stub = await startStubServer((_request, response) => {
-      sendJson(response, 423, {
-        code: "locked",
-        message: "document is locked by user",
-        lock: { docId: "doc_a1b2c3", holder: "user", acquired: "2026-07-27T10:00:00Z", ttl: 120 },
+      sendJson(response, 409, {
+        code: "stale_key",
+        message: "the key presented names a version this document no longer is",
+        doc: MOVED_ON,
       });
     });
-    const harness = stubContext(stub, { args: ARGS, actor: "agent" });
+    const harness = stubContext(stub, { args: ARGS, flags: { key: KEY }, actor: "agent" });
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: pipe("new body"),
       stdinIsBodySource: true,
     }).catch((cause: unknown) => cause);
 
-    expect(exitCodeFor(error)).toBe(ExitCode.serverError);
-    expect(String(error)).toContain("locked by user");
+    expect(exitCodeFor(error)).toBe(ExitCode.staleKey);
     expect(stub.requests).toHaveLength(1);
     expect(harness.stdout()).toBe("");
+  });
+
+  it("renders a refusal as the two facts it is: what the document says now, and the fresh key", async () => {
+    const stub = await startStubServer((_request, response) => {
+      sendJson(response, 409, {
+        code: "stale_key",
+        message: "the key presented names a version this document no longer is",
+        doc: MOVED_ON,
+      });
+    });
+    const harness = stubContext(stub, { args: ARGS, flags: { key: KEY }, actor: "agent" });
+
+    const error: unknown = await runDocEdit(harness.context, {
+      stdin: pipe("my new body"),
+      stdinIsBodySource: true,
+    }).catch((cause: unknown) => cause);
+
+    const rendered = renderError(error, { verbose: false });
+
+    // Fact one: what it now says — the body itself, not a summary of it and not
+    // a JSON payload with the newlines escaped.
+    expect(rendered).toContain("30-year fixed at 6.4%, survey booked.");
+    // Fact two: the fresh key, beside the flag it goes in, so the retry is one
+    // line below the sentence that asks for it.
+    expect(rendered).toContain(`--key ${FRESH_KEY}`);
+    // Recoverable from its own message: the next two commands are named, and the
+    // retry is called the expected path rather than a failure.
+    expect(rendered).toContain("corpus doc show doc_a1b2c3");
+    expect(rendered).toContain("Retrying after a re-read is the expected path");
+    expect(rendered).toContain("nothing was written");
+    // Not a stack trace, and not a payload dump.
+    expect(rendered).not.toContain("at Object");
+    expect(rendered).not.toContain('"frontmatter"');
+  });
+
+  it("gives a refused write its own exit code and asserts nothing changed", async () => {
+    const stub = await startStubServer((_request, response) => {
+      sendJson(response, 409, { code: "stale_key", message: "stale", doc: MOVED_ON });
+    });
+    const harness = stubContext(stub, { args: ARGS, flags: { key: KEY } });
+
+    const error: unknown = await runDocEdit(harness.context, {
+      stdin: pipe("body"),
+      stdinIsBodySource: true,
+    }).catch((cause: unknown) => cause);
+
+    // Distinguishable from a usage error (2) and from a server failure (5),
+    // because an agent branches on the exit code.
+    expect(exitCodeFor(error)).toBe(ExitCode.staleKey);
+    expect(exitCodeFor(error)).not.toBe(ExitCode.usageError);
+    expect(exitCodeFor(error)).not.toBe(ExitCode.serverError);
+    // And the machine reader gets the same two facts structurally.
+    const problem = toProblem(error);
+    expect(problem.code).toBe("stale_key");
+    expect(problem.changed).toBe(false);
+    expect(problem.details).toEqual(MOVED_ON);
+  });
+
+  it("refuses a body edit that presents no key, before anything is sent", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, actor: "agent" });
+
+    const error: unknown = await runDocEdit(harness.context, {
+      stdin: pipe("a body nobody asked to overwrite"),
+      stdinIsBodySource: true,
+    }).catch((cause: unknown) => cause);
+
+    // A usage error, not the stale-key code: the invocation is malformed, the
+    // world is not stale, and the two recoveries are different.
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("needs its `--key`");
+    expect(errorHint(error)).toContain("corpus doc show doc_a1b2c3");
+    expect(errorHint(error)).toContain("--key <key>");
+    // Impossible, not discouraged: nothing reached the server.
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("still refuses the body write when other flags would have carried it", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { title: "New title" } });
+
+    const error: unknown = await runDocEdit(harness.context, {
+      stdin: pipe("and a body too"),
+      stdinIsBodySource: true,
+    }).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it.each([
+    ["a truncated key", "3b2ec1f04d75a2c6"],
+    ["the document's id", "doc_a1b2c3"],
+    ["upper case", "3B2EC1F04D75A2C6EF2B8B9A1F0C4D3E5A6B7C8D9E0F1A2B3C4D5E6F708192A3"],
+  ])("refuses %s as a key rather than sending it to be called stale", async (_case, key) => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { key } });
+
+    const error: unknown = await runDocEdit(harness.context, {
+      stdin: pipe("body"),
+      stdinIsBodySource: true,
+    }).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("is not a document key");
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("presents a key on a delta-only edit when one is given, and it is checked", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { title: "Renamed", key: KEY } });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    // Welcome, and still checked: a caller that always sends what it read needs
+    // no rule about which fields are keyed.
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({ title: "Renamed", key: KEY });
+  });
+
+  it("does not count a bare --key as something to change", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { key: KEY } });
+
+    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("nothing to change");
+    expect(stub.requests).toHaveLength(0);
   });
 
   it("is a usage error when nothing at all was named", async () => {
@@ -331,11 +483,13 @@ describe("corpus doc edit", () => {
     };
     const stub = await startStubServer(jsonResponder(200, { doc, anchors, warnings: [] }));
 
-    const human = stubContext(stub, { args: ARGS });
+    const human = stubContext(stub, { args: ARGS, flags: { key: KEY } });
     await runDocEdit(human.context, { stdin: pipe("rewritten"), stdinIsBodySource: true });
-    expect(human.stdout()).toBe("edited doc_a1b2c3 — 2 anchors remapped, 1 orphaned (th_x9y8)\n");
+    expect(human.stdout()).toBe(
+      `edited doc_a1b2c3 — 2 anchors remapped, 1 orphaned (th_x9y8)\nkey ${doc.key}\n`,
+    );
 
-    const machine = stubContext(stub, { args: ARGS, json: true });
+    const machine = stubContext(stub, { args: ARGS, flags: { key: KEY }, json: true });
     await runDocEdit(machine.context, { stdin: pipe("rewritten"), stdinIsBodySource: true });
     expect(JSON.parse(machine.stdout())).toEqual({ doc, anchors, warnings: [] });
   });
@@ -347,12 +501,13 @@ describe("corpus doc edit", () => {
         warnings: [{ code: "commit_failed", detail: "pre-commit hook rejected the commit" }],
       }),
     );
-    const harness = stubContext(stub, { args: ARGS });
+    const harness = stubContext(stub, { args: ARGS, flags: { key: KEY } });
 
     await runDocEdit(harness.context, { stdin: pipe("x"), stdinIsBodySource: true });
 
     expect(harness.stdout()).toBe(
-      "edited doc_a1b2c3 — warning: commit_failed (pre-commit hook rejected the commit)\n",
+      "edited doc_a1b2c3 — warning: commit_failed (pre-commit hook rejected the commit)\n" +
+        FRESH_KEY_LINE,
     );
   });
 });
@@ -400,7 +555,7 @@ describe("corpus doc edit --extra", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, {
       args: ARGS,
-      flags: { title: "Finance", extra: ["width=640"] },
+      flags: { title: "Finance", extra: ["width=640"], key: KEY },
     });
 
     await runDocEdit(harness.context, { stdin: pipe("body\n"), stdinIsBodySource: true });
@@ -408,6 +563,7 @@ describe("corpus doc edit --extra", () => {
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
       title: "Finance",
       extra: { width: 640 },
+      key: KEY,
       body: "body\n",
     });
   });
@@ -543,7 +699,7 @@ describe("`--extra` and the archived-skill guard together (CLI-016 x CLI-017)", 
 
     expect(stub.requests.map((request) => request.method)).toEqual(["PUT"]); // no GET
     expect(bodyOf(stub.requests[0]?.body)).toEqual({ extra: { width: 520 } });
-    expect(harness.stdout()).toBe("edited doc_gqyrzvto\n");
+    expect(harness.stdout()).toBe(`edited doc_gqyrzvto\n${FRESH_KEY_LINE}`);
   });
 
   it("cannot smuggle a status past the guard through --extra", async () => {
@@ -759,7 +915,13 @@ describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, {
       args: ARGS,
-      flags: { title: "Finance", extra: ["width=640"], pinned: "true", column: "todos/todos" },
+      flags: {
+        title: "Finance",
+        extra: ["width=640"],
+        pinned: "true",
+        column: "todos/todos",
+        key: KEY,
+      },
     });
 
     await runDocEdit(harness.context, { stdin: pipe("body\n"), stdinIsBodySource: true });
@@ -769,6 +931,7 @@ describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
       extra: { width: 640 },
       pinned: true,
       column: "todos/todos",
+      key: KEY,
       body: "body\n",
     });
   });
@@ -888,10 +1051,13 @@ describe("edit helpers", () => {
   });
 
   it("states the accepted read-modify-write race where a caller will read it", () => {
-    // CLI-008 item 3 is WAIVED-with-rationale: there is no conditional write to
-    // mitigate with, so the hazard is documented instead — in the help, which is
-    // what `docs/cli.md` publishes.
-    expect(editCommand.description).toContain("no conditional write");
+    // CLI-008 item 3 stays WAIVED-with-rationale under SPEC.md §7: a tag edit
+    // names its own delta, so it is deliberately keyless and the race survives
+    // — with an opt-out the help now names, since presenting `--key` on a tag
+    // edit is checked like any other write.
+    expect(editCommand.description).toContain("needs no key");
+    expect(editCommand.description).toContain("only the later one's tag");
+    expect(editCommand.description).toContain("Passing `--key` closes that window");
   });
 
   it("writes instants to the second, like the frontmatter the server stamps", () => {

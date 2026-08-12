@@ -17,7 +17,6 @@ const RESULT = {
   links: 0,
   events: 1,
   jobs: 1,
-  locks: 0,
   seen: 1,
   durationMs: 412,
   skipped: [],
@@ -37,7 +36,7 @@ describe("corpus db rebuild", () => {
     expect(request?.path).toBe("/api/db/rebuild");
     expect(harness.stdout()).toBe(
       "rebuilt the projection in 412ms — 12 documents, 3 threads, 7 turns, 2 anchors, " +
-        "0 links, 1 event, 1 job, 0 locks, 1 seen\n",
+        "0 links, 1 event, 1 job, 1 seen\n",
     );
   });
 

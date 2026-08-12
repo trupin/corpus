@@ -1,4 +1,5 @@
 import {
+  DOCUMENT_KEY_PATTERN,
   DOC_STATUSES,
   type AnchorReconciliation,
   type Doc,
@@ -21,6 +22,7 @@ import {
   parseViewFlags,
   VIEW_KEY_FLAGS,
 } from "./frontmatter.js";
+import { keyLine } from "./render.js";
 
 /**
  * The value grammar and the `--extra` parser moved to `./frontmatter.js` when
@@ -32,17 +34,31 @@ export { parseExtraFlags, parseExtraValue } from "./frontmatter.js";
 /**
  * `corpus doc edit` — the save path, and the one place anchor reconciliation is
  * guaranteed to run (SPEC.md §6). The CLI's whole contribution is assembling the
- * patch: the server holds the lock, reconciles the anchors against the body as
- * it exists on disk, writes and commits.
+ * patch: the server serialises the write, reconciles the anchors against the
+ * body as it exists on disk, writes and commits.
  *
- * Two details matter for the agent's loop:
+ * Three details matter for the agent's loop:
  *
+ * - **Replacing the body means presenting a key** (SPEC.md §7, SHARED-041).
+ *   `--key` is the value `corpus doc show` printed, and a body edit without one
+ *   is a usage error *here*, before anything is sent — the server refuses it too
+ *   (`400` naming `body.key`), and refusing twice is deliberate: the enforcement
+ *   that matters is the server's, and this one exists so the message names a
+ *   command instead of a field. **A write that names its own delta needs no
+ *   key** — `--add-tag`, `--status`, `--folder`, a view key — and none of them
+ *   started asking for one. Passing `--key` alongside them anyway is welcome and
+ *   is still checked, so a caller that always presents what it read needs no
+ *   rule about which fields are which.
  * - **A frontmatter-only edit sends no `body` key.** An empty body would be an
  *   instruction to wipe the document, so "no body source" and "an empty body"
  *   must stay distinguishable all the way to the wire.
  * - **The reconciliation report is rendered, not swallowed.** A detached thread
  *   is something the agent has to notice, so it is on the success line and, under
  *   `--json`, exactly as the server sent it.
+ *
+ * Every write that lands answers with a fresh key, which this verb prints on the
+ * line after the confirmation: a chain of edits therefore needs exactly one read
+ * at the start, not one between every pair of writes.
  */
 
 /** ISO instants are written to seconds, matching what the server stamps into frontmatter. */
@@ -57,24 +73,24 @@ export interface EditDependencies extends InputDependencies {
 /**
  * `--add-tag` / `--remove-tag` against a wire field that carries the whole list:
  * the current tags have to be read first. Only these two flags and `--status`
- * cost a read — a plain body or title edit is exactly one request, which is what
- * keeps a lock conflict a single, un-retried failure.
+ * cost a read — a plain body or title edit is exactly one request.
  *
  * **This read-then-write is an accepted race, not an oversight** (CLI-008 item
  * 3). Two concurrent `--add-tag` calls can each `GET` the same list and each
  * `PUT` its own merge, and the second write wins with the first one's tag
- * missing. Nothing in the CLI can close that window today: `PUT /api/docs/{id}`
- * takes `ActorHeaderSchema` and nothing else — there is no `If-Match`, no ETag
- * and no version anywhere in `packages/contract` or `apps/server`, so there is
- * no conditional write to make this atomic. The only concurrency control the API
- * offers is the `423` document lock, which serialises an *editing session*, not
- * a one-shot tag edit, and taking a lock per `--add-tag` would make the cheap
- * verb expensive and give it a lock to leak.
+ * missing. §7's key does not close it and is not meant to: `tags` is
+ * deliberately not a keyed field (`KEYED_UPDATE_FIELDS`), because §7 names
+ * adding a tag as the canonical write that merges rather than overwrites, and
+ * requiring a key for one would refuse the cheap verb the whole distinction
+ * exists to keep cheap. What the key guarantees is stated exactly in §7's *what
+ * a key does not do*: no writer overwrites something it never read. Two writers
+ * that both read are a different problem, and this is a small instance of it.
  *
- * The exposure is small and bounded: the window is one round trip, both writers
- * are this single-user workspace's own, and every version is in git. Closing it
- * properly means a conditional-write primitive on the contract — a filed
- * CONTRACT issue, not something this verb should invent.
+ * **The caller can opt in**, which is the part worth knowing: presenting `--key`
+ * on a tag edit is checked like any other, so an agent that always sends the key
+ * it read gets this window closed too — at the cost of a refusal it then has to
+ * reconcile. The exposure without it is bounded: one round trip, both writers
+ * this single-user workspace's own, and every version in git.
  */
 export function mergeTags(
   current: readonly string[],
@@ -106,14 +122,66 @@ function parseStatus(value: string | undefined): DocStatus | undefined {
 }
 
 /**
+ * `--key`, checked for **shape** only, and only so that a value that was never a
+ * key fails as the mistake it is.
+ *
+ * The pattern is the contract's own (`DOCUMENT_KEY_PATTERN`), not a guess about
+ * one: a key is a fixed-width lowercase hex string, and the two ways an agent
+ * arrives here with something else are a truncated copy (a wrapped line) and a
+ * wrong value entirely (the document's id, a path). Both are usage errors — the
+ * invocation is malformed — and neither should reach the server as a `409`,
+ * because a stale key means *re-read and merge* and a truncated one means *you
+ * did not copy the whole line*, and sending the agent down the first path for
+ * the second mistake costs a round trip and teaches it the wrong lesson.
+ *
+ * Checking the shape is **not** parsing a key: nothing here reads meaning out of
+ * one, orders one, or shortens one. The value is echoed onward untouched.
+ */
+function parseKey(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (DOCUMENT_KEY_PATTERN.test(value)) return value;
+  throw new UsageError(`--key is not a document key: "${value}".`, {
+    hint:
+      "A key is the whole value `corpus doc show <id>` printed on its `key` line — copy it " +
+      "entire, exactly as it was printed. Nothing was sent to the server.",
+  });
+}
+
+/**
+ * What a body-replacing write with no key is told (SPEC.md §7).
+ *
+ * The refusal has to be **actionable from its own text**, because an agent that
+ * cannot recover from a message guesses, and the guess here is a lost edit. So
+ * it names the two commands in the order they are run, and says why the rule
+ * exists in one clause — a body write states nothing about what it changes, so
+ * it is the write that can destroy silently.
+ */
+function missingKey(id: string): UsageError {
+  return new UsageError(`replacing the body of ${id} needs its \`--key\`.`, {
+    hint:
+      `Read the document first — \`corpus doc show ${id}\` prints its \`key\` — then send this ` +
+      `edit again with \`--key <key>\`. The key names the version you read, so writing without ` +
+      `one is writing over something you never saw (SPEC.md §7). A write that names its own ` +
+      `delta (--add-tag, --status, --folder, a view key) needs no key. Nothing was sent to the ` +
+      `server.`,
+  });
+}
+
+/**
  * The document as it stands, read at most once per invocation.
  *
  * Two things need it and neither should pay for the other: `--add-tag` needs the
  * current list to merge against, and `--status` needs to know whether the
  * document is archived (see {@link assertNotArchived}). Naming both flags is one
  * `GET`, naming neither is none — which is what keeps the ordinary body or title
- * edit a single request, and therefore a lock conflict a single un-retried
- * failure.
+ * edit a single request.
+ *
+ * **What it never does is supply the key.** This response carries one, and using
+ * it would turn every body edit into a read the CLI performed on the caller's
+ * behalf — a key obtained by the writer's own tooling rather than by the writer
+ * having read the document, which is precisely the evidence §7 asks for and
+ * exactly how the lock became forgettable. The agent carries the key explicitly
+ * (SHARED-041 decision 1) or the write does not happen.
  */
 function currentDocument(context: WorkspaceCommandContext, id: string): () => Promise<Doc> {
   let pending: Promise<Doc> | undefined;
@@ -152,10 +220,11 @@ function currentDocument(context: WorkspaceCommandContext, id: string): () => Pr
  *
  * The read this needs is one `GET`, and it carries the same accepted staleness
  * as {@link mergeTags}: the document could be archived, or unarchived, between
- * the read and the `PUT`. There is no conditional write to close that with (see
+ * the read and the `PUT`. A status flip is a named delta and takes no key (see
  * `mergeTags` for why), so the exposure is the same bounded one — and here it
- * costs nothing either way, because the server re-checks under its own lock: a
- * document archived inside the window is refused there instead of here.
+ * costs nothing either way, because the server re-checks while it holds the
+ * document: a document archived inside the window is refused there instead of
+ * here.
  */
 function assertNotArchived(current: Doc, id: string, status: DocStatus): void {
   if (current.frontmatter.status !== "archived" || status === "archived") return;
@@ -195,8 +264,19 @@ export async function runDocEdit(
     parseExtraJsonFlags(context.flags.strings("extra-json")),
   );
   const view = parseViewFlags(context.flags);
+  const key = parseKey(context.flags.string("key"));
 
   const body = await resolveBody(context, dependencies);
+  // **The one check that deliberately runs after stdin is drained.** Every other
+  // guard above is pure and ends the command before the caller's heredoc is
+  // touched; this one cannot be, because whether a key is required is exactly
+  // the question "is a body being sent", and only `resolveBody` answers it — a
+  // `--message`, a `--file`, an empty pipe and a socket on fd 0 all resolve
+  // differently. Asking earlier would mean guessing, and guessing wrong in the
+  // strict direction refuses a frontmatter-only edit that was never keyed. The
+  // payload is not lost either way: the retry has to carry the body again
+  // regardless, because nothing was written.
+  if (body !== undefined && key === undefined) throw missingKey(id);
   const read = currentDocument(context, id);
 
   if (status !== undefined) assertNotArchived(await read(), id, status);
@@ -228,6 +308,9 @@ export async function runDocEdit(
     ...view,
   };
 
+  // `--key` is not a change and is not counted as one: an edit that presents a
+  // key and names nothing else has still asked for nothing, and sending it would
+  // trade a usage error for a write that rewrites the document with itself.
   if (body === undefined && Object.keys(patch).length === 0) {
     throw new UsageError(`nothing to change on ${id}.`, {
       hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra, --extra-json, --pinned, --order, --query, --column.",
@@ -237,7 +320,11 @@ export async function runDocEdit(
   const response = await context.client.request((api) =>
     api.PUT("/api/docs/{id}", {
       params: { path: { id } },
-      body: { ...patch, ...(body === undefined ? {} : { body }) },
+      body: {
+        ...patch,
+        ...(key === undefined ? {} : { key }),
+        ...(body === undefined ? {} : { body }),
+      },
     }),
   );
 
@@ -245,6 +332,10 @@ export async function runDocEdit(
   context.out.line(
     `edited ${id}${describeAnchors(response.anchors, response.doc)}${warningSuffix(response.warnings)}`,
   );
+  // The fresh key, on its own line, because §7's "every write that lands gives
+  // you a fresh key for the next one" is only true for the agent if the CLI says
+  // what it is. Without it a chain of edits costs a read between every pair.
+  context.out.line(keyLine(response.doc));
 }
 
 /** `— 1 anchor remapped, 1 orphaned (th_x9y8)`, or nothing at all when no anchor moved. */
@@ -277,10 +368,11 @@ export const editCommand: WorkspaceCommandSpec = {
     "detached. `--reviewed` records the current instant as a “still current” confirmation, which " +
     "is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's " +
     "current tags first and `--status` reads the current document, so those flags cost one extra " +
-    "request; nothing else does — and because the API " +
-    "offers no conditional write, two tag edits racing on one document can end with only the " +
+    "request; nothing else does — and because a tag edit names its own delta and so needs no " +
+    "key, two tag edits racing on one document can end with only the " +
     "later one's tag, and the archived check below is read from the same one-round-trip-old " +
-    "snapshot. **`--status` refuses to move an archived document off `archived`** and names " +
+    "snapshot. Passing `--key` closes that window at the cost of a refusal to reconcile. " +
+    "**`--status` refuses to move an archived document off `archived`** and names " +
     "`corpus doc unarchive <id>` instead — for a `type: skill` document because the frontmatter " +
     "would say `open` while the folder stayed disabled in `.claude/skills-archived/` and its " +
     "name stayed blocked, and for every other type because un-archiving is its own operation. " +
@@ -291,12 +383,39 @@ export const editCommand: WorkspaceCommandSpec = {
     "removes, unnamed keys are untouched. `--pinned`, `--order`, `--query` and `--column` write " +
     "the four **view keys** of SPEC.md §11, which are core fields rather than `extra` ones: a " +
     "board column IS a `type: view` document with `pinned: true`, so pinning, reordering and " +
-    "reconfiguring one is this verb, and the board follows over SSE with no reload. A `423` from the " +
-    "other party's edit lock is reported as a server error (exit 5) and is never retried — the " +
-    "orchestrate skill defers instead. An edit that names no change at all is a usage error, not " +
-    "an empty request.",
+    "reconfiguring one is this verb, and the board follows over SSE with no reload. An edit that " +
+    "names no change at all is a usage error, not an empty request.\n\n" +
+    "**Replacing the body means presenting the document's `--key`** (SPEC.md §7). Read the " +
+    "document with `corpus doc show <id>`, which prints the key, and present that key here: a " +
+    "body edit without one is refused before anything is sent (exit 2), because a write that " +
+    "replaces a block says nothing about what it changes and is the one that can destroy " +
+    "silently. If the document moved on between that read and this write, the key is stale and " +
+    "the write is **refused with exit 9** — carrying the document as it now stands and a fresh " +
+    "key, so no second read is needed: reconcile against what is printed and run the same command " +
+    "again with the fresh key. **That retry is the mechanism working, not a failure.** Every " +
+    "write that lands prints the fresh key on the line after the confirmation, so a chain of " +
+    "edits costs one read at the start rather than one between every pair.\n\n" +
+    "**A write that names its own delta needs no key**, and none of them started asking for one: " +
+    "`--add-tag`, `--remove-tag`, `--status`, `--due`, `--reviewed`, `--evergreen`, `--extra`, " +
+    "`--extra-json` and the view keys all merge with whatever else happened rather than " +
+    "overwriting it, as do `corpus doc move|archive|unarchive`. Presenting `--key` alongside them " +
+    "anyway is welcome and is still checked, so a caller that always sends what it read needs no " +
+    "rule about which fields are which.",
   args: [{ name: "id", required: true, description: "The document's id." }],
   flags: [
+    {
+      name: "key",
+      type: "string",
+      valueName: "key",
+      description:
+        "The document's **key**, exactly as `corpus doc show <id>` printed it — the version this " +
+        "edit is written against (SPEC.md §7). **Required when the edit replaces the body**; " +
+        "accepted, and still checked, on every other write. A key the document has moved past is " +
+        "refused with exit 9, and the refusal carries the document as it now stands with a fresh " +
+        "key, so the retry needs no extra read. It is opaque: echo it back exactly, and never " +
+        "construct, shorten, split or order one. There is nothing to acquire and nothing to " +
+        "release — reading gives you a key, not a claim on the document.",
+    },
     { name: "title", type: "string", valueName: "text", description: "Replace the title." },
     {
       name: "add-tag",
@@ -389,13 +508,17 @@ export const editCommand: WorkspaceCommandSpec = {
   ],
   examples: [
     {
-      command: "corpus doc edit doc_a1b2c3 --from agent <<'EOF'\nThe revised body.\nEOF",
+      command:
+        "corpus doc show doc_a1b2c3\n" +
+        "corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'EOF'\n" +
+        "The revised body.\nEOF",
       description:
-        "Replace the body from a heredoc, attributed to the agent; the anchor report names any thread that came loose.",
+        "The whole loop: read the document — which is both how you see what you are revising and where its key comes from — then replace the body presenting that key. The anchor report names any thread that came loose, and the write prints the fresh key for the next edit.",
     },
     {
       command: 'corpus doc edit doc_a1b2c3 --title "Mortgage options (2026)"',
-      description: "A frontmatter-only edit: the title changes and the body is not touched.",
+      description:
+        "A frontmatter-only edit: the title changes, the body is not touched, and no key is needed — a title names its own delta.",
     },
     {
       command: "corpus doc edit doc_a1b2c3 --add-tag housing --remove-tag draft --reviewed",
@@ -433,9 +556,14 @@ export const editCommand: WorkspaceCommandSpec = {
         "Store a plugin key whose value is an object; `--extra` stores scalars, and this is how the same merge patch carries structure.",
     },
     {
-      command: "corpus doc edit doc_a1b2c3 --file revised.md --json",
+      command: 'corpus doc edit doc_a1b2c3 --file revised.md --key "$key" --json',
       description:
-        "One JSON value carrying `doc`, `anchors.remapped`, `anchors.orphaned` and `warnings`, exactly as the server sent them.",
+        "One JSON value carrying `doc`, `anchors.remapped`, `anchors.orphaned` and `warnings`, exactly as the server sent them — `doc.key` is the fresh key.",
+    },
+    {
+      command: "corpus doc edit doc_a1b2c3 --key \"$stale\" -m 'New text' ; echo $?",
+      description:
+        "A key the document has moved past: exit **9**, nothing written, and the refusal prints the document as it now stands with its fresh key — reconcile against that and run the same command again with it.",
     },
   ],
   handler: (context) => runDocEdit(context),

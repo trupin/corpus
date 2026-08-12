@@ -607,7 +607,7 @@ mechanism rather than waste.
 | CONTRACT-049 | A key on every read, and on every write that overwrites | done | P0 | SHARED-041 |
 | SERVER-098 | Derive the key, verify it, and refuse with the document | done | P0 | CONTRACT-049 |
 | SERVER-099 | Remove the lock subsystem | todo | P0 | SERVER-098 |
-| CLI-038 | `corpus doc read` hands you a key; the write verbs demand one | todo | P0 | CONTRACT-049, SERVER-098 |
+| CLI-038 | `corpus doc read` hands you a key; the write verbs demand one | done | P0 | CONTRACT-049, SERVER-098 |
 | UI-107 | The board presents a key, and never goes read-only | todo | P0 | CONTRACT-049, SERVER-098 |
 | AGENT-022 | The skills teach keys, and stop teaching locks | todo | P0 | CLI-038 |
 | PLUGINS-017 | The todos plugin writes from a read it captured, and the key now catches it | todo | P0 | CONTRACT-049, SERVER-098 |

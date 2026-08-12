@@ -41,6 +41,8 @@ const SKILL: Doc = {
   },
   body: "# Weekly review\n",
   path: ".claude/skills/weekly-review/SKILL.md",
+  key: "a1d4e0c9b8f7a6d5c4b3a2918f7e6d5c4b3a29180f1e2d3c4b5a69788796a5b4",
+  userEditing: false,
   anchors: [],
 };
 

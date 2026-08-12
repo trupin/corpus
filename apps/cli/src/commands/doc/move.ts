@@ -41,8 +41,9 @@ export const moveCommand: WorkspaceCommandSpec = {
     "or thread parent has to be rewritten (SPEC.md §9.2). Moving a document to the folder it is " +
     "already in is a reported no-op that writes and commits nothing — the agent's loop never has " +
     "to branch on it. Threads live flat under `data/threads/` and skills inside their own folder, " +
-    "so neither can be moved; the server says so. A `423` from the other party's edit lock is a " +
-    "server error (exit 5).",
+    "so neither can be moved; the server says so. A move **names its own delta** and needs no " +
+    "key (SPEC.md §7) — and because a key names the document's content rather than its path, a " +
+    "key read before a move is still good after it.",
   args: [{ name: "id", required: true, description: "The document's id." }],
   flags: [
     {

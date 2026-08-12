@@ -27,8 +27,20 @@ export const DOC: Doc = {
   },
   body: "30-year fixed at 6.1%.\n",
   path: "data/docs/finance/mortgage-options.md",
+  // A real-shaped key: 64 lowercase hex characters, which is what
+  // `DOCUMENT_KEY_PATTERN` accepts and therefore what `--key` round-trips. A
+  // placeholder like "key1" would pass every assertion in these tests and fail
+  // the first real invocation.
+  key: "3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3",
+  userEditing: false,
   anchors: [],
 };
+
+/** The same document after someone opened it in the board — §7's advisory signal. */
+export const beingEdited = (doc: Doc): Doc => ({ ...doc, userEditing: true });
+
+/** A document that has moved on: a different key, which is what makes an old one stale. */
+export const rekeyed = (doc: Doc, key: string): Doc => ({ ...doc, key });
 
 export const archived = (doc: Doc): Doc => ({
   ...doc,

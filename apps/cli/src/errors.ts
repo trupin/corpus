@@ -15,6 +15,7 @@ export const ExitCode = {
   checkFailed: 6,
   refused: 7,
   partialFailure: 8,
+  staleKey: 9,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
@@ -45,6 +46,12 @@ export const EXIT_CODES: readonly { readonly code: ExitCode; readonly meaning: s
     code: ExitCode.partialFailure,
     meaning: "Failed partway — something had already been changed, so verify before retrying.",
   },
+  {
+    code: ExitCode.staleKey,
+    meaning:
+      "Stale key — the document changed after the read that handed you the key, so nothing was " +
+      "written. Re-read it, merge, and run the same command again with the fresh `--key`.",
+  },
 ];
 
 /**
@@ -67,8 +74,22 @@ export interface CliProblem {
 export interface CliErrorOptions {
   /** One actionable follow-up line, rendered under the message for humans. */
   readonly hint?: string;
-  /** Structured extra context: validation issues, a held lock, an unparsed body. */
+  /** Structured extra context: validation issues, a refused write's document, an unparsed body. */
   readonly details?: unknown;
+  /**
+   * A **pre-rendered** human form of {@link details}, emitted verbatim in place
+   * of the JSON dump — its own indentation included, because the renderer that
+   * produced it knows what its content is and this one does not.
+   *
+   * It exists for one failure whose details are not a diagnostic blob but a
+   * document: SPEC.md §7's stale-key refusal carries the document *as it now
+   * stands*, and an agent has to read that to reconcile against it. Serialised
+   * as JSON it is a payload dump with the body escaped onto one line — present,
+   * unreadable, and useless as the thing it is there to be. `--json` is
+   * unaffected: that mode emits {@link details} structurally, which is what a
+   * machine reader wants and what these lines are not.
+   */
+  readonly detailLines?: readonly string[];
   readonly cause?: unknown;
 }
 
@@ -84,12 +105,14 @@ export abstract class CliError extends Error {
   readonly changed: boolean | undefined = undefined;
   readonly hint: string | undefined;
   readonly details: unknown;
+  readonly detailLines: readonly string[] | undefined;
 
   constructor(message: string, options: CliErrorOptions = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = new.target.name;
     this.hint = options.hint;
     this.details = options.details;
+    this.detailLines = options.detailLines;
   }
 }
 
@@ -206,6 +229,46 @@ export class PartialFailureError extends CliError {
   }
 }
 
+/**
+ * SPEC.md §7's refusal: **the key presented names a version the document no
+ * longer is**, so the write did not happen.
+ *
+ * ## Why it is not exit 5, and not exit 7 either
+ *
+ * An agent branches on exit codes, and this outcome is the one where the right
+ * next move is *specific and different from every neighbour's*:
+ *
+ * - **Not `serverError` (5).** Nothing went wrong. The mechanism worked exactly
+ *   as designed — it caught a writer about to overwrite something it never read
+ *   — and 5's advice ("the server returned an error") would send the caller
+ *   looking for a fault that does not exist. The refusal is the feature.
+ * - **Not `usageError` (2).** The command was well-formed; a key *was*
+ *   presented. What is stale is the world, not the invocation, and re-reading
+ *   the help would teach nothing. (A *missing* key is a usage error, and that
+ *   one is caught in `doc edit` before any request is sent.)
+ * - **Not `refused` (7).** Closer — nothing was changed, which this asserts too
+ *   — but 7 means "your preconditions were not met, stop and reconsider",
+ *   whereas here **retrying is the expected path**: re-read, merge, present the
+ *   fresh key. Sharing a code with `corpus upgrade`'s refusals would make the
+ *   one recoverable failure indistinguishable from the ones that are not.
+ *
+ * So it carries its own code, and the recovery travels with it: `details` is
+ * the document as it now stands (the machine reader's copy, `--json`), and
+ * `detailLines` renders it the way `corpus doc show` would (the agent's).
+ */
+export class StaleKeyError extends CliError {
+  override readonly exitCode = ExitCode.staleKey;
+  override readonly code = "stale_key";
+  /** Nothing was written — that is the whole of the refusal. */
+  override readonly changed = false;
+  readonly status: number;
+
+  constructor(message: string, options: CliErrorOptions & { readonly status: number }) {
+    super(message, options);
+    this.status = options.status;
+  }
+}
+
 /** Anything thrown that is not a `CliError` is reported as this. */
 export class InternalError extends CliError {
   override readonly exitCode = ExitCode.internalError;
@@ -253,7 +316,11 @@ export function renderError(error: unknown, options: { readonly verbose: boolean
       );
     }
     if (error.hint !== undefined) lines.push(`  ${error.hint}`);
-    if (error.details !== undefined) {
+    if (error.detailLines !== undefined) {
+      // Verbatim, indentation included: these lines are content (a document),
+      // not a diagnostic, and re-indenting content misrepresents it.
+      lines.push(...error.detailLines);
+    } else if (error.details !== undefined) {
       for (const line of formatDetails(error.details)) lines.push(`  ${line}`);
     }
   }

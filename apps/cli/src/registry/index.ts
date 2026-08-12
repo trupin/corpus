@@ -4,7 +4,6 @@ import { healthCommand } from "../commands/health.js";
 import { indexTopic } from "../commands/index-maintenance/index.js";
 import { initCommand } from "../commands/init/index.js";
 import { jobTopic } from "../commands/job/index.js";
-import { lockTopic } from "../commands/lock/index.js";
 import { queueTopic } from "../commands/queue/index.js";
 import { searchCommand } from "../commands/search.js";
 import { serverTopic } from "../commands/server/index.js";
@@ -52,7 +51,6 @@ export const registry: Registry = validateRegistry({
     threadTopic,
     skillTopic,
     queueTopic,
-    lockTopic,
     jobTopic,
     dbTopic,
     indexTopic,

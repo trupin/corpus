@@ -14,7 +14,7 @@ const DRIFTED = {
   ok: false,
   drift: [
     { kind: "missing_row", path: "data/docs/inbox/new.md", detail: "no row for this file" },
-    { kind: "count_mismatch", path: null, detail: "locks: 2 files, 1 row" },
+    { kind: "count_mismatch", path: null, detail: "jobs: 2 files, 1 row" },
   ],
   stats: STATS,
 };
@@ -87,7 +87,7 @@ describe("corpus db doctor", () => {
     expect(exitCodeFor(error)).toBe(ExitCode.checkFailed);
     expect(harness.stdout()).toBe(
       "missing_row data/docs/inbox/new.md: no row for this file\n" +
-        "count_mismatch (no file): locks: 2 files, 1 row\n",
+        "count_mismatch (no file): jobs: 2 files, 1 row\n",
     );
   });
 

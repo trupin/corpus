@@ -2,7 +2,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { createClient, transportError } from "./client.js";
-import { ExitCode, ServerResponseError, ServerUnreachableError } from "./errors.js";
+import { DOC, rekeyed } from "./commands/doc/fixtures.js";
+import {
+  ExitCode,
+  exitCodeFor,
+  ServerResponseError,
+  ServerUnreachableError,
+  StaleKeyError,
+} from "./errors.js";
 import type { Workspace } from "./workspace.js";
 
 /**
@@ -14,6 +21,9 @@ import type { Workspace } from "./workspace.js";
 type Handler = (request: IncomingMessage, response: ServerResponse) => void;
 
 const servers: Server[] = [];
+
+/** The document a §7 refusal carries: the same one, changed, with a new key. */
+const MOVED_ON = rekeyed(DOC, "c0ffee11223344556677889900aabbccddeeff00112233445566778899aabbcc");
 
 async function listen(handler: Handler): Promise<{ port: number; requests: IncomingMessage[] }> {
   const requests: IncomingMessage[] = [];
@@ -125,21 +135,22 @@ describe("non-2xx responses", () => {
     expect(error).toHaveProperty("details", issues);
   });
 
-  it("carries a locked error's lock as details", async () => {
-    const lock = {
-      docId: "doc_a1b2c3",
-      holder: "agent",
-      acquired: "2026-07-26T00:00:00.000Z",
-      ttl: 300,
-    };
-    const { port } = await listen(json(423, { code: "locked", message: "held", lock }));
+  it("turns a stale-key refusal into its own error, carrying the document it came with", async () => {
+    // SPEC.md §7: the refusal is classified here rather than in the verb, so no
+    // verb has to remember to translate a `409` — and its whole recovery is the
+    // body, which nothing on this path slices, truncates or stringifies.
+    const { port } = await listen(
+      json(409, { code: "stale_key", message: "it moved", doc: MOVED_ON }),
+    );
     const error = await createClient({ workspace: workspaceOn(port) })
       .request((api) => api.GET("/api/health"))
       .catch((e: unknown) => e);
-    expect(error).toHaveProperty("details", lock);
-    // The holder is in the server's message; the hint is what to do about it.
-    expect(error).toHaveProperty("hint", expect.stringContaining("was not applied"));
-    expect(error).toHaveProperty("hint", expect.stringContaining("retrying in a loop"));
+
+    expect(error).toBeInstanceOf(StaleKeyError);
+    expect(exitCodeFor(error)).toBe(ExitCode.staleKey);
+    expect(error).toHaveProperty("details", MOVED_ON);
+    expect(error).toHaveProperty("changed", false);
+    expect(error).toHaveProperty("hint", expect.stringContaining(MOVED_ON.key));
   });
 
   it("renders a body that is not a contract problem through the same path", async () => {
