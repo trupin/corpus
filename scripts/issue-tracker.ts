@@ -251,9 +251,16 @@ export function compare(rows: readonly PlanRow[], files: readonly IssueFile[]): 
     // against. `closed` is the one status whose bare form is uninformative:
     // superseded, obsoleted and reverted are different fates with different
     // consequences for a reader, and the word alone names none of them.
-    if (fileStatus === "closed" && classifyStatus(file.rawStatus) !== undefined) {
+    //
+    // Emphasis is stripped from **both** edges before the gloss is read.
+    // Stripping only the leading marker left `**closed**` with a gloss of `**`,
+    // which is not empty and so passed — defeated by the very convention the
+    // parser above exists to handle, since several files bold the word (PR #46
+    // review).
+    if (fileStatus === "closed") {
       const gloss = file.rawStatus
         .replace(/^[*_`]+/, "")
+        .replace(/[*_`]+$/, "")
         .trim()
         .slice("closed".length)
         .trim();

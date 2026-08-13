@@ -352,8 +352,8 @@ describe("the three-part result (CONTRACT-037, per-document verbs from CONTRACT-
       {
         id: "th_x9y8",
         action: "resolve" as const,
-        reason: "stale" as const,
-        message: "it changed while the Save was staged",
+        reason: "not-applicable" as const,
+        message: "the corpus changed between staging and saving",
       },
     ],
     orphanedThreadIds: [],
@@ -483,13 +483,14 @@ describe("a refusal names the document, the act, the reason and what to do about
    * about it changed with it: there is no holder to wait for, so the class alone
    * has to carry "look at what it says now", and the message carries the rest.
    */
-  it("carries a content-moved refusal with no holder to name", () => {
-    const parsed = BulkActionRefusalSchema.parse({
-      ...refusal,
-      reason: "stale",
-      message: "the agent rewrote it while the Save was staged",
-    });
-    expect(parsed.reason).toBe("stale");
+  it("no longer carries a staleness refusal, which had no producer", () => {
+    // `locked` became `stale` when SHARED-041 replaced the lock with a key, and
+    // `stale` was kept on the strength of a §11 sentence struck on 2026-08-13
+    // (PR #46 review). Nothing ever emitted it and nothing can: every act this
+    // route offers names its own delta, so the request carries no key and the
+    // route has no version to compare. A declared class with no producer invites
+    // a `case "stale":` recovery that can never run.
+    expect(BulkActionRefusalSchema.safeParse({ ...refusal, reason: "stale" }).success).toBe(false);
   });
 
   /**
@@ -507,9 +508,10 @@ describe("a refusal names the document, the act, the reason and what to do about
     expect(parsed).not.toHaveProperty("lock");
   });
 
-  it("distinguishes a stale document from an unknown id and from a validation failure", () => {
+  it("distinguishes an unknown id from an inapplicable act and from a validation failure", () => {
+    // Exactly the classes the route can produce, and no more — the enum is what
+    // a client branches on, so a value with no producer is a dead branch.
     expect([...BULK_REFUSAL_REASONS]).toEqual([
-      "stale",
       "not-found",
       "not-applicable",
       "invalid",
@@ -526,14 +528,19 @@ describe("a refusal names the document, the act, the reason and what to do about
       changed: [],
       alreadyInState: [],
       refused: [
-        { id: "doc_a1b2c3", action: "archive", reason: "stale", message: "it moved" },
+        {
+          id: "doc_a1b2c3",
+          action: "archive",
+          reason: "invalid",
+          message: "it would not validate",
+        },
         { id: "th_x9y8", action: "resolve", reason: "not-found", message: "no such thread" },
       ],
       orphanedThreadIds: [],
       commit: null,
       warnings: [],
     });
-    expect(parsed.refused.map((row) => row.reason)).toEqual(["stale", "not-found"]);
+    expect(parsed.refused.map((row) => row.reason)).toEqual(["invalid", "not-found"]);
     expect(parsed.refused.map((row) => row.action)).toEqual(["archive", "resolve"]);
   });
 });

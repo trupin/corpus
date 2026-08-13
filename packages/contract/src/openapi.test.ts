@@ -1600,8 +1600,12 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   it("requires a reason and a message on every refusal, and nothing else", () => {
     const refusal = componentSchemas?.["BulkActionRefusal"];
     expect(refusal?.required).toEqual(["id", "action", "reason", "message"]);
+    // No `stale`: it was kept alive by a §11 sentence struck on 2026-08-13, and
+    // nothing ever produced it — the request carries no key, so the route has no
+    // version to compare (PR #46 review). Pinned from the published document
+    // because a class a client can branch on and a server can never send is a
+    // dead recovery path.
     expect(refusal?.properties?.["reason"]?.enum).toEqual([
-      "stale",
       "not-found",
       "not-applicable",
       "invalid",
@@ -1611,8 +1615,8 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   });
 
   /**
-   * The holder went with the lock (SHARED-041): a `stale` refusal has nobody to
-   * name, because nothing is held. Pinned from the published document because
+   * The holder went with the lock (SHARED-041): no refusal this route reports
+   * has anybody to name, because nothing is held. Pinned from the published document because
    * the field's absence is what tells a client there is no banner to render.
    */
   it("carries no holder on a refusal, since nothing is ever held", () => {

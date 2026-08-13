@@ -1119,19 +1119,18 @@
           "reason": {
             "type": "string",
             "enum": [
-              "stale",
               "not-found",
               "not-applicable",
               "invalid",
               "write-failed"
             ],
-            "description": "Which class of refusal this is. `stale`: this document's content moved under the staged Save, so it is refused exactly as a single edit to it would be (SPEC.md §7) — the staged action was chosen against a version the document no longer is. Nothing is held and there is nothing to clear: look at what it says now and retry. `not-found`: no document has that id; the other documents are not the caller's mistake, so it is an entry here rather than a `404` for the whole request. `not-applicable`: the act does not apply to this document (resolving something that is not a thread) — §11 offers an action only on the rows that can take it, so for an enumerated row this means the corpus changed between staging and saving, and for a `wholeResultSet` entry it is the ordinary case of one act covering a mixed result set. `invalid`: the write would leave the document failing §14 validation, refused with its reason. `write-failed`: the file could not be written; nothing about this document reached the commit.",
-            "example": "stale"
+            "description": "Which class of refusal this is. `not-found`: no document has that id; the other documents are not the caller's mistake, so it is an entry here rather than a `404` for the whole request. `not-applicable`: the act does not apply to this document (resolving something that is not a thread) — §11 offers an action only on the rows that can take it, so for an enumerated row this means the corpus changed between staging and saving, and for a `wholeResultSet` entry it is the ordinary case of one act covering a mixed result set. `invalid`: the write would leave the document failing §14 validation, refused with its reason. `write-failed`: the file could not be written; nothing about this document reached the commit.",
+            "example": "not-applicable"
           },
           "message": {
             "type": "string",
             "minLength": 1,
-            "description": "Human-readable specifics for this document — what moved under a `stale` refusal, the validator's own finding, the write error. Rendered verbatim beside the document's title; never parsed. Always present: §11 requires every entry in this part to carry its reason, and a class alone does not tell a person what to do next."
+            "description": "Human-readable specifics for this document — which act found nothing to apply, the validator's own finding, the write error. Rendered verbatim beside the document's title; never parsed. Always present: §11 requires every entry in this part to carry its reason, and a class alone does not tell a person what to do next."
           }
         },
         "required": [

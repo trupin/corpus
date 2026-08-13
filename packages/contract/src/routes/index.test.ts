@@ -296,7 +296,7 @@ function createStubApp() {
         alreadyInState: rest,
         refused: moved.map((row) => ({
           ...row,
-          reason: "stale" as const,
+          reason: "not-applicable" as const,
           message: `${row.action} refused: it changed while the Save was staged`,
         })),
         orphanedThreadIds: deleting ? ["th_x9y8"] : [],
@@ -1049,7 +1049,7 @@ describe("routes mounted on a Hono app", () => {
     expect(response.status).toBe(200);
     const result = (await response.json()) as BulkResult;
     expect(result.changed).toEqual([{ id: "doc_a1b2c3", action: "archive" }]);
-    expect(result.refused[0]).toMatchObject({ id: "th_x9y8", reason: "stale" });
+    expect(result.refused[0]).toMatchObject({ id: "th_x9y8", reason: "not-applicable" });
     expect(result.refused[0]).not.toHaveProperty("lock");
     // One act, one commit — a single sha for the whole request.
     expect(result.commit).toBe(DEFAULT_HEAD_SHA);

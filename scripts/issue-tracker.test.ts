@@ -224,6 +224,25 @@ describe("compare", () => {
     );
   });
 
+  it("is not fooled by emphasis around a bare `closed`", () => {
+    // Stripping only the *leading* marker left `**closed**` with a gloss of
+    // `**` — not empty, so it passed. Defeated by the bolding convention the
+    // status parser itself exists to handle (PR #46 review).
+    for (const bare of ["**closed**", "`closed`", "_closed_"]) {
+      const root = tree("", { "server/055-a-slug.md": issue("SERVER-055", bare) });
+      expect(
+        kinds(compare(parsePlan(planOf(["SERVER-055", "closed"])), readIssueFiles(root))),
+      ).toEqual(["bare-closed"]);
+    }
+    // And still accepts a real gloss wearing the same emphasis.
+    const emphasised = tree("", {
+      "server/055-a-slug.md": issue("SERVER-055", "**closed — superseded by INFRA-025.**"),
+    });
+    expect(
+      compare(parsePlan(planOf(["SERVER-055", "closed"])), readIssueFiles(emphasised)),
+    ).toEqual([]);
+  });
+
   it("reports every disagreement rather than stopping at the first", () => {
     const root = tree("", {
       "server/001-a.md": issue("SERVER-001", "todo"),

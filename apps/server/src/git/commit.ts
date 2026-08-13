@@ -832,14 +832,20 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     if (directories.length === 0) return false;
     const parent = await git.exec(["rev-parse", "--quiet", "--verify", "HEAD^"]);
     if (!parent.ok || parent.stdout.trim() === "") return true;
-    const listing = async (ref: string): Promise<Set<string>> => {
+    // A failed listing is **not** an empty tree. Reading it as one would let a
+    // failure on the `HEAD` side answer "nothing beneath these directories, so
+    // nothing to orphan" and permit the fold — the one guard here breaking the
+    // bias every other one keeps ("refusing a fold is always safe … the bias
+    // goes to the cheap mistake"). `undefined` means "could not tell", and the
+    // caller refuses (PR #46 review).
+    const listing = async (ref: string): Promise<Set<string> | undefined> => {
       const listed = await git.exec(["ls-tree", "-r", "--name-only", ref, "--", ...directories]);
-      return new Set(
-        listed.ok ? listed.stdout.split("\n").filter((line) => line.trim() !== "") : [],
-      );
+      if (!listed.ok) return undefined;
+      return new Set(listed.stdout.split("\n").filter((line) => line.trim() !== ""));
     };
     const head = await listing("HEAD");
     const survives = await listing("HEAD^");
+    if (head === undefined || survives === undefined) return true;
     for (const path of head) {
       if (survives.has(path)) continue;
       if (existsSync(resolve(git.root, path))) continue;

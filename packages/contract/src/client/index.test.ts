@@ -160,7 +160,7 @@ function createServer() {
         refused: refused.map((row) => ({
           id: row.id,
           action: row.action,
-          reason: "stale" as const,
+          reason: "not-applicable" as const,
           message: `${row.detail} · actor=${actor}`,
         })),
         orphanedThreadIds: [],
@@ -719,7 +719,7 @@ describe("the typed bulk act", () => {
     expect(data?.refused[0]?.action).toBe("resolve");
     // The class is typed, so the board can branch on it without a cast — and
     // there is no holder to render, because nothing is ever held (SPEC.md §7).
-    expect(data?.refused[0]?.reason).toBe("stale");
+    expect(data?.refused[0]?.reason).toBe("not-applicable");
     // One act, one commit.
     expect(data?.commit).toBe("9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456");
   });
