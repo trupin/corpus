@@ -4,7 +4,7 @@
 shared (orchestrator-handled, with spec-writer)
 
 ## Status
-todo
+done — verified 2026-08-13 (INFRA-027): the work landed and PLAN.md has said so; this file was never ticked. Evidence: a commit carrying the id, or the named implementation and its tests in the tree.
 
 ## Priority
 P0

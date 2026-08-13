@@ -6,11 +6,11 @@ ui
 
 ## Status
 
-blocked — **held 2026-08-08: do not implement from this file.** The user
-revised the interaction model before implementation (SHARED-032: bulk actions
-become a mode with per-row staged actions and a Save). This issue is rewritten
-against that rider once it is signed; the design below describes the superseded
-2026-08-05 model.
+todo — **the design below is superseded; rewrite this issue before implementing
+from it.** SHARED-032 was signed 2026-08-09, which cleared the block, but what it
+cleared into is a rewrite: bulk actions became a mode with per-row staged actions
+and a Save, and the 2026-08-05 model described below is not that. Not `blocked`
+any more, because nothing is waiting on anyone. (INFRA-027, 2026-08-13.)
 
 ## Priority
 

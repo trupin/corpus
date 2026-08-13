@@ -23,6 +23,12 @@ jobs:
       # build, and the same script is the release workflow's tag/version guard.
       - name: version singularity
         run: npm run version:check
+      # The issue tracker's two halves must agree (INFRA-027). Whole-tree by
+      # nature — one file against 400 — so it is CI's rather than the commit
+      # hook's, per CLAUDE.md's rule on where a check belongs. Needs no build,
+      # so it sits here with the other cheap gates and fails in seconds.
+      - name: issue tracker agreement
+        run: npm run issues:check
       # Supply-chain gate (INFRA-013): zero `npm audit` findings of ANY severity.
       # Not `--audit-level` — that tolerates the `info` bucket — but a
       # `metadata.vulnerabilities.total === 0` assertion, which has no floor.

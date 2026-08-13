@@ -4,7 +4,12 @@
 server
 
 ## Status
-done
+closed — implemented, then **reverted**, and deliberately not in the tree.
+Wiring SPEC §6's third rung into the read path landed threads on the neighbouring
+bullet, the next table row and the parallel paragraph — the silent misattachment
+§6 forbids, worse than the detachment it was meant to cure (sprint-003
+Adjudication 1). `apps/server/src/docs/read.ts` records this at the resolver.
+Was `done`, which told a reader the behaviour is there. (INFRA-027, 2026-08-13.)
 
 ## Priority
 P1

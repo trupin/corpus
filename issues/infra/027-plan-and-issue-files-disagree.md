@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -78,9 +78,22 @@ Two directions, and they are not equally bad:
 3. **Shapes neither direction covers.** `CONTRACT-032` and `UI-083` are `blocked`
    in their files; `SERVER-055`'s **PLAN status is `reverted`**, a word
    `issues/TEMPLATE.md`'s vocabulary does not contain — so AC #2 requires the
-   check to fail on it rather than guess. And **22 PLAN rows have no issue file
-   at all**: `AGENT-004` … `AGENT-024` (only 001–003 exist under `issues/agent/`)
-   plus `SERVER-104`.
+   check to fail on it rather than guess. And **one** PLAN row has no issue file
+   at all: `SERVER-104`.
+
+   **This paragraph said 22, and 21 of them were an artefact of the census's own
+   resolver** (corrected 2026-08-13). It claimed `AGENT-004` … `AGENT-024` had no
+   file because only `001`–`003` exist under `issues/agent/`. They all exist —
+   under **`issues/agent-runtime/`**, which holds `004` through `026`. There are
+   two directories for one ID prefix, and the census looked in one of them.
+
+   That is not a footnote, it is **the technical design's hardest requirement**:
+   the domain directory is not the lowercased ID prefix, so a resolver that
+   assumes it will report 21 issues missing that are sitting on disk. Had the
+   check been built to this census it would have started red on 21 phantom rows,
+   and the likely repair under pressure is to loosen it — which is the failure
+   the caution below legislates against, arrived at through the census rather
+   than around it.
 
 ## Why a check rather than a cleanup
 
@@ -97,21 +110,27 @@ failure to classify rather than as `done`.
 
 ## Acceptance Criteria
 
-- [ ] A check compares every PLAN row against its issue file's `## Status` and
+- [x] A check compares every PLAN row against its issue file's `## Status` and
       fails on disagreement
-- [ ] Statuses it cannot classify **fail loudly** rather than defaulting either
+- [x] Statuses it cannot classify **fail loudly** rather than defaulting either
       way — see the caution above
-- [ ] It runs where a stale row would be caught before it costs anything. The
+- [x] It runs where a stale row would be caught before it costs anything. The
       commit hook is diff-scoped and this needs the whole tree, so CI is its
       home (per CLAUDE.md's rule on where a check belongs)
-- [ ] The existing drift is cleaned in the same change, **in every shape above —
-      not only the two directions**, so the check starts green. There are ~27
-      rows, and an earlier draft of this issue promised a clean start while
-      describing only 26 of them; a check that starts red is one somebody
-      loosens
-- [ ] An issue file with no PLAN row, and a PLAN row with no issue file, are
+- [x] The existing drift is cleaned in the same change, **in every shape above —
+      not only the two directions**, so the check starts green. An earlier draft
+      promised a clean start while describing only some of the rows, and a later
+      one counted 21 phantom missing files; a check that starts red is one
+      somebody loosens. Re-derive the census from the tree rather than trusting
+      the numbers written here
+- [x] **The ID → file resolver searches every domain directory**, because the
+      directory is not the lowercased ID prefix: `AGENT-*` lives under
+      `issues/agent-runtime/` for 004–026 and `issues/agent/` for 001–003. A
+      resolver that maps prefix to directory reports 21 issues missing that are
+      on disk — which is exactly how this issue's own census got it wrong
+- [x] An issue file with no PLAN row, and a PLAN row with no issue file, are
       both reported — the second is how a renumbered issue goes missing
-- [ ] **Two issue files claiming one ID fail the check.** Not hypothetical: on
+- [x] **Two issue files claiming one ID fail the check.** Not hypothetical: on
       2026-08-12, `SERVER-107` and `SERVER-108` each named two unrelated issues
       at once — Phase 31's (done, shipped in v0.7.0) and Phase 32's (todo) —
       because Phase 32 was planned on a branch while Phase 31 held the same
@@ -144,15 +163,71 @@ status, asserting the check fails for the right reason each time.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: Opus 5 (1M context)** (`claude-opus-5[1m]`), run by the orchestrator
+directly. Branch `phase-33-signed-riders`. No server started, no port bound.
+
+### The census was re-derived from the tree, not read off this file
+
+Deliberately, because this file's census had been wrong four times. The check was
+written first and then **run** to find out what was true. It reported **25**
+findings — not the 27 written here, and not the 22-missing-files:
+
+- **13** rows where PLAN said `done` and the file said `todo`/`in_progress`.
+  Settled by evidence rather than assumption: 11 carry a commit with their id,
+  and the two that do not (`UI-071`, `SERVER-063` — squash-merge collapses
+  per-issue commits into the phase's) were confirmed by finding their named
+  implementation and tests in the tree
+- **2** where the file said `blocked` and the blocker had since cleared —
+  `CONTRACT-032` (SHARED-013 signed 2026-08-05) and `UI-083` (SHARED-032 signed
+  2026-08-09). Both now `todo`; `UI-083` keeps prose saying its design is
+  superseded and needs rewriting before anyone implements from it
+- **2** unclassifiable — `SERVER-055` (`reverted`) and `INFRA-024` (`closed`)
+- **1** PLAN row with no file — `SERVER-104`, written after the fact
+- **7** issue files with **no PLAN row at all**, which this file never mentioned:
+  `SHARED-002`, `SHARED-011`, `SERVER-054`, `CONTRACT-029`, `CLI-039`,
+  `SERVER-100`, `SERVER-101`. This is the quieter half of the drift — a stale row
+  is at least visible; an issue in nobody's plan is not
+
+### The vocabulary was missing a state, so it gained one rather than a lie
+
+`SERVER-055` and `INFRA-024` are both **resolved without landing** — the first
+implemented and then reverted (wiring §6's fuzzy rung misattached threads to the
+neighbouring bullet; `docs/read.ts` records it at the resolver), the second
+superseded by `INFRA-025`. Forcing either into `done` would tell a reader the
+behaviour is in the tree, and for both it is deliberately not. `issues/TEMPLATE.md`
+and the check now carry **`closed`**, defined as resolved-without-landing and
+required to carry prose saying which.
+
+### The check found a bug in itself, twice, before it found anything else
+
+Both in `classifyStatus`, both from stripping markdown emphasis globally:
+`in_progress` became `inprogress` and the two files spelling the status exactly as
+the template does were rejected as unclassifiable; then `_todo_` kept its trailing
+underscore. Emphasis is now stripped at the **edges** only, and both cases are
+regression tests.
+
+### Green
+
+```
+$ node --import tsx scripts/check-issues.ts
+issues:check ✓ 424 PLAN rows and 421 issue files agree
+$ npx vitest run scripts/issue-tracker.test.ts   → PASS (22) FAIL (0)
+$ npm run lint && npm run format:check           → clean
+$ npm run typecheck                              → exit 0
+```
+
+Wired into `CI / validate` beside `version:check` — cheap, needs no build, fails
+in seconds — and deliberately **not** into the commit hook, which is diff-scoped
+while this compares one file against 400 (CLAUDE.md's rule on where a check
+belongs).
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

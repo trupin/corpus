@@ -4,8 +4,9 @@
 contract
 
 ## Status
-blocked — the decision below changes what SPEC.md §9.2 promises, so it is
-drafted in SHARED-013 and held for user sign-off. Recommendation: candidate 2.
+todo — the blocker cleared: SHARED-013 was signed 2026-08-05 and its amendment
+is in SPEC.md §9.2, so this is ordinary unstarted work rather than held.
+Recommendation stands: candidate 2. (Unblocked 2026-08-13, INFRA-027.)
 
 ## Priority
 P2
