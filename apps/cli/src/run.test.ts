@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ExitCode } from "./errors.js";
+import { ExitCode, INTERNAL_ERROR_HINT } from "./errors.js";
 import { fixtureRegistry, noopHandler } from "./registry/fixtures.js";
 import type { Registry } from "./registry/types.js";
 import { run } from "./run.js";
@@ -277,7 +277,7 @@ describe("corpus health against a real server", () => {
     expect(structured.code).toBe(ExitCode.serverError);
     expect(structured.stdout).toBe("");
     expect(JSON.parse(structured.stderr)).toEqual({
-      error: { code: "not_found", message: "404 not_found: gone" },
+      error: { code: "not_found", message: "404 not_found: gone", hint: null },
     });
   });
 
@@ -347,7 +347,7 @@ describe("internal errors", () => {
   it("reports an internal error as JSON under --json", async () => {
     const result = await invoke(["boom", "--json"], { registry: explodingRegistry });
     expect(JSON.parse(result.stderr)).toEqual({
-      error: { code: "internal_error", message: "unexpected explosion" },
+      error: { code: "internal_error", message: "unexpected explosion", hint: INTERNAL_ERROR_HINT },
     });
   });
 });

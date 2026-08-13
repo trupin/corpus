@@ -428,12 +428,31 @@ from scratch.
    rather than a spec question — if the upgrade does not in fact commit, recovery
    would paper over it under no author, which is worse than the gap.
 
-## SIGNED 2026-08-10 — corrections (a), (b) and (c) applied; (d) still held
+## SIGNED — corrections (a), (b) and (c) applied 2026-08-10; (d) signed and applied 2026-08-13
 
 The user signed (a) and (b) as drafted, and on (c) chose **any turn** — the word
 `agent` struck from §4's first closer, and `threads/turns.ts` now sets the act
-for either party. (d) was raised after the others and is still awaiting a
-signature; nothing waits on it.
+for either party. (d) was raised after the others, read aloud on its own on 2026-08-13 and
+signed as drafted, then **corrected the same day** after PR #46's review found
+two absolutes in it that the code does not honour (user authorized the fix):
+
+- *"this closer **alone** closes the window without renaming its commit"* —
+  `closeWindowLocked` also leaves the last subject whenever the relabel amend
+  cannot be made: a detached head, a repository mid-operation, a commit already
+  published, or a workspace hook that refuses it. The design claim is right, the
+  absolute was not. §4 now says it is the only closer that declines the rename
+  *by design*, and that from `git log` the two cases are indistinguishable.
+- *"the subject of **the save that ended it**"* — no save ends it; the edit
+  session does. It keeps the subject of the window's **last save**, which may
+  name a different document than the session that ended. This issue's own
+  artefact is exactly that case (`ea3c60b doc edit: Beta doc … by user` on a
+  commit holding two documents, closed by the *other* document's
+  acknowledgment), so the drafted sentence contradicted the evidence beneath it.
+
+The signed clause is otherwise unchanged; the clause is in §4's "What closes a window" list, on the
+edit-session entry. The disclosability caveat was read aloud with it and
+accepted: a commit closed this way looks like an ordinary single-document edit
+in `git log`.
 
 ### The corrections, as read aloud
 
@@ -466,10 +485,11 @@ Every other entry names an act without a party: "a thread resolved or reopened",
 "a document archived, restored, moved, renamed". Only this one carries a
 qualifier, and it is load-bearing either way.
 
-**Implemented as literally written** — `threads/turns.ts` sets the act only for
-`actor === "agent"`, with a named test for a person's reply staying one of the
-changes a window gathers. That is the conservative reading of signed text and it
-is what shipped; nothing below is waiting on an answer.
+**Settled and shipped as "any turn".** This paragraph previously recorded the
+pre-signature state — `threads/turns.ts` setting the act only for
+`actor === "agent"` — and was left stale when the user struck the word `agent`
+on 2026-08-10. Verified against the code 2026-08-12: `turns.ts` sets the act for
+either party, and says so in a comment citing the sign-off. Nothing is waiting.
 
 But the qualifier sits badly against §4's own definition two lines above it — "an
 act being a change someone else can act on, as against a body edit that is merely
@@ -525,7 +545,7 @@ running `git log` cannot tell which closes were exempt.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Read aloud verbatim, on its own, separately from the other held riders
+- [x] Read aloud verbatim, on its own, separately from the other held riders — (a)(b)(c) on 2026-08-10, (d) on 2026-08-13
 - [x] The draft's six questions answered and folded in (2026-08-09)
 - [ ] Separate defect issue filed for uncommitted out-of-band edits (see Key
       Implementation Details) — independent of this rider

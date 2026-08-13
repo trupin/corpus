@@ -103,12 +103,13 @@ export const applyBulkAction = createRoute({
     'to what it can and reports what it could not" and "never refuses the whole set because of ' +
     'one document". The result states three parts — what `changed`, what was `alreadyInState` ' +
     "(a document already archived is a no-op, **not** a failure), and, listed apart from both, " +
-    "what was `refused` and why, each named individually **with the verb that applied to it**. A " +
-    "document whose content moved under the staged Save is refused as `stale`, exactly as a " +
-    "single edit to it would be (SPEC.md §7); one that fails validation is refused with its " +
-    "reason (§14); an unknown id is refused as `not-found`; a row the act does not apply to is " +
-    "refused as `not-applicable`; the rest go through. There is no `404`: an unknown id is a " +
-    "per-document outcome here, not a verdict on the request. Every " +
+    "what was `refused` and why, each named individually **with the verb that applied to it**. One " +
+    "that fails validation is refused with its reason (§14); an unknown id is refused as " +
+    "`not-found`; a row the act does not apply to is refused as `not-applicable`; one whose " +
+    "file could not be written is refused as `write-failed`; the rest go through. **There is no " +
+    "staleness refusal**: every act here names its own delta, so none presents a key (SPEC.md " +
+    "§7) and this route is given no version to compare. There is no `404` either: an unknown id " +
+    "is a per-document outcome here, not a verdict on the request. Every " +
     "requested id appears exactly once across the three parts, so the caller can compare the " +
     "total against the count it showed.\n\n" +
     "**`delete` is user-only** (SPEC.md §7, §9.2): a Save carrying a `delete` entry with " +

@@ -53,7 +53,7 @@
 //   working tree is never touched — the mutation stands (SPEC.md §14), it is
 //   simply not staged.
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { Actor } from "@corpus/contract";
 import { silentLogger, type Logger } from "../logger.js";
@@ -697,20 +697,50 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
 
   /**
    * The subset git can be asked about: present on disk, or tracked (so a removal
-   * stages) — and, separately, which of them this save **removes**.
+   * stages) — and, separately, which of them this save **removes**, and whether
+   * any of them is a **directory**.
    *
    * `removed` is a by-product rather than a second question: a path gone from
    * disk but known to git is exactly a path this commit stages as a deletion,
    * and the walk that decides stageability has already established both halves.
    * Free where it matters, too — a save whose every path is on disk answers
    * `removed: []` without spawning anything, which is every autosave.
+   *
+   * `directories` is free in the same way, and is a **list rather than a flag**
+   * because the guard below asks git about exactly these paths and no others.
+   * `statSync` answers "does this exist" and "is it a directory" in the one
+   * syscall `existsSync` was already making, and a *removed* directory is read
+   * off the `ls-files` output this branch has already fetched — a tracked entry
+   * **beneath** a missing path is what makes that path a directory. So no new
+   * git invocation reaches the autosave path, whose every path is a file.
+   *
+   * `statSync` is wrapped because it is not a total replacement for
+   * `existsSync`: `throwIfNoEntry: false` suppresses `ENOENT` and nothing else,
+   * while `EACCES`, `ENOTDIR` and `ELOOP` still throw where `existsSync` simply
+   * answered `false`. `runCommit` has no try/catch, so an unreadable parent
+   * directory would reject the commit instead of returning a `CommitOutcome` —
+   * bypassing this module's contract that every failure is a `skipped` or
+   * `failed` outcome with §14's logging. A path we cannot stat is a path that is
+   * not there **as far as staging is concerned**, which is what `existsSync`
+   * meant all along.
    */
   const stageablePaths = async (
     paths: readonly string[],
-  ): Promise<{ paths: string[]; removed: string[] }> => {
+  ): Promise<{ paths: string[]; removed: string[]; directories: string[] }> => {
     const candidates = [...new Set(paths)];
-    const missing = candidates.filter((path) => !existsSync(resolve(git.root, path)));
-    if (missing.length === 0) return { paths: candidates, removed: [] };
+    const missing: string[] = [];
+    const directories: string[] = [];
+    for (const path of candidates) {
+      let stat;
+      try {
+        stat = statSync(resolve(git.root, path), { throwIfNoEntry: false });
+      } catch {
+        stat = undefined;
+      }
+      if (stat === undefined) missing.push(path);
+      else if (stat.isDirectory()) directories.push(path);
+    }
+    if (missing.length === 0) return { paths: candidates, removed: [], directories };
     const tracked = await git.exec(["ls-files", "--", ...missing]);
     const trackedPaths = tracked.ok
       ? tracked.stdout.split("\n").filter((line) => line.trim() !== "")
@@ -720,6 +750,10 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     return {
       paths: candidates.filter((path) => !missing.includes(path) || isTracked(path)),
       removed: missing.filter(isTracked),
+      directories: [
+        ...directories,
+        ...missing.filter((path) => trackedPaths.some((entry) => entry.startsWith(`${path}/`))),
+      ],
     };
   };
 
@@ -756,6 +790,66 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     if (!parent.ok || parent.stdout.trim() === "") return true;
     for (const path of removed) {
       if (!(await git.exec(["cat-file", "-e", `HEAD^:${path}`])).ok) return true;
+    }
+    return false;
+  };
+
+  /**
+   * The same question, asked of a staged **directory** — where the one above
+   * cannot answer it (SERVER-105).
+   *
+   * A tree defeats {@link amendWouldOrphanContent} in both directions. A
+   * directory still on disk is never "missing", so `removed` is empty and the
+   * guard returns `false` whatever was deleted underneath it; and
+   * `cat-file -e HEAD^:<dir>` succeeds on a *tree*, so a whole-directory removal
+   * looks like a path the parent already carries while the contents the window
+   * added go with the amend. Both were reproduced against real git.
+   *
+   * So this asks it properly, by listing the paths beneath the staged
+   * directories in `HEAD` and in its parent. A path `HEAD` holds is safe to
+   * amend away only if something else still has it: the parent commit, or the
+   * working tree (where it is about to be re-staged into the amended commit).
+   * A path in neither is one whose **only** revision is the commit being
+   * rewritten, which is what §4's guard exists to refuse.
+   *
+   * **Gated on there being a staged directory at all**, which is what keeps the
+   * fold path free. Every autosave stages files, so `directories` is empty and
+   * this returns without spawning anything — the property that lets the guard
+   * run on every fold. The two `ls-tree` calls are paid only by the skill-folder
+   * archive, which is rare and is an act.
+   *
+   * An earlier attempt refused to fold *any* save that staged a directory, on
+   * the reasoning that the only such caller is an act and "§4's acts commit
+   * alone". That reasoning was wrong: §4 has **two** acts that commit alone (a
+   * deletion and a bulk Save), and archiving is not one of them — it is one of
+   * the four whose "own change is the last thing in the window's commit", so it
+   * folds and *then* closes the window. Refusing outright broke that guarantee
+   * for skills (PR #46 review).
+   */
+  const amendWouldOrphanUnderDirectory = async (
+    directories: readonly string[],
+  ): Promise<boolean> => {
+    if (directories.length === 0) return false;
+    const parent = await git.exec(["rev-parse", "--quiet", "--verify", "HEAD^"]);
+    if (!parent.ok || parent.stdout.trim() === "") return true;
+    // A failed listing is **not** an empty tree. Reading it as one would let a
+    // failure on the `HEAD` side answer "nothing beneath these directories, so
+    // nothing to orphan" and permit the fold — the one guard here breaking the
+    // bias every other one keeps ("refusing a fold is always safe … the bias
+    // goes to the cheap mistake"). `undefined` means "could not tell", and the
+    // caller refuses (PR #46 review).
+    const listing = async (ref: string): Promise<Set<string> | undefined> => {
+      const listed = await git.exec(["ls-tree", "-r", "--name-only", ref, "--", ...directories]);
+      if (!listed.ok) return undefined;
+      return new Set(listed.stdout.split("\n").filter((line) => line.trim() !== ""));
+    };
+    const head = await listing("HEAD");
+    const survives = await listing("HEAD^");
+    if (head === undefined || survives === undefined) return true;
+    for (const path of head) {
+      if (survives.has(path)) continue;
+      if (existsSync(resolve(git.root, path))) continue;
+      return true;
     }
     return false;
   };
@@ -798,7 +892,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // legitimately names a path that no longer exists (and a never-committed
     // skill folder names one git has never heard of). Filtering keeps one such
     // path from failing the commit for the paths that are real.
-    const { paths, removed } = await stageablePaths(request.paths);
+    const { paths, removed, directories } = await stageablePaths(request.paths);
     const head = await headSha();
     if (paths.length > 0) {
       // `-A` so a removal (a delete, or a move's old path) stages as a removal
@@ -819,14 +913,21 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     }
 
     const candidate = head === null ? null : await amendTarget(request, head);
-    // Two reasons a fold that git would accept must not happen anyway: an amend
-    // that would *empty* the commit git refuses outright, and one that would
-    // take the open window's only copy of what this save removes leaves nothing
-    // to recover from (§4). Both answer "make a fresh commit instead", which is
-    // what the history should record in either case.
+    // Three reasons a fold that git would accept must not happen anyway: an
+    // amend that would *empty* the commit git refuses outright, one that would
+    // take the open window's only copy of what this save removes, and — the
+    // same question asked where a tree hides it — one that would orphan
+    // something beneath a staged directory (SERVER-105). All answer "make a
+    // fresh commit instead", which is what the history should record.
+    //
+    // Each is gated so the fold path stays free: `removed` is empty for a save
+    // whose paths are all on disk, and `directories` is empty for every
+    // autosave, so neither spawns anything on the hot path.
     const unfoldable =
       candidate !== null &&
-      ((await amendWouldEmptyHead(paths)) || (await amendWouldOrphanContent(removed)));
+      ((await amendWouldEmptyHead(paths)) ||
+        (await amendWouldOrphanContent(removed)) ||
+        (await amendWouldOrphanUnderDirectory(directories)));
     const target = unfoldable ? null : candidate;
     // A save that cannot fold is a save the open window did not take, which is
     // exactly what "the window closed" means — because the other party wrote,

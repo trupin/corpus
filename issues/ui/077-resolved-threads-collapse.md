@@ -6,7 +6,8 @@ ui
 
 ## Status
 
-todo
+done — verified 2026-08-13 (INFRA-027) against commit `b9d58569`, which carries this
+id. The work landed; this file was never ticked.
 
 ## Priority
 

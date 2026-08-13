@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ExitCode, renderError, StaleKeyError } from "../../errors.js";
+import { ExitCode, renderError, StaleKeyError, toProblem } from "../../errors.js";
 import { DOC, rekeyed } from "./fixtures.js";
 import { staleKeyError } from "./render.js";
 
@@ -110,5 +110,34 @@ describe("staleKeyError — the refusal of the verb that presents no key", () =>
     // a machine caller that wants to check its excerpt against the new body
     // before retrying reads `.error.details.body`.
     expect(staleKeyError(409, MOVED_ON, { keyed: false }).details).toBe(MOVED_ON);
+  });
+});
+
+describe("the machine surface of the refusal that prompted CLI-042", () => {
+  // These build the errors the way production does — `staleKeyError` is what
+  // `doc edit` and `doc patch` actually throw — rather than handing the
+  // constructor a hint the test wrote. A test that supplies its own hint asserts
+  // that `toProblem` copies a field, and would pass if no call site ever set one.
+
+  it("carries the keyed write's recovery, naming the fresh key", () => {
+    const problem = toProblem(staleKeyError(409, rekeyed(DOC, "sha-fresh")));
+    expect(problem.hint).toContain("--key sha-fresh");
+    // The whole point: what to do, not only what happened.
+    expect(problem.hint).toContain("run the same command again");
+  });
+
+  it("carries the patch's recovery — run it again — which was human-only", () => {
+    // The exact defect the issue names: the message says "the patch itself is
+    // still good", and the instruction that makes that actionable lived only in
+    // the human rendering.
+    const problem = toProblem(staleKeyError(409, DOC, { keyed: false }));
+    expect(problem.message).toContain("the patch itself is still good");
+    expect(problem.hint).toContain("Run the same patch again");
+  });
+
+  it("gives the two refusals different recoveries, since they are different events", () => {
+    const keyed = toProblem(staleKeyError(409, DOC)).hint;
+    const patched = toProblem(staleKeyError(409, DOC, { keyed: false })).hint;
+    expect(keyed).not.toBe(patched);
   });
 });

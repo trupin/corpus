@@ -4,7 +4,14 @@
 <!-- The domain this issue belongs to (must match a directory in issues/) -->
 
 ## Status
-todo | in_progress | done | blocked
+todo | in_progress | done | blocked | closed
+
+`closed` is **resolved without landing** — superseded, obsoleted, or implemented
+and then reverted — and always carries prose saying which. It exists because
+`done` would be a falsehood for work that is deliberately not in the tree:
+`SERVER-055` wired SPEC §6's fuzzy rung and was reverted for misattaching
+threads, and `INFRA-024` was replaced by `INFRA-025` rather than fixed. Calling
+either `done` would tell a reader the behaviour is there. (INFRA-027.)
 
 ## Priority
 P0 (critical path) | P1 (important) | P2 (nice-to-have)

@@ -4,7 +4,8 @@
 shared (orchestrator-handled, with spec-writer)
 
 ## Status
-todo
+done — verified 2026-08-13 (INFRA-027) against commit `f805267d`, which carries this
+id. The work landed; this file was never ticked.
 
 ## Priority
 P0

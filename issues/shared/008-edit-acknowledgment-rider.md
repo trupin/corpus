@@ -4,7 +4,10 @@
 shared (orchestrator-owned)
 
 ## Status
-todo
+done — signed 2026-08-02 and **applied**: the text is in SPEC.md §4
+("Edit acknowledgment"), carrying its own `_(Rider signed 2026-08-02.)_` marker
+plus a later 2026-08-08 amendment. The status line said `todo` until 2026-08-13
+because "apply at phase kickoff" was never ticked once the kickoff happened.
 
 ## Priority
 P1

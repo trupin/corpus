@@ -3,7 +3,7 @@
 // was called.
 
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ import {
   WINDOW_MAX_MS,
   type AutoCommitter,
 } from "./commit.js";
-import { createGit, type Git } from "./git.js";
+import { createGit, type Git, type GitCommandResult } from "./git.js";
 import { sanitizeGitEnv } from "./env.js";
 import { disableAutoMaintenance } from "./maintenance.js";
 
@@ -27,6 +27,12 @@ type Repo = {
   readonly rewrites: [string, string][];
   clock: number;
   git(...args: string[]): string;
+  /**
+   * Make one git subcommand fail for the rest of the test, so a guard's
+   * failure branch can be reached without a broken repository — the fail-closed
+   * paths are otherwise unreachable from a real workspace.
+   */
+  failCommand(name: string): void;
   touch(path: string, content: string): void;
   log(format: string): string[];
   close(): void;
@@ -75,10 +81,22 @@ function makeRepo(
   const state = { clock: Date.parse("2026-07-27T09:00:00Z") };
   const calls: string[][] = [];
   const underlying = createGit(root);
+  const failing = new Set<string>();
   const recording: Git = {
     root,
     exec: (args, execOptions) => {
       calls.push([...args]);
+      if (args[0] !== undefined && failing.has(args[0])) {
+        // A real failure shape: git ran and said no, which is the case the
+        // guard has to survive — not a missing binary.
+        return Promise.resolve<GitCommandResult>({
+          ok: false,
+          code: 1,
+          stdout: "",
+          stderr: `${String(args[0])}: injected failure`,
+          spawned: true,
+        });
+      }
       return underlying.exec(args, execOptions);
     },
   };
@@ -102,6 +120,9 @@ function makeRepo(
       state.clock = value;
     },
     git,
+    failCommand(name) {
+      failing.add(name);
+    },
     touch(path, content) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       writeFileSync(join(root, path), content, "utf8");
@@ -1545,5 +1566,243 @@ describe("a commit window belongs to a party", () => {
     expect(r.git("show", `HEAD:${A}`)).toBe("a one");
     expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain("operator.txt");
     expect(r.git("status", "--porcelain")).toContain("operator.txt");
+  });
+});
+
+// SERVER-105. The fold guard (`amendWouldOrphanContent`) asks "does HEAD's
+// parent already carry this path", and a **directory** answers that question
+// wrong in both directions: a tree can satisfy "already existed" while its
+// contents did not, and a directory still on disk is never even considered
+// missing. Both probes below were found by PR #43's fourth review pass by
+// running the real committer, and both were confirmed against real git before
+// the guard was changed.
+//
+// Neither is reachable from production today — the only directory-valued stage
+// paths are `move.from`/`move.to` from the skill-folder archive, a
+// whole-directory move whose content is present at the destination — which is
+// why this is a latent hole rather than a bug report.
+describe("a staged directory folds only when nothing beneath it is orphaned (SERVER-105)", () => {
+  const DIR = "data/skills/demo";
+  const KEPT = `${DIR}/SKILL.md`;
+  const EXTRA = `${DIR}/extra.md`;
+
+  /** Every commit reachable from anywhere that touched `path`. Empty = orphaned. */
+  const revisionsOf = (r: Repo, path: string): string[] =>
+    r
+      .git("log", "--all", "--format=%H", "--", path)
+      .split("\n")
+      .filter((line) => line !== "");
+
+  it("keeps a file created and deleted under a surviving directory reachable", async () => {
+    const r = makeRepo("fold-guard-dir-child");
+    r.touch(KEPT, "skill\n");
+    const first = await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "doc edit: Demo (doc_skill01) by user",
+      paths: [DIR],
+    });
+    expect(first.kind).toBe("committed");
+
+    // Created inside the window, so its only revision is the window's commit.
+    r.clock += 100;
+    r.touch(EXTRA, "scratch\n");
+    await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "doc edit: Demo (doc_skill01) by user",
+      paths: [DIR],
+    });
+    expect(revisionsOf(r, EXTRA)).not.toEqual([]);
+
+    // Deleted inside the same window. `DIR` is still on disk, so it is never
+    // "missing" and `removed` stays empty — the guard's first line returns
+    // false and the amend takes EXTRA's only revision with it.
+    r.clock += 100;
+    rmSync(join(r.root, EXTRA));
+    const third = await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "doc edit: Demo (doc_skill01) by user",
+      paths: [DIR],
+    });
+    expect(third.kind).toBe("committed");
+
+    expect(revisionsOf(r, EXTRA)).not.toEqual([]);
+  });
+
+  it("keeps a file reachable when the whole directory holding it is removed", async () => {
+    const r = makeRepo("fold-guard-dir-whole");
+    // The directory is in HEAD^ by the time the removal is asked about, which is
+    // exactly what makes `cat-file -e HEAD^:<dir>` succeed on a *tree* whose
+    // contents the window changed.
+    r.touch(KEPT, "skill\n");
+    r.git("add", "-A", "--", DIR);
+    r.git("-c", "user.name=Seed", "-c", "user.email=seed@example.test", "commit", "-m", "dir");
+
+    r.touch(EXTRA, "scratch\n");
+    const first = await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "doc edit: Demo (doc_skill01) by user",
+      paths: [DIR],
+    });
+    expect(first.kind).toBe("committed");
+    expect(revisionsOf(r, EXTRA)).not.toEqual([]);
+
+    r.clock += 100;
+    rmSync(join(r.root, DIR), { recursive: true });
+    const second = await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "doc edit: Demo (doc_skill01) by user",
+      paths: [DIR],
+    });
+    expect(second.kind).toBe("committed");
+
+    expect(revisionsOf(r, EXTRA)).not.toEqual([]);
+  });
+
+  it("costs the autosave path no git invocation to answer", async () => {
+    const r = makeRepo("fold-guard-dir-free");
+    r.touch(DOC, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    // The ordinary fold: one file, on disk, by the same party. Whether a staged
+    // path is a directory is answered by the `statSync` that already decided
+    // whether it exists, so this save must reach `ls-files` no more often than
+    // it did before the guard learned about directories — which is never.
+    r.clock += 100;
+    r.touch(DOC, "two");
+    r.calls.length = 0;
+    const folded = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    expect(folded.kind).toBe("amended");
+    expect(r.calls.some((call) => call[0] === "ls-files")).toBe(false);
+  });
+
+  it("still folds a whole-directory move, which is how a skill folder is archived", async () => {
+    // The regression an earlier version of this guard introduced (PR #46
+    // review). It refused to fold *any* save that staged a directory, on the
+    // reasoning that the only such caller is an act and "§4's acts commit
+    // alone". §4 says otherwise: **two** acts commit alone (a deletion and a
+    // bulk Save), and archiving is not one of them — it is one of the four
+    // whose "own change is the last thing in the window's commit", so it folds
+    // into the open window and *then* closes it (`docs/write.ts` classifies it
+    // `names-the-window`). Refusing outright split the archive into its own
+    // commit and broke that guarantee for skills.
+    //
+    // Nothing caught it: `acts.test.ts` asserts the invariant only for
+    // file-valued acts, and the skill folder is the one directory-valued caller.
+    const r = makeRepo("fold-guard-dir-move");
+    const FROM = "data/skills/demo";
+    const TO = "data/skills/_archived/demo";
+    r.touch(`${FROM}/SKILL.md`, "skill\n");
+    r.git("add", "-A", "--", FROM);
+    r.git("-c", "user.name=Seed", "-c", "user.email=seed@example.test", "commit", "-m", "skill");
+
+    r.touch(DOC, "one");
+    const session = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    expect(session.kind).toBe("committed");
+
+    // Archive the skill: the whole directory moves, and both halves are staged
+    // in one commit, so the content is present at the destination throughout.
+    r.clock += 100;
+    mkdirSync(join(r.root, TO, ".."), { recursive: true });
+    renameSync(join(r.root, FROM), join(r.root, TO));
+    const act = await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "archive: Demo (doc_skill01) by user",
+      paths: [FROM, TO],
+    });
+
+    expect(act.kind).toBe("amended");
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).toContain(`${TO}/SKILL.md`);
+    // And nothing was orphaned by folding it: the file is reachable at both the
+    // path it came from and the one it went to.
+    expect(r.git("log", "--all", "--format=%H", "--", `${FROM}/SKILL.md`)).not.toBe("");
+  });
+
+  it("refuses the fold when git cannot say what is beneath a staged directory", async () => {
+    // The guard fails **closed**, like every other condition on that line: the
+    // module's stated bias is that refusing a fold costs one commit and allowing
+    // a wrong one costs the document. An earlier version read a failed `ls-tree`
+    // as an empty tree, which answered "nothing to orphan" and permitted the
+    // fold (PR #46 review) — the one guard here breaking that bias.
+    const r = makeRepo("fold-guard-dir-listing-fails");
+    r.touch(KEPT, "skill\n");
+    r.git("add", "-A", "--", DIR);
+    r.git("-c", "user.name=Seed", "-c", "user.email=seed@example.test", "commit", "-m", "dir");
+
+    r.touch(DOC, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    // Break only `ls-tree`, so everything up to the listing behaves normally.
+    r.failCommand("ls-tree");
+    r.clock += 100;
+    r.touch(`${DIR}/added.md`, "added\n");
+    const outcome = await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "doc edit: Demo (doc_skill01) by user",
+      paths: [DIR],
+    });
+
+    expect(outcome.kind).toBe("committed");
+  });
+
+  it("still folds an edit-then-delete of a document the window did not create", async () => {
+    // The disclosed non-bug, and the reason the guard asks about `HEAD^` rather
+    // than refusing every removal: a document that existed *before* the window
+    // survives the amend in the parent commit. Collapsing the intermediate
+    // revision is what folding is for.
+    const r = makeRepo("fold-guard-pre-existing");
+    r.touch(DOC, "before the window");
+    r.git("add", "-A", "--", DOC);
+    r.git("-c", "user.name=Seed", "-c", "user.email=seed@example.test", "commit", "-m", "prior");
+    const prior = r.git("rev-parse", "HEAD").trim();
+
+    r.touch(DOC, "edited inside the window");
+    const edit = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    expect(edit.kind).toBe("committed");
+
+    r.clock += 100;
+    rmSync(join(r.root, DOC));
+    const deleted = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    expect(deleted.kind).toBe("amended");
+    // The document survives at its pre-window state, which is the whole point.
+    expect(r.git("show", `${prior}:${DOC}`)).toBe("before the window");
   });
 });

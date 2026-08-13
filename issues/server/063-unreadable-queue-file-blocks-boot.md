@@ -6,7 +6,8 @@ server
 
 ## Status
 
-todo
+done — verified 2026-08-13 (INFRA-027): no commit of its own — squash-merge folded it into its phase's; verified instead by `apps/server/src/queue/project.ts` and the two named tests in `queue/service.test.ts`, which cite it by id. The work landed; this file was
+never ticked.
 
 ## Priority
 

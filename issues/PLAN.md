@@ -130,12 +130,10 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | done | P1 | CLI-003, SERVER-019 |
 | AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | done | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
 | CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | done | P1 | CLI-003 |
-| CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | done | P1 | CLI-006, SERVER-019 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs (design closed; impl = PLUGINS-005/006/007) | done | P1 | UI-014 |
 | INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
 | SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | done | P1 | SERVER-003 |
 | UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | done | P1 | UI-029 |
-| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | done | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
@@ -387,7 +385,7 @@ belongs to the same fix wave.
 | UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | todo | P2 | UI-073 |
 | INFRA-020 | Two tests fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
 | SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
-| SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | reverted | P1 | — |
+| SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | closed | P1 | — |
 | SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | done | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
 | UI-075 | UI-069's per-thread jobs query fans out once per thread card (PR #24 review MAJOR) | done | P1 | UI-069 |
 | SHARED-015 | Agent sees the server's in-progress set and reconciles it (SIGNED, applied to §7) | done | P1 | — |
@@ -574,7 +572,6 @@ changes behaviour and nothing below waits on them.
 | SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | todo | P1 | — |
 | SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | todo | P1 | — |
 | SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
-| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P1 | — |
 
 ## Phase 30 — A key instead of a lock (2026-08-11)
 
@@ -632,10 +629,29 @@ guarantees the watcher commits it as the `user` edit it is.
 | SERVER-104 | Delete the server's rollback module | done | P0 | SHARED-042 |
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
-| SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | todo | P1 | — |
+| SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | done | P1 | — |
 | SERVER-106 | §4 says archiving closes a window; archiving through `PUT` does not (PR #44 review) | todo | P2 | — |
-| CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | todo | P1 | — |
-| INFRA-027 | `issues/PLAN.md` and the issue files disagree, and nothing checks (PR #44 review) | todo | P1 | — |
+| CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | done | P1 | — |
+| INFRA-027 | `issues/PLAN.md` and the issue files disagree, and nothing checks (PR #44 review) | done | P1 | — |
+
+### Unrowed backlog — issues that existed with no PLAN row (INFRA-027, 2026-08-13)
+
+Seven issue files were on disk and in nobody's plan, which is the quieter half of
+the drift `INFRA-027` closes: a stale row is at least visible, an issue with no
+row is invisible. Found by the check rather than by eye, and listed here so they
+are schedulable. They are unstarted work, not a phase — the priorities are the
+ones their own files carry.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-002 | Reconcile SPEC.md with adjudicated Phase 2 behavior (PR #9 findings 2–4) | done | P0 | — |
+| SHARED-011 | Structured filtering — arbitrary fields and glob matching (SIGNED 2026-08-04, applied at its phase kickoff) | todo | P1 | — |
+| SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | todo | P1 | UI-058 |
+| CONTRACT-029 | `Job.started` means two different instants | todo | P2 | — |
+| CLI-039 | A hung `git gc` leaves children the timeout does not kill | todo | P2 | — |
+| SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | todo | P2 | — |
+| SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
+
 ### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 
 CONTRACT-046, SERVER-079 and CLI-035 shipped `corpus doc patch`. §9.2's bullet

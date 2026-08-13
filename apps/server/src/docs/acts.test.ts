@@ -233,6 +233,41 @@ describe("each act closes the window and names its commit (§4)", () => {
     expect(filesIn("HEAD")).toContain(neighbour.path);
   });
 
+  it.each([
+    ["archive", "doc archive"],
+    ["unarchive", "doc unarchive"],
+  ])("a **skill folder** %sd — the one directory-valued act", async (verb, prefix) => {
+    // The gap that let PR #46's regression through. Every other case here acts
+    // on a file-valued document, and a skill is a *folder*: archiving it stages
+    // `move.from`/`move.to`, both directories. A fold guard that refused any
+    // save staging a directory therefore broke §4 for skills alone while 547
+    // tests stayed green — because none of them archived one.
+    const neighbour = await settledDoc("Neighbour", "kept");
+    const created = await ws.server.app.request("/api/skills", {
+      method: "POST",
+      headers: { ...AUTH, "content-type": "application/json", [ACTOR_HEADER]: "agent" },
+      body: JSON.stringify({ name: "weekly-review", description: "Run the weekly review." }),
+    });
+    expect(created.status).toBe(201);
+    const skill = ((await created.json()) as { doc: { frontmatter: { id: string } } }).doc
+      .frontmatter.id;
+    if (verb === "unarchive") {
+      expect((await ws.post(`/api/docs/${skill}/archive`, {}, asAgent)).status).toBe(200);
+    }
+    ws.advance(QUIET);
+
+    const before = await saveThenAct(neighbour.id, "agent", () =>
+      ws.post(`/api/docs/${skill}/${verb}`, {}, asAgent),
+    );
+
+    // §4: archiving is one of the four acts whose "own change is the last thing
+    // in the window's commit" — it folds into the open window and *then* closes
+    // it. One commit, not two, and it carries the neighbour's save.
+    expect(commitCount()).toBe(before + 1);
+    expect(subjectOf("HEAD")).toContain(`${prefix}:`);
+    expect(filesIn("HEAD")).toContain(neighbour.path);
+  });
+
   it("a document moved", async () => {
     const neighbour = await settledDoc("Neighbour", "kept");
     const subject = await createDoc(ws, { type: "note", title: "Subject", body: "one" }, "agent");

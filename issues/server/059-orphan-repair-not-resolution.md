@@ -4,7 +4,8 @@
 server
 
 ## Status
-todo
+done — verified 2026-08-13 (INFRA-027) against commit `6369302a`, which carries this
+id. The work landed; this file was never ticked.
 
 ## Priority
 P1

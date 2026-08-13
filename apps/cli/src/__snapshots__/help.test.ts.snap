@@ -20,7 +20,7 @@ Flags:
 
 Global flags:
   --from <user|agent>  Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
-  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
+  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
   --workspace <path>   Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
   --timeout <ms>       How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
   --verbose            Include the stack trace when an unexpected internal error occurs.
@@ -50,7 +50,7 @@ Topics:
 
 Global flags:
   --from <user|agent>  Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
-  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
+  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
   --workspace <path>   Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
   --timeout <ms>       How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
   --verbose            Include the stack trace when an unexpected internal error occurs.
@@ -77,7 +77,7 @@ Verbs:
 
 Global flags:
   --from <user|agent>  Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
-  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
+  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
   --workspace <path>   Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
   --timeout <ms>       How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
   --verbose            Include the stack trace when an unexpected internal error occurs.

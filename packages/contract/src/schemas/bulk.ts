@@ -451,26 +451,34 @@ export const BulkActionRequestSchema = z
 
 /**
  * Why a document the act could not change did not change. Machine readable,
- * because the five refusals want different things from the person — look at what
- * changed and retry, refresh the board, fix the document, or nothing at all —
- * and a UI that had to match on prose would get it wrong the first time the
- * prose was improved. The message beside it carries the specifics; this carries
+ * because the four refusals want different things from the person — refresh the
+ * board, fix the document, try again, or nothing at all — and a UI that had to
+ * match on prose would get it wrong the first time the prose was improved. The message beside it carries the specifics; this carries
  * the class.
  *
- * **`stale` replaced `locked`** when the edit lock did (SPEC.md §7, SHARED-041).
- * The class survived the mechanism because §11's sentence did: *"a document
- * whose content moved under the staged Save is refused exactly as a single edit
- * to it would be, saying so (§7)"*. What changed is what the person does about
- * it — there is no holder to name and no lock to clear, only a version they have
- * not seen, so the row is retried after looking rather than after waiting.
- * Whether a bulk Save presents keys **at all** is deliberately still open
- * (SHARED-041's remaining open question, left to the UI work): every act this
- * route offers names its own delta, so most Saves can never go stale. The class
- * is declared because the spec sentence requires the report to be able to say
- * it, not because every implementation must produce it.
+ * **There is deliberately no staleness class**, and the history of that is worth
+ * keeping because the value outlived two justifications in a row. It began as
+ * `locked`, naming the holder of the edit lock; when SHARED-041 replaced the
+ * lock with a key it was renamed `stale`, and kept on the strength of §11's
+ * sentence — *"a document whose content moved under the staged Save is refused
+ * exactly as a single edit to it would be, saying so (§7)"*. It was declared
+ * "because the spec sentence requires the report to be able to say it, not
+ * because every implementation must produce it".
+ *
+ * **That sentence is gone** (struck from §11 and §9.2 on 2026-08-13, PR #46
+ * review), and it was the value's only remaining support: no code path emits it,
+ * and none can. Every act this route offers — archive, unarchive, resolve,
+ * reopen, move, tag, review, delete — **names its own delta**, so by §7 none of
+ * them needs a key, and {@link BulkActionRequestSchema} carries none. A route
+ * given no version to compare cannot detect that a version changed.
+ *
+ * A declared class with no producer is not free: `example` made it this field's
+ * showcase value, and a client author reading the generated types would write a
+ * `case "stale":` recovery that can never run. If a bulk Save is ever given keys
+ * (SHARED-041's remaining open question, left to the UI work), the class comes
+ * back **with** the mechanism that produces it, rather than waiting for it.
  */
 export const BULK_REFUSAL_REASONS = [
-  "stale",
   "not-found",
   "not-applicable",
   "invalid",
@@ -479,10 +487,7 @@ export const BULK_REFUSAL_REASONS = [
 
 export const BulkRefusalReasonSchema = z.enum(BULK_REFUSAL_REASONS).openapi({
   description:
-    "Which class of refusal this is. `stale`: this document's content moved under the staged " +
-    "Save, so it is refused exactly as a single edit to it would be (SPEC.md §7) — the staged " +
-    "action was chosen against a version the document no longer is. Nothing is held and there is " +
-    "nothing to clear: look at what it says now and retry. `not-found`: no " +
+    "Which class of refusal this is. `not-found`: no " +
     "document has that id; the other documents are not the caller's mistake, so it is an entry " +
     "here rather than a `404` for the whole request. `not-applicable`: the act does not apply to " +
     "this document (resolving something that is not a thread) — §11 offers an action only on the " +
@@ -491,7 +496,7 @@ export const BulkRefusalReasonSchema = z.enum(BULK_REFUSAL_REASONS).openapi({
     "covering a mixed result set. `invalid`: the write would leave the document failing §14 " +
     "validation, refused with its reason. `write-failed`: the file could not be written; nothing " +
     "about this document reached the commit.",
-  example: "stale",
+  example: "not-applicable",
 });
 
 /**
@@ -520,10 +525,10 @@ export const BulkActionOutcomeSchema = z.object(outcomeShape).openapi("BulkActio
  * **The reason and its message are the whole of an entry**, and that is what the
  * removal of the edit lock left behind: the shape used to carry a `Lock` beside
  * the reason, non-null exactly when the reason was `locked`, because a refusal
- * had to name the holder a person would go and wait for. A `stale` refusal has
- * no holder — nothing is held — so there is nothing to name, and the message
- * carries what a person needs. One field fewer, one refinement fewer, and no
- * shared component to accidentally make nullable.
+ * had to name the holder a person would go and wait for. Nothing this route
+ * reports has a holder any more — nothing is held — so there is nothing to name,
+ * and the message carries what a person needs. One field fewer, one refinement
+ * fewer, and no shared component to accidentally make nullable.
  *
  * Stated as one shape rather than a union of two because §11 describes one list
  * of named refusals, and a `oneOf` here would make every consumer narrow before
@@ -537,7 +542,7 @@ export const BulkActionRefusalSchema = z
       .string()
       .min(1)
       .describe(
-        "Human-readable specifics for this document — what moved under a `stale` refusal, the " +
+        "Human-readable specifics for this document — which act found nothing to apply, the " +
           "validator's own finding, the write error. Rendered verbatim beside the document's " +
           "title; never parsed. Always present: §11 requires every entry in this part to carry " +
           "its reason, and a class alone does not tell a person what to do next.",
