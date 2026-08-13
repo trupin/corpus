@@ -53,7 +53,7 @@
 //   working tree is never touched — the mutation stands (SPEC.md §14), it is
 //   simply not staged.
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { Actor } from "@corpus/contract";
 import { silentLogger, type Logger } from "../logger.js";
@@ -697,29 +697,47 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
 
   /**
    * The subset git can be asked about: present on disk, or tracked (so a removal
-   * stages) — and, separately, which of them this save **removes**.
+   * stages) — and, separately, which of them this save **removes**, and whether
+   * any of them is a **directory**.
    *
    * `removed` is a by-product rather than a second question: a path gone from
    * disk but known to git is exactly a path this commit stages as a deletion,
    * and the walk that decides stageability has already established both halves.
    * Free where it matters, too — a save whose every path is on disk answers
    * `removed: []` without spawning anything, which is every autosave.
+   *
+   * `stagesDirectory` is free in the same way. `statSync` answers "does this
+   * exist" and "is it a directory" in the one syscall `existsSync` was already
+   * making, and a *removed* directory is read off the `ls-files` output this
+   * branch has already fetched — a tracked entry **beneath** a missing path is
+   * what makes that path a directory. So no new git invocation reaches the
+   * autosave path, which is what lets the guard below run on every fold.
    */
   const stageablePaths = async (
     paths: readonly string[],
-  ): Promise<{ paths: string[]; removed: string[] }> => {
+  ): Promise<{ paths: string[]; removed: string[]; stagesDirectory: boolean }> => {
     const candidates = [...new Set(paths)];
-    const missing = candidates.filter((path) => !existsSync(resolve(git.root, path)));
-    if (missing.length === 0) return { paths: candidates, removed: [] };
+    const missing: string[] = [];
+    let stagesDirectory = false;
+    for (const path of candidates) {
+      const stat = statSync(resolve(git.root, path), { throwIfNoEntry: false });
+      if (stat === undefined) missing.push(path);
+      else if (stat.isDirectory()) stagesDirectory = true;
+    }
+    if (missing.length === 0) return { paths: candidates, removed: [], stagesDirectory };
     const tracked = await git.exec(["ls-files", "--", ...missing]);
     const trackedPaths = tracked.ok
       ? tracked.stdout.split("\n").filter((line) => line.trim() !== "")
       : [];
     const isTracked = (path: string): boolean =>
       trackedPaths.some((entry) => entry === path || entry.startsWith(`${path}/`));
+    const removedDirectory = missing.some((path) =>
+      trackedPaths.some((entry) => entry.startsWith(`${path}/`)),
+    );
     return {
       paths: candidates.filter((path) => !missing.includes(path) || isTracked(path)),
       removed: missing.filter(isTracked),
+      stagesDirectory: stagesDirectory || removedDirectory,
     };
   };
 
@@ -798,7 +816,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // legitimately names a path that no longer exists (and a never-committed
     // skill folder names one git has never heard of). Filtering keeps one such
     // path from failing the commit for the paths that are real.
-    const { paths, removed } = await stageablePaths(request.paths);
+    const { paths, removed, stagesDirectory } = await stageablePaths(request.paths);
     const head = await headSha();
     if (paths.length > 0) {
       // `-A` so a removal (a delete, or a move's old path) stages as a removal
@@ -819,14 +837,36 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     }
 
     const candidate = head === null ? null : await amendTarget(request, head);
-    // Two reasons a fold that git would accept must not happen anyway: an amend
-    // that would *empty* the commit git refuses outright, and one that would
+    // Three reasons a fold that git would accept must not happen anyway: an
+    // amend that would *empty* the commit git refuses outright, one that would
     // take the open window's only copy of what this save removes leaves nothing
-    // to recover from (§4). Both answer "make a fresh commit instead", which is
-    // what the history should record in either case.
+    // to recover from (§4), and any save that stages a **directory** at all.
+    // All answer "make a fresh commit instead", which is what the history should
+    // record in every case.
+    //
+    // The directory rule is deliberately blunter than the question it answers
+    // (SERVER-105). `amendWouldOrphanContent` asks whether `HEAD`'s parent
+    // already carries a path, and a tree answers that wrong in both directions:
+    // a directory still on disk is never "missing", so a file created and
+    // deleted beneath it is never even considered; and `cat-file -e HEAD^:<dir>`
+    // succeeds on a *tree*, so a whole-directory removal looks like a path the
+    // parent carries while the contents the window added go with the amend.
+    // Answering it properly means comparing trees, which is a git invocation on
+    // the fold path — and the fold path is every autosave.
+    //
+    // Refusing outright costs nothing measurable instead. The only production
+    // caller that stages a directory is the skill-folder archive/unarchive
+    // (`docs/archive.ts`'s `move.from`/`move.to`), and that is an **act** — §4's
+    // acts commit alone and never fold, so this condition fires on a save that
+    // was not going to be folded anyway. It becomes a real cost only if some
+    // future caller stages a directory for an ordinary save, and the cost then
+    // is one extra commit, which is what every other condition here already
+    // trades for safety.
     const unfoldable =
       candidate !== null &&
-      ((await amendWouldEmptyHead(paths)) || (await amendWouldOrphanContent(removed)));
+      (stagesDirectory ||
+        (await amendWouldEmptyHead(paths)) ||
+        (await amendWouldOrphanContent(removed)));
     const target = unfoldable ? null : candidate;
     // A save that cannot fold is a save the open window did not take, which is
     // exactly what "the window closed" means — because the other party wrote,
