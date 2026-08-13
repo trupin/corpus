@@ -130,9 +130,24 @@ The clause cited §7 as the authority for a mechanism §7 had deleted. The shipp
 code never had the bug (`BULK_REFUSAL_REASONS` is `stale`, `not-found`,
 `not-applicable`, `invalid`, `write-failed`, with `stale` being the key check),
 so only this unsigned text still described locks. Applied text names those five
-classes and reads `409` where the draft read `423` (Locked). Placed after the
-`POST /api/docs/:id/patch` bullet rather than strictly after the `PUT` bullet —
-the draft's "immediately after" predates the patch bullet's existence.
+classes and reads `409` where the draft read `423` (Locked).
+
+**Then that repair was itself wrong, and PR #46's review caught it** — the same
+defect one level over. The applied text said a row whose content moved comes back
+refused as **stale**. `apps/server/src/docs/bulk.ts` emits no such reason and
+cannot: `BulkActionRequestSchema` carries `{id, action}` pairs and a
+`wholeResultSet` query and **no key**, so there is no version to compare against.
+`stale` exists only as a declared enum value, which the contract file says in as
+many words. Struck from §9.2 on 2026-08-13, along with the `409` that only made
+sense beside it. **§11 carried the same claim** (signed 2026-08-05, predating all
+of this) and was struck the same day on the user's authorization: a bulk Save
+reports what did not apply, what failed validation, what could not be written and
+what was unknown — it does not report staleness, because it is not given the
+means to detect it.
+
+Placed after the `POST /api/docs/:id/patch` bullet rather than strictly after the
+`PUT` bullet — the draft's "immediately after" predates the patch bullet's
+existence.
 
 CONTRACT-037's held draft described the `{ids, action}` shape and is **void** —
 a note to that effect is in its issue file.
@@ -159,13 +174,11 @@ The text as applied, with the repair above folded in:
 >   not** (§11): the result names individually what **changed**, what was
 >   **already in that state** (a no-op, not a failure), and what **did not change
 >   and why** — each with the act that applied to it, since a Save carries a mix —
->   a document whose content moved under the staged Save refused as **stale**,
->   the act having been chosen against a version the document no longer is (§7),
 >   one the act does not apply to reported as such, one failing §14 validation
 >   refused with its reason, one whose file could not be written reported as
 >   such, and an unknown id reported as such. Partial application is a `200`;
->   there is no `409` and no `404`, because a stale key and an unknown id are
->   per-document outcomes here rather than verdicts on the request. It lands as the **single** auto-commit §4 requires, authored
+>   there is no `404`, because an unknown id is a per-document outcome here
+>   rather than a verdict on the request. It lands as the **single** auto-commit §4 requires, authored
 >   by the acting party and containing exactly the documents it changed, and
 >   reports that commit — or `null` when nothing changed and there was therefore
 >   nothing to commit. **Delete keeps its user-only rule**: a staged set holding a

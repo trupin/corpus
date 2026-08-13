@@ -433,7 +433,23 @@ from scratch.
 The user signed (a) and (b) as drafted, and on (c) chose **any turn** — the word
 `agent` struck from §4's first closer, and `threads/turns.ts` now sets the act
 for either party. (d) was raised after the others, read aloud on its own on 2026-08-13 and
-signed as drafted; the clause is in §4's "What closes a window" list, on the
+signed as drafted, then **corrected the same day** after PR #46's review found
+two absolutes in it that the code does not honour (user authorized the fix):
+
+- *"this closer **alone** closes the window without renaming its commit"* —
+  `closeWindowLocked` also leaves the last subject whenever the relabel amend
+  cannot be made: a detached head, a repository mid-operation, a commit already
+  published, or a workspace hook that refuses it. The design claim is right, the
+  absolute was not. §4 now says it is the only closer that declines the rename
+  *by design*, and that from `git log` the two cases are indistinguishable.
+- *"the subject of **the save that ended it**"* — no save ends it; the edit
+  session does. It keeps the subject of the window's **last save**, which may
+  name a different document than the session that ended. This issue's own
+  artefact is exactly that case (`ea3c60b doc edit: Beta doc … by user` on a
+  commit holding two documents, closed by the *other* document's
+  acknowledgment), so the drafted sentence contradicted the evidence beneath it.
+
+The signed clause is otherwise unchanged; the clause is in §4's "What closes a window" list, on the
 edit-session entry. The disclosability caveat was read aloud with it and
 accepted: a commit closed this way looks like an ordinary single-document edit
 in `git log`.
