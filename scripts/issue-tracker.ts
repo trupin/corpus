@@ -59,6 +59,8 @@ export type Finding =
     }
   | { readonly kind: "missing-issue-file"; readonly id: string }
   | { readonly kind: "missing-plan-row"; readonly id: string; readonly path: string }
+  | { readonly kind: "duplicate-plan-row"; readonly id: string; readonly count: number }
+  | { readonly kind: "bare-closed"; readonly id: string; readonly path: string }
   | {
       readonly kind: "duplicate-issue-file";
       readonly id: string;
@@ -206,10 +208,24 @@ export function compare(rows: readonly PlanRow[], files: readonly IssueFile[]): 
     });
   }
 
+  // Two rows for one id, which is the same ambiguity one file over and matters
+  // for the same reason: the orchestration loop reads PLAN to decide what is
+  // ready, so a duplicated id gives it two answers. Live when this check was
+  // written — `SERVER-090` appeared twice with different Priority *and*
+  // Dependencies (PR #46 review).
+  const rowCounts = new Map<string, number>();
+  for (const row of rows) rowCounts.set(row.id, (rowCounts.get(row.id) ?? 0) + 1);
+  const duplicatedRows = new Set<string>();
+  for (const [id, count] of [...rowCounts].sort(([a], [b]) => a.localeCompare(b))) {
+    if (count < 2) continue;
+    duplicatedRows.add(id);
+    findings.push({ kind: "duplicate-plan-row", id, count });
+  }
+
   const inPlan = new Set<string>();
   for (const row of rows) {
     inPlan.add(row.id);
-    if (duplicated.has(row.id)) continue;
+    if (duplicated.has(row.id) || duplicatedRows.has(row.id)) continue;
     const planStatus = classifyStatus(row.rawStatus);
     if (planStatus === undefined) {
       findings.push({ kind: "unclassifiable-plan-status", id: row.id, raw: row.rawStatus });
@@ -229,6 +245,22 @@ export function compare(rows: readonly PlanRow[], files: readonly IssueFile[]): 
         path: file.path,
       });
       continue;
+    }
+    // `issues/TEMPLATE.md` says `closed` "always carries prose saying which",
+    // and a rule with nothing behind it is the shape this check was filed
+    // against. `closed` is the one status whose bare form is uninformative:
+    // superseded, obsoleted and reverted are different fates with different
+    // consequences for a reader, and the word alone names none of them.
+    if (fileStatus === "closed" && classifyStatus(file.rawStatus) !== undefined) {
+      const gloss = file.rawStatus
+        .replace(/^[*_`]+/, "")
+        .trim()
+        .slice("closed".length)
+        .trim();
+      if (gloss.replace(/^[—:(-]+/, "").trim() === "") {
+        findings.push({ kind: "bare-closed", id: row.id, path: file.path });
+        continue;
+      }
     }
     if (fileStatus !== planStatus) {
       findings.push({
@@ -262,6 +294,10 @@ export function describe(finding: Finding): string {
       return `${finding.id}: a PLAN row with no issue file — file it, or drop the row if the work never existed`;
     case "missing-plan-row":
       return `${finding.id}: ${finding.path} has no PLAN row — add it to the phase it belongs to`;
+    case "bare-closed":
+      return `${finding.id}: ${finding.path} is \`closed\` with no reason — say which fate it was (superseded, obsoleted, or implemented and reverted), because the word alone names none of them`;
+    case "duplicate-plan-row":
+      return `${finding.id}: ${String(finding.count)} PLAN rows for one id — the readiness rule reads PLAN, so this is two answers to "is it ready"; keep the row from the phase the work landed in and drop the rest`;
     case "duplicate-issue-file":
       return `${finding.id}: claimed by ${finding.paths.length} files (${finding.paths.join(", ")}) — renumber all but one; a dependency naming this ID is ambiguous until you do`;
   }

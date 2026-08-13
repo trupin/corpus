@@ -194,6 +194,36 @@ describe("compare", () => {
     ).toEqual(["duplicate-issue-file"]);
   });
 
+  it("fails when one id has two PLAN rows", () => {
+    // The same ambiguity as two files, and it matters for the same reason: the
+    // readiness rule reads PLAN, so a duplicated id gives it two answers. Live
+    // when this was written — SERVER-090 appeared twice with different Priority
+    // *and* Dependencies (PR #46 review).
+    const root = tree("", { "server/090-a-slug.md": issue("SERVER-090", "done") });
+    const plan = planOf(["SERVER-090", "done"], ["SERVER-090", "done"]);
+    expect(compare(parsePlan(plan), readIssueFiles(root))).toEqual([
+      { kind: "duplicate-plan-row", id: "SERVER-090", count: 2 },
+    ]);
+  });
+
+  it("fails a bare `closed`, which names none of the fates it can mean", () => {
+    // issues/TEMPLATE.md says `closed` always carries prose saying which, and a
+    // vocabulary rule with nothing behind it is the shape this check exists
+    // against. Superseded, obsoleted and reverted have different consequences
+    // for a reader.
+    const bare = tree("", { "server/055-a-slug.md": issue("SERVER-055", "closed") });
+    expect(
+      kinds(compare(parsePlan(planOf(["SERVER-055", "closed"])), readIssueFiles(bare))),
+    ).toEqual(["bare-closed"]);
+
+    const glossed = tree("", {
+      "server/055-a-slug.md": issue("SERVER-055", "closed — implemented and then reverted"),
+    });
+    expect(compare(parsePlan(planOf(["SERVER-055", "closed"])), readIssueFiles(glossed))).toEqual(
+      [],
+    );
+  });
+
   it("reports every disagreement rather than stopping at the first", () => {
     const root = tree("", {
       "server/001-a.md": issue("SERVER-001", "todo"),

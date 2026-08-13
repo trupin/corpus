@@ -3,7 +3,7 @@
 // was called.
 
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -1560,7 +1560,7 @@ describe("a commit window belongs to a party", () => {
 // paths are `move.from`/`move.to` from the skill-folder archive, a
 // whole-directory move whose content is present at the destination — which is
 // why this is a latent hole rather than a bug report.
-describe("a staged directory path cannot fold (SERVER-105)", () => {
+describe("a staged directory folds only when nothing beneath it is orphaned (SERVER-105)", () => {
   const DIR = "data/skills/demo";
   const KEPT = `${DIR}/SKILL.md`;
   const EXTRA = `${DIR}/extra.md`;
@@ -1668,6 +1668,54 @@ describe("a staged directory path cannot fold (SERVER-105)", () => {
 
     expect(folded.kind).toBe("amended");
     expect(r.calls.some((call) => call[0] === "ls-files")).toBe(false);
+  });
+
+  it("still folds a whole-directory move, which is how a skill folder is archived", async () => {
+    // The regression an earlier version of this guard introduced (PR #46
+    // review). It refused to fold *any* save that staged a directory, on the
+    // reasoning that the only such caller is an act and "§4's acts commit
+    // alone". §4 says otherwise: **two** acts commit alone (a deletion and a
+    // bulk Save), and archiving is not one of them — it is one of the four
+    // whose "own change is the last thing in the window's commit", so it folds
+    // into the open window and *then* closes it (`docs/write.ts` classifies it
+    // `names-the-window`). Refusing outright split the archive into its own
+    // commit and broke that guarantee for skills.
+    //
+    // Nothing caught it: `acts.test.ts` asserts the invariant only for
+    // file-valued acts, and the skill folder is the one directory-valued caller.
+    const r = makeRepo("fold-guard-dir-move");
+    const FROM = "data/skills/demo";
+    const TO = "data/skills/_archived/demo";
+    r.touch(`${FROM}/SKILL.md`, "skill\n");
+    r.git("add", "-A", "--", FROM);
+    r.git("-c", "user.name=Seed", "-c", "user.email=seed@example.test", "commit", "-m", "skill");
+
+    r.touch(DOC, "one");
+    const session = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    expect(session.kind).toBe("committed");
+
+    // Archive the skill: the whole directory moves, and both halves are staged
+    // in one commit, so the content is present at the destination throughout.
+    r.clock += 100;
+    mkdirSync(join(r.root, TO, ".."), { recursive: true });
+    renameSync(join(r.root, FROM), join(r.root, TO));
+    const act = await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "archive: Demo (doc_skill01) by user",
+      paths: [FROM, TO],
+    });
+
+    expect(act.kind).toBe("amended");
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).toContain(`${TO}/SKILL.md`);
+    // And nothing was orphaned by folding it: the file is reachable at both the
+    // path it came from and the one it went to.
+    expect(r.git("log", "--all", "--format=%H", "--", `${FROM}/SKILL.md`)).not.toBe("");
   });
 
   it("still folds an edit-then-delete of a document the window did not create", async () => {

@@ -129,6 +129,13 @@ describe("the machine surface carries the recovery (CLI-042)", () => {
   // not what to do, and the caller it exists for is the agent. One case per
   // error class, because a partial answer leaves a caller guessing which errors
   // carry a recovery.
+  //
+  // **These construct their own errors, so the table below asserts that
+  // `toProblem` carries a hint through every class — not that any production
+  // call site sets one.** That second claim is a different test and is made
+  // where the errors are really built: `commands/doc/render.test.ts` drives
+  // `staleKeyError` itself, including the patch refusal whose recovery is the
+  // defect this issue was filed about.
   const withHint: readonly [string, CliError][] = [
     ["UsageError", new UsageError("bad usage", { hint: "Run `corpus doc --help`." })],
     [

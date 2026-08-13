@@ -4,7 +4,8 @@
 ui
 
 ## Status
-done — verified 2026-08-13 (INFRA-027): the work landed and PLAN.md has said so; this file was never ticked. Evidence: a commit carrying the id, or the named implementation and its tests in the tree.
+done — verified 2026-08-13 (INFRA-027): no commit of its own — squash-merge folded it into its phase's; verified instead by its implementation and named tests in `apps/ui/e2e/plugin-late-arrival.spec.ts`, which cite it by id. The work landed; this file was
+never ticked.
 
 ## Priority
 P1

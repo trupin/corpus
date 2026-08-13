@@ -65,7 +65,8 @@ export const EXIT_CODES: readonly { readonly code: ExitCode; readonly meaning: s
 ];
 
 /**
- * The `--json` failure envelope: `{"error":{"code","message","changed","details"}}`.
+ * The `--json` failure envelope:
+ * `{"error":{"code","message","hint","changed","details"}}`.
  *
  * `changed` is **tri-state on purpose**. `false` is asserted only where the code
  * path proves nothing moved; `true` where something had already begun to move;
@@ -73,8 +74,7 @@ export const EXIT_CODES: readonly { readonly code: ExitCode; readonly meaning: s
  * `POST` may or may not have written on the server, and claiming either would
  * replace one false promise with another. The caller's rule is one comparison:
  * `changed === false` means retry freely, anything else means re-verify first.
- */
-/**
+ *
  * `hint` is **always present, and `null` rather than absent when there is no
  * recovery** (CLI-042). Every refusal this CLI raises was written so the message
  * names its own recovery — the stale key, the patch's two conflicts, the keyless

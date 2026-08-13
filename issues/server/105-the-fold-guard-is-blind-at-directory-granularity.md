@@ -117,30 +117,51 @@ PASS (0) FAIL (2)
 Both folded where they must not — the review's finding, confirmed rather than
 taken on trust.
 
-### 2. The choice: refuse to fold any save that stages a directory
+### 2. First attempt was wrong, and PR #46's review caught it
 
-Took the option the issue flagged for consideration, for the reason it gave.
-Answering the question *properly* means comparing trees, which is a git
-invocation on the fold path, and the fold path is every autosave — that trades
-away exactly the zero-cost property AC #3 protects. Refusing outright costs
-nothing measurable instead: the only production caller that stages a directory
-is the skill-folder archive/unarchive (`docs/archive.ts`'s `move.from`/`move.to`),
-and that is an **act** — §4's acts commit alone and never fold — so the condition
-fires on saves that were not going to fold anyway. It becomes a real cost only if
-a future caller stages a directory for an ordinary save, and the cost then is one
-extra commit, which is the trade every other condition on that line already makes.
+The first fix took the option this issue flagged for consideration — refuse to
+fold **any** save that stages a directory — on the reasoning that "the only such
+caller is an act, and §4's acts commit alone, so this fires on a save that was
+not going to fold anyway."
 
-Directory-ness is read off the `statSync` that already decided whether the path
-exists (replacing `existsSync` — the same syscall, one more field consulted), and
-a *removed* directory off the `ls-files` output that branch already fetches: a
-tracked entry beneath a missing path is what makes that path a directory. No new
-git invocation anywhere.
+**That reasoning is false and the change was a regression.** §4 has *two* acts
+that commit alone — a deletion and a bulk Save — and archiving is not one of
+them. It is one of the four whose "own change is the **last thing in the
+window's commit**", so it folds into the open window and *then* closes it;
+`apps/server/src/docs/write.ts` classifies archive/unarchive as
+`names-the-window` and says so. Refusing outright split a skill-folder archive
+into its own commit and broke that guarantee for skills.
+
+Nothing caught it locally: `acts.test.ts` asserts the invariant only for
+file-valued acts, and the skill folder is the one directory-valued caller — which
+is why 547 `docs` tests stayed green over a real behavioural change.
+
+### 2b. The fix that landed: ask the real question, but only when it arises
+
+`amendWouldOrphanUnderDirectory` lists the paths beneath the staged directories
+in `HEAD` and in its parent. A path `HEAD` holds is safe to amend away only if
+something else still has it — the parent commit, or the working tree, where it is
+about to be re-staged into the amended commit. A path in neither has its **only**
+revision in the commit being rewritten, which is what §4's guard refuses.
+
+**Gated on there being a staged directory at all**, which is what preserves AC
+#3. Every autosave stages files, so the list is empty and the guard returns
+without spawning anything; the two `ls-tree` calls are paid only by the skill
+archive. That is the property the first attempt tried to buy by refusing
+outright, bought instead by not asking the question when it cannot arise.
+
+Directory-ness still comes from the `statSync` that already decided existence,
+and a removed directory off the `ls-files` output that branch already fetches.
+`statSync` is now wrapped: `throwIfNoEntry: false` suppresses `ENOENT` only,
+while `EACCES`/`ENOTDIR`/`ELOOP` still throw where `existsSync` answered `false`,
+and `runCommit` has no try/catch — an unreadable parent directory would have
+rejected the commit instead of returning a `CommitOutcome` (PR #46 review).
 
 ### 3. Green after the fix
 
 ```
-$ npx vitest run apps/server/src/git/commit.test.ts   → PASS (51) FAIL (0)
-$ npx vitest run apps/server/src/git                  → PASS (80) FAIL (0)
+$ npx vitest run apps/server/src/git/commit.test.ts   → PASS (52) FAIL (0)
+$ npx vitest run apps/server/src/git                  → PASS (83) FAIL (0)
 $ npx vitest run apps/server/src/docs                 → 547 passed (27 files)
 $ npx eslint <both files>                             → No issues found
 $ npx prettier --check <both files>                   → all use Prettier style
@@ -155,6 +176,10 @@ archive/unarchive, the one production caller that stages a directory path.
 - **Zero-cost on the autosave path** — an ordinary same-party fold of one file
   reaches `ls-files` zero times (`r.calls.some(call => call[0] === "ls-files")`
   is `false`), so the guard still runs on every fold for free.
+- **A skill-folder archive still folds** — a whole-directory move into an open
+  window returns `amended`, and the moved file is reachable at both its old and
+  new paths. This is the case the first attempt broke, and the invariant
+  `acts.test.ts` never covered for a directory-valued act.
 - **The disclosed non-bug stays a non-bug** — an edit-then-delete of a document
   that existed *before* the window still folds (`kind: "amended"`), and the
   document is still readable at its pre-window state from the prior commit.

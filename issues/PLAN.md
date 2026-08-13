@@ -130,12 +130,10 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | done | P1 | CLI-003, SERVER-019 |
 | AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | done | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
 | CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | done | P1 | CLI-003 |
-| CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | done | P1 | CLI-006, SERVER-019 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs (design closed; impl = PLUGINS-005/006/007) | done | P1 | UI-014 |
 | INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
 | SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | done | P1 | SERVER-003 |
 | UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | done | P1 | UI-029 |
-| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | done | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
@@ -574,7 +572,6 @@ changes behaviour and nothing below waits on them.
 | SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | todo | P1 | — |
 | SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | todo | P1 | — |
 | SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
-| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P1 | — |
 
 ## Phase 30 — A key instead of a lock (2026-08-11)
 

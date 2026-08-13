@@ -6,7 +6,8 @@ ui
 
 ## Status
 
-done — verified 2026-08-13 (INFRA-027): the work landed and PLAN.md has said so; this file was never ticked. Evidence: a commit carrying the id, or the named implementation and its tests in the tree.
+done — verified 2026-08-13 (INFRA-027) against commit `caa20769`, which carries this
+id. The work landed; this file was never ticked.
 
 ## Priority
 
