@@ -78,6 +78,19 @@ describe("classifyStatus", () => {
     expect(classifyStatus("")).toBeUndefined();
   });
 
+  it("reads a status whose emphasis closes around the word, leaving the gloss outside", () => {
+    // `**closed** — superseded` is a spelling this repo uses. Stripping emphasis
+    // only at the edges left `closed** — superseded`, which the parser then
+    // refused as unclassifiable — a false positive on a well-formed status, and
+    // the reason the gloss check and the classifier now share one normalisation
+    // (PR #46 third review).
+    expect(classifyStatus("**closed** — superseded by INFRA-025")).toBe("closed");
+    expect(classifyStatus("**done** — signed and applied")).toBe("done");
+    expect(classifyStatus("`todo` — waiting on the phase")).toBe("todo");
+    // And the interior underscore still survives it.
+    expect(classifyStatus("**in_progress** — half landed")).toBe("in_progress");
+  });
+
   it("refuses a longer word that starts with a vocabulary word", () => {
     expect(classifyStatus("todos")).toBeUndefined();
     expect(classifyStatus("doneness")).toBeUndefined();
@@ -228,7 +241,17 @@ describe("compare", () => {
     // Stripping only the *leading* marker left `**closed**` with a gloss of
     // `**` — not empty, so it passed. Defeated by the bolding convention the
     // status parser itself exists to handle (PR #46 review).
-    for (const bare of ["**closed**", "`closed`", "_closed_"]) {
+    for (const bare of [
+      "**closed**",
+      "`closed`",
+      "_closed_",
+      // Emphasis closing around the word, with only a separator after it — the
+      // shape that survived the first repair, because the trailing `*` became
+      // the gloss and blocked the separator strip.
+      "**closed** —",
+      "**closed**:",
+      "`closed` -",
+    ]) {
       const root = tree("", { "server/055-a-slug.md": issue("SERVER-055", bare) });
       expect(
         kinds(compare(parsePlan(planOf(["SERVER-055", "closed"])), readIssueFiles(root))),

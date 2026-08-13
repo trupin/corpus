@@ -14,7 +14,7 @@ import {
   WINDOW_MAX_MS,
   type AutoCommitter,
 } from "./commit.js";
-import { createGit, type Git } from "./git.js";
+import { createGit, type Git, type GitCommandResult } from "./git.js";
 import { sanitizeGitEnv } from "./env.js";
 import { disableAutoMaintenance } from "./maintenance.js";
 
@@ -27,6 +27,12 @@ type Repo = {
   readonly rewrites: [string, string][];
   clock: number;
   git(...args: string[]): string;
+  /**
+   * Make one git subcommand fail for the rest of the test, so a guard's
+   * failure branch can be reached without a broken repository — the fail-closed
+   * paths are otherwise unreachable from a real workspace.
+   */
+  failCommand(name: string): void;
   touch(path: string, content: string): void;
   log(format: string): string[];
   close(): void;
@@ -75,10 +81,22 @@ function makeRepo(
   const state = { clock: Date.parse("2026-07-27T09:00:00Z") };
   const calls: string[][] = [];
   const underlying = createGit(root);
+  const failing = new Set<string>();
   const recording: Git = {
     root,
     exec: (args, execOptions) => {
       calls.push([...args]);
+      if (args[0] !== undefined && failing.has(args[0])) {
+        // A real failure shape: git ran and said no, which is the case the
+        // guard has to survive — not a missing binary.
+        return Promise.resolve<GitCommandResult>({
+          ok: false,
+          code: 1,
+          stdout: "",
+          stderr: `${String(args[0])}: injected failure`,
+          spawned: true,
+        });
+      }
       return underlying.exec(args, execOptions);
     },
   };
@@ -102,6 +120,9 @@ function makeRepo(
       state.clock = value;
     },
     git,
+    failCommand(name) {
+      failing.add(name);
+    },
     touch(path, content) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       writeFileSync(join(root, path), content, "utf8");
@@ -1716,6 +1737,39 @@ describe("a staged directory folds only when nothing beneath it is orphaned (SER
     // And nothing was orphaned by folding it: the file is reachable at both the
     // path it came from and the one it went to.
     expect(r.git("log", "--all", "--format=%H", "--", `${FROM}/SKILL.md`)).not.toBe("");
+  });
+
+  it("refuses the fold when git cannot say what is beneath a staged directory", async () => {
+    // The guard fails **closed**, like every other condition on that line: the
+    // module's stated bias is that refusing a fold costs one commit and allowing
+    // a wrong one costs the document. An earlier version read a failed `ls-tree`
+    // as an empty tree, which answered "nothing to orphan" and permitted the
+    // fold (PR #46 review) — the one guard here breaking that bias.
+    const r = makeRepo("fold-guard-dir-listing-fails");
+    r.touch(KEPT, "skill\n");
+    r.git("add", "-A", "--", DIR);
+    r.git("-c", "user.name=Seed", "-c", "user.email=seed@example.test", "commit", "-m", "dir");
+
+    r.touch(DOC, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    // Break only `ls-tree`, so everything up to the listing behaves normally.
+    r.failCommand("ls-tree");
+    r.clock += 100;
+    r.touch(`${DIR}/added.md`, "added\n");
+    const outcome = await r.committer.commit({
+      docId: "doc_skill01",
+      actor: "user",
+      subject: "doc edit: Demo (doc_skill01) by user",
+      paths: [DIR],
+    });
+
+    expect(outcome.kind).toBe("committed");
   });
 
   it("still folds an edit-then-delete of a document the window did not create", async () => {

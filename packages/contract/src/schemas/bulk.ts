@@ -451,10 +451,9 @@ export const BulkActionRequestSchema = z
 
 /**
  * Why a document the act could not change did not change. Machine readable,
- * because the five refusals want different things from the person — look at what
- * changed and retry, refresh the board, fix the document, or nothing at all —
- * and a UI that had to match on prose would get it wrong the first time the
- * prose was improved. The message beside it carries the specifics; this carries
+ * because the four refusals want different things from the person — refresh the
+ * board, fix the document, try again, or nothing at all — and a UI that had to
+ * match on prose would get it wrong the first time the prose was improved. The message beside it carries the specifics; this carries
  * the class.
  *
  * **There is deliberately no staleness class**, and the history of that is worth

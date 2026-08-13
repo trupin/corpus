@@ -88,19 +88,12 @@ export interface IssueFile {
  * reading *"needs the amendment signed off first"* is not `done` because it
  * contains a word that appears in some done statuses.
  *
- * Markdown emphasis is stripped first, because several files bold the word
- * (`**done — signed and applied.**`) and the emphasis is presentation. Stripped
- * only at the **edges**, never everywhere: `in_progress` carries an underscore
- * that is part of the word, and a global strip turned it into `inprogress` and
- * rejected the two files that spell the status exactly as the template does.
+ * Markdown emphasis is stripped by {@link withoutEmphasis} first, because
+ * several files bold the word (`**done — signed and applied.**`) and the
+ * emphasis is presentation.
  */
 export function classifyStatus(raw: string): IssueStatus | undefined {
-  const text = raw
-    .trim()
-    .replace(/^[*_`]+/, "")
-    .replace(/[*_`]+$/, "")
-    .trim()
-    .toLowerCase();
+  const text = withoutEmphasis(raw).toLowerCase();
   for (const status of ISSUE_STATUSES) {
     // Accept the word itself, and either spelling of the two-word one.
     for (const spelling of status === "in_progress" ? ["in_progress", "in progress"] : [status]) {
@@ -113,6 +106,28 @@ export function classifyStatus(raw: string): IssueStatus | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * A status line with its markdown emphasis removed and nothing else changed.
+ *
+ * `*` and a backtick are never part of a status word, so they go **wherever they
+ * sit** — which matters because the marker can close *around the word* and leave
+ * the gloss outside it: `**closed** — superseded` is a spelling this repo
+ * actually uses, and stripping only the edges leaves `closed** — superseded`,
+ * which the parser below then refuses as unclassifiable.
+ *
+ * `_` is stripped only at the **edges**, because `in_progress` carries one in
+ * the middle and it is part of the word — a global strip turned it into
+ * `inprogress` and rejected the two files that spell the status exactly as
+ * `issues/TEMPLATE.md` does.
+ */
+export function withoutEmphasis(raw: string): string {
+  return raw
+    .replace(/[*`]/g, "")
+    .trim()
+    .replace(/^_+|_+$/g, "")
+    .trim();
 }
 
 const ROW = /^\|\s*([A-Z]+-\d+)\s*\|([^|]*)\|([^|]*)\|/;
@@ -258,12 +273,9 @@ export function compare(rows: readonly PlanRow[], files: readonly IssueFile[]): 
     // parser above exists to handle, since several files bold the word (PR #46
     // review).
     if (fileStatus === "closed") {
-      const gloss = file.rawStatus
-        .replace(/^[*_`]+/, "")
-        .replace(/[*_`]+$/, "")
-        .trim()
-        .slice("closed".length)
-        .trim();
+      // The same normalisation the classifier used, so the two can never
+      // disagree about where the word ends.
+      const gloss = withoutEmphasis(file.rawStatus).slice("closed".length).trim();
       if (gloss.replace(/^[—:(-]+/, "").trim() === "") {
         findings.push({ kind: "bare-closed", id: row.id, path: file.path });
         continue;
