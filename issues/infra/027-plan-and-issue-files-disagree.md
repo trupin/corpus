@@ -44,18 +44,37 @@ Two directions, and they are not equally bad:
    same sweep — `UI-081`, PLAN `todo` → `blocked` — which is a different shape
    and is counted below, not here.)
 2. **PLAN says `done`, the file says something else** — bookkeeping debt, and it
-   is not one shape. **13** rows where the file says `todo`: `SHARED-001`,
-   `SHARED-008`, `SHARED-009`, `SERVER-011`, `INFRA-004`, `UI-056`, `UI-071`,
-   `SERVER-059`, `UI-075`, `UI-077`, `SERVER-077`, `UI-084`, `SERVER-063`. Two
-   more where the file says **`in_progress`** — `SERVER-008`, `CLI-002` — which
-   neither direction above describes.
+   is not one shape. **11** rows where the file says `todo`: `SHARED-001`,
+   `SERVER-011`, `INFRA-004`, `UI-056`, `UI-071`, `SERVER-059`, `UI-075`,
+   `UI-077`, `SERVER-077`, `UI-084`, `SERVER-063`. (It was 13 until 2026-08-13,
+   when `SHARED-008` and `SHARED-009` were settled — see below.) Two more where
+   the file says **`in_progress`** — `SERVER-008`, `CLI-002` — which neither
+   direction above describes.
 
-   **`SHARED-009` is the consequential one** and an earlier draft of this census
-   missed it: PLAN calls it done while its file says *"signed by the user
+   **`SHARED-009` was the consequential one** and an earlier draft of this census
+   missed it: PLAN called it done while its file said *"signed by the user
    2026-08-03; apply to SPEC.md at phase kickoff, before the domain issues
    start."* Either five SPEC amendments were applied and never recorded, or they
-   were never applied and the plan says otherwise. Settle that one by reading
-   SPEC.md, not by flipping a row.
+   were never applied and the plan said otherwise — settled by reading SPEC.md
+   rather than by flipping a row.
+
+   **Settled 2026-08-13: applied, never recorded.** All five amendments are in
+   SPEC.md §11 — the composer key contract, commenting on a selection, images
+   opening full-size, the one autocomplete keyboard contract, and fenced canvases
+   wrapping — each carrying its own signed marker. `SHARED-008` resolved the same
+   way (its text is in §4, tagged `_(Rider signed 2026-08-02.)_`). Both status
+   lines now say so, which drops this row count from 13 to 11.
+
+   **`SHARED-011` is the shape that looks like this one and is not**, and the
+   check must not conflate them: its file says `todo — apply at phase kickoff`,
+   its text is genuinely **not** in SPEC.md, and that is *correct* — its own
+   acceptance criterion is "the chain does not start before the text is in
+   place", and the chain never started. A signed rider parked ahead of its phase
+   is not drift. What distinguishes it from `SHARED-009` is the PLAN row, not the
+   file: nothing calls `SHARED-011` done. (Its `Blocks` list is separately wrong
+   — it names `CONTRACT-030`, `SERVER-056`, `UI-069`, which are jobs-query-by-
+   origin issues, unrelated to structured filtering. A stale cross-reference, not
+   a status disagreement, and out of this check's scope.)
 3. **Shapes neither direction covers.** `CONTRACT-032` and `UI-083` are `blocked`
    in their files; `SERVER-055`'s **PLAN status is `reverted`**, a word
    `issues/TEMPLATE.md`'s vocabulary does not contain — so AC #2 requires the

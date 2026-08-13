@@ -121,14 +121,23 @@ entry; OpenAPI drift.
    `BulkActionRefusal` gains the same `action`. The three parts, their meanings,
    and the partition are otherwise untouched.
 
-## Held for sign-off — proposed SPEC.md §9.2 addition (supersedes CONTRACT-037's draft)
+## SIGNED 2026-08-12 — applied to SPEC.md §9.2
 
-**Not applied.** This package never edits SPEC.md; the orchestrator applies it
-after the user signs it off. CONTRACT-037's held draft described the `{ids,
-action}` shape and is **void** — a note to that effect is in its issue file.
-Insert as a new bullet in §9.2 immediately after the `POST /api/docs` /
-`PUT /api/docs/:id` / move-and-archive bullet, before the `GET /api/threads/:id`
-bullet:
+**Signed and applied**, with one repair made before it was read aloud: the draft
+refused a row for being **locked** "with its holder named (§7)", and §7 has had
+no lock since SHARED-041 (2026-08-11) — it says "There is no lock to be held".
+The clause cited §7 as the authority for a mechanism §7 had deleted. The shipped
+code never had the bug (`BULK_REFUSAL_REASONS` is `stale`, `not-found`,
+`not-applicable`, `invalid`, `write-failed`, with `stale` being the key check),
+so only this unsigned text still described locks. Applied text names those five
+classes and reads `409` where the draft read `423` (Locked). Placed after the
+`POST /api/docs/:id/patch` bullet rather than strictly after the `PUT` bullet —
+the draft's "immediately after" predates the patch bullet's existence.
+
+CONTRACT-037's held draft described the `{ids, action}` shape and is **void** —
+a note to that effect is in its issue file.
+
+The text as applied, with the repair above folded in:
 
 > - `POST /api/docs/bulk` — applies a column's **staged set** (§11) as a single
 >   act, which is what makes §4's "One action, one commit" something a client can
@@ -150,11 +159,13 @@ bullet:
 >   not** (§11): the result names individually what **changed**, what was
 >   **already in that state** (a no-op, not a failure), and what **did not change
 >   and why** — each with the act that applied to it, since a Save carries a mix —
->   a document locked by the other party refused with its holder named (§7), one
->   failing validation refused with its reason (§14), an unknown id reported as
->   such. Partial application is a `200`; there is no `423` and no `404`, because
->   a lock and an unknown id are per-document outcomes here rather than verdicts
->   on the request. It lands as the **single** auto-commit §4 requires, authored
+>   a document whose content moved under the staged Save refused as **stale**,
+>   the act having been chosen against a version the document no longer is (§7),
+>   one the act does not apply to reported as such, one failing §14 validation
+>   refused with its reason, one whose file could not be written reported as
+>   such, and an unknown id reported as such. Partial application is a `200`;
+>   there is no `409` and no `404`, because a stale key and an unknown id are
+>   per-document outcomes here rather than verdicts on the request. It lands as the **single** auto-commit §4 requires, authored
 >   by the acting party and containing exactly the documents it changed, and
 >   reports that commit — or `null` when nothing changed and there was therefore
 >   nothing to commit. **Delete keeps its user-only rule**: a staged set holding a
@@ -369,8 +380,9 @@ they forbid.
 
 **Refused / not done, deliberately:**
 
-- **SPEC.md was not edited.** The §9.2 bullet is redrafted above under "Held for
-  sign-off" and needs the user's signature.
+- **SPEC.md was not edited** by this agent. The §9.2 bullet was redrafted above
+  and held; the orchestrator read it aloud, repaired its dead lock clause, and
+  applied it on the user's signature 2026-08-12.
 - **`apps/server` was not touched**, though it no longer typechecks. It is
   another domain and another issue (SERVER-087), and this agent's scope is
   `packages/contract`.

@@ -4,8 +4,12 @@
 shared
 
 ## Status
-todo — signed by the user 2026-08-03; apply to SPEC.md at phase kickoff
-(orchestrator), before the domain issues start.
+done — signed by the user 2026-08-03 and **applied**. Verified 2026-08-13: all
+five amendments are in SPEC.md §11 (the composer key contract, commenting on a
+selection, images opening full-size, the one autocomplete keyboard contract, and
+fenced canvases wrapping), each carrying its own signed marker. The status line
+read `todo — apply at phase kickoff` until 2026-08-13 because it was never
+ticked once the kickoff happened; INFRA-027 flagged the disagreement.
 
 ## Priority
 P1
