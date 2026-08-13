@@ -74,15 +74,44 @@ export const EXIT_CODES: readonly { readonly code: ExitCode; readonly meaning: s
  * replace one false promise with another. The caller's rule is one comparison:
  * `changed === false` means retry freely, anything else means re-verify first.
  */
+/**
+ * `hint` is **always present, and `null` rather than absent when there is no
+ * recovery** (CLI-042). Every refusal this CLI raises was written so the message
+ * names its own recovery — the stale key, the patch's two conflicts, the keyless
+ * write — and `--json` used to drop exactly that half, telling a machine caller
+ * what happened and not what to do. It was visible on the patch route's
+ * stale-key refusal, whose message is "the patch itself is still good" and whose
+ * recovery (run the same patch again) lived only in the human rendering.
+ *
+ * Prose rather than a `{action, args}` structure, because **the machine caller
+ * is the agent** — an LLM, which reads "re-read the document and run the same
+ * patch again" better than it reads a schema. The usual objection to publishing
+ * prose (a hint becomes an interface, and rewording it breaks parsers) assumes a
+ * brittle consumer this one does not have. _(User decision, 2026-08-13.)_
+ *
+ * The key is never omitted so that **absence is never ambiguous**: `null` is the
+ * CLI saying there is nothing to do, as against nobody having written a hint.
+ */
 export interface CliProblem {
   readonly code: string;
   readonly message: string;
+  readonly hint: string | null;
   readonly changed?: boolean;
   readonly details?: unknown;
 }
 
 export interface CliErrorOptions {
-  /** One actionable follow-up line, rendered under the message for humans. */
+  /**
+   * One actionable follow-up line — rendered under the message for humans, and
+   * carried on `--json` as `hint` (CLI-042).
+   *
+   * It is a follow-up the **message does not already contain**. Omitting it
+   * reports `hint: null`, which says the CLI has no further instruction: either
+   * the message is the whole story (a usage error that already enumerates the
+   * values it would accept) or nothing about the request can be changed. The key
+   * is never absent, so a caller never has to tell "no recovery" apart from
+   * "nobody wrote one".
+   */
   readonly hint?: string;
   /** Structured extra context: validation issues, a refused write's document, an unparsed body. */
   readonly details?: unknown;
@@ -335,11 +364,28 @@ export class PatchRefusedError extends CliError {
   }
 }
 
-/** Anything thrown that is not a `CliError` is reported as this. */
+/**
+ * Anything thrown that is not a `CliError` is reported as this.
+ *
+ * It carries a **default hint**, which the other classes do not, because its
+ * recovery is a property of the class rather than of the call site: an internal
+ * error is a defect, so there is nothing about the request to change, and the
+ * one useful next step is the same every time. Without it these would report
+ * `hint: null` — "the CLI has no further instruction" — while `toProblem`'s
+ * fallback for a non-`CliError` said the opposite about the identical situation
+ * (CLI-042). A call site that knows better still overrides it.
+ */
 export class InternalError extends CliError {
   override readonly exitCode = ExitCode.internalError;
   override readonly code = "internal_error";
+
+  constructor(message: string, options: CliErrorOptions = {}) {
+    super(message, { hint: INTERNAL_ERROR_HINT, ...options });
+  }
 }
+
+export const INTERNAL_ERROR_HINT =
+  "This is a bug in corpus rather than a problem with the request. Re-run with `--verbose` for a stack trace, and report it.";
 
 export function isCliError(value: unknown): value is CliError {
   return value instanceof CliError;
@@ -354,11 +400,17 @@ export function toProblem(error: unknown): CliProblem {
     const problem: CliProblem = {
       code: error.code,
       message: error.message,
+      hint: error.hint ?? null,
       ...(error.changed === undefined ? {} : { changed: error.changed }),
     };
     return error.details === undefined ? problem : { ...problem, details: error.details };
   }
-  return { code: "internal_error", message: messageOf(error) };
+  // An exception that reached here is a defect rather than a refusal, so the
+  // recovery is not about the corpus: there is nothing the caller can change
+  // about its request to make this one succeed. Same sentence `InternalError`
+  // defaults to, from the same constant, because it is the same situation
+  // reached by a different road.
+  return { code: "internal_error", message: messageOf(error), hint: INTERNAL_ERROR_HINT };
 }
 
 function messageOf(error: unknown): string {

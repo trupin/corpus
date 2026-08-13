@@ -12,7 +12,10 @@ export const GLOBAL_FLAGS: readonly FlagSpec[] = [
     name: "json",
     type: "boolean",
     description:
-      'Write exactly one machine-readable JSON value to stdout, and failures as `{"error":{…}}` to stderr.',
+      'Write exactly one machine-readable JSON value to stdout, and failures as `{"error":{…}}` to stderr. ' +
+      "The error carries `code`, `message` and `hint` — the recovery, in the same words a person is shown — " +
+      "plus `details` and `changed` where they apply. `hint` is always present and is `null` when there is " +
+      "no follow-up beyond the message, so absence never has to be guessed at.",
   },
   {
     name: "workspace",

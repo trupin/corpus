@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InternalError, ServerResponseError, UsageError } from "./errors.js";
+import { INTERNAL_ERROR_HINT, InternalError, ServerResponseError, UsageError } from "./errors.js";
 import { createNestedOutput, createOutput } from "./output.js";
 
 function collector() {
@@ -53,6 +53,9 @@ describe("--json mode", () => {
       error: {
         code: "not_found",
         message: "404 not_found: no such document",
+        // CLI-042: the machine surface carries the recovery too, and says so
+        // explicitly when there is none.
+        hint: null,
         details: { id: "doc-1" },
       },
     });
@@ -62,7 +65,7 @@ describe("--json mode", () => {
     const sink = collector();
     sink.out(true).fail(new Error("boom"), { verbose: false });
     expect(JSON.parse(sink.stderr.join(""))).toEqual({
-      error: { code: "internal_error", message: "boom" },
+      error: { code: "internal_error", message: "boom", hint: INTERNAL_ERROR_HINT },
     });
   });
 });

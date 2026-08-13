@@ -634,7 +634,7 @@ guarantees the watcher commits it as the `user` edit it is.
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
 | SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | done | P1 | — |
 | SERVER-106 | §4 says archiving closes a window; archiving through `PUT` does not (PR #44 review) | todo | P2 | — |
-| CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | todo | P1 | — |
+| CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | done | P1 | — |
 | INFRA-027 | `issues/PLAN.md` and the issue files disagree, and nothing checks (PR #44 review) | todo | P1 | — |
 ### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 

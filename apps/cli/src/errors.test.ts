@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   CheckFailedError,
+  type CliError,
   EXIT_CODES,
   ExitCode,
+  INTERNAL_ERROR_HINT,
   InternalError,
   PartialFailureError,
   PatchRefusedError,
   RefusedError,
   ServerResponseError,
   ServerUnreachableError,
+  StaleKeyError,
   UsageError,
   WorkspaceConfigError,
   WorkspaceNotFoundError,
@@ -121,11 +124,99 @@ describe("exit codes", () => {
   });
 });
 
+describe("the machine surface carries the recovery (CLI-042)", () => {
+  // The point of the issue: `--json` used to tell a caller what happened and
+  // not what to do, and the caller it exists for is the agent. One case per
+  // error class, because a partial answer leaves a caller guessing which errors
+  // carry a recovery.
+  const withHint: readonly [string, CliError][] = [
+    ["UsageError", new UsageError("bad usage", { hint: "Run `corpus doc --help`." })],
+    [
+      "WorkspaceNotFoundError",
+      new WorkspaceNotFoundError("no workspace", { hint: "Run `corpus init`." }),
+    ],
+    [
+      "WorkspaceConfigError",
+      new WorkspaceConfigError("bad config", { hint: "Check `.corpus/config.json`." }),
+    ],
+    [
+      "ServerUnreachableError",
+      new ServerUnreachableError("down", { hint: "Run `corpus server start`." }),
+    ],
+    [
+      "ServerResponseError",
+      new ServerResponseError("400 bad_request: nope", {
+        code: "bad_request",
+        status: 400,
+        hint: "Fix the named field and retry.",
+      }),
+    ],
+    [
+      "CheckFailedError",
+      new CheckFailedError("2 problems", { hint: "Fix them and re-run `corpus doc check`." }),
+    ],
+    [
+      "RefusedError",
+      new RefusedError("refused", { code: "refused", hint: "Nothing changed; retry freely." }),
+    ],
+    [
+      "PartialFailureError",
+      new PartialFailureError("halfway", {
+        code: "interrupted",
+        hint: "Re-verify before retrying.",
+      }),
+    ],
+    ["InternalError", new InternalError("boom")],
+  ];
+
+  it.each(withHint)("%s reports its recovery on the machine surface", (_name, error) => {
+    const hint = toProblem(error).hint;
+    expect(hint).not.toBeNull();
+    expect(hint).not.toBe("");
+  });
+
+  it("says so explicitly when there is no recovery, rather than omitting the field", () => {
+    const problem = toProblem(new UsageError("bad usage"));
+    // Present and null — not absent. Absence would leave a caller unable to
+    // tell "there is nothing to do" from "nobody wrote a hint".
+    expect(problem).toHaveProperty("hint");
+    expect(problem.hint).toBeNull();
+  });
+
+  it("gives an internal error the same recovery whichever road reaches it", () => {
+    // A thrown non-CliError and an InternalError are the same situation, and
+    // used to disagree: the fallback had a sentence and the class had none.
+    expect(toProblem(new InternalError("boom")).hint).toBe(INTERNAL_ERROR_HINT);
+    expect(toProblem(new Error("boom")).hint).toBe(INTERNAL_ERROR_HINT);
+    expect(toProblem("boom").hint).toBe(INTERNAL_ERROR_HINT);
+  });
+
+  it("lets a call site override the internal default", () => {
+    const problem = toProblem(new InternalError("boom", { hint: "Something specific." }));
+    expect(problem.hint).toBe("Something specific.");
+  });
+
+  it("carries the stale-key recovery, the refusal that prompted the issue", () => {
+    // SPEC.md §7's refusal: the message says the write was refused, and the
+    // recovery — re-read, then write against the fresh key — was human-only.
+    const error = new StaleKeyError("the write was refused", {
+      status: 409,
+      hint: "Re-read the document and write again against the key it hands you.",
+      details: { id: "doc_a1b2c3" },
+    });
+    expect(toProblem(error).hint).toContain("Re-read");
+  });
+});
+
 describe("toProblem", () => {
   it("omits details when there are none", () => {
     expect(toProblem(new UsageError("bad usage"))).toEqual({
       code: "usage_error",
       message: "bad usage",
+      // Always keyed, `null` when there is no follow-up beyond the message
+      // (CLI-042) — so a caller never has to tell "no recovery" apart from
+      // "nobody wrote one".
+      hint: null,
     });
   });
 
@@ -138,6 +229,7 @@ describe("toProblem", () => {
     expect(toProblem(error)).toEqual({
       code: "bad_request",
       message: "400 bad_request: invalid",
+      hint: null,
       details: [{ path: "body.title", message: "Required" }],
     });
   });
@@ -146,6 +238,7 @@ describe("toProblem", () => {
     expect(toProblem(new RefusedError("nope", { code: "upgrade_unverifiable" }))).toEqual({
       code: "upgrade_unverifiable",
       message: "nope",
+      hint: null,
       changed: false,
     });
     expect(
@@ -155,6 +248,7 @@ describe("toProblem", () => {
     ).toEqual({
       code: "upgrade_interrupted",
       message: "halfway",
+      hint: null,
       changed: true,
       details: { pid: 7 },
     });
@@ -165,10 +259,12 @@ describe("toProblem", () => {
     expect(toProblem("just a string")).toEqual({
       code: "internal_error",
       message: "just a string",
+      hint: INTERNAL_ERROR_HINT,
     });
     expect(toProblem({ weird: true })).toEqual({
       code: "internal_error",
       message: "unexpected internal error",
+      hint: INTERNAL_ERROR_HINT,
     });
   });
 });
