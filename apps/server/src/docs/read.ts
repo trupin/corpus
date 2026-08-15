@@ -209,6 +209,7 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     due: due === null ? null : normalizeCalendarDate(due),
     reviewed: reviewed === null ? null : normalizeInstant(reviewed),
     evergreen: data["evergreen"] === true,
+    origin: asText(data["origin"]) ?? null,
     // §11's view keys and §12's plugin keys, read by the same functions the
     // projection uses for the list row (CONTRACT-011). Shared rather than
     // restated for the reason the nullable timestamps above document: one file

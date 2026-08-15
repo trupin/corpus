@@ -79,6 +79,7 @@ function docRow(id: string): Record<string, unknown> {
     due: null,
     reviewed: null,
     evergreen: false,
+    origin: null,
     threadCount: 0,
     openThreadCount: 0,
     unreadCount: 0,

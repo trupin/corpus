@@ -131,6 +131,8 @@ type DocumentFields = {
   readonly due: string | null;
   readonly reviewed: string | null;
   readonly evergreen: boolean;
+  /** SPEC.md §7 scope / §9.2 provenance: the thread this document came from, or null. */
+  readonly origin: string | null;
   readonly anchors: Record<string, TextQuoteSelector>;
   /**
    * §11's view keys and §12's plugin keys, read by the same functions
@@ -176,6 +178,7 @@ function readDocumentFields(
     due: asCalendarDate(data["due"]),
     reviewed: asInstant(data["reviewed"]),
     evergreen: data["evergreen"] === true,
+    origin: asString(data["origin"]) ?? null,
     anchors: readAnchors(data["anchors"]),
     view: readViewFrontmatter(data),
   };
@@ -257,8 +260,8 @@ function insertDocumentRow(
   db.prepare(
     `INSERT INTO documents
        (id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen,
-        body_excerpt, pinned, sort_order, query_json, column_ref, extra_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        origin, body_excerpt, pinned, sort_order, query_json, column_ref, extra_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     fields.type,
@@ -271,6 +274,7 @@ function insertDocumentRow(
     fields.due,
     fields.reviewed,
     fields.evergreen ? 1 : 0,
+    fields.origin,
     bodyExcerpt(body),
     fields.view.pinned ? 1 : 0,
     fields.view.order,

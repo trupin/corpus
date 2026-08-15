@@ -68,6 +68,7 @@ const frontmatter = {
   due: null,
   reviewed: null,
   evergreen: false,
+  origin: null,
   pinned: false,
   order: null,
   query: null,
@@ -472,6 +473,11 @@ describe("the published operation", () => {
       "401",
       "404",
       "409",
+      // CONTRACT-050: a `job` naming no event. Deliberately not folded into the
+      // 400 — the body is well-formed, the id simply resolves to nothing, and a
+      // caller that mistyped a job id wanted the attribution it asked for
+      // (SPEC.md §9.2).
+      "422",
     ]);
   });
 

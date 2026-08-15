@@ -36,6 +36,7 @@ describe("FileFrontmatterSchema", () => {
       due: null,
       reviewed: null,
       evergreen: false,
+      origin: null,
     });
   });
 

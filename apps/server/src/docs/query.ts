@@ -216,6 +216,7 @@ interface RawRow {
   readonly due: string | null;
   readonly reviewed: string | null;
   readonly evergreen: number;
+  readonly origin: string | null;
   readonly excerpt: string;
   readonly pinned: number;
   readonly sort_order: number | null;
@@ -292,6 +293,7 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     due: row.due,
     reviewed: row.reviewed,
     evergreen: row.evergreen !== 0,
+    origin: row.origin,
     excerpt: row.excerpt,
     // The §11 view keys, from the columns the projection filled by parsing the
     // file with the contract's own schemas — so the row and `GET /api/docs/{id}`
@@ -353,7 +355,8 @@ export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): Do
 
   const rowsSql = `${searching ? `WITH ${HITS_CTE}\n` : ""}SELECT d.id AS id, d.type AS type, d.title AS title, d.path AS path,
          d.status AS status, d.tags_json AS tags_json, d.created AS created, d.updated AS updated,
-         d.due AS due, d.reviewed AS reviewed, d.evergreen AS evergreen, d.body_excerpt AS excerpt,
+         d.due AS due, d.reviewed AS reviewed, d.evergreen AS evergreen, d.origin AS origin,
+         d.body_excerpt AS excerpt,
          d.pinned AS pinned, d.sort_order AS sort_order, d.query_json AS query_json,
          d.column_ref AS column_ref, d.extra_json AS extra_json,
          ${searching ? "m.snippets" : "NULL"} AS snippets_json,

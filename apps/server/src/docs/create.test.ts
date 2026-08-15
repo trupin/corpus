@@ -57,6 +57,7 @@ describe("POST /api/docs", () => {
       due: null,
       reviewed: null,
       evergreen: false,
+      origin: null,
     });
     expect(doc.frontmatter.created).toBe(doc.frontmatter.updated);
     // TEST-45's clean half: a mutation with nothing wrong still declares the

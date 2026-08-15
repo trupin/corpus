@@ -25,6 +25,7 @@ const frontmatter = {
   due: null,
   reviewed: null,
   evergreen: false,
+  origin: null,
   pinned: false,
   order: null,
   query: null,
@@ -188,6 +189,7 @@ function createServer() {
             due: null,
             reviewed: null,
             evergreen: false,
+            origin: null,
             // The handler echoes the parsed query so the test can assert what
             // the typed client actually put on the wire.
             excerpt: `isParent=${isParent === undefined ? "absent" : String(isParent)}`,

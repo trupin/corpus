@@ -1,4 +1,5 @@
 import type { z } from "@hono/zod-openapi";
+import { UnknownJobErrorSchema } from "../schemas/provenance.js";
 import {
   ConflictErrorSchema,
   ForbiddenErrorSchema,
@@ -53,6 +54,24 @@ export const FORBIDDEN_RESPONSE = jsonContent(
 );
 
 export const NOT_FOUND_RESPONSE = jsonContent(NotFoundErrorSchema, "No such resource.");
+
+/**
+ * A `job` naming no event (SPEC.md §9.2, CONTRACT-050).
+ *
+ * `422` rather than `400`, and rather than silence. Not `400`, because the body
+ * is well-formed — `evt_…` is a valid id, it simply names nothing — and not
+ * silence, because a caller that got the id wrong **wanted the attribution**:
+ * dropping it quietly leaves the caller believing its document was filed into a
+ * conversation when it was not, which is the failure mode provenance exists to
+ * prevent. It is the one place a missing job is refused; an **omitted** job is
+ * always fine, and that asymmetry is the whole rule (§9.2: "forgetting it costs
+ * provenance, never correctness" — but naming the wrong thing is not
+ * forgetting).
+ */
+export const UNKNOWN_JOB_RESPONSE = jsonContent(
+  UnknownJobErrorSchema,
+  "The `job` names no event. Nothing was written; retry without it, or with the right id.",
+);
 
 export const CONFLICT_RESPONSE = jsonContent(
   ConflictErrorSchema,

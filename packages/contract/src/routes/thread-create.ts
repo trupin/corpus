@@ -20,6 +20,7 @@ import {
   PAYLOAD_TOO_LARGE_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
+  UNKNOWN_JOB_RESPONSE,
 } from "./responses.js";
 
 /**
@@ -78,6 +79,7 @@ const createThreadRoute = (required: boolean) =>
       },
     },
     responses: {
+      422: UNKNOWN_JOB_RESPONSE,
       201: jsonContent(
         CreateThreadResponseSchema,
         "The created thread, its anchor, and any enqueued event.",

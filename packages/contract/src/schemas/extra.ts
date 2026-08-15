@@ -56,6 +56,13 @@ export const RESERVED_FRONTMATTER_KEYS = [
   "due",
   "reviewed",
   "evergreen",
+  // SPEC.md §7/§9.2 — the conversation this document came from (SHARED-043).
+  // Reserved for the same reason `turnModels` is: `extra` is a client-supplied
+  // merge patch, and an origin stored there could be rewritten by an ordinary
+  // `PUT /api/docs/{id}` — which is precisely the caller-asserted scope
+  // membership the job/origin split exists to make unexpressible. Detach is the
+  // only way a caller touches it, and it can only clear.
+  "origin",
   // SPEC.md §6 — thread documents
   "parent",
   "anchor",

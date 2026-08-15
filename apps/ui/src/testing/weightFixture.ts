@@ -93,6 +93,7 @@ export function skillDoc(body: string = THREE_LEVELS): Doc {
       due: null,
       reviewed: null,
       evergreen: false,
+      origin: null,
       parent: null,
       agent: null,
       pinned: false,

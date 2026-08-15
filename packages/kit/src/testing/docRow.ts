@@ -24,6 +24,7 @@ export function docRowFixture(overrides: Partial<DocRow> = {}): DocRow {
     due: null,
     reviewed: null,
     evergreen: false,
+    origin: null,
     excerpt: "",
     stale: null,
     parent: null,
