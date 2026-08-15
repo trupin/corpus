@@ -665,7 +665,7 @@ it was false until the skills knew the verb existed.
 | SERVER-107 | A resolved document does not age — and the ramp never heard about it (PR #44 review) | done | P0 | SHARED-031 |
 | SERVER-108 | Unarchiving returns a document to `resolved`, not to `open` (PR #44 review) | done | P1 | SHARED-031 |
 
-## Phase 32 — A resident agent for a conversation (2026-08-12)
+## Phase 32 — A resident agent for a conversation (2026-08-12; rider AUTHORIZED and applied 2026-08-13)
 A top-level (standalone) thread can designate a **resident**: a long-lived agent
 that owns the thread's whole **scope** — the thread, its subthreads, and every
 artifact whose provenance walks back to it — and runs its own claim → work →
@@ -689,7 +689,7 @@ independently valuable: `CORPUS_JOB` makes every write name the job it serves, t
 where "direct conversation with a subagent" either feels synchronous or doesn't.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-043 | A resident agent for a conversation (rider — needs signature) | todo | P0 | — |
+| SHARED-043 | A resident agent for a conversation (AUTHORIZED 2026-08-13, applied to §7/§8/§9.2) | done | P0 | — |
 | CONTRACT-050 | Every write can name the job it serves | todo | P0 | SHARED-043 |
 | CONTRACT-051 | Lanes, designation, and the roster on the wire | todo | P0 | SHARED-043 |
 | SERVER-110 | Stamp a document with the thread it came from | todo | P0 | CONTRACT-050 |
