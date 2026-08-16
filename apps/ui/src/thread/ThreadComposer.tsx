@@ -150,7 +150,15 @@ export function ThreadComposer({
 
   return (
     <div
-      className={intake.dropping ? "composer dropping" : "composer"}
+      // `in-use` is the half of "stays visible while you scroll" that CSS cannot
+      // ask for: `:focus-within` covers a composer being typed in, but nothing
+      // in CSS can ask whether a textarea holds text. Both halves are wanted —
+      // focus is the case the issue was filed for, and an unsent draft is the
+      // step after it, where you click into the document to check something and
+      // scrolling would otherwise carry your half-written reply away (UI-110).
+      className={["composer", intake.dropping ? "dropping" : "", hasContent ? "in-use" : ""]
+        .filter(Boolean)
+        .join(" ")}
       data-dropzone={threadId}
       onDragEnter={intake.onDragEnter}
       onDragOver={intake.onDragOver}

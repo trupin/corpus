@@ -122,6 +122,33 @@
 }
 
 /* ── Composer ── */
+
+/* **A composer in use stays on screen** (UI-110, SPEC.md §11).
+   The problem it solves, in the words it was reported in: *"I often have to
+   scroll up to see what I'm commenting on… I want to be able to keep typing
+   while seeing the content I'm commenting on."* In ordinary flow the reply box
+   sits after the last turn, so reading what you are answering and seeing where
+   you type it are exclusive on anything longer than a screen.
+
+   Sticky rather than fixed, and **only while in use**: an empty composer nobody
+   is touching returns to flow and costs the column no vertical space, which is
+   the difference between an affordance and a permanent bar. Sticky also scopes
+   itself for free — the box pins to the bottom of the scrolling surface only
+   while its own card is in view, so a document showing several threads does not
+   grow several floating boxes.
+
+   `bottom: -1px` rather than `0`: the card's own bottom border sits a hairline
+   below, and pinning flush leaves a 1px seam of scrolled content visible under
+   the composer on fractional-DPI displays. */
+.composer:focus-within,
+.composer.in-use {
+  position: sticky;
+  bottom: -1px;
+  /* Above the turns it scrolls over, below the popovers and menus that must
+     still open on top of it. */
+  z-index: 2;
+}
+
 .composer {
   margin-top: 9px;
   display: flex;
