@@ -48,8 +48,10 @@ export const jobField = z
   .openapi({
     description:
       "The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to " +
-      "the lane's root thread and records that as the created document's `origin`, which is what " +
-      "makes scope membership computable (§7). **Optional everywhere**: a write that names no job " +
+      "**the thread the event itself names** and records that as the created document's `origin`, " +
+      "which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the " +
+      "two apart deliberately — the lane routes the work (a summons carries the recipient's), " +
+      "while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job " +
       "records no origin and the document belongs to no conversation — forgetting it costs " +
       "provenance, never correctness, so nothing is refused and nothing is lost. An id that names " +
       "no event is a `422` rather than a silent omission: a caller that got the id wrong wanted " +

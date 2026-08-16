@@ -17,10 +17,16 @@ import type { QueueEventStatus } from "@corpus/contract";
 /**
  * Payload keys that can name where a job came from, most specific first.
  *
- * The order is `jobs/project.ts`'s, and shared with it on purpose: the console
- * row and the origin stamp must point at the same place, or "open the thread
- * this job came from" and "the conversation this document belongs to" would be
- * two different answers to one question.
+ * The order is `jobs/project.ts`'s, and shared with it for the cases where both
+ * answer the same question — a `comment.created` event's console row and its
+ * origin stamp point at one thread, as they should.
+ *
+ * **They deliberately diverge on `doc.edited`**, and the comment that used to
+ * claim they could not has been corrected (PR #47 re-review). The console
+ * resolves such an event to the **document** — "open where this job came from"
+ * — while provenance resolves it to that document's **origin thread**, because
+ * §7 puts reflection work in the scope of what it reflects on. Two questions,
+ * two answers; the shared order is about the keys, not about the destination.
  */
 const ORIGIN_KEYS = ["threadId", "parentId", "docId"] as const;
 

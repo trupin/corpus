@@ -4138,7 +4138,7 @@ export interface components {
         };
         CreateDocRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -4402,7 +4402,7 @@ export interface components {
         };
         UpdateDocRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -4478,7 +4478,7 @@ export interface components {
         };
         PatchDocRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -4516,7 +4516,7 @@ export interface components {
         };
         MoveDocRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -4525,7 +4525,7 @@ export interface components {
         };
         JobOnlyRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -4666,7 +4666,7 @@ export interface components {
         };
         CreateThreadRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -4697,7 +4697,7 @@ export interface components {
         };
         MultipartCreateThreadRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -4943,7 +4943,7 @@ export interface components {
         };
         AppendTurnRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -4957,7 +4957,7 @@ export interface components {
         };
         MultipartAppendTurnRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
@@ -5008,7 +5008,7 @@ export interface components {
         };
         FormAnswerRequest: {
             /**
-             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the lane's root thread and records that as the created document's `origin`, which is what makes scope membership computable (§7). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;

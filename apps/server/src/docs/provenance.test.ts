@@ -314,4 +314,36 @@ describe("a corpus that existed before this field did (PR #47 review)", () => {
     const saved = await ws.put(`/api/docs/${id}`, { title: "Renamed" }, asUser);
     expect(saved.status).toBe(200);
   });
+
+  it("lets a job file such a document, since every reader calls it unfiled", async () => {
+    // The half the first fix missed (PR #47 re-review). `changedFields` tested
+    // the **raw** YAML while every read path reported `null`, so a legacy
+    // document said "unfiled" on the wire and silently refused to be filed:
+    // a write naming a valid job answered 200 and recorded nothing — the exact
+    // silent ignore §9.2 names, and the one the 422 was added to prevent.
+    const created = await ws.post("/api/docs", { type: "note", title: "Imported" }, asUser);
+    const doc = (await created.json()) as { doc: { frontmatter: { id: string }; path: string } };
+    const id = doc.doc.frontmatter.id;
+    ws.write(doc.doc.path, ws.read(doc.doc.path).replace("origin: null", "origin: legacy-system"));
+    expect(await originOf(id)).toBeNull();
+
+    const { threadId, job } = await threadWithJob();
+    expect((await ws.put(`/api/docs/${id}`, { title: "Filed", job }, asUser)).status).toBe(200);
+
+    expect(await originOf(id)).toBe(threadId);
+  });
+});
+
+describe("the ninth route (PR #47 re-review)", () => {
+  it("refuses an unresolvable job on a form answer", async () => {
+    // The only one of the six with no test; identical path to turn append.
+    const { threadId } = await threadWithJob();
+    const refused = await ws.post(
+      `/api/threads/${threadId}/turns/2026-08-15T10:00:00Z/form`,
+      { answers: [], job: "evt_nosuchjob" },
+      asUser,
+    );
+    // 422 for the job, whatever else the route would have said about the form.
+    expect(refused.status).toBe(422);
+  });
 });

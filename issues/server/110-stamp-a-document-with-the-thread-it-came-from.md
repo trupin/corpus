@@ -98,10 +98,18 @@ ticked:
   returned `null` for such an event, its docblock said "resolved by the caller",
   and no caller did. A follow-up written while reflecting fell out of the scope
   it reflects on. `originDocumentOf` + the projection read in `job-lookup.ts`
-  close it, tested in `queue/job-lookup.test.ts` — **not** in the integration
-  suite, because the write fixture wires no `editSessions`, so no `doc.edited`
-  event is ever emitted there and an integration test would have proved only
-  that the event never arrived.
+  close it, tested in `queue/job-lookup.test.ts` **and** end to end in
+  `edit/provenance-reflection.test.ts`.
+
+  **A correction to this file's own record.** The first version of this entry
+  said the integration test was impossible "because the write fixture wires no
+  `editSessions`, so no `doc.edited` event is ever emitted there". That is
+  **false**: `createWriteWorkspace` always passes a projection and `app.ts`
+  builds the tracker whenever one is present — `editAckIdleMs` shortens the
+  window rather than enabling it, and `edit/acknowledgment.test.ts` has been
+  asserting real `doc.edited` events through that same fixture all along. The
+  test was straightforwardly available and is now written. Recorded because a
+  false statement about a fixture is the kind the next agent trusts.
 - **Nine routes declared the `422`; three could produce it.** The other six
   accepted `job` and dropped it — the silent ignore §9.2 names as the failure to
   avoid. `patch` now stamps through the ordinary write path (so the two edit
@@ -113,9 +121,13 @@ ticked:
   autosave. The parse, the read path and the projection now read anything that
   is not a thread id as `null`.
 
-Writing the test for the first of those caught a fourth: `job-lookup.ts` called
-`projection.db.prepare`, and `ProjectionDb` exposes `prepare` directly — the
-production path would have thrown on every `doc.edited` job.
+Writing the test for the first of those caught a `projection.db.prepare` call
+where `ProjectionDb` exposes `prepare` directly. **This was overstated when it
+was first written up** as a bug the fix had *caught* in existing code: the string
+never existed in any committed tree (`git log --all -S` matches only the fixing
+commit itself). It was introduced and corrected inside one working session, and
+is worth recording only as a reminder that a seam typed loosely enough to accept
+`.db` is a seam that will accept a typo.
 
 ### Three things worth recording
 

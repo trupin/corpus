@@ -175,8 +175,8 @@ export function changedFields(
           "could quietly move an artifact out of the scope it belongs to.",
       );
     }
-    if (current["origin"] != null) changed["origin"] = null;
-  } else if (stamp !== null && current["origin"] == null) {
+    if (currentOrigin(current) !== null) changed["origin"] = null;
+  } else if (stamp !== null && currentOrigin(current) === null) {
     // "Has no origin" is `origin: null`, not an absent key: every document
     // written since SERVER-110 carries the key, and the null is the fact that it
     // came from no job. Testing for the key's presence would make the stamp fire
@@ -193,6 +193,22 @@ export function changedFields(
   }
   return changed;
 }
+
+/**
+ * This document's origin **as the rest of the system sees it**.
+ *
+ * `current` is raw YAML, and the read paths deliberately report anything that is
+ * not a thread id as `null` — `origin` was a legal `extra` key before it was
+ * reserved, so a corpus that predates the field must stay readable. Testing the
+ * raw value here would split the two: `GET` would say a legacy document is
+ * unfiled while a write naming a job silently declined to file it, answering
+ * `200` and recording nothing. That is the silent ignore §9.2 names by name, so
+ * the stamp asks the same question the reader answers (PR #47 re-review).
+ */
+const currentOrigin = (current: Readonly<Record<string, unknown>>): string | null => {
+  const value = current["origin"];
+  return typeof value === "string" && value.startsWith("th_") ? value : null;
+};
 
 /** One merge-patch entry: `undefined` skips, `null` removes, anything else replaces. */
 function applyPatchEntry(
