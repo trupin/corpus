@@ -286,6 +286,35 @@ either sentence alone.
 > resident returning, or the orchestrator after the fallback.
 
 
+## Corrections after signature (PR #47 review, 2026-08-15)
+
+Both found by review of the applied text, both delegated back to the
+orchestrator by the user ("do whatever you recommend"), and both are cases where
+a signed sentence's **conclusion** was right and its **reason** was not.
+
+**Section 5 — the summons was unimplementable as written.** The signed text said
+the summons event "was enqueued on the host's lane". Combined with Section 3's
+"an unscoped claim never sees a live lane's events", that leaves such an event
+claimable by nobody: the summoned resident's scoped claim is on a different
+lane, and the orchestrator cannot reach a live one.
+
+Resolved by separating two things the draft had conflated. **The lane and the
+origin are read off different things**: the lane is stamped to route the work
+(so a summons carries the *recipient's* lane), while the origin is the thread the
+event's payload names (so a message posted in the host thread files there
+whoever works it). Routing follows the recipient; filing follows the
+conversation. That keeps Section 3's disjoint sets — the property that makes two
+agents safe — and keeps the feature, where the alternatives lost one or the
+other.
+
+**Section 6 — "nothing is refused" was contradicted by this phase's own code.**
+CONTRACT-050 added a `422` for a job that names no event or names settled work,
+and §9.2 said provenance never refuses. Amended to state the asymmetry the
+contract already relied on: **omitting is free and misnaming is not**. Dropping
+the refusal instead was the alternative, and was rejected for the reason the
+route's own docblock gives — the one thing worse than no provenance is a caller
+believing it has some.
+
 ## Open questions the draft takes a position on
 
 Each is a place the rider could reasonably read otherwise. Raised here rather
