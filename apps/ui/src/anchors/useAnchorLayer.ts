@@ -1,5 +1,11 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
-import { CorpusRequestError, useCreateThread, type RowNotice } from "@corpus/kit";
+import {
+  CorpusRequestError,
+  releaseAttachments,
+  useCreateThread,
+  type PendingAttachment,
+  type RowNotice,
+} from "@corpus/kit";
 import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { expandClipAround } from "../editor/changelogClip";
@@ -9,7 +15,6 @@ import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from ".
 import type { AnchorReport } from "../editor/useAutosave";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import { readStateOf } from "../thread/threadCollapse";
-import { releaseAttachments, type PendingAttachment } from "../thread/useAttachmentIntake";
 import type { CommentRestore } from "./CommentPopover";
 import {
   anchorDecorationPlugin,

@@ -1,4 +1,5 @@
 import {
+  AttachButton,
   AutocompleteMenu,
   COMPOSER_NEWLINE_HINT,
   COMPOSER_PRIMARY_KEY,
@@ -6,9 +7,12 @@ import {
   composerReachesAgent,
   GLOBAL_COMPOSE_WEIGHT_SCOPE,
   handleComposerKeyDown,
+  PendingAttachments,
+  useAttachmentIntake,
   useAutocomplete,
   useComposerWeight,
   WeightPicker,
+  type PendingAttachment,
   type RowNotice,
 } from "@corpus/kit";
 import {
@@ -22,9 +26,6 @@ import {
   type ReactElement,
 } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
-import { AttachButton } from "../thread/AttachButton";
-import { PendingAttachments } from "../thread/PendingAttachments";
-import { useAttachmentIntake, type PendingAttachment } from "../thread/useAttachmentIntake";
 import { useCompose, type ComposeMode } from "./useCompose";
 import "./compose.css";
 

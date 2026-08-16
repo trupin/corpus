@@ -13,7 +13,7 @@ import { editorBody } from "../editor/editorBody.js";
 import { parseMarkdown } from "../editor/markdown/parse.js";
 import { canonicalizeMarkdown } from "../editor/markdown/serialize.js";
 import { STALE_SELECTION_NOTICE, type TextQuoteSelector } from "../editor/selection.js";
-import type { PendingAttachment } from "../thread/useAttachmentIntake.js";
+import type { PendingAttachment } from "@corpus/kit";
 import { corpusSchema } from "../editor/markdown/schema.js";
 import {
   readerTransport,

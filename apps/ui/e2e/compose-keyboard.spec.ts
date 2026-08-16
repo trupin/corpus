@@ -178,6 +178,70 @@ test.describe("the compose panel", () => {
     expect(strip["display"]).toBe("flex");
     expect(strip["flex-wrap"]).toBe("wrap");
   });
+
+  /**
+   * UI-070. The chip and the 📎 are no longer this app's CSS: they ship from
+   * `@corpus/kit/composer.css` with `PendingAttachments` and `AttachButton`, so
+   * that a plugin's composer inherits the look instead of approximating it.
+   *
+   * Asserted **here**, in the cascade the real bundle produces, because that is
+   * the only place the move can be wrong: a stylesheet the kit exports but
+   * `main.tsx` never imports type-checks, unit-tests green, and renders naked
+   * chips. `.compose-panel .pending-atts` above and this together also pin the
+   * specificity — the app's inset must still win over the kit's base rule.
+   */
+  test("draws the chip and the clip from the kit's composer stylesheet", async ({ page }) => {
+    const styles = await measure(page, COMPOSE_PANEL, [
+      [
+        ".att-chip",
+        [
+          "display",
+          "align-items",
+          "gap",
+          "background-color",
+          "color",
+          "border-radius",
+          "font-size",
+        ],
+      ],
+      [".clip", ["color", "font-size", "padding"]],
+    ]);
+
+    const chip = styles[".att-chip"] ?? {};
+    // The chip declares `inline-flex`; it is a flex item of `.pending-atts`, and
+    // a flex item's outer display is blockified, so the *computed* value is
+    // `flex`. That it is a flex box at all is the assertion — an unstyled span
+    // in the same place computes `block`, which is what a missing stylesheet
+    // would have produced.
+    expect(chip["display"]).toBe("flex");
+    expect(chip["align-items"]).toBe("center");
+    expect(chip["gap"]).toBe("6px");
+    expect(chip["background-color"]).toBe(LIGHT_SURFACE_2);
+    expect(chip["color"]).toBe(LIGHT_INK_2);
+    expect(chip["border-radius"]).toBe("7px");
+    expect(chip["font-size"]).toBe("11px");
+
+    const clip = styles[".clip"] ?? {};
+    expect(clip["color"]).toBe(LIGHT_INK_3);
+    expect(clip["font-size"]).toBe("13px");
+    expect(clip["padding"]).toBe("0px 4px");
+  });
+
+  /**
+   * The rule that keeps a composer a composer: with nothing attached the strip
+   * collapses entirely rather than reserving a row, which is what stops the
+   * comment popover reflowing into a panel when it grew attachments (UI-111).
+   */
+  test("collapses the chip strip entirely while it is empty", async ({ page }) => {
+    const styles = await measure(
+      page,
+      `<div class="overlay open"><div class="search-panel compose-panel">
+         <div class="pending-atts"></div>
+       </div></div>`,
+      [[".pending-atts", ["display"]]],
+    );
+    expect(styles[".pending-atts"]?.["display"]).toBe("none");
+  });
 });
 
 test.describe("the cheat sheet", () => {

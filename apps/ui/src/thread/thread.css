@@ -236,56 +236,18 @@
   cursor: default;
 }
 
-/* ── Attachments ── */
-.pending-atts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.pending-atts:empty {
-  display: none;
-}
-
-.att-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-family: var(--mono);
-  color: var(--ink-2);
-  background: var(--surface-2);
-}
-
-.att-chip img {
-  height: 34px;
-  border-radius: 4px;
-  display: block;
-}
-
-.att-chip button {
-  color: var(--ink-3);
-  font-size: 11px;
-  padding: 0 2px;
-}
-
-.att-chip button:hover {
-  color: var(--signal);
-}
-
-.clip {
-  font-size: 13px;
-  color: var(--ink-3);
-  padding: 0 4px;
-}
-
-.clip:hover {
-  color: var(--accent-ink);
-}
-
+/* ── Attachments ──
+ *
+ * A composer's *pending* chips (`.pending-atts`, `.att-chip`) and its 📎
+ * (`.clip`) are not here: they ship from `@corpus/kit/composer.css` with
+ * `PendingAttachments` and `AttachButton`, which every composer in the app now
+ * imports from the kit so that a plugin's composer can import them too (UI-070).
+ * `main.tsx` loads that sheet with the other kit stylesheets.
+ *
+ * What stays is this file's own: how a *sent* attachment renders inside a turn,
+ * and the reply box's drop highlight (`.composer.dropping`, above), which is
+ * per-surface by design.
+ */
 .turn-att-img {
   max-width: 240px;
   max-height: 180px;

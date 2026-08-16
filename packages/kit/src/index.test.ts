@@ -159,6 +159,14 @@ const RUNTIME_SURFACE = [
   "COMPOSER_PRIMARY_KEY",
   "COMPOSER_SECONDARY_KEY",
   "handleComposerKeyDown",
+  // the attachment trio every composer obeys §6 with: the three intake routes,
+  // the chip strip that previews them, and the 📎 that opens the picker. Here
+  // for the same reason the key contract is — §11's rider binds "any composer a
+  // plugin contributes", and a plugin may import nothing else (UI-070).
+  "useAttachmentIntake",
+  "releaseAttachments",
+  "PendingAttachments",
+  "AttachButton",
   // the weight a composer may state (SPEC.md §11's rider, signed 2026-08-06).
   // Published here so a plugin's composer offers the same levels a first-party
   // one does, with one import and no copy — the plugin row of §11's enumeration.

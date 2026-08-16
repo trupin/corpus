@@ -1,17 +1,18 @@
 import {
+  AttachButton,
   COMPOSER_PRIMARY_KEY,
   composerReachesAgent,
   handleComposerKeyDown,
+  PendingAttachments,
+  useAttachmentIntake,
   useComposerWeight,
   WeightPicker,
+  type PendingAttachment,
 } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
-import { AttachButton } from "../thread/AttachButton";
-import { PendingAttachments } from "../thread/PendingAttachments";
 import { ASK_AGENT_LABEL, NOTE_ONLY_LABEL } from "../thread/ThreadComposer";
-import { useAttachmentIntake, type PendingAttachment } from "../thread/useAttachmentIntake";
 import { usePopoverDrag } from "./popoverDrag";
 
 /**

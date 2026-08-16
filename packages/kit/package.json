@@ -25,6 +25,7 @@
     "./row.css": "./src/row/row.css",
     "./markdown.css": "./src/markdown/markdown.css",
     "./autocomplete.css": "./src/components/Autocomplete/autocomplete.css",
+    "./composer.css": "./src/components/Composer/composer.css",
     "./weight.css": "./src/weight/weight.css",
     "./package.json": "./package.json"
   },
@@ -34,6 +35,7 @@
     "src/row/row.css",
     "src/markdown/markdown.css",
     "src/components/Autocomplete/autocomplete.css",
+    "src/components/Composer/composer.css",
     "src/weight/weight.css"
   ],
   "scripts": {

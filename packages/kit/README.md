@@ -5,13 +5,13 @@ The plugin contract (SPEC.md §10). Plugin UI imports **only** from `@corpus/kit
 
 Three code entry points, and the stylesheets:
 
-| Import                                                                     | What it is                                                                                        |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `@corpus/kit`                                                              | The runtime contract: client, provider, hooks, key builders, components, types                    |
-| `@corpus/kit/plugin`                                                       | The manifest surface: `definePlugin`, `PluginManifest`, `ColumnComponentProps`, `DocPanelProps`   |
-| `@corpus/kit/testing`                                                      | Test doubles: `FakeEventSource`, `createCorpusTestHarness`                                        |
-| `@corpus/kit/tokens.css`                                                   | The design tokens (light/dark). CSS has no compile step, so it is a stylesheet, not an export     |
-| `@corpus/kit/row.css`, `/markdown.css`, `/autocomplete.css`, `/weight.css` | The anatomy stylesheets for the components that need one — import the sheet next to the component |
+| Import                                                                                      | What it is                                                                                        |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `@corpus/kit`                                                                               | The runtime contract: client, provider, hooks, key builders, components, types                    |
+| `@corpus/kit/plugin`                                                                        | The manifest surface: `definePlugin`, `PluginManifest`, `ColumnComponentProps`, `DocPanelProps`   |
+| `@corpus/kit/testing`                                                                       | Test doubles: `FakeEventSource`, `createCorpusTestHarness`                                        |
+| `@corpus/kit/tokens.css`                                                                    | The design tokens (light/dark). CSS has no compile step, so it is a stylesheet, not an export     |
+| `@corpus/kit/row.css`, `/markdown.css`, `/autocomplete.css`, `/composer.css`, `/weight.css` | The anatomy stylesheets for the components that need one — import the sheet next to the component |
 
 ## The kit is the only data path
 
@@ -56,10 +56,84 @@ native (SPEC.md §10) — each with its stylesheet as a subpath beside it:
 | Markdown              | `MarkdownView`, the `[[ref]]` grammar (`parseRefs`, `remarkCorpusRefs`), `CorpusImage`, `ImageViewerProvider`                                 | `markdown.css`     |
 | Smart input           | `useAutocomplete`, `AutocompleteMenu`, `handleAutocompleteKeyDown` — the one `@` / `/` / `[[` implementation                                  | `autocomplete.css` |
 | Composer key contract | the `↵` / `⌘↵` / `⇧⌘↵` handling every composer obeys                                                                                          | —                  |
+| Composer attachments  | `useAttachmentIntake`, `PendingAttachments`, `AttachButton`, `releaseAttachments` — §6's three intake routes and the chips they preview as    | `composer.css`     |
 | Weight                | `WeightPicker`, `useComposerWeight`                                                                                                           | `weight.css`       |
 
 `src/index.ts` is the authority on the surface and says why each export is on it;
 this table is a map, not a census.
+
+## Every composer takes attachments
+
+SPEC.md §11's rider binds the whole class — "the global composer, a thread's
+reply box, a comment on a document selection, a comment on a turn or on a
+selection within one, **and any composer a plugin contributes**" — to §6's three
+intake routes and its chip previews. A plugin may import nothing but this
+package, so the trio that satisfies that sentence is published here and the
+board's own composers consume the same copy.
+
+```tsx
+import { AttachButton, PendingAttachments, useAttachmentIntake, useCreateThread } from "@corpus/kit";
+import "@corpus/kit/composer.css";
+
+function MyComposer() {
+  const intake = useAttachmentIntake();
+  const create = useCreateThread();
+
+  const send = () => {
+    const files = intake.take(); // leaves the composer, previews still live
+    create.mutate(
+      { parent, body: text, files: files.map((a) => a.file) },
+      {
+        onSuccess: () => {
+          intake.release(files);
+        },
+        onError: () => {
+          intake.restore(files);
+        }, // the screenshot comes back
+      },
+    );
+  };
+
+  return (
+    <div
+      className={intake.dropping ? "my-composer dropping" : "my-composer"}
+      onDragEnter={intake.onDragEnter}
+      onDragOver={intake.onDragOver}
+      onDragLeave={intake.onDragLeave}
+      onDrop={intake.onDrop}
+    >
+      <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
+      <textarea onPaste={intake.onPaste} … />
+      <AttachButton surface="my-composer" onFiles={intake.add} />
+    </div>
+  );
+}
+```
+
+Four things about that shape are load-bearing:
+
+- **The three routes are three different attachment points.** `onPaste` belongs
+  on the _field_, the four drag handlers on the _surface_ (the dropzone is the
+  whole composer, not the text box), and `AttachButton` renders the picker with
+  its own hidden `<input multiple>` — whose `value` it clears after every change,
+  because otherwise re-picking the same file fires no event and the attachment
+  silently does not arrive.
+- **`take` / `restore` / `release`, never a bare reset.** A send `take()`s the
+  list so the chips leave immediately, _without_ revoking their object URLs. A
+  refusal `restore()`s them and the previews still render; a success
+  `release()`s them. A composer that cleared its state on submit would lose the
+  screenshot to a `413` or a dropped connection, which is worse than never
+  having accepted it. `releaseAttachments(snapshot)` is the same act from
+  outside a composer that has already unmounted, and `useAttachmentIntake(initial)`
+  seeds a re-opened one with what it was holding.
+- **An over-cap file is refused visibly.** The cap is the server's and the answer
+  is a contracted `413` (SPEC.md §6); surface `error.message` on the composer
+  rather than dropping the file. The intake itself accepts anything — the size
+  rule has exactly one home, and it is not the client.
+- **The drop highlight is yours to paint.** `intake.dropping` is the boolean;
+  `composer.css` deliberately ships no bare `.dropping` rule, because the
+  dropzone is a different element on every surface. The recipe is
+  `border-color: var(--accent); background: var(--accent-wash);`.
 
 ## Query keys
 
@@ -76,7 +150,7 @@ keys with the exported builders; never write a literal.
 | `["docs", "search", <canonical>]` | `searchKey(params)`     | — (a client-side variant under the `["docs"]` prefix)                                                                                                                                                                 | `useCorpusSearch(params)`                                                                    |
 | `["threads", "<threadId>"]`       | `threadKey(id)`         | thread creation, turn append, turn deletion, resolve/reopen, mark-seen                                                                                                                                                | `useThread(id)`                                                                              |
 | `["tree"]`                        | `TREE_KEY`              | anything that changes the folder hierarchy                                                                                                                                                                            | `useTree()`                                                                                  |
-| `["queue"]`                       | `QUEUE_KEY`             | every queue transition (SPEC.md §7)                                                                                                                                                                                   | the console's depth and halted state                                                         |
+| `["queue"]`                       | `QUEUE_KEY`             | every queue transition (SPEC.md §7), and every change to agent presence — the status carries it                                                                                                                       | the console's agent pill, depth and halted state                                             |
 | `["jobs"]`                        | `JOBS_KEY`              | every queue transition, plus any job-log append (coalesced)                                                                                                                                                           | every `useJobs` variant                                                                      |
 | `["jobs", <canonical>]`           | `jobsListKey(params)`   | — (a client-side variant under the `["jobs"]` prefix)                                                                                                                                                                 | that `useJobs` call                                                                          |
 | `["jobs", "<eventId>"]`           | `jobKey(eventId)`       | an append to that job's log, and its retry/abandon transitions                                                                                                                                                        | the console's live log panel                                                                 |

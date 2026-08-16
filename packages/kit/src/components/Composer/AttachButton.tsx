@@ -11,10 +11,10 @@ import { useRef, type ReactElement } from "react";
  * after every change, or **re-picking the same file fires no `change` event**
  * and the attachment silently does not arrive.
  *
- * Kept in `apps/ui` for now. UI-070 is the issue that publishes this trio — the
- * intake hook, the chip strip and this button — from `@corpus/kit`, so that a
- * plugin's composer obeys §6 by importing rather than by copying, which is what
- * `plugins/todos/ui/TodoItemComposer.tsx` still has to do.
+ * Published from the kit alongside {@link useAttachmentIntake} and
+ * `PendingAttachments` (UI-070). The picker is the route a plugin cannot supply
+ * for itself without re-deriving both of those details, and §11's rider binds
+ * "any composer a plugin contributes" to all three routes, not two.
  */
 
 export interface AttachButtonProps {
@@ -50,7 +50,6 @@ export function AttachButton({ surface, onFiles }: AttachButtonProps): ReactElem
         data-attach-input={surface}
         onChange={(event) => {
           onFiles(event.target.files);
-          // Re-picking the same file must fire `change` again.
           event.target.value = "";
         }}
       />

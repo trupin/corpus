@@ -1,0 +1,86 @@
+/*
+ * The composer's attachment anatomy, from `design/index.html` — shipped from the
+ * kit with the components that emit it, like `autocomplete.css` and
+ * `markdown.css`:
+ *
+ *     import "@corpus/kit/composer.css";
+ *
+ * `PendingAttachments` draws `.pending-atts` / `.att-chip`; `AttachButton` draws
+ * `.clip`. SPEC.md §11's rider binds "any composer a plugin contributes" to the
+ * same three intake routes and the same chip previews as the board's own, and a
+ * plugin can import the components but not `apps/ui/src/thread/thread.css` — so
+ * the look travels with them or it does not travel at all (UI-070).
+ *
+ * Values resolve against `@corpus/kit/tokens.css`, and the chip's ✕ assumes the
+ * host's `button` reset (no border, no padding, inherited font) — the same
+ * assumption `row.css` and `autocomplete.css` already make.
+ *
+ * ── What is deliberately not here: the drop highlight ──
+ *
+ * The dropzone is the *surface*, not the strip: the reply box lights its border
+ * (`.composer.dropping`), the global panel lights an inset outline
+ * (`.compose-panel.dropping`), the comment popover lights its own border
+ * (`.comment-pop.dropping`). A bare `.dropping` rule here would paint whichever
+ * of them happened to match. `useAttachmentIntake` supplies the `dropping`
+ * boolean; each surface spends it on its own class, and the recipe is two
+ * declarations:
+ *
+ *     .my-composer.dropping {
+ *       border-color: var(--accent);
+ *       background: var(--accent-wash);
+ *     }
+ */
+
+.pending-atts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/*
+ * A composer with nothing attached is the composer that was there before: the
+ * strip collapses entirely rather than reserving a row. That is what keeps the
+ * comment popover a popover instead of reflowing it into a panel (UI-070).
+ */
+.pending-atts:empty {
+  display: none;
+}
+
+.att-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--ink-2);
+  background: var(--surface-2);
+}
+
+.att-chip img {
+  height: 34px;
+  border-radius: 4px;
+  display: block;
+}
+
+.att-chip button {
+  color: var(--ink-3);
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+.att-chip button:hover {
+  color: var(--signal);
+}
+
+.clip {
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 0 4px;
+}
+
+.clip:hover {
+  color: var(--accent-ink);
+}

@@ -1,18 +1,18 @@
 import {
+  AttachButton,
   childThreadWeightScope,
   COMPOSER_PRIMARY_KEY,
   composerReachesAgent,
   handleComposerKeyDown,
+  PendingAttachments,
+  useAttachmentIntake,
   useComposerWeight,
   useCreateThread,
   WeightPicker,
   type RowNotice,
 } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
-import { AttachButton } from "./AttachButton";
 import { GrowingTextarea } from "./GrowingTextarea";
-import { PendingAttachments } from "./PendingAttachments";
-import { useAttachmentIntake } from "./useAttachmentIntake";
 
 /**
  * Commenting on a turn (SPEC.md §6's recursion). One `POST /api/threads` with

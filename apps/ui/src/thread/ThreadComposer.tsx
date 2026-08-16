@@ -1,13 +1,17 @@
 import {
+  AttachButton,
   AutocompleteMenu,
   COMPOSER_PRIMARY_KEY,
   composerReachesAgent,
   handleComposerKeyDown,
+  PendingAttachments,
   threadWeightScope,
   useAppendTurn,
+  useAttachmentIntake,
   useAutocomplete,
   useComposerWeight,
   WeightPicker,
+  type PendingAttachment,
   type RowNotice,
 } from "@corpus/kit";
 import {
@@ -18,10 +22,7 @@ import {
   type CSSProperties,
   type ReactElement,
 } from "react";
-import { AttachButton } from "./AttachButton";
 import { GrowingTextarea } from "./GrowingTextarea";
-import { PendingAttachments } from "./PendingAttachments";
-import { useAttachmentIntake, type PendingAttachment } from "./useAttachmentIntake";
 
 /**
  * The thread composer (`design/index.html`'s `.composer`): one field, the shared

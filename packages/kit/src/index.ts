@@ -282,11 +282,19 @@ export {
 // app *and* every composer a plugin contributes, and a plugin may import
 // nothing but this package.
 export {
+  AttachButton,
   COMPOSER_NEWLINE_HINT,
   COMPOSER_PRIMARY_KEY,
   COMPOSER_SECONDARY_KEY,
   handleComposerKeyDown,
+  PendingAttachments,
+  releaseAttachments,
+  useAttachmentIntake,
+  type AttachButtonProps,
+  type AttachmentIntake,
   type ComposerKeyOptions,
+  type PendingAttachment,
+  type PendingAttachmentsProps,
 } from "./components/Composer/index.js";
 
 // SPEC.md §11's "every composer can choose how much thought the work gets"

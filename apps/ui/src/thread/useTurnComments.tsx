@@ -1,8 +1,10 @@
 import type { ResolvedAnchor } from "@corpus/contract";
 import {
   isPendingTurn,
+  releaseAttachments,
   threadWeightScope,
   useCreateThread,
+  type PendingAttachment,
   type RowNotice,
   type ThreadTurn,
 } from "@corpus/kit";
@@ -29,7 +31,6 @@ import {
   turnSourceParts,
   turnSpans,
 } from "./turnAnchors";
-import { releaseAttachments, type PendingAttachment } from "./useAttachmentIntake";
 
 /**
  * **Comment on a selection inside a turn** (SPEC.md §11's rider, signed
