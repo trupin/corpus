@@ -156,7 +156,11 @@ export {
 export { Row, type ListItemComponent, type RowProps } from "./row/Row.js";
 export {
   AgeChip,
+  // One call for the row's agent signal, so no row implementation has to decide
+  // for itself which of the two dots an unclaimed event gets (SPEC.md §8).
+  AgentActivityDot,
   NeedsYouBadge,
+  QueuedDot,
   UnreadBadge,
   // A plugin's own `ListItem` replaces `Row` wholesale, so the rule deciding
   // which unread pill a row draws ships with the badge rather than staying
@@ -164,6 +168,7 @@ export {
   // again, one surface at a time.
   unreadBadgeProps,
   WorkingDot,
+  type AgentActivityDotProps,
   type AgeChipProps,
   type NeedsYouBadgeProps,
   type UnreadBadgeProps,
@@ -200,7 +205,11 @@ export {
   type RowActionSubject,
   type RowNotice,
 } from "./row/useRowActions.js";
-export { useAgentActivity, type AgentActivity } from "./row/useRowSignals.js";
+export {
+  useAgentActivity,
+  type AgentActivity,
+  type AgentActivityState,
+} from "./row/useRowSignals.js";
 
 // Rendered markdown (SPEC.md §10 names `MarkdownView` in the kit contract), and
 // the `[[ref]]` grammar of SPEC.md §5 that only it knows how to render. The

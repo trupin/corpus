@@ -340,6 +340,18 @@ export interface StubJob {
 /** Everything a spec seeds that is not a document. */
 export interface StubOptions {
   readonly jobs?: readonly StubJob[];
+  /**
+   * Who is parked, as `GET /api/queue/status` reports it (`QueueStatus.agent`,
+   * CONTRACT-045).
+   *
+   * Seeded because it is not derivable from anything else in a stubbed page —
+   * presence is a request the server is holding open, and this suite runs no
+   * server — and because it changes what §8's pending row *says*: an unclaimed
+   * request with nobody listening reads differently from one an agent is about
+   * to take (UI-097). The default is **nobody**, which is the state a stub
+   * without an agent process is actually in.
+   */
+  readonly agent?: QueueStatus["agent"];
 }
 
 export interface StubCorpus {
@@ -375,6 +387,19 @@ export interface StubCorpus {
    * left behind, which is the one the board's retry must present.
    */
   readonly writeAsAgent: (docId: string, body: string) => Promise<string>;
+  /**
+   * **An agent taking the work** — the queue transition §8's pending row is
+   * about (UI-097).
+   *
+   * A claim happens in a process this suite does not run, so a spec that wants
+   * to see `pending → in-progress` has to move the event itself. Like every
+   * other writer on this interface it moves the corpus **behind the page's
+   * back**: nothing the page did caused it, so no `invalidateQueries` of its own
+   * is coming, and what repaints the card is the `invalidate` frame a spec
+   * pushes afterwards — which is the whole point, since "updates live over SSE"
+   * is otherwise indistinguishable from "was right on first paint".
+   */
+  readonly claimJob: (eventId: string) => Promise<void>;
 }
 
 function seeded(row: StubRow): StoredDoc {
@@ -583,7 +608,9 @@ export async function stubCorpus(
   options: StubOptions = {},
 ): Promise<StubCorpus> {
   const store = new Map<string, StoredDoc>(rows.map((row) => [row.id, seeded(row)]));
-  const jobs = options.jobs ?? [];
+  // A mutable copy: `claimJob` moves an event's status, and the seed the spec
+  // handed in is not the stub's to rewrite.
+  const jobs: StubJob[] = [...(options.jobs ?? [])];
   const requests: StubRequest[] = [];
   let created = 0;
 
@@ -909,9 +936,14 @@ export async function stubCorpus(
      */
     if (url.pathname === "/api/queue/status") {
       return json(route, {
-        pending: 0,
-        inProgress: 0,
-        deferred: 0,
+        // `agent` is required since CONTRACT-045 and it is read by §8's pending
+        // row, so it is seeded rather than invented here: the default says
+        // nobody is parked, which is true of every spec that does not say
+        // otherwise.
+        agent: options.agent ?? { live: false, since: null },
+        pending: jobs.filter((job) => job.status === "pending").length,
+        inProgress: jobs.filter((job) => job.status === "in-progress").length,
+        deferred: jobs.filter((job) => job.status === "deferred").length,
         failed: 0,
         processed: 0,
         abandoned: 0,
@@ -1585,6 +1617,19 @@ export async function stubCorpus(
       return Promise.resolve(
         commitAnswerTurn(doc, formatFormAnswerBody(formAnswerRecord(form, answer))),
       );
+    },
+    claimJob: (eventId) => {
+      const index = jobs.findIndex((job) => job.eventId === eventId);
+      if (index === -1) throw new Error(`claimJob: no event ${eventId}`);
+      const job = jobs[index];
+      if (job === undefined) throw new Error(`claimJob: no event ${eventId}`);
+      if (job.status !== "pending") throw new Error(`claimJob: ${eventId} is ${job.status}`);
+      // `started` is deliberately left alone: the server only moves it when the
+      // job writes its first log line (`recordJobLine`'s `COALESCE`), and a
+      // claim writes none. A stub that advanced it here would hide the very
+      // reset `agentWaitSince` exists to prevent.
+      jobs[index] = { ...job, status: "in-progress" };
+      return Promise.resolve();
     },
     writeAsAgent: (docId, body) => {
       const doc = store.get(docId);

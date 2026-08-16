@@ -96,6 +96,10 @@ const RUNTIME_SURFACE = [
   "UnreadBadge",
   "unreadBadgeProps",
   "WorkingDot",
+  // …and the same dot for work nobody has taken, plus the one call that picks
+  // between them so no row implementation decides for itself (UI-097).
+  "QueuedDot",
+  "AgentActivityDot",
   "reasonChip",
   "reasonChips",
   "REASON_CHIP_CLASSES",

@@ -307,6 +307,7 @@ test.describe("the master-detail body", () => {
       }
       if (url.pathname === "/api/queue/status") {
         return body({
+          agent: { live: true, since: new Date().toISOString() },
           halted: true,
           pending: 0,
           inProgress: 0,

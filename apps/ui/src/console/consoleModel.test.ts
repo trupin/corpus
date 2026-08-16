@@ -19,6 +19,7 @@ import {
 } from "./consoleModel";
 
 const IDLE: QueueStatus = {
+  agent: { live: true, since: "2026-07-19T10:00:00.000Z" },
   halted: false,
   pending: 0,
   inProgress: 0,

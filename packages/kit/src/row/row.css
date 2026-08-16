@@ -169,6 +169,29 @@
   flex: none;
 }
 
+/*
+ * Queued, and nobody has taken it (SPEC.md §8's rider; UI-097).
+ *
+ * The dot's geometry to the pixel, so the two read as one signal in two states
+ * rather than as two badges — and the difference is carried by the two
+ * properties that mean "happening": it is unfilled, and it does not pulse. It
+ * therefore needs no `prefers-reduced-motion` entry in `global.css`'s guard,
+ * which is the honest reason it animates nothing rather than animating slower.
+ * Ink rather than `--accent`: the accent is the agent axis, and an unclaimed
+ * event is precisely the state in which no agent is involved yet.
+ */
+.queued-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  /* Stated rather than inherited from the host's reset: 7px is the dot's size,
+     not the size of its fill. */
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink-3);
+  flex: none;
+}
+
 .age {
   font-family: var(--mono);
   font-size: 10.5px;

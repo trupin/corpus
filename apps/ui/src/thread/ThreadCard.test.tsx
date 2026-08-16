@@ -628,6 +628,61 @@ describe("the pending indicator", () => {
     await waitFor(() => {
       expect(container.querySelector(".working")).not.toBeNull();
     });
+    // It was claimed and then parked, so nobody is working it this minute
+    // (SPEC.md §7, UI-097): outstanding, and not "working…".
+    expect(container.querySelector(".working")?.getAttribute("data-pending-state")).toBe("waiting");
+  });
+
+  /**
+   * UI-097, and the whole of it. SPEC.md §8's rider: "no claim that the agent is
+   * working before one has taken the work" — a queued, unclaimed request "reads
+   * as **waiting to be picked up**, distinct in wording from a request being
+   * worked", and "the elapsed clock still runs from when the request was
+   * written".
+   */
+  it("calls an unclaimed request waiting and a claimed one working, on one clock", async () => {
+    const queued = render(
+      <Host
+        transport={wire(
+          { agent: "requested", turns: [TURNS[0] as never] },
+          { jobs: [askJob({ status: "pending" })] },
+        )}
+      />,
+    );
+    await loaded(queued.container);
+    await waitFor(() => {
+      expect(queued.container.querySelector(".working")).not.toBeNull();
+    });
+    const waiting = queued.container.querySelector(".working");
+    expect(waiting?.getAttribute("data-pending-state")).toBe("waiting");
+    // Elapsed here is the fixture's own age — these turns are from July — so the
+    // tier is the oldest one. What matters at every tier is the same: it names
+    // the wait and never claims anybody is working.
+    expect(waiting?.textContent).toContain("waiting");
+    expect(waiting?.textContent).not.toContain("working");
+    expect(waiting?.getAttribute("data-working-since")).toBe(ASKED_AT);
+    expect(queued.container.querySelector(".working .working-dot")).toBeNull();
+
+    cleanup();
+    resetSeenMarks();
+    const claimed = render(
+      <Host
+        transport={wire(
+          { agent: "requested", turns: [TURNS[0] as never] },
+          { jobs: [askJob({ status: "in-progress" })] },
+        )}
+      />,
+    );
+    await loaded(claimed.container);
+    await waitFor(() => {
+      expect(claimed.container.querySelector(".working")).not.toBeNull();
+    });
+    const working = claimed.container.querySelector(".working");
+    expect(working?.getAttribute("data-pending-state")).toBe("working");
+    expect(working?.textContent).toContain("working");
+    // The same clock, from the same turn: a claim changes the words, not the wait.
+    expect(working?.getAttribute("data-working-since")).toBe(ASKED_AT);
+    expect(claimed.container.querySelector(".working .working-dot")).not.toBeNull();
   });
 
   it("sends a note only, and says nothing about an agent that was never asked", async () => {
@@ -665,7 +720,9 @@ describe("the pending indicator", () => {
     });
     expect(container.querySelector("progress")).toBeNull();
     expect(container.querySelector("[role='progressbar']")).toBeNull();
-    expect(container.querySelector(".working")?.textContent).toContain("working");
+    // `askJob()` is `pending` — nobody has taken it — so what the row reports is
+    // the wait, and it still reports nothing but the wait.
+    expect(container.querySelector(".working")?.textContent).toContain("waiting");
   });
 });
 

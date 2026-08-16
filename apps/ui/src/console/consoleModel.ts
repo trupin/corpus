@@ -237,6 +237,13 @@ export function consoleCounts(status: QueueStatus): ConsoleCounts {
  * the reachability verdict is already in the strip beside it.
  */
 export const UNKNOWN_QUEUE_STATUS: QueueStatus = {
+  /*
+   * Nobody is known to be there, which is what an unanswered read means
+   * (CONTRACT-045). `live: false` here is not a claim that the agent left — the
+   * strip's reachability verdict beside it says the server itself has not
+   * answered — and it is the only value that cannot be mistaken for evidence.
+   */
+  agent: { live: false, since: null },
   halted: false,
   pending: 0,
   inProgress: 0,

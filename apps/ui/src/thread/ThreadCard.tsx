@@ -17,7 +17,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from 
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 import { summaryFromRow, type ThreadSummary } from "./CollapsedThread";
 import { NewChildThread } from "./NewChildThread";
-import { agentWaitSince, useOutstandingAgentJob } from "./outstandingAgentRequest";
+import { agentWaitSince, useOutstandingAgentRequest } from "./outstandingAgentRequest";
 import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
 import { threadStatusNotice } from "./resolveNotice";
@@ -221,7 +221,7 @@ export function ThreadCard({
    * with nothing queued has no job, which is the ordinary case and already says
    * nothing.
    */
-  const outstanding = useOutstandingAgentJob(threadId);
+  const outstanding = useOutstandingAgentRequest(threadId);
 
   const classes = [
     "thread-card",
@@ -387,7 +387,10 @@ export function ThreadCard({
       />
 
       {outstanding === null ? null : (
-        <PendingIndicator since={agentWaitSince(outstanding, turns)} />
+        <PendingIndicator
+          since={agentWaitSince(outstanding.job, turns)}
+          state={outstanding.working ? "working" : "waiting"}
+        />
       )}
 
       <ThreadComposer threadId={threadId} resolved={resolved} onNotify={onNotify} />

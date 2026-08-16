@@ -1,4 +1,4 @@
-import type { Doc, DocRow, Job, RelatedDoc, Thread, Warning } from "@corpus/contract";
+import type { Doc, DocRow, Job, QueueStatus, RelatedDoc, Thread, Warning } from "@corpus/contract";
 import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
@@ -62,6 +62,15 @@ export interface ReaderTransportOptions {
    * §8, UI-058). Empty by default: a quiet queue is the ordinary state.
    */
   readonly jobs?: readonly Job[];
+  /**
+   * `GET /api/queue/status`, whose `agent` field says whether anybody is parked
+   * (CONTRACT-045) — read by §8's pending row, which will not say "no agent is
+   * connected" without it (UI-097).
+   *
+   * The default answers **nobody**, because that is the truth about a suite that
+   * runs no agent; a test asserting the other wording seeds a live one.
+   */
+  readonly queue?: QueueStatus;
   /** `"<METHOD> <pathname>"` → status, for the failure paths. */
   readonly failing?: Readonly<Record<string, number>>;
   /**
@@ -197,6 +206,26 @@ function answerJobs(jobs: readonly Job[], url: URL): readonly Job[] {
   return answer.slice(0, Number.isFinite(recent) && recent > 0 ? recent : DEFAULT_RECENT_JOBS);
 }
 
+/**
+ * A workspace with nobody parked and nothing queued — what a suite that runs no
+ * agent process is honestly in (CONTRACT-045).
+ */
+export const QUIET_QUEUE: QueueStatus = {
+  agent: { live: false, since: null },
+  halted: false,
+  pending: 0,
+  inProgress: 0,
+  deferred: 0,
+  processed: 0,
+  failed: 0,
+  abandoned: 0,
+};
+
+/** The same workspace with an agent parked, for the row that says so. */
+export function liveQueue(since: string): QueueStatus {
+  return { ...QUIET_QUEUE, agent: { live: true, since } };
+}
+
 export function readerTransport(options: ReaderTransportOptions = {}): ReaderTransport {
   const calls: ReaderCall[] = [];
   const docs = new Map((options.docs ?? []).map((doc) => [doc.frontmatter.id, doc]));
@@ -237,6 +266,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     }
 
     if (url.pathname === "/api/jobs") return json({ jobs: answerJobs(jobs, url) });
+    if (url.pathname === "/api/queue/status") return json(options.queue ?? QUIET_QUEUE);
     if (url.pathname === "/api/tree") return json({ folders: [] });
 
     if (url.pathname === "/api/docs" && request.method === "GET") {

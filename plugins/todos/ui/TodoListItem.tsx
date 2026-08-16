@@ -1,8 +1,8 @@
 import {
+  AgentActivityDot,
   AgeChip,
   NeedsYouBadge,
   UnreadBadge,
-  WorkingDot,
   ageLabel,
   hasStaleActions,
   reasonChips,
@@ -119,7 +119,7 @@ export function TodoListItem(props: TodoListItemProps): ReactElement {
         <span className="row-badges">
           {unread === null ? null : <UnreadBadge {...unread} />}
           {due === 0 ? null : <NeedsYouBadge text={`${String(due)} due`} />}
-          {activity.active ? <WorkingDot title={activity.title} /> : null}
+          <AgentActivityDot activity={activity} />
           {showActions ? <AgeChip label={ageLabel(row, today)} /> : null}
         </span>
       </div>

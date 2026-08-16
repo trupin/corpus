@@ -8,7 +8,8 @@ import { jobFixture, readerTransport } from "../testing/readerFixture";
 import {
   agentWaitSince,
   pickOutstandingJob,
-  useOutstandingAgentJob,
+  pickOutstandingRequest,
+  useOutstandingAgentRequest,
 } from "./outstandingAgentRequest";
 
 afterEach(cleanup);
@@ -105,6 +106,78 @@ describe("pickOutstandingJob", () => {
 });
 
 /**
+ * UI-097. **"Outstanding" and "being worked" are two questions**, and until this
+ * split they were answered with one job: a `pending` event nobody had claimed
+ * put "agent is working…" on the card, escalating, while no agent was running.
+ */
+describe("pickOutstandingRequest", () => {
+  it("reports nothing at all when nothing is outstanding", () => {
+    expect(pickOutstandingRequest([], THREAD)).toBeNull();
+    expect(
+      pickOutstandingRequest([jobFixture({ status: "processed", originId: THREAD })], THREAD),
+    ).toBeNull();
+  });
+
+  it("calls an unclaimed event waiting, not working", () => {
+    const queued = jobFixture({ eventId: "evt_queued", status: "pending", originId: THREAD });
+    expect(pickOutstandingRequest([queued], THREAD)).toEqual({ job: queued, working: false });
+  });
+
+  it("calls a claimed event working", () => {
+    const held = jobFixture({ eventId: "evt_held", status: "in-progress", originId: THREAD });
+    expect(pickOutstandingRequest([held], THREAD)).toEqual({ job: held, working: true });
+  });
+
+  /**
+   * A deferral was claimed and then parked because somebody is editing the
+   * document it needs (SPEC.md §7). The reply is still coming — so it is still
+   * outstanding — but nobody is working it this minute.
+   */
+  it("calls a deferral waiting", () => {
+    const parked = jobFixture({
+      eventId: "evt_parked",
+      status: "deferred",
+      originId: THREAD,
+      blockedOn: "doc-standup",
+    });
+    expect(pickOutstandingRequest([parked], THREAD)).toEqual({ job: parked, working: false });
+  });
+
+  /**
+   * Two asks, one wait: the clock runs from the older and the claim is read off
+   * whichever event has one. Both directions, because the answer must not depend
+   * on which of them the queue happened to list first.
+   */
+  it("counts from the oldest ask and reports the claim from any of them", () => {
+    const older = jobFixture({
+      eventId: "evt_older",
+      status: "pending",
+      originId: THREAD,
+      started: "2026-07-01T10:00:00.000Z",
+    });
+    const newer = jobFixture({
+      eventId: "evt_newer",
+      status: "in-progress",
+      originId: THREAD,
+      started: "2026-07-01T10:20:00.000Z",
+    });
+    expect(pickOutstandingRequest([older, newer], THREAD)).toEqual({ job: older, working: true });
+    expect(pickOutstandingRequest([newer, older], THREAD)).toEqual({ job: older, working: true });
+  });
+
+  /** Another thread's claim is not this thread's, however busy the queue is. */
+  it("ignores a claim on somebody else's thread", () => {
+    const mine = jobFixture({ eventId: "evt_mine", status: "pending", originId: THREAD });
+    const theirs = jobFixture({
+      eventId: "evt_theirs",
+      status: "in-progress",
+      originId: "thread-other",
+    });
+    expect(pickOutstandingRequest([mine, theirs], THREAD)).toEqual({ job: mine, working: false });
+  });
+});
+
+/**
  * UI-069, and the reason CONTRACT-030 and SERVER-056 were filed; UI-075, and the
  * reason the question is no longer asked per thread.
  *
@@ -126,7 +199,7 @@ describe("pickOutstandingJob", () => {
  * that went back to scanning the console list would fail these, while a test
  * over `pickOutstandingJob` alone could not tell the two apart.
  */
-describe("useOutstandingAgentJob", () => {
+describe("useOutstandingAgentRequest", () => {
   const deferred = jobFixture({
     eventId: "evt_deferred",
     status: "deferred",
@@ -138,7 +211,7 @@ describe("useOutstandingAgentJob", () => {
   function setup(jobs: readonly Job[]) {
     const wire = readerTransport({ jobs });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const view = renderHook(() => useOutstandingAgentJob(THREAD), { wrapper: harness.Wrapper });
+    const view = renderHook(() => useOutstandingAgentRequest(THREAD), { wrapper: harness.Wrapper });
     return { ...view, wire };
   }
 
@@ -147,7 +220,7 @@ describe("useOutstandingAgentJob", () => {
     const { result, wire } = setup([...noise(DEFAULT_RECENT_JOBS), deferred]);
 
     await waitFor(() => {
-      expect(result.current?.eventId).toBe("evt_deferred");
+      expect(result.current?.job.eventId).toBe("evt_deferred");
     });
 
     // …because the statuses went to the server, rather than being scanned here.
@@ -167,15 +240,15 @@ describe("useOutstandingAgentJob", () => {
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const view = renderHook(
       () => [
-        useOutstandingAgentJob(THREAD),
-        useOutstandingAgentJob("thread-other-1"),
-        useOutstandingAgentJob("thread-other-2"),
+        useOutstandingAgentRequest(THREAD),
+        useOutstandingAgentRequest("thread-other-1"),
+        useOutstandingAgentRequest("thread-other-2"),
       ],
       { wrapper: harness.Wrapper },
     );
 
     await waitFor(() => {
-      expect(view.result.current[0]?.eventId).toBe("evt_deferred");
+      expect(view.result.current[0]?.job.eventId).toBe("evt_deferred");
     });
     expect(view.result.current[1]).toBeNull();
     expect(view.result.current[2]).toBeNull();
@@ -199,7 +272,7 @@ describe("useOutstandingAgentJob", () => {
     const { result, wire } = setup([...saturating, deferred]);
 
     await waitFor(() => {
-      expect(result.current?.eventId).toBe("evt_deferred");
+      expect(result.current?.job.eventId).toBe("evt_deferred");
     });
     const filtered = wire.of("GET", "/api/jobs").filter((call) => call.search.includes("originId"));
     expect(filtered).toHaveLength(1);
@@ -236,7 +309,7 @@ describe("useOutstandingAgentJob", () => {
  * long by construction; a `waitFor` on the final state cannot see it, and would
  * have passed against the code this issue was filed against.
  */
-describe("useOutstandingAgentJob across two truncation episodes", () => {
+describe("useOutstandingAgentRequest across two truncation episodes", () => {
   /** `MAX_RECENT_JOBS` unfinished jobs of other threads — the shared list, at its cap. */
   function saturation(tag: string): Job[] {
     return Array.from({ length: MAX_RECENT_JOBS }, (_, index) =>
@@ -257,9 +330,9 @@ describe("useOutstandingAgentJob across two truncation episodes", () => {
     const seen: (string | null)[] = [];
     renderHook(
       () => {
-        const job = useOutstandingAgentJob(THREAD);
-        seen.push(job?.eventId ?? null);
-        return job;
+        const request = useOutstandingAgentRequest(THREAD);
+        seen.push(request?.job.eventId ?? null);
+        return request;
       },
       { wrapper: harness.Wrapper },
     );

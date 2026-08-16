@@ -187,7 +187,11 @@ describe("TodoListItem", () => {
   it("keeps the row's own signals: the working dot and the unread pill", () => {
     mountRow(todoRow({ awaitingAgent: true, unreadThreads: 2 }));
     expect(screen.getByText("2")).toBeTruthy();
-    expect(document.querySelector(".working-dot")).toBeTruthy();
+    // A row the agent owes a reply reads as waiting, not working: nothing says
+    // anybody has taken it (UI-097). The plugin item draws the same signal the
+    // kit row does, through the same component.
+    expect(document.querySelector(".queued-dot")).toBeTruthy();
+    expect(document.querySelector(".working-dot")).toBeNull();
   });
 
   it("renders attention reason chips, and hides them when the host says so", () => {
