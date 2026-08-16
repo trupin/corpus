@@ -378,7 +378,7 @@ belongs to the same fix wave.
 | UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
 | SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | done | P1 | — |
-| UI-070 | Attachments in every composer, through one kit surface | todo | P1 | SHARED-012 |
+| UI-070 | Attachments in every composer, through one kit surface | done | P1 | SHARED-012 |
 | UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | done | P1 | UI-062 |
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
 | UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
@@ -518,7 +518,7 @@ cheapest moment for that to happen.
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
 | UI-097 | A request nobody has picked up says "agent is working…" | todo | P1 | SHARED-033 |
-| CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | todo | P1 | SHARED-033 |
+| CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | done | P1 | SHARED-033 |
 | SERVER-086 | The server does not record that an agent is there | todo | P1 | CONTRACT-045 |
 | UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-086 |
 | UI-099 | Commenting on a document selection leaves no visible anchor | done | P0 | — |
@@ -659,6 +659,17 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | todo | P1 | — |
 
+**Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
+a required field, which breaks every constructor of one: `SERVER-086` (the
+server's status handler) and `UI-098` (the console model and its fixtures). Both
+are pulled into this release rather than left — a contract nothing satisfies is
+not a shippable state, and the rule this release is being run under is that a
+release which starts a feature finishes it. `CONTRACT-045`'s own report also
+notes that `SERVER-086` is now partly superseded: its standalone "last agent
+contact" scalar is exactly the second definition of liveness the shared
+vocabulary removed, so it must aggregate `SERVER-112`'s tracker rather than keep
+its own clock.
+
 **Scope for v0.10.0** (agreed 2026-08-16). This phase carries the four issues
 above plus three that share their theme and their files: `UI-070` (attachments
 through one kit surface — `UI-111` is its missing half, and doing them apart
@@ -686,6 +697,27 @@ ones their own files carry.
 | CLI-039 | A hung `git gc` leaves children the timeout does not kill | todo | P2 | — |
 | SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | todo | P2 | — |
 | SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
+
+### Found in flight during Phase 33, deliberately not in v0.10.0 (2026-08-16)
+
+Both were surfaced by `UI-070`'s agent while running the suite for an unrelated
+change, and neither is caused by this phase's work. They are filed rather than
+folded in: the release scope grew twice already, and a harness bug and a keyboard
+route are not what this release is about.
+
+`INFRA-028` is the more useful of the two, because it explains a confusion this
+repo has been living with. Vite proxies `/api` to `127.0.0.1:8765` by default, so
+running `npm run e2e` beside a live workspace server makes two "server
+unreachable" specs fail against a server that is, in fact, reachable. That has
+been written off repeatedly as "the pair that needs 8765 free" — a true statement
+of the symptom that leaves every local run carrying two failures a reader has to
+remember to discount. Two expected failures is how three unexpected ones get
+through.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | todo | P1 | — |
+| UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | todo | P1 | — |
 
 ### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 
