@@ -151,16 +151,48 @@ it.
 Record each call as you make it — what you chose, what you rejected, and why.
 Written down while the reasoning is fresh, not reconstructed at the end.
 
-## 6. Report the calls
+## 6. Write the release description
 
-After the release is out, report:
+**The release notes are the deliverable, not a changelog.** They are where the
+user finds out what the work amounted to, and they are read by someone who was
+not in the room while it happened. Generated notes — a list of PR titles — do not
+do this and should be replaced.
 
-- **What shipped**, in terms of what a user can now do — not issue ids
-- **Every judgment call**, with the alternative you rejected
-- **Anything you got wrong** and how it was caught. Corrections belong in the
-  report, not buried in a commit
-- **What was deliberately left out**, so the next scope conversation starts from
-  the truth
+High-level but **detailed**: no issue ids as the substance, no shopping list of
+commits, and no sentence a reader would have to open the repo to understand.
+
+Every release description answers two questions outright:
+
+**1. How are users affected?** What can someone do now that they could not do
+before, or what stopped getting in their way? Written in terms of the thing they
+were trying to do — _"the box you are typing in no longer disappears when you
+scroll up to re-read the passage"_ — not in terms of the mechanism. If the honest
+answer is "nothing yet, this is groundwork", **say that plainly**; a release with
+no user-visible change is a normal thing to ship and a dishonest headline is not.
+
+**2. What changed about the product's direction?** Which decisions in here will
+still be shaping the thing in six months — a doctrine revised, a mechanism
+replaced, an assumption dropped. This is the part that is expensive to
+reconstruct later and cheap to write down now. Where nothing did, say so; most
+releases move the product along a direction rather than turning it.
+
+Then the **calls made along the way**, each with:
+
+- what was chosen, in one line
+- what was rejected, and **why it lost** — a decision without its alternative is
+  an assertion
+- what it costs, where the choice has a real downside worth knowing about
+
+Include the calls that went wrong. A correction discovered in review and fixed
+before the tag is part of the story of the release, and burying it makes the next
+reader trust the notes less, not more. Anything left unresolved goes in as an
+open question rather than being quietly omitted.
+
+Keep the mechanical detail last and short: the changelog link, and the tarball.
+Someone who wants the commit list can follow it.
+
+Post the same account to the user when the release is out, so it does not have to
+be gone looking for.
 
 ## Rules
 
@@ -175,6 +207,9 @@ After the release is out, report:
 - **Do not ask the user to adjudicate.** After the go-ahead, questions are a
   failure of the skill. Make the call, note it, keep going, and let them review
   the whole set afterwards — that is the point of the arrangement.
+- **Never leave the generated release notes standing.** A list of PR titles is
+  not a description of what shipped. Write the two answers — how users are
+  affected, what changed about the direction — or the release is undocumented.
 - Never skip the proposal step, even when the scope looks obvious — the user's
   additions are usually the point.
 - Never start the release without the user's go-ahead.
