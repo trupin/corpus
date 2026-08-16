@@ -12,6 +12,7 @@ import type { ParsedDocument } from "./document.js";
 import { normalizeCalendarDate, normalizeInstant } from "./time.js";
 import { FileTurnModelsSchema } from "./turn-model.js";
 import { originOrNull } from "./provenance.js";
+import { residentOrNull } from "./resident.js";
 
 /**
  * The **file-level** frontmatter shape (SPEC.md §5, §6) — deliberately not the
@@ -134,6 +135,22 @@ export const FileThreadFrontmatterSchema = FileFrontmatterSchema.extend({
   anchor: AnchorIdSchema.nullable().default(null),
   agent: ThreadAgentSchema.default("none"),
   turnModels: FileTurnModelsSchema.default({}),
+  /**
+   * The agent resident in this conversation (SPEC.md §7, SHARED-043,
+   * SERVER-109), or `null` — which is what a thread nobody designated says, and
+   * what dissolution leaves behind: §7 makes releasing the *absence* of a
+   * resident and never a third state, so the release removes the key rather
+   * than writing `resident: null`.
+   *
+   * Read through `resident.ts`'s one reader, and **leniently, for the reason
+   * `origin` above is**: anything that is not `{name, docId}` reads as no
+   * resident instead of failing the document, so a workspace that used the key
+   * for something of its own stays readable and writable.
+   */
+  resident: z
+    .unknown()
+    .transform((value) => residentOrNull(value))
+    .default(null),
 });
 
 export type FileFrontmatter = z.infer<typeof FileFrontmatterSchema>;

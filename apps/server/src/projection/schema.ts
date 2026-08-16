@@ -114,8 +114,17 @@
  * table nothing reads cost every upgrading workspace its whole semantic index,
  * because only the explicit rebuild carried `chunk_embeddings` across. Both
  * paths carry them now, so the cost of this bump is what it says it is.
+ *
+ * 15 → 16 (SERVER-109): `threads.resident_name` and `threads.resident_doc_id` —
+ * SPEC.md §7's resident, the agent a standalone conversation belongs to
+ * (SHARED-043). Two new columns, so a v15 database does not have them and no
+ * value in one could be carried over; both are read straight off the thread
+ * file's `resident` frontmatter, so the rebuild this bump triggers is the whole
+ * migration. They are projected rather than read per row because the enqueue
+ * path asks "is this root thread designated" for every event (SERVER-111), and
+ * that question must cost one SQLite read rather than a file open.
  */
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -303,7 +312,15 @@ CREATE TABLE threads (
   updated TEXT,
   turn_count INTEGER NOT NULL,
   last_author TEXT,
-  last_ts TEXT
+  last_ts TEXT,
+  -- SPEC.md §7's resident (SHARED-043, SERVER-109): the agent this conversation
+  -- belongs to, as the file spells it, or NULL for the threads nobody
+  -- designated — which is nearly all of them. Both halves, because they answer
+  -- different questions: the name is what a person reads and what survives its
+  -- agent-def being deleted, the id is what a reader opens. Never set for a
+  -- thread with a parent: only a standalone thread may designate.
+  resident_name TEXT,
+  resident_doc_id TEXT
 );
 
 CREATE TABLE anchors (

@@ -69,6 +69,12 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "turn_count",
     "last_author",
     "last_ts",
+    // Past §9.1's list, retyped from SPEC.md §7's resident rider (SHARED-043,
+    // SERVER-109): a lane is named by a designated root thread, so the enqueue
+    // path asks whether a thread is designated once per event and must not open
+    // a file to find out.
+    "resident_name",
+    "resident_doc_id",
   ],
   anchors: ["doc_id", "anchor_id", "exact_text", "prefix", "suffix", "resolved_offset"],
   // `has_form` and `form_answered` are past §9.1's list, retyped from

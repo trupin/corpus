@@ -23,7 +23,7 @@ import {
   type DocumentMutex,
   type MutationResult,
 } from "../docs/index.js";
-import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
+import { AGENTS_KEY, DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { loadThread, toThreadSummary } from "./read.js";
 import type { ThreadsWorkspace } from "./workspace.js";
 
@@ -42,7 +42,20 @@ export async function setThreadStatus(
 ): Promise<StatusChange> {
   return mutex.run(id, async () => {
     const thread = loadThread(workspace, id);
-    if (thread.status === status) {
+    // SPEC.md §7: "a thread that is **resolved** releases its resident with it,
+    // since a settled conversation has nobody to keep resident". One write, one
+    // commit: the release is part of resolving rather than a second act, and it
+    // rewrites nothing already stamped — events keep the lane they were enqueued
+    // with. **Reopening does not bring it back** (§8, as amended): the
+    // conversation resumes on the orchestrator's lane, and designating again is
+    // a deliberate act, as the first designation was. So the key is cleared on
+    // the way to `resolved` and never restored on the way back.
+    //
+    // Read off the file rather than off `thread.resident`, which is null for a
+    // parented thread whatever its frontmatter says (`core/resident.ts`), so a
+    // hand-edited key is cleared here too rather than surviving forever.
+    const releasing = status === "resolved" && Object.hasOwn(thread.loaded.parsed.data, "resident");
+    if (thread.status === status && !releasing) {
       return { thread: toThreadSummary(thread), result: null };
     }
 
@@ -50,12 +63,17 @@ export async function setThreadStatus(
       setFrontmatterFields(thread.loaded.parsed, {
         status,
         updated: formatInstant(workspace.now()),
+        ...(releasing ? { resident: undefined } : {}),
       }),
     );
     const warnings = validateBeforeWrite(workspace, thread.loaded.path, text);
 
     const keys = [DOCS_KEY, docKey(id), threadKey(id)];
     if (thread.parent !== null) keys.push(docKey(thread.parent));
+    // A released resident takes a lane off the roster, which is a different
+    // query from this thread's (SPEC.md §7 — the roster is a read behind
+    // `["agents"]`). Added only when this resolve actually released one.
+    if (releasing) keys.push(AGENTS_KEY);
 
     const result = await runMutation(workspace, {
       docId: id,

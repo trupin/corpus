@@ -240,6 +240,10 @@ describe("projectDocument — threads and turns", () => {
       turn_count: 3,
       last_author: "user",
       last_ts: "2026-07-05T09:00:00Z",
+      // §7's resident (SERVER-109): this thread has a parent, and only a
+      // standalone thread may have one.
+      resident_name: null,
+      resident_doc_id: null,
     });
 
     expect(db.prepare("SELECT idx, author, ts, body_md FROM turns ORDER BY idx").all()).toEqual([
@@ -261,6 +265,52 @@ describe("projectDocument — threads and turns", () => {
       turn_count: 0,
       last_author: null,
       last_ts: null,
+    });
+  });
+
+  // SPEC.md §7's resident (SHARED-043, SERVER-109). Projected so the enqueue
+  // path can ask "is this root thread designated" with one SQLite read, and
+  // stored exactly as the file spells it — the id is re-resolved from the name
+  // at read time, and a projection that pre-resolved it would answer differently
+  // from the thread route about one file.
+  describe("the resident columns", () => {
+    const standalone = (resident: string): string =>
+      `---\nid: th_res\ntype: thread\ntitle: Resident\n${resident}---\n\nNo turns yet.\n`;
+
+    it("projects a standalone thread's designation verbatim", () => {
+      project(
+        "data/threads/th_res.md",
+        standalone("resident:\n  name: researcher\n  docId: doc_researcher\n"),
+      );
+      expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+        resident_name: "researcher",
+        resident_doc_id: "doc_researcher",
+      });
+    });
+
+    it.each([
+      ["no key at all", ""],
+      ["a value that is not a designation", "resident: mine\n"],
+      ["half a designation", "resident:\n  name: researcher\n"],
+    ])("projects nothing for %s", (_label, resident) => {
+      project("data/threads/th_res.md", standalone(resident));
+      expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+        resident_name: null,
+        resident_doc_id: null,
+      });
+    });
+
+    it("projects nothing for a thread with a parent, whatever its frontmatter says", () => {
+      project(
+        "data/threads/th_res.md",
+        `---\nid: th_res\ntype: thread\ntitle: Resident\nparent: doc_a1b2c3\n` +
+          `resident:\n  name: researcher\n  docId: doc_researcher\n---\n\nNo turns yet.\n`,
+      );
+      expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+        parent_id: "doc_a1b2c3",
+        resident_name: null,
+        resident_doc_id: null,
+      });
     });
   });
 

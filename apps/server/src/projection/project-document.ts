@@ -38,6 +38,7 @@ import {
 import type { ProjectionDb } from "./db.js";
 import { classifyPath, workspaceRelativePath, SKILL_FILENAME, type DocumentRoot } from "./roots.js";
 import { originOrNull } from "../core/provenance.js";
+import { storedResident } from "../core/resident.js";
 
 /** How much of the body a list row shows (§9.1 `body_excerpt`). */
 export const EXCERPT_LENGTH = 280;
@@ -304,14 +305,23 @@ function projectThread(
   const anchor = asString(data["anchor"]);
   const agent = ThreadAgentSchema.safeParse(data["agent"]);
   const last = turns.at(-1);
+  const parentId = parent !== null && DocumentIdSchema.safeParse(parent).success ? parent : null;
+  // §7's resident (SHARED-043, SERVER-109), through the one reader every path
+  // asks — which also applies §7's standalone rule, so a `resident:` key on a
+  // parented thread projects as nothing, exactly as it reads as nothing on the
+  // wire. Stored verbatim: the id is re-resolved from the name at *read* time
+  // (`threads/read.ts`), and a projection that pre-resolved it would answer a
+  // different thing from the thread route about one file.
+  const resident = storedResident(data["resident"], parentId);
 
   db.prepare(
     `INSERT INTO threads
-       (id, parent_id, status, agent, anchor_id, title, created, updated, turn_count, last_author, last_ts)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, parent_id, status, agent, anchor_id, title, created, updated, turn_count, last_author,
+        last_ts, resident_name, resident_doc_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
-    parent !== null && DocumentIdSchema.safeParse(parent).success ? parent : null,
+    parentId,
     fields.status,
     agent.success ? agent.data : "none",
     anchor !== null && AnchorIdSchema.safeParse(anchor).success ? anchor : null,
@@ -321,6 +331,8 @@ function projectThread(
     turns.length,
     last?.author ?? null,
     last?.ts ?? null,
+    resident?.name ?? null,
+    resident?.docId ?? null,
   );
 
   // `OR IGNORE`: the primary key is (thread_id, ts) because a turn's timestamp

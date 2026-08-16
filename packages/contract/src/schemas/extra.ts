@@ -67,6 +67,15 @@ export const RESERVED_FRONTMATTER_KEYS = [
   "parent",
   "anchor",
   "agent",
+  // SPEC.md §7 — the resident a standalone thread designates (SHARED-043).
+  // Reserved for exactly the reason `origin` and `turnModels` are, and the
+  // hazard was **reproduced against a running server** before this line existed
+  // (SERVER-109): `extra` is a client-supplied merge patch, so an unreserved
+  // `resident` let an agent designate — or release — itself with an ordinary
+  // `PUT /api/docs/{threadId}`, straight past §7's user-only rule. Once the
+  // queue routes on designation (SERVER-111) that is also a way for an agent to
+  // redirect its own work.
+  "resident",
   // SPEC.md §11 — which model wrote each agent turn, keyed by turn timestamp.
   // Reserved is what makes it unforgeable: `extra` is a client-supplied merge
   // patch, so an attribution stored there could be rewritten by an ordinary
