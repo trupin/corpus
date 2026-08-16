@@ -178,7 +178,9 @@ function readDocumentFields(
     due: asCalendarDate(data["due"]),
     reviewed: asInstant(data["reviewed"]),
     evergreen: data["evergreen"] === true,
-    origin: asString(data["origin"]) ?? null,
+    origin: ((value) => (typeof value === "string" && value.startsWith("th_") ? value : null))(
+      data["origin"],
+    ),
     anchors: readAnchors(data["anchors"]),
     view: readViewFrontmatter(data),
   };

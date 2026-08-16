@@ -74,3 +74,18 @@ export const STAMPABLE_STATUSES: readonly QueueEventStatus[] = [
 
 export const isStampable = (status: QueueEventStatus): boolean =>
   STAMPABLE_STATUSES.includes(status);
+
+/**
+ * The **document** an event names, when it names no thread — the other half of
+ * {@link resolveOrigin}, and the reason that one can stay pure.
+ *
+ * A `doc.edited` event carries only a `docId`, and §7 puts its work in the
+ * scope the *edited document* belongs to. That needs a corpus read, so it is
+ * split out here: this says which document to ask about, and the caller (which
+ * has the projection) asks.
+ */
+export function originDocumentOf(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const docId = (payload as Record<string, unknown>)["docId"];
+  return typeof docId === "string" && docId.startsWith("doc_") ? docId : null;
+}

@@ -8,7 +8,8 @@
 // it.
 
 import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
-import { isStampable, resolveOrigin } from "../core/provenance.js";
+import { isStampable, resolveOrigin, originDocumentOf } from "../core/provenance.js";
+import type { ProjectionDb } from "../projection/index.js";
 import type { JobLookup, JobOrigin } from "../docs/write.js";
 import type { QueueStore } from "./store.js";
 
@@ -22,7 +23,7 @@ import type { QueueStore } from "./store.js";
  * business, not the caller's — a caller made to name the status would be a
  * caller made to track it.
  */
-export function createJobLookup(store: QueueStore): JobLookup {
+export function createJobLookup(store: QueueStore, projection: ProjectionDb): JobLookup {
   return {
     originFor(job: string): JobOrigin {
       for (const status of QUEUE_EVENT_STATUSES) {
@@ -38,7 +39,22 @@ export function createJobLookup(store: QueueStore): JobLookup {
         // event. Reported with the status, because "which one" is the whole
         // difference between those two mistakes.
         if (!isStampable(status)) return { ok: false, reason: "settled", status };
-        return { ok: true, origin: resolveOrigin(found.event.payload) };
+        const named = resolveOrigin(found.event.payload);
+        if (named !== null) return { ok: true, origin: named };
+        // The `doc.edited` case, and the only one that needs the corpus: such
+        // an event names a **document**, not a thread, so the work belongs to
+        // whatever conversation that document already belongs to. Resolving it
+        // here is what keeps reflection work — and every artifact it produces —
+        // inside the scope it reflects on, rather than starting a new one.
+        // `resolveOrigin` cannot do this itself: it is pure by contract, and
+        // SERVER-111 calls it on the enqueue path where a read per event would
+        // be paid on every message.
+        const document = originDocumentOf(found.event.payload);
+        if (document === null) return { ok: true, origin: null };
+        const row = projection
+          .prepare("SELECT origin FROM documents WHERE id = ?")
+          .get(document) as { origin: string | null } | undefined;
+        return { ok: true, origin: row?.origin ?? null };
       }
       return { ok: false, reason: "unknown" };
     },

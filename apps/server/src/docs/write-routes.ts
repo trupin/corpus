@@ -19,6 +19,7 @@ import { applyBulkAction } from "./bulk.js";
 import { createDocument } from "./create.js";
 import { deleteDocument } from "./delete.js";
 import { moveDocument } from "./move.js";
+import { assertJobResolvable } from "./create.js";
 import { patchDocument } from "./patch.js";
 import { loadDocument, toWireDoc } from "./read.js";
 import { updateDocument } from "./update.js";
@@ -147,7 +148,14 @@ export function mountDocWriteRoutes(
   app.openapi(contractRoutes.moveDoc, async (c) => {
     const { id } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
-    const { folder } = c.req.valid("json");
+    const { folder, job } = c.req.valid("json");
+    // Validated and discarded, deliberately. A move creates no document, so
+    // §9.2 records no origin for it — the job buys **attribution** — but the
+    // route declares a `422` for an unresolvable one, and a declared refusal
+    // that never fires is the silent ignore §9.2 names as the failure to avoid:
+    // a caller that mistyped a job id would be told its act was attributed when
+    // nothing was.
+    assertJobResolvable(workspace, job);
     const { doc, result } = await moveDocument(workspace, mutex, actor, id, folder);
     reportWarnings(workspace, id, result);
     return c.json({ doc, warnings: serializeWarnings(result) }, 200);
@@ -156,6 +164,7 @@ export function mountDocWriteRoutes(
   app.openapi(contractRoutes.archiveDoc, async (c) => {
     const { id } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
+    assertJobResolvable(workspace, c.req.valid("json")?.job);
     const { doc, result } = await setArchived(workspace, mutex, actor, id, true);
     reportWarnings(workspace, id, result);
     return c.json({ doc, warnings: serializeWarnings(result) }, 200);
@@ -164,6 +173,7 @@ export function mountDocWriteRoutes(
   app.openapi(contractRoutes.unarchiveDoc, async (c) => {
     const { id } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
+    assertJobResolvable(workspace, c.req.valid("json")?.job);
     const { doc, result } = await setArchived(workspace, mutex, actor, id, false);
     reportWarnings(workspace, id, result);
     return c.json({ doc, warnings: serializeWarnings(result) }, 200);

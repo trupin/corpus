@@ -114,6 +114,22 @@ export function stampedOrigin(
   return resolved.origin;
 }
 
+/**
+ * Refuses an unresolvable `job` without stamping anything.
+ *
+ * For the writes that carry a job but create no document — a move, an archive,
+ * an unarchive — where §9.2 records no origin (it records one for a document a
+ * job *creates*) but the route still declares the `422`. Validating without
+ * stamping is what keeps that declaration honest: the alternative is a route
+ * that accepts an id, ignores it, and answers `200`.
+ */
+export function assertJobResolvable(
+  workspace: { readonly jobs?: JobLookup | undefined },
+  job: string | undefined,
+): void {
+  stampedOrigin(workspace, job);
+}
+
 export async function createDocument(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,

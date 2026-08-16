@@ -94,8 +94,23 @@ export const FileFrontmatterSchema = z.looseObject({
    * Nothing here *sets* it. The stamp is the write path's (SERVER-110), which
    * resolves the job a write names to its lane's root thread; this is only the
    * parse, and its whole job is to make the absent case explicit.
+   *
+   * **Anything that is not a thread id reads as `null` rather than failing.**
+   * `origin` was a perfectly legal `extra` key before this existed — §5 and §12
+   * make frontmatter the plugin extension point — so a workspace may already
+   * hold documents whose `origin:` means something else entirely. Validating it
+   * strictly would make every save of such a document a `400`, including the
+   * reader's autosave, until somebody hand-edited the file: a corpus that
+   * existed before a field did must not become unwritable because of it. The
+   * value is dropped rather than preserved because the **wire** promises a
+   * thread id or null, and `extra` cannot hold it either now that the key is
+   * reserved — so this is the one place the old value goes, and it goes
+   * quietly. (PR #47 review.)
    */
-  origin: ThreadIdSchema.nullable().default(null),
+  origin: z
+    .unknown()
+    .transform((value) => (typeof value === "string" && value.startsWith("th_") ? value : null))
+    .default(null),
 });
 
 /**

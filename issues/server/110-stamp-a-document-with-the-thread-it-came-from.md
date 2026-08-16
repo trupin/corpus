@@ -89,6 +89,34 @@ naming `body.origin`; a detached document can be claimed again; an unknown job
 is `422` naming the id, a settled one is `422` naming its state, and a refusal
 writes nothing.
 
+### Corrections from PR #47's review
+
+Three MAJORs, all real, and one of them was a criterion this file had already
+ticked:
+
+- **AC 2's `doc.edited` half was declared and unimplemented.** `resolveOrigin`
+  returned `null` for such an event, its docblock said "resolved by the caller",
+  and no caller did. A follow-up written while reflecting fell out of the scope
+  it reflects on. `originDocumentOf` + the projection read in `job-lookup.ts`
+  close it, tested in `queue/job-lookup.test.ts` — **not** in the integration
+  suite, because the write fixture wires no `editSessions`, so no `doc.edited`
+  event is ever emitted there and an integration test would have proved only
+  that the event never arrived.
+- **Nine routes declared the `422`; three could produce it.** The other six
+  accepted `job` and dropped it — the silent ignore §9.2 names as the failure to
+  avoid. `patch` now stamps through the ordinary write path (so the two edit
+  verbs agree about filing), and move/archive/unarchive/turn-append/form-respond
+  validate the job without stamping, since they create no document.
+- **A corpus that predates the field became unwritable.** `origin` was a legal
+  `extra` key before it was reserved, so a document carrying an unrelated
+  `origin:` failed §14 validation on every save, including the reader's
+  autosave. The parse, the read path and the projection now read anything that
+  is not a thread id as `null`.
+
+Writing the test for the first of those caught a fourth: `job-lookup.ts` called
+`projection.db.prepare`, and `ProjectionDb` exposes `prepare` directly — the
+production path would have thrown on every `doc.edited` job.
+
 ### Three things worth recording
 
 **"Has no origin" is `origin: null`, not an absent key.** Every document written

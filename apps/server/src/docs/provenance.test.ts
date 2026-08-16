@@ -232,3 +232,86 @@ describe("a job that names no work this write can serve", () => {
     expect(((await after.json()) as { items: unknown[] }).items.length).toBe(countBefore);
   });
 });
+
+describe("every route that declares the 422 can produce it (PR #47 review)", () => {
+  // Six of the nine accepted `job` and dropped it, so the declared refusal
+  // never fired — the silent ignore §9.2 names as the failure to avoid: a
+  // caller that mistyped a job id was told its act was attributed when nothing
+  // was recorded and nothing refused.
+  const BAD = "evt_nosuchjob";
+
+  it("refuses an unresolvable job on a patch", async () => {
+    const created = await ws.post("/api/docs", { type: "note", title: "T", body: "aaa" }, asAgent);
+    const id = ((await created.json()) as { doc: { frontmatter: { id: string } } }).doc.frontmatter
+      .id;
+    const refused = await ws.post(
+      `/api/docs/${id}/patch`,
+      { old: "aaa", new: "bbb", job: BAD },
+      asAgent,
+    );
+    expect(refused.status).toBe(422);
+  });
+
+  it("refuses one on a move, an archive and an unarchive", async () => {
+    const created = await ws.post("/api/docs", { type: "note", title: "T" }, asAgent);
+    const id = ((await created.json()) as { doc: { frontmatter: { id: string } } }).doc.frontmatter
+      .id;
+
+    expect((await ws.post(`/api/docs/${id}/move`, { folder: "f", job: BAD }, asAgent)).status).toBe(
+      422,
+    );
+    expect((await ws.post(`/api/docs/${id}/archive`, { job: BAD }, asAgent)).status).toBe(422);
+    expect((await ws.post(`/api/docs/${id}/unarchive`, { job: BAD }, asAgent)).status).toBe(422);
+  });
+
+  it("refuses one on a turn append", async () => {
+    const { threadId } = await threadWithJob();
+    const refused = await ws.post(
+      `/api/threads/${threadId}/turns`,
+      { body: "a reply", job: BAD },
+      asAgent,
+    );
+    expect(refused.status).toBe(422);
+  });
+
+  it("stamps through a patch, so the two edit verbs agree", async () => {
+    // A patch is an edit path, so it files an unfiled document exactly as a
+    // `PUT` does — otherwise whether a job-attributed edit files a document
+    // would depend on which verb the caller happened to choose.
+    const created = await ws.post("/api/docs", { type: "note", title: "T", body: "aaa" }, asAgent);
+    const id = ((await created.json()) as { doc: { frontmatter: { id: string } } }).doc.frontmatter
+      .id;
+    expect(await originOf(id)).toBeNull();
+
+    const { threadId, job } = await threadWithJob();
+    expect(
+      (await ws.post(`/api/docs/${id}/patch`, { old: "aaa", new: "bbb", job }, asAgent)).status,
+    ).toBe(200);
+
+    expect(await originOf(id)).toBe(threadId);
+  });
+});
+
+describe("a corpus that existed before this field did (PR #47 review)", () => {
+  it("reads an unrelated `origin:` key as null instead of refusing every save", async () => {
+    // `origin` was a legal `extra` key before it was reserved, so a workspace
+    // may already hold documents whose `origin:` means something else. Strict
+    // validation would make every save of one a 400 — including the reader's
+    // autosave — until somebody hand-edited the file.
+    const created = await ws.post("/api/docs", { type: "note", title: "Imported" }, asUser);
+    const doc = (await created.json()) as { doc: { frontmatter: { id: string }; path: string } };
+    const id = doc.doc.frontmatter.id;
+
+    const onDisk = ws.read(doc.doc.path);
+    ws.write(doc.doc.path, onDisk.replace("origin: null", "origin: some-import-system"));
+
+    const read = await ws.request(`/api/docs/${id}`);
+    expect(read.status).toBe(200);
+    expect(
+      ((await read.json()) as { frontmatter: { origin: string | null } }).frontmatter.origin,
+    ).toBeNull();
+
+    const saved = await ws.put(`/api/docs/${id}`, { title: "Renamed" }, asUser);
+    expect(saved.status).toBe(200);
+  });
+});

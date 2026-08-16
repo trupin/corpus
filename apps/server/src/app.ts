@@ -515,7 +515,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       // §9.2's provenance (SERVER-110). Reads the queue's own event files, so a
       // write naming a `job` can be stamped with the conversation that work
       // came from without the write path knowing anything about the queue.
-      jobs: createJobLookup(queue.store),
+      jobs: createJobLookup(queue.store, deps.projection),
     };
     // One mutex across both surfaces. Anchored thread creation and the deletion
     // cascade rewrite a *document's* frontmatter, so they contend with
