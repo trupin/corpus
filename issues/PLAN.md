@@ -670,6 +670,15 @@ contact" scalar is exactly the second definition of liveness the shared
 vocabulary removed, so it must aggregate `SERVER-112`'s tracker rather than keep
 its own clock.
 
+**Second scope addition, 2026-08-16 — `PLUGINS-012`.** `UI-111` audited every
+surface §11's attachment rider names and fixed all but one: the Todos plugin's
+*Comment on item* composer, which it could not reach, because a plugin may import
+only `@corpus/kit` and the kit published no intake hook at the time. `UI-070` has
+now published it — that was its entire purpose. So this release would otherwise
+ship a §11 claim ("every composer takes attachments") with one composer in the
+repo still refusing files, which is exactly the half-finished feature the release
+rule forbids. Pulled in.
+
 **Scope for v0.10.0** (agreed 2026-08-16). This phase carries the four issues
 above plus three that share their theme and their files: `UI-070` (attachments
 through one kit surface — `UI-111` is its missing half, and doing them apart
