@@ -26,9 +26,24 @@ import { IsoDateTimeSchema } from "./time.js";
  * §7: *"A resident is **live** exactly while it holds a parked scoped `idle`."*
  * There is no heartbeat to send, no registration to keep fresh and no state to
  * reap — an agent that stops parking stops being present, however it stopped.
- * So {@link AgentLaneSchema.live} is a fact about a request the server is
+ * So {@link presenceLiveField} is a fact about a request the server is
  * currently holding open, and every field beside it is either configuration
  * (`resident`, `origin`) or an observation of the same parking (`since`).
+ *
+ * ## One notion of presence, published in two places
+ *
+ * "Is an agent there" is asked by two surfaces at two grains — the composer's
+ * recipient picker asks it of one lane, the console strip asks it of the
+ * workspace — and CONTRACT-045 answers both from **this** vocabulary rather than
+ * a second one. {@link presenceLiveField} and {@link presenceSinceField} are the
+ * literal schema objects published on a roster row *and*, through
+ * {@link AgentPresenceSchema}, on `QueueStatus.agent`: the two sites carry
+ * character-identical prose because they carry the same object, and
+ * `openapi.test.ts` asserts it. The queue status's copy is the roster's own
+ * verdict aggregated — `live` there is true exactly when some row's `live` is —
+ * so the strip and the picker cannot come to disagree about the same fact, which
+ * is the whole reason the aggregate is published beside the counts instead of
+ * being derived by elimination from them.
  */
 
 /** The upper bound on {@link AgentLaneSchema}'s `summary`, in characters. */
@@ -145,6 +160,89 @@ export const LaneOriginSchema = z
   .openapi("LaneOrigin");
 
 /**
+ * **Whether a listener is parked** — the one field every "is an agent there"
+ * question on this wire is answered by, whatever its grain.
+ *
+ * Published on a roster row (per lane) and on `QueueStatus.agent` (the whole
+ * workspace) as the *same object*, so the two descriptions are identical by
+ * construction rather than by anyone remembering to keep them so. The subject
+ * therefore has to be named by where it sits, which is what the first sentence
+ * does.
+ *
+ * **The grace window is applied server-side, before this is answered**, and that
+ * is the one thing about it a client must not re-decide. §7 leaves the window's
+ * length open but guarantees it is longer than a rearm gap, because a healthy
+ * listener un-parks for a moment every time it re-arms; a verdict computed
+ * without it would flicker every eight minutes, and a console pill that
+ * flickered would be the same lie this field exists to stop, just faster.
+ */
+export const presenceLiveField = z
+  .boolean()
+  .describe(
+    "**Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster " +
+      "row, on any lane at all where it sits on the queue status. The two are the same " +
+      "observation at two grains and never disagree. Presence is the parked scoped `idle` and " +
+      "nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that " +
+      "stops parking stops being present whether it exited cleanly, crashed or was killed. **The " +
+      "grace window is already applied**: a listener between parks is still live, since a healthy " +
+      "one un-parks for a moment every time it re-arms. False is therefore an ordinary, " +
+      "recoverable state and not an error — past that window a lane's pending events fall back to " +
+      "the orchestrator at claim time, so the work is done more slowly and never silently not " +
+      "done.",
+  );
+
+/**
+ * **When a listener was last observed parked** — the evidence behind
+ * {@link presenceLiveField}, and the field that lets a caller say *how* stale
+ * the verdict it is holding has become.
+ *
+ * It advances on every re-arm, so on a live lane it is never older than the idle
+ * timeout, and it stops moving the moment the listener does. That is what makes
+ * `now − since` the age of the evidence rather than the length of the agent's
+ * session — and it is why a client may expire a `live: true` it has been holding
+ * too long (`isAgentPresent`) without ever being able to manufacture a presence
+ * the server did not report.
+ */
+export const presenceSinceField = IsoDateTimeSchema.nullable().describe(
+  "**When a listener was last observed parked**, as an instant — null when none ever has been. " +
+    "It advances every time the listener re-arms, so on a live lane it is never older than the " +
+    "idle timeout, and it stops the moment the listener does: `now − since` is therefore the age " +
+    "of the evidence behind `live`, not the length of a session. An instant rather than an " +
+    "elapsed duration, for the reason `InProgressEvent.heldSince` gives: a duration is stale the " +
+    "moment the response is read and hides which clock produced it, while an instant lets the " +
+    "caller subtract against whichever clock it trusts. Rendering it as `last seen 12m ago` is " +
+    "the caller's job.",
+);
+
+/**
+ * Whether an agent is there, and the observation behind the answer.
+ *
+ * A component of its own because it is carried at two grains — one lane's, on a
+ * roster row, and the workspace's, on `QueueStatus.agent` — and a caller that
+ * can write one function over `{live, since}` writes the pill and the picker
+ * with the same code. {@link AgentLaneSchema} spreads the same two fields flat
+ * rather than nesting this, so the row still reads as one sentence; it is
+ * structurally an `AgentPresence`, and `isAgentPresent` takes either.
+ */
+export const AgentPresenceSchema = z
+  .object({ live: presenceLiveField, since: presenceSinceField })
+  .openapi("AgentPresence", {
+    description:
+      "**Whether an agent is there, and the observation behind the answer** (SPEC.md §7, §11). " +
+      "Presence is the parked scoped `idle` and nothing else — nothing is registered, nothing is " +
+      "reaped, and nothing new is asked of the agent, which is why it can be reported without a " +
+      "heartbeat protocol.\n\n" +
+      "Where this sits on `QueueStatus` it is the roster's own liveness **aggregated over every " +
+      "lane**: `live` is true exactly when some lane of `GET /api/agents` is live, and `since` " +
+      "is the most recent of their instants. One notion of presence reported at two grains, so " +
+      "the console strip and the recipient picker can never disagree about whether anybody is " +
+      "listening. **It says whether an agent is present, never how many are**: one parked agent " +
+      "and two are both `live`, and a count belongs to the roster, which has a row per lane to " +
+      "put it on. Read it rather than deriving idleness from the queue counts beside it — an " +
+      "empty queue means nobody asked for anything, not that somebody is waiting to be asked.",
+  });
+
+/**
  * One lane of the queue, and whoever is or is not listening on it.
  *
  * Ordered as the row reads: which lane, who is resident on it, whether anyone is
@@ -157,24 +255,11 @@ export const AgentLaneSchema = z
         "to send as `scope` on a queue verb, and as `recipient` on a message addressed here.",
     ),
     resident: residentField,
-    live: z
-      .boolean()
-      .describe(
-        "**Whether a listener is parked on this lane right now** (SPEC.md §7). Presence is the " +
-          "parked scoped `idle` and nothing else: there is no heartbeat, no registration and " +
-          "nothing to reap, so an agent that stops parking stops being present whether it exited " +
-          "cleanly, crashed or was killed. False is therefore an ordinary, recoverable state and " +
-          "not an error — a lane whose listener has been absent past the grace window falls back " +
-          "to the orchestrator at claim time, so the work is done more slowly and never silently " +
-          "not done.",
-      ),
-    since: IsoDateTimeSchema.nullable().describe(
-      "**When this lane's listener was last seen parked**, as an instant — null when it never has " +
-        "been. An instant rather than an elapsed duration, for the reason `InProgressEvent." +
-        "heldSince` gives: a duration is stale the moment the response is read, and it hides " +
-        "which clock produced it, while an instant lets the caller subtract against whichever " +
-        "clock it trusts. Rendering it as `live 4m` is the caller's job.",
-    ),
+    // The shared objects, deliberately: a roster row and the queue status ask
+    // the same question, and they answer it in the same words because they are
+    // the same schema.
+    live: presenceLiveField,
+    since: presenceSinceField,
     summary: z
       .string()
       .max(LANE_SUMMARY_MAX_LENGTH)
@@ -232,6 +317,7 @@ export const DesignateResidentRequestSchema = z
   .strictObject({ name: AgentNameSchema })
   .openapi("DesignateResidentRequest");
 
+export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
 export type Resident = z.infer<typeof ResidentSchema>;
 export type LaneOrigin = z.infer<typeof LaneOriginSchema>;
 export type AgentLane = z.infer<typeof AgentLaneSchema>;

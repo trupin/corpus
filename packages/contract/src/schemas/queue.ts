@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { type AgentPresence, AgentPresenceSchema } from "./agents.js";
 import { DocumentIdSchema, EventIdSchema } from "./id.js";
 import { laneScopeParam } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
@@ -310,8 +311,61 @@ export const ClaimBatchSchema = z
   })
   .openapi("ClaimBatch");
 
+/**
+ * Long-poll window (CLAUDE.md Architecture Decision 4). The default matches the
+ * agent skill's ~8 minute rearm, and the same value bounds the ask: a longer
+ * timeout is rejected with a 400 validation error rather than silently clamped,
+ * so a client cannot park past the window the loop is built around (SPEC.md §7).
+ */
+export const DEFAULT_IDLE_TIMEOUT_SECONDS = 480;
+export const MAX_IDLE_TIMEOUT_SECONDS = 480;
+
+/**
+ * How long a listener may be un-parked before it stops counting as present —
+ * §7's **grace window**, fixed here because it is one number two processes have
+ * to agree on.
+ *
+ * **Derived, never chosen.** §7 deliberately does not fix the length, but it
+ * guarantees exactly one bound on it: *"the window is longer than a rearm gap"*.
+ * The rearm gap is bounded by {@link MAX_IDLE_TIMEOUT_SECONDS} — a park cannot
+ * outlive it, and the skill re-invokes immediately — so a window shorter than
+ * the timeout would read an ordinary rearm as a departure, which is the failure
+ * SHARED-033's rider names ("comfortably longer than the interval at which a
+ * parked agent re-contacts the server"). Twice the timeout tolerates one wholly
+ * missed rearm and calls two a departure. Writing it as a multiple rather than
+ * as `960` is the point: change the loop's rearm and the window follows it, and
+ * `queue.test.ts` pins the bound so it can never quietly stop following.
+ *
+ * The server applies it before answering `AgentPresence.live`; a client applies
+ * the same number to the same instant only to *expire* a verdict it has held too
+ * long ({@link isAgentPresent}). One window, one definition, two appliers.
+ */
+export const AGENT_PRESENCE_WINDOW_SECONDS = DEFAULT_IDLE_TIMEOUT_SECONDS * 2;
+
+/**
+ * Queue depth, halt state — and, since CONTRACT-045, **who is or is not there to
+ * work it**.
+ *
+ * The counts describe the work; `agent` describes the worker, and until it
+ * existed the console had to guess the second from the first. It guessed by
+ * elimination — not halted and nothing in progress ⇒ `idle` — so a machine with
+ * no agent at all reported an agent with nothing to do, which is precisely the
+ * claim §11's rider now says requires evidence. The evidence is this field.
+ *
+ * It is **the roster's own verdict aggregated**, not a second notion of
+ * liveness: `agent.live` is true exactly when some `AgentLane.live` is, and
+ * `agent.since` is the most recent of theirs. Published here rather than left to
+ * a second fetch because the strip already reads this resource on load and on
+ * every `["queue"]` invalidation, and because presence and queue depth are read
+ * together — depth matters most in exactly the state where nobody is listening.
+ */
 export const QueueStatusSchema = z
   .object({
+    // Referenced unmodified, deliberately: `.describe()` on a registered schema
+    // makes zod-to-openapi carry the component's name onto the derived one and
+    // rewrite the shared definition (CONTRACT-037). The prose lives on the
+    // component itself, as it does for `inProgress` above.
+    agent: AgentPresenceSchema,
     halted: z
       .boolean()
       .describe("True while the `.corpus/HALT` sentinel exists; claims return empty."),
@@ -332,6 +386,75 @@ export const QueueStatusSchema = z
     abandoned: z.number().int().min(0),
   })
   .openapi("QueueStatus");
+
+/**
+ * Is an agent there, as of `now`?
+ *
+ * **The server's verdict, which a caller may let expire but never overrule.**
+ * `live` already has the grace window applied ({@link AGENT_PRESENCE_WINDOW_SECONDS}),
+ * so this returns it unchanged in every case but one: a `live: true` whose
+ * evidence is older than the window — a response the caller has been holding
+ * since before the agent left, with no invalidation having arrived to correct
+ * it. Applying the same window to the same instant can therefore only ever
+ * *withdraw* a stale presence, never manufacture one the server denied, which is
+ * what keeps this a second application of one rule rather than a second rule.
+ *
+ * It takes a clock so a UI can re-evaluate on a tick without refetching: §11
+ * asks the pill to flip on its own when an agent walks away, and a pill that
+ * only moved when new data arrived would sit on `idle` for as long as nothing
+ * else happened — the original bug with extra steps. Clock skew costs nothing
+ * either way: a fast local clock expires the verdict early and the next fetch
+ * restores it, a slow one holds it a moment longer, and neither can invent
+ * presence.
+ *
+ * Accepts a roster row as readily as `QueueStatus.agent` — an `AgentLane` is
+ * structurally an {@link AgentPresence}, deliberately.
+ */
+export function isAgentPresent(presence: AgentPresence, now: Date = new Date()): boolean {
+  if (!presence.live) return false;
+  // Live with no instant behind it is a server bug, not a shape to interpret:
+  // trust the verdict rather than inventing an absence the server did not report.
+  if (presence.since === null) return true;
+  const seen = Date.parse(presence.since);
+  if (Number.isNaN(seen)) return true;
+  return now.getTime() - seen <= AGENT_PRESENCE_WINDOW_SECONDS * 1000;
+}
+
+/**
+ * The four states SPEC.md §11's agent pill names, in one place because two
+ * consumers already read them — the console strip and any plugin reading queue
+ * status — and a rule about honesty that each derives for itself is a rule that
+ * holds in one of them.
+ *
+ * The precedence is the interesting part, and every step of it is §11's own
+ * "reports what the server can actually observe":
+ *
+ * 1. **`halted`** outranks everything. While the sentinel is set nothing new is
+ *    claimed, and an in-flight job finishing does not make the agent working
+ *    again. (Unchanged: this is what the UI already did.)
+ * 2. **`disconnected` outranks `working`** — the decision this function makes,
+ *    and the one SHARED-033 listed as open. `inProgress > 0` is a fact about
+ *    *events*, not about anybody holding them: an agent that claimed work and
+ *    died leaves the count standing forever, and `working` about a corpse is the
+ *    same unevidenced claim as `idle` about an empty machine, mirrored. §8's
+ *    rider already refuses to call unclaimed work "working"; refusing to call
+ *    abandoned work "working" is the same sentence read in the other direction.
+ *    What recovers those events is `reap-stale`, and what tells a person to run
+ *    it is seeing that nobody is there.
+ * 3. **`working`** when an agent is present and holds work.
+ * 4. **`idle`** last, and now a claim with evidence behind it rather than the
+ *    else-branch it used to be: an agent is connected and has nothing to do.
+ */
+export type AgentActivity = "halted" | "disconnected" | "working" | "idle";
+
+export function agentActivity(
+  status: Pick<QueueStatus, "agent" | "halted" | "inProgress">,
+  now: Date = new Date(),
+): AgentActivity {
+  if (status.halted) return "halted";
+  if (!isAgentPresent(status.agent, now)) return "disconnected";
+  return status.inProgress > 0 ? "working" : "idle";
+}
 
 /**
  * Events available to claim right now, returned by the long-poll idle endpoint.
@@ -358,15 +481,6 @@ export const IdleResultSchema = z
     inProgress: InProgressSetSchema,
   })
   .openapi("IdleResult");
-
-/**
- * Long-poll window (CLAUDE.md Architecture Decision 4). The default matches the
- * agent skill's ~8 minute rearm, and the same value bounds the ask: a longer
- * timeout is rejected with a 400 validation error rather than silently clamped,
- * so a client cannot park past the window the loop is built around (SPEC.md §7).
- */
-export const DEFAULT_IDLE_TIMEOUT_SECONDS = 480;
-export const MAX_IDLE_TIMEOUT_SECONDS = 480;
 
 /**
  * The lane a claim consumes (SPEC.md §7), on `POST /api/queue/claim-all`.

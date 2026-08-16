@@ -166,8 +166,10 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     parameterised: false,
     emittedBy:
       "every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, " +
-      "and the end of an edit session that re-enters a deferred event",
-    refetchedBy: "`GET /api/queue/status` — the console strip's depth and halted state",
+      "and the end of an edit session that re-enters a deferred event — plus every change to " +
+      "agent presence, since the status carries it: a listener parking, its hold ending, and the " +
+      "grace window lapsing",
+    refetchedBy: "`GET /api/queue/status` — the console strip's agent pill, depth and halted state",
   },
   jobs: {
     shape: '["jobs"]',

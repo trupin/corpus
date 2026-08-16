@@ -2252,6 +2252,7 @@ describe("the deferred queue state (CONTRACT-021)", () => {
   it("counts deferrals separately from failures on the console strip's status", () => {
     const status = componentSchemas?.["QueueStatus"];
     expect(Object.keys(status?.properties ?? {})).toEqual([
+      "agent",
       "halted",
       "pending",
       "inProgress",
@@ -2338,6 +2339,81 @@ describe("the deferred queue state (CONTRACT-021)", () => {
     const description = operation("/events", "get").description ?? "";
     expect(description).toContain("complete, fail, defer, abandon");
     expect(description).toContain("the end of an edit session that re-enters a deferred event");
+  });
+});
+
+/**
+ * CONTRACT-045 — presence, published once and read at two grains.
+ *
+ * The console strip used to derive `idle` by elimination from the counts, so a
+ * machine with no agent reported an agent with nothing to do. What removes that
+ * is not merely a new field but a **single** notion of liveness: the roster's,
+ * aggregated. So these tests are about the published document agreeing with
+ * itself — the two sites must carry the same words, because a copy that drifts
+ * by a sentence is how the strip and the recipient picker come to answer the
+ * same question differently.
+ */
+describe("one notion of presence, at two grains (CONTRACT-045)", () => {
+  const presence = () => componentSchemas?.["AgentPresence"];
+  const lane = () => componentSchemas?.["AgentLane"];
+
+  it("puts the worker on the queue status, beside the work", () => {
+    const status = componentSchemas?.["QueueStatus"];
+    expect(status?.properties?.["agent"]?.$ref).toBe("#/components/schemas/AgentPresence");
+    expect(status?.required).toContain("agent");
+  });
+
+  it("demands both halves of a presence, so a verdict never travels without its evidence", () => {
+    expect(Object.keys(presence()?.properties ?? {})).toEqual(["live", "since"]);
+    expect(presence()?.required).toEqual(["live", "since"]);
+  });
+
+  /**
+   * The sharing itself, read off the generated document rather than the source:
+   * the roster row and the queue status publish the same schema objects, so
+   * their prose is identical character for character. A hand-copied description
+   * is what this fails on.
+   */
+  it.each(["live", "since"])(
+    "publishes %s in the same words on a roster row and on the queue status",
+    (field) => {
+      const fromLane = JSON.stringify(lane()?.properties?.[field]);
+      const fromPresence = JSON.stringify(presence()?.properties?.[field]);
+      expect(fromLane).toBe(fromPresence);
+      expect(fromLane.length).toBeGreaterThan(200);
+    },
+  );
+
+  it("says what presence is, and that the grace window is already applied", () => {
+    const live = JSON.stringify(presence()?.properties?.["live"]);
+    expect(live).toContain("Presence is the parked scoped `idle` and nothing else");
+    expect(live).toContain("**The grace window is already applied**");
+  });
+
+  it("says `since` advances on every re-arm, which is what makes it the evidence's age", () => {
+    expect(JSON.stringify(presence()?.properties?.["since"])).toContain(
+      "It advances every time the listener re-arms",
+    );
+  });
+
+  /** The identity itself, stated where a server author will read it. */
+  it("states that the aggregate is the roster's own verdict and not a second one", () => {
+    expect(presence()?.description).toContain(
+      "`live` is true exactly when some lane of `GET /api/agents` is live",
+    );
+    expect(operation("/api/queue/status", "get").description).toContain(
+      "the roster's own liveness aggregated",
+    );
+  });
+
+  /**
+   * A pill that never refetches is a pill that never notices the agent left, so
+   * the queue key owes a frame on a presence change as much as on a transition.
+   */
+  it("names presence changes among the queue key's emitters", () => {
+    const description = operation("/events", "get").description ?? "";
+    expect(description).toContain("every change to agent presence");
+    expect(description).toContain("a listener parking, its hold ending, and the grace window");
   });
 });
 

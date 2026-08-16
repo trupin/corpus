@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_PRESENCE_WINDOW_SECONDS,
+  agentActivity,
   CORE_QUEUE_EVENT_TYPES,
   ClaimBatchSchema,
   CoreQueueEventTypeSchema,
@@ -11,6 +13,7 @@ import {
   IdleResultSchema,
   InProgressEventSchema,
   InProgressSetSchema,
+  isAgentPresent,
   MAX_IDLE_TIMEOUT_SECONDS,
   MAX_IN_PROGRESS_REPORTED,
   QUEUE_EVENT_STATUSES,
@@ -403,9 +406,12 @@ describe("ReapStaleResult", () => {
   });
 });
 
+const presentAgent = { live: true, since: "2026-07-19T10:00:00Z" };
+
 describe("QueueStatus", () => {
-  it("round-trips halt state with per-status counts", () => {
+  it("round-trips agent presence with halt state and per-status counts", () => {
     const status = {
+      agent: presentAgent,
       halted: true,
       pending: 3,
       inProgress: 1,
@@ -418,12 +424,15 @@ describe("QueueStatus", () => {
   });
 
   /**
-   * Pinned by CONTRACT-001; widened once, by CONTRACT-021, because a deferral
-   * counted as a failure is exactly the misreading SPEC.md §7 asks the surface
-   * to stop making.
+   * Pinned by CONTRACT-001; widened by CONTRACT-021, because a deferral counted
+   * as a failure is exactly the misreading SPEC.md §7 asks the surface to stop
+   * making, and again by CONTRACT-045 — which adds the only field here that is
+   * not a count, and puts it first because the strip reads the worker before it
+   * reads the work.
    */
-  it("carries exactly the seven fields the console strip reads", () => {
+  it("carries exactly the eight fields the console strip reads, the worker first", () => {
     expect(Object.keys(QueueStatusSchema.shape)).toEqual([
+      "agent",
       "halted",
       "pending",
       "inProgress",
@@ -436,6 +445,149 @@ describe("QueueStatus", () => {
 
   it("requires every count, so a partial response is a validation failure", () => {
     expect(QueueStatusSchema.safeParse({ halted: false, pending: 0 }).success).toBe(false);
+  });
+
+  /**
+   * Required rather than optional, the response-side convention: an absent key
+   * would be indistinguishable from "nobody is there", which is the one
+   * distinction this field was added to make.
+   */
+  it("refuses a status that omits the agent, since silence is what it replaced", () => {
+    const { agent: _dropped, ...counts } = {
+      agent: presentAgent,
+      halted: false,
+      pending: 0,
+      inProgress: 0,
+      deferred: 0,
+      processed: 0,
+      failed: 0,
+      abandoned: 0,
+    };
+    expect(QueueStatusSchema.safeParse(counts).success).toBe(false);
+  });
+
+  it("accepts a workspace no agent has ever contacted", () => {
+    const parsed = QueueStatusSchema.parse({
+      agent: { live: false, since: null },
+      halted: false,
+      pending: 3,
+      inProgress: 0,
+      deferred: 0,
+      processed: 0,
+      failed: 0,
+      abandoned: 0,
+    });
+    expect(parsed.agent).toEqual({ live: false, since: null });
+  });
+});
+
+/**
+ * CONTRACT-045 — the presence window, and the two functions over it.
+ *
+ * SPEC.md §7 leaves the window's length open and guarantees exactly one bound:
+ * it is longer than a rearm gap. That bound is the reason the constant is a
+ * multiple of the idle timeout rather than a number, and it is what these tests
+ * hold: a window that stopped exceeding the rearm would read every healthy
+ * re-park as a departure, and the symptom would be a pill flickering to
+ * `disconnected` every eight minutes.
+ */
+describe("the agent presence window", () => {
+  it("is longer than a rearm gap, which is the one bound SPEC.md §7 fixes", () => {
+    expect(AGENT_PRESENCE_WINDOW_SECONDS).toBeGreaterThan(MAX_IDLE_TIMEOUT_SECONDS);
+    expect(AGENT_PRESENCE_WINDOW_SECONDS).toBeGreaterThan(DEFAULT_IDLE_TIMEOUT_SECONDS);
+  });
+
+  it("tolerates one wholly missed rearm and calls two a departure", () => {
+    expect(AGENT_PRESENCE_WINDOW_SECONDS).toBe(DEFAULT_IDLE_TIMEOUT_SECONDS * 2);
+  });
+});
+
+describe("isAgentPresent", () => {
+  const at = (secondsAgo: number): { live: true; since: string } => ({
+    live: true,
+    since: new Date(Date.parse("2026-07-19T10:00:00Z") - secondsAgo * 1000).toISOString(),
+  });
+  const now = new Date("2026-07-19T10:00:00Z");
+
+  it("keeps a verdict whose evidence is inside the window", () => {
+    expect(isAgentPresent(at(AGENT_PRESENCE_WINDOW_SECONDS - 1), now)).toBe(true);
+  });
+
+  it("keeps it exactly at the boundary, which is still evidence", () => {
+    expect(isAgentPresent(at(AGENT_PRESENCE_WINDOW_SECONDS), now)).toBe(true);
+  });
+
+  /**
+   * The point of taking a clock: §11 asks the pill to flip on its own when an
+   * agent walks away, and nothing else may have happened to prompt a refetch.
+   */
+  it("expires a stale `live` no invalidation has arrived to correct", () => {
+    expect(isAgentPresent(at(AGENT_PRESENCE_WINDOW_SECONDS + 1), now)).toBe(false);
+  });
+
+  it("never manufactures a presence the server denied, however fresh the instant", () => {
+    expect(isAgentPresent({ live: false, since: now.toISOString() }, now)).toBe(false);
+  });
+
+  it("reads a workspace nothing has ever parked on as absent", () => {
+    expect(isAgentPresent({ live: false, since: null }, now)).toBe(false);
+  });
+
+  /**
+   * Live with no instant behind it is a server bug, not a shape to interpret.
+   * Trusting the verdict keeps the failure visible as a missing timestamp rather
+   * than converting it into a silent, permanent `disconnected`.
+   */
+  it("trusts a live verdict whose instant is missing or unparseable", () => {
+    expect(isAgentPresent({ live: true, since: null }, now)).toBe(true);
+    expect(isAgentPresent({ live: true, since: "not an instant" }, now)).toBe(true);
+  });
+});
+
+/**
+ * The pill's four states (SPEC.md §11, rider SHARED-033). Two of the three
+ * precedence steps were already the UI's behaviour; the third — `disconnected`
+ * over `working` — is the decision CONTRACT-045 makes, and it is the mirror of
+ * the bug that filed the issue: `working` about an agent that claimed work and
+ * died is as unevidenced as `idle` about a machine with no agent at all.
+ */
+describe("agentActivity", () => {
+  const now = new Date("2026-07-19T10:00:00Z");
+  const base = { agent: presentAgent, halted: false, inProgress: 0 };
+
+  it("reads a connected agent with nothing to do as idle — the claim, now evidenced", () => {
+    expect(agentActivity(base, now)).toBe("idle");
+  });
+
+  it("reads a connected agent holding work as working", () => {
+    expect(agentActivity({ ...base, inProgress: 2 }, now)).toBe("working");
+  });
+
+  it("reads an empty queue with nobody listening as disconnected, never idle", () => {
+    expect(agentActivity({ ...base, agent: { live: false, since: null } }, now)).toBe(
+      "disconnected",
+    );
+  });
+
+  it("refuses to call held events `working` when nobody is there to hold them", () => {
+    expect(
+      agentActivity({ agent: { live: false, since: null }, halted: false, inProgress: 3 }, now),
+    ).toBe("disconnected");
+  });
+
+  it.each([
+    ["a working agent", { ...base, inProgress: 2 }],
+    ["an idle agent", base],
+    ["no agent at all", { ...base, agent: { live: false, since: null } }],
+  ])("lets halted outrank %s", (_name, status) => {
+    expect(agentActivity({ ...status, halted: true }, now)).toBe("halted");
+  });
+
+  it("flips on the clock alone, with no new status to prompt it", () => {
+    const status = { ...base, agent: { live: true, since: now.toISOString() } };
+    expect(agentActivity(status, now)).toBe("idle");
+    const later = new Date(now.getTime() + (AGENT_PRESENCE_WINDOW_SECONDS + 1) * 1000);
+    expect(agentActivity(status, later)).toBe("disconnected");
   });
 });
 

@@ -3,10 +3,13 @@ import {
   AGENT_NAME_MAX_LENGTH,
   AgentLaneSchema,
   AgentNameSchema,
+  AgentPresenceSchema,
   AgentRosterSchema,
   DesignateResidentRequestSchema,
   LANE_SUMMARY_MAX_LENGTH,
   LaneOriginSchema,
+  presenceLiveField,
+  presenceSinceField,
   ResidentSchema,
   residentField,
 } from "./agents.js";
@@ -142,6 +145,55 @@ describe("AgentLane", () => {
 
   it("refuses a lane name that is neither the orchestrator nor a thread", () => {
     expect(AgentLaneSchema.safeParse({ ...residentLane, lane: "doc_a1b2c3" }).success).toBe(false);
+  });
+});
+
+/**
+ * CONTRACT-045. "Is an agent there" is asked at two grains — of one lane, and of
+ * the workspace — and both are answered from these two objects. The tests below
+ * are about the *sharing*: a second definition of presence is the drift the
+ * field exists to remove, and the cheapest way to grow one is to copy a
+ * description rather than reuse the schema.
+ */
+describe("AgentPresence", () => {
+  it("round-trips a listener that is there, and one that never was", () => {
+    expect(AgentPresenceSchema.parse({ live: true, since: "2026-07-19T10:00:00Z" })).toEqual({
+      live: true,
+      since: "2026-07-19T10:00:00Z",
+    });
+    expect(AgentPresenceSchema.parse({ live: false, since: null })).toEqual({
+      live: false,
+      since: null,
+    });
+  });
+
+  it("requires both halves: a verdict with no evidence behind it is not one", () => {
+    expect(AgentPresenceSchema.safeParse({ live: true }).success).toBe(false);
+    expect(AgentPresenceSchema.safeParse({ since: null }).success).toBe(false);
+  });
+
+  it("spells never-observed as null rather than as an absent key", () => {
+    expect(AgentPresenceSchema.safeParse({ live: false, since: undefined }).success).toBe(false);
+  });
+
+  it("is the very objects a roster row publishes, not a copy of them", () => {
+    expect(AgentLaneSchema.shape.live).toBe(presenceLiveField);
+    expect(AgentLaneSchema.shape.since).toBe(presenceSinceField);
+    expect(AgentPresenceSchema.shape.live).toBe(presenceLiveField);
+    expect(AgentPresenceSchema.shape.since).toBe(presenceSinceField);
+  });
+
+  /**
+   * A roster row is structurally an `AgentPresence`, which is what lets one
+   * predicate serve the pill and the picker. Spreading the fields flat rather
+   * than nesting keeps the row reading as one sentence; this asserts the price
+   * of that choice was not the sharing.
+   */
+  it("parses a roster row, since a row is a presence with more on it", () => {
+    expect(AgentPresenceSchema.parse(orchestratorLane)).toEqual({
+      live: orchestratorLane.live,
+      since: orchestratorLane.since,
+    });
   });
 });
 

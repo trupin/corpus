@@ -3672,7 +3672,7 @@
           },
           "live": {
             "type": "boolean",
-            "description": "**Whether a listener is parked on this lane right now** (SPEC.md §7). Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. False is therefore an ordinary, recoverable state and not an error — a lane whose listener has been absent past the grace window falls back to the orchestrator at claim time, so the work is done more slowly and never silently not done."
+            "description": "**Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster row, on any lane at all where it sits on the queue status. The two are the same observation at two grains and never disagree. Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. **The grace window is already applied**: a listener between parks is still live, since a healthy one un-parks for a moment every time it re-arms. False is therefore an ordinary, recoverable state and not an error — past that window a lane's pending events fall back to the orchestrator at claim time, so the work is done more slowly and never silently not done."
           },
           "since": {
             "type": [
@@ -3681,7 +3681,7 @@
             ],
             "format": "date-time",
             "example": "2026-07-19T10:05:00Z",
-            "description": "**When this lane's listener was last seen parked**, as an instant — null when it never has been. An instant rather than an elapsed duration, for the reason `InProgressEvent.heldSince` gives: a duration is stale the moment the response is read, and it hides which clock produced it, while an instant lets the caller subtract against whichever clock it trusts. Rendering it as `live 4m` is the caller's job."
+            "description": "**When a listener was last observed parked**, as an instant — null when none ever has been. It advances every time the listener re-arms, so on a live lane it is never older than the idle timeout, and it stops the moment the listener does: `now − since` is therefore the age of the evidence behind `live`, not the length of a session. An instant rather than an elapsed duration, for the reason `InProgressEvent.heldSince` gives: a duration is stale the moment the response is read and hides which clock produced it, while an instant lets the caller subtract against whichever clock it trusts. Rendering it as `last seen 12m ago` is the caller's job."
           },
           "summary": {
             "type": [
@@ -3734,6 +3734,9 @@
       "QueueStatus": {
         "type": "object",
         "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentPresence"
+          },
           "halted": {
             "type": "boolean",
             "description": "True while the `.corpus/HALT` sentinel exists; claims return empty."
@@ -3765,6 +3768,7 @@
           }
         },
         "required": [
+          "agent",
           "halted",
           "pending",
           "inProgress",
@@ -3773,6 +3777,29 @@
           "failed",
           "abandoned"
         ]
+      },
+      "AgentPresence": {
+        "type": "object",
+        "properties": {
+          "live": {
+            "type": "boolean",
+            "description": "**Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster row, on any lane at all where it sits on the queue status. The two are the same observation at two grains and never disagree. Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. **The grace window is already applied**: a listener between parks is still live, since a healthy one un-parks for a moment every time it re-arms. False is therefore an ordinary, recoverable state and not an error — past that window a lane's pending events fall back to the orchestrator at claim time, so the work is done more slowly and never silently not done."
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-07-19T10:05:00Z",
+            "description": "**When a listener was last observed parked**, as an instant — null when none ever has been. It advances every time the listener re-arms, so on a live lane it is never older than the idle timeout, and it stops the moment the listener does: `now − since` is therefore the age of the evidence behind `live`, not the length of a session. An instant rather than an elapsed duration, for the reason `InProgressEvent.heldSince` gives: a duration is stale the moment the response is read and hides which clock produced it, while an instant lets the caller subtract against whichever clock it trusts. Rendering it as `last seen 12m ago` is the caller's job."
+          }
+        },
+        "required": [
+          "live",
+          "since"
+        ],
+        "description": "**Whether an agent is there, and the observation behind the answer** (SPEC.md §7, §11). Presence is the parked scoped `idle` and nothing else — nothing is registered, nothing is reaped, and nothing new is asked of the agent, which is why it can be reported without a heartbeat protocol.\n\nWhere this sits on `QueueStatus` it is the roster's own liveness **aggregated over every lane**: `live` is true exactly when some lane of `GET /api/agents` is live, and `since` is the most recent of their instants. One notion of presence reported at two grains, so the console strip and the recipient picker can never disagree about whether anybody is listening. **It says whether an agent is present, never how many are**: one parked agent and two are both `live`, and a count belongs to the roster, which has a row per lane to put it on. Read it rather than deriving idleness from the queue counts beside it — an empty queue means nobody asked for anything, not that somebody is waiting to be asked."
       },
       "IdleResult": {
         "type": "object",
@@ -7676,10 +7703,11 @@
         "tags": [
           "queue"
         ],
-        "summary": "Halted state and per-status event counts",
+        "summary": "Whether an agent is there, halted state, and per-status event counts",
+        "description": "What the console strip reads (SPEC.md §11): the counts describe the work, and `agent` describes the worker. **`agent` is the roster's own liveness aggregated** — the same observation `GET /api/agents` reports per lane, so the strip and the recipient picker cannot disagree about whether anybody is listening — and it is here so that `idle` can be a claim with evidence behind it rather than the else-branch of the counts. An empty queue means nobody asked for anything; it has never meant somebody is waiting to be asked.",
         "responses": {
           "200": {
-            "description": "Current queue depth and halt state.",
+            "description": "Agent presence, current queue depth and halt state.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9210,7 +9238,7 @@
           "events"
         ],
         "summary": "Server-sent invalidation stream",
-        "description": "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\nThe key vocabulary is **closed** — these ten shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:\n\n- `[\"docs\"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.\n- `[\"docs\", \"<docId|threadId>\"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.\n- `[\"tree\"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.\n- `[\"threads\", \"<threadId>\"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.\n- `[\"queue\"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and the end of an edit session that re-enters a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.\n- `[\"jobs\"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.\n- `[\"jobs\", \"<eventId>\"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.\n- `[\"index\"]` — emitted by the embed worker whenever the index's derived state moves: provider adoption, a new disabled or model-download reason, throttled progress while a backlog drains, and the caught-up transition — plus an index rebuild's start and end. Refetch: `GET /api/index/status` — the console strip's index pill.\n- `[\"agents\"]` — emitted by designating or releasing a thread's resident, a thread's resolution releasing one with it, and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a lane lapsing past the grace window. Refetch: `GET /api/agents` — the composer's recipient picker and every surface showing who is running.",
+        "description": "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\nThe key vocabulary is **closed** — these ten shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:\n\n- `[\"docs\"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.\n- `[\"docs\", \"<docId|threadId>\"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.\n- `[\"tree\"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.\n- `[\"threads\", \"<threadId>\"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.\n- `[\"queue\"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and the end of an edit session that re-enters a deferred event — plus every change to agent presence, since the status carries it: a listener parking, its hold ending, and the grace window lapsing. Refetch: `GET /api/queue/status` — the console strip's agent pill, depth and halted state.\n- `[\"jobs\"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.\n- `[\"jobs\", \"<eventId>\"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.\n- `[\"index\"]` — emitted by the embed worker whenever the index's derived state moves: provider adoption, a new disabled or model-download reason, throttled progress while a backlog drains, and the caught-up transition — plus an index rebuild's start and end. Refetch: `GET /api/index/status` — the console strip's index pill.\n- `[\"agents\"]` — emitted by designating or releasing a thread's resident, a thread's resolution releasing one with it, and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a lane lapsing past the grace window. Refetch: `GET /api/agents` — the composer's recipient picker and every surface showing who is running.",
         "security": [],
         "parameters": [
           {

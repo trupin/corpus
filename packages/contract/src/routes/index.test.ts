@@ -194,6 +194,9 @@ const inProgressSet = {
 };
 
 const queueStatus = {
+  // A parked listener with nothing to do — the state that used to be
+  // indistinguishable from an empty machine (CONTRACT-045).
+  agent: { live: true, since: "2026-07-19T10:00:00Z" },
   halted: false,
   pending: 0,
   inProgress: 0,

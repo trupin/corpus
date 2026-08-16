@@ -28,15 +28,28 @@ const EventIdParamSchema = z.object({
 
 /**
  * Read on load by the console strip: SSE only announces invalidation, so the
- * halted dot and the queue depth need a plain fetch (SPEC.md §2.2 rule 3).
+ * halted dot, the queue depth and the agent pill need a plain fetch (SPEC.md
+ * §2.2 rule 3).
+ *
+ * Since CONTRACT-045 it answers the pill's question directly instead of leaving
+ * it to be guessed from the counts. That is why a `["queue"]` frame is owed on
+ * a presence change as well as on a queue transition (`../query-keys.ts`): a
+ * status the strip never refetches is a pill that never notices the agent left.
  */
 export const getQueueStatus = createRoute({
   method: "get",
   path: "/api/queue/status",
   tags: ["queue"],
-  summary: "Halted state and per-status event counts",
+  summary: "Whether an agent is there, halted state, and per-status event counts",
+  description:
+    "What the console strip reads (SPEC.md §11): the counts describe the work, and `agent` " +
+    "describes the worker. **`agent` is the roster's own liveness aggregated** — the same " +
+    "observation `GET /api/agents` reports per lane, so the strip and the recipient picker " +
+    "cannot disagree about whether anybody is listening — and it is here so that `idle` can be " +
+    "a claim with evidence behind it rather than the else-branch of the counts. An empty queue " +
+    "means nobody asked for anything; it has never meant somebody is waiting to be asked.",
   responses: {
-    200: jsonContent(QueueStatusSchema, "Current queue depth and halt state."),
+    200: jsonContent(QueueStatusSchema, "Agent presence, current queue depth and halt state."),
     401: UNAUTHORIZED_RESPONSE,
   },
 });

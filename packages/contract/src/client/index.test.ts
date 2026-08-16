@@ -272,6 +272,7 @@ function createServer() {
     const { reason } = c.req.valid("json");
     return c.json(
       {
+        agent: { live: false, since: null },
         halted: true,
         pending: reason?.length ?? 0,
         inProgress: 0,
