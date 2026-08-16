@@ -37,7 +37,7 @@ async function diff(
 }
 
 describe("GET /api/docs/{id}/diff", () => {
-  it("defaults to the newest commit that touched the document, and its parent", async () => {
+  it("defaults to the newest commit that touched the document, and the one before it", async () => {
     const ws = workspace("diff-default");
     const doc = await createDoc(ws, { type: "note", title: "Rates", body: "one\n" });
     ws.advance(60_000);
@@ -54,6 +54,96 @@ describe("GET /api/docs/{id}/diff", () => {
     expect(body.diff).toContain("+two");
     expect(body.stats.commits).toBe(1);
     expect(body.stats.insertions).toBeGreaterThan(0);
+  });
+
+  it("defaults `from` to the previous commit that touched this document, skipping a neighbour's", async () => {
+    // SERVER-113, the twin of SERVER-097's acknowledgment defect. §4's commit
+    // window belongs to a **party**, not to a document, so the commit sitting
+    // immediately before this document's newest one is routinely whatever the
+    // *other* party last did — to whichever document. `parentOf(to)` names it
+    // anyway, and the range then claims a provenance the document never had.
+    const ws = workspace("diff-default-skips-neighbour");
+    const doc = await createDoc(ws, { type: "note", title: "Estate", body: "one\n" });
+    ws.advance(60_000);
+    // The interloper: a different party, a different document. It closes the
+    // user's window and opens its own, so it is a commit of its own between this
+    // document's two revisions.
+    await createDoc(ws, { type: "note", title: "Comment", body: "unrelated\n" }, "agent");
+    ws.advance(60_000);
+    await putDoc(ws, doc.id, { body: "one\ntwo\n" }, { "x-corpus-author": "user" });
+
+    const { status, body } = await diff(ws, doc.id);
+    expect(status).toBe(200);
+    // Shas are read *after* the request: the last save's window was still open
+    // when it arrived, and the read closes it, which amends that commit
+    // (SERVER-091). Positions are stable across that rewrite; shas are not.
+    const created = ws.git("rev-parse", "HEAD~2").trim();
+    const interloper = ws.git("rev-parse", "HEAD~1").trim();
+    // The fixture really did build the divergence this test is about.
+    expect(ws.git("show", "--name-only", "--format=", interloper).trim()).not.toContain(doc.path);
+    expect(ws.git("show", "--name-only", "--format=", created).trim()).toContain(doc.path);
+
+    expect(body.from).not.toBe(interloper);
+    expect(body.from).toBe(created);
+    expect(body.diff).toContain("+two");
+    expect(body.diff).not.toContain("unrelated");
+    // And nothing the range *reports* moves: the commit skipped over left this
+    // file byte-identical, and both readers are path-scoped, so the old base
+    // answers the same stats and the same bytes. What changed is the claim.
+    const fromOldBase = await diff(ws, doc.id, `?from=${interloper}&to=${body.to ?? ""}`);
+    expect(fromOldBase.body.stats).toEqual(body.stats);
+    expect(fromOldBase.body.diff).toBe(body.diff);
+  });
+
+  it("defaults to git's empty tree when nothing before this document's only commit touched it", async () => {
+    // The honest base for a document whose first commit is its only one:
+    // "nothing before this touched it", which is what the acknowledgment path
+    // publishes for the same shape (SERVER-097). `parentOf` named some earlier
+    // commit about another document instead — a base at which this file did not
+    // exist, described as though it did.
+    const ws = workspace("diff-default-first-commit");
+    await createDoc(ws, { type: "note", title: "Estate", body: "one\n" });
+    ws.advance(60_000);
+    const fresh = await createDoc(
+      ws,
+      { type: "note", title: "Comment", body: "unrelated\n" },
+      "agent",
+    );
+
+    const { status, body } = await diff(ws, fresh.id);
+    expect(status).toBe(200);
+    expect(body.from).toBe(EMPTY_TREE_OBJECT_ID);
+    expect(body.to).toBe(ws.head());
+    // The bytes are the same either way — a file absent at the old base and a
+    // file absent from the empty tree produce the same whole-file-added diff —
+    // so what changed is the claim alone.
+    expect(body.diff).toContain("new file mode");
+    expect(body.diff).toContain("+unrelated");
+    expect(body.stats.commits).toBe(1);
+    expect(body.stats.deletions).toBe(0);
+  });
+
+  it("leaves an explicitly named base alone, however unrelated the commit it names", async () => {
+    // The default is what SERVER-113 changed. A caller that names a range still
+    // gets exactly that range back — including one starting at a commit that
+    // never touched this document, which is precisely what a client quoting an
+    // older `doc.edited` range does.
+    const ws = workspace("diff-explicit-base-kept");
+    const doc = await createDoc(ws, { type: "note", title: "Estate", body: "one\n" });
+    ws.advance(60_000);
+    await createDoc(ws, { type: "note", title: "Comment", body: "unrelated\n" }, "agent");
+    ws.advance(60_000);
+    await putDoc(ws, doc.id, { body: "one\ntwo\n" }, { "x-corpus-author": "user" });
+    ws.advance(60_000);
+    // A fourth commit, so the range's ends both name windows that have closed.
+    await createDoc(ws, { type: "note", title: "Ledger", body: "ledger\n" });
+    const interloper = ws.git("rev-parse", "HEAD~2").trim();
+    const edited = ws.git("rev-parse", "HEAD~1").trim();
+
+    const { body } = await diff(ws, doc.id, `?from=${interloper}&to=${edited}`);
+    expect(body.from).toBe(interloper);
+    expect(body.to).toBe(edited);
+    expect(body.diff).toContain("+two");
   });
 
   it("reads the range it is given, and reports it back resolved", async () => {

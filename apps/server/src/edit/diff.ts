@@ -302,8 +302,28 @@ const unknownRevision = (parameter: "from" | "to", ref: string): never => {
  *
  * The range is resolved before anything is read, and both defaults are computed
  * from the document's own history: `to` is the newest commit that touched its
- * file and `from` is that commit's parent, so the bare `corpus doc diff <id>`
- * §4 spells reads as "what changed in this document's last commit".
+ * file and `from` is the newest commit **before it that touched the same file**,
+ * so the bare `corpus doc diff <id>` §4 spells reads as "what changed in this
+ * document's last commit".
+ *
+ * `from` is {@link previousCommitFor} rather than {@link parentOf} for the reason
+ * that function documents (SERVER-097, and SERVER-113 for this route): under §4's
+ * party-scoped commit window the commit immediately preceding a document's newest
+ * one is routinely the *other* party's work on a *different* document, so the
+ * parent is a false claim about this document's provenance — measured live as a
+ * default base whose only file was a neighbour's. The numbers do not move, since
+ * every commit skipped over left this file byte-identical and both readers below
+ * are path-scoped; what moves is the claim. It is also what the `doc.edited`
+ * acknowledgment already publishes, so the event an agent receives and the route
+ * it calls to see that change now name the same base instead of disagreeing.
+ * A document whose first commit is its only one therefore diffs against
+ * `EMPTY_TREE_OBJECT_ID` — "nothing before this touched it", which the contract
+ * already accepts back as a `from` and which yields the same whole-file-added
+ * diff a base predating the file did.
+ *
+ * An explicitly named `from` is untouched by any of this: a caller that quotes a
+ * range gets exactly that range, including one starting at a commit that never
+ * touched this document.
  *
  * The diff is taken at the path the document holds **now**. A document moved
  * across the range therefore shows what git shows for its current path, which is
@@ -380,7 +400,7 @@ export async function readDocDiff(
 
     const from =
       query.from === undefined
-        ? ((await parentOf(git, to)) ?? EMPTY_TREE_OBJECT_ID)
+        ? ((await previousCommitFor(git, to, path)) ?? EMPTY_TREE_OBJECT_ID)
         : ((await resolveRangeEnd(git, query.from)) ?? unknownRevision("from", query.from));
 
     const stats = await readRangeStats(git, from, to, path);
