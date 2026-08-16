@@ -181,6 +181,15 @@ export interface paths {
                         "application/json": components["schemas"]["UnauthorizedError"];
                     };
                 };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -405,12 +414,21 @@ export interface paths {
                         "application/json": components["schemas"]["StaleKeyError"];
                     };
                 };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
+                    };
+                };
             };
         };
         post?: never;
         /**
          * Delete a document (user-only)
-         * @description **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (SPEC.md §7). Cascade: the document's threads become **orphaned records** — they keep their `parent` id and stay readable, but their anchors no longer resolve. Nothing is hard-deleted from history; git preserves the file and every version of it. Deletion presents no key (SPEC.md §7): it is a user's deliberate act on a document they are looking at, behind an explicit confirm, and it destroys the document rather than a version of it.
+         * @description **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (SPEC.md §7). Cascade: the document's threads become **orphaned records** — they keep their `parent` id and stay readable, but their anchors no longer resolve. Nothing is hard-deleted from history; git preserves the file and every version of it. Deletion presents no key (SPEC.md §7): it is a user's deliberate act on a document they are looking at, behind an explicit confirm, and it destroys the document rather than a version of it. It takes **no `job`**, unlike the other writes: §9.2's attribution is for work an agent does, and deletion is the one mutation an agent may never perform, so a job field here would name work that cannot exist.
          */
         delete: {
             parameters: {
@@ -802,6 +820,15 @@ export interface paths {
                         "application/json": components["schemas"]["PatchConflictError"] | components["schemas"]["StaleKeyError"];
                     };
                 };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -879,6 +906,15 @@ export interface paths {
                         "application/json": components["schemas"]["NotFoundError"];
                     };
                 };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -913,7 +949,12 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Optional, and optional in every part: §9.2 lets any write name the job it serves, and this route previously took no body at all — so **omit the body entirely** and the call is exactly what it has always been. The only thing it can carry is `job`, which buys attribution rather than an origin: §9.2 records an origin for a document a job *creates*, and this act creates nothing. */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["JobOnlyRequest"];
+                };
+            };
             responses: {
                 /** @description The document, now archived, any §14 warnings, and what a skill folder move carried. */
                 200: {
@@ -951,6 +992,15 @@ export interface paths {
                         "application/json": components["schemas"]["NotFoundError"];
                     };
                 };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -985,7 +1035,12 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Optional, and optional in every part: §9.2 lets any write name the job it serves, and this route previously took no body at all — so **omit the body entirely** and the call is exactly what it has always been. The only thing it can carry is `job`, which buys attribution rather than an origin: §9.2 records an origin for a document a job *creates*, and this act creates nothing. */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["JobOnlyRequest"];
+                };
+            };
             responses: {
                 /** @description The document, restored, any §14 warnings, and what a skill folder move carried. */
                 200: {
@@ -1021,6 +1076,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
                     };
                 };
             };
@@ -1323,6 +1387,15 @@ export interface paths {
                         "application/json": components["schemas"]["ValidationError"];
                     };
                 };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -1552,6 +1625,15 @@ export interface paths {
                         "application/json": components["schemas"]["ValidationError"];
                     };
                 };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -1742,6 +1824,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ConflictError"];
+                    };
+                };
+                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownJobError"];
                     };
                 };
             };
@@ -3786,6 +3877,11 @@ export interface components {
              */
             reviewed: string | null;
             evergreen: boolean;
+            /**
+             * @description The thread this document came from (SPEC.md §7 scope, §9.2 provenance), or null when it came from no job. **Server-assigned**: recorded once, from the job the creating write named, whether or not any thread is designated — scope is computed later, and a fact not recorded at write time cannot be recovered. The only request that may touch it is a doc edit sending `origin: null` (detach, user-only), and a detached document may be claimed again by a later write naming a job.
+             * @example th_x9y8z7
+             */
+            origin: string | null;
             /** @description Leading plain-text excerpt of the body, for list rows. */
             excerpt: string;
             /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
@@ -3798,7 +3894,7 @@ export interface components {
             } | null;
             /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). */
             column: string | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra: {
                 [key: string]: unknown;
             };
@@ -3963,6 +4059,11 @@ export interface components {
             reviewed: string | null;
             /** @description True opts the document out of staleness entirely. */
             evergreen: boolean;
+            /**
+             * @description The thread this document came from (SPEC.md §7 scope, §9.2 provenance), or null when it came from no job. **Server-assigned**: recorded once, from the job the creating write named, whether or not any thread is designated — scope is computed later, and a fact not recorded at write time cannot be recovered. The only request that may touch it is a doc edit sending `origin: null` (detach, user-only), and a detached document may be claimed again by a later write naming a job.
+             * @example th_x9y8z7
+             */
+            origin: string | null;
             /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
             pinned: boolean;
             /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. */
@@ -3973,7 +4074,7 @@ export interface components {
             } | null;
             /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). */
             column: string | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra: {
                 [key: string]: unknown;
             };
@@ -4028,7 +4129,19 @@ export interface components {
             /** @description Human-readable specifics — the hook's own output, the offending anchor id, the unresolved ref, the carried document's id and path. Rendered verbatim in the console; never parsed, which is why every distinction a client must act on lives in `code`. */
             detail: string;
         };
+        UnknownJobError: {
+            /** @enum {string} */
+            code: "unknown_job";
+            message: string;
+            /** @description The id that resolved to no event, or to work already settled. */
+            job: string;
+        };
         CreateDocRequest: {
+            /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
             /**
              * @description Document type. Core values: note, thread, view, template, skill, agent-def. Plugins define their own.
              * @example note
@@ -4064,7 +4177,7 @@ export interface components {
             } | null;
             /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). Null is the same as omitting it: no `column` key. */
             column?: string | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra?: {
                 [key: string]: unknown;
             };
@@ -4289,6 +4402,16 @@ export interface components {
         };
         UpdateDocRequest: {
             /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
+            /**
+             * @description Detach: clears this document's `origin`, removing it from its conversation's scope (SPEC.md §9.2). **`null` is the only accepted value** — an origin is never set by a caller, and a request naming a thread here is a `400` — and it is **user-only**, refused for an agent actor. A detached document may be claimed again by a later write that names a job, so this is a correction rather than a lock.
+             * @example th_x9y8
+             */
+            origin?: string | null;
+            /**
              * @description The **key** naming the version of this document that was read (SPEC.md §7). Present it on a write that replaces the document's body, and the write is refused with `409` if the document has changed since — carrying the document as it now stands, and a fresh key for it, so a refusal is one exchange rather than two. **A refusal is never a lost edit**: nothing was written, and the content you tried to save is yours to resend.
              *
              *     **It is opaque. Echo it back exactly as received.** It is *derived from the document's stored content*, which is what makes it need no acquiring, releasing, expiry or reaping: an edit made outside the app invalidates it for free, and it survives a server restart. How it is derived is not contract and is deliberately unpublished. **Never compute, construct, parse, truncate or order a key** — a key is evidence that you read a version, and evidence you manufactured is not evidence; two keys are only ever equal or unequal. It is not a claim, a lease or a handle: there is nothing to release, and holding one confers nothing on you. Every write that lands answers with the document it wrote, carrying a fresh key for the next one.
@@ -4324,7 +4447,7 @@ export interface components {
             } | null;
             /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). On update, `null` clears the key from the file. */
             column?: string | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra?: {
                 [key: string]: unknown;
             };
@@ -4354,6 +4477,11 @@ export interface components {
             matches: number;
         };
         PatchDocRequest: {
+            /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
             /**
              * @description The excerpt of the document's body to replace, quoted **exactly** as it is stored — the same bytes `GET /api/docs/{id}` returned in `body`. Matching is byte-exact: no trimming, no whitespace collapsing, no line-ending translation, no case folding, and no regular expressions. Whitespace and indentation are significant.
              *
@@ -4387,8 +4515,20 @@ export interface components {
             warnings: components["schemas"]["Warning"][];
         };
         MoveDocRequest: {
+            /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
             /** @description Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first (SPEC.md §11), and the agent files inbox arrivals per its skill. */
             folder: string;
+        };
+        JobOnlyRequest: {
+            /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
         };
         SearchResults: {
             /** @description Best match first, ties broken deterministically so the same query twice returns the same order. Empty when nothing matched — an empty ranking, never an error. */
@@ -4526,6 +4666,11 @@ export interface components {
         };
         CreateThreadRequest: {
             /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
+            /**
              * @description Document being commented on. Omitted or null creates a standalone thread.
              * @example doc_a1b2c3
              */
@@ -4551,6 +4696,11 @@ export interface components {
             weight?: string;
         };
         MultipartCreateThreadRequest: {
+            /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
             /**
              * @description Document being commented on. Omitted creates a standalone thread.
              * @example doc_a1b2c3
@@ -4792,6 +4942,11 @@ export interface components {
             lastTs: string;
         };
         AppendTurnRequest: {
+            /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
             body: string;
             /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
             requestsAgent?: boolean;
@@ -4801,6 +4956,11 @@ export interface components {
             weight?: string;
         };
         MultipartAppendTurnRequest: {
+            /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
             /** @description Markdown body of the turn. Optional: a turn may be attachment-only. */
             text?: string;
             /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
@@ -4847,6 +5007,11 @@ export interface components {
             message: string;
         };
         FormAnswerRequest: {
+            /**
+             * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
+             * @example evt_a1b2c3d4
+             */
+            job?: string;
             /** @description One entry per field answered, in any order — entries are matched to fields by question, not by position. A field left blank has no entry, which is a `400` unless that field is optional. Submitting is all-or-nothing: there is no partial save and no per-field submit (SPEC.md §6). */
             answers: components["schemas"]["FormFieldAnswer"][];
             /** @description Free-text note about the ask as a whole, recorded beside the answers (SPEC.md §6). Optional, and never a field's answer. */

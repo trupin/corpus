@@ -93,6 +93,7 @@ async function seedVocabulary(page: Page): Promise<void> {
             due: null,
             reviewed: null,
             evergreen: false,
+            origin: null,
             excerpt: "",
             stale: null,
             parent: null,

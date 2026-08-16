@@ -26,6 +26,7 @@ import { loadThread, toWireThread } from "./read.js";
 import { reattachThread } from "./reattach.js";
 import { markThreadSeen } from "./seen.js";
 import { setThreadStatus } from "./status.js";
+import { assertJobResolvable } from "../docs/create.js";
 import { appendThreadTurn, turnRequestBody } from "./turns.js";
 import type { ThreadsWorkspace } from "./workspace.js";
 
@@ -84,6 +85,10 @@ export function mountThreadRoutes(
     const { id } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
     const input = turnRequestBody(c.req.valid("json"));
+    // A turn appends to a thread that already exists, so it creates no document
+    // and records no origin — but the route declares the `422`, and a declared
+    // refusal that never fires is §9.2's silent ignore.
+    assertJobResolvable(workspace, input.job);
     const { thread, turn, eventId, result } = await appendThreadTurn(
       workspace,
       mutex,
@@ -101,6 +106,10 @@ export function mountThreadRoutes(
   app.openapi(contractRoutes.respondToForm, async (c) => {
     const { id, ts } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
+    // A form answer is user-only and creates no document; the job on it
+    // attributes the answer to the work that asked the question. Validated for
+    // the same reason as the other attribution-only writes.
+    assertJobResolvable(workspace, c.req.valid("json").job);
     const { thread, turn, eventId, result } = await answerThreadForm(
       workspace,
       mutex,

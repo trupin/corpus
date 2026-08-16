@@ -2492,6 +2492,8 @@ describe("a key on every read, and on every write that overwrites", () => {
       "not_found",
       "conflict",
       "stale_key",
+      // CONTRACT-050: a `job` naming no event, or work already settled.
+      "unknown_job",
       "internal_error",
     ]);
   });
@@ -3156,11 +3158,16 @@ describe("the forms surface", () => {
       "403",
       "404",
       "409",
+      // CONTRACT-050. A form answer is user-only, and a job on it is still
+      // meaningful: the form was *asked* by a job, so answering it continues
+      // that work, and §9.2 makes a job on a user actor explicitly legal.
+      "422",
     ]);
   });
 
   it("keeps the answer body to the answer", () => {
     expect(Object.keys(componentSchemas?.["FormAnswerRequest"]?.properties ?? {})).toEqual([
+      "job",
       "answers",
       "note",
     ]);
@@ -3507,6 +3514,8 @@ describe("multipart, attachments and the stream", () => {
       "not_found",
       "conflict",
       "stale_key",
+      // CONTRACT-050: a `job` naming no event, or work already settled.
+      "unknown_job",
       "internal_error",
     ]);
     expect(Object.keys(componentSchemas ?? {})).not.toContain("PayloadTooLargeError");
@@ -3638,7 +3647,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(17);
+    expect(bodies).toHaveLength(19);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -3690,6 +3699,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/check": true,
       "POST /api/docs": true,
       "POST /api/docs/bulk": true,
+      "POST /api/docs/{id}/archive": false,
       "POST /api/docs/{id}/move": true,
       "POST /api/docs/{id}/patch": true,
       "POST /api/jobs/{id}/log": true,
@@ -3702,6 +3712,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/threads/{id}/seen": false,
       "POST /api/threads/{id}/turns": true,
       "POST /api/threads/{id}/turns/{ts}/form": true,
+      "POST /api/docs/{id}/unarchive": false,
       "PUT /api/docs/{id}": false,
     });
   });

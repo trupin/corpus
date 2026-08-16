@@ -71,6 +71,7 @@ import {
   type QueueMirror,
   type QueueService,
 } from "./queue/index.js";
+import { createJobLookup } from "./queue/job-lookup.js";
 import { createHealthHandler } from "./routes/health.js";
 import { mountStaticUi } from "./static-ui.js";
 import {
@@ -511,6 +512,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       now,
       attachmentsRoot: attachmentsRootOf(config.corpusDir),
       editSessions,
+      // §9.2's provenance (SERVER-110). Reads the queue's own event files, so a
+      // write naming a `job` can be stamped with the conversation that work
+      // came from without the write path knowing anything about the queue.
+      jobs: createJobLookup(queue.store, deps.projection),
     };
     // One mutex across both surfaces. Anchored thread creation and the deletion
     // cascade rewrite a *document's* frontmatter, so they contend with

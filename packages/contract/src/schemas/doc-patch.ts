@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { jobField } from "./provenance.js";
 import { docWriteResponseShape } from "./doc.js";
 
 /**
@@ -108,6 +109,7 @@ const ALL_DESCRIPTION =
  */
 export const PatchDocRequestSchema = z
   .strictObject({
+    job: jobField,
     old: z.string().min(1).describe(OLD_DESCRIPTION),
     new: z.string().describe(NEW_DESCRIPTION),
     all: z.boolean().optional().describe(ALL_DESCRIPTION),

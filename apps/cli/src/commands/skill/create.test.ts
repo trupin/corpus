@@ -33,6 +33,7 @@ const SKILL: Doc = {
     due: null,
     reviewed: null,
     evergreen: false,
+    origin: null,
     pinned: false,
     order: null,
     query: null,

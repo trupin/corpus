@@ -155,6 +155,7 @@ describe("GET /api/docs/{id}", () => {
       due: null,
       reviewed: null,
       evergreen: false,
+      origin: null,
     });
     // Undated is `null`, exactly as the collection query reports it, so one
     // document never has two ages depending on the endpoint.

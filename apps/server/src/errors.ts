@@ -120,6 +120,31 @@ export function conflict(message: string): HttpError {
  * re-attach conflict and the two must stay tellable apart at the `code` a client
  * branches on (`StaleKeyErrorSchema`).
  */
+/**
+ * A `job` that names no event this server can serve work for (SPEC.md §9.2,
+ * SERVER-110).
+ *
+ * `422` rather than `400`, and rather than silence. The body is well-formed —
+ * `evt_…` is a valid id, it simply resolves to nothing, or to work that is over
+ * — so it is not a malformed request; and it is not ignored because a caller
+ * that got the id wrong **wanted the attribution**. Dropping it quietly would
+ * leave that caller believing its document had been filed into a conversation
+ * when it had not, which is the failure provenance exists to prevent. An
+ * **omitted** job stays free: forgetting is not the same as naming the wrong
+ * thing.
+ */
+export function unknownJob(job: string, status?: string): HttpError {
+  const because =
+    status === undefined
+      ? "no event has that id"
+      : `that event is \`${status}\` — settled work cannot acquire a scope, and a write claiming to serve it is either a stale job id or a loop that never settled its own event`;
+  return new HttpError(422, {
+    code: "unknown_job",
+    message: `the job \`${job}\` names no work this write can serve: ${because}. Nothing was written — retry without \`job\`, or with the id of the event you are actually holding.`,
+    job,
+  });
+}
+
 export function staleKey(message: string, doc: Doc): HttpError {
   return new HttpError(409, { code: "stale_key", message, doc });
 }

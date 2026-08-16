@@ -12,6 +12,7 @@ import {
   NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
+  UNKNOWN_JOB_RESPONSE,
 } from "./responses.js";
 
 const DocIdParamSchema = z.object({
@@ -119,6 +120,7 @@ export const patchDoc = createRoute({
     },
   },
   responses: {
+    422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       PatchDocResponseSchema,
       "The saved document — carrying a fresh `key` — the anchor reconciliation report, §14's " +

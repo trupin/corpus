@@ -79,6 +79,7 @@ function createTestClient() {
             due: request.due ?? null,
             reviewed: null,
             evergreen: request.evergreen ?? false,
+            origin: null,
             pinned: request.pinned ?? false,
             order: request.order ?? null,
             query: request.query ?? null,

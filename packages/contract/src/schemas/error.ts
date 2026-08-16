@@ -13,6 +13,7 @@ export const ERROR_CODES = [
   "not_found",
   "conflict",
   "stale_key",
+  "unknown_job",
   "internal_error",
 ] as const;
 
@@ -136,6 +137,22 @@ export const InternalErrorSchema = z
       "Catch-all body for an unexpected server failure. Intentionally not declared as a response by any route: the code exists so an unhandled failure can be serialised as an ApiError rather than mislabelled, while a documented 500 would wrongly present a crash as a designed outcome.",
   });
 
+/**
+ * A `job` that names no work a write can serve (SPEC.md §9.2, CONTRACT-050).
+ *
+ * A full member of the union rather than a route-local shape, for the reason
+ * every other member is one: a client that narrows on `code` must be able to
+ * reach it, and a `422` that serialized as something outside `ApiError` would be
+ * the one refusal a caller could not handle generically.
+ */
+export const UnknownJobErrorSchema = z
+  .object({
+    code: z.literal("unknown_job"),
+    message: z.string(),
+    job: z.string().describe("The id that resolved to no event, or to work already settled."),
+  })
+  .openapi("UnknownJobError");
+
 export const ApiErrorSchema = z
   .discriminatedUnion("code", [
     ValidationErrorSchema,
@@ -144,6 +161,7 @@ export const ApiErrorSchema = z
     NotFoundErrorSchema,
     ConflictErrorSchema,
     StaleKeyErrorSchema,
+    UnknownJobErrorSchema,
     InternalErrorSchema,
   ])
   .openapi("ApiError");

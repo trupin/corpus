@@ -21,6 +21,7 @@ function docFixture(id: string, title: string): Doc {
       due: null,
       reviewed: null,
       evergreen: false,
+      origin: null,
       pinned: false,
       order: null,
       query: null,

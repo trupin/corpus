@@ -35,6 +35,7 @@ const frontmatter = {
   due: null,
   reviewed: null,
   evergreen: false,
+  origin: null,
   pinned: false,
   order: null,
   query: null,
@@ -52,6 +53,7 @@ const viewFrontmatter = {
   type: "view",
   title: "Attention",
   evergreen: true,
+  origin: null,
   pinned: true,
   order: 1,
   query: { needs: "me" },
@@ -338,9 +340,14 @@ describe("CreateDocRequest", () => {
 });
 
 describe("MoveDocRequest", () => {
-  it("carries only the destination folder — the id never changes", () => {
+  it("carries the destination folder and the job it serves — the id never changes", () => {
     expect(MoveDocRequestSchema.parse({ folder: "finance" })).toEqual({ folder: "finance" });
-    expect(Object.keys(MoveDocRequestSchema.shape)).toEqual(["folder"]);
+    // `job` joined it with CONTRACT-050 (SPEC.md §9.2: any write may name the
+    // work it serves). The pin is kept exact rather than loosened to a
+    // `toContain`, because what it is guarding is that **no id ever appears
+    // here** — a move that could name a document id would be a move that could
+    // change identity, which is the one thing this route promises it never does.
+    expect(Object.keys(MoveDocRequestSchema.shape)).toEqual(["job", "folder"]);
   });
 
   it("requires a destination", () => {

@@ -6,6 +6,7 @@ import { AnchorIdSchema, DocumentIdSchema, EventIdSchema, ThreadIdSchema } from 
 import { IsoDateTimeSchema } from "./time.js";
 import { turnModelRequestField, turnModelResponseField } from "./turn-model.js";
 import { warningsField } from "./warning.js";
+import { jobField } from "./provenance.js";
 import { requestedWeightField } from "./weight.js";
 
 /**
@@ -147,6 +148,7 @@ export const THREAD_CREATE_OMITTED_BEHAVIOUR =
  */
 export const CreateThreadRequestSchema = z
   .strictObject({
+    job: jobField,
     parent: DocumentIdSchema.nullable()
       .optional()
       .describe("Document being commented on. Omitted or null creates a standalone thread."),
@@ -208,6 +210,7 @@ const MultipartSelectorSchema = z
  */
 export const MultipartCreateThreadRequestSchema = z
   .strictObject({
+    job: jobField,
     parent: DocumentIdSchema.optional().describe(
       "Document being commented on. Omitted creates a standalone thread.",
     ),
@@ -258,6 +261,7 @@ export const CreateThreadResponseSchema = z
 
 export const AppendTurnRequestSchema = z
   .strictObject({
+    job: jobField,
     body: z.string().min(1),
     requestsAgent: requestsAgentField(TURN_APPEND_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
@@ -272,6 +276,7 @@ export const AppendTurnRequestSchema = z
  */
 export const MultipartAppendTurnRequestSchema = z
   .strictObject({
+    job: jobField,
     text: z
       .string()
       .min(1)

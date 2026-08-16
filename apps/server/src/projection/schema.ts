@@ -115,7 +115,7 @@
  * because only the explicit rebuild carried `chunk_embeddings` across. Both
  * paths carry them now, so the cost of this bump is what it says it is.
  */
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -279,6 +279,11 @@ CREATE TABLE documents (
   due TEXT,
   reviewed TEXT,
   evergreen INTEGER NOT NULL,
+  -- SPEC.md §7 scope / §9.2 provenance (SHARED-043, SERVER-110): the thread this
+  -- document came from, or NULL when it came from no job. Projected rather than
+  -- read per row because scope membership is computed by walking origin, and a
+  -- walk that had to open files would put a read per hop on the enqueue path.
+  origin TEXT,
   body_excerpt TEXT NOT NULL,
   pinned INTEGER NOT NULL,
   sort_order REAL,

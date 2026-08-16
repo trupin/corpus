@@ -180,6 +180,7 @@ describe("the envelope", () => {
       "lastAuthor",
       "lastTurn",
       "order",
+      "origin",
       "parent",
       "parentTitle",
       "path",

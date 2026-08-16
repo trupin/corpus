@@ -2,6 +2,7 @@ import { z } from "@hono/zod-openapi";
 import { BodyRangeSchema, TextQuoteSelectorSchema } from "./anchor.js";
 import { ExtraFrontmatterSchema } from "./extra.js";
 import { AnchorIdSchema, DocumentIdSchema, ThreadIdSchema } from "./id.js";
+import { jobField, originDetachField, originField } from "./provenance.js";
 import {
   documentKeyRequestField,
   documentKeyResponseField,
@@ -165,6 +166,7 @@ export const DocFrontmatterSchema = z
       'Last explicit "still current" confirmation; staleness runs from max(updated, reviewed).',
     ),
     evergreen: z.boolean().describe("True opts the document out of staleness entirely."),
+    origin: originField,
     ...viewFrontmatterShape,
   })
   .openapi("DocFrontmatter");
@@ -237,6 +239,7 @@ export const docRowBaseShape = {
   due: IsoDateSchema.nullable(),
   reviewed: IsoDateTimeSchema.nullable(),
   evergreen: z.boolean(),
+  origin: originField,
   excerpt: z.string().describe("Leading plain-text excerpt of the body, for list rows."),
   ...viewFrontmatterShape,
 } as const;
@@ -249,6 +252,7 @@ export const docRowBaseShape = {
  */
 export const CreateDocRequestSchema = z
   .strictObject({
+    job: jobField,
     type: DocTypeSchema,
     title: z.string().min(1),
     body: z
@@ -307,6 +311,8 @@ export const CreateDocRequestSchema = z
  */
 export const UpdateDocRequestSchema = z
   .strictObject({
+    job: jobField,
+    origin: originDetachField,
     key: documentKeyRequestField,
     title: z.string().min(1).optional(),
     body: z.string().optional(),
@@ -362,8 +368,21 @@ export const UpdateDocRequestSchema = z
  * at creation and is immutable, so every `[[ref]]`, anchor and thread `parent`
  * survives a move untouched.
  */
+/**
+ * Archive and unarchive take **no body at all today**, and this makes one that
+ * is entirely optional: §9.2 says *any* write may name the job it serves, and
+ * these are writes. Nothing in it is required, so an existing caller that sends
+ * no body is unchanged — which is every caller, since the field's only consumer
+ * is provenance and provenance is new.
+ *
+ * It stamps no origin: §9.2 records an origin for a document a job **creates**,
+ * and archiving creates nothing. What the job buys here is attribution — the
+ * job log and the trace line can say which piece of work archived something.
+ */
+export const JobOnlyRequestSchema = z.strictObject({ job: jobField }).openapi("JobOnlyRequest");
+
 export const MoveDocRequestSchema = z
-  .strictObject({ folder: z.string().describe(FOLDER_DESCRIPTION) })
+  .strictObject({ job: jobField, folder: z.string().describe(FOLDER_DESCRIPTION) })
   .openapi("MoveDocRequest");
 
 /**

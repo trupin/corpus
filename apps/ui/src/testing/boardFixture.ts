@@ -44,6 +44,7 @@ export function viewRow(overrides: Partial<DocRow> = {}): DocRow {
     type: "view",
     pinned: true,
     evergreen: true,
+    origin: null,
     path: "data/docs/views/a.md",
     ...overrides,
   });

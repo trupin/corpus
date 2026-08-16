@@ -100,6 +100,8 @@ export interface TurnInput {
    * separate values. It rides to the queue event and no further.
    */
   readonly weight: string | undefined;
+  /** The queue event this turn serves (SPEC.md §9.2); attribution only — a turn creates no document. */
+  readonly job: string | undefined;
   readonly files: readonly File[];
 }
 
@@ -152,6 +154,7 @@ export function turnRequestBody(body: AppendTurnBody): TurnInput {
       requestsAgent: body.requestsAgent,
       model: body.model,
       weight: body.weight,
+      job: body.job,
       files: [],
     };
   }
@@ -162,6 +165,7 @@ export function turnRequestBody(body: AppendTurnBody): TurnInput {
     requestsAgent: body.requestsAgent,
     model: body.model,
     weight: body.weight,
+    job: body.job,
     files: body.files,
   };
 }

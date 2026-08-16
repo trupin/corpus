@@ -4,7 +4,7 @@
 contract
 
 ## Status
-todo
+done
 
 ## Priority
 P0
@@ -28,11 +28,11 @@ thread` at write time (SERVER-110), and everything downstream — scope membersh
 verifiable trace line, richer job console rows — reads `origin`.
 
 ## Acceptance Criteria
-- [ ] `job: z.string().regex(/^evt_/).optional()` accepted on every mutating request body that creates or edits a document or thread: doc create/edit/patch/move/archive/unarchive, thread create, turn append, form respond
-- [ ] `DocumentSchema` (and the summary shape if it carries frontmatter-derived fields) gains `origin: z.string().regex(/^th_/).nullable()`
-- [ ] `origin` is server-assigned: no request shape accepts it directly; the one exception is the detach affordance — doc edit accepts `origin: null` (clear only, never set), user actor only, enforced server-side
-- [ ] An unknown or settled `job` id is defined as a 422 in the route contract, not silently ignored
-- [ ] OpenAPI regenerated; generated client exposes the new fields; UI and CLI compile untouched (fields optional everywhere)
+- [x] `job: z.string().regex(/^evt_/).optional()` accepted on every mutating request body that creates or edits a document or thread: doc create/edit/patch/move/archive/unarchive, thread create, turn append, form respond
+- [x] `DocumentSchema` (and the summary shape if it carries frontmatter-derived fields) gains `origin: z.string().regex(/^th_/).nullable()`
+- [x] `origin` is server-assigned: no request shape accepts it directly; the one exception is the detach affordance — doc edit accepts `origin: null` (clear only, never set), user actor only, enforced server-side
+- [x] An unknown or settled `job` id is defined as a 422 in the route contract, not silently ignored
+- [x] OpenAPI regenerated; generated client exposes the new fields; UI and CLI compile untouched (fields optional everywhere)
 
 ## Technical Design
 
@@ -66,17 +66,50 @@ distinguishably where relevant; OpenAPI snapshot updated; 422 declared on the ro
 4. `corpus doc show <id> --json` (generated client) round-trips `origin`
 
 ## E2E Verification Log
-_Filled in by the implementing agent as proof-of-work._
+**Model: Opus 5 (1M context)**, orchestrator, on `phase-34-resident-rider`. No
+server started, no port bound.
+
+```
+$ npx vitest run apps packages scripts plugins  → 12288 passed, 0 failed
+$ npm run typecheck                             → 0 errors
+$ npm run lint / prettier --check .             → clean
+```
+
+**One design change from the issue's stated shape, and why.** The issue asked for
+`origin: null` on the doc edit as a `z.null()` — clear-only expressed in the type
+so `origin: "th_…"` would be a compile error. **That does not survive the
+toolchain**: a JSON Schema `{"type":"null"}` reaches `openapi-fetch` as
+`origin?: never`, so the generated client rejects the one value the field exists
+to accept (`Type 'null' is not assignable to type 'never'`). The wire type is now
+the ordinary nullable id and clear-only is enforced in the write path — which is
+what the same acceptance criterion already asked for ("clear only, never set,
+user actor only, **enforced server-side**"). The docblock that claimed a
+type-level guarantee was corrected rather than left standing.
+
+**`origin` is a reserved frontmatter key.** Not in the issue's list, and
+required: `extra` is a client-supplied merge patch, so an origin stored there
+could be rewritten by an ordinary `PUT /api/docs/{id}` — exactly the
+caller-asserted scope membership the job/origin split makes unexpressible. Same
+reasoning `turnModels` is reserved under.
+
+**`delete` deliberately takes no `job`.** §9.2 says any write may name one, and
+deletion is the one mutation an agent may never perform, so a job there would
+name work that cannot exist. Archive and unarchive gained an entirely optional
+body for it (they previously took none), and both say so — the census test that
+pins every request body in the surface required them to be declared and to tell
+the caller that omitting the body is a real call.
+
+**Nine routes declare the `422`**, and no route that cannot carry a job does.
 
 ### Post-Implementation Verification
 _[Agent fills]_
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0, cross-domain)

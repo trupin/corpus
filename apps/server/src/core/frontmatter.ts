@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { ParsedDocument } from "./document.js";
 import { normalizeCalendarDate, normalizeInstant } from "./time.js";
 import { FileTurnModelsSchema } from "./turn-model.js";
+import { originOrNull } from "./provenance.js";
 
 /**
  * The **file-level** frontmatter shape (SPEC.md §5, §6) — deliberately not the
@@ -82,6 +83,35 @@ export const FileFrontmatterSchema = z.looseObject({
   due: FileCalendarDateSchema.nullable().default(null),
   reviewed: FileInstantSchema.nullable().default(null),
   evergreen: z.boolean().default(false),
+  /**
+   * The conversation this document came from (SPEC.md §7 scope, §9.2
+   * provenance, SHARED-043). **Defaults to `null` rather than being optional**,
+   * for the reason every other core key here defaults: a document written
+   * before provenance existed, or by a write that named no job, has no origin —
+   * which is a fact about it, not a missing field — and the wire shape carries
+   * `origin` on every document so a reader never has to tell "unfiled" from
+   * "this server is too old to say".
+   *
+   * Nothing here *sets* it. The stamp is the write path's (SERVER-110), which
+   * resolves the job a write names to the thread that event's payload names; this is only the
+   * parse, and its whole job is to make the absent case explicit.
+   *
+   * **Anything that is not a thread id reads as `null` rather than failing.**
+   * `origin` was a perfectly legal `extra` key before this existed — §5 and §12
+   * make frontmatter the plugin extension point — so a workspace may already
+   * hold documents whose `origin:` means something else entirely. Validating it
+   * strictly would make every save of such a document a `400`, including the
+   * reader's autosave, until somebody hand-edited the file: a corpus that
+   * existed before a field did must not become unwritable because of it. The
+   * value is dropped rather than preserved because the **wire** promises a
+   * thread id or null, and `extra` cannot hold it either now that the key is
+   * reserved — so this is the one place the old value goes, and it goes
+   * quietly. (PR #47 review.)
+   */
+  origin: z
+    .unknown()
+    .transform((value) => originOrNull(value))
+    .default(null),
 });
 
 /**

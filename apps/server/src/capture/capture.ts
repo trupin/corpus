@@ -160,6 +160,7 @@ export async function captureDocument(
         due: null,
         reviewed: null,
         evergreen: false,
+        origin: null,
       }),
     );
 

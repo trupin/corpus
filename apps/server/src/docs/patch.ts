@@ -210,9 +210,15 @@ async function patchDocumentLocked(
   const targets = request.all === true ? found : found.slice(0, 1);
   const nextBody = spliceAt(loaded.parsed.body, targets, request.old.length, request.new);
 
+  // `job` travels into the ordinary write path rather than being read here, so
+  // a patch files a document exactly as a `PUT` does (first writer wins) and an
+  // unresolvable job is refused by the one rule that refuses it — SERVER-110's
+  // `422`. A patch that accepted `job` and dropped it would be the silent
+  // ignore §9.2 calls out by name.
   const { doc, anchors, result } = await updateDocumentLocked(workspace, actor, id, {
     body: nextBody,
     key: documentKey(loaded.text),
+    ...(request.job === undefined ? {} : { job: request.job }),
   });
 
   // Reported whether or not anything was written: a no-op patch (`new` equal to

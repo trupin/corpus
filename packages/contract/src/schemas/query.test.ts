@@ -31,6 +31,7 @@ const row = {
   due: "2026-08-01",
   reviewed: "2026-07-20T09:00:00Z",
   evergreen: false,
+  origin: null,
   excerpt: "Body is plain markdown.",
   pinned: false,
   order: null,

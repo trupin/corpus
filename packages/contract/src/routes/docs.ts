@@ -5,6 +5,7 @@ import {
   DeleteDocResultSchema,
   DocMutationResponseSchema,
   DocSchema,
+  JobOnlyRequestSchema,
   MoveDocRequestSchema,
   UpdateDocRequestSchema,
   UpdateDocResponseSchema,
@@ -18,6 +19,7 @@ import {
   NOT_FOUND_RESPONSE,
   STALE_KEY_RESPONSE,
   UNAUTHORIZED_RESPONSE,
+  UNKNOWN_JOB_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
 
@@ -127,6 +129,7 @@ export const createDoc = createRoute({
     },
   },
   responses: {
+    422: UNKNOWN_JOB_RESPONSE,
     201: jsonContent(DocMutationResponseSchema, "The created document, and any §14 warnings."),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
@@ -166,6 +169,7 @@ export const updateDoc = createRoute({
     },
   },
   responses: {
+    422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       UpdateDocResponseSchema,
       "The saved document — carrying a fresh `key` — and the anchor reconciliation report.",
@@ -197,6 +201,7 @@ export const moveDoc = createRoute({
     },
   },
   responses: {
+    422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       DocMutationResponseSchema,
       "The document at its new path, and any §14 warnings.",
@@ -228,8 +233,22 @@ export const archiveDoc = createRoute({
     "identity rather than changing one. An archive that carries no other skill document warns " +
     "nothing. **Archiving names its own delta and presents no key** (SPEC.md §7): it flips " +
     "`status`, overwriting nothing a reader may have been holding.",
-  request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
+  request: {
+    params: DocIdParamSchema,
+    headers: ActorHeaderSchema,
+    body: {
+      required: false,
+      description:
+        "Optional, and optional in every part: §9.2 lets any write name the job it serves, and " +
+        "this route previously took no body at all — so **omit the body entirely** and the call " +
+        "is exactly what it has always been. The only thing it can carry is `job`, which buys " +
+        "attribution rather than an origin: §9.2 records an origin for a document a job " +
+        "*creates*, and this act creates nothing.",
+      content: { "application/json": { schema: JobOnlyRequestSchema } },
+    },
+  },
   responses: {
+    422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       DocMutationResponseSchema,
       "The document, now archived, any §14 warnings, and what a skill folder move carried.",
@@ -261,8 +280,22 @@ export const unarchiveDoc = createRoute({
     "document warns nothing, and one whose carried documents needed no correction carries no " +
     "`carried_reconciliation`. **Unarchiving names its own delta and presents no key** " +
     "(SPEC.md §7): it flips `status` back, overwriting nothing a reader may have been holding.",
-  request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
+  request: {
+    params: DocIdParamSchema,
+    headers: ActorHeaderSchema,
+    body: {
+      required: false,
+      description:
+        "Optional, and optional in every part: §9.2 lets any write name the job it serves, and " +
+        "this route previously took no body at all — so **omit the body entirely** and the call " +
+        "is exactly what it has always been. The only thing it can carry is `job`, which buys " +
+        "attribution rather than an origin: §9.2 records an origin for a document a job " +
+        "*creates*, and this act creates nothing.",
+      content: { "application/json": { schema: JobOnlyRequestSchema } },
+    },
+  },
   responses: {
+    422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       DocMutationResponseSchema,
       "The document, restored, any §14 warnings, and what a skill folder move carried.",
@@ -285,7 +318,9 @@ export const deleteDoc = createRoute({
     "Nothing is hard-deleted from history; git preserves the file and every version of it. " +
     "Deletion presents no key (SPEC.md §7): it is a user's deliberate act on a document they are " +
     "looking at, behind an explicit confirm, and it destroys the document rather than a version " +
-    "of it.",
+    "of it. It takes **no `job`**, unlike the other writes: §9.2's attribution is for work an " +
+    "agent does, and deletion is the one mutation an agent may never perform, so a job field here " +
+    "would name work that cannot exist.",
   request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(
