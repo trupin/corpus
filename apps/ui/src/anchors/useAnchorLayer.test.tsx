@@ -13,6 +13,7 @@ import { editorBody } from "../editor/editorBody.js";
 import { parseMarkdown } from "../editor/markdown/parse.js";
 import { canonicalizeMarkdown } from "../editor/markdown/serialize.js";
 import { STALE_SELECTION_NOTICE, type TextQuoteSelector } from "../editor/selection.js";
+import type { PendingAttachment } from "../thread/useAttachmentIntake.js";
 import { corpusSchema } from "../editor/markdown/schema.js";
 import {
   readerTransport,
@@ -52,6 +53,8 @@ interface FakeEditor {
   state: () => EditorState;
   /** Replaces the whole document, carrying no meta of its own. */
   replace: (markdown: string) => void;
+  /** One ordinary edit: what typing into the body dispatches. */
+  insert: (at: number, text: string) => void;
   /** The same replacement `DocEditor`'s `setContent(…, false)` dispatches. */
   adopt: (markdown: string) => void;
 }
@@ -112,6 +115,9 @@ function fakeEditor(markdown: string): FakeEditor {
     replace: (next: string) => {
       const replacement = editorDocument(next);
       dispatch(state.tr.replaceWith(0, state.doc.content.size, replacement.content));
+    },
+    insert: (at: number, text: string) => {
+      dispatch(state.tr.insertText(text, at));
     },
     adopt: (next: string) => {
       const replacement = editorDocument(next);
@@ -191,6 +197,8 @@ interface Mounted {
   readonly editorState: () => EditorState;
   readonly replaceDocument: (markdown: string) => void;
   readonly adoptDocument: (markdown: string) => void;
+  /** Types into the body, the way a person does. */
+  readonly typeInto: (at: number, text: string) => void;
   /** The server's copy moves on: a new body, and the anchors that index it. */
   readonly serveDocument: (next: ServedDocument) => void;
 }
@@ -231,6 +239,7 @@ function mount(
     editorState: fake.state,
     replaceDocument: fake.replace,
     adoptDocument: fake.adopt,
+    typeInto: fake.insert,
     serveDocument: (next) => {
       act(() => {
         serve?.(next);
@@ -258,9 +267,38 @@ function selectQuote(layer: AnchorLayer, from: number, to: number): void {
   });
 }
 
+/**
+ * Where the composer's own highlight is, read out of the plugin — `null` when
+ * nothing is lit.
+ *
+ * Read from the *decoration set* rather than from the state field beside it,
+ * because a range the plugin remembers and does not draw is exactly the failure
+ * this feature is about.
+ */
+function provisional(app: Mounted): { from: number; to: number } | null {
+  const decorations = (anchorState(app.editorState())?.set.find() ?? []).filter(
+    (decoration) =>
+      (decoration as unknown as { type: { attrs?: Record<string, string> } }).type.attrs?.[
+        "data-provisional"
+      ] === "true",
+  );
+  const only = decorations[0];
+  return only === undefined ? null : { from: only.from, to: only.to };
+}
+
 /* `6.1%` is markdown offset 22–26, which is ProseMirror 23–27. */
 const RATE_FROM = BODY.indexOf("6.1%") + 1;
 const RATE_TO = RATE_FROM + 4;
+
+/** What a composer hands over on send — the shape `intake.take()` returns. */
+function attachment(name: string): PendingAttachment {
+  return {
+    id: `att-${name}`,
+    file: new File(["x"], name, { type: "image/png" }),
+    name,
+    previewUrl: null,
+  };
+}
 
 describe("commenting on a selection", () => {
   it("opens a composer carrying the markdown quote", () => {
@@ -334,6 +372,90 @@ describe("commenting on a selection", () => {
   });
 
   /**
+   * SPEC.md §11's rider, signed 2026-08-05: a comment on a document selection
+   * carries files like every other composer, and carrying them is what makes
+   * the request multipart (§6). Asserted on the **wire**, because a composer
+   * that collects attachments and a layer that drops them on the way out is the
+   * same bug from the outside (UI-111).
+   */
+  it("posts a comment's attachments as multipart, with an omitted text part", async () => {
+    const app = mount();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      // §6: a first turn may be the file and nothing else.
+      app.layer().submitComment("", true, {}, [attachment("shot.png")]);
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const call = app.wire.of("POST", "/api/threads")[0];
+    expect(call?.files).toEqual(["shot.png"]);
+    expect(call?.parts?.["text"]).toBeUndefined();
+    expect(call?.parts?.["selector"]).toContain("6.1%");
+    expect(call?.parts?.["requestsAgent"]).toBe("true");
+  });
+
+  /** And the JSON branch is untouched: no attachments, no multipart. */
+  it("posts a comment carrying no files as JSON", async () => {
+    const app = mount();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("Just words.", true, {}, []);
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const call = app.wire.of("POST", "/api/threads")[0];
+    expect(call?.files).toBeUndefined();
+    expect((call?.body as { body: string }).body).toBe("Just words.");
+  });
+
+  /**
+   * The failure ThreadComposer has always handled and this surface did not:
+   * nothing was written, so the composer comes back holding what it held. A
+   * comment that loses its screenshot because the post failed is worse than one
+   * that could never take it (UI-111).
+   */
+  it("re-opens the composer with its words and its files when the server refuses", async () => {
+    const app = mount([], [], readerTransport({ failing: { "POST /api/threads": 409 } }));
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    const held = attachment("shot.png");
+    act(() => {
+      app.layer().submitComment("Look at this.", true, {}, [held]);
+    });
+    // Gone while it is in flight, exactly as the reply box empties on send.
+    expect(app.layer().draft).toBeNull();
+
+    await waitFor(() => {
+      expect(app.layer().draft).not.toBeNull();
+    });
+    expect(app.layer().draft?.restore).toEqual({
+      text: "Look at this.",
+      attachments: [held],
+    });
+    // And on the same selection, so re-sending anchors where it was written.
+    expect(app.layer().draft?.selection.selector.exact).toBe("6.1%");
+  });
+
+  /** A second send must not carry the first refusal's leftovers as well. */
+  it("does not re-restore a draft that has already been resubmitted", async () => {
+    const app = mount([], [], readerTransport({ failing: { "POST /api/threads": 409 } }));
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("Once.", true, {}, [attachment("shot.png")]);
+    });
+    await waitFor(() => {
+      expect(app.layer().draft?.restore).not.toBeUndefined();
+    });
+    act(() => {
+      app.layer().submitComment("Twice.", true, {}, []);
+    });
+    await waitFor(() => {
+      expect(app.layer().draft?.restore).toEqual({ text: "Twice.", attachments: [] });
+    });
+  });
+
+  /**
    * SPEC.md §11's rider: the composer states the weight, and the layer is what
    * puts it on the request. Absence stays absence — an untouched picker sends
    * `{}` and the body must not grow a `weight` key from it (UI-082).
@@ -375,34 +497,113 @@ describe("commenting on a selection", () => {
     ).toBe(true);
   });
 
+  /**
+   * UI-112. The complaint was that the highlight arrived with the *anchor* —
+   * after the comment had been posted, which is the moment it stops being
+   * useful. While composing, the browser's own selection was all there was, and
+   * it is gone the moment focus reaches the composer.
+   */
+  it("lights the selection the moment the composer opens, before anything is sent", () => {
+    const app = mount();
+    expect(provisional(app)).toBeNull();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
+    expect(app.editorState().doc.textBetween(RATE_FROM, RATE_TO)).toBe("6.1%");
+    expect(app.wire.of("POST", "/api/threads")).toHaveLength(0);
+  });
+
+  it("puts it out when the comment is abandoned, leaving nothing behind", () => {
+    const app = mount();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().cancelComment();
+    });
+    expect(provisional(app)).toBeNull();
+    expect(anchorState(app.editorState())?.set.find()).toHaveLength(0);
+  });
+
+  /** A position and a highlight are both per-opening: the next selection wins. */
+  it("moves the mark to a second selection rather than lighting both", () => {
+    const app = mount();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    const other = { from: 1, to: 5 };
+    selectQuote(app.layer(), other.from, other.to);
+    expect(provisional(app)).toEqual(other);
+  });
+
+  /**
+   * The reconcile half of UI-112's ProseMirror decision, through the layer:
+   * typing above the quote — what someone does when the comment is about to say
+   * "as I wrote above" — moves the mark with its words rather than leaving it
+   * over whatever slid into those offsets.
+   */
+  it("keeps the mark on its words when the document is edited above them", () => {
+    const app = mount();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    app.typeInto(1, "Note: ");
+    const moved = provisional(app);
+    expect(moved).not.toBeNull();
+    expect(moved).not.toEqual({ from: RATE_FROM, to: RATE_TO });
+    expect(app.editorState().doc.textBetween(moved?.from ?? 0, moved?.to ?? 0)).toBe("6.1%");
+  });
+
+  /**
+   * The case the server's own offsets can never cover, and the reason this
+   * highlight is a slot of its own rather than one more placement: while the
+   * editor holds unsaved edits `applyAnchors` declines every dispatch, because
+   * the server's ranges index a body that is no longer on screen. A comment
+   * written *during* an editing session is precisely when the words most need
+   * marking — and routing it through that gate left it dark.
+   */
+  it("lights the selection even while the editor holds unsaved edits", () => {
+    const app = mount();
+    app.replaceDocument("The rate assumption is 6.1% today, revised.\n\nAnd a second one.\n");
+    const from = app.editorState().doc.textContent.indexOf("6.1%") + 1;
+    selectQuote(app.layer(), from, from + 4);
+    expect(app.layer().draft).not.toBeNull();
+    expect(provisional(app)).toEqual({ from, to: from + 4 });
+  });
+
   it("paints the highlight before the response lands, and clears it after", async () => {
     const app = mount();
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
       app.layer().submitComment("A note.", false, {});
     });
-    // Optimistic: the decoration is there while the request is in flight.
-    const pending = anchorState(app.editorState())?.anchors ?? [];
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.segments).toEqual([{ from: RATE_FROM, to: RATE_TO }]);
-    expect(pending[0]?.threadId.startsWith("pending:")).toBe(true);
+    // The decoration is there while the request is in flight — the same one the
+    // composer put up on open, now waiting for the server's anchor.
+    expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
 
     await waitFor(() => {
-      expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
+      expect(provisional(app)).toBeNull();
     });
   });
 
-  it("rolls the highlight back and toasts when the server refuses", async () => {
+  /**
+   * It used to roll back, and rolling back was wrong (UI-112). Nothing was
+   * written, so the composer comes back on the same words (UI-111) — and a
+   * composer whose subject is unlit is the complaint this issue is about. The
+   * mark is the composer's, not the request's, so it outlives a refused send
+   * exactly as the typed words do.
+   */
+  it("keeps the words lit and toasts when the server refuses, because the composer returns", async () => {
     const app = mount([], [], readerTransport({ failing: { "POST /api/threads": 409 } }));
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
       app.layer().submitComment("A note.", false, {});
     });
-    expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(1);
+    expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
     await waitFor(() => {
       expect(app.notices.some((notice) => notice.message.startsWith("Comment failed"))).toBe(true);
     });
-    expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
+    expect(app.layer().draft).not.toBeNull();
+    expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
+
+    // And abandoning it there does leave nothing behind.
+    act(() => {
+      app.layer().cancelComment();
+    });
+    expect(provisional(app)).toBeNull();
   });
 
   /**
@@ -777,8 +978,8 @@ describe("a comment whose reader closed before it settled", () => {
     const { held, release } = gate();
     const app = mount([], [], readerTransport({ holdWrites: held }));
     await submitAndHold(app);
-    const painted = anchorState(app.editorState())?.anchors ?? [];
-    expect(painted).toHaveLength(1);
+    const painted = provisional(app);
+    expect(painted).not.toBeNull();
 
     cleanup();
     release();
@@ -787,7 +988,7 @@ describe("a comment whose reader closed before it settled", () => {
       await Promise.resolve();
     });
 
-    expect(anchorState(app.editorState())?.anchors).toEqual(painted);
+    expect(provisional(app)).toEqual(painted);
     expect(errors).not.toHaveBeenCalled();
     errors.mockRestore();
   });
@@ -804,7 +1005,7 @@ describe("a comment whose reader closed before it settled", () => {
       app.layer().submitComment("A note.", false, {});
     });
     await waitFor(() => {
-      expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
+      expect(provisional(app)).toBeNull();
     });
     expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
     expect(app.notices).toEqual([]);
@@ -833,7 +1034,7 @@ describe("a comment whose reader closed before it settled", () => {
     expect(app.notices).toEqual([
       { tone: "error", message: "unresolved_ref — [[missing]] names no document" },
     ]);
-    expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
+    expect(provisional(app)).toBeNull();
   });
 });
 

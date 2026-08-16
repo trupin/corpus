@@ -1,5 +1,6 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
 import type { RowNotice } from "@corpus/kit";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { ReattachOffer } from "../reattach/ReattachOffer";
@@ -60,7 +61,7 @@ export interface AnchorThreadsProps {
    */
   readonly parentId: string;
   readonly flashThread: string | null;
-  readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
+  readonly onOpenDoc: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -161,7 +162,7 @@ export interface DetachedThreadsProps {
   readonly unplaced?: readonly DocRow[];
   readonly reattach?: ReattachContext | undefined;
   readonly flashThread: string | null;
-  readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
+  readonly onOpenDoc: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 

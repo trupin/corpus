@@ -509,12 +509,12 @@ cheapest moment for that to happen.
 | PLUGINS-016 | A plugin doc type can derive its own status | todo | P1 | SHARED-036 |
 | SERVER-085 | The board, queries and the file all agree on a derived status | todo | P1 | SHARED-036, PLUGINS-016 |
 | UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-016, SERVER-085, UI-093 |
-| PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | todo | P1 | SHARED-036 |
+| PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | done | P1 | SHARED-036 |
 | UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
 | SHARED-038 | `--unstable` reaches §2.4 before it reaches the code | done | P1 | — |
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
 | CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
-| UI-095 | Clicking a comment does not take you to it, opened | todo | P1 | — |
+| UI-095 | Clicking a comment does not take you to it, opened | done | P1 | — |
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
 | UI-097 | A request nobody has picked up says "agent is working…" | todo | P1 | SHARED-033 |
@@ -569,8 +569,8 @@ changes behaviour and nothing below waits on them.
 | SERVER-094 | A window never outlives the server silently | done | P1 | SERVER-091 |
 | SERVER-095 | Resizing a board column wakes the agent to reflect on it (user report) | done | P0 | — |
 | SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | todo | P2 | — |
-| SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | todo | P1 | — |
-| SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | todo | P1 | — |
+| SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | done | P1 | — |
+| SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | done | P1 | — |
 | SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
 
 ## Phase 30 — A key instead of a lock (2026-08-11)
@@ -655,8 +655,9 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | --- | --- | --- | --- | --- |
 | UI-110 | The composer you are typing in stays visible while you scroll what you are commenting on | done | P0 | — |
 | UI-111 | The comment popover takes no attachments, and §11 says every composer does | done | P0 | — |
-| UI-112 | The comment popover can be moved, and what it is about stays lit while you write | todo | P0 | — |
+| UI-112 | The comment popover can be moved, and what it is about stays lit while you write | done | P0 | — |
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
+| SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | todo | P1 | — |
 
 **Scope for v0.10.0** (agreed 2026-08-16). This phase carries the four issues
 above plus three that share their theme and their files: `UI-070` (attachments
@@ -727,7 +728,7 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | CONTRACT-050 | Every write can name the job it serves | done | P0 | SHARED-043 |
 | CONTRACT-051 | Lanes, designation, and the roster on the wire | done | P0 | SHARED-043 |
 | SERVER-110 | Stamp a document with the thread it came from | done | P0 | CONTRACT-050 |
-| SERVER-109 | Designate a resident, and dissolve it cleanly | todo | P0 | CONTRACT-051 |
+| SERVER-109 | Designate a resident, and dissolve it cleanly | done | P0 | CONTRACT-051 |
 | SERVER-111 | The queue learns lanes | todo | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
 | SERVER-112 | Presence is a parked request — liveness and the roster | todo | P0 | SERVER-111 |
 | CLI-044 | Mutating verbs carry the job they serve | done | P0 | CONTRACT-050, SERVER-110 |

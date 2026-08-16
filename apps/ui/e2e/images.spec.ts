@@ -139,6 +139,7 @@ async function stubThread(page: Page): Promise<void> {
         parent: null,
         anchor: null,
         agent: "engaged",
+        resident: null,
         turns: [
           {
             author: "user",

@@ -9,6 +9,7 @@ import {
   useDocs,
   type RowNotice,
 } from "@corpus/kit";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useRef, type ReactElement } from "react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";
@@ -141,8 +142,15 @@ export interface DocViewProps {
   readonly selectTitle: boolean;
   /** The thread the 💬 popover just jumped to; flashes for ~1.2s. */
   readonly flashThread: string | null;
-  /** A `[[ref]]`, a backlink or a thread-context link was followed. */
-  readonly onNavigate: (docId: string) => void;
+  /**
+   * A `[[ref]]`, a backlink or a thread-context link was followed.
+   *
+   * The optional `reveal` rides onto the navigation entry the host pushes, so a
+   * follow can name **where inside** the arriving document to land (UI-095).
+   * A `[[ref]]` names a document and omits it; a thread-context link names the
+   * conversation it came from and passes it.
+   */
+  readonly onNavigate: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -586,6 +594,9 @@ export function DocView({
           // A comment on a document selection is not yet in a conversation, so
           // the nearest scope §11's rule can mean is the document itself.
           weightScope={docWeightScope(doc.frontmatter.id)}
+          // Set only on a draft the layer re-opened after a refusal: the words
+          // and the files the refused send was carrying (UI-111).
+          restore={anchors.draft.restore}
           onSubmit={anchors.submitComment}
           onClose={anchors.cancelComment}
         />

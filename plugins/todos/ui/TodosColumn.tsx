@@ -5,6 +5,7 @@ import { useTodoItemToggle } from "./itemActions.js";
 import type { ItemSelector } from "./itemAnchor.js";
 import { useTodoLists, type TodoListView } from "./queries.js";
 import { itemOpenRequest } from "./reveal.js";
+import { useShowCompleted } from "./showCompleted.js";
 import { TodoItemComposer } from "./TodoItemComposer.js";
 import { TodoItemMenu, type TodoItemTarget } from "./TodoItemMenu.js";
 import "./todos.css";
@@ -37,7 +38,27 @@ import "./todos.css";
  * reveal, so the reader opens scrolled to that line and flashes it, rather than
  * at the top of a list the user then has to search. The payload is built in
  * `./reveal.ts` from the document's *whole* item list — which is why the groups
- * below carry `all` beside the open items they render.
+ * below carry `all` beside the items they render.
+ *
+ * **The box checks the item; the rest of the row opens it** (PLUGINS-015). A row
+ * is therefore a *container* holding two controls rather than one button — a
+ * `<button>` inside a `<button>` is invalid and does not behave — and the two
+ * tile it edge to edge, because padding belonging to neither reads as a row that
+ * ignored the click. The box is a real `role="checkbox"`, so the keyboard and
+ * assistive technology get its semantics rather than an approximation of them;
+ * only the glyph is the plugin's. It writes through the same
+ * {@link useTodoItemToggle} the item menu already used — this widened where a
+ * toggle can be asked for and added no second write path — and the row leaves
+ * the column because the aggregate refetched, never because the column guessed
+ * locally at what the server would say.
+ *
+ * **And completed items are reachable, so unchecking is** (SPEC.md §12, rider
+ * signed 2026-08-12): the column shows open items by default and offers a
+ * control that also shows completed ones, held in `./showCompleted.ts` as
+ * browser-local state. The control renders above the empty state too, which is
+ * the case that matters most — a list whose last item was checked by mistake
+ * shows no rows at all, and a control that only appeared beside rows would be
+ * missing exactly then.
  *
  * **Right-click is the plugin's own** (PLUGINS-009). Core deliberately leaves
  * this surface alone — `Column.tsx` stamps `data-plugin-surface` on the node
@@ -51,8 +72,8 @@ import "./todos.css";
 /** Wide content belongs in focus mode (SPEC.md §10) — the column body stays narrow. */
 const MAX_ITEMS_PER_LIST = 5;
 
-/** One open item, and where it sits among **all** of its document's items. */
-interface OpenItem {
+/** One shown item, and where it sits among **all** of its document's items. */
+interface ShownItem {
   /** Its position in {@link TodoGroup.all} — what a reveal's frame is read from. */
   readonly at: number;
   readonly item: TodoItem;
@@ -64,23 +85,36 @@ interface TodoGroup {
   /**
    * Every item the document has, in body order, done ones included.
    *
-   * The column shows only the open ones, but a reveal frames its target with
-   * the lines the *reader* will render around it (PLUGINS-010) — and a checked
-   * item between two open ones is one of those lines. Framing with the open
-   * items alone would quote a neighbour that is not adjacent on screen, and the
-   * frame would never match.
+   * The column may be showing only the open ones, but a reveal frames its target
+   * with the lines the *reader* will render around it (PLUGINS-010) — and a
+   * checked item between two open ones is one of those lines. Framing with the
+   * shown items alone would quote a neighbour that is not adjacent on screen,
+   * and the frame would never match.
    */
   readonly all: readonly TodoItem[];
-  readonly items: readonly OpenItem[];
+  readonly items: readonly ShownItem[];
 }
 
-/** Open items, grouped by their source document, empty lists dropped. */
-export function groupOpenItems(lists: readonly TodoListView[]): readonly TodoGroup[] {
+/**
+ * Items grouped by their source document, empty lists dropped.
+ *
+ * `showCompleted` is the rider's control: off, this is the open items and
+ * nothing else — a list of work to do; on, it is every item in body order, so a
+ * box ticked by mistake is reachable to untick. Either way `at` is the item's
+ * index in the **document**, which is what the plugin's item route addresses and
+ * what a reveal's frame is read from — never its position on screen.
+ */
+export function groupItems(
+  lists: readonly TodoListView[],
+  showCompleted: boolean,
+): readonly TodoGroup[] {
   const groups: TodoGroup[] = [];
   for (const list of lists) {
-    const open = list.items.flatMap((item, at) => (item.done ? [] : [{ at, item }]));
-    if (open.length === 0) continue;
-    groups.push({ docId: list.docId, title: list.title, all: list.items, items: open });
+    const shown = list.items.flatMap((item, at) =>
+      showCompleted || !item.done ? [{ at, item }] : [],
+    );
+    if (shown.length === 0) continue;
+    groups.push({ docId: list.docId, title: list.title, all: list.items, items: shown });
   }
   return groups;
 }
@@ -114,6 +148,7 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
   // the fingerprint is taken from (`ui/queries.ts`).
   const lists = useTodoLists();
   const toggle = useTodoItemToggle();
+  const completed = useShowCompleted(viewDocId);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [composer, setComposer] = useState<OpenComposer | null>(null);
   const today = now ?? new Date();
@@ -133,14 +168,7 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
     );
   }
 
-  const groups = groupOpenItems(lists.all);
-  if (groups.length === 0) {
-    return (
-      <p className="col-empty" data-todos-column={viewDocId}>
-        Nothing open. Every todo list is clear.
-      </p>
-    );
-  }
+  const groups = groupItems(lists.all, completed.shown);
 
   const openMenu = (
     target: TodoItemTarget,
@@ -153,7 +181,7 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
   };
 
   /** The menu key and ⇧F10, on the row the keyboard is on (SPEC.md §11). */
-  const onItemKeyDown = (event: KeyboardEvent<HTMLButtonElement>, target: TodoItemTarget): void => {
+  const onItemKeyDown = (event: KeyboardEvent<HTMLDivElement>, target: TodoItemTarget): void => {
     if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
     // Also stops the board's own `menu.open` shortcut: its dispatcher skips an
     // already-defaulted event, which is how a surface says "this press was
@@ -174,6 +202,34 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
           </button>
         </p>
       )}
+
+      {/*
+       * Rendered whatever the column holds, including nothing — the list whose
+       * last item was just ticked shows no rows, and that is exactly when the
+       * way back to it must be on screen. It is a toggle rather than a filter
+       * menu because there are two states and naming them is the whole control.
+       */}
+      <div className="todos-bar">
+        <button
+          type="button"
+          className="todos-show-done"
+          aria-pressed={completed.shown}
+          data-todos-show-completed={completed.shown ? "true" : "false"}
+          onClick={() => {
+            completed.setShown(!completed.shown);
+          }}
+        >
+          {completed.shown ? "Hide completed" : "Show completed"}
+        </button>
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="col-empty">
+          {completed.shown
+            ? "No todo items anywhere yet."
+            : "Nothing open. Every todo list is clear."}
+        </p>
+      ) : null}
 
       {groups.map((group) => (
         <section className="todos-group" key={group.docId} data-todos-group={group.docId}>
@@ -196,12 +252,13 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
                 item,
               };
               return (
-                <button
-                  type="button"
+                <div
                   key={`${String(at)}:${item.text}`}
-                  className={`check${isOverdue(item, today) ? " overdue" : ""}`}
+                  className={`check${item.done ? " done" : ""}${
+                    isOverdue(item, today) ? " overdue" : ""
+                  }`}
                   data-todos-item={String(at)}
-                  onClick={() => onOpen?.(itemOpenRequest(group.docId, group.all, at))}
+                  data-todos-done={item.done ? "true" : "false"}
                   onContextMenu={(event) => {
                     // The browser's menu is what this surface gets otherwise
                     // (`nativeMenu.ts` keeps it for every `[data-plugin-surface]`),
@@ -214,14 +271,38 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
                     onItemKeyDown(event, target);
                   }}
                 >
-                  <span className="box">☐</span>
-                  <span className="todo-item-text">{item.text}</span>
-                  {item.due === undefined ? null : (
-                    <span className="due" data-overdue={isOverdue(item, today) ? "true" : "false"}>
-                      {item.due}
-                    </span>
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={item.done}
+                    className="box"
+                    data-todos-check={String(at)}
+                    // Named for what pressing it does, because a checkbox on a
+                    // board of many lists is otherwise announced as "checkbox"
+                    // and nothing else.
+                    aria-label={`${item.done ? "Mark as open" : "Mark as done"}: ${item.text}`}
+                    onClick={() => {
+                      toggle.toggle(target);
+                    }}
+                  >
+                    {item.done ? "☑" : "☐"}
+                  </button>
+                  <button
+                    type="button"
+                    className="todo-item-open"
+                    onClick={() => onOpen?.(itemOpenRequest(group.docId, group.all, at))}
+                  >
+                    <span className="todo-item-text">{item.text}</span>
+                    {item.due === undefined ? null : (
+                      <span
+                        className="due"
+                        data-overdue={isOverdue(item, today) ? "true" : "false"}
+                      >
+                        {item.due}
+                      </span>
+                    )}
+                  </button>
+                </div>
               );
             })}
             {group.items.length > MAX_ITEMS_PER_LIST ? (

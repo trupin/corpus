@@ -1,4 +1,5 @@
 import { useSetThreadStatus, type RowNotice } from "@corpus/kit";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useMemo, type MouseEvent, type ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { MenuItems } from "../menu/MenuItems";
@@ -36,7 +37,7 @@ export interface ThreadPanelProps {
   readonly depth?: number;
   /** True for ~1.2s after the 💬 popover jumped here. */
   readonly flashing?: boolean;
-  readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
+  readonly onOpenDoc: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 

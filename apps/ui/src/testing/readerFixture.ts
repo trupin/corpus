@@ -148,6 +148,7 @@ export function threadFixture(overrides: Partial<Thread> = {}): Thread {
     parent: null,
     anchor: null,
     agent: "none",
+    resident: null,
     turns: [],
     ...overrides,
   };
@@ -399,12 +400,22 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     }
 
     if (url.pathname === "/api/threads" && request.method === "POST") {
-      const created = threadFixture({ id: `th_child_${String(threads.size)}` });
+      /*
+       * The ids are **contract-shaped** (`^th_[A-Za-z0-9]+$`, `^anc_…`), and
+       * that is not cosmetic: the multipart branch of `createThread` parses this
+       * response with `CreateThreadResponseSchema`, while the JSON branch goes
+       * through `openapi-fetch` and validates nothing. A `th_child_0` here
+       * therefore answered every plain comment happily and refused every comment
+       * carrying a file — which read as "attachments do not work" (UI-111). The
+       * shapes are the contract's: `th_` then alphanumerics only, so the second
+       * underscore `th_child_0` carried is what made it invalid.
+       */
+      const created = threadFixture({ id: `th_child${String(threads.size)}` });
       threads.set(created.id, created);
       return json(
         {
           thread: created,
-          anchorId: "a_1",
+          anchorId: "anc_1",
           eventId: null,
           warnings: options.threadWarnings ?? [],
         },
@@ -507,6 +518,7 @@ function threadSummary(id: string, resolved: boolean): unknown {
     parent: null,
     anchor: null,
     agent: "none",
+    resident: null,
     created: "2026-07-01T09:00:00.000Z",
     updated: "2026-07-01T09:05:00.000Z",
     turnCount: 1,

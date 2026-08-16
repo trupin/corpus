@@ -12,6 +12,7 @@ import {
   type RowNotice,
   type ThreadTurn,
 } from "@corpus/kit";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from "react";
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 import { summaryFromRow, type ThreadSummary } from "./CollapsedThread";
@@ -64,8 +65,16 @@ export interface ThreadCardProps {
   readonly onCollapse?: (() => void) | undefined;
   /** The conversation's own right-click menu, when a placement hosts one. */
   readonly onCardContextMenu?: ((event: MouseEvent<HTMLElement>) => void) | undefined;
-  /** Follows a `[[ref]]`, the context link, or a nested thread's own link. */
-  readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
+  /**
+   * Follows a `[[ref]]`, the context link, or a nested thread's own link.
+   *
+   * The optional `reveal` is what makes the **context link** land on the
+   * conversation rather than at the top of the parent (UI-095): the host pushes
+   * it onto the navigation entry it creates, and the arriving reader honours it
+   * once the document has rendered. A caller with nothing to say about where to
+   * land — a `[[ref]]` — omits it and the open behaves exactly as it always did.
+   */
+  readonly onOpenDoc: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -291,7 +300,6 @@ export function ThreadCard({
         parentId={parentId}
         parentTitle={parentMissing ? null : parentTitle}
         quote={quote}
-        anchorId={data?.anchor ?? null}
         onOpenDoc={onOpenDoc}
       />
 
@@ -391,7 +399,7 @@ export function ThreadCard({
 interface ChildCardsProps {
   readonly rows: readonly DocRow[];
   readonly depth: number;
-  readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
+  readonly onOpenDoc: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -439,8 +447,7 @@ interface ThreadContextProps {
   readonly parentId: string | null;
   readonly parentTitle: string | null;
   readonly quote: string;
-  readonly anchorId: string | null;
-  readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
+  readonly onOpenDoc: (docId: string, reveal?: RevealTarget) => void;
 }
 
 /**
@@ -457,7 +464,6 @@ function ThreadContext({
   parentId,
   parentTitle,
   quote,
-  anchorId,
   onOpenDoc,
 }: ThreadContextProps): ReactElement {
   if (parentId === null) {
@@ -486,7 +492,12 @@ function ThreadContext({
         type="button"
         className="ref"
         onClick={() => {
-          onOpenDoc(parentId, anchorId);
+          // The conversation, not the top of the document it hangs on: this
+          // link's whole promise is "at «quote»", and the reveal is what keeps
+          // it. `jumpToThread` expands the card, scrolls its highlight into
+          // view and flashes it — and on a thread with no anchor it still
+          // expands the card, which is where the reason it has none is written.
+          onOpenDoc(parentId, { kind: "thread", threadId });
         }}
       >
         {parentTitle}

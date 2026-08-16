@@ -81,8 +81,27 @@ function releasePreview(attachment: PendingAttachment): void {
   URL.revokeObjectURL(attachment.previewUrl);
 }
 
-export function useAttachmentIntake(): AttachmentIntake {
-  const [pending, setPending] = useState<readonly PendingAttachment[]>([]);
+/**
+ * Revokes a taken snapshot's previews from **outside** a composer.
+ *
+ * A composer that closes on submit hands its attachments to whoever posts them
+ * — `take()` deliberately leaves them unrevoked so a refusal can put them back —
+ * and that owner is then the only thing left to free them once the post lands.
+ * {@link AttachmentIntake.release} is the same act from inside a composer that
+ * is still mounted.
+ */
+export function releaseAttachments(snapshot: readonly PendingAttachment[]): void {
+  for (const attachment of snapshot) releasePreview(attachment);
+}
+
+/**
+ * `initial` seeds the list — what a composer re-opened on a refused send holds
+ * (UI-111). Those previews were made by the composer that closed and survived
+ * its unmount because `take()` handed ownership out; seeding is how ownership
+ * comes back.
+ */
+export function useAttachmentIntake(initial: readonly PendingAttachment[] = []): AttachmentIntake {
+  const [pending, setPending] = useState<readonly PendingAttachment[]>(initial);
   const [dropping, setDropping] = useState(false);
   const depth = useRef(0);
   // Mirrors state so the unmount cleanup revokes what is actually held: an

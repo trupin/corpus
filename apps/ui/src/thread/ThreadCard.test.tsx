@@ -2,6 +2,7 @@
 import type { Job, Thread } from "@corpus/contract";
 import { resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -80,7 +81,7 @@ function Host({
 }: {
   readonly transport: ReaderTransport;
   readonly host?: ThreadHost;
-  readonly onOpenDoc?: (docId: string, anchorId?: string | null) => void;
+  readonly onOpenDoc?: (docId: string, reveal?: RevealTarget) => void;
   readonly onCollapse?: () => void;
   readonly onNotify?: (notice: { tone: string; message: string }) => void;
 }): ReactElement {
@@ -299,7 +300,14 @@ describe("a flip whose card went away before it settled", () => {
 });
 
 describe("the context line", () => {
-  it("names the parent and links back at the anchor", async () => {
+  /**
+   * UI-095. This used to assert `("doc_m", "a_1")` — an anchor id that **every**
+   * wiring of `onOpenDoc` dropped, because they all took `(docId: string)`
+   * alone. The test passed and the link opened the parent at the top, which is
+   * what the user reported. What reaches the reader is a reveal, and it names
+   * the *thread*, because that is what `useReaderSurface` honours.
+   */
+  it("names the parent and links back at the conversation, not at the top", async () => {
     const open = vi.fn();
     const { container } = render(<Host transport={wire()} onOpenDoc={open} />);
     await waitFor(() => {
@@ -309,7 +317,28 @@ describe("the context line", () => {
       "on Mortgage options · at “assume a 30-year fixed at 6.1%”",
     );
     fireEvent.click(container.querySelector(".t-context .ref") as HTMLElement);
-    expect(open).toHaveBeenCalledWith("doc_m", "a_1");
+    expect(open).toHaveBeenCalledWith("doc_m", { kind: "thread", threadId: "th_a" });
+  });
+
+  /**
+   * A whole-document thread has no anchor to scroll to, and the reveal is still
+   * the right instruction: `jumpToThread` expands the card and flashes it, and
+   * the card is where "· whole document" is written — the rider's "an unanchored
+   * row opens its thread and says why it has no anchor".
+   */
+  it("carries the same instruction for a thread with no anchor", async () => {
+    const open = vi.fn();
+    const transport = readerTransport({
+      docs: [docFixture({ frontmatter: { id: "doc_m", title: "Mortgage options" } })],
+      threads: [threadFixture({ id: "th_a", parent: "doc_m", anchor: null, turns: TURNS })],
+    });
+    const { container } = render(<Host transport={transport} onOpenDoc={open} />);
+    await waitFor(() => {
+      expect(container.querySelector(".t-context .ref")).not.toBeNull();
+    });
+    expect(container.querySelector(".t-context")?.textContent).toContain("whole document");
+    fireEvent.click(container.querySelector(".t-context .ref") as HTMLElement);
+    expect(open).toHaveBeenCalledWith("doc_m", { kind: "thread", threadId: "th_a" });
   });
 
   /** SPEC.md §9: a deleted parent leaves an orphaned record, not a crash. */

@@ -6,7 +6,7 @@ plugins
 
 ## Status
 
-todo
+done
 
 ## Priority
 

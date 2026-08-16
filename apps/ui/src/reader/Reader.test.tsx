@@ -453,6 +453,50 @@ describe("Reader", () => {
     });
 
     /**
+     * UI-095. The reveal above was only ever reachable from the 💬 popover,
+     * because the **thread-context link** — "on «Parent» · at «quote»" — handed
+     * its host an `anchorId` that every wiring of `onOpenDoc` dropped on the
+     * floor. So the link that promises to take you to a passage opened the
+     * parent at the top of the document, however far down the passage was.
+     *
+     * What is pinned is the whole path in one act: the entry the follow pushes
+     * carries the instruction, and the arriving reader has the conversation
+     * expanded and flashing rather than merely present.
+     */
+    it("follows a thread's context link to the conversation, not to the top", async () => {
+      const stacks: (readonly NavEntry[])[] = [];
+      const { container } = render(
+        <Host
+          wire={fullWire()}
+          initial={[{ docId: "th_rate", scrollY: 0 }]}
+          onNav={(next) => stacks.push(next)}
+        />,
+      );
+      await waitFor(() => {
+        expect(container.querySelector(".t-context .ref")).not.toBeNull();
+      });
+
+      fireEvent.click(container.querySelector(".t-context .ref") as HTMLElement);
+
+      await showsDoc(container, "doc_m");
+      // The push itself — read from the history rather than from the live
+      // stack, because the reader honours the instruction and takes it off the
+      // entry, which is UI-037's one-shot rule and not this issue's business.
+      expect(stacks[0]).toEqual([
+        { docId: "th_rate", scrollY: 0 },
+        { docId: "doc_m", scrollY: 0, reveal: { kind: "thread", threadId: "th_rate" } },
+      ]);
+      await waitFor(() => {
+        expect(container.querySelector(".thread-slot.expanded")).not.toBeNull();
+      });
+      expect(container.querySelector(".thread-card.flash")).not.toBeNull();
+      // Honoured once: Back onto this entry is an ordinary restoration.
+      await waitFor(() => {
+        expect(stacks.at(-1)?.at(-1)).toEqual({ docId: "doc_m", scrollY: 0 });
+      });
+    });
+
+    /**
      * A quote the document no longer contains — edited between the click and
      * the open. Giving up counts as honouring it: a pending instruction left on
      * the entry would fire on the next reload, against a document that has

@@ -2,11 +2,20 @@
 import type { DocRow } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { groupOpenItems, TodosColumn } from "./TodosColumn.js";
-import { listPayload, transport, wrapperFor, type Transport } from "./testing.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { groupItems, TodosColumn } from "./TodosColumn.js";
+import { listPayload, memoryStorage, transport, wrapperFor, type Transport } from "./testing.js";
 
-afterEach(cleanup);
+beforeEach(() => {
+  // The show-completed control is browser-local (PLUGINS-015): a dependable
+  // store per test, because the ambient one is not (see `testing.tsx`).
+  vi.stubGlobal("localStorage", memoryStorage());
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const NOW = new Date("2026-07-20T12:00:00.000Z");
 
@@ -58,12 +67,12 @@ const itemTexts = (): string[] =>
     (node) => node.textContent ?? "",
   );
 
-describe("groupOpenItems", () => {
+describe("groupItems", () => {
   const list = (
     docId: string,
     title: string,
     items: readonly { text: string; done: boolean }[],
-  ): Parameters<typeof groupOpenItems>[0][number] => ({
+  ): Parameters<typeof groupItems>[0][number] => ({
     docId,
     title,
     open: items.filter((entry) => !entry.done).length,
@@ -72,11 +81,14 @@ describe("groupOpenItems", () => {
   });
 
   it("keeps only open items and drops documents with none", () => {
-    const grouped = groupOpenItems([
-      list("doc_a", "A", [item("open", false), item("done", true)]),
-      list("doc_b", "B", [item("all done", true)]),
-      list("doc_c", "C", []),
-    ]);
+    const grouped = groupItems(
+      [
+        list("doc_a", "A", [item("open", false), item("done", true)]),
+        list("doc_b", "B", [item("all done", true)]),
+        list("doc_c", "C", []),
+      ],
+      false,
+    );
     expect(grouped).toEqual([
       {
         docId: "doc_a",
@@ -92,11 +104,34 @@ describe("groupOpenItems", () => {
     ]);
   });
 
+  /**
+   * The rider's control (SPEC.md §12, signed 2026-08-12): a list whose every
+   * item is done is dropped when only open items are shown, and comes back —
+   * with its checked items, so they can be unchecked — when they are asked for.
+   */
+  it("keeps completed items, and the lists made only of them, when asked", () => {
+    const grouped = groupItems(
+      [
+        list("doc_a", "A", [item("open", false), item("done", true)]),
+        list("doc_b", "B", [item("all done", true)]),
+        list("doc_c", "C", []),
+      ],
+      true,
+    );
+    expect(grouped.map((group) => group.docId)).toEqual(["doc_a", "doc_b"]);
+    expect(grouped[0]?.items).toEqual([
+      { at: 0, item: { text: "open", done: false } },
+      { at: 1, item: { text: "done", done: true } },
+    ]);
+    expect(grouped[1]?.items).toEqual([{ at: 0, item: { text: "all done", done: true } }]);
+  });
+
   /** The position is the item's place in the **document**, not in the column. */
   it("records each open item's position among all of the document's items", () => {
-    const grouped = groupOpenItems([
-      list("doc_a", "A", [item("done", true), item("first", false), item("second", false)]),
-    ]);
+    const grouped = groupItems(
+      [list("doc_a", "A", [item("done", true), item("first", false), item("second", false)])],
+      false,
+    );
     expect(grouped[0]?.items).toEqual([
       { at: 1, item: { text: "first", done: false } },
       { at: 2, item: { text: "second", done: false } },
@@ -104,7 +139,8 @@ describe("groupOpenItems", () => {
   });
 
   it("answers nothing for a workspace with no todo documents at all", () => {
-    expect(groupOpenItems([])).toEqual([]);
+    expect(groupItems([], false)).toEqual([]);
+    expect(groupItems([], true)).toEqual([]);
   });
 });
 
@@ -224,7 +260,7 @@ describe("TodosColumn", () => {
       expect(itemTexts()).toEqual(["Call the plumber", "Call the plumber"]);
     });
     const [firstRow, secondRow] = [
-      ...document.querySelectorAll<HTMLElement>(".todos-column .check"),
+      ...document.querySelectorAll<HTMLElement>(".todos-column .check .todo-item-open"),
     ];
     if (firstRow === undefined || secondRow === undefined) throw new Error("expected two rows");
     fireEvent.click(secondRow);

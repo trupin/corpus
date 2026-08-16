@@ -18,6 +18,7 @@ import {
   type CSSProperties,
   type ReactElement,
 } from "react";
+import { AttachButton } from "./AttachButton";
 import { GrowingTextarea } from "./GrowingTextarea";
 import { PendingAttachments } from "./PendingAttachments";
 import { useAttachmentIntake, type PendingAttachment } from "./useAttachmentIntake";
@@ -67,7 +68,6 @@ export function ThreadComposer({
   const [caret, setCaret] = useState(0);
   const [asking, setAsking] = useState(true);
   const input = useRef<HTMLTextAreaElement>(null);
-  const picker = useRef<HTMLInputElement>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
   const intake = useAttachmentIntake();
   const append = useAppendTurn(threadId);
@@ -189,29 +189,7 @@ export function ThreadComposer({
       <WeightPicker weight={weight} live={live} surface={threadId} />
 
       <div className="composer-foot">
-        <button
-          type="button"
-          className="clip"
-          title="Attach files from disk"
-          aria-label="Attach files"
-          onClick={() => {
-            picker.current?.click();
-          }}
-        >
-          📎
-        </button>
-        <input
-          ref={picker}
-          type="file"
-          multiple
-          hidden
-          data-attach-input={threadId}
-          onChange={(event) => {
-            intake.add(event.target.files);
-            // Re-picking the same file must fire `change` again.
-            event.target.value = "";
-          }}
-        />
+        <AttachButton surface={threadId} onFiles={intake.add} />
         <button
           type="button"
           className={asking ? "toggle on" : "toggle"}

@@ -1021,6 +1021,7 @@ export async function stubCorpus(
             parent: thread.parent,
             anchor: selector === undefined ? null : anchorId,
             agent: thread.agent,
+            resident: null,
             turns: [firstTurn],
           },
           anchorId: selector === undefined ? null : anchorId,
@@ -1184,6 +1185,7 @@ export async function stubCorpus(
             parent: doc.parent,
             anchor: null,
             agent: doc.agent,
+            resident: null,
             created: SEEDED_AT,
             updated: doc.updated,
             turnCount: turns.length + 1,
@@ -1236,6 +1238,7 @@ export async function stubCorpus(
           parent: doc.parent,
           anchor: anchor?.anchorId ?? null,
           agent: doc.agent,
+          resident: null,
           created: SEEDED_AT,
           updated: doc.updated,
           turnCount: turns.length,
@@ -1325,6 +1328,7 @@ export async function stubCorpus(
           parent: thread.parent,
           anchor: anchor.anchorId,
           agent: thread.agent,
+          resident: null,
           created: SEEDED_AT,
           updated: thread.updated,
           turnCount: turns.length,
@@ -1355,6 +1359,7 @@ export async function stubCorpus(
         // The anchor entry lives on the **parent**, and the thread names it.
         anchor: parent?.anchors.find((anchor) => anchor.threadId === id)?.anchorId ?? null,
         agent: doc.agent,
+        resident: null,
         // `turnsOf`, not the bare body parser: this is the read every thread
         // surface goes through, and it is where a turn learns which model wrote
         // it (SPEC.md §11).

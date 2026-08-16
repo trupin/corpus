@@ -22,6 +22,7 @@ import {
   type ReactElement,
 } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
+import { AttachButton } from "../thread/AttachButton";
 import { PendingAttachments } from "../thread/PendingAttachments";
 import { useAttachmentIntake, type PendingAttachment } from "../thread/useAttachmentIntake";
 import { useCompose, type ComposeMode } from "./useCompose";
@@ -75,7 +76,6 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
   const [caret, setCaret] = useState(0);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
   const textarea = useRef<HTMLTextAreaElement>(null);
-  const picker = useRef<HTMLInputElement>(null);
   const intake = useAttachmentIntake();
   const compose = useCompose(onNotify);
   /*
@@ -216,28 +216,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         <WeightPicker weight={weight} live={live} surface="compose" />
 
         <div className="compose-actions">
-          <button
-            type="button"
-            className="clip"
-            title="Attach files from disk"
-            aria-label="Attach files"
-            onClick={() => {
-              picker.current?.click();
-            }}
-          >
-            📎
-          </button>
-          <input
-            ref={picker}
-            type="file"
-            multiple
-            hidden
-            data-attach-input="compose"
-            onChange={(event) => {
-              intake.add(event.target.files);
-              event.target.value = "";
-            }}
-          />
+          <AttachButton surface="compose" onFiles={intake.add} />
           <span className="hint">{COMPOSE_HINT}</span>
           <span className="spacer" />
           <button

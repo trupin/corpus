@@ -1,6 +1,7 @@
-import type { Doc, DocRow } from "@corpus/contract";
-import { createCorpusTestHarness } from "@corpus/kit/testing";
+import type { Doc, DocRow, ResolvedAnchor } from "@corpus/contract";
+import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
 import type { ReactElement, ReactNode } from "react";
+import { openItems, parseBodyItems, updateItemInBody, type TodoItem } from "../items.js";
 
 /**
  * The plugin's own test scaffolding: a mounted kit data layer plus a `fetch`
@@ -186,6 +187,158 @@ export function transport(overrides: Partial<TransportOptions>): Transport {
     fetch: fetchStub,
     calls,
     pluginCalls: () => calls.filter((call) => call.url.includes("/api/x/todos")),
+  };
+}
+
+/**
+ * A **stateful** transport: the plugin's item routes actually rewrite a body,
+ * and `GET /lists` is recomputed from that body every time it is asked.
+ *
+ * That is what makes "the row leaves the column without a reload" an assertion
+ * about the application rather than about a fixture — a column that did not
+ * re-read would keep showing the item it just checked off, and a column that
+ * hid it optimistically would keep hiding it after the server refused.
+ *
+ * Shared by the item-menu tests and the checkbox tests because both are the
+ * same write path reached two ways (PLUGINS-015).
+ */
+export const STATEFUL_BODY = [
+  "Chores that landed in the inbox.",
+  "",
+  "- [x] Send the signed form",
+  "- [ ] Book the passport appointment (due: 2026-08-01)",
+  "- [ ] Call the plumber",
+  "",
+].join("\n");
+
+export interface StatefulWire extends Transport {
+  /** The document body as the stub currently holds it. */
+  body(): string;
+  /** Only the item-route writes — `PUT /api/x/todos/{doc}/items/{index}`. */
+  readonly pluginWrites: () => readonly RecordedCall[];
+}
+
+export interface StatefulWireOptions {
+  /** Status the item route answers with; 200 applies the write. */
+  readonly itemStatus?: number;
+  /** What `GET /api/docs/{id}` reports as resolved anchors. */
+  readonly anchors?: readonly ResolvedAnchor[];
+  /** The body the stub starts from; defaults to {@link STATEFUL_BODY}. */
+  readonly body?: string;
+}
+
+/** The JSON a recorded call carried, which `pluginRequest` always sends as a string. */
+export function sentJson(init: RequestInit | undefined): Record<string, unknown> {
+  return JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<string, unknown>;
+}
+
+export function statefulTodoWire(options: StatefulWireOptions = {}): StatefulWire {
+  let body = options.body ?? STATEFUL_BODY;
+  const calls: RecordedCall[] = [];
+  const status = options.itemStatus ?? 200;
+
+  const listView = (): Record<string, unknown> => {
+    const items: readonly TodoItem[] = parseBodyItems(body);
+    return {
+      docId: "doc_week",
+      title: "Week of Jul 20",
+      path: "data/docs/todos/doc_week.md",
+      status: "open",
+      open: openItems(items).length,
+      done: items.length - openItems(items).length,
+      items,
+    };
+  };
+
+  const fetchStub: typeof globalThis.fetch = (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    calls.push({ url, init });
+    const path = new URL(url).pathname;
+    const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+
+    if (path.startsWith("/api/x/todos/lists")) {
+      return Promise.resolve(json({ lists: [listView()] }, 200));
+    }
+
+    const item = /^\/api\/x\/todos\/([^/]+)\/items\/(\d+)$/.exec(path);
+    if (item !== null && method === "PUT") {
+      if (status !== 200) {
+        return Promise.resolve(
+          json({ code: "conflict", message: "it changed under you; nothing was written" }, status),
+        );
+      }
+      body = updateItemInBody(body, Number(item[2]), sentJson(init));
+      return Promise.resolve(json({ docId: item[1], index: Number(item[2]) }, 200));
+    }
+
+    if (path === "/api/threads" && method === "POST") {
+      return Promise.resolve(
+        json({ thread: { id: "th_new1" }, anchorId: "anc_new1", warnings: [] }, 201),
+      );
+    }
+    if (path === "/api/jobs") return Promise.resolve(json({ jobs: [] }, 200));
+    if (path.startsWith("/api/docs/")) {
+      return Promise.resolve(
+        json(
+          {
+            ...todoDoc("doc_week", {}, body),
+            frontmatter: { ...todoDoc("doc_week", {}, body).frontmatter, title: "Week of Jul 20" },
+            path: "data/docs/todos/doc_week.md",
+            anchors: options.anchors ?? [],
+          },
+          200,
+        ),
+      );
+    }
+    const rows = [docRowFixture({ id: "doc_week", type: "todo", title: "Week of Jul 20" })];
+    return Promise.resolve(json({ items: rows, page: { total: 1, limit: 50, offset: 0 } }, 200));
+  };
+
+  return {
+    fetch: fetchStub,
+    calls,
+    body: () => body,
+    pluginCalls: () => calls.filter((call) => call.url.includes("/api/x/todos")),
+    pluginWrites: () => calls.filter((call) => /\/api\/x\/todos\/[^/]+\/items\//.test(call.url)),
+  };
+}
+
+/**
+ * In-memory `Storage` doubles, for the same reason `apps/ui` has its own: the
+ * ambient `localStorage` under the runner is not dependable — Node 25 defines a
+ * Web Storage global that shadows jsdom's and is inert without
+ * `--localstorage-file`. The plugin cannot import `apps/ui`'s copy (SPEC.md §10
+ * — the kit is the whole import surface), and the real path is covered in a
+ * real browser by the E2E drill.
+ */
+export function memoryStorage(initial: Record<string, string> = {}): Storage {
+  const entries = new Map(Object.entries(initial));
+  return {
+    get length() {
+      return entries.size;
+    },
+    clear: () => entries.clear(),
+    getItem: (key) => entries.get(key) ?? null,
+    key: (index) => [...entries.keys()][index] ?? null,
+    removeItem: (key) => void entries.delete(key),
+    setItem: (key, value) => void entries.set(key, value),
+  };
+}
+
+/** Models Safari private mode and sandboxed frames, where access throws. */
+export function throwingStorage(): Storage {
+  const reject = (): never => {
+    throw new DOMException("The operation is insecure.", "SecurityError");
+  };
+  return {
+    get length(): number {
+      return reject();
+    },
+    clear: reject,
+    getItem: reject,
+    key: reject,
+    removeItem: reject,
+    setItem: reject,
   };
 }
 

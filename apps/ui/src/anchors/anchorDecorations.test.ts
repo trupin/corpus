@@ -12,9 +12,10 @@ import {
   anchorState,
   innermostAt,
   setAnchorsTransaction,
+  setProvisionalTransaction,
   type AnchorPlacement,
 } from "./anchorDecorations.js";
-import { mdRangeToPm } from "./offsetMap.js";
+import { mdRangeToPm, type PmRange } from "./offsetMap.js";
 
 /**
  * The decoration layer, against a real ProseMirror state built from the real
@@ -45,6 +46,11 @@ function placement(overrides: Partial<AnchorPlacement> = {}): AnchorPlacement {
 
 function withAnchors(state: EditorState, anchors: readonly AnchorPlacement[]): EditorState {
   return state.apply(setAnchorsTransaction(state, anchors));
+}
+
+/** The open composer's own range, or `null` to put it out. */
+function withProvisional(state: EditorState, range: PmRange | null): EditorState {
+  return state.apply(setProvisionalTransaction(state, range));
 }
 
 /** Every inline decoration's range, in order. */
@@ -162,6 +168,75 @@ describe("living with edits", () => {
     // The zero-width range does not re-grow on its own — the server's next
     // report is what re-attaches it — but the thread never disappeared.
     expect(ranges(retyped)).toEqual([]);
+  });
+});
+
+/**
+ * UI-112: the words an open composer is about, lit before the server has heard
+ * of them — and the rule that makes that safe on an editable surface.
+ */
+describe("the provisional highlight", () => {
+  const opened = withProvisional(stateFor(BODY), { from: 5, to: 20 });
+
+  it("is painted with an anchor's own class, and carries no pip", () => {
+    expect(ranges(opened)).toEqual([{ from: 5, to: 20 }]);
+    // The same paint, because it is about to become one (§6). The flag is for
+    // whoever needs to tell them apart; the appearance is not.
+    expect(attributes(opened)[0]).toMatchObject({
+      class: "anchor-hl",
+      "data-provisional": "true",
+    });
+    // No conversation yet, so nothing to count the turns of.
+    expect(
+      anchorState(opened)
+        ?.set.find()
+        .filter((d) => d.from === d.to),
+    ).toHaveLength(0);
+    expect(anchorState(opened)?.anchors).toEqual([]);
+  });
+
+  it("reconciles with an edit around it — the common case while composing", () => {
+    const above = opened.apply(opened.tr.insertText("Note: ", 1));
+    expect(ranges(above)).toEqual([{ from: 11, to: 26 }]);
+    expect(above.doc.textBetween(11, 26)).toBe(opened.doc.textBetween(5, 20));
+
+    const below = opened.apply(opened.tr.insertText(" indeed", 30));
+    expect(ranges(below)).toEqual([{ from: 5, to: 20 }]);
+  });
+
+  /**
+   * The asymmetry with an anchor, which retains a collapsed range and hides it:
+   * that retention exists because a conversation hangs off the anchor and only
+   * the server may orphan it. Nothing hangs off this one, and a zero-width mark
+   * claiming the selection survived its own deletion would be a lie the surface
+   * has no way to correct.
+   */
+  it("yields to an edit through it, where an anchor would be retained", () => {
+    const typedOver = opened.apply(opened.tr.delete(5, 20));
+    expect(anchorState(typedOver)?.provisional).toBeNull();
+    expect(anchorState(typedOver)?.set.find()).toHaveLength(0);
+
+    const anchored = withAnchors(stateFor(BODY), [placement()]);
+    const sameEdit = anchored.apply(anchored.tr.delete(5, 20));
+    expect(anchorState(sameEdit)?.anchors[0]?.segments).toEqual([{ from: 5, to: 5 }]);
+  });
+
+  it("goes out when the host puts it out, leaving the anchors alone", () => {
+    const withBoth = withProvisional(withAnchors(stateFor(BODY), [placement()]), {
+      from: 25,
+      to: 30,
+    });
+    expect(ranges(withBoth)).toHaveLength(2);
+
+    const closed = withProvisional(withBoth, null);
+    expect(anchorState(closed)?.provisional).toBeNull();
+    expect(ranges(closed)).toEqual([{ from: 5, to: 20 }]);
+  });
+
+  it("survives a report about the anchors, which says nothing about it", () => {
+    const reported = withAnchors(opened, [placement({ segments: [{ from: 25, to: 30 }] })]);
+    expect(anchorState(reported)?.provisional).toEqual({ from: 5, to: 20 });
+    expect(ranges(reported)).toContainEqual({ from: 5, to: 20 });
   });
 });
 

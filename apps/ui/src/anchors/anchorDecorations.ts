@@ -29,6 +29,35 @@ import type { PmRange } from "./offsetMap";
  * rather than dropped: deleting an anchored phrase and immediately retyping it
  * must not make the thread blink out of existence and back, and only the server
  * gets to say the anchor is orphaned (sprint-011 TEST-111).
+ *
+ * ## The provisional highlight
+ *
+ * One more range, held apart from the anchors: the words a comment is being
+ * written **about**, lit from the moment the composer opens until it is
+ * abandoned or the server's own anchor arrives to take their place (UI-112). It
+ * is painted with `.anchor-hl`, the same paint and literally the same rule,
+ * because it is about to become one — the only difference in the DOM is a
+ * `data-provisional` flag and the absence of a pip, since there is no
+ * conversation to count turns of yet.
+ *
+ * It is a separate slot rather than a placement in {@link AnchorPluginState}'s
+ * list for two reasons, and both are about who owns the offsets. The anchors are
+ * the *server's*, and its host declines to apply them whenever the editor is
+ * showing anything but the body they index — so a highlight smuggled in with
+ * them would go dark for the whole of an editing session, which is exactly when
+ * someone is commenting. And the mapping rule is the opposite one:
+ *
+ * **A provisional range reconciles with edits around it and yields to edits
+ * through it.** It maps like an anchor, so typing above the quote — the common
+ * case while a composer is open — moves the mark with its words instead of
+ * drifting it onto other ones. But where an anchor collapsed to nothing is
+ * retained and hidden, this is dropped: retention exists because a *conversation*
+ * hangs off that anchor and only the server may declare it orphaned, and a
+ * provisional range has neither. It is a promise about words that are about to
+ * be quoted, and once those words have been typed over the promise is false. A
+ * zero-width mark asserting that the selection survives its own deletion would
+ * be the worse failure — the highlight going out is the surface's only honest
+ * signal that the quote being composed no longer matches the document.
  */
 
 export interface AnchorPlacement {
@@ -44,18 +73,25 @@ export interface AnchorPlacement {
 
 export interface AnchorPluginState {
   readonly anchors: readonly AnchorPlacement[];
+  /** The words an open composer is about, before the server has seen them. */
+  readonly provisional: PmRange | null;
   readonly set: DecorationSet;
 }
 
 export const anchorPluginKey = new PluginKey<AnchorPluginState>("corpusAnchors");
 
-/** The meta a host dispatches to replace the set from server data. */
-interface SetAnchorsMeta {
-  readonly anchors: readonly AnchorPlacement[];
-}
+/** What a host dispatches: the server's answer, or the composer's own range. */
+type AnchorMeta =
+  | { readonly kind: "anchors"; readonly anchors: readonly AnchorPlacement[] }
+  | { readonly kind: "provisional"; readonly range: PmRange | null };
 
 export function anchorState(state: EditorState): AnchorPluginState | undefined {
   return anchorPluginKey.getState(state);
+}
+
+/** Neither is undoable: ⌘Z must undo the sentence, not the highlight over it. */
+function metaTransaction(state: EditorState, meta: AnchorMeta): Transaction {
+  return state.tr.setMeta(anchorPluginKey, meta).setMeta("addToHistory", false);
 }
 
 /** The transaction that makes the server's answer the truth on screen. */
@@ -63,10 +99,12 @@ export function setAnchorsTransaction(
   state: EditorState,
   anchors: readonly AnchorPlacement[],
 ): Transaction {
-  const meta: SetAnchorsMeta = { anchors };
-  // Not undoable: an anchor report is not something the user did, and ⌘Z after
-  // a save must undo the sentence, not the highlight that arrived with it.
-  return state.tr.setMeta(anchorPluginKey, meta).setMeta("addToHistory", false);
+  return metaTransaction(state, { kind: "anchors", anchors });
+}
+
+/** The transaction that lights (or puts out) the open composer's selection. */
+export function setProvisionalTransaction(state: EditorState, range: PmRange | null): Transaction {
+  return metaTransaction(state, { kind: "provisional", range });
 }
 
 /** The pip: a widget, so it is drawn beside the text without ever being in it. */
@@ -79,8 +117,9 @@ function pip(anchor: AnchorPlacement): HTMLElement {
   return element;
 }
 
-function visibleSegments(anchor: AnchorPlacement, size: number): PmRange[] {
-  return anchor.segments
+/** The parts of a range that are still inside a document this size. */
+function visibleSegments(segments: readonly PmRange[], size: number): PmRange[] {
+  return segments
     .map((segment) => ({ from: Math.min(segment.from, size), to: Math.min(segment.to, size) }))
     .filter((segment) => segment.to > segment.from);
 }
@@ -104,10 +143,27 @@ export function buildDecorations(
   doc: PmDocument,
   anchors: readonly AnchorPlacement[],
   hosts: DecorationHosts = {},
+  provisional: PmRange | null = null,
 ): Decoration[] {
   const decorations: Decoration[] = [];
+  if (provisional !== null) {
+    const [only] = visibleSegments([provisional], doc.content.size);
+    if (only !== undefined) {
+      decorations.push(
+        Decoration.inline(
+          only.from,
+          only.to,
+          // `.anchor-hl` and nothing else: §11 asks for the same paint as an
+          // anchor's, and a second class would be a second appearance waiting
+          // to drift from the first. No pip — there is no conversation to count.
+          { class: "anchor-hl", "data-provisional": "true" },
+          { inclusiveStart: false, inclusiveEnd: false },
+        ),
+      );
+    }
+  }
   anchors.forEach((anchor, index) => {
-    const segments = visibleSegments(anchor, doc.content.size);
+    const segments = visibleSegments(anchor.segments, doc.content.size);
     for (const segment of segments) {
       decorations.push(
         Decoration.inline(
@@ -178,6 +234,23 @@ export function mapAnchors(
   }));
 }
 
+/**
+ * Follows the composer's own range through one transaction — and drops it when
+ * the edit went through the words rather than around them.
+ *
+ * The asymmetry with {@link mapAnchors} is deliberate; the module comment says
+ * why. Note that a wholesale replacement of the document (an external change
+ * adopted while the composer is open) collapses it too, and that is the right
+ * outcome: after a replacement these offsets describe a document that is no
+ * longer on screen, and there is no server anchor to repair them from.
+ */
+export function mapProvisional(range: PmRange | null, transaction: Transaction): PmRange | null {
+  if (range === null) return null;
+  const from = transaction.mapping.map(range.from, 1);
+  const to = transaction.mapping.map(range.to, -1);
+  return to > from ? { from, to } : null;
+}
+
 /** The anchor whose range is shortest among those covering `position`. */
 export function innermostAt(
   anchors: readonly AnchorPlacement[],
@@ -211,25 +284,22 @@ export function anchorDecorationPlugin({ onActivate, slotFor }: AnchorPluginOpti
   return new Plugin<AnchorPluginState>({
     key: anchorPluginKey,
     state: {
-      init: () => ({ anchors: [], set: DecorationSet.empty }),
+      init: () => ({ anchors: [], provisional: null, set: DecorationSet.empty }),
       apply(transaction, value) {
-        const meta = transaction.getMeta(anchorPluginKey) as SetAnchorsMeta | undefined;
-        if (meta !== undefined) {
-          return {
-            anchors: meta.anchors,
-            set: DecorationSet.create(
-              transaction.doc,
-              buildDecorations(transaction.doc, meta.anchors, hosts),
-            ),
-          };
+        const meta = transaction.getMeta(anchorPluginKey) as AnchorMeta | undefined;
+        if (meta === undefined && !transaction.docChanged) return value;
+        let anchors = meta?.kind === "anchors" ? meta.anchors : value.anchors;
+        let provisional = meta?.kind === "provisional" ? meta.range : value.provisional;
+        if (transaction.docChanged) {
+          anchors = mapAnchors(anchors, transaction);
+          provisional = mapProvisional(provisional, transaction);
         }
-        if (!transaction.docChanged) return value;
-        const anchors = mapAnchors(value.anchors, transaction);
         return {
           anchors,
+          provisional,
           set: DecorationSet.create(
             transaction.doc,
-            buildDecorations(transaction.doc, anchors, hosts),
+            buildDecorations(transaction.doc, anchors, hosts, provisional),
           ),
         };
       },
