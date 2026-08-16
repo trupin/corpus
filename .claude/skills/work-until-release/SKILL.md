@@ -41,11 +41,56 @@ in this repo. Correcting the notes does not rewrite the tag.
 Compute readiness rather than trusting a status column; a row can say `todo`
 while its blocker is long done.
 
+## What makes a release
+
+Scope selection has rules, and they are about coherence rather than size.
+
+**A release is a body of related work, not a commit.** One fix that happens to be
+ready is not a release; it is a commit that can wait for one. What makes a set of
+commits a release is that a single sentence describes them and a user can tell
+what changed about their day.
+
+**A release never ships a half-built feature.** If it starts a feature, it
+finishes it — every part needed to _use_ the thing, not merely to have built
+toward it. The test is blunt: **can the user do the thing the release is named
+for?** If the wire carries it, the server records it, and no surface exposes it,
+the feature did not ship, whatever the issue tracker says.
+
+This is not hypothetical here. v0.9.0 shipped three of a thirteen-issue phase —
+a signed spec, the wire fields and a server-side stamp — and was titled _"a
+conversation can have a resident"_. A conversation could not. Designation,
+lanes, presence, the CLI verbs, the skills and both UI surfaces were all still
+`todo`, so a user who read the title went looking for something that did not
+exist.
+
+**Two honest ways out of that**, and both are better than the third:
+
+1. **Finish the feature in this release.** Preferred. Pull the rest of the arc in
+   and ship it whole.
+2. **Ship the groundwork under its own name.** "Provenance, and the spec for
+   resident agents" is a true headline for the same commits. Infrastructure is an
+   honest thing to release; it just may not borrow the name of the feature it is
+   for.
+
+The third way — shipping part of a feature under the feature's name — is the one
+to refuse, and it is the easy one to fall into because the work really was done.
+
+**Prefer finishing an arc already in flight over starting a new one.** A phase
+half-landed is a promise the spec has made and the code has not, and every issue
+built afterwards is built against a description of machinery nobody can run.
+
+**Bounded debt may ride along.** Correctness bugs in files the release already
+touches are cheap to include and expensive to route around later. Debt that
+merely _exists_ is not a reason to widen the scope.
+
 ## 3. Propose a scope
 
 Present a table of what is in hand (done-but-uncommitted, in progress, filed),
 then propose additions in groups, each with a reason:
 
+- **Whatever finishes what is already started** — first, and not optional. If the
+  release touches a feature at all, the issues that make it usable are in scope
+  by default, and leaving one out needs an argument.
 - **Same work** — issues that are really the same design as something already in
   scope. Doing them apart means designing one idea twice.
 - **Same theme** — issues that share the release's story. A release with a single
@@ -101,6 +146,11 @@ After the release is out, report:
 - **The headline must be true.** If the release does not make a feature usable,
   do not name it for that feature. Plumbing is an honest thing to ship; claiming
   a feature that is not there is not.
+- **Finish what you start.** A release that begins a feature ships all of it. If
+  the whole arc will not fit, ship the groundwork under a name that describes
+  groundwork — never the feature's name.
+- **One sentence has to cover it.** If the scope needs two unrelated sentences to
+  describe, it is two releases.
 - Never skip the proposal step, even when the scope looks obvious — the user's
   additions are usually the point.
 - Never start the release without the user's go-ahead.
