@@ -12,6 +12,12 @@ works to a released tag — making the calls itself and reporting them at the en
 rather than one at a time. Do not skip the proposal step and do not start
 building before the user says go.
 
+**There is exactly one conversation, and it happens before the work.** After the
+go-ahead the user is spending their attention elsewhere; the release arriving
+with a written account of the decisions is the thing they are trading for. A
+skill that asks "which of these two?" every twenty minutes has delivered nothing
+they could not have got by doing it themselves.
+
 ## 1. Establish what actually shipped last time
 
 Before proposing anything, find out what the last release really contains — not
@@ -125,10 +131,25 @@ to the release without stopping for judgment calls:
 - Then `npm run release:prepare <x.y.z> "<headline>"`, push the commit, push the
   tag, and confirm the workflow attached the tarball
 
-**Make the calls yourself.** Escalate only for something genuinely unsafe or
-where every reading would produce wasted work. Record each call as you make it —
-what you chose, what you rejected, and why — because the report at the end is the
-deliverable the user is trading their attention for.
+**Make the calls yourself — do not ask.** Design choices, naming, which of two
+reasonable approaches, whether a test is worth writing, how to resolve a spec
+ambiguity, what to do when an issue turns out bigger than it looked: decide, act,
+and write the decision down. Where a call is genuinely hard, reach for a stronger
+model rather than for the user.
+
+Escalate mid-flight for two things only:
+
+- something **unsafe or irreversible** — data loss, a force push, publishing
+- a choice where **every reading leads to wasted work**, so proceeding on any
+  assumption means throwing the work away
+
+Everything else is yours. A signed SPEC amendment is the one standing exception
+this repo keeps, and even then: draft it, apply what the user already authorised,
+and carry the open question into the report rather than stopping the release for
+it.
+
+Record each call as you make it — what you chose, what you rejected, and why.
+Written down while the reasoning is fresh, not reconstructed at the end.
 
 ## 6. Report the calls
 
@@ -151,6 +172,9 @@ After the release is out, report:
   groundwork — never the feature's name.
 - **One sentence has to cover it.** If the scope needs two unrelated sentences to
   describe, it is two releases.
+- **Do not ask the user to adjudicate.** After the go-ahead, questions are a
+  failure of the skill. Make the call, note it, keep going, and let them review
+  the whole set afterwards — that is the point of the arrangement.
 - Never skip the proposal step, even when the scope looks obvious — the user's
   additions are usually the point.
 - Never start the release without the user's go-ahead.
