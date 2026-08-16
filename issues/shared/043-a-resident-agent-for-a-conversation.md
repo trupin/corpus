@@ -315,6 +315,20 @@ the refusal instead was the alternative, and was rejected for the reason the
 route's own docblock gives — the one thing worse than no provenance is a caller
 believing it has some.
 
+### And a correction to the correction (PR #47 re-review)
+
+The summons fix above traded an *unimplementable* sentence for a *contradictory*
+one. Section 3's lane rule — "the scope's root thread where the event falls" —
+was left untouched while Section 5 gained "a summons is stamped with the
+recipient's lane", so §7 stated two different lanes for one event four
+paragraphs apart.
+
+Resolved by putting the exception where the rule is: the lane rule now reads
+"the recipient's lane where the message named a recipient, and otherwise the
+scope's root thread… or the orchestrator's lane". The lesson is in the text —
+a routing rule and its carve-out stated in two places is how they come to
+disagree, which is what happened here twice in one phase.
+
 ## Open questions the draft takes a position on
 
 Each is a place the rider could reasonably read otherwise. Raised here rather
