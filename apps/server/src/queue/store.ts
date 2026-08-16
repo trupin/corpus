@@ -6,6 +6,7 @@ import { z } from "@hono/zod-openapi";
 import {
   DocumentIdSchema,
   IsoDateTimeSchema,
+  LaneSchema,
   QUEUE_EVENT_STATUSES,
   QueueEventSchema,
   QueueEventStatusSchema,
@@ -48,6 +49,28 @@ export const StoredEventSchema = QueueEventSchema.extend({
   error: z.string().min(1).optional(),
   blockedOn: DocumentIdSchema.optional(),
   deferReason: z.string().min(1).optional(),
+  /**
+   * SPEC.md §7's lane: which agent's work this event is (SERVER-111).
+   *
+   * **Server-only bookkeeping**, beside `status` and `attempts` and never on the
+   * wire — the contract's queue event gained nothing for lanes, because an agent
+   * claims a lane rather than reading one off an event it has already been
+   * handed.
+   *
+   * **Optional, and an absent value means the orchestrator's lane.** Every event
+   * written before lanes existed, and every file a hand drops into `pending/`,
+   * is therefore claimable by exactly the caller that could always claim it —
+   * which is the whole of the migration. `queue/lanes.ts`'s `laneOf` is the one
+   * reader; nothing else may spell that default.
+   *
+   * **Written once, at enqueue, and never rewritten.** A value that is neither
+   * absent nor a lane fails the parse, which quarantines the file: a stamp
+   * nobody can read is not a routing decision to be silently reinterpreted as
+   * the orchestrator's. (The projection's own file reader is deliberately
+   * laxer — see `projection/project-runtime.ts` — because it decides what a
+   * console row says, not who may claim.)
+   */
+  lane: LaneSchema.optional(),
 });
 
 export type StoredEvent = z.infer<typeof StoredEventSchema> & {
@@ -171,6 +194,12 @@ export function parseEventFile(
 /**
  * The stand-in written to `failed/` for a file that could not be parsed, so a
  * corrupt event is quarantined with its evidence instead of poisoning a batch.
+ *
+ * It carries no `lane`, and that costs nothing: the file it replaces did not
+ * parse, so whatever lane it claimed is not readable, and `failed/` is terminal
+ * — no claim of any scope will ever offer it. The raw bytes are preserved in
+ * `payload.raw`, which is where an operator reads the original stamp if it
+ * mattered.
  */
 export function salvageEvent(
   id: string,

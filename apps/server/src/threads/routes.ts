@@ -28,6 +28,7 @@ import { designateResident, releaseResident } from "./resident.js";
 import { markThreadSeen } from "./seen.js";
 import { setThreadStatus } from "./status.js";
 import { assertJobResolvable } from "../docs/create.js";
+import { assertRecipientResolvable } from "../queue/scope.js";
 import { appendThreadTurn, turnRequestBody } from "./turns.js";
 import type { ThreadsWorkspace } from "./workspace.js";
 
@@ -72,6 +73,11 @@ export function mountThreadRoutes(
   mountCreateThread(app, async (c) => {
     const actor = actorOf(c.req.valid("header"));
     const input = threadRequestBody(c.req.valid("json"));
+    // §7's recipient, refused here for the same reason `job` is refused on the
+    // two routes below: the route declares the `422`, and a declared refusal
+    // that never fires is a route that accepts a value and ignores it. Before
+    // the verb, so "nothing was written" is true of the refusal.
+    assertRecipientResolvable(workspace.projection, input.recipient);
     const { thread, anchorId, eventId, result } = await createThread(
       workspace,
       mutex,
@@ -90,6 +96,7 @@ export function mountThreadRoutes(
     // and records no origin — but the route declares the `422`, and a declared
     // refusal that never fires is §9.2's silent ignore.
     assertJobResolvable(workspace, input.job);
+    assertRecipientResolvable(workspace.projection, input.recipient);
     const { thread, turn, eventId, result } = await appendThreadTurn(
       workspace,
       mutex,
@@ -111,6 +118,7 @@ export function mountThreadRoutes(
     // attributes the answer to the work that asked the question. Validated for
     // the same reason as the other attribution-only writes.
     assertJobResolvable(workspace, c.req.valid("json").job);
+    assertRecipientResolvable(workspace.projection, c.req.valid("json").recipient);
     const { thread, turn, eventId, result } = await answerThreadForm(
       workspace,
       mutex,

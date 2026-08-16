@@ -72,6 +72,7 @@ import {
   type QueueService,
 } from "./queue/index.js";
 import { createJobLookup } from "./queue/job-lookup.js";
+import { createLaneScopeLookup } from "./queue/scope.js";
 import { createHealthHandler } from "./routes/health.js";
 import { mountStaticUi } from "./static-ui.js";
 import {
@@ -375,6 +376,19 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   /** §4's clean-stop half — the same close, reached from the two points below. */
   let closeCommitWindow: (() => Promise<void>) | undefined;
   if (deps.projection !== undefined) {
+    // SPEC.md §7's lanes (SERVER-111): the walk from an event to the designated
+    // root thread whose scope it falls in. Bound here, and not passed to
+    // `createQueueService`, for the reason the mirror is bound rather than
+    // passed — the queue is built above, before this block knows there is a
+    // database. Until it is bound every event routes to the orchestrator, which
+    // is what a server with no projection can honestly say.
+    //
+    // Its sibling seam, `attachLaneLiveness`, is deliberately **not** bound:
+    // liveness is SERVER-112's tracker, and until it exists every thread lane
+    // reads as lapsed, so the orchestrator's unscoped claim still sees the whole
+    // queue. Binding one line here is all that will change.
+    queue.attachScopeLookup(createLaneScopeLookup(deps.projection));
+
     // Everything the write path needs is already reachable here (sprint-005
     // Open Conflict 12: "no new deps"): the workspace root is on the config, the
     // bus and the self-write registry were just created, the projection is the

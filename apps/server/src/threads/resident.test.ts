@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CORE_QUEUE_EVENT_TYPES, type QueryKey } from "@corpus/contract";
 import {
+  appendTurn,
   createDoc,
   createThread,
   createThreadWorkspace,
@@ -71,6 +72,8 @@ type StoredEvent = {
   readonly type: string;
   readonly source: string;
   readonly status: string;
+  readonly created: string;
+  readonly lane: string;
   readonly payload: Record<string, unknown>;
 };
 
@@ -83,8 +86,20 @@ const pendingPayloads = (): StoredEvent[] =>
       ) as StoredEvent,
   );
 
+/**
+ * Every pending `resident.designated`, **oldest first**.
+ *
+ * Sorted by `created` and not left in `pendingPayloads`' order, which is the
+ * directory's — i.e. by event id, which is randomly generated. An assertion
+ * about two designations in sequence was therefore a coin flip on which one came
+ * first, and failed roughly half the time (found while running the suite for
+ * SERVER-111). The fixture advances its clock between designations, so `created`
+ * is the deterministic key that says what the assertion means.
+ */
 const designations = (): StoredEvent[] =>
-  pendingPayloads().filter((event) => event.type === RESIDENT_DESIGNATED);
+  pendingPayloads()
+    .filter((event) => event.type === RESIDENT_DESIGNATED)
+    .sort((left, right) => left.created.localeCompare(right.created));
 
 /** The title the server derived for a created thread — what a commit subject names. */
 const titleOf = (created: { thread: Record<string, unknown> }): string =>
@@ -497,5 +512,135 @@ describe("reading a resident back", () => {
     // A corpus that used the key for something of its own stays readable.
     expect((await readThread(created.id))["resident"]).toBeNull();
     expect(residentRow(created.id)).toEqual({ resident_name: null, resident_doc_id: null });
+  });
+});
+
+// SPEC.md §7's lanes (SERVER-111), against the real server: designation is what
+// makes the walk answer differently, and the walk is what stamps the file a
+// parked agent will claim from.
+describe("what a designation routes", () => {
+  /** The one pending event, as the queue wrote it — including its lane stamp. */
+  const onlyPending = (): StoredEvent => {
+    const events = pendingPayloads();
+    expect(events).toHaveLength(1);
+    return events[0] as StoredEvent;
+  };
+
+  it("stamps a reply in the designated conversation with that thread's lane", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designate(created.id, "researcher");
+    ws.advance(61_000);
+    rmSync(join(ws.root, ".corpus", "queue", "pending"), { recursive: true, force: true });
+    ws.server.queue.store.ensureLayoutSync();
+
+    await appendTurn(ws, created.id, { body: "@researcher please", requestsAgent: true });
+
+    expect(onlyPending().lane).toBe(created.id);
+  });
+
+  it("stamps a comment outside every scope with the orchestrator's lane", async () => {
+    const designated = await createThread(ws, { body: "start" });
+    await designate(designated.id, "researcher");
+    ws.advance(61_000);
+    const elsewhere = await createThread(ws, { body: "unrelated" });
+    ws.advance(61_000);
+    rmSync(join(ws.root, ".corpus", "queue", "pending"), { recursive: true, force: true });
+    ws.server.queue.store.ensureLayoutSync();
+
+    await appendTurn(ws, elsewhere.id, { body: "hello", requestsAgent: true });
+
+    expect(onlyPending().lane).toBe("orchestrator");
+  });
+
+  // §7's one deliberate scope crossing. Routing follows the recipient, filing
+  // follows the conversation: the lane is the summoned agent's, the payload
+  // still names the host thread.
+  it("routes a summons to the recipient's lane while filing it in the host thread", async () => {
+    const designated = await createThread(ws, { body: "start" });
+    await designate(designated.id, "researcher");
+    ws.advance(61_000);
+    const host = await createThread(ws, { body: "unrelated" });
+    ws.advance(61_000);
+    rmSync(join(ws.root, ".corpus", "queue", "pending"), { recursive: true, force: true });
+    ws.server.queue.store.ensureLayoutSync();
+
+    await appendTurn(ws, host.id, {
+      body: "a question",
+      requestsAgent: true,
+      recipient: designated.id,
+    });
+
+    const event = onlyPending();
+    expect(event.lane).toBe(designated.id);
+    expect(event.payload["threadId"]).toBe(host.id);
+  });
+
+  // §7 stamps once and never rewrites: releasing does not strand queued work,
+  // it only changes what the *next* enqueue is stamped with.
+  it("leaves an already-queued event on its lane when the resident is released", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designate(created.id, "researcher");
+    ws.advance(61_000);
+    rmSync(join(ws.root, ".corpus", "queue", "pending"), { recursive: true, force: true });
+    ws.server.queue.store.ensureLayoutSync();
+    await appendTurn(ws, created.id, { body: "first", requestsAgent: true });
+    ws.advance(61_000);
+
+    await release(created.id);
+    ws.advance(61_000);
+
+    expect(onlyPending().lane).toBe(created.id);
+    await appendTurn(ws, created.id, { body: "second", requestsAgent: true });
+    expect(
+      pendingPayloads()
+        .map((event) => event.lane)
+        .sort(),
+    ).toEqual([created.id, "orchestrator"].sort());
+  });
+
+  describe("a recipient that names no lane", () => {
+    it("is a 422 naming the value, with nothing written", async () => {
+      const thread = await createThread(ws, { body: "start" });
+      ws.advance(61_000);
+      const before = ws.read(threadPath(thread.id));
+      const pendingBefore = pendingEvents(ws).length;
+
+      const response = await ws.post(`/api/threads/${thread.id}/turns`, {
+        body: "a question",
+        requestsAgent: true,
+        recipient: thread.id,
+      });
+
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({
+        code: "unknown_recipient",
+        recipient: thread.id,
+      });
+      expect(ws.read(threadPath(thread.id))).toBe(before);
+      expect(pendingEvents(ws)).toHaveLength(pendingBefore);
+    });
+
+    it("refuses a thread that does not exist the same way", async () => {
+      const thread = await createThread(ws, { body: "start" });
+      ws.advance(61_000);
+
+      const response = await ws.post(`/api/threads/${thread.id}/turns`, {
+        body: "a question",
+        recipient: "th_nosuchthread",
+      });
+
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({ code: "unknown_recipient" });
+    });
+
+    it("refuses it on creation too, before a thread exists to have been written", async () => {
+      const response = await ws.post("/api/threads", {
+        body: "start",
+        recipient: "th_nosuchthread",
+      });
+
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({ code: "unknown_recipient" });
+    });
   });
 });

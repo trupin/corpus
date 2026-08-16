@@ -240,6 +240,13 @@ export async function captureDocument(
           // that simply governs no work — it is not an error, and there is no
           // event for it to ride on (CONTRACT-039).
           weight: request.weight,
+          // Always the computed lane, because `POST /api/capture` carries no
+          // `recipient` and the contract says why: a capture creates a
+          // standalone thread that is in no scope by construction, so it
+          // addresses the orchestrator by the ordinary default rule, and an
+          // override here would be a routing choice made before there is a
+          // conversation to route.
+          recipient: undefined,
           source: EVENT_SOURCE.capture,
         })
       : null;

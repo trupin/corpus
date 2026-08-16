@@ -1,37 +1,45 @@
 import { describe, expect, it, vi } from "vitest";
+import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
 import { DEFAULT_POLL_INTERVAL_MS, WaiterRegistry } from "./waiters.js";
 
 const never = (): Promise<boolean> => Promise.resolve(false);
 
+/** The lane every pre-lane test parked on, spelled once. */
+const ANY: Lane = ORCHESTRATOR_LANE;
+const OTHER: Lane = "th_resident";
+
+/** "Everyone", for the tests that predate lanes and are not about them. */
+const everyone = (): boolean => true;
+
 describe("WaiterRegistry", () => {
   it("parks until notified, and leaves nothing behind", async () => {
     const registry = new WaiterRegistry({ probe: never });
-    const parked = registry.wait(5_000);
+    const parked = registry.wait(ANY, 5_000);
     await vi.waitFor(() => {
       expect(registry.size).toBe(1);
     });
 
-    registry.notify();
+    registry.notify(everyone);
     expect(await parked).toBe(true);
     expect(registry.size).toBe(0);
   });
 
   it("expires with false when the window elapses", async () => {
     const registry = new WaiterRegistry({ probe: never });
-    expect(await registry.wait(20)).toBe(false);
+    expect(await registry.wait(ANY, 20)).toBe(false);
     expect(registry.size).toBe(0);
   });
 
   it("refuses to park at all for a non-positive window", async () => {
     const registry = new WaiterRegistry({ probe: never });
-    expect(await registry.wait(0)).toBe(false);
+    expect(await registry.wait(ANY, 0)).toBe(false);
     expect(registry.size).toBe(0);
   });
 
   it("releases a dropped client and removes its waiter", async () => {
     const registry = new WaiterRegistry({ probe: never });
     const controller = new AbortController();
-    const parked = registry.wait(5_000, controller.signal);
+    const parked = registry.wait(ANY, 5_000, controller.signal);
     await vi.waitFor(() => {
       expect(registry.size).toBe(1);
     });
@@ -43,7 +51,7 @@ describe("WaiterRegistry", () => {
 
   it("does not park a client that is already gone", async () => {
     const registry = new WaiterRegistry({ probe: never });
-    expect(await registry.wait(5_000, AbortSignal.abort())).toBe(false);
+    expect(await registry.wait(ANY, 5_000, AbortSignal.abort())).toBe(false);
     expect(registry.size).toBe(0);
   });
 
@@ -54,7 +62,7 @@ describe("WaiterRegistry", () => {
       pollIntervalMs: 5,
     });
 
-    const parked = registry.wait(5_000);
+    const parked = registry.wait(ANY, 5_000);
     available = true;
     expect(await parked).toBe(true);
     expect(registry.size).toBe(0);
@@ -72,21 +80,73 @@ describe("WaiterRegistry", () => {
       onProbeError,
     });
 
-    expect(await registry.wait(5_000)).toBe(true);
+    expect(await registry.wait(ANY, 5_000)).toBe(true);
     expect(onProbeError).toHaveBeenCalled();
   });
 
   it("releases everyone as expired on close, and refuses to park afterwards", async () => {
     const registry = new WaiterRegistry({ probe: never });
-    const parked = registry.wait(5_000);
+    const parked = registry.wait(ANY, 5_000);
     await vi.waitFor(() => {
       expect(registry.size).toBe(1);
     });
 
     registry.close();
     expect(await parked).toBe(false);
-    expect(await registry.wait(5_000)).toBe(false);
+    expect(await registry.wait(ANY, 5_000)).toBe(false);
     expect(registry.size).toBe(0);
+  });
+
+  // SPEC.md §7 (SERVER-111): parking takes a lane, and a wake-up concerns some
+  // lanes and not others.
+  describe("lanes", () => {
+    it("wakes only the waiters the notification reaches", async () => {
+      const registry = new WaiterRegistry({ probe: never });
+      const resident = registry.wait(OTHER, 5_000);
+      const orchestrator = registry.wait(ANY, 5_000);
+      await vi.waitFor(() => {
+        expect(registry.size).toBe(2);
+      });
+
+      registry.notify((scope) => scope === OTHER);
+      expect(await resident).toBe(true);
+      // Still parked: the other lane's arrival is not this one's business.
+      expect(registry.size).toBe(1);
+      registry.notify(everyone);
+      expect(await orchestrator).toBe(true);
+    });
+
+    it("probes each parked lane and wakes it on its own answer", async () => {
+      const asked: Lane[] = [];
+      const registry = new WaiterRegistry({
+        probe: (scope) => {
+          asked.push(scope);
+          return Promise.resolve(scope === OTHER);
+        },
+        pollIntervalMs: 5,
+      });
+
+      const resident = registry.wait(OTHER, 5_000);
+      const orchestrator = registry.wait(ANY, 200);
+      expect(await resident).toBe(true);
+      // The orchestrator's window expires rather than being woken by the other
+      // lane's pending work.
+      expect(await orchestrator).toBe(false);
+      expect(new Set(asked)).toEqual(new Set([OTHER, ANY]));
+    });
+
+    it("reports the distinct lanes something is parked on", async () => {
+      const registry = new WaiterRegistry({ probe: never });
+      void registry.wait(OTHER, 5_000);
+      void registry.wait(OTHER, 5_000);
+      void registry.wait(ANY, 5_000);
+      await vi.waitFor(() => {
+        expect(registry.size).toBe(3);
+      });
+
+      expect(new Set(registry.parkedLanes)).toEqual(new Set([OTHER, ANY]));
+      registry.close();
+    });
   });
 
   it("polls twice a second by default", () => {
@@ -107,7 +167,7 @@ describe("WaiterRegistry", () => {
       pollIntervalMs: 1,
     });
 
-    expect(await registry.wait(60)).toBe(false);
+    expect(await registry.wait(ANY, 60)).toBe(false);
     expect(overlapped).toBe(false);
   });
 });

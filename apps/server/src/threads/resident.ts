@@ -62,6 +62,7 @@ import {
 } from "../docs/index.js";
 import { AGENTS_KEY, DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { conflict, forbidden, notFound } from "../errors.js";
+import { RESIDENT_DESIGNATED } from "../queue/lanes.js";
 import { MENTION_TYPE, resolveMentionTarget } from "./mentions.js";
 import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
 import { EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
@@ -70,8 +71,15 @@ import { EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
  * The one event type designation produces (SPEC.md §7). A member of the
  * contract's `CORE_QUEUE_EVENT_TYPES`, pinned by this module's test rather than
  * spelled as an index into that tuple — exactly as `COMMENT_CREATED` is.
+ *
+ * **Defined in `queue/lanes.ts` and re-exported here** (SERVER-111): the reason
+ * the name matters in a second place is the lane carve-out — a
+ * `resident.designated` goes to the orchestrator's lane whoever is designated —
+ * and that rule has to recognise the type this module produces. Two spellings of
+ * it would be a designation that routes to the lane it announces, which starts
+ * no listener at all.
  */
-export const RESIDENT_DESIGNATED = "resident.designated";
+export { RESIDENT_DESIGNATED } from "../queue/lanes.js";
 
 export const AGENT_DESIGNATE_MESSAGE =
   "designating a resident is user-only; a resident claims a conversation and everything that " +

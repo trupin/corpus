@@ -32,11 +32,17 @@ export function mountQueueRoutes(
 
   app.openapi(contractRoutes.getQueueStatus, async (c) => c.json(await queue.status(), 200));
 
+  // `scope` on both verbs, and `undefined` is not a third behaviour: the
+  // contract defaults an omitted one to the orchestrator's lane, so every caller
+  // written before lanes existed keeps meaning exactly what it meant. The
+  // service applies that default rather than the handler, so the two entry
+  // points cannot come to disagree about it.
   app.openapi(contractRoutes.idleQueue, async (c) => {
-    const { timeout } = c.req.valid("query");
+    const { timeout, scope } = c.req.valid("query");
     const available = await queue.idle({
       timeoutMs: timeout * SECONDS,
       signal: c.req.raw.signal,
+      scope,
     });
     // The window expired (or the queue is halted, or the client went away):
     // `204` with no body is a normal outcome, not an error — and a body-less
@@ -56,7 +62,7 @@ export function mountQueueRoutes(
     // Two fields, never one: what the agent is being handed, and what the server
     // already believed it was doing. `held` was read before this call moved
     // anything, so the sets are disjoint by construction (SPEC.md §7).
-    const claimed = await queue.claimAll();
+    const claimed = await queue.claimAll({ scope: c.req.valid("query").scope });
     return c.json(
       {
         events: claimed.events.map(toWireEvent),

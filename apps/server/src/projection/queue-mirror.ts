@@ -10,7 +10,7 @@
 // Synchronous, like every projector: a client that just got a `200` must be
 // able to read its own write out of the projection.
 
-import { toWireEvent, type QueueMirror, type StoredEvent } from "../queue/index.js";
+import { laneOf, toWireEvent, type QueueMirror, type StoredEvent } from "../queue/index.js";
 import type { ProjectionDb } from "./db.js";
 import { projectEvent } from "./project-runtime.js";
 
@@ -25,10 +25,12 @@ import { projectEvent } from "./project-runtime.js";
  * exactly that reason.
  */
 function upsert(db: ProjectionDb, event: StoredEvent): void {
-  // `blockedOn` rides beside the wire event rather than inside it: it is
-  // server-internal bookkeeping (SERVER-030), and `toWireEvent` exists precisely
-  // to keep the five contract fields and nothing else.
-  projectEvent(db, toWireEvent(event), event.status, event.blockedOn ?? null);
+  // `blockedOn` and `lane` ride beside the wire event rather than inside it:
+  // both are server-internal bookkeeping (SERVER-030, SERVER-111), and
+  // `toWireEvent` exists precisely to keep the five contract fields and nothing
+  // else. The lane goes through `laneOf` so the mirror spells an unstamped
+  // legacy event's lane the same way every claim does.
+  projectEvent(db, toWireEvent(event), event.status, event.blockedOn ?? null, laneOf(event));
   db.prepare("UPDATE jobs SET status = ? WHERE event_id = ?").run(event.status, event.id);
 }
 

@@ -214,6 +214,53 @@ describe("POST /api/queue/claim-all", () => {
   });
 });
 
+// SPEC.md §7's lanes (SERVER-111), on the wire. The `scope` parameter reaches the
+// service and its absence means the orchestrator's lane — the same lane, never a
+// third behaviour, so a caller written before lanes existed keeps its meaning.
+describe("the scope parameter", () => {
+  /** Routes every event to `th_resident`, and reports that lane live. */
+  const partition = (): void => {
+    server.queue.attachScopeLookup(() => "th_resident");
+    server.queue.attachLaneLiveness((lane) => lane === "th_resident");
+  };
+
+  it("hands a scoped claim its own lane, and the orchestrator's call nothing", async () => {
+    partition();
+    const ids = await seed(2);
+
+    const orchestrator = await request("/api/queue/claim-all", { method: "POST" });
+    expect(((await orchestrator.json()) as ClaimBatch).events).toEqual([]);
+
+    const resident = await request("/api/queue/claim-all?scope=th_resident", { method: "POST" });
+    const claimed = ClaimBatchSchema.safeParse(await resident.json());
+    expect(claimed.success && claimed.data.events.map((event) => event.id).sort()).toEqual(
+      [...ids].sort(),
+    );
+  });
+
+  it("reports availability per lane on idle", async () => {
+    partition();
+    await seed(1);
+
+    expect((await request("/api/queue/idle?timeout=1")).status).toBe(204);
+    const scoped = await request("/api/queue/idle?timeout=1&scope=th_resident");
+    expect(scoped.status).toBe(200);
+    expect(IdleResultSchema.safeParse(await scoped.json()).success).toBe(true);
+  });
+
+  it("treats an omitted scope and an explicit orchestrator as one lane", async () => {
+    await seed(1);
+    expect((await request("/api/queue/idle?timeout=1&scope=orchestrator")).status).toBe(200);
+    expect((await request("/api/queue/idle?timeout=1")).status).toBe(200);
+  });
+
+  it("refuses a scope that is not a lane's name at all", async () => {
+    const response = await request("/api/queue/claim-all?scope=doc_a1b2c3", { method: "POST" });
+    expect(response.status).toBe(400);
+    expect(ValidationErrorSchema.safeParse(await response.json()).success).toBe(true);
+  });
+});
+
 // SPEC.md §7: "the server reports what it is holding and settles nothing by
 // itself" (SHARED-015, SERVER-061).
 describe("the in-progress set on the loop's entry points", () => {

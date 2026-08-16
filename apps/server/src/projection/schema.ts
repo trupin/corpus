@@ -123,8 +123,18 @@
  * migration. They are projected rather than read per row because the enqueue
  * path asks "is this root thread designated" for every event (SERVER-111), and
  * that question must cost one SQLite read rather than a file open.
+ *
+ * 16 → 17 (SERVER-111): `events.lane` — SPEC.md §7's lane, the agent whose work
+ * an event is. It mirrors the stamp the queue writes onto the event file, which
+ * is where the authority stays; the column exists so the console and the roster
+ * can ask "what is on this lane" with a `WHERE` instead of reading every file in
+ * five directories. A v16 database has no such column, and every value is
+ * re-derivable from the files, so the rebuild this bump triggers is the whole
+ * migration — an event written before lanes existed simply has no stamp, and
+ * `NOT NULL DEFAULT 'orchestrator'` records the reading `queue/lanes.ts` already
+ * gives it.
  */
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -351,7 +361,15 @@ CREATE TABLE events (
   status TEXT NOT NULL,
   created TEXT,
   payload_json TEXT NOT NULL,
-  blocked_on TEXT
+  blocked_on TEXT,
+  -- SPEC.md §7's lane (SHARED-043, SERVER-111): whose work this event is —
+  -- the orchestrator's, or the id of a designated root thread. A mirror of the
+  -- stamp on the event file, which stays authoritative; this column is here so a
+  -- reader can filter by lane in SQL rather than by reading five directories.
+  -- NOT NULL because the orchestrator's lane is a lane like any other and has a
+  -- name: an event file with no stamp reads as the orchestrator's, and the
+  -- default writes that reading down rather than inventing a second spelling.
+  lane TEXT NOT NULL DEFAULT 'orchestrator'
 );
 
 CREATE TABLE seen (

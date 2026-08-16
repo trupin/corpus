@@ -22,6 +22,7 @@ describe("commentPayload", () => {
         turnTs: "2026-07-19T10:05:00Z",
         parsed: PARSED,
         weight: undefined,
+        recipient: undefined,
       }),
     ).toEqual({
       threadId: "th_x9y8z7w6",
@@ -40,6 +41,7 @@ describe("commentPayload", () => {
       turnTs: "2026-07-19T10:05:00Z",
       parsed: NO_MENTIONS,
       weight: undefined,
+      recipient: undefined,
     });
     expect(payload).toMatchObject({ parentId: null, mentions: [], skills: [], unresolved: [] });
   });
@@ -53,6 +55,7 @@ describe("commentPayload", () => {
       turnTs: "2026-07-19T10:05:00Z",
       parsed: NO_MENTIONS,
       weight: "Heavy or judgment-laden",
+      recipient: undefined,
     });
 
     expect(payload["weight"]).toBe("Heavy or judgment-laden");
@@ -65,6 +68,7 @@ describe("commentPayload", () => {
       turnTs: "2026-07-19T10:05:00Z",
       parsed: NO_MENTIONS,
       weight: undefined,
+      recipient: undefined,
     });
 
     // Not `toBeUndefined()`: a `weight: undefined` key would satisfy that and
@@ -90,6 +94,7 @@ describe("enqueueComment", () => {
       turnTs: "2026-07-19T10:05:00Z",
       parsed: NO_MENTIONS,
       weight: undefined,
+      recipient: undefined,
     });
 
     expect(id).toBe("evt_a1b2c3d4e5f6");
@@ -112,6 +117,7 @@ describe("enqueueComment", () => {
       turnTs: "2026-07-19T10:05:00Z",
       parsed: NO_MENTIONS,
       weight: undefined,
+      recipient: undefined,
       source: "capture",
     });
 

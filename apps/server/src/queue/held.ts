@@ -31,6 +31,28 @@ export interface HeldSet {
 export const NOTHING_HELD: HeldSet = { events: [], total: 0, truncated: false };
 
 /**
+ * Which held events this caller is entitled to see (SPEC.md §7's lanes,
+ * SERVER-111).
+ *
+ * The held set answers "what does the server still think **you** are doing", and
+ * with lanes that pronoun has a referent: a resident never sees the
+ * orchestrator's held list and the orchestrator never sees a live lane's.
+ *
+ * It is the **same** predicate the claim uses, deliberately, rather than a
+ * stricter equality. Under §7's fallback the orchestrator claims a lapsed lane's
+ * pending events, and the stamp is never rewritten — so the work it is then
+ * holding is stamped with that lane. A held report filtered on equality would
+ * hide exactly the work the fallback had just handed over, which is the
+ * discrepancy the report exists to surface. `total` and `truncated` count the
+ * filtered set, so the contract's `total === events.length` invariant is about
+ * what this caller can see, which is the only set it can reconcile.
+ */
+export type HeldFilter = (event: StoredEvent) => boolean;
+
+/** The filter for a caller that owns the whole queue: every lane. */
+export const EVERY_LANE: HeldFilter = () => true;
+
+/**
  * When the event was claimed.
  *
  * `updated` is written by `stamp()` as the event moves into `in-progress/`, and
@@ -116,7 +138,11 @@ const causeOf = (error: unknown): string =>
  * and is bounded by what one agent is working on — the cap bounds the *report*,
  * not the directory.
  */
-export async function readHeldInProgress(store: QueueStore, logger: Logger): Promise<HeldSet> {
+export async function readHeldInProgress(
+  store: QueueStore,
+  logger: Logger,
+  visible: HeldFilter = EVERY_LANE,
+): Promise<HeldSet> {
   let ids: readonly string[];
   try {
     ids = await store.listIds("in-progress");
@@ -137,8 +163,9 @@ export async function readHeldInProgress(store: QueueStore, logger: Logger): Pro
       continue;
     }
     if (read === undefined) continue;
-    if (read.ok) held.push(read.event);
-    else logger.debug("skipping malformed in-progress event", { id, reason: read.reason });
+    if (read.ok) {
+      if (visible(read.event)) held.push(read.event);
+    } else logger.debug("skipping malformed in-progress event", { id, reason: read.reason });
   }
   if (held.length === 0) return NOTHING_HELD;
 

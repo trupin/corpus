@@ -2,11 +2,21 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { QUEUE_EVENT_STATUSES, type QueryKey, type QueueEventStatus } from "@corpus/contract";
+import {
+  ORCHESTRATOR_LANE,
+  QUEUE_EVENT_STATUSES,
+  type QueryKey,
+  type QueueEventStatus,
+} from "@corpus/contract";
 import { HttpError } from "../errors.js";
 import type { QueueMirror } from "./project.js";
 import { QUEUE_QUERY_KEYS } from "./project.js";
-import { createQueueService, DEFAULT_MAX_ATTEMPTS, QueueService } from "./service.js";
+import {
+  createQueueService,
+  DEFAULT_MAX_ATTEMPTS,
+  DEFAULT_STALE_AFTER_MS,
+  QueueService,
+} from "./service.js";
 import type { StoredEvent } from "./store.js";
 
 let root: string;
@@ -1146,5 +1156,259 @@ describe("a finished event closes the commit window (§4)", () => {
     const [event] = await enqueueMany(service, 1);
     await service.claimAll();
     expect((await service.complete(event?.id ?? "")).status).toBe("processed");
+  });
+});
+
+// SPEC.md §7's lanes (SERVER-111): the stamp, the partition it creates, and the
+// fallback that keeps a lapsed lane's work from being silently not done.
+describe("lanes", () => {
+  const RESIDENT = "th_resident";
+  const OTHER = "th_other";
+
+  /** A service whose walk answers `lane` for every event; nothing is live. */
+  const laned = (lane: string): QueueService => {
+    const service = makeService();
+    service.attachScopeLookup(() => lane);
+    return service;
+  };
+
+  /** The scope lookup a real workspace supplies, as a payload-keyed table. */
+  const routing = (table: Record<string, string>): QueueService => {
+    const service = makeService();
+    service.attachScopeLookup((payload) => table[String(payload.threadId)] ?? ORCHESTRATOR_LANE);
+    return service;
+  };
+
+  const post = async (service: QueueService, threadId: string, recipient?: string) =>
+    service.enqueue({
+      type: "comment.created",
+      source: "ui",
+      payload: { threadId },
+      ...(recipient === undefined ? {} : { recipient }),
+    });
+
+  describe("the stamp", () => {
+    it("writes the walk's lane onto the file and the mirror", async () => {
+      const service = laned(RESIDENT);
+      const event = await service.enqueue({
+        type: "comment.created",
+        source: "ui",
+        payload: { threadId: RESIDENT },
+      });
+
+      expect(event.lane).toBe(RESIDENT);
+      const onDisk: unknown = JSON.parse(
+        readFileSync(join(corpusDir, "queue", "pending", `${event.id}.json`), "utf8"),
+      );
+      expect(onDisk).toMatchObject({ lane: RESIDENT });
+      expect(mirror.upserts.at(-1)?.lane).toBe(RESIDENT);
+    });
+
+    it("stamps the orchestrator's lane with no scope lookup bound", async () => {
+      const service = makeService();
+      const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+      expect(event.lane).toBe(ORCHESTRATOR_LANE);
+    });
+
+    it("lets a named recipient override the walk for that one event", async () => {
+      const service = laned(RESIDENT);
+      const summons = await post(service, RESIDENT, OTHER);
+      expect(summons.lane).toBe(OTHER);
+      // Nothing persisted: the next message from the same place is computed
+      // afresh (§7 — an override "does not persist past the message it was set
+      // on").
+      expect((await post(service, RESIDENT)).lane).toBe(RESIDENT);
+    });
+
+    it("sends a resident.designated to the orchestrator whoever is designated", async () => {
+      const service = laned(RESIDENT);
+      const event = await service.enqueue({
+        type: "resident.designated",
+        source: "thread",
+        payload: { threadId: RESIDENT, resident: { name: "Ana", docId: "doc_agent" } },
+      });
+      expect(event.lane).toBe(ORCHESTRATOR_LANE);
+    });
+  });
+
+  describe("one consumer per lane", () => {
+    it("hands a scoped claim only its own lane", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      const mine = await post(service, "th_resident");
+      await post(service, "th_elsewhere");
+
+      const claimed = await service.claimAll({ scope: RESIDENT });
+      expect(claimed.events.map((event) => event.id)).toEqual([mine.id]);
+      // The orchestrator's event is untouched and still pending.
+      expect(await service.store.listIds("pending")).toHaveLength(1);
+    });
+
+    it("never shows the orchestrator a live lane's events", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      service.attachLaneLiveness((lane) => lane === RESIDENT);
+      await post(service, "th_resident");
+      const mine = await post(service, "th_elsewhere");
+
+      const claimed = await service.claimAll();
+      expect(claimed.events.map((event) => event.id)).toEqual([mine.id]);
+    });
+
+    it("shows the orchestrator a lapsed lane's events, without rewriting them", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      let live = true;
+      service.attachLaneLiveness((lane) => live && lane === RESIDENT);
+      const theirs = await post(service, "th_resident");
+      expect((await service.claimAll()).events).toHaveLength(0);
+
+      live = false;
+      const claimed = await service.claimAll();
+      expect(claimed.events.map((event) => event.id)).toEqual([theirs.id]);
+      // The stamp survives the fallback: a returning resident finds its lane
+      // intact, because nothing about the lapse was written down.
+      expect(claimed.events[0]?.lane).toBe(RESIDENT);
+    });
+
+    it("still shows a returning resident its own lane while it reads as lapsed", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      service.attachLaneLiveness(() => false);
+      const theirs = await post(service, "th_resident");
+
+      const claimed = await service.claimAll({ scope: RESIDENT });
+      expect(claimed.events.map((event) => event.id)).toEqual([theirs.id]);
+    });
+
+    it("reads an unstamped legacy file as the orchestrator's", async () => {
+      const service = makeService();
+      writeFileSync(
+        join(corpusDir, "queue", "pending", "evt_legacy.json"),
+        JSON.stringify({
+          id: "evt_legacy",
+          type: "comment.created",
+          created: "2026-07-19T10:05:00Z",
+          source: "cli",
+          payload: {},
+        }),
+        "utf8",
+      );
+
+      expect((await service.claimAll({ scope: RESIDENT })).events).toHaveLength(0);
+      expect((await service.claimAll()).events.map((event) => event.id)).toEqual(["evt_legacy"]);
+    });
+
+    it("scopes the held report the way it scopes the claim", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      service.attachLaneLiveness((lane) => lane === RESIDENT);
+      await post(service, "th_resident");
+      await post(service, "th_elsewhere");
+      await service.claimAll({ scope: RESIDENT });
+      await service.claimAll();
+
+      const orchestrator = await service.claimAll();
+      expect(orchestrator.held.total).toBe(1);
+      expect(orchestrator.held.events[0]?.lane ?? ORCHESTRATOR_LANE).toBe(ORCHESTRATOR_LANE);
+
+      const resident = await service.claimAll({ scope: RESIDENT });
+      expect(resident.held.total).toBe(1);
+      expect(resident.held.events[0]?.lane).toBe(RESIDENT);
+    });
+  });
+
+  describe("parking", () => {
+    // What a *park* owes: it ends on its own lane's work and on nothing else.
+    // Which parked requests a wake-up is delivered to is the registry's own
+    // question and is pinned in `waiters.test.ts` — from out here a waiter woken
+    // for another lane's event finds nothing available and re-parks silently, so
+    // the observable difference is this one.
+    it("ends a scoped park on its own lane, and expires one that cannot see the event", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      service.attachLaneLiveness((lane) => lane === RESIDENT);
+      const orchestrator = service.idle({ timeoutMs: 100 });
+      const resident = service.idle({ timeoutMs: 5_000, scope: RESIDENT });
+      await vi.waitFor(() => {
+        expect(service.parked).toBe(2);
+      });
+
+      await post(service, "th_resident");
+      expect((await resident)?.events).toHaveLength(1);
+      // The orchestrator's window expires with nothing rather than being woken
+      // by another lane's arrival.
+      expect(await orchestrator).toBeUndefined();
+    });
+
+    it("reports availability per lane, matching what the next claim would hand over", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      service.attachLaneLiveness((lane) => lane === RESIDENT);
+      await post(service, "th_resident");
+
+      expect(await service.idle({ timeoutMs: 20 })).toBeUndefined();
+      expect((await service.idle({ timeoutMs: 20, scope: RESIDENT }))?.events).toHaveLength(1);
+    });
+  });
+
+  describe("transitions carry the lane", () => {
+    it("keeps it across a manual retry, which rebuilds the event", async () => {
+      const service = laned(RESIDENT);
+      const event = await service.enqueue({
+        type: "comment.created",
+        source: "ui",
+        payload: {},
+      });
+      await service.claimAll({ scope: RESIDENT });
+      await service.fail(event.id, "boom");
+
+      expect((await service.requeue(event.id)).lane).toBe(RESIDENT);
+    });
+
+    it("keeps it across a deferral's automatic re-entry", async () => {
+      const service = laned(RESIDENT);
+      const event = await service.enqueue({
+        type: "comment.created",
+        source: "ui",
+        payload: {},
+      });
+      await service.claimAll({ scope: RESIDENT });
+      await service.defer(event.id, { blockedOn: "doc_aaaa1111" });
+      expect(await service.requeueDeferredFor("doc_aaaa1111")).toEqual([event.id]);
+
+      const read = await service.store.readEvent("pending", event.id);
+      expect(read?.ok === true && read.event.lane).toBe(RESIDENT);
+    });
+
+    it("reaps a lapsed lane's stuck work without re-routing it", async () => {
+      const service = laned(RESIDENT);
+      const event = await service.enqueue({
+        type: "comment.created",
+        source: "ui",
+        payload: {},
+      });
+      await service.claimAll({ scope: RESIDENT });
+      clock += DEFAULT_STALE_AFTER_MS + 1_000;
+
+      expect((await service.reapStale()).reaped).toEqual([event.id]);
+      const read = await service.store.readEvent("pending", event.id);
+      expect(read?.ok === true && read.event.lane).toBe(RESIDENT);
+    });
+  });
+
+  describe("halt", () => {
+    it("applies to every lane, and resume wakes them all", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      service.attachLaneLiveness((lane) => lane === RESIDENT);
+      await post(service, "th_resident");
+      await post(service, "th_elsewhere");
+      await service.halt("stop");
+
+      expect((await service.claimAll({ scope: RESIDENT })).events).toHaveLength(0);
+      expect((await service.claimAll()).events).toHaveLength(0);
+
+      const orchestrator = service.idle({ timeoutMs: 5_000 });
+      const resident = service.idle({ timeoutMs: 5_000, scope: RESIDENT });
+      await vi.waitFor(() => {
+        expect(service.parked).toBe(2);
+      });
+      await service.resume();
+      expect((await orchestrator)?.events).toHaveLength(1);
+      expect((await resident)?.events).toHaveLength(1);
+    });
   });
 });

@@ -1,9 +1,23 @@
-import type { QueueEventStatus, QueueStatus } from "@corpus/contract";
+import {
+  ORCHESTRATOR_LANE,
+  type Lane,
+  type QueueEventStatus,
+  type QueueStatus,
+} from "@corpus/contract";
 import { ID_PREFIXES, newId } from "../core/ids.js";
 import { formatInstant } from "../core/time.js";
 import { conflict, notFound } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import { readHeldInProgress, type HeldSet } from "./held.js";
+import {
+  NOTHING_LIVE,
+  NO_SCOPE_LOOKUP,
+  laneFor,
+  laneOf,
+  visibleTo,
+  type LaneLiveness,
+  type ScopeRootLookup,
+} from "./lanes.js";
 import {
   NOOP_INVALIDATE,
   NOOP_QUEUE_MIRROR,
@@ -96,6 +110,20 @@ export interface EnqueueInput {
   readonly payload: Record<string, unknown>;
   /** Only for re-enqueueing a known event; a fresh `evt_*` id is minted otherwise. */
   readonly id?: string;
+  /**
+   * The lane this one message named — a posting request's `recipient` (SPEC.md
+   * §7), already refused at the route if it named no lane.
+   *
+   * `undefined` is the ordinary case and means "compute it from where the
+   * message was posted". It routes **this message and nothing else**: nothing is
+   * remembered, and the next message from the same place is computed afresh.
+   */
+  readonly recipient?: Lane | undefined;
+}
+
+/** What a claim or a park is scoped to. Absent means {@link ORCHESTRATOR_LANE}. */
+export interface LaneScope {
+  readonly scope?: Lane | undefined;
 }
 
 /**
@@ -120,7 +148,7 @@ export interface EnqueueInput {
  */
 export type QueueEnqueueObserver = (event: StoredEvent) => Promise<void>;
 
-export interface IdleRequest {
+export interface IdleRequest extends LaneScope {
   readonly timeoutMs: number;
   readonly signal?: AbortSignal | undefined;
 }
@@ -206,6 +234,10 @@ export class QueueService {
   private enqueueObserver: QueueEnqueueObserver | undefined;
   /** Late-bound: see {@link attachWindowCloser}. Closes nothing until bound. */
   private closeCommitWindow: CommitWindowCloser = () => Promise.resolve();
+  /** Late-bound: see {@link attachScopeLookup}. Routes everything to the orchestrator until bound. */
+  private findScopeRoot: ScopeRootLookup = NO_SCOPE_LOOKUP;
+  /** Late-bound: see {@link attachLaneLiveness}. Nothing is live until bound. */
+  private laneIsLive: LaneLiveness = NOTHING_LIVE;
   private readonly invalidate: QueueInvalidate;
   private readonly now: () => number;
   private readonly staleAfterMs: number;
@@ -223,7 +255,7 @@ export class QueueService {
     this.staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.waiters = new WaiterRegistry({
-      probe: async () => (await this.settledPending()).length > 0,
+      probe: async (scope) => (await this.settledPending(scope)).length > 0,
       ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
       onProbeError: (error: unknown) => {
         this.logger.error("queue poll failed", { error: String(error) });
@@ -267,6 +299,36 @@ export class QueueService {
    */
   attachWindowCloser(close: CommitWindowCloser): void {
     this.closeCommitWindow = close;
+  }
+
+  /**
+   * Binds the projection-backed scope walk (`queue/scope.ts`), which
+   * `createServer` does as soon as it has a database.
+   *
+   * Late-bound for the reason every other seam here is: `createServer` builds
+   * the queue before it opens the projection, and a queue built without one
+   * cannot see a designation at all — so it routes everything to the
+   * orchestrator, which is the honest answer rather than a degraded one.
+   */
+  attachScopeLookup(findScopeRoot: ScopeRootLookup): void {
+    this.findScopeRoot = findScopeRoot;
+  }
+
+  /**
+   * Binds the lane liveness predicate — **SERVER-112's tracker**, which is what
+   * will plug in here.
+   *
+   * Until it does, {@link NOTHING_LIVE} holds and every thread lane reads as
+   * lapsed, so the orchestrator's unscoped claim sees the whole queue exactly as
+   * it did before lanes existed. That is deliberate and is the safe direction:
+   * §7 says the cost of a lapse is that the orchestrator does the work, never
+   * that it is silently not done.
+   *
+   * Nothing on the claim path changes when the real predicate arrives — the
+   * fallback is computed here, at claim time, and never written into an event.
+   */
+  attachLaneLiveness(isLive: LaneLiveness): void {
+    this.laneIsLive = isLive;
   }
 
   /**
@@ -332,6 +394,12 @@ export class QueueService {
       payload: input.payload,
       status: "pending",
       updated: at,
+      // SPEC.md §7: stamped here, once, and never rewritten by anything below.
+      // Resolved outside `serialize()` because it is a read of the projection —
+      // one indexed lookup per link of a chain that is one to three links long —
+      // and the chain exists to keep readers from observing a half-written
+      // *batch* of files, which a lane resolution neither performs nor observes.
+      lane: laneFor(input, this.findScopeRoot),
     };
     await this.store.writeEvent("pending", event);
     this.mirror.upsertEvent(event);
@@ -343,8 +411,39 @@ export class QueueService {
     // appends to the same log.
     await this.notifyEnqueued(event);
     this.invalidate(QUEUE_QUERY_KEYS);
-    this.waiters.notify();
+    this.wake(laneOf(event));
     return event;
+  }
+
+  /**
+   * Releases every parked request that would see an event on `lane` — its own
+   * lane's, and the orchestrator's when that lane is not live.
+   *
+   * The same predicate the claim uses, so a park and the claim that follows it
+   * can never disagree about whether there is work: waking an agent whose next
+   * claim returns an empty batch is a spin, and *not* waking one whose claim
+   * would have returned the event is the event sitting there until the poll tick
+   * finds it.
+   */
+  private wake(lane: Lane): void {
+    this.wakeLanes([lane]);
+  }
+
+  /** {@link wake} for a batch: woken once, for the union of what those lanes reach. */
+  private wakeLanes(lanes: readonly Lane[]): void {
+    if (lanes.length === 0) return;
+    this.waiters.notify((scope) => lanes.some((lane) => visibleTo(scope, lane, this.laneIsLive)));
+  }
+
+  /**
+   * Wakes every parked lane, whatever it is scoped to.
+   *
+   * The one caller is `resume`: a halt suppressed every lane at once, so lifting
+   * it concerns every lane, and there is no set of events to read a lane off —
+   * the work that becomes claimable is whatever was already sitting there.
+   */
+  private wakeEveryLane(): void {
+    this.waiters.notify(() => true);
   }
 
   /**
@@ -376,28 +475,47 @@ export class QueueService {
    * observation rather than two. The expiring window reports nothing, because
    * the contract's `204` has no body — and an agent with nothing to claim has
    * nothing to reconcile against; the list arrives on the next `200` regardless.
+   *
+   * **Parks on one lane** (SPEC.md §7, SERVER-111): the events it waits for and
+   * the events it reports are the ones `claimAll` at the same scope would hand
+   * over, which is what keeps the loop's two entry points from disagreeing.
+   * `scope` absent is {@link ORCHESTRATOR_LANE} — the same lane, not a third
+   * behaviour, so a caller written before lanes existed means what it meant.
    */
   async idle(request: IdleRequest): Promise<QueueBatch | undefined> {
+    const scope = request.scope ?? ORCHESTRATOR_LANE;
     // Wall clock, not the injected `now`: the window is a duration measured
     // against the very timers the waiter parks on, while `now` exists to make
     // the *instants written into files* deterministic in tests.
     const deadline = Date.now() + request.timeoutMs;
     for (;;) {
-      const available = await this.settledWork();
+      const available = await this.settledWork(scope);
       if (available !== undefined) return available;
 
       const remaining = deadline - Date.now();
       if (remaining <= 0) return undefined;
-      const woke = await this.waiters.wait(remaining, request.signal);
+      // Parked **under its lane**: another lane's arrival must not end this
+      // window, or a resident re-parks on every message the orchestrator gets
+      // and a scoped park stops being the zero-token wait it is sold as.
+      const woke = await this.waiters.wait(scope, remaining, request.signal);
       if (!woke) return undefined;
     }
   }
 
   /**
-   * Moves every current `pending/*` to `in-progress/` and returns them as one
-   * batch. Serialized in-process and `ENOENT`-tolerant, so two concurrent calls
-   * split the queue between them and never hand the same event to both. Events
-   * enqueued during the claim simply stay pending for the next one.
+   * Moves every `pending/*` **this scope can see** to `in-progress/` and returns
+   * them as one batch. Serialized in-process and `ENOENT`-tolerant, so two
+   * concurrent calls split the queue between them and never hand the same event
+   * to both. Events enqueued during the claim simply stay pending for the next
+   * one.
+   *
+   * **What "can see" means is SPEC.md §7's whole partition** (SERVER-111): a
+   * scoped claim sees only its own lane, and the orchestrator's — which is the
+   * unscoped one, since `scope` absent is {@link ORCHESTRATOR_LANE} — sees its
+   * own lane plus every lane whose listener has lapsed. Two agents claiming at
+   * once are therefore reading disjoint sets rather than racing, and "a claim
+   * never hands one event to two callers" now holds per lane, which is where it
+   * was always doing its work.
    *
    * **`held` is the state `in-progress/` was in *before* this claim's moves**,
    * and that is the whole point of the field (SPEC.md §7, CONTRACT-033). The
@@ -411,9 +529,12 @@ export class QueueService {
    * It is read before the halt check as well: a halt stops work being handed
    * out, not the agent's ability to reconcile what it already holds.
    */
-  async claimAll(): Promise<QueueBatch> {
+  async claimAll(request: LaneScope = {}): Promise<QueueBatch> {
+    const scope = request.scope ?? ORCHESTRATOR_LANE;
     return this.serialize(async () => {
-      const held = await readHeldInProgress(this.store, this.logger);
+      const held = await readHeldInProgress(this.store, this.logger, (event) =>
+        this.visible(scope, event),
+      );
       // Halted: claim nothing, and *move* nothing — the read above is the report
       // the halt does not suppress (see the docblock), never a claim.
       if (await this.store.isHalted()) return { events: [], held };
@@ -421,6 +542,18 @@ export class QueueService {
       const claimed: StoredEvent[] = [];
       let touched = false;
       for (const id of await this.store.listIds("pending")) {
+        // The lane is read **before** the move, off the file in `pending/`: a
+        // claim that moved first and filtered afterwards would have to move
+        // another lane's event back, and the window between the two renames is
+        // exactly where a second claimant would see it in neither directory.
+        //
+        // A file that does not parse belongs to no lane — its stamp is part of
+        // what could not be read — so it is claimed by whoever gets there and
+        // quarantined below. Skipping it while scoped would leave a corrupt file
+        // sitting in `pending/` for as long as no orchestrator claim ran, which
+        // is the one outcome quarantine exists to prevent.
+        const pending = await this.store.readEvent("pending", id);
+        if (pending !== undefined && pending.ok && !this.visible(scope, pending.event)) continue;
         if (!(await this.store.move("pending", "in-progress", id))) continue;
         touched = true;
         const read = await this.store.readEvent("in-progress", id);
@@ -505,6 +638,7 @@ export class QueueService {
   async requeueDeferredFor(docId: string): Promise<string[]> {
     return this.serialize(async () => {
       const requeued: string[] = [];
+      const requeuedLanes: Lane[] = [];
       for (const id of await this.store.listIds("deferred")) {
         const read = await this.store.readEvent("deferred", id);
         if (read === undefined) continue;
@@ -519,14 +653,19 @@ export class QueueService {
         // attempt count does **not** reset, because waiting for a person to stop
         // editing is not an attempt and a manual `job retry` is the verb that
         // asserts a clean slate (see `requeue`).
+        // `stamp` spreads the event, so the lane rides across untouched — which
+        // is what §7 requires of automatic re-entry: an event deferred on a
+        // resident's lane comes back to that resident, not to whoever happens to
+        // claim next.
         const event = this.stamp(withoutDeferral(read.event), "pending");
         await this.store.writeEvent("pending", event);
         this.mirror.upsertEvent(event);
+        requeuedLanes.push(laneOf(event));
         requeued.push(id);
       }
       if (requeued.length > 0) {
         this.invalidate(QUEUE_QUERY_KEYS);
-        this.waiters.notify();
+        this.wakeLanes(requeuedLanes);
         this.logger.info("deferred events re-entered the queue", {
           docId,
           ids: requeued.join(","),
@@ -567,6 +706,11 @@ export class QueueService {
       }
       // Rebuilt field by field rather than spread: `error`, `attempts` and the
       // deferral bookkeeping are exactly what a requeue is supposed to forget.
+      // The **lane is not one of them** and has to be carried across by name —
+      // this is the one transition that reconstructs the event instead of
+      // stamping it, so it is the one place a lane could be silently dropped and
+      // a resident's retried work quietly become the orchestrator's (SPEC.md §7:
+      // the stamp is made once and never rewritten).
       const event: StoredEvent = {
         id: current.event.id,
         type: current.event.type,
@@ -576,11 +720,12 @@ export class QueueService {
         status: "pending",
         updated: formatInstant(this.now()),
         attempts: 0,
+        ...(current.event.lane === undefined ? {} : { lane: current.event.lane }),
       };
       await this.store.writeEvent("pending", event);
       this.mirror.upsertEvent(event);
       this.invalidate(QUEUE_QUERY_KEYS);
-      this.waiters.notify();
+      this.wake(laneOf(event));
       return event;
     });
   }
@@ -589,11 +734,20 @@ export class QueueService {
    * Returns events stranded in `in-progress/` by a dead run to `pending/`, one
    * attempt poorer, and gives up on those past the cap. `reaped` lists only what
    * came back to `pending/` (sprint-003 adjudication 1).
+   *
+   * **Lane-blind, and lane-preserving** (SPEC.md §7). Staleness is staleness: a
+   * held event nobody can account for is stuck whichever agent claimed it, and
+   * scoping the reaper would leave a dead resident's work unrecoverable by the
+   * one agent still running. What it must not do is *re-route* what it recovers
+   * — `stamp` spreads the event, so a reaped event returns to `pending/` on the
+   * lane it was claimed from, and the fallback (not the reaper) is what decides
+   * who may then see it.
    */
   async reapStale(): Promise<ReapResult> {
     return this.serialize(async () => {
       const reaped: string[] = [];
       const failed: string[] = [];
+      const reapedLanes: Lane[] = [];
       for (const id of await this.store.listIds("in-progress")) {
         const read = await this.store.readEvent("in-progress", id);
         if (read === undefined) continue;
@@ -615,10 +769,14 @@ export class QueueService {
         });
         await this.store.writeEvent(target, event);
         this.mirror.upsertEvent(event);
-        (target === "failed" ? failed : reaped).push(id);
+        if (target === "failed") failed.push(id);
+        else {
+          reaped.push(id);
+          reapedLanes.push(laneOf(event));
+        }
       }
       if (reaped.length > 0 || failed.length > 0) this.invalidate(QUEUE_QUERY_KEYS);
-      if (reaped.length > 0) this.waiters.notify();
+      this.wakeLanes(reapedLanes);
       return { reaped, failed };
     });
   }
@@ -638,7 +796,10 @@ export class QueueService {
   async resume(): Promise<QueueStatus> {
     await this.store.clearHalt();
     this.invalidate(QUEUE_QUERY_KEYS);
-    this.waiters.notify();
+    // One halt switch across every lane (SPEC.md §7), so lifting it concerns
+    // every parked agent — including ones whose lane has nothing pending, which
+    // simply claim an empty batch and re-park.
+    this.wakeEveryLane();
     return this.status();
   }
 
@@ -680,19 +841,42 @@ export class QueueService {
     this.waiters.close();
   }
 
-  /** The pending events an agent could claim right now; empty while halted. */
-  private async availablePending(): Promise<StoredEvent[]> {
+  /**
+   * The pending events a claim scoped to `scope` could take right now; empty
+   * while halted.
+   *
+   * Filtered by the same predicate the claim itself uses, so `idle` and the
+   * `claim-all` that follows it can never disagree: reporting availability that
+   * the next claim declines to hand over is how an agent ends up in a wake-claim-
+   * empty-repark loop.
+   */
+  private async availablePending(scope: Lane): Promise<StoredEvent[]> {
     if (await this.store.isHalted()) return [];
     const events: StoredEvent[] = [];
     for (const id of await this.store.listIds("pending")) {
       const read = await this.store.readEvent("pending", id);
       if (read === undefined) continue;
-      if (read.ok) events.push(read.event);
+      if (read.ok) {
+        if (this.visible(scope, read.event)) events.push(read.event);
+      }
       // A corrupt file is quarantined by `claim-all`, which is a write path;
       // `idle` is a read and never mutates the queue.
       else this.logger.debug("skipping malformed pending event", { id, reason: read.reason });
     }
     return events;
+  }
+
+  /**
+   * SPEC.md §7's visibility rule, with this server's current picture of which
+   * lanes are live: `queue/lanes.ts` decides, and the liveness it asks is the
+   * bound predicate — {@link NOTHING_LIVE} until SERVER-112 binds a real one.
+   *
+   * Read at the moment of the claim and never written down, which is what makes
+   * a lapse recoverable: a resident that comes back finds its lane exactly as it
+   * left it, because nothing about the lapse was ever recorded on an event.
+   */
+  private visible(scope: Lane, event: StoredEvent): boolean {
+    return visibleTo(scope, laneOf(event), this.laneIsLive);
   }
 
   private async transition(
@@ -797,8 +981,8 @@ export class QueueService {
    * rather than *during* one, and it cannot deadlock: `notify()` fires from
    * inside a write's turn, but the woken reader only *queues* behind it.
    */
-  private settledPending(): Promise<StoredEvent[]> {
-    return this.serialize(() => this.availablePending());
+  private settledPending(scope: Lane): Promise<StoredEvent[]> {
+    return this.serialize(() => this.availablePending(scope));
   }
 
   /**
@@ -811,11 +995,16 @@ export class QueueService {
    * the chain at all. `idle` claims nothing, so unlike `claimAll` there is no
    * before-or-after question here: there are no moves to be before.
    */
-  private settledWork(): Promise<QueueBatch | undefined> {
+  private settledWork(scope: Lane): Promise<QueueBatch | undefined> {
     return this.serialize(async () => {
-      const events = await this.availablePending();
+      const events = await this.availablePending(scope);
       if (events.length === 0) return undefined;
-      return { events, held: await readHeldInProgress(this.store, this.logger) };
+      return {
+        events,
+        held: await readHeldInProgress(this.store, this.logger, (event) =>
+          this.visible(scope, event),
+        ),
+      };
     });
   }
 

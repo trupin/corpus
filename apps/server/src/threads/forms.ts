@@ -378,6 +378,11 @@ export async function answerThreadForm(
             // `formTs` is the *answered* turn's stamp, never the answer's: the
             // form's identity is the turn carrying it (SPEC.md §6).
             payload: { ...formRespondPayload({ threadId: id, formTs, form, answer }) },
+            // §7's recipient, exactly as the reply path carries it: an answer is
+            // a turn, and a person answering a form may address it the same way
+            // they address any other message. Absent is the ordinary case — the
+            // lane follows from the conversation the form is in.
+            recipient: answer.recipient,
           })
         ).id
       : null;
