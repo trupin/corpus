@@ -517,7 +517,7 @@ cheapest moment for that to happen.
 | UI-095 | Clicking a comment does not take you to it, opened | done | P1 | — |
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
-| UI-097 | A request nobody has picked up says "agent is working…" | todo | P1 | SHARED-033 |
+| UI-097 | A request nobody has picked up says "agent is working…" | done | P1 | SHARED-033 |
 | CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | done | P1 | SHARED-033 |
 | SERVER-086 | The server does not record that an agent is there | todo | P1 | CONTRACT-045 |
 | UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-086 |
@@ -719,6 +719,7 @@ through.
 | INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | todo | P1 | — |
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | todo | P1 | — |
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
+| UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
 
 `SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
 had to pick a precedence between an artifact's own `origin` and its `parent`
