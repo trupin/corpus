@@ -37,6 +37,7 @@ import {
 } from "../semantic/index.js";
 import type { ProjectionDb } from "./db.js";
 import { classifyPath, workspaceRelativePath, SKILL_FILENAME, type DocumentRoot } from "./roots.js";
+import { originOrNull } from "../core/provenance.js";
 
 /** How much of the body a list row shows (§9.1 `body_excerpt`). */
 export const EXCERPT_LENGTH = 280;
@@ -178,9 +179,7 @@ function readDocumentFields(
     due: asCalendarDate(data["due"]),
     reviewed: asInstant(data["reviewed"]),
     evergreen: data["evergreen"] === true,
-    origin: ((value) => (typeof value === "string" && value.startsWith("th_") ? value : null))(
-      data["origin"],
-    ),
+    origin: originOrNull(data["origin"]),
     anchors: readAnchors(data["anchors"]),
     view: readViewFrontmatter(data),
   };

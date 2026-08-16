@@ -32,6 +32,7 @@ import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { internalError, notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 import { documentKey } from "./key.js";
+import { originOrNull } from "../core/provenance.js";
 
 export type DocumentRow = {
   readonly id: string;
@@ -213,7 +214,7 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     // that is not a thread id reads as null rather than reaching the wire,
     // because `origin` was a legal `extra` key before it was reserved and a
     // corpus that predates the field must stay readable.
-    origin: threadIdOrNull(data["origin"]),
+    origin: originOrNull(data["origin"]),
     // §11's view keys and §12's plugin keys, read by the same functions the
     // projection uses for the list row (CONTRACT-011). Shared rather than
     // restated for the reason the nullable timestamps above document: one file
@@ -221,9 +222,6 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     ...readViewFrontmatter(data),
   };
 }
-
-const threadIdOrNull = (value: unknown): string | null =>
-  typeof value === "string" && value.startsWith("th_") ? value : null;
 
 type AnchorThreadRow = { readonly anchor_id: string; readonly id: string; readonly status: string };
 

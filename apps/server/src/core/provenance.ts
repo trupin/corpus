@@ -30,8 +30,22 @@ import type { QueueEventStatus } from "@corpus/contract";
  */
 const ORIGIN_KEYS = ["threadId", "parentId", "docId"] as const;
 
-const isThreadId = (value: unknown): value is string =>
+/**
+ * Is this raw value an origin?
+ *
+ * **The one copy.** Five independent spellings of this predicate is how the
+ * defect it was written for happened: the read paths were made lenient and the
+ * write path was not, so a legacy document reported "unfiled" and silently
+ * refused to be filed (PR #47). Every path that reads an `origin` off raw
+ * frontmatter — the file parser, the document read, the projection, and the
+ * update path's first-writer-wins check — asks here, so they cannot drift
+ * apart again.
+ */
+export const isThreadId = (value: unknown): value is string =>
   typeof value === "string" && value.startsWith("th_");
+
+/** That value, or `null` — the shape every read path wants. */
+export const originOrNull = (value: unknown): string | null => (isThreadId(value) ? value : null);
 
 /**
  * The thread an event came from, or `null` when it names none.

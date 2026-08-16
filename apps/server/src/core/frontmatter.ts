@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { ParsedDocument } from "./document.js";
 import { normalizeCalendarDate, normalizeInstant } from "./time.js";
 import { FileTurnModelsSchema } from "./turn-model.js";
+import { originOrNull } from "./provenance.js";
 
 /**
  * The **file-level** frontmatter shape (SPEC.md §5, §6) — deliberately not the
@@ -92,7 +93,7 @@ export const FileFrontmatterSchema = z.looseObject({
    * "this server is too old to say".
    *
    * Nothing here *sets* it. The stamp is the write path's (SERVER-110), which
-   * resolves the job a write names to its lane's root thread; this is only the
+   * resolves the job a write names to the thread that event's payload names; this is only the
    * parse, and its whole job is to make the absent case explicit.
    *
    * **Anything that is not a thread id reads as `null` rather than failing.**
@@ -109,7 +110,7 @@ export const FileFrontmatterSchema = z.looseObject({
    */
   origin: z
     .unknown()
-    .transform((value) => (typeof value === "string" && value.startsWith("th_") ? value : null))
+    .transform((value) => originOrNull(value))
     .default(null),
 });
 

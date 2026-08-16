@@ -35,6 +35,7 @@ import {
   type MutationResult,
   validationError,
 } from "./write.js";
+import { originOrNull } from "../core/provenance.js";
 
 export type UpdateOutcome = {
   readonly doc: Doc;
@@ -175,7 +176,10 @@ export function changedFields(
           "could quietly move an artifact out of the scope it belongs to.",
       );
     }
-    if (currentOrigin(current) !== null) changed["origin"] = null;
+    // Cleared whenever the key holds anything at all, not only a real origin: a
+    // legacy junk value under a now-reserved key would otherwise sit on disk
+    // forever, invisible to every reader and clearable by nobody.
+    if (current["origin"] != null) changed["origin"] = null;
   } else if (stamp !== null && currentOrigin(current) === null) {
     // "Has no origin" is `origin: null`, not an absent key: every document
     // written since SERVER-110 carries the key, and the null is the fact that it
@@ -205,10 +209,8 @@ export function changedFields(
  * `200` and recording nothing. That is the silent ignore §9.2 names by name, so
  * the stamp asks the same question the reader answers (PR #47 re-review).
  */
-const currentOrigin = (current: Readonly<Record<string, unknown>>): string | null => {
-  const value = current["origin"];
-  return typeof value === "string" && value.startsWith("th_") ? value : null;
-};
+const currentOrigin = (current: Readonly<Record<string, unknown>>): string | null =>
+  originOrNull(current["origin"]);
 
 /** One merge-patch entry: `undefined` skips, `null` removes, anything else replaces. */
 function applyPatchEntry(

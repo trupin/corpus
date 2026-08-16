@@ -315,6 +315,16 @@ describe("a corpus that existed before this field did (PR #47 review)", () => {
     expect(saved.status).toBe(200);
   });
 
+  it("clears a legacy value on detach, so it cannot linger under a reserved key", async () => {
+    const created = await ws.post("/api/docs", { type: "note", title: "Imported" }, asUser);
+    const doc = (await created.json()) as { doc: { frontmatter: { id: string }; path: string } };
+    const id = doc.doc.frontmatter.id;
+    ws.write(doc.doc.path, ws.read(doc.doc.path).replace("origin: null", "origin: legacy-system"));
+
+    expect((await ws.put(`/api/docs/${id}`, { origin: null }, asUser)).status).toBe(200);
+    expect(ws.read(doc.doc.path)).not.toContain("legacy-system");
+  });
+
   it("lets a job file such a document, since every reader calls it unfiled", async () => {
     // The half the first fix missed (PR #47 re-review). `changedFields` tested
     // the **raw** YAML while every read path reported `null`, so a legacy

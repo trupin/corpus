@@ -9,8 +9,8 @@ import { ThreadIdSchema } from "./id.js";
  * about which is which, because they are easy to read as one thing:
  *
  * ```text
- *   caller ──job: evt_…──▶ any mutating route ──▶ server resolves evt → its
- *                                                 lane's root thread
+ *   caller ──job: evt_…──▶ any mutating route ──▶ server resolves evt → the
+ *                                                 thread its payload names
  *                                                        │
  *   caller ◀──origin: th_…── the document it wrote ◀──────┘
  * ```
