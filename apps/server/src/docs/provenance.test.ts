@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "@corpus/contract";
-import { AUTH, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
 
