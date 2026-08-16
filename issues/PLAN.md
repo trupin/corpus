@@ -657,7 +657,9 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-111 | The comment popover takes no attachments, and §11 says every composer does | done | P0 | — |
 | UI-112 | The comment popover can be moved, and what it is about stays lit while you write | done | P0 | — |
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
-| SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | todo | P1 | — |
+| SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
+| CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | todo | P1 | SERVER-113 |
+| CLI-045 | `corpus doc diff --help` describes the old default base | todo | P2 | SERVER-113 |
 
 **Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
 a required field, which breaks every constructor of one: `SERVER-086` (the
@@ -728,6 +730,7 @@ through.
 | INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | todo | P1 | — |
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | todo | P1 | — |
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
+| SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
 | UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
 
 `SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
