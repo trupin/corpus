@@ -114,6 +114,7 @@ const thread = {
   parent: "doc_a1b2c3",
   anchor: "anc_k4f7",
   agent: "engaged" as const,
+  resident: null,
   turns: [turn],
 };
 
@@ -124,11 +125,38 @@ const threadSummary = {
   parent: "doc_a1b2c3",
   anchor: "anc_k4f7",
   agent: "engaged" as const,
+  resident: null,
   created: "2026-07-19T10:05:00Z",
   updated: "2026-07-19T10:07:12Z",
   turnCount: 1,
   lastAuthor: "user" as const,
   lastTs: "2026-07-19T10:05:00Z",
+};
+
+/**
+ * The roster (CONTRACT-051): the orchestrator's lane, which is always there,
+ * plus one designated conversation. Deliberately shows both liveness states —
+ * a lapsed lane is an ordinary row, not an omitted one.
+ */
+const agentRoster = {
+  agents: [
+    {
+      lane: "orchestrator" as const,
+      resident: null,
+      live: true,
+      since: "2026-07-19T10:00:00Z",
+      summary: "parked",
+      origin: null,
+    },
+    {
+      lane: "th_x9y8",
+      resident: { name: "researcher", docId: "doc_agentdef" },
+      live: false,
+      since: "2026-07-19T09:40:00Z",
+      summary: null,
+      origin: { id: "th_x9y8", title: "Re: 30-year fixed assumption" },
+    },
+  ],
 };
 
 /** The form the stub thread's last agent turn carries, parsed from its fence. */
@@ -645,6 +673,35 @@ function createStubApp() {
       200,
     );
   });
+
+  // Designation and release (CONTRACT-051). The stub resolves the name it was
+  // given and answers with the thread, because that is the promise both halves
+  // make: the caller never repeats the lookup, and a release that wrote
+  // something can still report §14's warnings.
+  app.openapi(contractRoutes.designateResident, (c) =>
+    c.json(
+      {
+        thread: {
+          ...threadSummary,
+          parent: null,
+          anchor: null,
+          resident: { name: c.req.valid("json").name, docId: "doc_agentdef" },
+        },
+        warnings: [],
+      },
+      200,
+    ),
+  );
+  app.openapi(contractRoutes.releaseResident, (c) =>
+    c.json(
+      { thread: { ...threadSummary, parent: null, anchor: null, resident: null }, warnings: [] },
+      200,
+    ),
+  );
+
+  // The roster always carries the orchestrator's row, whatever else is
+  // designated (SPEC.md §7), so the stub carries it beside a resident lane.
+  app.openapi(contractRoutes.getAgentRoster, (c) => c.json(agentRoster, 200));
 
   app.openapi(contractRoutes.getQueueStatus, (c) => c.json(queueStatus, 200));
   app.openapi(contractRoutes.idleQueue, (c) =>
@@ -1529,6 +1586,84 @@ describe("routes mounted on a Hono app", () => {
     expect(body.warnings).toEqual([{ code: "commit_failed", detail: "pre-commit hook exited 1" }]);
     expect(body.thread.status).toBe("resolved");
     expect(body.thread).not.toHaveProperty("warnings");
+  });
+
+  /**
+   * CONTRACT-051, through the mounted definitions — which is where the wire
+   * shapes are actually enforced: `@hono/zod-openapi` validates before any
+   * handler runs, so a designation naming nobody is refused by the contract.
+   */
+  describe("designation, release and the roster", () => {
+    const designate = async (body: unknown): Promise<Response> =>
+      createStubApp().request("/api/threads/th_x9y8/resident", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    it("resolves the invocable name to `{name, docId}` on the thread it answers with", async () => {
+      const response = await designate({ name: "researcher" });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        thread: { resident: { name: string; docId: string } | null };
+        warnings: unknown[];
+      };
+      expect(body.thread.resident).toEqual({ name: "researcher", docId: "doc_agentdef" });
+      expect(body.warnings).toEqual([]);
+    });
+
+    it.each([
+      ["a body naming nobody", {}],
+      ["a blank name", { name: "   " }],
+      ["a document id where the invocable name belongs", { name: "a\nb" }],
+      ["an unknown key, since every request body is strict", { name: "r", docId: "doc_x" }],
+    ])("refuses %s with a 400", async (_case, body) => {
+      expect((await designate(body)).status).toBe(400);
+    });
+
+    it("releases idempotently, answering with the thread and a null resident", async () => {
+      const response = await createStubApp().request("/api/threads/th_x9y8/resident", {
+        method: "DELETE",
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { thread: { resident: unknown } };
+      expect(body.thread.resident).toBeNull();
+    });
+
+    it("lists the orchestrator's lane beside a designated one", async () => {
+      const response = await createStubApp().request("/api/agents");
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        agents: { lane: string; live: boolean; origin: unknown }[];
+      };
+      expect(body.agents.map((row) => row.lane)).toEqual(["orchestrator", "th_x9y8"]);
+      // The orchestrator's lane belongs to no conversation; a resident's does.
+      expect(body.agents[0]?.origin).toBeNull();
+      expect(body.agents[1]?.origin).toEqual({
+        id: "th_x9y8",
+        title: "Re: 30-year fixed assumption",
+      });
+      // A lapsed lane is a present row, not an omitted one (SPEC.md §7, §8).
+      expect(body.agents[1]?.live).toBe(false);
+    });
+
+    it("takes a scope on both queue verbs, and treats an omitted one as the orchestrator's", async () => {
+      const app = createStubApp();
+      for (const url of [
+        "/api/queue/idle?scope=th_x9y8",
+        "/api/queue/idle",
+        "/api/queue/idle?scope=orchestrator",
+      ]) {
+        expect((await app.request(url)).status, url).toBe(200);
+      }
+      expect((await app.request("/api/queue/idle?scope=doc_a1b2c3")).status).toBe(400);
+      expect(
+        (await app.request("/api/queue/claim-all?scope=th_x9y8", { method: "POST" })).status,
+      ).toBe(200);
+      expect(
+        (await app.request("/api/queue/claim-all?scope=nobody", { method: "POST" })).status,
+      ).toBe(400);
+    });
   });
 
   it("labels a job row with its origin's title", async () => {

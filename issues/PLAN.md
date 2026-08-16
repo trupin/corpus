@@ -654,7 +654,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | UI-110 | The composer you are typing in stays visible while you scroll what you are commenting on | done | P0 | — |
-| UI-111 | The comment popover takes no attachments, and §11 says every composer does | todo | P0 | — |
+| UI-111 | The comment popover takes no attachments, and §11 says every composer does | done | P0 | — |
 | UI-112 | The comment popover can be moved, and what it is about stays lit while you write | todo | P0 | — |
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 
@@ -725,7 +725,7 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | --- | --- | --- | --- | --- |
 | SHARED-043 | A resident agent for a conversation (AUTHORIZED 2026-08-13, applied to §7/§8/§9.2) | done | P0 | — |
 | CONTRACT-050 | Every write can name the job it serves | done | P0 | SHARED-043 |
-| CONTRACT-051 | Lanes, designation, and the roster on the wire | todo | P0 | SHARED-043 |
+| CONTRACT-051 | Lanes, designation, and the roster on the wire | done | P0 | SHARED-043 |
 | SERVER-110 | Stamp a document with the thread it came from | done | P0 | CONTRACT-050 |
 | SERVER-109 | Designate a resident, and dissolve it cleanly | todo | P0 | CONTRACT-051 |
 | SERVER-111 | The queue learns lanes | todo | P0 | CONTRACT-051, SERVER-110, SERVER-109 |

@@ -2494,6 +2494,11 @@ describe("a key on every read, and on every write that overwrites", () => {
       "stale_key",
       // CONTRACT-050: a `job` naming no event, or work already settled.
       "unknown_job",
+      // CONTRACT-051: a `recipient` naming no lane. Its own code rather than a
+      // second `unknown_job` body, for the reason `stale_key` has one beside
+      // `conflict`: two refusals sharing a status must differ where clients
+      // narrow, or one of them is unreachable.
+      "unknown_recipient",
       "internal_error",
     ]);
   });
@@ -3168,6 +3173,11 @@ describe("the forms surface", () => {
   it("keeps the answer body to the answer", () => {
     expect(Object.keys(componentSchemas?.["FormAnswerRequest"]?.properties ?? {})).toEqual([
       "job",
+      // CONTRACT-051. An answer is a message, and §7 gives every message a
+      // recipient — the lane it is addressed to, defaulted from where it is
+      // posted. It sits beside `job` because the two are the request's whole
+      // relationship to the queue: what work it serves, and who does the next.
+      "recipient",
       "answers",
       "note",
     ]);
@@ -3516,6 +3526,11 @@ describe("multipart, attachments and the stream", () => {
       "stale_key",
       // CONTRACT-050: a `job` naming no event, or work already settled.
       "unknown_job",
+      // CONTRACT-051: a `recipient` naming no lane. Its own code rather than a
+      // second `unknown_job` body, for the reason `stale_key` has one beside
+      // `conflict`: two refusals sharing a status must differ where clients
+      // narrow, or one of them is unreachable.
+      "unknown_recipient",
       "internal_error",
     ]);
     expect(Object.keys(componentSchemas ?? {})).not.toContain("PayloadTooLargeError");
@@ -3647,7 +3662,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(19);
+    expect(bodies).toHaveLength(20);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -3705,6 +3720,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/jobs/{id}/log": true,
       "POST /api/threads": true,
       "POST /api/threads/{id}/reattach": true,
+      "POST /api/threads/{id}/resident": true,
       "POST /api/queue/{id}/defer": true,
       "POST /api/skills": true,
       "POST /api/queue/halt": false,
@@ -3875,5 +3891,281 @@ describe("a stated weight rides the request (CONTRACT-039)", () => {
     const payload = componentSchemas?.["QueueEvent"]?.properties?.payload;
     expect(payload?.description).toContain("`weight`");
     expect(payload?.description).toContain("the orchestrator decides");
+  });
+});
+
+/**
+ * CONTRACT-051 — lanes, designation and the roster, published. SPEC.md §7 as
+ * amended by SHARED-043 (signed 2026-08-13, corrected 2026-08-15).
+ *
+ * The properties pinned here are the ones a later tidy-up undoes without
+ * noticing: that a lane and a document's origin stay different things, that the
+ * queue event's wire shape gained nothing, and that every lane-shaped field is
+ * spelled from one vocabulary.
+ */
+describe("lanes, designation and the roster (CONTRACT-051)", () => {
+  const POSTING_BODIES = [
+    ["/api/threads", "post"],
+    ["/api/threads/{id}/turns", "post"],
+    ["/api/threads/{id}/turns/{ts}/form", "post"],
+  ] as const;
+
+  /** The JSON schema an operation declares for one status. */
+  function responseSchema(path: string, method: string, status: string): SchemaNode | undefined {
+    const media = operation(path, method).responses?.[status]?.content?.["application/json"];
+    return (media as { schema?: SchemaNode } | undefined)?.schema;
+  }
+
+  /** Every representation of a body, so a multipart twin is never skipped. */
+  function bodySchemas(path: string, method: string): SchemaNode[] {
+    const content = operation(path, method).requestBody?.content ?? {};
+    return Object.values(content).flatMap((media) => {
+      const schema = (media as { schema?: SchemaNode }).schema;
+      if (schema?.$ref === undefined) return schema ? [schema] : [];
+      const resolved = componentSchemas?.[schema.$ref.split("/").pop() ?? ""];
+      return resolved ? [resolved] : [];
+    });
+  }
+
+  it("declares the three new endpoints, and only those", () => {
+    const added = ENDPOINT_INVENTORY.filter(
+      (entry) => entry.includes("/resident") || entry.includes("/api/agents"),
+    );
+    expect([...added]).toEqual([
+      "POST /api/threads/{id}/resident",
+      "DELETE /api/threads/{id}/resident",
+      "GET /api/agents",
+    ]);
+  });
+
+  it("carries `recipient` on every posting body, multipart twins included", () => {
+    for (const [path, method] of POSTING_BODIES) {
+      const schemas = bodySchemas(path, method);
+      expect(schemas.length, `${method} ${path}`).toBeGreaterThan(0);
+      for (const schema of schemas) {
+        expect(Object.keys(schema.properties ?? {}), `${method} ${path}`).toContain("recipient");
+        // Omitting it is the ordinary case: the default follows from where the
+        // message was posted, so it is never required and never defaulted.
+        expect(schema.required ?? [], `${method} ${path}`).not.toContain("recipient");
+        expect(
+          Object.hasOwn(schema.properties?.recipient ?? {}, "default"),
+          `${method} ${path}`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("spells a recipient as the orchestrator or a thread, and nothing else", () => {
+    const recipient = componentSchemas?.["CreateThreadRequest"]?.properties?.recipient;
+    const branches = recipient?.anyOf ?? [];
+    expect(branches).toHaveLength(2);
+    expect(branches[0]?.enum).toEqual(["orchestrator"]);
+    expect(branches[1]?.pattern).toBe("^th_[A-Za-z0-9]+$");
+  });
+
+  /**
+   * The distinction §7 corrected itself twice over: the lane routes the work,
+   * the origin files it. A description that let them blur is how a summons
+   * becomes claimable by nobody, so the recipient's own prose has to carry it.
+   */
+  it("keeps the lane and the origin apart in the recipient's own description", () => {
+    const description =
+      componentSchemas?.["CreateThreadRequest"]?.properties?.recipient?.description ?? "";
+    for (const phrase of [
+      "routing follows the recipient, filing follows the conversation",
+      "routes this message and nothing else",
+      "never rewires a scope",
+      "computed from where the message is posted",
+    ]) {
+      expect(description.toLowerCase(), phrase).toContain(phrase.toLowerCase());
+    }
+  });
+
+  it("takes a `scope` on both queue verbs, optional and undefaulted", () => {
+    for (const [path, method] of [
+      ["/api/queue/idle", "get"],
+      ["/api/queue/claim-all", "post"],
+    ] as const) {
+      const scope = parameter(path, method, "scope");
+      expect(scope?.in, `${method} ${path}`).toBe("query");
+      expect(scope?.required, `${method} ${path}`).toBe(false);
+      expect(Object.hasOwn(scope?.schema ?? {}, "default"), `${method} ${path}`).toBe(false);
+      expect(scope?.description, `${method} ${path}`).toContain("Omitted means `orchestrator`");
+    }
+  });
+
+  /**
+   * The wire shape of a queue event is unchanged: §7 stamps a lane, but the
+   * stamp is server-side bookkeeping like the event's status, and publishing it
+   * would hand a routing decision back to the party the routing was for.
+   */
+  it("adds nothing to the queue event, which still carries no lane", () => {
+    expect(Object.keys(componentSchemas?.["QueueEvent"]?.properties ?? {})).toEqual([
+      "id",
+      "type",
+      "created",
+      "source",
+      "payload",
+    ]);
+  });
+
+  it("publishes `resident.designated` wherever an event type is described", () => {
+    for (const component of ["QueueEvent", "InProgressEvent", "Job"]) {
+      const description = componentSchemas?.[component]?.properties?.type?.description ?? "";
+      expect(description, component).toContain("resident.designated");
+    }
+  });
+
+  it("gives Thread and ThreadSummary a required, nullable resident", () => {
+    for (const component of ["Thread", "ThreadSummary"]) {
+      expect(componentSchemas?.[component]?.required ?? [], component).toContain("resident");
+      const resident = componentSchemas?.[component]?.properties?.resident;
+      // `z.union([Resident, z.null()])`, never `Resident.nullable()` — the
+      // second rewrites the shared component for every route referencing it.
+      expect(resident?.anyOf?.[0]?.$ref, component).toBe("#/components/schemas/Resident");
+      expect(resident?.anyOf?.[1]?.type, component).toBe("null");
+    }
+    expect(componentSchemas?.["Resident"]?.type).toBe("object");
+    expect(componentSchemas?.["Resident"]?.required).toEqual(["name", "docId"]);
+  });
+
+  it("answers a designation and a release with the thread, so §14's warnings surface", () => {
+    for (const method of ["post", "delete"] as const) {
+      const ok = operation("/api/threads/{id}/resident", method).responses?.["200"];
+      expect(JSON.stringify(ok), method).toContain("ThreadMutationResponse");
+    }
+  });
+
+  it("declares exactly the refusals each half of designation can produce", () => {
+    expect(Object.keys(operation("/api/threads/{id}/resident", "post").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+      // User-only, like every other user-only endpoint in §9.2's family.
+      "403",
+      // An unknown thread, or a name resolving to no agent-def.
+      "404",
+      // A thread that may not have a resident at all: it has a parent.
+      "409",
+    ]);
+    // Releasing refuses nothing the state can refuse — it is idempotent, so
+    // there is no `409` for a thread with nobody to release.
+    expect(Object.keys(operation("/api/threads/{id}/resident", "delete").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+      "403",
+      "404",
+    ]);
+  });
+
+  it("takes no input on the roster, and therefore declares no 400", () => {
+    const op = operation("/api/agents", "get");
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters).toBeUndefined();
+    expect(Object.keys(op.responses ?? {})).toEqual(["200", "401"]);
+  });
+
+  it("shapes a roster row as the rider's six fields", () => {
+    expect(Object.keys(componentSchemas?.["AgentLane"]?.properties ?? {})).toEqual([
+      "lane",
+      "resident",
+      "live",
+      "since",
+      "summary",
+      "origin",
+    ]);
+    expect(componentSchemas?.["AgentLane"]?.required).toEqual([
+      "lane",
+      "resident",
+      "live",
+      "since",
+      "summary",
+      "origin",
+    ]);
+    expect(componentSchemas?.["AgentRoster"]?.required).toEqual(["agents"]);
+  });
+
+  /**
+   * The roster's `origin` is the conversation a lane *is*, not §9.2's document
+   * origin — the field most likely to be read as the other one, so it says so.
+   */
+  it("says the roster's origin is not a document's origin", () => {
+    const description = componentSchemas?.["AgentLane"]?.properties?.origin?.description ?? "";
+    expect(description).toContain("Not a document's `origin`");
+    expect(componentSchemas?.["LaneOrigin"]?.type).toBe("object");
+    expect(componentSchemas?.["LaneOrigin"]?.required).toEqual(["id", "title"]);
+  });
+
+  /**
+   * §7 promises a *bound* on the summary and nothing about its content, which
+   * is what lets the server change how it derives one without a contract
+   * change. A client that parsed it would have made that promise for us.
+   */
+  it("bounds the summary and promises nothing else about it", () => {
+    const summary = componentSchemas?.["AgentLane"]?.properties?.summary;
+    expect(summary?.anyOf?.[0]?.maxLength ?? summary?.maxLength).toBe(200);
+    expect(summary?.description).toContain("display only");
+    expect(summary?.description).toContain("never parse it");
+  });
+
+  /**
+   * Designation's lifecycle is not only on its own two routes: §7 has
+   * resolution release a resident, and §8 has reopening not restore one. Both
+   * are published where a reader of `resolve`/`reopen` will actually meet them,
+   * because a rule stated only next to the route that does not perform it is
+   * how the two come to disagree.
+   */
+  it("says on resolve that it releases, and on reopen that it does not restore", () => {
+    expect(operation("/api/threads/{id}/resolve", "post").description).toContain(
+      "Resolving releases the thread's resident with it",
+    );
+    expect(operation("/api/threads/{id}/reopen", "post").description).toContain(
+      "Reopening does not restore a resident",
+    );
+  });
+
+  it("says liveness is a read behind an invalidate key, never a push", () => {
+    const description = operation("/api/agents", "get").description ?? "";
+    expect(description).toContain("A read, never a push");
+    expect(description).toContain('["agents"]');
+    expect(operation("/events", "get").description).toContain('`["agents"]`');
+  });
+
+  /**
+   * Two refusals on one status, told apart by `code` — the arrangement
+   * `stale_key` established beside `conflict` on `409`. A single body would
+   * have made one of them unreachable to a client that narrows on the code.
+   */
+  it("widens the 422 to name a bad recipient beside a bad job, without merging them", () => {
+    for (const [path, method] of POSTING_BODIES) {
+      const schema = responseSchema(path, method, "422");
+      expect(
+        schema?.anyOf?.map((branch) => branch.$ref),
+        `${method} ${path}`,
+      ).toEqual([
+        "#/components/schemas/UnknownJobError",
+        "#/components/schemas/UnknownRecipientError",
+      ]);
+    }
+    expect(componentSchemas?.["UnknownRecipientError"]?.properties?.code?.enum).toEqual([
+      "unknown_recipient",
+    ]);
+    expect(componentSchemas?.["UnknownRecipientError"]?.required).toEqual([
+      "code",
+      "message",
+      "recipient",
+    ]);
+  });
+
+  /**
+   * The document writes take a job and no recipient, so they keep the narrow
+   * `422`; capture takes neither and declares none. No route publishes a
+   * refusal it cannot produce.
+   */
+  it("leaves the job-only routes' 422 narrow, and capture's absent", () => {
+    const jobOnly = responseSchema("/api/docs", "post", "422");
+    expect(jobOnly?.$ref).toBe("#/components/schemas/UnknownJobError");
+    expect(operation("/api/capture", "post").responses?.["422"]).toBeUndefined();
   });
 });

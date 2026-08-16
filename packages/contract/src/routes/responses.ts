@@ -1,4 +1,4 @@
-import type { z } from "@hono/zod-openapi";
+import { z } from "@hono/zod-openapi";
 
 import {
   ConflictErrorSchema,
@@ -8,6 +8,7 @@ import {
   UnauthorizedErrorSchema,
   ValidationErrorSchema,
   UnknownJobErrorSchema,
+  UnknownRecipientErrorSchema,
 } from "../schemas/error.js";
 
 /** Wraps a schema as a single-content-type JSON response entry for `createRoute`. */
@@ -72,6 +73,31 @@ export const NOT_FOUND_RESPONSE = jsonContent(NotFoundErrorSchema, "No such reso
 export const UNKNOWN_JOB_RESPONSE = jsonContent(
   UnknownJobErrorSchema,
   "The `job` names no event. Nothing was written; retry without it, or with the right id.",
+);
+
+/**
+ * The `422` of a **posting** request, which can name two things that may not
+ * exist: the job it serves, and the lane it is addressed to (SPEC.md §7, §9.2 —
+ * CONTRACT-050 and CONTRACT-051).
+ *
+ * One status, two bodies, told apart by `code` — the arrangement `409` already
+ * uses for `conflict` versus `stale_key`, and for the same reason: a client
+ * narrows on the code, so two refusals sharing a status must differ there or one
+ * of them is unreachable. The union is declared inline rather than registered as
+ * a component, because a `oneOf` has no `type: "object"` and a registered name
+ * would propagate onto anything derived from it (CONTRACT-037).
+ *
+ * The document writes take a job and no recipient, so they keep
+ * {@link UNKNOWN_JOB_RESPONSE}; `POST /api/capture` takes neither and declares
+ * no `422` at all. No route publishes a refusal it cannot produce.
+ */
+export const UNRESOLVED_REFERENCE_RESPONSE = jsonContent(
+  z.union([UnknownJobErrorSchema, UnknownRecipientErrorSchema]),
+  "The request names something that does not exist: `unknown_job` — a `job` resolving to no " +
+    "event, or to work already settled — or `unknown_recipient` — a `recipient` naming a thread " +
+    "this workspace does not hold, or one that holds no resident and is therefore not a lane. " +
+    "Nothing was written in either case. Retry without the offending field, or with a value that " +
+    "resolves.",
 );
 
 export const CONFLICT_RESPONSE = jsonContent(

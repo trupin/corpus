@@ -92,6 +92,7 @@ function wire(options: { readonly failSeen?: boolean } = {}) {
           parent: null,
           anchor: null,
           agent: "none",
+          resident: null,
           created: TS,
           updated: TS,
           turnCount: 1,

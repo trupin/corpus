@@ -138,6 +138,7 @@ export function toWireThread(thread: LoadedThread): Thread {
     parent: thread.parent,
     anchor: thread.anchor,
     agent: thread.agent,
+    resident: null,
     turns: thread.turns.map((turn) => ({ ...turn })),
   };
 }
@@ -158,6 +159,11 @@ export function toThreadSummary(thread: LoadedThread): ThreadSummary {
     parent: thread.parent,
     anchor: thread.anchor,
     agent: thread.agent,
+    // §7's resident (CONTRACT-051). `null` everywhere until SERVER-109 can
+    // designate one — the field is on the wire so a reader needs no version
+    // check, and a thread nobody designated has no resident, which is a fact
+    // about it rather than a missing value.
+    resident: null,
     created: thread.created,
     updated: thread.updated,
     turnCount: thread.turns.length,

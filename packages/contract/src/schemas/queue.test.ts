@@ -60,6 +60,43 @@ describe("queue vocabularies", () => {
     expect(CoreQueueEventTypeSchema.safeParse("todo.due").success).toBe(false);
   });
 
+  /**
+   * CONTRACT-051. §7's "Core event types" sentence names five, and the fifth
+   * arrived with the resident-agent rider. Written out literally rather than
+   * derived from the constant, because a test that computes its expectation
+   * from the thing it is testing pins nothing — and this set is what every
+   * event-type description in the published document is built from.
+   */
+  it("is exactly §7's five core types, in producer order", () => {
+    expect([...CORE_QUEUE_EVENT_TYPES]).toEqual([
+      "comment.created",
+      "form.respond",
+      "doc.edited",
+      "resident.designated",
+      "agent.done",
+    ]);
+  });
+
+  /**
+   * Designation is ordinary queue vocabulary rather than a side channel
+   * (SPEC.md §7): it is visible in the queue, the job log and the history
+   * exactly as a comment is. The event itself carries no lane — §7 stamps one,
+   * but the stamp is server-side bookkeeping and the wire shape is unchanged.
+   */
+  it("carries a designation as an ordinary event, with no lane on the wire", () => {
+    const designation = QueueEventSchema.parse({
+      ...event,
+      type: "resident.designated",
+      payload: { threadId: "th_x9y8", name: "researcher" },
+    });
+    expect(designation.type).toBe("resident.designated");
+    expect("lane" in designation).toBe(false);
+    // Unknown top-level keys are dropped rather than published: the response
+    // side is tolerant, and a `lane` a client read here would be a routing
+    // decision handed back to the party the routing was for.
+    expect("lane" in QueueEventSchema.parse({ ...event, lane: "th_x9y8" })).toBe(false);
+  });
+
   it.each(QUEUE_EVENT_STATUSES)("recognises the status %s", (status) => {
     expect(QueueEventStatusSchema.parse(status)).toBe(status);
   });

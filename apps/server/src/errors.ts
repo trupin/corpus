@@ -145,6 +145,30 @@ export function unknownJob(job: string, status?: string): HttpError {
   });
 }
 
+/**
+ * A `recipient` that names no lane (SPEC.md §7, CONTRACT-051).
+ *
+ * A sibling of {@link unknownJob} and deliberately not the same refusal: a job
+ * names *work*, a recipient names *who should do it*, and the remedies differ —
+ * retry without the job, versus pick someone else or post where you meant to.
+ * Merging them would hand a client one code and two recoveries.
+ *
+ * Carries the offending value for the reason `unknownJob` carries its id: a
+ * composer that offered a roster needs to know which entry went stale so it can
+ * drop that row rather than reload everything.
+ */
+export function unknownRecipient(recipient: string): HttpError {
+  return new HttpError(422, {
+    code: "unknown_recipient",
+    message:
+      `\`${recipient}\` names no lane: either this workspace holds no such thread, or that thread ` +
+      "holds no resident and is therefore not a lane at all (SPEC.md §7). Nothing was written — " +
+      "post without a recipient to reach whoever owns the conversation you are posting in, or " +
+      "pick a live agent from the roster.",
+    recipient,
+  });
+}
+
 export function staleKey(message: string, doc: Doc): HttpError {
   return new HttpError(409, { code: "stale_key", message, doc });
 }

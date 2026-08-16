@@ -53,6 +53,24 @@ export const JOBS_KEY: QueryKey = ["jobs"];
 export const INDEX_KEY: QueryKey = ["index"];
 
 /**
+ * The roster behind `GET /api/agents` — every lane, its resident and its
+ * liveness (SPEC.md §7, rider SHARED-043).
+ *
+ * **This key is what makes §7's "a read, never a push" implementable.** The
+ * rider is explicit that the roster and each lane's liveness are *"read behind
+ * the ordinary invalidate keys, like any other projection"* — so presence
+ * arrives here, as a key name that says "ask again", and never as agent state
+ * pushed down the stream. Without a key of its own the only way to deliver
+ * liveness would have been to put it in the frame, which is the one thing §2.2
+ * rule 3 forbids.
+ *
+ * One segment, like {@link QUEUE_KEY} and {@link INDEX_KEY}: the resource is
+ * named, not the endpoint, so anything a client caches under an `["agents", …]`
+ * prefix refetches on the frame the server actually emits.
+ */
+export const AGENTS_KEY: QueryKey = ["agents"];
+
+/**
  * One document, by id. Threads are documents, so a thread id is legal here and
  * both `["docs", threadId]` and `["threads", threadId]` are emitted for a turn.
  */
@@ -78,6 +96,7 @@ export const QUERY_KEY_NAMES = [
   "jobs",
   "job",
   "index",
+  "agents",
 ] as const;
 
 export type QueryKeyName = (typeof QUERY_KEY_NAMES)[number];
@@ -174,6 +193,17 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
       "disabled or model-download reason, throttled progress while a backlog drains, and the " +
       "caught-up transition — plus an index rebuild's start and end",
     refetchedBy: "`GET /api/index/status` — the console strip's index pill",
+  },
+  agents: {
+    shape: '["agents"]',
+    key: () => [...AGENTS_KEY],
+    parameterised: false,
+    emittedBy:
+      "designating or releasing a thread's resident, a thread's resolution releasing one with it, " +
+      "and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a " +
+      "lane lapsing past the grace window",
+    refetchedBy:
+      "`GET /api/agents` — the composer's recipient picker and every surface showing who is running",
   },
 };
 

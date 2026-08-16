@@ -1,8 +1,10 @@
 import { z } from "@hono/zod-openapi";
 import { ActorSchema } from "./actor.js";
+import { residentField } from "./agents.js";
 import { TextQuoteSelectorRequestSchema } from "./anchor.js";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { AnchorIdSchema, DocumentIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
+import { recipientField } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
 import { turnModelRequestField, turnModelResponseField } from "./turn-model.js";
 import { warningsField } from "./warning.js";
@@ -58,6 +60,7 @@ export const ThreadSchema = z
       "Anchor entry in the parent's frontmatter; null for a whole-document or standalone thread.",
     ),
     agent: ThreadAgentSchema,
+    resident: residentField,
     turns: z.array(TurnSchema),
   })
   .openapi("Thread");
@@ -71,6 +74,7 @@ export const ThreadSummarySchema = z
     parent: DocumentIdSchema.nullable(),
     anchor: AnchorIdSchema.nullable(),
     agent: ThreadAgentSchema,
+    resident: residentField,
     created: IsoDateTimeSchema,
     updated: IsoDateTimeSchema,
     turnCount: z.number().int().min(0),
@@ -149,6 +153,7 @@ export const THREAD_CREATE_OMITTED_BEHAVIOUR =
 export const CreateThreadRequestSchema = z
   .strictObject({
     job: jobField,
+    recipient: recipientField,
     parent: DocumentIdSchema.nullable()
       .optional()
       .describe("Document being commented on. Omitted or null creates a standalone thread."),
@@ -211,6 +216,7 @@ const MultipartSelectorSchema = z
 export const MultipartCreateThreadRequestSchema = z
   .strictObject({
     job: jobField,
+    recipient: recipientField,
     parent: DocumentIdSchema.optional().describe(
       "Document being commented on. Omitted creates a standalone thread.",
     ),
@@ -262,6 +268,7 @@ export const CreateThreadResponseSchema = z
 export const AppendTurnRequestSchema = z
   .strictObject({
     job: jobField,
+    recipient: recipientField,
     body: z.string().min(1),
     requestsAgent: requestsAgentField(TURN_APPEND_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
@@ -277,6 +284,7 @@ export const AppendTurnRequestSchema = z
 export const MultipartAppendTurnRequestSchema = z
   .strictObject({
     job: jobField,
+    recipient: recipientField,
     text: z
       .string()
       .min(1)

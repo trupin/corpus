@@ -1,6 +1,7 @@
 import { z } from "@hono/zod-openapi";
 import type { ValidationError, ValidationIssue } from "./error.js";
 import { EventIdSchema, ThreadIdSchema } from "./id.js";
+import { recipientField } from "./lane.js";
 import { jobField } from "./provenance.js";
 import { ThreadSummarySchema, TurnSchema } from "./thread.js";
 import { IsoDateTimeSchema } from "./time.js";
@@ -665,6 +666,7 @@ export const FormFieldAnswerSchema = z
 export const FormAnswerRequestSchema = z
   .strictObject({
     job: jobField,
+    recipient: recipientField,
     answers: z
       .array(FormFieldAnswerSchema)
       .describe(

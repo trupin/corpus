@@ -20,6 +20,7 @@ import {
   toValidationIssues,
   unauthorized,
   unknownJob,
+  unknownRecipient,
 } from "./errors.js";
 
 /**
@@ -63,6 +64,7 @@ const ALL_FACTORY_ERRORS = [
   conflict("c"),
   staleKey("s", CURRENT_DOC),
   unknownJob("evt_a1b2c3"),
+  unknownRecipient("th_x9y8"),
   internalError(),
 ];
 

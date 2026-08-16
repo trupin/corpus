@@ -30,6 +30,7 @@ const threadSummary = {
   parent: "doc_a1b2c3",
   anchor: "anc_k4f7",
   agent: "engaged" as const,
+  resident: null,
   created: "2026-07-19T10:05:00Z",
   updated: "2026-07-19T10:09:00Z",
   turnCount: 2,
@@ -101,6 +102,7 @@ function createServer() {
           parent: validated.parent ?? null,
           anchor: validated.selector ? "anc_k4f7" : null,
           agent: "none" as const,
+          resident: null,
           turns: [],
         },
         anchorId: validated.selector ? "anc_k4f7" : null,
@@ -173,6 +175,26 @@ describe("buildTurnFormData", () => {
   it("omits the text part on an attachment-only turn", () => {
     expect(buildTurnFormData({ files: [png()] }).has("text")).toBe(false);
   });
+
+  /**
+   * Both fields travel on the JSON twin — `job` since CONTRACT-050, `recipient`
+   * since CONTRACT-051 — so a multipart turn that could not carry them would
+   * make attaching a file the one thing that costs a message its provenance or
+   * its routing. Omitted when unstated, like every other optional part.
+   */
+  it("carries the job and the recipient, and omits them when unstated", () => {
+    const form = buildTurnFormData({
+      text: "hi",
+      job: "evt_7c1d",
+      recipient: "th_x9y8",
+      files: [png()],
+    });
+    expect(form.get("job")).toBe("evt_7c1d");
+    expect(form.get("recipient")).toBe("th_x9y8");
+    const bare = buildTurnFormData({ text: "hi" });
+    expect(bare.has("job")).toBe(false);
+    expect(bare.has("recipient")).toBe(false);
+  });
 });
 
 describe("buildThreadFormData", () => {
@@ -202,6 +224,17 @@ describe("buildThreadFormData", () => {
   it("repeats the files part once per attachment", () => {
     const form = buildThreadFormData({ text: "hi", files: [png("a.png"), png("b.png")] });
     expect(form.getAll(FILES_FIELD)).toHaveLength(2);
+  });
+
+  /** As `buildTurnFormData`: both travel on the JSON twin, so both travel here. */
+  it("carries the job and the recipient", () => {
+    const form = buildThreadFormData({
+      text: "why?",
+      job: "evt_7c1d",
+      recipient: "orchestrator",
+    });
+    expect(form.get("job")).toBe("evt_7c1d");
+    expect(form.get("recipient")).toBe("orchestrator");
   });
 });
 

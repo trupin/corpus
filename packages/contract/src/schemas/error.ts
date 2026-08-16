@@ -14,6 +14,7 @@ export const ERROR_CODES = [
   "conflict",
   "stale_key",
   "unknown_job",
+  "unknown_recipient",
   "internal_error",
 ] as const;
 
@@ -80,9 +81,11 @@ export const ConflictErrorSchema = z
  * one discriminator (which a discriminated union cannot express, so
  * `isApiError` would silently pick one) or a `reason` field that every consumer
  * must remember to check before reading a document that may not be there.
- * `stale_key` costs the union nothing: it takes the seat `locked` vacated when
- * the lock mechanism was removed, so `ERROR_CODES` still has seven members and
- * every `switch` over them is still exhaustive.
+ * `stale_key` cost the union nothing when it landed: it took the seat `locked`
+ * vacated when the lock mechanism was removed, so no `switch` over
+ * `ERROR_CODES` grew a branch for it. The set has since grown for refusals with
+ * no vacant seat — `unknown_job`, then `unknown_recipient` — which is the price
+ * of the rule above and is paid deliberately each time.
  *
  * ## Why it carries a whole document
  *
@@ -153,6 +156,36 @@ export const UnknownJobErrorSchema = z
   })
   .openapi("UnknownJobError");
 
+/**
+ * A `recipient` that names no lane a message can be addressed to (SPEC.md §7,
+ * CONTRACT-051).
+ *
+ * **A code of its own rather than a second `unknown_job` body**, for the reason
+ * {@link StaleKeyErrorSchema} gives about sharing `409` with
+ * `ReattachConflictError`: two different refusals that share a status must stay
+ * tellable apart at the place clients actually branch — the `code`. Both live on
+ * `422` because both are a well-formed request naming something that does not
+ * exist, but a caller recovers from them differently: a bad `job` costs the
+ * write its provenance, a bad `recipient` costs it its routing, and the
+ * remedies are not the same call.
+ *
+ * It carries the offending value for the same reason `UnknownJobError` carries
+ * `job` — a client that offered a picker needs to know *which* entry went stale
+ * so it can drop that row rather than reload the world.
+ */
+export const UnknownRecipientErrorSchema = z
+  .object({
+    code: z.literal("unknown_recipient"),
+    message: z.string(),
+    recipient: z
+      .string()
+      .describe(
+        "The value that named no lane — a thread this workspace does not hold, or one that holds " +
+          "no resident and is therefore not a lane at all.",
+      ),
+  })
+  .openapi("UnknownRecipientError");
+
 export const ApiErrorSchema = z
   .discriminatedUnion("code", [
     ValidationErrorSchema,
@@ -162,6 +195,7 @@ export const ApiErrorSchema = z
     ConflictErrorSchema,
     StaleKeyErrorSchema,
     UnknownJobErrorSchema,
+    UnknownRecipientErrorSchema,
     InternalErrorSchema,
   ])
   .openapi("ApiError");
@@ -174,6 +208,8 @@ export type ForbiddenError = z.infer<typeof ForbiddenErrorSchema>;
 export type NotFoundError = z.infer<typeof NotFoundErrorSchema>;
 export type ConflictError = z.infer<typeof ConflictErrorSchema>;
 export type StaleKeyError = z.infer<typeof StaleKeyErrorSchema>;
+export type UnknownJobError = z.infer<typeof UnknownJobErrorSchema>;
+export type UnknownRecipientError = z.infer<typeof UnknownRecipientErrorSchema>;
 export type InternalError = z.infer<typeof InternalErrorSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 

@@ -3,6 +3,7 @@ import { ActorHeaderSchema } from "../schemas/actor.js";
 import { EventIdSchema } from "../schemas/id.js";
 import {
   ClaimBatchSchema,
+  ClaimScopeQuerySchema,
   DeferEventRequestSchema,
   FailEventRequestSchema,
   HaltQueueRequestSchema,
@@ -60,7 +61,13 @@ export const idleQueue = createRoute({
     "A `200` also carries `inProgress`: what the server still thinks the agent is doing. It is " +
     "reported here and on `claim-all` — the loop's two entry points — and nowhere else; the `204` " +
     "that ends an empty window has no body and therefore no list. See `claim-all` for the " +
-    "reconciliation contract.",
+    "reconciliation contract.\n\n" +
+    "**Parking here is what presence *is*** (SPEC.md §7). A resident is live exactly while it " +
+    "holds a parked scoped `idle` — there is no heartbeat to send and no registration to keep " +
+    "fresh — so `scope` decides both which lane's work this call waits for and which lane " +
+    "`GET /api/agents` reports as live. An agent that stops parking stops being present, and its " +
+    "lane's pending work falls back to the orchestrator's unscoped claim once the grace window " +
+    "has passed.",
   request: { query: IdleQuerySchema },
   responses: {
     200: jsonContent(IdleResultSchema, "Pending events exist; claim them next."),
@@ -105,8 +112,15 @@ export const claimAll = createRoute({
     "— a session that died with its context — and stays a requeue.\n\n" +
     "**The list is capped, and says so.** Past the cap it reports the true `total` and sets " +
     "`truncated`; the complete set is `GET /api/jobs?status=in-progress`. A short list that looked " +
-    "complete would defeat the whole field.",
-  request: { headers: ActorHeaderSchema },
+    "complete would defeat the whole field.\n\n" +
+    "**A claim takes a lane** (SPEC.md §7). `scope` names it, and omitting it means the " +
+    "orchestrator's — so a caller written before lanes existed keeps its meaning exactly. A " +
+    "scoped claim sees only its own lane's events; the orchestrator's claim never sees a live " +
+    "lane's events, and picks up a lapsed lane's pending work. Two agents claiming at once are " +
+    "therefore reading disjoint sets rather than racing, and **one consumer per lane** still " +
+    "holds: a second concurrent claim on one lane is refused exactly as a second claim on the " +
+    "whole queue always was.",
+  request: { query: ClaimScopeQuerySchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(
       ClaimBatchSchema,

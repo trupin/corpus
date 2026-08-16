@@ -150,6 +150,25 @@
  * precedent that every user-observable behaviour reaches SPEC.md before it
  * reaches the code, which the re-attach route set and this one followed.
  *
+ * `POST /api/threads/{id}/resident`, `DELETE /api/threads/{id}/resident` and
+ * `GET /api/agents` (CONTRACT-051) are derived from SPEC.md §7 as amended by the
+ * resident-agent rider (SHARED-043, signed 2026-08-13, corrected 2026-08-15),
+ * and **§9.2 does not list them** — they join `POST /api/docs/bulk` as the
+ * inventory's pending amendments rather than as undocumented routes. The
+ * derivation, which is short because the rider is explicit: §7 says a standalone
+ * thread "may designate a resident agent", that designation is "user-only state
+ * on the thread, set and released like any other thread field", and that a
+ * person "is released by the person who designated it" — a person reaches the
+ * workspace only through the server (Architecture Decision 2), so setting and
+ * releasing are each a server endpoint, and §9.3 makes them routes declared here
+ * rather than invented in the server. The roster is derived the same way from
+ * §7's "**Who is running is a read, never a push**: the roster and each lane's
+ * liveness are read behind the ordinary invalidate keys, like any other
+ * projection" — a *read* behind an invalidate key is an HTTP endpoint plus a
+ * query key, and both halves are contract surface. No §9.2 bullet has been
+ * drafted for them here: this package never edits SPEC.md, and the amendment is
+ * the orchestrator's to take to the user.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -195,6 +214,10 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/threads/{id}/reopen",
   "POST /api/threads/{id}/seen",
   "POST /api/threads/{id}/reattach",
+  "POST /api/threads/{id}/resident",
+  "DELETE /api/threads/{id}/resident",
+
+  "GET /api/agents",
 
   "GET /api/queue/status",
   "GET /api/queue/idle",

@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { DocumentIdSchema, EventIdSchema } from "./id.js";
+import { laneScopeParam } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
 
 /**
@@ -7,23 +8,35 @@ import { IsoDateTimeSchema } from "./time.js";
  * open string because plugins define their own event types; consumers that only
  * handle core types narrow with {@link CoreQueueEventTypeSchema}.
  *
- * Ordered by producer, with the one type nothing produces yet last:
- * `comment.created` (a turn that requests the agent), `form.respond` (a form
- * answer, §6), `doc.edited` (a user edit session that ended, §4's
- * edit-acknowledgment rider — payload and dedupe rule in `./edit.ts`), and
- * `agent.done`, which §7 marks reserved.
+ * The set is exactly §7's "Core event types" sentence, and the order here is
+ * **by producer, with the one type nothing produces last** rather than §7's
+ * listing order:
+ *
+ * - `comment.created` — a turn that requests the agent (§8).
+ * - `form.respond` — a form answer (§6); payload shape in `./form.ts`.
+ * - `doc.edited` — a user edit session that ended (§4's edit-acknowledgment
+ *   rider); payload and dedupe rule in `./edit.ts`.
+ * - `resident.designated` — a standalone thread was given a resident (§7, rider
+ *   SHARED-043). It lands on the **orchestrator's** lane whoever is designated,
+ *   since a resident does not announce itself to itself; that carve-out is one
+ *   of exactly two §7 names, the other being a message that stated a recipient.
+ * - `agent.done` — background subagent wake-back, which §7 marks **reserved**:
+ *   nothing produces it, and an arriving one is settled like a report. It is
+ *   last because of that, not because it is newest.
  *
  * **`doc.edited` is a core type rather than a plugin one** because the core loop
  * owns both ends of it: the server emits it, and the shipped orchestrate skill
- * handles it. §7's own "Core event types" sentence predates the rider and does
- * not yet name it — a SPEC amendment is drafted and held for sign-off
- * (CONTRACT-028); this constant is what the shipped surfaces read, and the
- * generated document publishes the whole set wherever an event type appears.
+ * handles it. `resident.designated` is core for the same reason — designation is
+ * a first-class act of the product, visible in the queue, the job log and the
+ * history exactly as a comment is, and §7 makes it ordinary queue vocabulary
+ * rather than a side channel. The generated document publishes the whole set
+ * wherever an event type appears.
  */
 export const CORE_QUEUE_EVENT_TYPES = [
   "comment.created",
   "form.respond",
   "doc.edited",
+  "resident.designated",
   "agent.done",
 ] as const;
 
@@ -77,7 +90,21 @@ export const QueueEventStatusSchema = z.enum(QUEUE_EVENT_STATUSES).openapi({
     "Nothing refused it: the agent deferred because it saw, not because it was blocked.",
 });
 
-/** One event file in `.corpus/queue/<status>/<id>.json`, written and moved only by the server. */
+/**
+ * One event file in `.corpus/queue/<status>/<id>.json`, written and moved only
+ * by the server.
+ *
+ * **There is no `lane` field, and that is deliberate** (CONTRACT-051; SPEC.md §7
+ * as amended by SHARED-043). Every event *is* stamped with a lane when it is
+ * enqueued, but the stamp is server-side bookkeeping of the same class as the
+ * event's status and its attempt count: it decides who the event is handed to,
+ * and by the time a consumer holds one it has already been handed to them.
+ * Publishing it would put a routing decision in the hands of the party the
+ * routing was *for*, and the honest answer to "which lane is this?" is "the one
+ * you asked for" — the `scope` you claimed with. The lane is reachable where it
+ * is actually a question: `GET /api/agents` lists the lanes, and the scoped
+ * queue verbs consume one.
+ */
 export const QueueEventSchema = z
   .object({
     id: EventIdSchema,
@@ -341,7 +368,21 @@ export const IdleResultSchema = z
 export const DEFAULT_IDLE_TIMEOUT_SECONDS = 480;
 export const MAX_IDLE_TIMEOUT_SECONDS = 480;
 
+/**
+ * The lane a claim consumes (SPEC.md §7), on `POST /api/queue/claim-all`.
+ *
+ * A **query parameter rather than a request body**, and that is the one choice
+ * here worth stating: `claim-all` is a bodiless verb today, and giving it a body
+ * to carry one optional field would make a bare `POST` — which is what every
+ * caller sends and what the CLI will keep sending — a call whose body is omitted
+ * rather than absent. `idle` spells the same thing as a query parameter because
+ * it is a `GET`, and the two verbs are one instruction to the loop; spelling it
+ * two different ways on the two of them is how they would come to disagree.
+ */
+export const ClaimScopeQuerySchema = z.object({ scope: laneScopeParam });
+
 export const IdleQuerySchema = z.object({
+  scope: laneScopeParam,
   timeout: z.coerce
     .number()
     .int()
@@ -446,6 +487,7 @@ export const FailEventRequestSchema = z
 export type CoreQueueEventType = z.infer<typeof CoreQueueEventTypeSchema>;
 export type IdleResult = z.infer<typeof IdleResultSchema>;
 export type IdleQuery = z.infer<typeof IdleQuerySchema>;
+export type ClaimScopeQuery = z.infer<typeof ClaimScopeQuerySchema>;
 export type ReapStaleResult = z.infer<typeof ReapStaleResultSchema>;
 export type QueueEventStatus = z.infer<typeof QueueEventStatusSchema>;
 export type QueueEvent = z.infer<typeof QueueEventSchema>;

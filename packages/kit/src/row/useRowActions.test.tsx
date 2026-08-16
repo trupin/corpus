@@ -69,6 +69,7 @@ function renderStaleRow(
           parent: STALE_ROW.id,
           anchor: null,
           agent: "requested",
+          resident: null,
           turns: [],
         },
         anchorId: null,

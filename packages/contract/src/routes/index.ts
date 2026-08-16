@@ -1,3 +1,4 @@
+import { getAgentRoster } from "./agents.js";
 import { getAttachment } from "./attachments.js";
 import { applyBulkAction } from "./bulk.js";
 import { capture } from "./capture.js";
@@ -38,6 +39,7 @@ import { searchCorpus } from "./search.js";
 import { createSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
 import { reattachThread } from "./thread-reattach.js";
+import { designateResident, releaseResident } from "./thread-resident.js";
 import {
   deleteTurn,
   getThread,
@@ -50,6 +52,7 @@ import { appendTurn } from "./turn-append.js";
 import { getTree } from "./tree.js";
 import { checkUpgrade, startUpgrade } from "./upgrade.js";
 
+export * from "./agents.js";
 export * from "./attachments.js";
 export * from "./bulk.js";
 export * from "./capture.js";
@@ -72,6 +75,7 @@ export * from "./search.js";
 export * from "./skills.js";
 export * from "./thread-create.js";
 export * from "./thread-reattach.js";
+export * from "./thread-resident.js";
 export * from "./threads.js";
 export * from "./tree.js";
 export * from "./turn-append.js";
@@ -120,6 +124,15 @@ export * from "./upgrade.js";
  * likewise not for routing: it is a `GET` one segment deeper than
  * `/api/threads/{id}`, and every other route at that depth is a `POST` or a
  * `DELETE`, so `context` competes with nothing.
+ *
+ * `designateResident` and `releaseResident` close the thread group, after
+ * `reattachThread`: they are the last of the thread's user-only acts, and they
+ * are a `POST`/`DELETE` pair on one static segment, so the two belong adjacent.
+ * `resident` competes with no parameter either — it sits one segment deeper than
+ * `/api/threads/{id}`, beside `resolve`, `reopen`, `seen` and `reattach`.
+ * `getAgentRoster` follows the whole group and precedes the queue verbs, which
+ * is where it belongs in both directions: the roster is what a designation
+ * changes and what a `scope` is chosen from.
  */
 export const contractRoutes = {
   getHealth,
@@ -153,6 +166,10 @@ export const contractRoutes = {
   reopenThread,
   markThreadSeen,
   reattachThread,
+  designateResident,
+  releaseResident,
+
+  getAgentRoster,
 
   getQueueStatus,
   idleQueue,
