@@ -187,18 +187,19 @@ All acceptance criteria met · tests pass, no regressions · combined coverage �
 
 ## Available Skills
 
-| Skill        | Purpose                                                                                          |
-| ------------ | ------------------------------------------------------------------------------------------------ |
-| `/dashboard` | Quick project dashboard: issues, git state, what's actionable now                                |
-| `/decompose` | Decompose a feature into phased issues across domains                                            |
-| `/implement` | Pick ready issues from plan and implement via domain agents                                      |
-| `/issue`     | Manage issues: create, close, implement, plan, refine, list, show                                |
-| `/evaluate`  | Run the behavioral evaluator against completed issues                                            |
-| `/audit`     | Audit recent changes for defects, missing tests, spec drift                                      |
-| `/lint`      | ESLint + Prettier check + tsc across workspaces                                                  |
-| `/test`      | Vitest suite with optional filters                                                               |
-| `/pr`        | Create a pull request from the current branch                                                    |
-| `/learn`     | Record a durable lesson in the right guideline file, then check for contradictions it introduced |
+| Skill                 | Purpose                                                                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/dashboard`          | Quick project dashboard: issues, git state, what's actionable now                                                                                    |
+| `/decompose`          | Decompose a feature into phased issues across domains                                                                                                |
+| `/implement`          | Pick ready issues from plan and implement via domain agents                                                                                          |
+| `/issue`              | Manage issues: create, close, implement, plan, refine, list, show                                                                                    |
+| `/evaluate`           | Run the behavioral evaluator against completed issues                                                                                                |
+| `/audit`              | Audit recent changes for defects, missing tests, spec drift                                                                                          |
+| `/lint`               | ESLint + Prettier check + tsc across workspaces                                                                                                      |
+| `/test`               | Vitest suite with optional filters                                                                                                                   |
+| `/pr`                 | Create a pull request from the current branch                                                                                                        |
+| `/work-until-release` | Agree a release scope with the user, then build it to a tagged release without checking in — proposes, waits for go, then runs and reports the calls |
+| `/learn`              | Record a durable lesson in the right guideline file, then check for contradictions it introduced                                                     |
 
 ## Git Workflow
 
