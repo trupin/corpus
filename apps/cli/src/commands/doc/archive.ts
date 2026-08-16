@@ -1,4 +1,5 @@
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { JOB_FLAG, resolveJob } from "../../input.js";
 import { runArchiveToggle } from "./archive-toggle.js";
 
 /**
@@ -15,10 +16,18 @@ import { runArchiveToggle } from "./archive-toggle.js";
  */
 
 export async function runDocArchive(context: WorkspaceCommandContext): Promise<void> {
+  const job = resolveJob(context.flags, context.env);
   await runArchiveToggle(context, {
     wantArchived: true,
     post: (ctx, id) =>
-      ctx.client.request((api) => api.POST("/api/docs/{id}/archive", { params: { path: { id } } })),
+      ctx.client.request((api) =>
+        api.POST("/api/docs/{id}/archive", {
+          params: { path: { id } },
+          // SPEC.md §9.2: attribution only — archiving creates no document, so it
+          // records no origin, but an unresolvable job is still refused (422).
+          ...(job === undefined ? {} : { body: { job } }),
+        }),
+      ),
     moved: (id) => `archived ${id}`,
     settled: (id) => `${id} is already archived`,
   });
@@ -39,7 +48,7 @@ export const archiveCommand: WorkspaceCommandSpec = {
     "which disables the skill without unindexing it. Archiving **names its own delta**, so it " +
     "needs no key (SPEC.md §7) and is never refused for a document someone else is writing.",
   args: [{ name: "id", required: true, description: "The document's id." }],
-  flags: [],
+  flags: [JOB_FLAG],
   examples: [
     {
       command: "corpus doc archive doc_a1b2c3",

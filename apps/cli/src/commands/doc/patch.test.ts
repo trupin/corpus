@@ -549,6 +549,10 @@ describe("corpus doc patch — the registry entry", () => {
       "new-file",
       "stdin",
       "all",
+      // `--job` (CLI-044): the work this write serves, not a key. §7's exemption
+      // is about presenting a *version* — a patch names the text it expects to
+      // find, which is the staleness check — and says nothing about attribution.
+      "job",
     ]);
   });
 

@@ -1,4 +1,4 @@
-import { requireFlag, warningSuffix } from "../../input.js";
+import { requireFlag, warningSuffix, JOB_FLAG, resolveJob } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
 /**
@@ -16,12 +16,18 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
 export async function runDocMove(context: WorkspaceCommandContext): Promise<void> {
   const id = context.args.get("id");
   const folder = requireFlag(context, "folder", "path");
+  const job = resolveJob(context.flags, context.env);
 
   const before = await context.client.request((api) =>
     api.GET("/api/docs/{id}", { params: { path: { id } } }),
   );
   const response = await context.client.request((api) =>
-    api.POST("/api/docs/{id}/move", { params: { path: { id } }, body: { folder } }),
+    api.POST("/api/docs/{id}/move", {
+      params: { path: { id } },
+      // SPEC.md §9.2: attribution only — a move creates no document, so it
+      // records no origin, but an unresolvable job is still refused (422).
+      body: { folder, ...(job === undefined ? {} : { job }) },
+    }),
   );
 
   context.out.emit(response);
@@ -54,6 +60,7 @@ export const moveCommand: WorkspaceCommandSpec = {
         "Destination folder under `data/docs/`, as a bare name (`finance`) or the full prefix " +
         "(`data/docs/finance`). Required.",
     },
+    JOB_FLAG,
   ],
   examples: [
     {

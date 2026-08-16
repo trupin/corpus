@@ -1,5 +1,6 @@
 import type { TopicSpec } from "../../registry/types.js";
 import { archiveCommand } from "./archive.js";
+import { detachCommand } from "./detach.js";
 import { checkCommand } from "./check.js";
 import { createCommand } from "./create.js";
 import { deleteCommand } from "./delete.js";
@@ -66,6 +67,7 @@ export const docTopic: TopicSpec = {
     moveCommand,
     archiveCommand,
     unarchiveCommand,
+    detachCommand,
     deleteCommand,
   ],
 };

@@ -5,6 +5,8 @@ import {
   resolveTurnModel,
   warningSuffix,
   type InputDependencies,
+  JOB_FLAG,
+  resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
@@ -47,6 +49,7 @@ export async function runThreadReply(
   context: WorkspaceCommandContext,
   dependencies: InputDependencies = {},
 ): Promise<void> {
+  const job = resolveJob(context.flags, context.env);
   const id = context.args.get("id");
   // Before the body is read: a `--model` this actor may not state is a usage
   // error whatever the body turns out to be, and a heredoc consumed on the way
@@ -63,7 +66,13 @@ export async function runThreadReply(
       // **absent field** rather than a null or an empty string: SPEC.md §11
       // wants a turn nobody recorded a model for to show nothing at all, and
       // absence having one spelling is what makes that checkable.
-      body: { body, ...(model === undefined ? {} : { model }) },
+      // SPEC.md §9.2's job travels the same way, and for the same reason:
+      // absent has one spelling, the field omitted (CLI-044).
+      body: {
+        body,
+        ...(model === undefined ? {} : { model }),
+        ...(job === undefined ? {} : { job }),
+      },
     }),
   );
 
@@ -105,7 +114,7 @@ export const replyCommand: WorkspaceCommandSpec = {
     "verbatim; omit it and the turn carries no model at all, which reads as nothing rather than " +
     "as a guess.",
   args: [{ name: "id", required: true, description: "The thread's id." }],
-  flags: [...bodyFlags("The turn body"), MODEL_FLAG],
+  flags: [...bodyFlags("The turn body"), MODEL_FLAG, JOB_FLAG],
   examples: [
     {
       command:

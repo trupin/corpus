@@ -13,6 +13,8 @@ import {
   resolveBody,
   warningSuffix,
   type InputDependencies,
+  JOB_FLAG,
+  resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import {
@@ -317,11 +319,15 @@ export async function runDocEdit(
     });
   }
 
+  const job = resolveJob(context.flags, context.env);
+
   const response = await context.client.request((api) =>
     api.PUT("/api/docs/{id}", {
       params: { path: { id } },
       body: {
         ...patch,
+        // SPEC.md §9.2: the work this write serves (CLI-044).
+        ...(job === undefined ? {} : { job }),
         ...(key === undefined ? {} : { key }),
         ...(body === undefined ? {} : { body }),
       },
@@ -505,6 +511,7 @@ export const editCommand: WorkspaceCommandSpec = {
     },
     ...VIEW_KEY_FLAGS,
     ...bodyFlags("The replacement document body"),
+    JOB_FLAG,
   ],
   examples: [
     {

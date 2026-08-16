@@ -730,7 +730,7 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | SERVER-109 | Designate a resident, and dissolve it cleanly | todo | P0 | CONTRACT-051 |
 | SERVER-111 | The queue learns lanes | todo | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
 | SERVER-112 | Presence is a parked request — liveness and the roster | todo | P0 | SERVER-111 |
-| CLI-044 | Mutating verbs carry the job they serve | todo | P0 | CONTRACT-050, SERVER-110 |
+| CLI-044 | Mutating verbs carry the job they serve | done | P0 | CONTRACT-050, SERVER-110 |
 | CLI-043 | Lane verbs, designation, and `corpus agents` | todo | P0 | CONTRACT-051, SERVER-111, SERVER-112, SERVER-109 |
 | AGENT-025 | The converse skill — a resident's own loop | todo | P0 | SHARED-043, CLI-044, CLI-043 |
 | AGENT-026 | Orchestrate learns to share the queue | todo | P0 | AGENT-025, CLI-043 |

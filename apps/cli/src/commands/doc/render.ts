@@ -80,6 +80,14 @@ export function documentLines(doc: Doc): readonly string[] {
     `tags ${frontmatter.tags.length === 0 ? NONE : frontmatter.tags.join(", ")}`,
   );
 
+  // The conversation this document came from (SPEC.md §7 scope, §9.2), printed
+  // only when it has one — for the same reason the optional row below is
+  // conditional: an `origin —` on every unfiled note is noise, and most notes
+  // are unfiled. The id alone rather than a title: `doc show` reads one
+  // document, and resolving the thread's title would be a second request to
+  // decorate a line nobody asked for.
+  if (frontmatter.origin !== null) lines.push(`origin ${frontmatter.origin}`);
+
   // Only when the document actually carries one of them: an always-printed
   // "due — · reviewed — · evergreen no" is noise on every note in the corpus.
   if (frontmatter.due !== null || frontmatter.reviewed !== null || frontmatter.evergreen) {

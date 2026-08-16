@@ -13,6 +13,7 @@ import {
   requireBody,
   requireFlag,
   resolveActor,
+  resolveJob,
   resolveBody,
   resolveTurnModel,
   splitTags,
@@ -297,5 +298,57 @@ describe("small parsers", () => {
     expect(plural(1, "anchor")).toBe("1 anchor");
     expect(plural(2, "anchor")).toBe("2 anchors");
     expect(plural(3, "seen", "seen")).toBe("3 seen");
+  });
+});
+
+describe("resolveJob — the work a write serves (CLI-044)", () => {
+  const flagsWith = (job?: string): ParsedFlags => flagsOf(job === undefined ? {} : { job });
+
+  it("takes the flag when one is given", () => {
+    expect(resolveJob(flagsWith("evt_a1b2c3"), {})).toBe("evt_a1b2c3");
+  });
+
+  it("falls back to the environment, which is how an agent stops remembering", () => {
+    // The whole design: a working agent exports CORPUS_JOB once when it claims
+    // an event, and every write it makes afterwards is attributed without the
+    // agent naming the job per command. §9.2 makes forgetting cost provenance
+    // rather than correctness, so a mechanism that had to be remembered per
+    // command is one that quietly stops working.
+    expect(resolveJob(flagsWith(), { CORPUS_JOB: "evt_fromenv" })).toBe("evt_fromenv");
+  });
+
+  it("lets the flag win over the variable", () => {
+    expect(resolveJob(flagsWith("evt_flag"), { CORPUS_JOB: "evt_env" })).toBe("evt_flag");
+  });
+
+  it("is absent when neither names one, with exactly one spelling for absent", () => {
+    // §9.2: a write with no job records no origin — a fact about the document,
+    // not a missing field. `undefined` is what omits the wire field entirely.
+    expect(resolveJob(flagsWith(), {})).toBeUndefined();
+  });
+
+  it("treats an empty variable as unset, because that is how a shell clears one", () => {
+    // `CORPUS_JOB=` is a clear. Reading it as "the job named empty string" would
+    // turn clearing the variable into a 422.
+    expect(resolveJob(flagsWith(), { CORPUS_JOB: "" })).toBeUndefined();
+  });
+
+  it("refuses something that is not an event id, before any request is sent", () => {
+    // Shape only. Whether the id names a live event is the server's 422 — it
+    // reads the queue and the CLI does not, and a second opinion here would be a
+    // second source of truth about what is claimable.
+    expect(() => resolveJob(flagsWith("th_x9y8"), {})).toThrow(/evt_/);
+    expect(() => resolveJob(flagsWith("nonsense"), {})).toThrow(/evt_/);
+  });
+
+  it("says how to clear a stale variable, since that is the likely cause", () => {
+    // A subagent's environment outliving its work is the realistic way this
+    // goes wrong, and "unset it or override it" is the recovery.
+    try {
+      resolveJob(flagsWith(), { CORPUS_JOB: "not-an-event" });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as { hint?: string }).hint).toMatch(/CORPUS_JOB/);
+    }
   });
 });

@@ -4,7 +4,7 @@
 cli
 
 ## Status
-todo
+done
 
 ## Priority
 P0
@@ -30,12 +30,12 @@ which is what makes stamping reliable rather than remembered. Also expose detach
 `corpus doc detach <id>` clears `origin` (user actor only, server-enforced).
 
 ## Acceptance Criteria
-- [ ] `JOB_FLAG` defined once beside `MODEL_FLAG`; accepted on the verbs above; value validated shape-only client-side (`evt_` prefix), existence left to the server's 422
-- [ ] `CORPUS_JOB` read exactly like `CORPUS_FROM`; `--job` overrides; neither present → field omitted (today's behavior, no default)
-- [ ] Server 422 (unknown/settled job) surfaces as the CLI's ordinary contract-error rendering with the server's reason verbatim — never retried, never stripped-and-resent
-- [ ] `corpus doc detach <id>` sends the clear-only edit; agent actor gets the server's 403 rendered plainly ("detaching is the user's act")
-- [ ] `corpus doc show` prints `origin` when set (one line, `origin th_… · <thread title>` when the projection can title it); `--json` carries the raw field
-- [ ] Read verbs take no `--job` (attribution is for writes; a flag on reads would imply meaning it does not have)
+- [x] `JOB_FLAG` defined once beside `MODEL_FLAG`; accepted on the verbs above; value validated shape-only client-side (`evt_` prefix), existence left to the server's 422
+- [x] `CORPUS_JOB` read exactly like `CORPUS_FROM`; `--job` overrides; neither present → field omitted (today's behavior, no default)
+- [x] Server 422 (unknown/settled job) surfaces as the CLI's ordinary contract-error rendering with the server's reason verbatim — never retried, never stripped-and-resent
+- [x] `corpus doc detach <id>` sends the clear-only edit; agent actor gets the server's 403 rendered plainly ("detaching is the user's act")
+- [x] `corpus doc show` prints `origin` when set (one line, `origin th_… · <thread title>` when the projection can title it); `--json` carries the raw field
+- [x] Read verbs take no `--job` (attribution is for writes; a flag on reads would imply meaning it does not have)
 
 ## Technical Design
 
@@ -68,6 +68,46 @@ detach's 403 path, show's origin line in both modes.
 4. `CORPUS_JOB=evt_nope corpus doc create …` → 422 rendered with the id
 
 ## E2E Verification Log
+
+**Model: Opus 5 (1M context)**, orchestrator. No server started, no port bound.
+
+`JOB_FLAG` and `resolveJob` sit beside `FROM_FLAG`/`resolveActor` in `input.ts`,
+which is the point rather than a convenience: **an agent exports `CORPUS_JOB`
+once when it claims an event and every write it makes afterwards is attributed
+without naming the job per command.** §9.2 makes forgetting cost provenance
+rather than correctness, so a mechanism that had to be remembered each time is a
+mechanism that quietly stops working — the same failure §7's key was redesigned
+to escape.
+
+Spread across `doc create/edit/patch/move/archive/unarchive` and
+`thread create/reply`. `corpus doc detach` is new, and `corpus doc show` prints
+`origin` only when the document carries one.
+
+**Calls made:**
+
+- **The flag is appended, not prepended.** A registry census pins each verb's
+  flag list exactly; appending matches where `MODEL_FLAG` sits and keeps the
+  help output's shape.
+- **`doc show` prints the bare id, not the thread's title.** The issue suggested
+  `origin th_… · <title>`. Resolving the title is a second request to decorate a
+  line nobody asked for, on a verb whose job is to read one document.
+- **`detach` pre-checks nothing** — not the actor, not the id. The server's `403`
+  and `422` are the answers; a second opinion here would be a second source of
+  truth about who may do what.
+- **Archive and unarchive send a body only when a job is present.** Both took no
+  body at all before CONTRACT-050, and a caller that names no job should send
+  exactly what it always did.
+
+```
+$ npx vitest run apps/cli          → 1425 passed
+$ npm run typecheck -w apps/cli    → 0 errors
+```
+
+Two plugin-discovery tests failed in one run and pass in isolation — another
+agent was editing `plugins/todos/` at the time, so the built plugin was
+mid-rewrite. Noted rather than chased.
+
+## E2E Verification Log (original plan)
 _Filled in by the implementing agent as proof-of-work._
 
 ### Post-Implementation Verification
