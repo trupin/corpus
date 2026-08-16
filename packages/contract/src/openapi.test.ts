@@ -2492,6 +2492,8 @@ describe("a key on every read, and on every write that overwrites", () => {
       "not_found",
       "conflict",
       "stale_key",
+      // CONTRACT-050: a `job` naming no event, or work already settled.
+      "unknown_job",
       "internal_error",
     ]);
   });
@@ -3512,6 +3514,8 @@ describe("multipart, attachments and the stream", () => {
       "not_found",
       "conflict",
       "stale_key",
+      // CONTRACT-050: a `job` naming no event, or work already settled.
+      "unknown_job",
       "internal_error",
     ]);
     expect(Object.keys(componentSchemas ?? {})).not.toContain("PayloadTooLargeError");

@@ -8,7 +8,8 @@ import {
 } from "./doc.js";
 import { PatchDocRequestSchema } from "./doc-patch.js";
 import { FormAnswerRequestSchema } from "./form.js";
-import { jobField, originField, UnknownJobErrorSchema } from "./provenance.js";
+import { UnknownJobErrorSchema } from "./error.js";
+import { jobField, originField } from "./provenance.js";
 import {
   AppendTurnRequestSchema,
   CreateThreadRequestSchema,

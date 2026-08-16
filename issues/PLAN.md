@@ -690,9 +690,9 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-043 | A resident agent for a conversation (AUTHORIZED 2026-08-13, applied to §7/§8/§9.2) | done | P0 | — |
-| CONTRACT-050 | Every write can name the job it serves | todo | P0 | SHARED-043 |
+| CONTRACT-050 | Every write can name the job it serves | done | P0 | SHARED-043 |
 | CONTRACT-051 | Lanes, designation, and the roster on the wire | todo | P0 | SHARED-043 |
-| SERVER-110 | Stamp a document with the thread it came from | todo | P0 | CONTRACT-050 |
+| SERVER-110 | Stamp a document with the thread it came from | done | P0 | CONTRACT-050 |
 | SERVER-109 | Designate a resident, and dissolve it cleanly | todo | P0 | CONTRACT-051 |
 | SERVER-111 | The queue learns lanes | todo | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
 | SERVER-112 | Presence is a parked request — liveness and the roster | todo | P0 | SERVER-111 |

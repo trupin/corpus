@@ -70,6 +70,9 @@ describe("POST /api/docs with view keys", () => {
       "due: null",
       "reviewed: null",
       "evergreen: false",
+      // §9.2's provenance, in canonical key order right after the §5 block
+      // (SERVER-110). `null` on a document no job created, which is most of them.
+      "origin: null",
       "pinned: true",
       "order: 20",
       "query:",

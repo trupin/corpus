@@ -1,5 +1,5 @@
 import type { z } from "@hono/zod-openapi";
-import { UnknownJobErrorSchema } from "../schemas/provenance.js";
+
 import {
   ConflictErrorSchema,
   ForbiddenErrorSchema,
@@ -7,6 +7,7 @@ import {
   StaleKeyErrorSchema,
   UnauthorizedErrorSchema,
   ValidationErrorSchema,
+  UnknownJobErrorSchema,
 } from "../schemas/error.js";
 
 /** Wraps a schema as a single-content-type JSON response entry for `createRoute`. */

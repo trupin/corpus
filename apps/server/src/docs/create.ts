@@ -1,3 +1,5 @@
+import type { JobLookup } from "./write.js";
+import { unknownJob } from "../errors.js";
 // `POST /api/docs` — creation (SPEC.md §9.2, §11).
 //
 // Creation is zero-form and inbox-first: a type and a title are the whole
@@ -93,6 +95,25 @@ function viewFields(input: CreateDocRequest): Record<string, unknown> {
   return fields;
 }
 
+/**
+ * The origin a write naming `job` stamps, or `null`.
+ *
+ * Refuses an unresolvable job (§9.2's `422`) and is silent about an absent one:
+ * a write that names no job records no origin, and so does a write on a server
+ * with no queue to ask — the same case, and neither is an error.
+ */
+export function stampedOrigin(
+  workspace: { readonly jobs?: JobLookup | undefined },
+  job: string | undefined,
+): string | null {
+  if (job === undefined) return null;
+  const lookup = workspace.jobs;
+  if (lookup === undefined) return null;
+  const resolved = lookup.originFor(job);
+  if (!resolved.ok) throw unknownJob(job, resolved.status);
+  return resolved.origin;
+}
+
 export async function createDocument(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,
@@ -135,6 +156,12 @@ export async function createDocument(
       due: input.due ?? null,
       reviewed: null,
       evergreen: input.evergreen ?? false,
+      // §9.2: recorded from the job this write names, **unconditionally** —
+      // whether or not that thread is designated. Scope membership is computed
+      // later by walking origin (§7), and a fact not recorded at write time
+      // cannot be recovered afterwards, so the cheap write now is what makes a
+      // thread designated tomorrow capture what it produced today.
+      origin: stampedOrigin(workspace, input.job),
       ...viewFields(input),
     };
 

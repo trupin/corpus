@@ -920,9 +920,7 @@
           },
           "job": {
             "type": "string",
-            "pattern": "^evt_[A-Za-z0-9]+$",
-            "description": "The id that resolved to no event.",
-            "example": "evt_7c1d"
+            "description": "The id that resolved to no event, or to work already settled."
           }
         },
         "required": [

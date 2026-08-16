@@ -22,9 +22,10 @@ import {
   setBody,
   setFrontmatterFields,
 } from "../core/index.js";
-import { badRequest } from "../errors.js";
+import { badRequest, forbidden } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { assertDocumentKey } from "./key.js";
+import { stampedOrigin } from "./create.js";
 import { loadDocument, readAnchorsMap, toWireDoc } from "./read.js";
 import {
   runMutation,
@@ -32,6 +33,7 @@ import {
   type DocsWorkspace,
   type DocumentMutex,
   type MutationResult,
+  validationError,
 } from "./write.js";
 
 export type UpdateOutcome = {
@@ -129,6 +131,8 @@ export const CLEARABLE_FRONTMATTER_KEYS = [
 export function changedFields(
   current: Readonly<Record<string, unknown>>,
   patch: UpdateDocRequest,
+  actor: Actor = "user",
+  stamp: string | null = null,
 ): Record<string, unknown> {
   const changed: Record<string, unknown> = {};
   for (const key of UPDATABLE_FRONTMATTER_KEYS) {
@@ -139,6 +143,45 @@ export function changedFields(
   }
   for (const key of CLEARABLE_FRONTMATTER_KEYS) {
     applyPatchEntry(changed, current, key, patch[key]);
+  }
+  // §9.2's provenance, and the two directions it moves.
+  //
+  // **Detach** — `origin: null` — clears the key. It is user-only, and the
+  // refusal is the caller's actor rather than the field's shape: the wire type
+  // is an ordinary nullable id (a `{"type":"null"}` schema reaches
+  // `openapi-fetch` as `never`, CONTRACT-050), so "clear only, never set" is
+  // enforced here, where it can say why.
+  //
+  // **A stamp from a `job`** fills the key only when the document has none:
+  // **first writer wins**. An edit that could re-file a document would let any
+  // later write move someone else's artifact between conversations, and the
+  // person's own detach is the one thing that moves it back out.
+  if (patch.origin !== undefined) {
+    if (patch.origin !== null) {
+      validationError("a document's origin is server-assigned and can only be cleared", [
+        {
+          path: "body.origin",
+          message:
+            "send `null` to detach this document from its conversation (SPEC.md §9.2). An " +
+            "origin is never set by a caller — name the `job` your write serves and the server " +
+            "records where that work came from.",
+        },
+      ]);
+    }
+    if (actor !== "user") {
+      throw forbidden(
+        "detaching a document from its conversation is user-only (SPEC.md §9.2): it is a " +
+          "person's correction of where their work was filed, and an agent that could undo it " +
+          "could quietly move an artifact out of the scope it belongs to.",
+      );
+    }
+    if (current["origin"] != null) changed["origin"] = null;
+  } else if (stamp !== null && current["origin"] == null) {
+    // "Has no origin" is `origin: null`, not an absent key: every document
+    // written since SERVER-110 carries the key, and the null is the fact that it
+    // came from no job. Testing for the key's presence would make the stamp fire
+    // only on documents written before provenance existed.
+    changed["origin"] = stamp;
   }
   // **`extra` is a shallow merge patch** (RFC 7386 at the top level): a named
   // key replaces the file's key wholesale, `null` removes it, and a key the
@@ -306,7 +349,7 @@ export async function updateDocumentLocked(
 
   const nextBody = patch.body ?? parsed.body;
   const bodyChanged = nextBody !== parsed.body;
-  const fields = changedFields(parsed.data, patch);
+  const fields = changedFields(parsed.data, patch, actor, stampedOrigin(workspace, patch.job));
   // Before anything is reconciled or written, and after `changedFields` has
   // decided the patch really moves `status` at all.
   assertNotUnarchivingByPut(id, parsed.data, loaded.row.status, fields);

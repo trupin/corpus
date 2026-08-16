@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { EventIdSchema, ThreadIdSchema } from "./id.js";
+import { ThreadIdSchema } from "./id.js";
 
 /**
  * **Provenance**: the job a write serves, and the conversation a document came
@@ -111,11 +111,12 @@ export const originDetachField = ThreadIdSchema.nullable()
       "a job, so this is a correction rather than a lock.",
   });
 
-/** The `422` a job id that names no claimable event answers with. */
-export const UnknownJobErrorSchema = z
-  .object({
-    code: z.literal("unknown_job"),
-    message: z.string(),
-    job: EventIdSchema.describe("The id that resolved to no event."),
-  })
-  .openapi("UnknownJobError");
+// The `422`'s shape lives in `./error.ts` with the rest of the `ApiError`
+// union: a client that narrows on `code` has to be able to reach it, and a
+// refusal outside the union is the one a caller cannot handle generically.
+// The `422`'s shape lives in `./error.ts` with the rest of the `ApiError` union
+// and is **not** re-exported here: `error.ts` carries the stale-key refusal,
+// which carries a whole `Doc`, so `error → doc → provenance → error` is a cycle
+// — and its symptom is not an import error but a half-initialised schema
+// ("Invalid element at key `origin`: expected a Zod schema") at every route
+// registration. Import it from `./error.js`.

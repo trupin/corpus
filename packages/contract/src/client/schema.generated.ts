@@ -4133,10 +4133,7 @@ export interface components {
             /** @enum {string} */
             code: "unknown_job";
             message: string;
-            /**
-             * @description The id that resolved to no event.
-             * @example evt_7c1d
-             */
+            /** @description The id that resolved to no event, or to work already settled. */
             job: string;
         };
         CreateDocRequest: {

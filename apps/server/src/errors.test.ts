@@ -19,6 +19,7 @@ import {
   toHttpError,
   toValidationIssues,
   unauthorized,
+  unknownJob,
 } from "./errors.js";
 
 /**
@@ -61,6 +62,7 @@ const ALL_FACTORY_ERRORS = [
   notFound("n"),
   conflict("c"),
   staleKey("s", CURRENT_DOC),
+  unknownJob("evt_a1b2c3"),
   internalError(),
 ];
 

@@ -359,6 +359,35 @@ export interface DocsWorkspace {
    * acknowledgment to make.
    */
   readonly editSessions?: EditSessionTracker | undefined;
+  /**
+   * §9.2's provenance lookup (SERVER-110): resolves the `job` a write names to
+   * the thread that work came from, so the document can be stamped with it.
+   *
+   * A seam, and optional, for the same reason {@link editSessions} is — the
+   * write pipeline is testable without a queue, and a server built without one
+   * has no job to resolve. When it is absent a write naming a job is **not**
+   * refused: it simply records no origin, which is exactly what §9.2 says a
+   * write that names no job does. Forgetting costs provenance, never
+   * correctness, and a server with no queue is the same case as a caller with
+   * no job.
+   */
+  readonly jobs?: JobLookup | undefined;
+}
+
+/** What a resolved job says about where its work belongs. */
+export type JobOrigin =
+  | { readonly ok: true; readonly origin: string | null }
+  | { readonly ok: false; readonly reason: "unknown" | "settled"; readonly status?: string };
+
+/**
+ * Resolves a `job` id to the thread its work came from (SERVER-110).
+ *
+ * Synchronous by design: the write path already holds a document lane, and an
+ * `await` inside it is a window for another writer. The queue's own event read
+ * is a single file read, so there is nothing here worth going async for.
+ */
+export interface JobLookup {
+  originFor(job: string): JobOrigin;
 }
 
 /** A 400 always carries `issues` — `ApiErrorSchema`'s `bad_request` variant requires it. */

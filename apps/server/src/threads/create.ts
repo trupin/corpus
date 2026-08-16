@@ -31,6 +31,7 @@ import {
   type TextQuoteSelector,
   type Thread,
 } from "@corpus/contract";
+import { stampedOrigin } from "../docs/create.js";
 import {
   DEFAULT_ATTACHMENT_LIMITS,
   assertWithinLimits,
@@ -100,6 +101,13 @@ export interface ThreadCreateInput {
    * Carried to the queue event and interpreted nowhere — see `events.ts`.
    */
   readonly weight: string | undefined;
+  /**
+   * The queue event this creation is doing the work of (SPEC.md §9.2);
+   * `undefined` when the caller names none. Resolved to the thread that work
+   * came from and stamped as this thread's `origin`, which is how a subthread
+   * the agent opens while working joins the scope it came from (§7).
+   */
+  readonly job: string | undefined;
   readonly files: readonly File[];
 }
 
@@ -120,6 +128,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
       requestsAgent: body.requestsAgent,
       model: body.model,
       weight: body.weight,
+      job: body.job,
       files: [],
     };
   }
@@ -131,6 +140,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
     requestsAgent: body.requestsAgent,
     model: body.model,
     weight: body.weight,
+    job: body.job,
     files: body.files,
   };
 }
@@ -194,6 +204,7 @@ function threadFields(input: {
   readonly anchor: string | null;
   readonly agent: string;
   readonly model: string | undefined;
+  readonly origin: string | null;
 }): Record<string, unknown> {
   return {
     id: input.id,
@@ -206,6 +217,10 @@ function threadFields(input: {
     parent: input.parent,
     anchor: input.anchor,
     agent: input.agent,
+    // §9.2's provenance, slotted after the §6 thread keys. A thread created
+    // from a job joins that job's scope — which is how a subthread the agent
+    // opens while working stays in the conversation it came from (§7).
+    origin: input.origin,
     ...(input.model === undefined
       ? {}
       : { [TURN_MODELS_FRONTMATTER_KEY]: { [input.stamp]: input.model } }),
@@ -339,6 +354,7 @@ export async function createThread(
             anchor: anchorId,
             agent: decision.agent,
             model: input.model,
+            origin: stampedOrigin(workspace, input.job),
           }),
         ),
       );
