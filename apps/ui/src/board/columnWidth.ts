@@ -111,21 +111,52 @@ export function readStoredWidth(
 }
 
 /**
- * The width a column renders at: its base, widened while a reader is open.
+ * The width a reader needs to show its content readably — the **floor** a column
+ * may be grown to when something is opened in it, never a ceiling on the width
+ * the user chose.
  *
- * Reading takes the **narrower** of the widened base and the content measure
- * ({@link READING_WIDTH_CEILING}), so a column whose base is already at or past
- * the measure opens the reader at the measure rather than adding gutter. The
- * viewport clamp still applies underneath: on a laptop the smaller of the two
- * wins, and the column never grows past the window (sprint-016 TEST-451).
- *
- * Closing the reader is untouched — a column returns to the base its view
- * document carries, however wide the user dragged it.
+ * That distinction is the whole of UI-113. This value used to be applied as
+ * `min(base × ratio, ceiling)`, which capped a wide column at the measure: open
+ * a document in a column dragged to 800 and it *narrowed* to 560. The reasoning
+ * was that width past the measure is gutter — true of a column nobody chose, and
+ * false of one somebody dragged. Reported by the user with two screenshots and
+ * the rule to replace it: *"I want a column to keep its width… When I click on a
+ * button I don't want to see the column width redimension on its own ever"*,
+ * qualified to *"it can resize up automatically but not down"*.
  */
-export function renderedWidth(base: number, reading: boolean, viewportWidth: number): number {
-  if (!reading) return clampColumnWidth(base, viewportWidth);
+export function readingFloor(base: number, viewportWidth: number): number {
   return Math.min(
     clampColumnWidth(base * READING_WIDTH_RATIO, viewportWidth),
     READING_WIDTH_CEILING,
+  );
+}
+
+/**
+ * The width a column renders at: **the wider of its own base and any floor it
+ * has already been grown to**.
+ *
+ * A one-way ratchet, and both directions matter:
+ *
+ * - **Up, automatically.** A column too narrow to show a document grows to the
+ *   reading floor when one is opened, which is the behaviour a default column
+ *   has always had.
+ * - **Down, never — including on close.** The grown width stays after the reader
+ *   closes. Returning to the base would be the app resizing the column downward
+ *   on its own, which is the complaint, and "but it went back to what you set"
+ *   is still the app moving something the user was looking at.
+ *
+ * The floor is **transient**, held in the board rather than written to the view
+ * document. Persisting it would mean a git commit every time a document was
+ * opened in a narrow column (`useColumnWidth` writes `extra.width` per gesture,
+ * one history entry per resize by design) — the app quietly editing a document
+ * because you clicked something.
+ *
+ * A user's own resize clears the floor: their gesture is the authority on width,
+ * and a floor that outlived it would make the column refuse to be narrowed.
+ */
+export function renderedWidth(base: number, floor: number, viewportWidth: number): number {
+  return Math.max(
+    clampColumnWidth(base, viewportWidth),
+    Math.min(floor, clampColumnWidth(floor, viewportWidth)),
   );
 }

@@ -634,6 +634,40 @@ guarantees the watcher commits it as the `user` edit it is.
 | CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | done | P1 | — |
 | INFRA-027 | `issues/PLAN.md` and the issue files disagree, and nothing checks (PR #44 review) | done | P1 | — |
 
+### Phase 33 — the reader's shape follows the person using it (2026-08-16)
+
+Filed from use rather than from a plan. The user, writing a comment on a long
+section: *"I often have to scroll up to see what I'm commenting on… I want to be
+able to keep typing while seeing the content I'm commenting on."* The reply box
+sits in ordinary flow, so reading what you are answering and seeing where you
+type it are currently exclusive.
+
+Three more from the same sitting, all the same shape — **the surface you write
+in gets in the way of the thing you are writing about**. `UI-111` is not a
+feature request but a **spec-compliance defect**: §11's rider of 2026-08-05 says
+"every composer takes attachments" and names "a comment on a document selection"
+in its own list, and that popover has no attachment code at all. `UI-112` is the
+comment modal sitting on the evidence, and a highlight that arrives only after
+the comment is posted — `useTurnComments.tsx` says it outright: "the highlight is
+the anchor the server resolved", i.e. painted at the moment it stops mattering.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| UI-110 | The composer you are typing in stays visible while you scroll what you are commenting on | done | P0 | — |
+| UI-111 | The comment popover takes no attachments, and §11 says every composer does | todo | P0 | — |
+| UI-112 | The comment popover can be moved, and what it is about stays lit while you write | todo | P0 | — |
+| UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
+
+**Scope for v0.10.0** (agreed 2026-08-16). This phase carries the four issues
+above plus three that share their theme and their files: `UI-070` (attachments
+through one kit surface — `UI-111` is its missing half, and doing them apart
+means extracting the same surface twice), `UI-095` (clicking a comment does not
+take you to it) and `PLUGINS-015` (the Todos checkbox opens the item instead of
+checking it). Two correctness bugs ride along because they sit in files this
+phase is already in: `SERVER-102` (adding a tag races on a single document) and
+`SERVER-097` (a `doc.edited` range starts at a commit that touched a different
+document — in the provenance path v0.9.0 shipped).
+
 ### Unrowed backlog — issues that existed with no PLAN row (INFRA-027, 2026-08-13)
 
 Seven issue files were on disk and in nobody's plan, which is the quieter half of
