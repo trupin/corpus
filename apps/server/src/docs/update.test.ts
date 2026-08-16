@@ -466,3 +466,127 @@ describe("squash-on-idle, through the API", () => {
     expect(authors[1]).toBe("user");
   });
 });
+
+// SPEC.md §7, its own example: "A write that names its own delta does **not**
+// need one — adding a tag … Those say what they change, so they **merge with
+// whatever else happened** rather than overwriting it."
+//
+// That sentence was true of `POST /api/docs/bulk`'s `tag` act and false here
+// (SERVER-102, found by PR #43's review), because the single-document route
+// offered only `tags` — the whole set. A caller that meant to add one tag had to
+// read the list, merge it and send the result, and two such callers lose a tag.
+// Every case below issues **both writes before awaiting either**: the point is
+// the concurrency, not the arithmetic.
+describe("PUT /api/docs/{id} — a tag delta merges rather than overwrites", () => {
+  const tagged = async (id: string): Promise<string[]> => {
+    const response = await ws.request(`/api/docs/${id}`);
+    const doc = (await response.json()) as { frontmatter: { tags: string[] } };
+    return doc.frontmatter.tags;
+  };
+
+  it("keeps both tags when two writers add one each at the same time", async () => {
+    ws = createWriteWorkspace("tag-delta-race");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Estate", body: "one\n" });
+
+    const [first, second] = await Promise.all([
+      putDoc(ws, created.id, { addTags: ["alpha"] }),
+      putDoc(ws, created.id, { addTags: ["beta"] }),
+    ]);
+
+    expect([first.status, second.status]).toEqual([200, 200]);
+    expect([...(await tagged(created.id))].sort()).toEqual(["alpha", "beta"]);
+    // And on disk, which is the source of truth §5 names — not only in the row.
+    expect(ws.read(created.path)).toContain("alpha");
+    expect(ws.read(created.path)).toContain("beta");
+  });
+
+  // The same two writers, spelling the same intent the only way this route used
+  // to allow. It still loses a tag, which is why the delta had to exist: the fix
+  // is a wire shape, and this case is what proves that rather than a guard.
+  it("loses one when the same two writers each send a whole set they computed", async () => {
+    ws = createWriteWorkspace("tag-set-race");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Estate", body: "one\n" });
+
+    // Both read the same list — the read-then-write every client-side merge is.
+    const before = await tagged(created.id);
+    await Promise.all([
+      putDoc(ws, created.id, { tags: [...before, "alpha"] }),
+      putDoc(ws, created.id, { tags: [...before, "beta"] }),
+    ]);
+
+    expect(await tagged(created.id)).toHaveLength(1);
+  });
+
+  it("merges a removal against the file too, not against what the caller last read", async () => {
+    ws = createWriteWorkspace("tag-delta-remove");
+    ws.reproject();
+    const created = await createDoc(ws, {
+      type: "note",
+      title: "Estate",
+      body: "one\n",
+      tags: ["draft", "housing"],
+    });
+
+    await Promise.all([
+      putDoc(ws, created.id, { removeTags: ["draft"] }),
+      putDoc(ws, created.id, { addTags: ["reviewed-2026"] }),
+    ]);
+
+    expect([...(await tagged(created.id))].sort()).toEqual(["housing", "reviewed-2026"]);
+  });
+
+  it("resolves a tag named in both lists as a removal, exactly as the bulk act does", async () => {
+    ws = createWriteWorkspace("tag-delta-both");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Estate", tags: ["a"] });
+
+    await putDoc(ws, created.id, { addTags: ["b"], removeTags: ["b", "a"] });
+
+    expect(await tagged(created.id)).toEqual([]);
+  });
+
+  it("writes nothing when the delta asks for what the document already carries", async () => {
+    ws = createWriteWorkspace("tag-delta-noop");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Estate", tags: ["housing"] });
+    ws.advance(SQUASH_IDLE_MS);
+    const head = ws.head();
+
+    const response = await putDoc(ws, created.id, {
+      addTags: ["housing"],
+      removeTags: ["absent"],
+    });
+
+    expect(response.status).toBe(200);
+    // No commit, so no `updated` re-stamp either: §7's no-op, not a save.
+    expect(ws.head()).toBe(head);
+  });
+
+  it("needs no key — it is the write §7 holds up as the canonical keyless one", async () => {
+    ws = createWriteWorkspace("tag-delta-keyless");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Estate", body: "one\n" });
+
+    const response = await ws.put(`/api/docs/${created.id}`, { addTags: ["housing"] });
+
+    expect(response.status).toBe(200);
+    expect(await tagged(created.id)).toEqual(["housing"]);
+  });
+
+  it("refuses a request that both states the set and changes it", async () => {
+    ws = createWriteWorkspace("tag-delta-contradiction");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Estate", tags: ["a"] });
+
+    const response = await ws.put(`/api/docs/${created.id}`, {
+      tags: ["a", "b"],
+      addTags: ["c"],
+    });
+
+    expect(response.status).toBe(400);
+    // Nothing was written: a refusal is never a half-applied edit.
+    expect(await tagged(created.id)).toEqual(["a"]);
+  });
+});

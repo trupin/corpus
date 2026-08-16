@@ -48,7 +48,7 @@ export const detachCommand: WorkspaceCommandSpec = {
     "artifact out of a scope unseen. **A correction rather than a lock** — a later write that " +
     "names a job may claim the document again, so this does not seal it. A document that must " +
     "stay unfiled stays unfiled by nobody writing it from a job.\n\n" +
-    "An origin is never *set* from here, or from anywhere else a caller can reach: the server " +
+    "An origin is never _set_ from here, or from anywhere else a caller can reach: the server " +
     "records it from the `job` a write names, which is why `--job` exists on the writing verbs " +
     "and no `--origin` exists anywhere.",
   args: [{ name: "id", required: true, description: "The document's id." }],

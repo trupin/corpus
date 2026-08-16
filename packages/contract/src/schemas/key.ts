@@ -232,26 +232,29 @@ export const documentKeyRequestField = DocumentKeySchema.optional().describe(
  * request did not itself state. `extra` does not: it is an RFC 7386 shallow
  * merge patch, so it is per-key delta by construction.
  *
- * **`tags` is deliberately not here**, and the residual is stated rather than
- * hidden: §7 names *"adding a tag"* among the writes that need no key, and
- * CONTRACT-049's acceptance criteria name *"tag add/remove"* the same way. This
- * request's `tags` is nonetheless a whole-set replacement, so two writers each
- * replacing the set can still lose a tag — §7's *"What a key does not do"*
- * governs that class. Adding `tags` here would refuse the write §7 names as the
- * canonical keyless one.
+ * **`tags` is deliberately not here**, and the reason is now a mechanism rather
+ * than a residual (SERVER-102). §7 names *"adding a tag"* among the writes that
+ * need no key, and CONTRACT-049's acceptance criteria name *"tag add/remove"*
+ * the same way; adding `tags` to this list would refuse the write §7 holds up as
+ * the canonical keyless one.
  *
- * **Only one of the two add/remove paths actually merges** (PR #43 review,
- * finding 4 — an earlier draft of this paragraph claimed both did, and the
- * correction matters because this is the document the next person consults when
- * classifying a new field). `POST /api/docs/bulk`'s `tag` action merges
- * **server-side**, inside the write lane, so it genuinely cannot lose a tag.
- * `corpus doc edit --add-tag` reads the list, merges in the client, and sends
- * the whole set — an accepted race that `apps/cli/src/commands/doc/edit.ts`
- * documents at its own call site (CLI-008 item 3), and that §7's keyless rule
- * does not close. So §7's *"they merge with whatever else happened"* is
- * literally true of the bulk path and is a statement about **shape** rather than
- * mechanism for the CLI one: a named delta is mergeable, and this API does not
- * yet offer the wire shape that would merge it. SERVER-102 tracks closing that.
+ * **Both add/remove paths merge server-side, and that is what makes the
+ * classification honest.** PR #43's review found that only one did: `POST
+ * /api/docs/bulk`'s `tag` act computed the next set inside the write lane, while
+ * `corpus doc edit --add-tag` read the list, merged in the client and sent the
+ * whole set — reproducibly losing one of two concurrent tags. The fix was the
+ * missing **wire shape**, not a key: `UpdateDocRequest` now carries
+ * `addTags`/`removeTags` beside `tags`, and the server merges them against the
+ * file it is holding. So §7's *"they merge with whatever else happened"* is
+ * literally true of both paths.
+ *
+ * `tags` itself remains on the request and remains a whole-set replacement, for
+ * the caller that genuinely means *these and no others*. Last-writer-wins on it
+ * is §7's *"What a key does not do"* — and it is now a shape a caller chooses
+ * rather than the only one on offer, which is the whole difference. It is the
+ * **only** whole-set field on `UpdateDocRequest`: every other frontmatter field
+ * there is a scalar, a nullable view key, or `extra`'s per-key merge patch, so
+ * none of them can lose a neighbour's change the way a set can.
  *
  * A **whole-frontmatter rewrite** — §7's second keyed write — is not a shape
  * this API offers: every frontmatter field on `UpdateDocRequest` is named

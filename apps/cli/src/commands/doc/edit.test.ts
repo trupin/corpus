@@ -13,7 +13,6 @@ import {
   describeAnchors,
   editCommand,
   instantNow,
-  mergeTags,
   parseExtraFlags,
   parseExtraValue,
   runDocEdit,
@@ -268,7 +267,7 @@ describe("corpus doc edit", () => {
     }
   });
 
-  it("reads the document once when --status and --add-tag are used together", async () => {
+  it("still reads once for --status, and sends the tag delta alongside it", async () => {
     const stub = await startStubServer((request, response) => {
       if (request.method === "GET") return sendJson(response, 200, DOC);
       sendJson(response, 200, UPDATED);
@@ -280,14 +279,18 @@ describe("corpus doc edit", () => {
 
     await runDocEdit(harness.context, { stdinIsBodySource: false });
 
+    // The `GET` is `--status`'s alone now: it phrases the archived refusal.
     expect(stub.requests.map((request) => request.method)).toEqual(["GET", "PUT"]);
     expect(bodyOf(stub.requests[1]?.body)).toEqual({
       status: "resolved",
-      tags: ["finance", "housing"],
+      addTags: ["housing"],
     });
   });
 
-  it("reads the current tags before merging --add-tag and --remove-tag", async () => {
+  // SERVER-102: the merge moved to the server, so the wire carries the change
+  // rather than a list the client computed from a read that may already be
+  // stale. `DOC` carries `tags: ["finance"]`; nothing here consults it.
+  it("sends --add-tag/--remove-tag as a delta, in one request and with no read", async () => {
     const stub = await startStubServer((request, response) => {
       if (request.method === "GET") return sendJson(response, 200, DOC);
       sendJson(response, 200, UPDATED);
@@ -299,8 +302,13 @@ describe("corpus doc edit", () => {
 
     await runDocEdit(harness.context, { stdinIsBodySource: false });
 
-    expect(stub.requests.map((request) => request.method)).toEqual(["GET", "PUT"]);
-    expect(bodyOf(stub.requests[1]?.body)).toEqual({ tags: ["housing"] });
+    expect(stub.requests.map((request) => request.method)).toEqual(["PUT"]);
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({
+      addTags: ["housing"],
+      removeTags: ["finance"],
+    });
+    // The whole-set field is never sent: it is what loses a concurrent tag.
+    expect(JSON.stringify(bodyOf(stub.requests[0]?.body))).not.toContain('"tags"');
   });
 
   it("issues exactly one request when no tag flag is used, so a refusal is one round trip", async () => {
@@ -1039,25 +1047,13 @@ describe("corpus doc edit --extra-json (SPEC 38)", () => {
 });
 
 describe("edit helpers", () => {
-  it("merges tags with removal winning over addition", () => {
-    expect(mergeTags(["a", "b"], ["c"], ["a"])).toEqual(["b", "c"]);
-    expect(mergeTags(["a"], ["a"], [])).toEqual(["a"]);
-    expect(mergeTags(["a"], ["b"], ["b"])).toEqual(["a"]);
-  });
-
-  it("removing a tag the document does not carry leaves the list alone", () => {
-    expect(mergeTags(["a", "b"], [], ["c"])).toEqual(["a", "b"]);
-    expect(mergeTags([], [], ["c"])).toEqual([]);
-  });
-
-  it("states the accepted read-modify-write race where a caller will read it", () => {
-    // CLI-008 item 3 stays WAIVED-with-rationale under SPEC.md §7: a tag edit
-    // names its own delta, so it is deliberately keyless and the race survives
-    // — with an opt-out the help now names, since presenting `--key` on a tag
-    // edit is checked like any other write.
-    expect(editCommand.description).toContain("needs no key");
-    expect(editCommand.description).toContain("only the later one's tag");
-    expect(editCommand.description).toContain("Passing `--key` closes that window");
+  it("tells a caller the tag flags send a change, and no longer advertises a race", () => {
+    // CLI-008 item 3 is CLOSED by SERVER-102 rather than waived: the merge is
+    // the server's, so the help must not go on offering `--key` as the way to
+    // close a window that no longer exists.
+    expect(editCommand.description).toContain("send the change, not the resulting list");
+    expect(editCommand.description).toContain("both land");
+    expect(editCommand.description).not.toContain("later one's tag");
   });
 
   it("writes instants to the second, like the frontmatter the server stamps", () => {

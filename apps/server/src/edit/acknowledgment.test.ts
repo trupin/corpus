@@ -247,6 +247,57 @@ describe("doc.edited over the real write path", () => {
     }
   });
 
+  // SERVER-097, reproduced from the user's live workspace: an acknowledgment
+  // whose `from` was a commit by the **agent** to a **different document**.
+  //
+  // §4's window belongs to a party, so branch order and this document's own
+  // order diverge routinely: the commit immediately before a session's first one
+  // is whatever the other party last did, to whatever document. `from` is a
+  // claim about *this* document's prior state, so it has to name a commit that
+  // touched it.
+  it("names the previous commit that touched this document, not the branch's previous commit", async () => {
+    const ws = workspace("ack-from-other-doc", { editAckIdleMs: IDLE_MS });
+    const alpha = await createDoc(ws, { type: "note", title: "Estate", body: "north wall\n" });
+    const created = ws.head();
+    pastTheSquashWindow(ws);
+
+    // The other party, the other document: this closes the user's window and
+    // opens its own, so it lands as the commit immediately before the save below.
+    const beta = await createDoc(ws, { type: "note", title: "Comment", body: "b1\n" }, "agent");
+    expect(beta.id).not.toBe(alpha.id);
+
+    await edit(ws, alpha.id, "north wall\nneeds repointing\n");
+    const saved = ws.head();
+    // The interloper really is between them on the branch, and really did not
+    // touch this document.
+    const interloper = ws.git("rev-parse", `${saved}^`).trim();
+    expect(ws.git("show", "--name-only", "--format=", interloper)).not.toContain(alpha.path);
+
+    expect((await flush(ws, alpha.id)).status).toBe(204);
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+
+    const payload = acknowledgments(ws)[0];
+    expect(payload?.to).toBe(saved);
+    expect(payload?.from).not.toBe(interloper);
+    // The whole property, stated as git states it: `from` is a commit in which
+    // this document's file changed.
+    expect(ws.git("show", "--name-only", "--format=", payload?.from ?? "")).toContain(alpha.path);
+    // And it is the *newest* such commit before the session — the create, whose
+    // sha the agent's window-closing relabel moved.
+    expect(payload?.from).toBe(
+      ws.git("rev-list", "--max-count=1", `${saved}^`, "--", alpha.path).trim(),
+    );
+    expect(ws.log("%H")).toContain(payload?.from);
+    // Narrowing the base changes nothing about what the range reports: every
+    // commit it skipped over was another document's, and the stats were already
+    // path-scoped. `created` is the sha before the relabel, so it is named only
+    // to assert it is *not* what survives.
+    expect(payload?.from).not.toBe(created);
+    expect(payload?.stats).toEqual({ commits: 1, insertions: 2, deletions: 1 });
+  });
+
   it("acknowledges a document created and edited in one sitting as one whole change", async () => {
     // §4 folds a create and the saves that follow it into **one** commit, so the
     // session's only commit *is* the create and its range is that commit's own —

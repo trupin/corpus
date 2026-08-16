@@ -27,6 +27,7 @@ import { DOCS_KEY, docKey } from "../events/index.js";
 import { assertDocumentKey } from "./key.js";
 import { stampedOrigin } from "./create.js";
 import { loadDocument, readAnchorsMap, toWireDoc } from "./read.js";
+import { nextTags } from "./tags.js";
 import {
   runMutation,
   validateBeforeWrite,
@@ -141,6 +142,24 @@ export function changedFields(
     if (value === undefined) continue;
     if (sameValue(current[key], value)) continue;
     changed[key] = value;
+  }
+  // SPEC.md §7's canonical keyless write, made true of this route as well as of
+  // the bulk one (SERVER-102). `tags` above carries the **whole set**, so a
+  // caller that wanted one more tag had to read the list and merge it itself —
+  // and two such callers each lose the other's tag. `addTags`/`removeTags` name
+  // the change instead, and the merge happens **here**: against `current`, which
+  // is the file this save just read off disk, inside the document's lane. There
+  // is no window between the read and the write for another tag to arrive in,
+  // which is the whole difference between the two shapes.
+  //
+  // The contract refuses `tags` alongside either delta, so this can never
+  // contend with the loop above for the same key.
+  if (patch.addTags !== undefined || patch.removeTags !== undefined) {
+    const merged = nextTags(current["tags"], patch.addTags, patch.removeTags);
+    // Through the same "different from the file?" gate every other field passes,
+    // so a delta that asks for what is already there is a no-op rather than a
+    // commit — the autosave rule, applied to the verb §11 calls a no-op too.
+    if (!sameValue(current["tags"], merged)) changed["tags"] = merged;
   }
   for (const key of CLEARABLE_FRONTMATTER_KEYS) {
     applyPatchEntry(changed, current, key, patch[key]);

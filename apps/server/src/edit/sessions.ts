@@ -39,7 +39,7 @@ import {
 } from "@corpus/contract";
 import { resolveRevision, type CommitOutcome, type Git } from "../git/index.js";
 import { silentLogger, type Logger } from "../logger.js";
-import { parentOf, readRangeStats } from "./diff.js";
+import { previousCommitFor, readRangeStats } from "./diff.js";
 
 /**
  * §4's acknowledgment window: how long a document may sit with no user editor
@@ -361,7 +361,10 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
       });
       return;
     }
-    const from = (await parentOf(git, first)) ?? EMPTY_TREE_OBJECT_ID;
+    // **This document's** previous commit, never the branch's (SERVER-097). See
+    // `previousCommitFor`: under §4's party-scoped window the commit before a
+    // session's first one is routinely the other party's, to another document.
+    const from = (await previousCommitFor(git, first, session.path)) ?? EMPTY_TREE_OBJECT_ID;
     const stats = await readRangeStats(git, from, to, session.path);
 
     // Nothing to acknowledge. `commits: 0` is the contract's own rule ("a
