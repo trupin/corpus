@@ -718,6 +718,16 @@ through.
 | --- | --- | --- | --- | --- |
 | INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | todo | P1 | — |
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | todo | P1 | — |
+| SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
+
+`SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
+had to pick a precedence between an artifact's own `origin` and its `parent`
+chain when the two reach different designated scopes, and §7 states a guarantee
+("an artifact belongs to at most one scope") whose stated reason — origin is
+single-valued — covers only one of the two routes into a scope. The code took
+origin-first and ships that way; what needs a signed rider is the spec sentence
+that made both readings look correct. It needs user sign-off, so it cannot ride
+in v0.10.0 unattended.
 
 ### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 
