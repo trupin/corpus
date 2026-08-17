@@ -167,8 +167,13 @@ function presenceCell(lane: AgentLane, now: number): string {
  * `since` as an age, or `null` when it is not an instant at all — in which case
  * the row prints the bare verdict rather than `parked NaNs ago`. The state is
  * the fact a reader needs; the age is the detail beside it.
+ *
+ * Exported for `corpus queue status`, which renders the same `{live, since}`
+ * pair at the workspace's grain (CLI-046). One reading of `since` there and
+ * here, for the reason `formatAge` gives about ages: two surfaces answering
+ * "when was somebody last here" must not disagree about the answer.
  */
-function sinceAge(since: string | null, now: number): string | null {
+export function sinceAge(since: string | null, now: number): string | null {
   if (since === null) return null;
   const seen = Date.parse(since);
   return Number.isNaN(seen) ? null : formatAge(now - seen);
