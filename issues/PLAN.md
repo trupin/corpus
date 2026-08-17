@@ -659,7 +659,10 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | todo | P1 | — |
-| SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | todo | P0 | — |
+| SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | done | P0 | — |
+| CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | todo | P0 | — |
+| SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | todo | P0 | CONTRACT-055 |
+| SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | — |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | todo | P2 | SERVER-113 |
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
@@ -676,6 +679,21 @@ notes that `SERVER-086` is now partly superseded: its standalone "last agent
 contact" scalar is exactly the second definition of liveness the shared
 vocabulary removed, so it must aggregate `SERVER-112`'s tracker rather than keep
 its own clock.
+
+**Third scope addition, 2026-08-16 — `CONTRACT-055` + `SERVER-115`, forced by
+this release's own UI work.** `SERVER-114`'s sweep found six more emitters that
+never name `["agents"]` although they change what the roster would answer — queue
+transitions, job-log appends, a designated thread's title, projection rebuild,
+out-of-band thread edits and queue-event moves, and deleting a designated root
+thread. They are latent **only because nothing caches `/api/agents` yet**, and
+`UI-108` and `UI-109` exist to put the roster on screen. The day either lands a
+cached `useAgents`, all seven become live staleness bugs: a recipient picker that
+keeps offering an agent that left, a board that keeps showing a resident whose
+thread was deleted. So this release either fixes them or ships the feature and
+the bugs together. `SERVER-116` (the index's "degraded ranking" word, same shape,
+three routes and one key) is **not** pulled in: it is a different subsystem, and
+its fix is a real design question — the obvious emit makes every progress tick
+re-read every board column.
 
 **Second scope addition, 2026-08-16 — `PLUGINS-012`.** `UI-111` audited every
 surface §11's attachment rider names and fixed all but one: the Todos plugin's
