@@ -65,14 +65,15 @@ export const PRESENCE_QUERY_KEYS: readonly QueryKey[] = [AGENTS_KEY, QUEUE_KEY];
  * **Derived from the contract, never chosen here.** §7 deliberately leaves the
  * length open but guarantees exactly one bound on it — *"the window is longer
  * than a rearm gap"* — and the rearm gap is bounded by the idle timeout, which
- * the contract fixes at `MAX_IDLE_TIMEOUT_SECONDS = 480`. It is the **max**, not
- * the default, that bounds the gap: the default is what a client gets when it
- * asks for nothing, while the max is what every park is admitted under and what
- * the CLI's segmenting loop parks for. A park cannot outlive it and the skill
+ * the contract fixes as `MAX_IDLE_TIMEOUT_SECONDS`. It is the **max**, not the
+ * default, that bounds the gap: the default is what a client gets when it asks
+ * for nothing, while the max is what every park is admitted under and what the
+ * CLI's segmenting loop parks for. A park cannot outlive it and the skill
  * re-invokes immediately, so a healthy listener is un-parked for milliseconds
  * and absent for at most one whole park cycle when a rearm is missed.
- * `AGENT_PRESENCE_WINDOW_SECONDS` is that max doubled — `480 × 2 = 960 s`: it
- * tolerates one wholly missed rearm and calls two a departure.
+ * `AGENT_PRESENCE_WINDOW_SECONDS` is the contract's window over that max — long
+ * enough to tolerate one wholly missed rearm, short enough that two are a
+ * departure. By how much, and why, is stated where the constant is chosen.
  *
  * **The multiple is not restated here** (CONTRACT-060). This file multiplies the
  * contract's seconds by 1000 and does nothing else; the choice of multiplicand
