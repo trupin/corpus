@@ -343,11 +343,15 @@ switch.
   string that may change without notice — and you must not invent a separator: no probe, no
   holding back a pass to see what happens, no reading the lane's busyness. **Launch, and let
   the lane settle it.** A second listener parks, costs nothing while the conversation is quiet,
-  and the first message it is asked to answer tells it what it is: its claim comes back empty
-  on work its own park had just named, which on a live lane only another listener can cause,
-  and it exits. That is a wasted session, occasionally. The failure you would buy by holding
-  back has no repair in it at all — a listener that really did die, on a lane nobody relaunches,
-  with a person waiting on the fallback indefinitely.
+  and at the first message either of them is asked to answer, one of the two finds out it is
+  second and goes — nothing posted, nothing worked, and nobody answered twice. **How it finds
+  that out is the converse skill's to state, and it is stated there alone.** A resident runs
+  that test, on a lane you never claim and never see; you neither run it nor observe it, and a
+  second account of it here would be a second thing to keep in step — which is how the two came
+  to disagree once already. What you rely on is the outcome: a duplicate resolves itself at
+  the first message, so launching costs a wasted session, occasionally. The failure you would
+  buy by holding back has no repair in it at all — a listener that really did die, on a lane
+  nobody relaunches, with a person waiting on the fallback indefinitely.
 
 - **But never in the same pass you took that lane's work.** This is why launching happens after
   the claim rather than at the roster read, and it is the one collision the fallback can

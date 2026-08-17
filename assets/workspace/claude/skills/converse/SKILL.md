@@ -657,9 +657,27 @@ until it has lapsed out of presence, so a guarded claim would strand them for a 
 window in order to tidy a parameter. Draining them is therefore the departing listener's job,
 and it is the first step below.
 
+**Unless the conversation has been designated again — and then the drain is not yours to
+make.** One thread released and designated again is one lane with two residents in succession,
+and the second one's listener takes that lane exactly as you took it. So the argument above
+turns over on its own premise: those events *can* be reached by somebody else now, they are the
+successor's ordinary pending work, and your claim would take them out from under a listener
+that has just parked on them. What that costs is not a late answer. An id its own park named,
+coming back held by a caller it cannot identify, is the one thing a listener stands down on
+(*The loop*) — and the row says nothing about who holds it or that they are leaving, so it
+cannot read your departure as anything but a peer. Your last act would be to evict the healthy
+listener that replaced you. So **read the roster immediately before you drain**, and read a row
+for your thread as what it now is: a designation that is not yours. The events stay `pending/`
+on the lane, which is exactly where the successor's own claim is about to look for them.
+
 When your row is gone from the roster, or your park was refused:
 
-1. Finish and settle any event you are holding, then make **one** last
+1. Finish and settle any event you are holding. Then **read the roster once more, and drain
+   only if your thread still has no row** — `corpus agents` immediately before the claim rather
+   than minutes earlier, because what it is testing is whether somebody has been designated in
+   your place while you were leaving. **A row that is back ends this list here**: post nothing,
+   drain nothing, and exit, having settled what you were holding. Where there is no row,
+   make **one** last
    `corpus queue claim-all --thread th_4b8e2c` and work what it hands you. Work already
    stamped for your lane is still yours — releasing strands nothing and rewrites nothing.
    **One claim is provably enough**, so do not claim again to check: the verb takes the
@@ -686,7 +704,7 @@ A job's log belongs to an event, so there is normally nothing to log a retiremen
 time you read the roster you have settled everything you held. Where you are still holding
 one — a release that arrived while you were mid-work — log the exit there before you settle
 it. Otherwise the sign-off turn, or the absence of one, is the whole record, and that is
-enough: the roster already stopped listing the lane.
+enough: the roster already says this lane is not yours.
 
 Reopening a resolved thread later does not bring you back: the conversation resumes on the
 orchestrator's lane, and designating again is a deliberate act, as the first one was.
@@ -722,7 +740,13 @@ corpus job log evt_7c1d9a "claimed comment.created on th_4b8e2c — working it i
 ```
 
 Nothing is held, so there is nothing to reconcile — and had something been, this being the
-session's first claim it would have been somebody else's and left where it was. The turn asks
+session's first claim it would have been somebody else's and left where it was. Which answer
+that row got would have turned on one thing, and this example is exactly the case it turns on:
+a first park and the claim that follows it. Had the held row been `evt_7c1d9a` itself — the id
+this park had just named as pending, coming back held by another caller instead of claimed to
+us — it would have been a second listener on this lane, and the answer would have been to exit
+here, having posted nothing and worked nothing, rather than to leave the row and carry on. Both
+answers belong to this same moment, so read them together. The turn asks
 for the rate assumption to be written down where the rest of the plan can find it. That is one
 document and one reply, in this session — no dispatch, because there is nothing here a
 subagent would do better than the agent that has been in the conversation since the first
@@ -784,8 +808,9 @@ Stepping out of this conversation — it has been handed back to the general age
 EOF
 ```
 
-The row is gone, so one last claim goes out for anything stamped before the release — here it
-is empty, because everything was worked as it arrived — and then, the thread still being open,
+The row is gone rather than back — nobody was designated in our place while we were leaving —
+so one last claim goes out for anything stamped before the release, and here it is empty
+because everything was worked as it arrived. Then, the thread still being open,
 the sign-off is posted and the session ends. Nothing is settled, because everything was settled
 as it was worked, and nothing is logged, because no event is being held to log it to. No
 further park is attempted, and there would be no point in one: the lane is not this agent's

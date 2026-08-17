@@ -2294,12 +2294,28 @@ describe("orchestrate skill body", () => {
         /no probe, no\s+holding back a pass to see what happens, no reading the lane's busyness/,
       );
       expect(routing).toMatch(/whose length is promised and whose content is not/);
-      // Where the duplicate is resolved instead, in the converse skill's terms.
+      // Where the duplicate is resolved instead. AGENT-032: the mechanism was
+      // restated here and then maintained only in `converse`, so the two
+      // disagreed — this skill now carries the outcome it relies on and a
+      // pointer, and the restatement is deleted rather than synchronised. The
+      // negative matcher runs against the shipped sentence in "one rule, one
+      // skill", which is also where the general form of the rule is pinned.
       expect(routing).toMatch(/\*\*Launch, and let\s+the lane settle it\.\*\*/);
-      expect(routing).toMatch(/its claim comes back empty\s+on work its own park had just named/);
+      expect(routing).toMatch(
+        /one of the two finds out it is\s+second and goes — nothing posted, nothing worked, and nobody answered twice/,
+      );
+      expect(routing).toMatch(
+        /\*\*How it finds\s+that out is the converse skill's to state, and it is stated there alone\.\*\*/,
+      );
+      expect(routing).toMatch(/on a lane you never claim and never see/);
+      expect(routing).toMatch(/you neither run it nor observe it/);
+      expect(routing).toMatch(/which is how the two came\s+to disagree once already/);
+      expect(routing, "the deleted restatement is back").not.toMatch(
+        /its claim comes back empty\s+on work its own park had just named/,
+      );
       // And the asymmetry that makes launching the right side to err on.
       expect(routing).toMatch(
-        /The failure you would buy by holding\s+back has no repair in it at all/,
+        /The failure you would\s+buy by holding back has no repair in it at all/,
       );
       // The window stays the server's number here too.
       for (const restatement of ["16m", "16 minutes", "960"]) {
@@ -3386,6 +3402,31 @@ describe("converse skill body", () => {
       expect(body).toMatch(/Leaving the row is right either way; staying is not/);
     });
 
+    /**
+     * AGENT-032. The worked example annotated its empty held list with AGENT-027's
+     * answer alone — *"it would have been somebody else's and left where it was"* —
+     * in the one scenario this whole family is about: a listener's first park and
+     * first claim. Not wrong, and understated in exactly the paragraph shape whose
+     * first draft stood the surviving listener down in AGENT-031's drill. An
+     * example that gives one of two answers is read as giving the answer.
+     */
+    it("gives the worked example's first claim both of its answers", () => {
+      const example = body.slice(body.indexOf("## Worked example"));
+      expect(example).toMatch(
+        /had something been, this being the\s+session's first claim it would have been somebody else's and left where it was/,
+      );
+      expect(example).toMatch(/this example is exactly the case it turns on:\s+a first park/);
+      // The counterfactual is written on the example's own ids, so it is read
+      // against a payload the reader has just seen rather than in the abstract.
+      expect(example).toMatch(
+        /Had the held row been `evt_7c1d9a` itself — the id\s+this park had just named as pending/,
+      );
+      expect(example).toMatch(
+        /the answer would have been to exit\s+here, having posted nothing and worked nothing/,
+      );
+      expect(example).toMatch(/Both\s+answers belong to this same moment, so read them together/);
+    });
+
     it("says why the check belongs at the claim and forbids every earlier probe", () => {
       expect(body).toMatch(/\*\*Two parked listeners cost nothing until a message arrives\*\*/);
       expect(body).toMatch(/before the person has been answered twice or in two\s+voices/);
@@ -3643,6 +3684,51 @@ describe("converse skill body", () => {
       expect(retirementClaims.length, "no worked claim to check").toBeGreaterThan(1);
       for (const use of retirementClaims) expect(use.flags).toContain("--thread");
     });
+
+    /**
+     * AGENT-032, the fourth producer of the stand-down signal — and the only one
+     * that is not a peer listener. AGENT-030 gave a retiring listener a drain
+     * claim; a person may re-designate the same thread (which this skill already
+     * contemplates in *Settling your own lane*). Interleave the two: release →
+     * A's park refused → the thread is designated again → the orchestrator
+     * launches B → B parks and its park names E as pending → A's **drain** claim
+     * takes E. B then sees E held, its own park named it, and it did not claim
+     * it — all three exclusions pass, B exits, A is leaving, and the
+     * conversation has no listener.
+     *
+     * It cannot be excluded at B: the held row carries no claimant and never
+     * will (`apps/server/src/queue/held.ts`), so B cannot tell a retiring
+     * listener's hold from a peer's. So it is closed at the producer — the drain
+     * is conditional on a roster read taken immediately before it, and a row
+     * that is back is a designation belonging to somebody else. The residual
+     * race (a designation landing between that read and that claim) needs B's
+     * whole launch and startup to fit inside two consecutive commands, and its
+     * cost is a lane with no resident, which the orchestrator's fallback covers.
+     */
+    it("does not drain a lane that has been designated again", () => {
+      expect(body).toMatch(
+        /\*\*Unless the conversation has been designated again — and then the drain is not yours to\s+make\.\*\*/,
+      );
+      // Why the paragraph above it no longer settles the question on its own.
+      expect(body).toMatch(/the argument above\s+turns over on its own premise/);
+      expect(body).toMatch(/they are the\s+successor's ordinary pending work/);
+      // What it costs, in the successor's own terms — this is the part a
+      // rewrite cannot rederive, and the reason the drain is not merely rude.
+      expect(body).toMatch(
+        /the row says nothing about who holds it or that they are leaving, so it\s+cannot read your departure as anything but a peer/,
+      );
+      expect(body).toMatch(/evict the healthy\s+listener that replaced you/);
+      // The instrument, and its ordering — a roster read minutes old is no test.
+      expect(body).toMatch(/\*\*read the roster immediately before you drain\*\*/);
+      expect(body).toMatch(/a designation that is not yours/);
+      expect(body).toMatch(/\*\*A row that is back ends this list here\*\*/);
+      expect(body).toMatch(/post nothing,\s+drain nothing, and exit/);
+      expect(body).toMatch(
+        /`corpus agents` immediately before the claim rather\s+than minutes earlier/,
+      );
+      // And the worked example agrees rather than showing the unguarded drain.
+      expect(body).toMatch(/The row is gone rather than back — nobody was designated in our place/);
+    });
   });
 
   /**
@@ -3721,6 +3807,353 @@ describe("converse skill body", () => {
     const heredocs = body.match(/<<-?\s*\S+/g) ?? [];
     expect(heredocs.length).toBeGreaterThan(0);
     for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
+  });
+});
+
+/**
+ * AGENT-032 — the class rather than the instance.
+ *
+ * Four review findings in three passes have come from one rule written into two
+ * skills and then maintained in one of them. The last was load-bearing:
+ * `orchestrate` justified *"Launch, and let the lane settle it"* with the
+ * discriminator AGENT-031 had **deleted** from `converse` — *"its claim comes
+ * back empty on work its own park had just named"* — while `converse` said
+ * *"judge it on that id, and never on the claim being empty"*. Nothing in this
+ * file compared the two, so the contradiction shipped green.
+ *
+ * Two pins, because the duplication arrives in two shapes and neither catches
+ * the other:
+ *
+ * - **Copied prose** is caught mechanically, by shared passage. Every passage
+ *   the skills state twice today is recorded below with the reason it is stated
+ *   twice, so a new one fails here rather than at a reviewer.
+ * - **A paraphrase** defeats that — AGENT-029 wrote the same rule into both
+ *   files in different words — so a rule known to be single-owner is registered
+ *   with the mechanism's own vocabulary. The owner must state it; nobody else
+ *   may; and a skill that relies on it carries the outcome and a pointer.
+ *
+ * Neither pin decides where a rule belongs. What they enforce is that the
+ * decision is made once and recorded, which is the part that was missing.
+ */
+describe("one rule, one skill", () => {
+  const SKILLS = ["orchestrate", "converse", "comment"] as const;
+  type SkillName = (typeof SKILLS)[number];
+
+  const skillBody: Record<SkillName, string> = {
+    orchestrate: documentAt("claude/skills/orchestrate/SKILL.md").body,
+    converse: documentAt("claude/skills/converse/SKILL.md").body,
+    comment: documentAt("claude/skills/comment/SKILL.md").body,
+  };
+
+  /** Prose paragraphs of a skill body: fenced blocks dropped, wrapped lines rejoined. */
+  const proseBlocks = (body: string): string[] => {
+    const blocks: string[] = [];
+    let current: string[] = [];
+    let inFence = false;
+    for (const line of body.split("\n")) {
+      if (line.trimStart().startsWith("```")) {
+        inFence = !inFence;
+        continue;
+      }
+      if (inFence) continue;
+      if (line.trim() === "") {
+        if (current.length > 0) blocks.push(current.join(" "));
+        current = [];
+        continue;
+      }
+      current.push(line.trim());
+    }
+    if (current.length > 0) blocks.push(current.join(" "));
+    return blocks;
+  };
+
+  const proseSentences = (body: string): string[] =>
+    proseBlocks(body)
+      .flatMap((block) => block.split(/(?<=[.!?])\s+/))
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence !== "");
+
+  /**
+   * A body as a word stream, with everything a re-wrap or a re-emphasis changes
+   * taken out. Comparing words rather than lines is what makes the pin survive
+   * ordinary editing: reflowing a paragraph moves no word, and copying it into
+   * the other skill moves all of them.
+   */
+  const proseWords = (body: string): string[] =>
+    proseBlocks(body)
+      .join(" ")
+      .toLowerCase()
+      .replaceAll(/[*_`>#|]/g, " ")
+      .replaceAll(/[^a-z0-9%\-/.:'’]+/g, " ")
+      .split(/\s+/)
+      .filter((word) => word !== "");
+
+  /**
+   * Twelve words is about a clause, and it is where the two error rates cross.
+   * Measured on these three bodies: at six words `orchestrate` and `converse`
+   * share 258 runs, nearly all of them ordinary vocabulary, and every one would
+   * have to be recorded below; at twelve they share 13, each a real restatement.
+   * Going higher only lets a copied sentence through — most are shorter than
+   * twenty words.
+   */
+  const PASSAGE_WORDS = 12;
+
+  const shingles = (words: readonly string[]): string[] => {
+    const out: string[] = [];
+    for (let index = 0; index + PASSAGE_WORDS <= words.length; index += 1) {
+      out.push(words.slice(index, index + PASSAGE_WORDS).join(" "));
+    }
+    return out;
+  };
+
+  /** The maximal passages of `left` whose every shingle also occurs in `right`. */
+  const sharedPassages = (left: readonly string[], right: readonly string[]): string[] => {
+    const known = new Set(shingles(right));
+    const passages: string[] = [];
+    let start: number | null = null;
+    for (let index = 0; index + PASSAGE_WORDS <= left.length; index += 1) {
+      const shared = known.has(left.slice(index, index + PASSAGE_WORDS).join(" "));
+      if (shared && start === null) start = index;
+      if (!shared && start !== null) {
+        passages.push(left.slice(start, index - 1 + PASSAGE_WORDS).join(" "));
+        start = null;
+      }
+    }
+    if (start !== null) passages.push(left.slice(start).join(" "));
+    return passages;
+  };
+
+  /**
+   * Every passage two skills state today, with why. An entry is a decision that
+   * a rule is worth saying twice — not a licence for the next one, and not a
+   * claim that the duplication is a good idea. Entries are not asserted to be
+   * still in use: one going stale means a duplication was removed, which is the
+   * direction this pin exists to encourage.
+   */
+  const STATED_TWICE: readonly { readonly why: string; readonly passages: readonly string[] }[] = [
+    {
+      why: "the invariants a resident inherits — `converse` restates them condensed and names `orchestrate` as their authority, and `comment` states the same ones for a subagent that reads neither loop skill",
+      passages: [
+        "and go there when a detail is missing. 1. every mutation goes through the corpus cli. workspace files are never hand-edited not with an editor not with your own file tools not with shell redirection and the http api is never called directly. the server is the sole writer. 2. attribution is explicit.",
+        "not with an editor not with your own file tools not with shell redirection and",
+        "run export corpus from agent once at the start of the session and still pass --from agent on",
+        "and still pass --from agent on mutating commands the way the examples below",
+        "the way the examples below do. 3. you archive you never delete. where a person would delete",
+        "corpus doc archive . deletion belongs to the user alone and the cli refuses it from you. 4.",
+        "belongs to the user alone and the cli refuses it from you.",
+        "a write presents the key its read gave you. replacing a document's body",
+        "what it costs you to find something must not grow with the corpus. reading a body",
+      ],
+    },
+    {
+      why: "the loop's own shape — both skills run a loop, and each states the steps of its own rather than pointing at the other's",
+      passages: [
+        "by nobody with no error anywhere and nothing in the console to show for it. run these steps in order indefinitely: 1.",
+        "is the entire command never appended to the claim above it never combined with",
+        "it parks the full window and prints idle :true reason : halted",
+        "just claimed and inprogress what the server still thinks you are doing.",
+        "is not a correctness failure the server still never hands one event to two",
+      ],
+    },
+    {
+      why: "the settling grammar — both skills settle events, on their own lanes, and the reason a person reads is written the same way in both",
+      passages: [
+        "short sentence naming the object and the obstacle it is what the",
+        "and the person waiting on it gets no reply and no failed row to explain the silence.",
+      ],
+    },
+    {
+      why: "delegation, which a resident does under `orchestrate`'s rules for a side task and `orchestrate` does for every event",
+      passages: [
+        "in the job's log while it runs and in the reply the",
+        "one request stays one piece of work with one status and one reply whatever it took internally.",
+      ],
+    },
+    {
+      why: "*Writing a document* — stated in full in both `orchestrate` and `comment`. This is the same class as AGENT-032 and is recorded rather than fixed: it is not this issue's subject, and freezing it is what stops it growing further",
+      passages: [
+        "read work write with the key you were given keep the key the write returned.",
+        "means passing the --key that corpus doc show printed and the write prints a fresh key for the next edit.",
+        "- a fence closes only on a line that is nothing but",
+        "a change you can quote is a patch a change you cannot quote is a",
+        "if you can point at the text that is wrong a figure a sentence a paragraph that should go",
+        "and puts every other line in your hands where a bad paste",
+        "a patch presents no key and that is a consequence rather than an",
+        "across the gap the tail of what comes before and the head of what comes after as one excerpt",
+        "two refusals exit 10 both nothing written and their recoveries are opposites. the message names the count so branch on it rather than guessing.",
+        "quote more of what surrounds it until it occurs exactly once the line above",
+        "--all replaces every occurrence and is right only when every occurrence is genuinely what you meant never",
+        "reading a document prints its key a write that replaces the body presents that key the write prints a fresh",
+        "a key the document has moved past is exactly the statement i am about to overwrite something i never read",
+        "two refusals on a keyed write and only the first is a mistake.",
+        "the text you read and run the same command again with the fresh key. that retry is the mechanism working not a failure to report and",
+        "putting an older version back is this same loop. there is no revert command and",
+        "a revert is a write whose content came from history so it",
+        "corpus doc diff id prints the document's path and its last committed change and",
+        "read from git never write to it. git log git show and git diff are",
+        "the body. everything down to and including the closing --- is frontmatter the server owns",
+        "so pasting the file in as a body writes that frontmatter into the document",
+        "the version you just read so a revert that would clobber a change made since that read is refused with exit 9",
+        "landing on top of it. the age of the content is never the question what happened after your read is. a patched revert is guarded",
+      ],
+    },
+    {
+      why: "stewardship, which binds whoever does the work — `orchestrate` states the charter and `comment` states the parts a turn carries",
+      passages: [
+        "is how their writing disappears and every thread anchored into an entry you rewrote comes loose",
+        "the arrow a space then a one-line past-tense report of what the work did as in",
+        "when you keep meeting the same mess propose the sweep in a reply instead of quietly starting it.",
+      ],
+    },
+  ];
+
+  const recorded = new Set(
+    STATED_TWICE.flatMap(({ passages }) => passages).flatMap((passage) =>
+      shingles(proseWords(passage)),
+    ),
+  );
+
+  /** Every passage of `left` that `right` also states and nothing above accounts for. */
+  const undeclaredDuplication = (left: SkillName, right: SkillName): string[] =>
+    sharedPassages(proseWords(skillBody[left]), proseWords(skillBody[right])).filter((passage) =>
+      shingles(proseWords(passage)).some((shingle) => !recorded.has(shingle)),
+    );
+
+  const PAIRS: readonly (readonly [SkillName, SkillName])[] = [
+    ["orchestrate", "converse"],
+    ["orchestrate", "comment"],
+    ["converse", "comment"],
+  ];
+
+  it("records nothing that records nothing", () => {
+    // A passage shorter than one shingle contributes no shingle, so it would
+    // sit here declaring a decision it does not actually permit.
+    for (const { passages } of STATED_TWICE) {
+      for (const passage of passages) {
+        expect(
+          proseWords(passage).length,
+          `"${passage}" is shorter than a shared passage and permits nothing`,
+        ).toBeGreaterThanOrEqual(PASSAGE_WORDS);
+      }
+    }
+    expect(recorded.size).toBeGreaterThan(0);
+  });
+
+  it("finds the duplication it is looking for, before it is asked to find none", () => {
+    // Anti-vacuity in both directions. The recorded passages are really shared,
+    // so a normalizer that silently matched nothing would fail here — and a
+    // paragraph moved from one skill into the other is really reported, which
+    // is the case the pin exists for, proven without touching a file.
+    expect(
+      sharedPassages(proseWords(skillBody.orchestrate), proseWords(skillBody.converse)).length,
+    ).toBeGreaterThan(0);
+    const borrowed = proseSentences(skillBody.converse).find((sentence) =>
+      sentence.includes("An id your park named, held by somebody else when you claim"),
+    );
+    expect(borrowed, "the stand-down rule is missing from converse").toBeDefined();
+    const copied = sharedPassages(
+      proseWords(`${skillBody.orchestrate}\n\n${borrowed ?? ""}\n`),
+      proseWords(skillBody.converse),
+    ).filter((passage) => shingles(proseWords(passage)).some((shingle) => !recorded.has(shingle)));
+    expect(copied.length, "a paragraph copied between the skills goes unreported").toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("states no passage in two skills that is not a recorded decision", () => {
+    for (const [left, right] of PAIRS) {
+      expect(
+        undeclaredDuplication(left, right),
+        `${left} and ${right} now state the same passage. Delete one and point at the skill that owns the rule — or, if it genuinely belongs in both, record it in STATED_TWICE with the reason`,
+      ).toEqual([]);
+    }
+  });
+
+  /**
+   * A rule one skill owns and another relies on. `restatements` is the
+   * mechanism's own vocabulary — the words a paraphrase cannot avoid — so the
+   * registry catches what the passage pin cannot: the same rule written twice in
+   * different words, which is how AGENT-029 shipped it into both files.
+   */
+  interface SingleOwnerRule {
+    readonly rule: string;
+    readonly owner: SkillName;
+    readonly restatements: (body: string) => readonly string[];
+    /** Skills that rely on the rule: each carries the outcome and says where the rule lives. */
+    readonly pointers: readonly { readonly skill: SkillName; readonly carries: RegExp }[];
+  }
+
+  // A sentence states the peer-listener discriminator when it says both halves:
+  // that a park named an id, and that somebody else came back holding it.
+  const PARK_NAMED = /park (?:had just |just |never )?nam(?:ed|es|e)|named (?:as )?pending/i;
+  const HELD_ELSEWHERE =
+    /`inProgress`|held by|another (?:listener|caller)|second listener|claim comes back/i;
+
+  const SINGLE_OWNER_RULES: readonly SingleOwnerRule[] = [
+    {
+      rule: "how a second listener finds out it is second",
+      owner: "converse",
+      restatements: (body) =>
+        proseSentences(body).filter(
+          (sentence) => PARK_NAMED.test(sentence) && HELD_ELSEWHERE.test(sentence),
+        ),
+      pointers: [
+        {
+          skill: "orchestrate",
+          carries:
+            /\*\*How it finds\s+that out is the converse skill's to state, and it is stated there alone\.\*\*/,
+        },
+      ],
+    },
+    {
+      rule: "the weight levels a request may state",
+      owner: "orchestrate",
+      restatements: (body) => readWeightLevels(body).map(({ name, key }) => `${name} (${key})`),
+      // `comment` never chooses a model, so it carries no pointer — it is held
+      // only to the prohibition, which is what a rule's non-consumers owe it.
+      pointers: [{ skill: "converse", carries: /do not restate the table here/ }],
+    },
+  ];
+
+  it("keeps every registered rule in the one skill that owns it", () => {
+    for (const { rule, owner, restatements, pointers } of SINGLE_OWNER_RULES) {
+      expect(
+        restatements(skillBody[owner]).length,
+        `"${rule}" is registered to ${owner}, which no longer states it`,
+      ).toBeGreaterThan(0);
+      for (const skill of SKILLS.filter((name) => name !== owner)) {
+        expect(
+          restatements(skillBody[skill]),
+          `${skill} restates "${rule}", which ${owner} owns. Say the outcome you rely on and point at ${owner}`,
+        ).toEqual([]);
+      }
+      for (const { skill, carries } of pointers) {
+        expect(
+          skillBody[skill],
+          `${skill} relies on "${rule}" without pointing at ${owner}`,
+        ).toMatch(carries);
+      }
+    }
+  });
+
+  it("reports the restatement that shipped, which is what makes the registry worth having", () => {
+    // The pre-fix orchestrate sentence, verbatim from `phase-4-agent-loop`. It
+    // described the rule in the form AGENT-031 had already deleted from
+    // converse, and every check in this file passed over it.
+    const shipped =
+      "A second listener parks, costs nothing while the conversation is quiet, and the " +
+      "first message it is asked to answer tells it what it is: its claim comes back empty " +
+      "on work its own park had just named, which on a live lane only another listener can " +
+      "cause, and it exits.";
+    const standDown = SINGLE_OWNER_RULES.find(({ rule }) =>
+      rule.startsWith("how a second listener"),
+    );
+    expect(standDown, "the stand-down rule is no longer registered").toBeDefined();
+    expect(
+      standDown?.restatements(shipped) ?? [],
+      "the registry would have passed over the sentence that shipped",
+    ).not.toEqual([]);
+    expect(standDown?.restatements(skillBody.orchestrate) ?? ["unchecked"]).toEqual([]);
   });
 });
 
