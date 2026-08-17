@@ -717,8 +717,8 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | AGENT-032 | The stand-down rule is written in both skills, and they now contradict | todo | P0 | — |
-| CONTRACT-060 | The grace window is derived two different ways, and both tests pass by coincidence | todo | P1 | — |
-| UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | todo | P2 | — |
+| CONTRACT-060 | The grace window is derived two different ways, and both tests pass by coincidence | done | P1 | — |
+| UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 

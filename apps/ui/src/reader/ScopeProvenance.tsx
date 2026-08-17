@@ -18,8 +18,14 @@ import type { ReactElement } from "react";
  * ## Scope is the walk, and this describes the walk
  *
  * It says *what this document is part of*, never *the scope it is in* — §7 makes
- * membership computed by climbing `origin` then `parent`, and nothing carries a
- * marker. So the line is the walk's answer, drawn with the same
+ * membership a search over **both** of its edges, `parent` and `origin`, with
+ * **the parent branch explored first** (`walkScope`; the user's decision of
+ * 2026-08-17, SERVER-117), and nothing carries a marker. Until UI-120 this said
+ * *"climbing `origin` then `parent`"* — the single chain SERVER-117 deleted, in
+ * the order it deleted — and it is corrected out loud rather than quietly
+ * because UI-119's whole thesis is that a docblock claiming the wrong order is
+ * how the divergence survived a release; this was the last statement still
+ * claiming it. So the line is the walk's answer, drawn with the same
  * `useResidentLane` the composer and the pending row use, and it degrades the
  * same way: a chain whose reads have not landed says nothing rather than naming
  * the orchestrator (SHARED-044; CLI-043, AGENT-025 and UI-108 word it the same).

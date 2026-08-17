@@ -11,6 +11,7 @@ import type {
 } from "@corpus/contract";
 import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
+import { unknownRecipientBody } from "./serverRefusals";
 
 /**
  * A recording transport for the reader's suites.
@@ -303,21 +304,15 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
    * the point: a pick can go stale between the roster read and the post, and a
    * fixture that accepted one anyway would let a suite assert a routing the
    * server would never have performed (UI-118).
+   *
+   * The body comes from `serverRefusals.ts` rather than being written out here
+   * (UI-120): this copy had lost the server's recovery sentence, and no
+   * assertion noticed because they all match on `names no lane`.
    */
   const recipientRefusal = (stated: unknown): Response | undefined => {
     const lane = (stated as { recipient?: unknown } | undefined)?.recipient;
     if (typeof lane !== "string" || isLane(lane)) return undefined;
-    return json(
-      {
-        code: "unknown_recipient",
-        message:
-          `\`${lane}\` names no lane: either this workspace holds no such thread, or that ` +
-          "thread holds no resident and is therefore not a lane at all (SPEC.md §7). Nothing " +
-          "was written.",
-        recipient: lane,
-      },
-      422,
-    );
+    return json(unknownRecipientBody(lane), 422);
   };
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {

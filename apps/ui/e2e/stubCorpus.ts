@@ -62,6 +62,7 @@ import {
   resolveAnchorExact,
   type StubTurn,
 } from "./serverParity";
+import { unknownRecipientBody } from "../src/testing/serverRefusals";
 
 /**
  * A corpus, in the browser, for the specs that need one.
@@ -1156,24 +1157,18 @@ export async function stubCorpus(
      * a stub that took one anyway would let a spec assert a routing the server
      * would never have performed (UI-118). `orchestrator` always resolves; an
      * absent field is the ordinary case and needs no lookup.
+     *
+     * The body comes from `src/testing/serverRefusals.ts` (UI-120), which is the
+     * application's single transcription of it — this copy was the correct one
+     * of the three, and it is gone for the same reason the wrong two are: three
+     * copies is three chances to drift, and only one of them is checked against
+     * the server.
      */
     const recipientRefusal = (input: Record<string, unknown>): Promise<void> | undefined => {
       const lane = input["recipient"];
       if (typeof lane !== "string") return undefined;
       if (lane === ORCHESTRATOR_LANE || lanes.some((row) => row.lane === lane)) return undefined;
-      return json(
-        route,
-        {
-          code: "unknown_recipient",
-          message:
-            `\`${lane}\` names no lane: either this workspace holds no such thread, or that ` +
-            "thread holds no resident and is therefore not a lane at all (SPEC.md §7). Nothing " +
-            "was written — post without a recipient to reach whoever owns the conversation you " +
-            "are posting in, or pick a live agent from the roster.",
-          recipient: lane,
-        } satisfies UnknownRecipientError,
-        422,
-      );
+      return json(route, unknownRecipientBody(lane) satisfies UnknownRecipientError, 422);
     };
 
     if (url.pathname === "/api/queue/status") {

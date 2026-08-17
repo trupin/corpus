@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveAnchorExact as serverResolveExact } from "../apps/server/src/anchors/resolve.js";
 import { parseThreadBody } from "../apps/server/src/core/turns.js";
+import { unknownRecipient } from "../apps/server/src/errors.js";
 import {
   ANCHOR_PARITY_CASES,
   parseThreadTurns,
@@ -8,6 +9,7 @@ import {
   resolveAnchorExact,
   TURN_PARITY_BODIES,
 } from "../apps/ui/e2e/serverParity.js";
+import { unknownRecipientBody } from "../apps/ui/src/testing/serverRefusals.js";
 
 /**
  * The e2e stub answers `/api` from inside the browser page, so it re-implements
@@ -95,5 +97,47 @@ describe("the e2e stub's thread turn parsing", () => {
     const body = turns.map((turn) => renderTurn(turn)).join("\n");
     expect(parseThreadBody(body).turns).toEqual(turns);
     expect(parseThreadBody(body).preamble).toBe("");
+  });
+});
+
+/**
+ * The UI's copy of a **refusal body** (UI-120), which is the same class of copy
+ * as the two above and had drifted in the same silent way.
+ *
+ * `apps/ui` cannot import `apps/server`, so every fixture that wants to answer
+ * the server's `422 unknown_recipient` carries a transcription of a message the
+ * server builds. There were three, and two had drifted — one had dropped the
+ * recovery sentence, one was a wholly different sentence — while every assertion
+ * in the repo matched the substring `names no lane`, which all three still
+ * contained. UI-120 reduced them to the one in
+ * `apps/ui/src/testing/serverRefusals.ts`; this is what makes that one a
+ * transcription. Change the server's wording and this fails, which is the whole
+ * ask: a double that words the refusal differently from the server can certify a
+ * message a person will never see.
+ *
+ * Whole body, not just the prose: `code` and `recipient` are what a composer
+ * branches on to drop the stale roster row, so a double right about the sentence
+ * and wrong about the shape is the same failure one field over.
+ *
+ * `unknownLaneScope` — the same code with a `scope`-flavoured message — has no
+ * double to pin: the UI never parks, so nothing in `apps/ui` answers it. Add a
+ * case here the day one does.
+ */
+describe("the UI fixtures' copy of a server refusal", () => {
+  it.each(["th_9k2", "orchestrator", "th_a-b_c"])(
+    "words `422 unknown_recipient` exactly as the server does — %s",
+    (lane) => {
+      expect(unknownRecipientBody(lane)).toEqual(unknownRecipient(lane).body);
+    },
+  );
+
+  it("is checked against a message that actually varies with the value", () => {
+    // Non-vacuity: an equality test over a constant would pass against a copy
+    // that ignored its argument. The server's message names the value, so the
+    // two ids above cannot produce the same body.
+    expect(unknownRecipientBody("th_9k2").message).not.toBe(
+      unknownRecipientBody("th_a-b_c").message,
+    );
+    expect(unknownRecipient("th_9k2").status).toBe(422);
   });
 });

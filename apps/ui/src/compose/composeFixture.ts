@@ -1,4 +1,5 @@
 import type { AgentLane, AgentRoster } from "@corpus/contract";
+import { unknownRecipientBody } from "../testing/serverRefusals";
 /**
  * A recording transport for the composer's suites.
  *
@@ -143,18 +144,15 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
      * names no lane is a `422` and nothing is written. Modelled rather than
      * accepted, because a fixture that took a stale pick would let a suite
      * assert a routing the server would have refused (UI-118).
+     *
+     * The body comes from `serverRefusals.ts` rather than being written out here
+     * (UI-120): this copy was a sentence of its own invention, and no assertion
+     * noticed because they all match on `names no lane`.
      */
     const stated = (form ?? body) as { recipient?: unknown } | undefined;
     const lane = stated?.recipient;
     if (typeof lane === "string" && !isLane(lane)) {
-      return json(
-        {
-          code: "unknown_recipient",
-          message: `\`${lane}\` names no lane (SPEC.md §7). Nothing was written.`,
-          recipient: lane,
-        },
-        422,
-      );
+      return json(unknownRecipientBody(lane), 422);
     }
     if (url.pathname === "/api/docs") {
       const items = options.rows ?? [];
