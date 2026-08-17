@@ -163,6 +163,52 @@ describe("corpus queue claim-all", () => {
 
   it("is a valid registry entry", () => {
     expect(claimAllCommand.args).toEqual([]);
-    expect(claimAllCommand.flags).toEqual([]);
+    expect(claimAllCommand.flags.map((flag) => flag.name)).toEqual(["thread"]);
+  });
+});
+
+describe("corpus queue claim-all --thread", () => {
+  it("claims the named lane, and sends no scope when none is named", async () => {
+    const stub = await startStubServer(
+      jsonResponder(200, { events: [], inProgress: NO_HELD_EVENTS }),
+    );
+
+    await runClaimAll(stubContext(stub, { flags: { thread: "th_4b8e2c" } }).context);
+    expect(stub.requests[0]?.query.get("scope")).toBe("th_4b8e2c");
+    expect(stub.requests[0]?.body).toBe("");
+
+    await runClaimAll(stubContext(stub).context);
+    // Absent, not `scope=orchestrator`: omission *is* the orchestrator's lane.
+    expect(stub.requests[1]?.query.has("scope")).toBe(false);
+  });
+
+  it("prints a scoped empty batch exactly as it prints an unscoped one", async () => {
+    // A resident whose lane is quiet and an orchestrator whose queue is quiet
+    // are the same, ordinary outcome, and the loop must not have to tell them
+    // apart from the output.
+    const stub = await startStubServer(
+      jsonResponder(200, { events: [], inProgress: NO_HELD_EVENTS }),
+    );
+
+    const scoped = stubContext(stub, { flags: { thread: "th_4b8e2c" } });
+    await runClaimAll(scoped.context);
+    const unscoped = stubContext(stub);
+    await runClaimAll(unscoped.context);
+
+    expect(scoped.stdout()).toBe(unscoped.stdout());
+    expect(scoped.stderr()).toBe(unscoped.stderr());
+  });
+
+  it("refuses a lane that is not a thread id before claiming anything", async () => {
+    const stub = await startStubServer(
+      jsonResponder(200, { events: eventsOf(1), inProgress: NO_HELD_EVENTS }),
+    );
+
+    const harness = stubContext(stub, { flags: { thread: "doc_a1b2c3" } });
+    await expect(runClaimAll(harness.context)).rejects.toThrow(/th_/);
+
+    // Claiming is destructive — the events move out of `pending/` — so a
+    // malformed lane must cost nothing at all.
+    expect(stub.requests).toEqual([]);
   });
 });

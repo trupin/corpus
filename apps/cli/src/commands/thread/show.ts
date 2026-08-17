@@ -36,6 +36,19 @@ export async function runThreadShow(context: WorkspaceCommandContext): Promise<v
   context.out.line(
     `parent ${thread.parent ?? NONE} · anchor ${thread.anchor ?? NONE} · ${shapeOf(thread.parent, thread.anchor)}`,
   );
+  // Printed only when there is one, because absence is the ordinary state of
+  // almost every thread and a `resident —` line on all of them would be noise
+  // (SPEC.md §7: dissolving is the absence of a resident, never a third state).
+  //
+  // It reports the **designation** and says nothing about whether that agent is
+  // running: liveness belongs to one lane's roster row, is read from a different
+  // endpoint, and the two may legitimately disagree for a grace window. Printing
+  // both here would present them as one fact. `corpus agents` is where presence
+  // is answered.
+  const resident = thread.resident;
+  if (resident !== null && resident !== undefined) {
+    context.out.line(`resident ${resident.name} · ${resident.docId}`);
+  }
   context.out.line(`created ${thread.created} · updated ${thread.updated}`);
   context.out.line(`tags ${thread.tags.length === 0 ? NONE : thread.tags.join(", ")}`);
 
@@ -68,7 +81,13 @@ export const showCommand: WorkspaceCommandSpec = {
     "state, parent, anchor and every turn oldest first, each with its author and timestamp. The " +
     "anchoring line names which of the three shapes the thread has: anchored to a selection, on " +
     "a whole document (`parent` set, no anchor), or standalone (neither). This is the context " +
-    "SPEC.md §7's comment skill reads before it replies. **No read-state is reported**: the " +
+    "SPEC.md §7's comment skill reads before it replies. A designated thread also prints a " +
+    "`resident` line naming the agent that owns the conversation and the `agent-def` document " +
+    "that defines it; an undesignated thread prints none, because having nobody resident is the " +
+    "ordinary state rather than a value. That line reports the **designation** and says nothing " +
+    "about whether the agent is currently running — presence is one lane's row in " +
+    "`corpus agents`, and the two are separate reads that may honestly disagree for a moment. " +
+    "**No read-state is reported**: the " +
     "endpoint carries none, and the only endpoint that does is a mutation — reading a thread " +
     "must not clear its unread badge. A thread id that names nothing is the server's `404`, " +
     "which is exit 5.",
@@ -84,7 +103,7 @@ export const showCommand: WorkspaceCommandSpec = {
       description:
         'One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":' +
         '"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open",' +
-        '"tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","turns":' +
+        '"tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","resident":null,"turns":' +
         '[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.',
     },
   ],

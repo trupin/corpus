@@ -25,6 +25,7 @@ const ANCHORED = {
   parent: "doc_a1b2c3",
   anchor: "anc_1",
   agent: "engaged",
+  resident: null,
   turns: [
     { author: "user", ts: "2026-07-28T10:00:00.000Z", body: "Is 6.1% right?" },
     { author: "agent", ts: "2026-07-28T10:05:00.000Z", body: "Checked today: it holds.\n" },
@@ -124,6 +125,53 @@ describe("corpus thread show", () => {
     expect(harness.stdout()).not.toMatch(/unread|lastSeenTs|events/i);
     // And the mutating read-state endpoint is never called.
     expect(stub.requests.map((request) => request.path)).toEqual(["/api/threads/th_x9y8"]);
+  });
+
+  it("names the resident of a designated conversation, and the document defining it", async () => {
+    const stub = await startStubServer(
+      jsonResponder(200, {
+        ...ANCHORED,
+        parent: null,
+        anchor: null,
+        resident: { name: "researcher", docId: "doc_r1" },
+      }),
+    );
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadShow(harness.context);
+
+    expect(harness.stdout()).toContain("\nresident researcher · doc_r1\n");
+    // Between the anchoring line and the timestamps: what the thread is, then
+    // who lives in it, then when.
+    const lines = harness.stdout().split("\n");
+    expect(lines[3]).toBe("resident researcher · doc_r1");
+    expect(lines[4]?.startsWith("created ")).toBe(true);
+  });
+
+  it("prints no resident line at all when there is nobody", async () => {
+    // Having nobody resident is the ordinary state of almost every thread, so a
+    // `resident —` line on all of them would be noise rather than information.
+    const stub = await startStubServer(jsonResponder(200, ANCHORED));
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadShow(harness.context);
+
+    expect(harness.stdout()).not.toContain("resident");
+  });
+
+  it("reports the designation and never claims anything about presence", async () => {
+    // Designation is thread state; presence is an observation about a parked
+    // request, read from `GET /api/agents` and free to disagree for a grace
+    // window. One read, one fact.
+    const stub = await startStubServer(
+      jsonResponder(200, { ...ANCHORED, resident: { name: "researcher", docId: "doc_r1" } }),
+    );
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadShow(harness.context);
+
+    expect(stub.requests.map((request) => request.path)).toEqual(["/api/threads/th_x9y8"]);
+    expect(harness.stdout()).not.toMatch(/\blive\b|lapsed|parked|listening/i);
   });
 
   it("handles a thread with no turns without pretending it has any", async () => {

@@ -1,3 +1,4 @@
+import { agentsCommand } from "../commands/agents.js";
 import { dbTopic } from "../commands/db/index.js";
 import { docTopic } from "../commands/doc/index.js";
 import { healthCommand } from "../commands/health.js";
@@ -43,7 +44,13 @@ export const registry: Registry = validateRegistry({
   // `search` is top-level rather than a `doc` verb because it retrieves across
   // the corpus — documents, threads and turns alike (SPEC.md §7, §9.2) — and it
   // is the first thing the agent runs, not a document operation.
-  commands: [healthCommand, initCommand, searchCommand, upgradeCommand],
+  //
+  // `agents` is top-level for the mirror-image reason: it is a read of the
+  // *queue's* lanes, not of any one thread, and there is exactly one of it. It
+  // is deliberately not a topic — a topic would invite `corpus agents register`
+  // or `corpus agents heartbeat`, and SPEC.md §7 has neither: presence is the
+  // parked request and nothing else, so the roster is only ever read.
+  commands: [agentsCommand, healthCommand, initCommand, searchCommand, upgradeCommand],
   topics: [
     workspaceTopic,
     serverTopic,

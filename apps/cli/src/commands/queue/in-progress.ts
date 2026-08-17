@@ -1,5 +1,6 @@
 import type { InProgressSet } from "@corpus/contract";
 import type { Output } from "../../output.js";
+import { formatAge } from "../age.js";
 import { oneLine, renderColumns } from "../columns.js";
 
 /**
@@ -27,15 +28,12 @@ import { oneLine, renderColumns } from "../columns.js";
  *   instant in `--json`, so an agent computes the age against its own clock.
  */
 
-/** How wide the ladder's rungs are, in seconds. */
-const MINUTE = 60;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
 /**
  * `held 45s` / `held 12m` / `held 3h` / `held 2d` — one significant unit, which
  * is all this row is for: the reader is deciding whether they recognise the
- * work, not measuring it.
+ * work, not measuring it. The ladder itself is `../age.ts`'s, shared with
+ * `corpus agents` so two verbs cannot disagree about what three hours looks
+ * like.
  *
  * A future `heldSince` (clock skew between the server and this machine) clamps
  * to `held 0s` rather than rendering a negative age, and a value that is not a
@@ -45,12 +43,7 @@ const DAY = 24 * HOUR;
 export function formatHeldFor(heldSince: string, now: number): string {
   const since = Date.parse(heldSince);
   if (Number.isNaN(since)) return `held since ${heldSince}`;
-
-  const seconds = Math.max(0, Math.floor((now - since) / 1000));
-  if (seconds < MINUTE) return `held ${String(seconds)}s`;
-  if (seconds < HOUR) return `held ${String(Math.floor(seconds / MINUTE))}m`;
-  if (seconds < DAY) return `held ${String(Math.floor(seconds / HOUR))}h`;
-  return `held ${String(Math.floor(seconds / DAY))}d`;
+  return `held ${formatAge(now - since)}`;
 }
 
 /**

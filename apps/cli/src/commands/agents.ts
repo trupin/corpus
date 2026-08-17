@@ -1,0 +1,232 @@
+import { AGENT_PRESENCE_WINDOW_SECONDS, ORCHESTRATOR_LANE, type AgentLane } from "@corpus/contract";
+import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../registry/types.js";
+import { formatAge } from "./age.js";
+import { oneLine } from "./columns.js";
+
+/**
+ * `corpus agents` — who is running (SPEC.md §7).
+ *
+ * **A read, and only a read.** §7 makes presence *"the parked request, and
+ * nothing else"*: a resident is live exactly while it holds a parked scoped
+ * `corpus queue idle --thread <id>`. There is no heartbeat to send, no
+ * registration to keep fresh and nothing to reap, so this CLI has no verb that
+ * announces an agent, joins a lane or says "I am still here" — and adding one
+ * would create a second source of truth about presence that no refetch could
+ * correct. This command asks the server what it currently observes and renders
+ * the answer. It is the same read the composer's recipient picker consumes.
+ *
+ * **Nothing here is computed that the server did not report.** No liveness
+ * arithmetic (the grace window is applied server-side, before `live` is
+ * answered), no summary derivation, no origin walking. The only thing this
+ * module decides is how to say `since` in English, which the contract assigns to
+ * the caller precisely because an instant is what survives two clocks.
+ *
+ * **A lane with nobody on it is not a failure**, and the wording is written
+ * around that. §7: the cost of a lapse is *"that the work is done by the
+ * orchestrator instead — slower, and without the conversation's warmth — and
+ * never that it is silently not done."* So a lapsed row is a state, printed
+ * beside the live ones in the same shape, and the one sentence that explains
+ * what happens next is a note rather than an alarm on every row.
+ */
+
+/**
+ * Three ways a lane can be, from two reported fields, and they are worth telling
+ * apart at the one surface a person looks at to see whether anybody is home:
+ *
+ * - **live** — a listener is parked right now, or was moments ago and the grace
+ *   window still covers it.
+ * - **lapsed** — a listener was parked once (`since`) and has been gone longer
+ *   than the window. Its pending work falls back to the orchestrator's claim.
+ * - **waiting** — the server has observed no park on this lane at all (`since`
+ *   is null). A designated conversation nobody has started a listener for, which
+ *   reads very differently from one whose agent has stopped.
+ *
+ * "Observed" rather than "ever", and the difference is real: presence is held in
+ * memory and nothing about it is persisted, so a server that has just restarted
+ * reports every lane as waiting however long a listener sat on it beforehand.
+ * That is the fallback §7 already accepts, in the direction it accepts it — the
+ * orchestrator may do work a resident would have, never the reverse — and this
+ * wording is what keeps the row from claiming more than the server knows.
+ *
+ * This is a rendering of `{live, since}` and not a re-derivation of it: the
+ * verdict is the server's, and the split only asks whether there is any evidence
+ * behind a `false`.
+ */
+type Presence = "live" | "lapsed" | "waiting";
+
+export function presenceOf(lane: Pick<AgentLane, "live" | "since">): Presence {
+  if (lane.live) return "live";
+  return lane.since === null ? "waiting" : "lapsed";
+}
+
+/**
+ * How long a lane keeps reading `live` after its listener stops — **read from
+ * the contract, never restated**.
+ *
+ * §7 deliberately leaves the length open and guarantees exactly one bound on it,
+ * and `AGENT_PRESENCE_WINDOW_SECONDS` is the one place that number is chosen.
+ * The server applies it to decide `live`; a second copy here would be a number
+ * that could drift from the verdict it purports to explain, which is precisely
+ * what putting it in the contract avoided.
+ */
+export const GRACE_WINDOW = formatAge(AGENT_PRESENCE_WINDOW_SECONDS * 1000);
+
+/**
+ * The one sentence about what a lane with no listener costs, printed once
+ * beneath the rows rather than on each of them.
+ *
+ * It is a note (stderr) because it is a diagnostic about the answer and not part
+ * of it: the rows are what `corpus agents` was asked for, and a reader counting
+ * lanes should not have to skip prose.
+ */
+export const FALLBACK_NOTE =
+  `a lane with no listener is not a failure: past the grace window (${GRACE_WINDOW}) its pending ` +
+  "work becomes visible to the orchestrator's own `corpus queue claim-all`, so it is done more " +
+  "slowly and without the conversation's warmth — never silently not done. Start a listener " +
+  "with `corpus queue idle --thread <id>`; parking is what presence is.";
+
+/**
+ * What the contract says an empty roster means: a bug, not a quiet workspace.
+ * The orchestrator's row exists before anything is designated and survives the
+ * last release, so this is reported rather than printed as an empty answer a
+ * reader would take for "nobody is here".
+ */
+export const EMPTY_ROSTER_NOTE =
+  "the server reported no lanes at all. The orchestrator's lane always exists, so this is a " +
+  "fault in the server rather than a workspace with no agents.";
+
+export async function runAgents(context: WorkspaceCommandContext, now = Date.now()): Promise<void> {
+  const roster = await context.client.request((api) => api.GET("/api/agents"));
+
+  context.out.emit(roster);
+
+  if (roster.agents.length === 0) {
+    context.out.note(EMPTY_ROSTER_NOTE);
+    return;
+  }
+
+  for (const lane of roster.agents) context.out.line(renderLane(lane, now));
+
+  // Only a *thread* lane's absence has a fallback to explain. The orchestrator's
+  // lane is the fallback — asking whether it is live in order to say where its
+  // work goes would be asking the question of itself — so its own row saying
+  // `waiting` prints no note.
+  const unattended = roster.agents.filter((lane) => lane.lane !== ORCHESTRATOR_LANE && !lane.live);
+  if (unattended.length > 0) context.out.note(FALLBACK_NOTE);
+}
+
+/**
+ * One lane, one line: which lane, who owns it, whether anybody is on it and
+ * since when, and the server's own sentence about what it is doing.
+ *
+ * The summary is quoted verbatim (collapsed to one line, since a row is one
+ * line) and never parsed: the contract promises its length and nothing about its
+ * content, and states that how it is derived may change without a contract
+ * change.
+ */
+export function renderLane(lane: AgentLane, now: number): string {
+  const cells = [laneLabel(lane), ...residentCell(lane), presenceCell(lane, now)];
+  const row = cells.join(" · ");
+  return lane.summary === null ? row : `${row} — ${oneLine(lane.summary)}`;
+}
+
+/**
+ * `orchestrator`, or a thread id with the conversation's current title beside it
+ * — the title is why `origin` is on the row at all, so a reader never needs a
+ * second read to know which conversation `th_4b8e2c` is.
+ */
+function laneLabel(lane: AgentLane): string {
+  if (lane.origin === null) return lane.lane;
+  return `${lane.lane} "${oneLine(lane.origin.title)}"`;
+}
+
+/**
+ * The orchestrator's lane has no resident cell at all — nobody designates it,
+ * and printing an em dash there would invite reading it as a vacancy.
+ *
+ * A designated lane whose `resident` came back null is a lane the server can see
+ * but cannot name (a hand-edited frontmatter is the only way in). `resident
+ * unknown` is the honest cell: the conversation *is* owned, and we cannot say by
+ * whom — which is a different fact from nobody owning it.
+ */
+function residentCell(lane: AgentLane): readonly string[] {
+  if (lane.lane === ORCHESTRATOR_LANE) return [];
+  return [lane.resident === null ? "resident unknown" : lane.resident.name];
+}
+
+function presenceCell(lane: AgentLane, now: number): string {
+  const presence = presenceOf(lane);
+  if (presence === "waiting") return "waiting for a listener";
+
+  const parked = sinceAge(lane.since, now);
+  if (parked === null) return presence;
+  return presence === "live" ? `live, parked ${parked} ago` : `lapsed, last parked ${parked} ago`;
+}
+
+/**
+ * `since` as an age, or `null` when it is not an instant at all — in which case
+ * the row prints the bare verdict rather than `parked NaNs ago`. The state is
+ * the fact a reader needs; the age is the detail beside it.
+ */
+function sinceAge(since: string | null, now: number): string | null {
+  if (since === null) return null;
+  const seen = Date.parse(since);
+  return Number.isNaN(seen) ? null : formatAge(now - seen);
+}
+
+export const agentsCommand: WorkspaceCommandSpec = {
+  name: "agents",
+  summary: "Who is running: every lane, its resident, and whether anybody is listening.",
+  description:
+    "Reads `GET /api/agents` and prints one row per **lane** of the queue (SPEC.md §7): the " +
+    "orchestrator's, plus one for every standalone thread that has been given a resident. Each " +
+    "row names the lane and the conversation it is, who is resident on it, whether a listener is " +
+    "parked on it right now and since when, and the server's one-line account of what it is " +
+    "doing. The `orchestrator` row is always there — it exists before anything is designated and " +
+    "survives the last release.\n\n" +
+    "**Presence is the parked request and nothing else.** A lane is live exactly while somebody " +
+    "holds a parked `corpus queue idle --thread <id>`: there is no heartbeat to send, no " +
+    "registration to keep fresh and nothing to reap, so an agent that stops parking stops being " +
+    "present whether it exited cleanly, crashed or was killed. That is why this verb only " +
+    "**reads** — nothing anywhere in this CLI announces an agent, and starting a listener is how " +
+    "one becomes visible here.\n\n" +
+    "**A lane with nobody on it is an ordinary, recoverable state, not a fault.** `waiting for a " +
+    "listener` means the server has observed no park on that lane — which is also what every lane " +
+    "reads as just after a restart, since presence is held in memory and nothing about it is " +
+    "persisted; `lapsed` means a listener was there and has " +
+    `been gone longer than the grace window (${GRACE_WINDOW}). In both cases that lane's pending ` +
+    "work becomes visible to the orchestrator's unscoped `corpus queue claim-all`, computed when " +
+    "the claim is made and never written into the events — so a resident that comes back finds " +
+    "its lane exactly as it left it, and in the meantime the work is done more slowly rather " +
+    "than not at all.\n\n" +
+    "The `summary` is display material: the contract promises its length and nothing about its " +
+    "content, and how it is derived may change. **Never parse it** — everything worth branching " +
+    "on is a field of its own under `--json`, which carries the roster exactly as the server " +
+    "sent it, `since` still an ISO instant so you compute ages against your own clock.\n\n" +
+    "This is a different read from `corpus thread show`'s `resident` line. That line is the " +
+    "**designation**, which is thread state; this is **presence**, which is an observation about " +
+    "a request the server is holding. The two are answered by different endpoints and may " +
+    "honestly disagree for a moment — a designated agent that has just stopped parking is still " +
+    "the thread's resident and is no longer live.",
+  args: [],
+  flags: [],
+  examples: [
+    {
+      command: "corpus agents",
+      description:
+        'One row per lane — `th_4b8e2c "Q3 planning" · researcher · live, parked 2m ago — ' +
+        "reading the mortgage docs` — with a lapsed or unattended lane shown rather than hidden.",
+    },
+    {
+      command: "corpus agents --json",
+      description:
+        'The roster verbatim: `{"agents":[{"lane":"orchestrator","resident":null,"live":true,' +
+        '"since":"2026-08-16T09:00:00.000Z","summary":null,"origin":null},…]}`.',
+    },
+    {
+      command: "corpus agents --json | jq -r '.agents[] | select(.live) | .lane'",
+      description: "The lanes something is actually listening on, one per line.",
+    },
+  ],
+  handler: (context) => runAgents(context),
+};

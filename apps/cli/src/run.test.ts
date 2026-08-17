@@ -151,7 +151,11 @@ describe("usage errors", () => {
     const result = await invoke(["nosuchtopic"]);
     expect(result.code).toBe(ExitCode.usageError);
     expect(result.stderr).toContain('unknown command "nosuchtopic"');
-    expect(result.stderr).toContain("Valid: health");
+    // The names, not their order: which command happens to be listed first is
+    // registration order and not a promise, so pinning it makes adding a
+    // top-level verb fail a test about unknown commands.
+    expect(result.stderr).toMatch(/Valid: .*\bhealth\b/);
+    expect(result.stderr).toMatch(/Valid: .*\bthread\b/);
     expect(result.stdout).toBe("");
   });
 

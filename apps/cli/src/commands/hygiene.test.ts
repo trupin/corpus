@@ -194,7 +194,9 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
       "index-maintenance/status.ts",
       "thread/context.ts",
       "thread/create.ts",
+      "thread/designate.ts",
       "thread/index.ts",
+      "thread/release.ts",
       "thread/reply.ts",
       "thread/show.ts",
       "thread/status.ts",
@@ -265,6 +267,8 @@ describe("nothing outside input.ts touches process.stdin", () => {
     // an unguarded module.
     const modules = await commandModules();
     expect(modules.map((module) => module.path)).toEqual([
+      "age.ts",
+      "agents.ts",
       "columns.ts",
       "db/doctor.ts",
       "db/index.ts",
@@ -304,6 +308,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "queue/idle.ts",
       "queue/in-progress.ts",
       "queue/index.ts",
+      "queue/lane.ts",
       "queue/poll.ts",
       "queue/transitions.ts",
       "retrieval.ts",
@@ -319,7 +324,9 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "skill/index.ts",
       "thread/context.ts",
       "thread/create.ts",
+      "thread/designate.ts",
       "thread/index.ts",
+      "thread/release.ts",
       "thread/reply.ts",
       "thread/show.ts",
       "thread/status.ts",

@@ -13,6 +13,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 
 - [Usage](#usage)
 - [Global flags](#global-flags)
+- [`corpus agents`](#corpus-agents)
 - [`corpus health`](#corpus-health)
 - [`corpus init`](#corpus-init)
 - [`corpus search`](#corpus-search)
@@ -63,6 +64,8 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [`corpus thread`](#corpus-thread)
   - [`corpus thread context`](#corpus-thread-context)
   - [`corpus thread create`](#corpus-thread-create)
+  - [`corpus thread designate`](#corpus-thread-designate)
+  - [`corpus thread release`](#corpus-thread-release)
   - [`corpus thread reopen`](#corpus-thread-reopen)
   - [`corpus thread reply`](#corpus-thread-reply)
   - [`corpus thread resolve`](#corpus-thread-resolve)
@@ -107,6 +110,44 @@ These are merged into every command; a command may not declare a flag that shado
 | `--no-color`           | boolean | `false` | Never emit ANSI colour. Implied whenever stdout is not a TTY.                                                                                                                                                                                                                                                                                                                        |
 | `-h, --help`           | boolean | `false` | Show help for the current topic or command and exit.                                                                                                                                                                                                                                                                                                                                 |
 | `--version`            | boolean | `false` | Print the version of the `corpus` tool and exit.                                                                                                                                                                                                                                                                                                                                     |
+
+## `corpus agents`
+
+Who is running: every lane, its resident, and whether anybody is listening.
+
+Reads `GET /api/agents` and prints one row per **lane** of the queue (SPEC.md §7): the orchestrator's, plus one for every standalone thread that has been given a resident. Each row names the lane and the conversation it is, who is resident on it, whether a listener is parked on it right now and since when, and the server's one-line account of what it is doing. The `orchestrator` row is always there — it exists before anything is designated and survives the last release.
+
+**Presence is the parked request and nothing else.** A lane is live exactly while somebody holds a parked `corpus queue idle --thread <id>`: there is no heartbeat to send, no registration to keep fresh and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. That is why this verb only **reads** — nothing anywhere in this CLI announces an agent, and starting a listener is how one becomes visible here.
+
+**A lane with nobody on it is an ordinary, recoverable state, not a fault.** `waiting for a listener` means the server has observed no park on that lane — which is also what every lane reads as just after a restart, since presence is held in memory and nothing about it is persisted; `lapsed` means a listener was there and has been gone longer than the grace window (16m). In both cases that lane's pending work becomes visible to the orchestrator's unscoped `corpus queue claim-all`, computed when the claim is made and never written into the events — so a resident that comes back finds its lane exactly as it left it, and in the meantime the work is done more slowly rather than not at all.
+
+The `summary` is display material: the contract promises its length and nothing about its content, and how it is derived may change. **Never parse it** — everything worth branching on is a field of its own under `--json`, which carries the roster exactly as the server sent it, `since` still an ISO instant so you compute ages against your own clock.
+
+This is a different read from `corpus thread show`'s `resident` line. That line is the **designation**, which is thread state; this is **presence**, which is an observation about a request the server is holding. The two are answered by different endpoints and may honestly disagree for a moment — a designated agent that has just stopped parking is still the thread's resident and is no longer live.
+
+```
+corpus agents [flags]
+```
+
+**Examples**
+
+One row per lane — `th_4b8e2c "Q3 planning" · researcher · live, parked 2m ago — reading the mortgage docs` — with a lapsed or unattended lane shown rather than hidden.
+
+```
+corpus agents
+```
+
+The roster verbatim: `{"agents":[{"lane":"orchestrator","resident":null,"live":true,"since":"2026-08-16T09:00:00.000Z","summary":null,"origin":null},…]}`.
+
+```
+corpus agents --json
+```
+
+The lanes something is actually listening on, one per line.
+
+```
+corpus agents --json | jq -r '.agents[] | select(.live) | .lane'
+```
 
 ## `corpus health`
 
@@ -1314,6 +1355,8 @@ Park on, claim and settle the agent's event queue.
 
 The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `defer` is the fourth, non-terminal outcome: work the agent parked because a person is editing the document it needs waits rather than failing, and returns to `pending` by itself when that session ends (SPEC.md §7 — a judgement, not a refusal). `halt` is the kill switch: it stops consumption without stopping production. The loop's two entry points — `idle` when it returns work, and `claim-all` — additionally report what the server still holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the agent can reconcile the server's view against its own memory (SPEC.md §7).
 
+**The queue is partitioned into lanes** (SPEC.md §7), and two verbs take one: `idle` and `claim-all` accept `--thread <th_…>` to consume the lane of a conversation with a resident agent. Omitting it is the orchestrator's lane, which is what every caller written before lanes existed already meant. A scoped call sees only its own lane; the orchestrator's sees its own plus every lane nobody is listening on — so two agents working at once read disjoint sets, and a conversation whose agent is absent is still answered, by the orchestrator, rather than left. `corpus agents` lists the lanes and says who is on them; **holding a scoped `idle` is the whole of what makes a resident present** — nothing here registers an agent, because there is nothing to register.
+
 ### `corpus queue abandon`
 
 Give up on an event for good.
@@ -1348,9 +1391,17 @@ Moves all `pending/*` events to `in-progress/` in a single call and prints them 
 
 In human mode that same list is also printed as a readable block **on stderr** — ages as `held 3h`, one row per event, with an explicit _and N more held_ line when the cap bit — so stdout stays the single JSON line a pipe can parse. Under `--json` the block is suppressed and stderr carries only failures. Either way nothing at all is printed when nothing is held.
 
+**A claim takes a lane** (SPEC.md §7). `--thread` claims that conversation's lane and only it; omitting the flag is the orchestrator's claim, which takes its own lane **plus every lane nobody is listening on** — so two agents claiming at once read disjoint sets rather than racing for one event. Picking up the work of a lane whose listener is absent is the ordinary intended outcome and not a fault to report: that work is then done by the orchestrator, more slowly and without the conversation's warmth, and never silently not done. The output shape is identical either way, empty batch included.
+
 ```
 corpus queue claim-all [flags]
 ```
+
+**Flags**
+
+| Flag              | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--thread <th_…>` | string | —       | Consume the lane of a **designated** root thread rather than the orchestrator's (SPEC.md §7). A scoped call sees only its own lane's events; the unscoped call — this flag omitted — is the orchestrator's, and never sees a live lane's events, so two agents running at once read disjoint sets rather than racing for one event. **Omit it for the orchestrator's lane**: `orchestrator` is not accepted here, because a lane with two spellings is one a caller can address by accident. The thread need not already be designated — the server accepts the call on whatever lane it is given, since a lane may be designated a moment later; `corpus agents` is where to check that the lane is real. |
 
 **Examples**
 
@@ -1370,6 +1421,12 @@ Inspect only what the server still holds — `total` and `truncated` say whether
 
 ```
 corpus queue claim-all | jq '.inProgress'
+```
+
+A resident's claim: only its own conversation's lane, never the orchestrator's and never another lane's.
+
+```
+corpus queue claim-all --thread th_4b8e2c
 ```
 
 ### `corpus queue complete`
@@ -1525,15 +1582,18 @@ Long-polls `GET /api/queue/idle` and returns the instant a pending event exists 
 
 **When it returns work, it also reports what the server still thinks you are doing** (SPEC.md §7) — the same `inProgress` field `corpus queue claim-all` carries, as its own key beside `events` and never mixed into them: those events are already in `in-progress/` and are not the ones waiting to be claimed. In human mode it prints as a readable block on stderr with ages rendered as `held 3h`; under `--json` `heldSince` stays an ISO instant so you compute the age against your own clock, and `total` plus `truncated` say whether the 20-row cap cut the list. A timeout carries no list at all — the `204` has no body, and an agent with nothing to claim has nothing to reconcile against.
 
+**Parking here is what presence _is_** (SPEC.md §7). With `--thread` this parks on that conversation's lane, and a resident is live exactly while it holds such a park — there is nothing to register, no heartbeat to send and nothing to reap, which is why no verb in this CLI announces an agent and `corpus agents` only ever _reads_ who is there. An agent that stops parking stops being present, however it stopped. Everything else about the verb is unchanged by the lane: the same `--wait`, the same output shapes, the same held report, and the same `{"idle":true,"reason":"timeout"}` on expiry — a scoped window that ends empty prints exactly what an unscoped one does.
+
 ```
 corpus queue idle [flags]
 ```
 
 **Flags**
 
-| Flag               | Type   | Default | Description                                                                                                                                                                                                                       |
-| ------------------ | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--wait <seconds>` | number | `480`   | How long to park before exiting with a timeout. The server holds each request for at most its own maximum, so a longer window is served by successive requests. `0` is a single non-blocking probe: is anything queued right now? |
+| Flag               | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------ | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--wait <seconds>` | number | `480`   | How long to park before exiting with a timeout. The server holds each request for at most its own maximum, so a longer window is served by successive requests. `0` is a single non-blocking probe: is anything queued right now?                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `--thread <th_…>`  | string | —       | Consume the lane of a **designated** root thread rather than the orchestrator's (SPEC.md §7). A scoped call sees only its own lane's events; the unscoped call — this flag omitted — is the orchestrator's, and never sees a live lane's events, so two agents running at once read disjoint sets rather than racing for one event. **Omit it for the orchestrator's lane**: `orchestrator` is not accepted here, because a lane with two spellings is one a caller can address by accident. The thread need not already be designated — the server accepts the call on whatever lane it is given, since a lane may be designated a moment later; `corpus agents` is where to check that the lane is real. |
 
 **Examples**
 
@@ -1553,6 +1613,12 @@ Probe the queue without blocking, for a script that must not park.
 
 ```
 corpus queue idle --wait 0 --json
+```
+
+A resident's park: it waits for that conversation's lane only, and holding this park is what makes the lane read `live` in `corpus agents`.
+
+```
+corpus queue idle --thread th_4b8e2c --json
 ```
 
 ### `corpus queue reap-stale`
@@ -1810,7 +1876,7 @@ corpus skill create triage --description "Triage the inbox." --json
 
 Open conversations, read them, reply to them, and resolve them.
 
-A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, or standalone — `show` is the read §7's comment skill starts from (status, anchoring and every turn), `context` is the bounded briefing around it (the anchored passage plus the excerpts that bear on it, Retrieval Phase C), `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
+A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, or standalone — `show` is the read §7's comment skill starts from (status, anchoring and every turn), `context` is the bounded briefing around it (the anchored passage plus the excerpts that bear on it, Retrieval Phase C), `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8). `designate` and `release` are the user's half of SPEC.md §7's residency: they put a long-lived agent in charge of a standalone conversation and everything that grows out of it, and take it away again.
 
 ### `corpus thread context`
 
@@ -1913,6 +1979,84 @@ One JSON value — `{"thread":{…},"anchorId":"anc_k4f7","eventId":null,"warnin
 
 ```
 corpus thread create --parent doc_a1b2c3 --quote "6.1%" --file question.md --json
+```
+
+### `corpus thread designate`
+
+Make an agent resident in a standalone conversation (user-only).
+
+Gives a **standalone** thread a resident: a long-lived agent that owns that conversation and everything that grows out of it, rather than being dispatched to one message at a time (SPEC.md §7). Work falling in the thread's **scope** is then enqueued on that scope's lane instead of the orchestrator's, and the resident consumes it with `corpus queue idle --thread <id>` and `corpus queue claim-all --thread <id>`. Scope membership is a walk, not a label: nothing carries a scope marker, and the server works out at enqueue time whether an event falls inside by following a thread's parents and a document's `origin`.
+
+**`--agent` names the agent, not a document.** It is the same name `@<subagent>` mentions resolve — a `type: agent-def` document's own name or its title, matched case-insensitively — and the printed line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the lookup. A name that resolves to no agent-def here is the server's `404`.
+
+**Single-valued, so designating again replaces**, and **a repeat is not a no-op**: even when the thread already has this exact resident and no file is written, the designation is announced again — which is how a person asks for a listener that is no longer running to be launched. The announcement goes to the **orchestrator's** lane whoever is designated, since a resident does not announce itself to itself.
+
+**Refused for a thread that may not have one**: a thread with a parent — anchored or whole-document — is the server's `409`, because a thread on a document is _about_ that document and a resident owns a conversation rather than a passage. **User-only**: sending this with `--from agent` is the server's `403`. Nothing already queued moves — a lane is stamped once, at enqueue time — so designating does not re-route work the orchestrator is already holding.
+
+```
+corpus thread designate <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                 |
+| -------- | -------- | --------------------------- |
+| `id`     | yes      | The standalone thread's id. |
+
+**Flags**
+
+| Flag             | Type   | Default | Description                                                                                                                                                                                                        |
+| ---------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--agent <name>` | string | —       | The agent to make resident, by the name `@<subagent>` mentions use — an `agent-def` document's own name or its title, case-insensitively. Not a document id. Required: a designation that names nobody is not one. |
+
+**Examples**
+
+Put the researcher in charge of a conversation and everything it produces.
+
+```
+corpus thread designate th_4b8e2c --agent researcher
+```
+
+One JSON value — `{"thread":{…,"resident":{"name":"researcher","docId":"doc_r1"}},"warnings":[]}` — the thread as it now stands, with the name resolved to the document that defines it.
+
+```
+corpus thread designate th_4b8e2c --agent researcher --json
+```
+
+### `corpus thread release`
+
+Release a conversation's resident agent (user-only).
+
+Releases the thread's resident, returning its scope to ordinary routing (SPEC.md §7): later events in that conversation are enqueued on the orchestrator's lane again, as they were before there was a resident. **Nothing is rewritten** — events already stamped keep the lane they were stamped with, so releasing strands no queued work — and dissolving is the absence of a resident, never a third state.
+
+**Idempotent.** Releasing a thread that has nobody resident writes nothing, commits nothing and announces nothing; it reports _nothing to release_ and exits 0. A real release rewrites the thread's frontmatter and commits it, so any SPEC.md §14 warning that commit raises is appended to the printed line.
+
+**Resolving a thread already does this** (SPEC.md §7): a settled conversation has nobody to keep resident, so `corpus thread resolve` releases as part of resolving — and **reopening does not bring the resident back** (§8). Designating again is a deliberate act, as the first designation was.
+
+**User-only**: sending this with `--from agent` is the server's `403`. Releasing is the other half of the same user-only state as designating, and an agent able to release could quietly stop being resident in a conversation a person put it in.
+
+```
+corpus thread release <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description      |
+| -------- | -------- | ---------------- |
+| `id`     | yes      | The thread's id. |
+
+**Examples**
+
+Hand the conversation back to ordinary routing; prints who was released, or that there was nobody.
+
+```
+corpus thread release th_4b8e2c
+```
+
+One JSON value — `{"thread":{…,"resident":null},"warnings":[]}` — the thread as it now stands, alongside any warning the commit raised.
+
+```
+corpus thread release th_4b8e2c --json
 ```
 
 ### `corpus thread reopen`
@@ -2036,7 +2180,7 @@ corpus thread resolve th_a1b2c3 --from agent --json
 
 Read a conversation: its status, its anchoring, and every turn.
 
-Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. **No read-state is reported**: the endpoint carries none, and the only endpoint that does is a mutation — reading a thread must not clear its unread badge. A thread id that names nothing is the server's `404`, which is exit 5.
+Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. A designated thread also prints a `resident` line naming the agent that owns the conversation and the `agent-def` document that defines it; an undesignated thread prints none, because having nobody resident is the ordinary state rather than a value. That line reports the **designation** and says nothing about whether the agent is currently running — presence is one lane's row in `corpus agents`, and the two are separate reads that may honestly disagree for a moment. **No read-state is reported**: the endpoint carries none, and the only endpoint that does is a mutation — reading a thread must not clear its unread badge. A thread id that names nothing is the server's `404`, which is exit 5.
 
 ```
 corpus thread show <id> [flags]
@@ -2056,7 +2200,7 @@ Read a conversation before replying to it.
 corpus thread show th_a1b2c3
 ```
 
-One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open","tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","turns":[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.
+One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open","tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","resident":null,"turns":[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.
 
 ```
 corpus thread show th_a1b2c3 --json
