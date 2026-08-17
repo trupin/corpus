@@ -720,6 +720,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | CONTRACT-060 | The grace window is derived two different ways, and both tests pass by coincidence | done | P1 | — |
 | UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
 | SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
+| UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | todo | P1 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 
