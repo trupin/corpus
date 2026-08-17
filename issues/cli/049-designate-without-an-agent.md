@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -33,19 +33,19 @@ the UI will offer and the same act the converse skill's launch depends on.
 
 ## Acceptance Criteria
 
-- [ ] `corpus thread designate <th_…>` with no `--agent` designates a general
+- [x] `corpus thread designate <th_…>` with no `--agent` designates a general
       resident and reports what it did in a way that distinguishes it from a
       profiled designation
-- [ ] `--agent <name>` is unchanged, including the `404` for a name that
+- [x] `--agent <name>` is unchanged, including the `404` for a name that
       resolves to nothing
-- [ ] `--agent ""` is refused rather than treated as absence — a blank name is a
+- [x] `--agent ""` is refused rather than treated as absence — a blank name is a
       mistake, not a request for a general resident
-- [ ] `--json` carries the resident shape CONTRACT-061 defined, with no
+- [x] `--json` carries the resident shape CONTRACT-061 defined, with no
       hand-rolled restatement of it
-- [ ] `corpus agents` lists a general-resident lane legibly — a reader can tell
+- [x] `corpus agents` lists a general-resident lane legibly — a reader can tell
       "this conversation has an agent with no profile" from "this conversation
       has profile X"
-- [ ] The help text says when you would want each, in one line, without
+- [x] The help text says when you would want each, in one line, without
       restating §7
 
 ## Technical Design
@@ -93,15 +93,112 @@ a mixed roster (orchestrator, a general lane, a profiled lane).
 
 ## E2E Verification Log
 
-_[Agent fills]_
+Model: **opus** (claude-opus-5[1m]).
+
+Real `corpus` binary (`apps/cli/dist/bin/corpus.js`, built), real server on port
+**8842**, throwaway workspace at
+`~/.claude/jobs/4dd0ddef/tmp/cli049` (removed afterwards). Every line below is
+verbatim.
+
+**Scope note.** The issue named one broken call site; there were two under
+`tsc` (`thread/designate.ts`, `agents.ts`) and two more that type-checked while
+printing the literal string `null` (`thread/show.ts`, `thread/release.ts` both
+interpolated `resident.name`/`docId` raw). All four now render through one
+shared label, `src/commands/resident.ts`.
+
+```
+$ corpus init cli049 --port 8842
+Initialized Corpus workspace at …/cli049
+$ corpus server start
+corpus 0.10.0 listening on http://127.0.0.1:8842 (pid 8391)
+
+$ corpus thread create --title "Kitchen rebuild" -m "Where do we start?"
+created th_umvcyswu — standalone
+
+# 1. no --agent: a general resident, and it says so
+$ corpus thread designate th_umvcyswu
+designated a general resident on th_umvcyswu           (exit 0)
+$ corpus agents
+orchestrator · waiting for a listener
+th_umvcyswu "Kitchen rebuild" · a general resident · waiting for a listener
+$ corpus thread show th_umvcyswu | sed -n 4p
+resident a general resident
+$ corpus thread designate th_umvcyswu --json
+{"thread":{…,"resident":{"name":null,"docId":null}},"warnings":[]}
+$ sed -n '12,14p' data/threads/*.md
+resident:
+  name: null
+  docId: null
+```
+
+The `POST` carried **no body at all** (asserted in `designate.test.ts`), which
+is how CONTRACT-061 spells absence.
+
+```
+# 2. --agent unchanged, resolution still reported
+$ corpus doc create --title "Researcher" --type agent-def -m "…"
+created doc_helf2x7t — .claude/agents/researcher.md
+$ corpus thread designate th_umvcyswu --agent RESEARCHER
+designated researcher (doc_helf2x7t) on th_umvcyswu     (exit 0)
+$ corpus agents
+th_umvcyswu "Kitchen rebuild" · researcher (doc_helf2x7t) · waiting for a listener
+
+# 3. the third state: profile deleted, designation stands
+$ corpus doc delete doc_helf2x7t --yes
+deleted doc_helf2x7t
+$ corpus agents
+th_umvcyswu "Kitchen rebuild" · researcher (profile missing) · waiting for a listener
+$ corpus thread show th_umvcyswu --json | jq .resident
+{"name":"researcher","docId":null}
+```
+
+Three lanes, three distinct cells: `a general resident`, `researcher (doc_r1)`,
+`researcher (profile missing)`. A general resident never occupies the position a
+profile name does — it has no parenthesis at all, which is what `schemas/agents.ts`
+asks for (it must not be printable as a name).
+
+```
+# 4. refusals — exit codes unchanged from today's
+$ corpus thread designate th_umvcyswu --agent ""
+corpus: --agent was given without an agent name.
+  Name the profile to make resident — `--agent researcher` — or leave the flag
+  out entirely to designate a general resident, an agent with no profile. A
+  blank is neither of those, and nothing was sent to the server.   (exit 2)
+$ corpus thread designate th_umvcyswu --agent "   "                (exit 2)
+$ corpus thread designate th_umvcyswu --agent nobody
+corpus: 404 not_found: no agent named nobody in this workspace …   (exit 5)
+$ corpus thread designate th_umvcyswu --from agent
+corpus: 403 forbidden: designating a resident is user-only …       (exit 5)
+$ corpus thread designate th_w7ydvtiq            # anchored thread
+corpus: 409 conflict: only a standalone thread may have a resident … (exit 5)
+
+# 5. profiled → general → released
+$ corpus thread designate th_umvcyswu
+designated a general resident on th_umvcyswu
+$ corpus thread release th_umvcyswu
+released a general resident from th_umvcyswu                       (exit 0)
+$ corpus agents
+orchestrator · waiting for a listener
+
+$ corpus server stop
+stopped (pid 8391)
+$ lsof -ti :8842 || echo free
+free
+```
+
+**Checks.** `npm run build` exit 0 (it was red at exactly these two files before
+this change, and nowhere else); `tsc --noEmit -p apps/cli` exit 0; `eslint` and
+`prettier` clean on every touched file; `vitest run apps/cli` — **93 files, 1533
+tests, all passing**. `docs/cli.md` regenerated with `npm run docs:cli -w apps/cli`
+(never hand-edited).
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

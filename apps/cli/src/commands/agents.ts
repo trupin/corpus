@@ -2,6 +2,7 @@ import { AGENT_PRESENCE_WINDOW_SECONDS, ORCHESTRATOR_LANE, type AgentLane } from
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../registry/types.js";
 import { formatAge } from "./age.js";
 import { oneLine } from "./columns.js";
+import { residentLabel } from "./resident.js";
 
 /**
  * `corpus agents` — who is running (SPEC.md §7).
@@ -144,14 +145,22 @@ function laneLabel(lane: AgentLane): string {
  * The orchestrator's lane has no resident cell at all — nobody designates it,
  * and printing an em dash there would invite reading it as a vacancy.
  *
+ * Every other lane exists because something was designated, so its cell says
+ * **which of the three residents §7 admits** owns it — a general one, a profile,
+ * or a profile that has gone — in `commands/resident.ts`'s words rather than in
+ * words invented here, because the board renders the same three states from the
+ * same two fields and a person reading both must be told the same fact twice.
+ *
  * A designated lane whose `resident` came back null is a lane the server can see
- * but cannot name (a hand-edited frontmatter is the only way in). `resident
- * unknown` is the honest cell: the conversation *is* owned, and we cannot say by
- * whom — which is a different fact from nobody owning it.
+ * but cannot name, and since SHARED-048 that is no longer how a resident with no
+ * profile is reported — a general resident is an object whose `name` is null.
+ * `resident unknown` is therefore what is left: the conversation *is* owned, we
+ * cannot say by whom, and that is a different fact from either a general
+ * resident or nobody at all.
  */
 function residentCell(lane: AgentLane): readonly string[] {
   if (lane.lane === ORCHESTRATOR_LANE) return [];
-  return [lane.resident === null ? "resident unknown" : lane.resident.name];
+  return [lane.resident === null ? "resident unknown" : residentLabel(lane.resident)];
 }
 
 function presenceCell(lane: AgentLane, now: number): string {
@@ -189,6 +198,12 @@ export const agentsCommand: WorkspaceCommandSpec = {
     "parked on it right now and since when, and the server's one-line account of what it is " +
     "doing. The `orchestrator` row is always there — it exists before anything is designated and " +
     "survives the last release.\n\n" +
+    "**The resident cell tells three states apart**, because they are three different facts about " +
+    "a conversation: `a general resident` is an agent with no profile document — the ordinary " +
+    "designation, which needs nothing to exist in the workspace first; `researcher (doc_r1)` is a " +
+    "profile a reader can open; and `researcher (profile missing)` is a designation whose profile " +
+    "has been renamed or archived since, which changes nothing about who owns the lane and is " +
+    "reported rather than silently substituted.\n\n" +
     "**Presence is the parked request and nothing else.** A lane is live exactly while somebody " +
     "holds a parked `corpus queue idle --thread <id>`: there is no heartbeat to send, no " +
     "registration to keep fresh and nothing to reap, so an agent that stops parking stops being " +
@@ -219,14 +234,16 @@ export const agentsCommand: WorkspaceCommandSpec = {
     {
       command: "corpus agents",
       description:
-        'One row per lane — `th_4b8e2c "Q3 planning" · researcher · live, parked 2m ago — ' +
-        "reading the mortgage docs` — with a lapsed or unattended lane shown rather than hidden.",
+        'One row per lane — `th_4b8e2c "Q3 planning" · researcher (doc_r1) · live, parked 2m ago ' +
+        "— reading the mortgage docs` — with a lapsed or unattended lane shown rather than hidden.",
     },
     {
       command: "corpus agents --json",
       description:
         'The roster verbatim: `{"agents":[{"lane":"orchestrator","resident":null,"live":true,' +
-        '"since":"2026-08-16T09:00:00.000Z","summary":null,"origin":null},…]}`.',
+        '"since":"2026-08-16T09:00:00.000Z","summary":null,"origin":null},…]}`. On a thread lane ' +
+        "`resident` is an object whose `name` is null for a general resident, so a null `resident` " +
+        "there means the server could not name one at all.",
     },
     {
       command: "corpus agents --json | jq -r '.agents[] | select(.live) | .lane'",

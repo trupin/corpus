@@ -140,12 +140,43 @@ describe("corpus thread show", () => {
     const harness = stubContext(stub, { args: ARGS });
     await runThreadShow(harness.context);
 
-    expect(harness.stdout()).toContain("\nresident researcher · doc_r1\n");
+    expect(harness.stdout()).toContain("\nresident researcher (doc_r1)\n");
     // Between the anchoring line and the timestamps: what the thread is, then
     // who lives in it, then when.
     const lines = harness.stdout().split("\n");
-    expect(lines[3]).toBe("resident researcher · doc_r1");
+    expect(lines[3]).toBe("resident researcher (doc_r1)");
     expect(lines[4]?.startsWith("created ")).toBe(true);
+  });
+
+  it("says a resident designated with no profile is one, rather than printing its nulls", async () => {
+    // SHARED-048: `{name: null, docId: null}` is a general resident — somebody,
+    // with no persona document. Interpolating the fields raw printed
+    // `resident null · null`, which reads as a bug in the thread rather than as
+    // the ordinary designation it is.
+    const stub = await startStubServer(
+      jsonResponder(200, { ...ANCHORED, resident: { name: null, docId: null } }),
+    );
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadShow(harness.context);
+
+    expect(harness.stdout()).toContain("\nresident a general resident\n");
+    expect(harness.stdout()).not.toContain("null");
+  });
+
+  it("reports a profile that has gone, rather than a stale id or a general resident", async () => {
+    // §7: a profile renamed or archived after designation does not end the
+    // designation — the miss is reported. The two nulls a reader could confuse
+    // are one level apart, so this must not read like the case above.
+    const stub = await startStubServer(
+      jsonResponder(200, { ...ANCHORED, resident: { name: "researcher", docId: null } }),
+    );
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadShow(harness.context);
+
+    expect(harness.stdout()).toContain("\nresident researcher (profile missing)\n");
+    expect(harness.stdout()).not.toContain("general resident");
   });
 
   it("prints no resident line at all when there is nobody", async () => {

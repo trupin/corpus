@@ -117,6 +117,8 @@ Who is running: every lane, its resident, and whether anybody is listening.
 
 Reads `GET /api/agents` and prints one row per **lane** of the queue (SPEC.md §7): the orchestrator's, plus one for every standalone thread that has been given a resident. Each row names the lane and the conversation it is, who is resident on it, whether a listener is parked on it right now and since when, and the server's one-line account of what it is doing. The `orchestrator` row is always there — it exists before anything is designated and survives the last release.
 
+**The resident cell tells three states apart**, because they are three different facts about a conversation: `a general resident` is an agent with no profile document — the ordinary designation, which needs nothing to exist in the workspace first; `researcher (doc_r1)` is a profile a reader can open; and `researcher (profile missing)` is a designation whose profile has been renamed or archived since, which changes nothing about who owns the lane and is reported rather than silently substituted.
+
 **Presence is the parked request and nothing else.** A lane is live exactly while somebody holds a parked `corpus queue idle --thread <id>`: there is no heartbeat to send, no registration to keep fresh and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. That is why this verb only **reads** — nothing anywhere in this CLI announces an agent, and starting a listener is how one becomes visible here.
 
 **A lane with nobody on it is an ordinary, recoverable state, not a fault.** `waiting for a listener` means the server has observed no park on that lane — which is also what every lane reads as just after a restart, since presence is held in memory and nothing about it is persisted; `lapsed` means a listener was there and has been gone longer than the grace window (16m). In both cases that lane's pending work becomes visible to the orchestrator's unscoped `corpus queue claim-all`, computed when the claim is made and never written into the events — so a resident that comes back finds its lane exactly as it left it, and in the meantime the work is done more slowly rather than not at all.
@@ -131,13 +133,13 @@ corpus agents [flags]
 
 **Examples**
 
-One row per lane — `th_4b8e2c "Q3 planning" · researcher · live, parked 2m ago — reading the mortgage docs` — with a lapsed or unattended lane shown rather than hidden.
+One row per lane — `th_4b8e2c "Q3 planning" · researcher (doc_r1) · live, parked 2m ago — reading the mortgage docs` — with a lapsed or unattended lane shown rather than hidden.
 
 ```
 corpus agents
 ```
 
-The roster verbatim: `{"agents":[{"lane":"orchestrator","resident":null,"live":true,"since":"2026-08-16T09:00:00.000Z","summary":null,"origin":null},…]}`.
+The roster verbatim: `{"agents":[{"lane":"orchestrator","resident":null,"live":true,"since":"2026-08-16T09:00:00.000Z","summary":null,"origin":null},…]}`. On a thread lane `resident` is an object whose `name` is null for a general resident, so a null `resident` there means the server could not name one at all.
 
 ```
 corpus agents --json
@@ -2005,7 +2007,9 @@ Make an agent resident in a standalone conversation (user-only).
 
 Gives a **standalone** thread a resident: a long-lived agent that owns that conversation and everything that grows out of it, rather than being dispatched to one message at a time (SPEC.md §7). Work falling in the thread's **scope** is then enqueued on that scope's lane instead of the orchestrator's, and the resident consumes it with `corpus queue idle --thread <id>` and `corpus queue claim-all --thread <id>`. Scope membership is a walk, not a label: nothing carries a scope marker, and the server works out at enqueue time whether an event falls inside by following a thread's parents and a document's `origin`.
 
-**`--agent` names the agent, not a document.** It is the same name `@<subagent>` mentions resolve — a `type: agent-def` document's own name or its title, matched case-insensitively — and the printed line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the lookup. A name that resolves to no agent-def here is the server's `404`.
+**`--agent` is optional, and which you want is a one-line question**: leave it out when the workspace's ordinary agent should own the conversation, and name a profile when it should be owned by an agent that behaves differently from the default. Designating without it gives the thread a _general resident_ — an agent with no profile document — which needs nothing to exist in the workspace first, so a workspace with no `agent-def` documents can designate on its first day. Everything else is identical either way: the lane, the scope, presence, the lapse fallback, and release.
+
+**`--agent` names the agent, not a document.** It is the same name `@<subagent>` mentions resolve — a `type: agent-def` document's own name or its title, matched case-insensitively — and the printed line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the lookup. A name that resolves to no agent-def here is the server's `404`: a typo is refused rather than quietly downgraded to a general resident. A **blank** name (`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is a mistake, while asking for no profile is a decision, and the two must not look alike. Where a profile is renamed or archived after designation the residency stands, and the printed line reports `name (profile missing)` rather than substituting anything for it.
 
 **Single-valued, so designating again replaces**, and **a repeat is not a no-op**: even when the thread already has this exact resident and no file is written, the designation is announced again — which is how a person asks for a listener that is no longer running to be launched. The announcement goes to the **orchestrator's** lane whoever is designated, since a resident does not announce itself to itself.
 
@@ -2023,22 +2027,28 @@ corpus thread designate <id> [flags]
 
 **Flags**
 
-| Flag             | Type   | Default | Description                                                                                                                                                                                                        |
-| ---------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--agent <name>` | string | —       | The agent to make resident, by the name `@<subagent>` mentions use — an `agent-def` document's own name or its title, case-insensitively. Not a document id. Required: a designation that names nobody is not one. |
+| Flag             | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--agent <name>` | string | —       | The **profile** to make resident, by the name `@<subagent>` mentions use — an `agent-def` document's own name or its title, case-insensitively. Not a document id. **Optional**: omit it when the workspace's ordinary agent should own this conversation, and name a profile when it wants an agent that behaves differently from the default. A blank name is a usage error rather than absence. |
 
 **Examples**
 
-Put the researcher in charge of a conversation and everything it produces.
+Put an agent in charge of a conversation and everything it produces, without choosing a profile for it — prints `designated a general resident on th_4b8e2c`.
+
+```
+corpus thread designate th_4b8e2c
+```
+
+The same, owned by the researcher's profile — prints the `agent-def` document the name resolved to, so nothing has to repeat the lookup.
 
 ```
 corpus thread designate th_4b8e2c --agent researcher
 ```
 
-One JSON value — `{"thread":{…,"resident":{"name":"researcher","docId":"doc_r1"}},"warnings":[]}` — the thread as it now stands, with the name resolved to the document that defines it.
+One JSON value — `{"thread":{…,"resident":{"name":null,"docId":null}},"warnings":[]}` — the thread as it now stands. Both fields null is a general resident; `name` set with `docId` null is a profile that has been renamed or archived since; the whole `resident` null is a thread that has none.
 
 ```
-corpus thread designate th_4b8e2c --agent researcher --json
+corpus thread designate th_4b8e2c --json
 ```
 
 ### `corpus thread release`
@@ -2198,7 +2208,7 @@ corpus thread resolve th_a1b2c3 --from agent --json
 
 Read a conversation: its status, its anchoring, and every turn.
 
-Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. A designated thread also prints a `resident` line naming the agent that owns the conversation and the `agent-def` document that defines it; an undesignated thread prints none, because having nobody resident is the ordinary state rather than a value. That line reports the **designation** and says nothing about whether the agent is currently running — presence is one lane's row in `corpus agents`, and the two are separate reads that may honestly disagree for a moment. **No read-state is reported**: the endpoint carries none, and the only endpoint that does is a mutation — reading a thread must not clear its unread badge. A thread id that names nothing is the server's `404`, which is exit 5.
+Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. A designated thread also prints a `resident` line naming the agent that owns the conversation, with the `agent-def` document that defines it where it has one — a resident designated with no profile prints as `a general resident`, and one whose profile has been renamed or archived since prints `name (profile missing)`. An undesignated thread prints no such line, because having nobody resident is the ordinary state rather than a value. That line reports the **designation** and says nothing about whether the agent is currently running — presence is one lane's row in `corpus agents`, and the two are separate reads that may honestly disagree for a moment. **No read-state is reported**: the endpoint carries none, and the only endpoint that does is a mutation — reading a thread must not clear its unread badge. A thread id that names nothing is the server's `404`, which is exit 5.
 
 ```
 corpus thread show <id> [flags]

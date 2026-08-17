@@ -1,4 +1,5 @@
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { residentLabel } from "../resident.js";
 
 /**
  * `corpus thread show` — the read half of the conversation surface (SPEC.md §6,
@@ -45,9 +46,14 @@ export async function runThreadShow(context: WorkspaceCommandContext): Promise<v
   // endpoint, and the two may legitimately disagree for a grace window. Printing
   // both here would present them as one fact. `corpus agents` is where presence
   // is answered.
+  //
+  // Rendered through the shared label, because since SHARED-048 a resident's
+  // `name` and `docId` are each nullable and the three combinations mean three
+  // different things — interpolating them raw printed `resident null · null` for
+  // the ordinary case.
   const resident = thread.resident;
   if (resident !== null && resident !== undefined) {
-    context.out.line(`resident ${resident.name} · ${resident.docId}`);
+    context.out.line(`resident ${residentLabel(resident)}`);
   }
   context.out.line(`created ${thread.created} · updated ${thread.updated}`);
   context.out.line(`tags ${thread.tags.length === 0 ? NONE : thread.tags.join(", ")}`);
@@ -82,9 +88,12 @@ export const showCommand: WorkspaceCommandSpec = {
     "anchoring line names which of the three shapes the thread has: anchored to a selection, on " +
     "a whole document (`parent` set, no anchor), or standalone (neither). This is the context " +
     "SPEC.md §7's comment skill reads before it replies. A designated thread also prints a " +
-    "`resident` line naming the agent that owns the conversation and the `agent-def` document " +
-    "that defines it; an undesignated thread prints none, because having nobody resident is the " +
-    "ordinary state rather than a value. That line reports the **designation** and says nothing " +
+    "`resident` line naming the agent that owns the conversation, with the `agent-def` document " +
+    "that defines it where it has one — a resident designated with no profile prints as `a " +
+    "general resident`, and one whose profile has been renamed or archived since prints " +
+    "`name (profile missing)`. An undesignated thread prints no such line, because having nobody " +
+    "resident is the ordinary state rather than a value. That line reports the **designation** " +
+    "and says nothing " +
     "about whether the agent is currently running — presence is one lane's row in " +
     "`corpus agents`, and the two are separate reads that may honestly disagree for a moment. " +
     "**No read-state is reported**: the " +
