@@ -659,6 +659,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | done | P1 | — |
+| UI-117 | `anchor-layer.spec.ts:475` reads `innerText` before layout has flushed (UI-116 finding) | todo | P2 | — |
 | SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | done | P0 | — |
 | AGENT-028 | Two product skills still say the empty tree is the repository's first commit (CLI-045 finding) | done | P1 | — |
 | CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | done | P0 | — |
