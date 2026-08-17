@@ -1638,6 +1638,61 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/`doc\.edited`: the payload's `docId`/);
     });
 
+    /**
+     * AGENT-028. SERVER-113 moved **both** ends of a range onto *this
+     * document's* history, and the consequence nobody predicted at the time is
+     * that every document's first change now diffs against git's empty tree —
+     * where this text still called it the base "carried by a document the
+     * repository's first commit introduced".
+     *
+     * That is product text rather than repository documentation: it is what a
+     * user's agent reads to decide what a diff means, and an agent told the
+     * empty tree is a rarity may report an ordinary new document as an anomaly.
+     *
+     * The same sentence has now been found stale in four surfaces (SPEC.md
+     * §9.2, the published contract, the CLI help, these skills), each time by
+     * somebody doing something else — so it is pinned in both directions: the
+     * correct framing must be present *with its reason*, and the too-narrow one
+     * must be absent from every installed skill, plugin skills included. The
+     * reason is the half that stops it drifting back: §4's commit windows are
+     * party-scoped, so the parent of a window commit is not this document's
+     * history but whoever else's document was saved in the same window.
+     */
+    it("teaches the empty-tree base as the ordinary shape of a first change", () => {
+      const flat = body.replace(/\s+/g, " ");
+      // Matched to `packages/contract/src/schemas/edit.ts` rather than phrased
+      // a fifth time: any document's first change, not the repository's.
+      expect(flat).toMatch(/empty-tree sha an event carries for a document's \*\*first\*\* change/);
+      expect(flat).toMatch(/ordinary shape of a first change, not an anomaly to report/i);
+      expect(flat).toMatch(/\*\*any\*\* document's first commit/);
+      // The why, without which the narrow framing grows back.
+      expect(flat).toMatch(/belongs to a party rather than to a document/i);
+      expect(flat).toMatch(/somebody else's save to a different file/i);
+      expect(flat).toMatch(/this document did not exist/i);
+    });
+
+    /**
+     * The negative half, across every installed skill. A sentence may still
+     * mention the repository's own first commit — the corrected wording does,
+     * to say the base is *not only* that — so what is forbidden is the
+     * unqualified equation, which is exactly what the stale text was.
+     */
+    it.each(installedSkills)(
+      "$label never ties the empty tree to the repository's own first commit",
+      ({ label, body: skillBody }) => {
+        const sentences = skillBody
+          .replace(/\s+/g, " ")
+          .split(/(?<=\.)\s+/)
+          .filter((sentence) => /empty[- ]tree/i.test(sentence));
+        for (const sentence of sentences) {
+          if (!/repositor|root commit/i.test(sentence)) continue;
+          expect(sentence, `${label}: narrows the empty tree to the repository`).toMatch(
+            /not only|never only|not just|rather than only|whether or not/i,
+          );
+        }
+      },
+    );
+
     it("fetches the diff with the event's range, passed through unchanged", () => {
       expect(body).toMatch(
         /corpus doc diff doc_a1b2c3 --from-rev [0-9a-f]{40} --to-rev [0-9a-f]{40}/,

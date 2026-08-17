@@ -934,7 +934,8 @@ completed without acting on it.
 
 **1 — Read the change, always, exactly once.** The event's `from` and `to` go in as
 `--from-rev` and `--to-rev` unchanged — no conversion, no resolution, including the
-empty-tree sha carried by a document the repository's first commit introduced:
+empty-tree sha an event carries for a document's **first** change, which diffs as wholly
+added:
 
 ```bash
 corpus doc diff doc_a1b2c3 --from-rev 0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b --to-rev 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
@@ -950,6 +951,18 @@ What they are for is sizing the read — a change far past the 16000-character b
 back cut, and the numbers say so before you spend the call — and giving you the honest
 figure to quote when it does. The read is bounded, so it costs about the same whatever the
 person wrote.
+
+**An empty-tree base is the ordinary shape of a first change, not an anomaly to report.**
+`from` is git's empty tree whenever nothing before the range ever touched **this
+document** — that is **any** document's first commit, not only one the repository's root
+commit introduced. Both ends of a range walk this document's history, not the branch's, and
+they have to: a commit window belongs to a party rather than to a document and gathers that
+party's saves across documents, so the commit sitting immediately before a document's first
+one is routinely somebody else's save to a different file — a commit at which this document
+did not exist, and naming it as the base would be a false claim about where this document
+came from. What comes back is the whole document as added, which is the truth about a
+document with no earlier revision. Read it and judge it like any other change; a new
+document being new is not something to raise with anyone.
 
 **2 — Decide triviality from the diff, never from its size.** Read the `-` lines and the
 `+` lines as claims and ask one question: does the document assert anything different now?

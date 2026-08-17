@@ -660,7 +660,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | todo | P1 | — |
 | SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | done | P0 | — |
-| AGENT-028 | Two product skills still say the empty tree is the repository's first commit (CLI-045 finding) | todo | P1 | — |
+| AGENT-028 | Two product skills still say the empty tree is the repository's first commit (CLI-045 finding) | done | P1 | — |
 | CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | done | P0 | — |
 | SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | done | P0 | CONTRACT-055 |
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | — |
