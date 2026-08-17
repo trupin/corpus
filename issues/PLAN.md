@@ -923,7 +923,7 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | SHARED-048 | A resident need not have a profile (SIGNED 2026-08-17) | done | P0 | — |
 | SHARED-046 | SPEC.md cited a §9.4 that does not exist; corrected to §9.2 everywhere | done | P1 | — |
 | CONTRACT-061 | A designation may name no profile | done | P0 | SHARED-048 |
-| SERVER-121 | Designate a resident without naming a profile | todo | P0 | CONTRACT-061 |
+| SERVER-121 | Designate a resident without naming a profile | done | P0 | CONTRACT-061 |
 | SERVER-122 | `.claude/agents/` is a legal create target | done | P0 | — |
 | CLI-049 | `corpus thread designate` without naming an agent | todo | P1 | CONTRACT-061, SERVER-121 |
 | CONTRACT-062 | `FOLDER_DESCRIPTION` describes two routes whose grammars have diverged | done | P1 | SERVER-122 |
