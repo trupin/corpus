@@ -1389,8 +1389,12 @@ Your skills (`.claude/skills/<name>/SKILL.md`, `type: skill`) and subagent perso
 (`.claude/agents/<name>.md`, `type: agent-def`) are ordinary documents: indexed, searchable,
 visible and commentable on the board, and edited through the CLI like everything else —
 `corpus doc edit` on a skill is how you revise your own behavior when feedback in a thread
-calls for it, and a new `type: agent-def` document is all it takes to make a persona
-addressable as `@<name>`. Two consequences:
+calls for it, and a persona is a document in exactly the same way — the file under
+`.claude/agents/` is what `@<name>` resolves to, with no registry anywhere to enter it in.
+**What a persona has to carry, and how one is written, is the profile skill's to state, and
+it is stated there alone.** A request for an agent of somebody's own goes to `/profile`; what
+you rely on here is only that the result is a document, revised and archived like any other.
+Two consequences:
 
 - An edit to **this** skill or to the comment skill takes effect on the **next**
   `/orchestrate`, not in the running session — say exactly that in the reply whenever you

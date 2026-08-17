@@ -44,6 +44,7 @@ const EXPECTED_TREE = [
   "claude/skills/comment/SKILL.md",
   "claude/skills/converse/SKILL.md",
   "claude/skills/orchestrate/SKILL.md",
+  "claude/skills/profile/SKILL.md",
   "data/docs/inbox/.gitkeep",
   "data/docs/templates/note.md",
   "data/docs/views/attention.md",
@@ -197,7 +198,7 @@ describe("template tree", () => {
 
 describe("seed documents", () => {
   it("gives every markdown file complete SPEC §5 frontmatter", () => {
-    expect(documents.length).toBe(8);
+    expect(documents.length).toBe(9);
     for (const { relPath, frontmatter } of documents) {
       expect(DocumentIdSchema.safeParse(frontmatter.id).success, `${relPath}: id`).toBe(true);
       expect(typeof frontmatter.type, `${relPath}: type`).toBe("string");
@@ -323,7 +324,11 @@ describe("skills", () => {
   ];
 
   /** Every skill the template itself ships — the checks that bind any skill, doctrine or not. */
-  const coreSkills = [...skills, { name: "converse", relPath: "claude/skills/converse/SKILL.md" }];
+  const coreSkills = [
+    ...skills,
+    { name: "converse", relPath: "claude/skills/converse/SKILL.md" },
+    { name: "profile", relPath: "claude/skills/profile/SKILL.md" },
+  ];
 
   it.each(coreSkills)("$name carries both frontmatter field sets", ({ name, relPath }) => {
     const { frontmatter } = documentAt(relPath);
@@ -388,6 +393,15 @@ describe("skills", () => {
         "lapse",
         "context runs heavy",
         "retirement",
+        "worked example",
+      ],
+      profile: [
+        "when this runs",
+        "before you write",
+        "worth having",
+        "writing it",
+        "refusals",
+        "reporting",
         "worked example",
       ],
     };
@@ -3811,6 +3825,172 @@ describe("converse skill body", () => {
 });
 
 /**
+ * AGENT-034. The skill that writes a subagent profile.
+ *
+ * Two things are pinned here and they are pinned for different reasons.
+ *
+ * **The mechanism**, because it is silent when it is wrong. `corpus doc create
+ * --type agent-def` writes Corpus's frontmatter and none of Claude Code's, and
+ * Claude Code loads a profile only when **both** `name` and `description` are
+ * present — measured against a real session on 2026-08-17: with neither, with
+ * `name` alone, and with `description` alone, the profile is absent from the
+ * subagent list and nothing anywhere reports it, while `corpus doc check`
+ * passes it clean. So the skill's second command is the whole difference
+ * between a persona and a file, and the text is held to teaching it.
+ *
+ * **The worked example against the skill's own prose**, because AGENT-026 is
+ * the defect this repo has already shipped: an example contradicting the rule
+ * above it teaches the example. Each assertion below pairs one stated rule with
+ * the place the example obeys it, so a future edit to either half has to move
+ * both.
+ */
+describe("profile skill body", () => {
+  const body = documentAt("claude/skills/profile/SKILL.md").body;
+
+  /** The `--extra name=` the worked example sets, and the path its create printed. */
+  const exampleName = /--extra name=([a-z0-9-]+)/.exec(body)?.[1];
+  const examplePath = /created doc_\w+ — (\.claude\/agents\/[a-z0-9-]+)\.md/.exec(body)?.[1];
+
+  it("carries its sections, each of them substantial", () => {
+    const sections = new Map<string, string[]>();
+    let current: string | null = null;
+    for (const line of body.split("\n")) {
+      if (line.startsWith("## ")) {
+        current = line.slice(3).trim();
+        sections.set(current, []);
+      } else if (current !== null) {
+        sections.get(current)?.push(line);
+      }
+    }
+    expect(sections.size).toBe(7);
+    for (const [heading, lines] of sections) {
+      expect(lines.join("\n").trim().length, `section "${heading}" is thin`).toBeGreaterThan(400);
+    }
+  });
+
+  it("teaches the create and the two fields as one procedure, not one command", () => {
+    expect(body).toMatch(/corpus doc create --type agent-def --title/);
+    expect(body).toMatch(/--extra name=\S+ --extra description=/);
+    // The reason the second command exists, stated as the consequence rather
+    // than as a step: this is what a reader skips if it reads as bookkeeping.
+    expect(body).toMatch(/needs \*\*both `name` and `description`\*\*/);
+    expect(body).toMatch(/loads nothing, lists nothing, and warns about nothing/);
+  });
+
+  it("ties the frontmatter name to the filename, with the cost of the mismatch", () => {
+    expect(body).toMatch(/exactly the stem of the path the create printed/);
+    expect(body).toMatch(/one document two different addresses and no error at all/);
+    // Both resolvers named, since the mismatch is only comprehensible as two of
+    // them disagreeing.
+    expect(body).toMatch(/Corpus resolves `@<name>`\s+from the file's path/);
+    expect(body).toMatch(/Claude Code resolves it from this field/);
+  });
+
+  it("says the read-back is the only check, and that doc check is not one", () => {
+    expect(body).toMatch(/corpus doc show doc_\w+ --json \| jq/);
+    expect(body).toMatch(/`corpus doc check` passes a profile\s+carrying neither field/);
+    expect(body).toMatch(/a green check proves nothing here/);
+  });
+
+  it("keeps writing a profile separate from putting it to work", () => {
+    expect(body).toMatch(/\*\*Writing a profile and putting it to work are two acts/);
+    expect(body).toMatch(/user-only/);
+    // The skill hands the designation over; it never runs one itself, which is
+    // checkable: an agent-authored designation is the shape that would be wrong.
+    for (const line of body.match(/[^\n]*corpus thread designate[^\n]*/g) ?? []) {
+      expect(line, "the skill designates instead of handing it over").not.toContain("--from agent");
+    }
+    // A resident needs no profile at all (SPEC.md §7, rider 2026-08-17), which
+    // is the answer when the request is really about staffing a conversation.
+    expect(body).toMatch(/a resident \*\*need not have a profile at all\*\*/);
+  });
+
+  it("refuses a taken name rather than inventing a free one", () => {
+    expect(body).toMatch(/already taken in \.claude\/agents/);
+    expect(body).toMatch(/exit \*\*5\*\*/);
+    expect(body).toMatch(/a second persona at an address the person will never type/);
+    // Revising the existing one is a different request, not a fallback.
+    expect(body).toMatch(/\*\*Revising it is a different request and needs\s+their yes\*\*/);
+    expect(body).toMatch(/never edit a profile you\s+did not just create/);
+  });
+
+  it("states what makes a persona worth having, in behavioural terms", () => {
+    expect(body).toMatch(/A profile that changes nothing is decoration/);
+    expect(body).toMatch(/name two things this\s+agent would do differently/);
+    expect(body).toMatch(/\*\*Write behaviour, not biography\.\*\*/);
+    expect(body).toMatch(/The refusals are half the profile/);
+    expect(body).toMatch(/Say what a finished answer looks like/);
+    expect(body).toMatch(/Short enough to stay true/);
+    expect(body).toMatch(/It inherits; it does not restate/);
+    // The description has a different reader from the body — the rule that
+    // makes a persona findable rather than merely correct.
+    expect(body).toMatch(/only part\s+of the file another agent sees before dispatching/);
+  });
+
+  it("gathers in one turn where it gathers at all, and refuses a blank request", () => {
+    expect(body).toMatch(/ask, and ask \*\*once\*\*/);
+    expect(body).toMatch(/Three questions is the whole budget/);
+    expect(body).toMatch(/Where the request already carries all three, write the profile/);
+    expect(body).toMatch(/is not thin, it is blank/);
+  });
+
+  /**
+   * The AGENT-026 pins: each one reads a rule out of the prose and the matching
+   * decision out of the worked example. They fail on a change to either half.
+   */
+  it("works an example whose name obeys the naming rule it states", () => {
+    expect(body).toMatch(/One word where you can, hyphenated\s+where you must, never a phrase/);
+    expect(exampleName, "the example sets no `--extra name=`").toBeDefined();
+    expect(examplePath, "the example's create prints no path").toBeDefined();
+    // The rule the prose states about `name` and the filename, checked on the
+    // one place a reader will copy from.
+    expect(`.claude/agents/${exampleName ?? ""}`).toBe(examplePath);
+    expect(exampleName, "the worked name is not the one word the rule asks for").not.toContain("-");
+  });
+
+  it("works an example description written as when to reach for the agent", () => {
+    expect(body).toMatch(/write it as \*when to reach for this\s+one\*/);
+    expect(body).toMatch(/--extra description='Reach for this when /);
+  });
+
+  it("works an example persona that obeys the body rules above it", () => {
+    // Scoped to the worked example: *Writing it* runs the same agent through a
+    // skeleton whose body is a stand-in, and holding that stand-in to the
+    // persona rules would be checking the wrong text.
+    const worked = body.slice(body.indexOf("## Worked example"));
+    expect(worked, "no worked-example section").not.toBe("");
+    const profileBody =
+      /--type agent-def --title "[^"]+" --from agent <<'EOF'\n([\s\S]*?)\nEOF/.exec(worked)?.[1];
+    expect(profileBody, "no worked persona body").toBeDefined();
+    const written = (profileBody ?? "").split("\n").filter((line) => line.trim() !== "");
+    // "Short enough to stay true", checked rather than asserted in prose.
+    expect(written.length, "the worked persona is longer than the rule allows").toBeLessThanOrEqual(
+      12,
+    );
+    // "The refusals are half the profile."
+    expect(profileBody).toMatch(/\bNever\b|\bdo not\b/);
+    // "Say what a finished answer looks like."
+    expect(profileBody).toMatch(/A good answer from you is/);
+    // "It inherits; it does not restate" — the worked persona repeats none of
+    // the workspace's own doctrine, which is the rule most easily broken by
+    // somebody making the example look thorough.
+    expect(profileBody).not.toMatch(/corpus |archive|--from agent/i);
+  });
+
+  it("reports the four things a person needs, and its example reports them", () => {
+    expect(body).toMatch(/\*\*what you created, where it lives, what it does, and how to reach it/);
+    const reply = /corpus thread reply [^\n]*<<'EOF'\n([\s\S]*?)\nEOF/.exec(body)?.[1] ?? "";
+    expect(reply, "no worked reply").not.toBe("");
+    expect(reply, "the reply names no sigil").toContain(`@${exampleName ?? ""}`);
+    expect(reply, "the reply names no path").toContain(`${examplePath ?? ""}.md`);
+    expect(reply, "the reply hands over no designation").toContain("corpus thread designate");
+    // The skill tells the agent to say what it guessed; the example does.
+    expect(body).toMatch(/every assumption you made instead of asking/i);
+    expect(reply).toMatch(/One guess in there/);
+  });
+});
+
+/**
  * AGENT-032 — the class rather than the instance.
  *
  * Four review findings in three passes have come from one rule written into two
@@ -3836,13 +4016,14 @@ describe("converse skill body", () => {
  * decision is made once and recorded, which is the part that was missing.
  */
 describe("one rule, one skill", () => {
-  const SKILLS = ["orchestrate", "converse", "comment"] as const;
+  const SKILLS = ["orchestrate", "converse", "comment", "profile"] as const;
   type SkillName = (typeof SKILLS)[number];
 
   const skillBody: Record<SkillName, string> = {
     orchestrate: documentAt("claude/skills/orchestrate/SKILL.md").body,
     converse: documentAt("claude/skills/converse/SKILL.md").body,
     comment: documentAt("claude/skills/comment/SKILL.md").body,
+    profile: documentAt("claude/skills/profile/SKILL.md").body,
   };
 
   /** Prose paragraphs of a skill body: fenced blocks dropped, wrapped lines rejoined. */
@@ -4023,6 +4204,9 @@ describe("one rule, one skill", () => {
     ["orchestrate", "converse"],
     ["orchestrate", "comment"],
     ["converse", "comment"],
+    ["orchestrate", "profile"],
+    ["converse", "profile"],
+    ["comment", "profile"],
   ];
 
   it("records nothing that records nothing", () => {
@@ -4132,6 +4316,43 @@ describe("one rule, one skill", () => {
       // only to the prohibition, which is what a rule's non-consumers owe it.
       pointers: [{ skill: "converse", carries: /do not restate the table here/ }],
     },
+    {
+      // AGENT-034. The procedure has exactly two moving parts, and both are
+      // vocabulary rather than phrasing, which is what makes them detectable at
+      // all: the **flag** that creates the document, and the **pair of fields**
+      // that finishes it. Both halves are needed — a skill that only ran the
+      // create would ship a profile Corpus resolves and Claude Code cannot
+      // load, silently — so a second skill restating either half is restating
+      // the procedure.
+      //
+      // `--type agent-def` is deliberately the flag and not the frontmatter
+      // `type: agent-def`: the *fact* that a persona is a `type: agent-def`
+      // document is exactly what `orchestrate` is allowed to keep, and pinning
+      // the fact would forbid the sentence the issue asked to preserve. So the
+      // hyphens carry the whole distinction between fact and procedure here.
+      //
+      // Net, not proof, in the same sense as the rule above: a restatement that
+      // names neither the flag nor both fields — *"create the document, then
+      // set the two fields Claude Code reads"* — passes, and the test below
+      // says so out loud rather than letting the omission become invisible.
+      rule: "how a persona profile is written",
+      owner: "profile",
+      restatements: (body) => [
+        ...(body.match(/[^\n]*--type\s+agent-def[^\n]*/g) ?? []),
+        ...proseSentences(body).filter(
+          (sentence) =>
+            /agent-def|persona|profile/i.test(sentence) &&
+            /`name`[^.]{0,140}`description`|`description`[^.]{0,140}`name`/.test(sentence),
+        ),
+      ],
+      pointers: [
+        {
+          skill: "orchestrate",
+          carries:
+            /\*\*What a persona has to carry, and how one is written, is the profile skill's to state, and\s+it is stated there alone\.\*\*/,
+        },
+      ],
+    },
   ];
 
   it("keeps every registered rule in the one skill that owns it", () => {
@@ -4200,6 +4421,32 @@ describe("one rule, one skill", () => {
       standDown?.restatements("the id it expected to claim comes back held by another caller") ?? [
         "unchecked",
       ],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("catches both halves of the profile procedure, and says which paraphrase it misses", () => {
+    // The same claim as the docblock, executable. The flag and the field pair
+    // are each enough on their own to report a restatement, because a skill
+    // that teaches only one of them teaches a broken profile — and the prose
+    // form that names neither is admitted as the gap it is.
+    const writing = SINGLE_OWNER_RULES.find(({ rule }) => rule.startsWith("how a persona"));
+    expect(writing, "profile writing is no longer registered").toBeDefined();
+    const caught = [
+      '```bash\ncorpus doc create --type agent-def --title "Archivist" --from agent\n```',
+      "A persona needs both `name` and `description` in its frontmatter, or nothing loads it.",
+      "Without a `description` beside the `name`, the agent-def is invisible to a dispatch.",
+    ];
+    for (const sample of caught) {
+      expect(
+        writing?.restatements(sample) ?? [],
+        `a restatement of the profile procedure now evades the pin: "${sample}"`,
+      ).not.toEqual([]);
+    }
+    expect(
+      writing?.restatements(
+        "Create the persona document, then set the two fields Claude Code reads.",
+      ) ?? ["unchecked"],
       "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
     ).toEqual([]);
   });

@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -47,29 +47,29 @@ could not put one in the right place.
 
 ## Acceptance Criteria
 
-- [ ] A new skill under `assets/workspace/claude/skills/<name>/SKILL.md`,
+- [x] A new skill under `assets/workspace/claude/skills/<name>/SKILL.md`,
       installed by `corpus init`, that creates a `type: agent-def` document in
       `.claude/agents/`
-- [ ] It is invocable the way the other product skills are, and its
+- [x] It is invocable the way the other product skills are, and its
       `description` says when to reach for it in terms a person would use
-- [ ] It **gathers what it needs before writing**: what the agent is for, how it
+- [x] It **gathers what it needs before writing**: what the agent is for, how it
       should behave, what it should avoid. Where the request is thin it asks
       with a form (§6) in one turn rather than interrogating across several, and
       where the request is already specific it does not ask at all
-- [ ] The document it writes carries the frontmatter Claude Code needs (`name`,
+- [x] The document it writes carries the frontmatter Claude Code needs (`name`,
       `description`) and is immediately resolvable as `@<name>` and designatable
       — verified in the drill, not assumed
-- [ ] It reports what it created, where, and how to use it, in the reply
-- [ ] **Refusals are honest**: a name that collides with an existing profile, a
+- [x] It reports what it created, where, and how to use it, in the reply
+- [x] **Refusals are honest**: a name that collides with an existing profile, a
       workspace whose root refuses the write, a blank request — each is said,
       not worked around
-- [ ] It never edits an existing profile as a side effect of being asked for a
+- [x] It never edits an existing profile as a side effect of being asked for a
       new one
-- [ ] **One rule, one skill**: it owns profile creation, and nothing about
+- [x] **One rule, one skill**: it owns profile creation, and nothing about
       creating a profile is restated in `orchestrate` or `comment` beyond a
       pointer. `orchestrate/SKILL.md:1392`'s sentence is reconciled — it may
       keep the *fact* that a profile is a document while ceding the *procedure*
-- [ ] `scripts/workspace-template.test.ts` covers the new skill: the manifest
+- [x] `scripts/workspace-template.test.ts` covers the new skill: the manifest
       installs it, and the single-owner registry gains its mechanism vocabulary
 
 ## Technical Design
@@ -135,16 +135,154 @@ behavioural test is the drill.
 
 ## E2E Verification Log
 
-_[Agent fills — include the created document verbatim and the drill's observed
-behaviour]_
+Ran on **opus** (Opus 5, 1M context). Workspaces under
+`~/.claude/jobs/4dd0ddef/tmp/{probe,s034-drill,s034-drill2}`, real server on port
+**8841** throughout, stopped at the end (port verified free; 8765 untouched).
+Drill transcripts retained as `s034-drill-transcript.jsonl`, `s034-drill-b.jsonl`,
+`s034-drill-c.jsonl`, `s034-drill-d.jsonl`, `s034-drill-e.jsonl`
+(`claude -p --output-format stream-json --verbose`).
+
+### The finding the skill is built on (measured, `probe` workspace)
+
+`corpus doc create --type agent-def --title "Archivist"` lands
+`.claude/agents/archivist.md` with **neither `name` nor `description`** — Corpus's
+frontmatter only. Against a real `claude` session in that workspace, asked to
+list its subagent types:
+
+| frontmatter | listed by Claude Code |
+| ------------------------- | --------------------- |
+| neither field | **no** |
+| `description` only | **no** |
+| `name` only | **no** |
+| both | **yes** |
+
+`corpus doc check` reported *no findings* in every one of those states, and
+nothing else warned either. So the CLI verb alone produces a profile Corpus can
+designate and Claude Code cannot run, silently — which is what makes this more
+than a wrapper, and what the skill's second command exists for.
+
+Second measured fact: the two resolvers disagree independently. Setting
+`name: numbers` on `.claude/agents/bareprofile.md` gave `numbers` in Claude
+Code's subagent list and `@bareprofile` in Corpus
+(`corpus thread designate --agent numbers` → `404`, `--agent bareprofile` →
+designated). One file, two addresses, no error. Hence the skill's rule that
+`name` must be the stem of the path the create printed.
+
+Collision is honest already: a second `--title "Archivist"` is exit **5**,
+*the name `archivist` is already taken in .claude/agents*, nothing written, no
+`-2` dedupe (`allocatePath` refuses under that root by design).
+
+### Install
+
+`corpus init s034-drill --port 8841` → *installed **10** template files*;
+`.claude/skills/` contains `comment converse fixture-notes orchestrate profile
+todos`. No manifest edit was needed: the installer copies the tree wholesale.
+
+### Drill A — ordinary words, near the worked example's domain
+
+Prompt: *"I keep having to remind you where the numbers came from whenever we
+talk about the household finances. Can I have an agent of my own that just does
+that properly?"*
+
+The session reached for the skill unprompted from the description alone
+(`Skill(profile)` on its first tool call), then: `corpus doc list --type
+agent-def` → create → `--extra name= --extra description=` → `doc show --json |
+jq` read-back → reported. It did **not** designate; it handed the command over.
+
+**Defect found by the drill:** the persona it wrote was a near-verbatim copy of
+the worked example (title *Bookkeeper*, same four rules, same closing shape) —
+the example was doing the work instead of the guidance. Fixed by adding *"This
+is one profile, not a template"* to the worked example, and re-drilled (E).
+
+### Drill B — a different domain, same skill
+
+Prompt: *"…something of my own that goes over my writing before I publish it? I
+write long posts and I overdo the qualifiers."* Produced `@editor`, wholly
+original: quote-the-line-and-the-trim output, "stacked hedges first", *a
+qualifier that is load-bearing stays*, a ten-item cap on long posts, and a
+refusal to comment on argument or voice. Behaviour not biography, refusals
+present, output shape stated, one-word name, three guesses declared. The
+guidance generalises.
+
+### Drill C — collision
+
+Prompt: *"I want an agent called editor that fixes my spelling."* Nothing was
+written. It read the existing `@editor`, said what that one is for, offered the
+two real choices, and refused the second without consent — *"rewriting a persona
+because its name is convenient changes how work already routed to `@editor`
+behaves, and you asked for a new agent."* No `@editor-2`.
+
+### Drill D — blank request
+
+Prompt: *"make me an agent."* Nothing written. It named the two things it would
+need, listed the profiles that already exist, and volunteered §7's rider: if what
+you want is presence rather than different behaviour, no profile is needed.
+That claim was checked against the real CLI —
+`corpus thread designate th_… ` with no `--agent` → *designated a general
+resident*, exit 0; `--agent ""` is a usage error naming both spellings. (Note:
+`docs/cli.md` still calls `--agent` *Required*, which is stale — CLI-049 territory,
+not this issue's.)
+
+### Drill E — the fix, re-drilled on drill A's exact prompt
+
+Fresh `corpus init` on the edited skill, same prompt as A. This time it wrote
+`@ledger`, not a copy: sourcing attached to the figure *"not a footnote, not a
+list at the end"*, derived numbers showing their parts, **re-source every time a
+figure comes up** — reasoning explicitly from the person's own complaint (*"that's
+the drift you've been correcting"*) — and no advice. It also volunteered that the
+corpus holds no finance documents yet, so the agent's first honest answers will
+be *unsourced*. Same prompt, different persona: the anti-mimicry line is what
+changed.
+
+The document it wrote, verbatim frontmatter:
+
+```
+---
+id: doc_jbkjvzzc
+type: agent-def
+title: Ledger
+created: 2026-08-17T23:22:58Z
+updated: 2026-08-17T23:23:02Z
+tags: []
+status: open
+anchors: {}
+due: null
+reviewed: null
+evergreen: false
+origin: null
+name: ledger
+description: Reach for this for anything about the household finances — what a bill or a balance was, what something totalled, what a figure was based on. It cites the source of every number it gives.
+---
+You answer questions about this household's money, and you never state a figure without saying where it came from.
+…
+```
+
+Then, without touching the file again:
+
+- `corpus thread designate th_wj2kvexp --agent ledger` → *designated ledger
+  (doc_jbkjvzzc) on th_wj2kvexp*
+- `corpus agents` → `th_wj2kvexp "June bills" · ledger (doc_jbkjvzzc) · waiting
+  for a listener`
+- a fresh `claude` session in that workspace lists `ledger` among its subagent
+  types
+
+### Tests
+
+`VITEST_MAX_THREADS=4 vitest run scripts apps/cli/src/template
+apps/cli/src/commands/init` → **878 passed**, 24 files.
+`scripts/workspace-template.test.ts` alone: 350 passed, including the new
+`profile skill body` block (sections pinned at 7, the two-command procedure, the
+name/filename tie, the read-back, the refusals, and eleven assertions pairing the
+worked example against the prose above it). Prettier and ESLint clean on the
+changed files.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
