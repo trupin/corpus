@@ -520,7 +520,7 @@ cheapest moment for that to happen.
 | UI-097 | A request nobody has picked up says "agent is working…" | done | P1 | SHARED-033 |
 | CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | done | P1 | SHARED-033 |
 | SERVER-086 | The server does not record that an agent is there | done (absorbed by SERVER-112) | P1 | CONTRACT-045 |
-| UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-086 |
+| UI-098 | The console says `agent: idle` when no agent exists | done | P1 | CONTRACT-045, SERVER-086 |
 | UI-099 | Commenting on a document selection leaves no visible anchor | done | P0 | — |
 | UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | done | P0 | — |
 | UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | done | P1 | UI-103 |
@@ -659,6 +659,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | todo | P1 | — |
+| SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | todo | P0 | — |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | todo | P2 | SERVER-113 |
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
