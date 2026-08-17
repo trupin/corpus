@@ -6,8 +6,19 @@
 // registration to keep fresh, nothing to reap.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AGENT_PRESENCE_WINDOW_SECONDS, MAX_IDLE_TIMEOUT_SECONDS } from "@corpus/contract";
-import { LANE_GRACE_MS, NOTHING_PARKED, createLaneTracker } from "./liveness.js";
+import {
+  AGENT_PRESENCE_WINDOW_SECONDS,
+  MAX_IDLE_TIMEOUT_SECONDS,
+  QUERY_KEY_NAMES,
+  QUERY_KEY_VOCABULARY,
+} from "@corpus/contract";
+import { DOCS_KEY, JOBS_KEY } from "../events/index.js";
+import {
+  LANE_GRACE_MS,
+  NOTHING_PARKED,
+  PRESENCE_QUERY_KEYS,
+  createLaneTracker,
+} from "./liveness.js";
 
 const LANE = "th_resident";
 const OTHER = "th_other";
@@ -296,5 +307,42 @@ describe("a queue with no tracker bound", () => {
     expect(NOTHING_PARKED.presence()).toEqual({ live: false, since: null });
     expect(NOTHING_PARKED.presenceOf(LANE)).toEqual({ lane: LANE, live: false, since: null });
     NOTHING_PARKED.close();
+  });
+});
+
+describe("what a presence change makes stale (SERVER-114)", () => {
+  // Both grains of the one observation: per lane on `GET /api/agents`, and
+  // aggregated on `QueueStatus.agent` from `GET /api/queue/status`
+  // (CONTRACT-045). §7 delivers presence as a key name and never as data, so a
+  // route left unnamed has no other way to learn — the UI's cache is
+  // `staleTime: Infinity` with no refetch on focus or reconnect.
+  it("names both routes that carry presence", () => {
+    expect(PRESENCE_QUERY_KEYS).toEqual([["agents"], ["queue"]]);
+  });
+
+  // The keys a queue *transition* names, which this deliberately is not: a park
+  // moves no counts and creates no job, so `["jobs"]` here would send the
+  // console to re-read a list that cannot have changed.
+  it("is not the queue transition's set", () => {
+    expect(PRESENCE_QUERY_KEYS).not.toContainEqual(JOBS_KEY);
+    expect(PRESENCE_QUERY_KEYS).not.toContainEqual(DOCS_KEY);
+  });
+
+  /**
+   * The cross-check that would have caught SERVER-114 the day CONTRACT-045 was
+   * written: the contract *publishes* which action emits each key, and its
+   * `queue` entry has said "plus every change to agent presence" since presence
+   * moved onto the queue status. Read that claim back and hold the emitter to
+   * it, so the two cannot drift again — a route that starts carrying presence
+   * announces itself here rather than in a stale pill.
+   */
+  it("covers every key the contract publishes as presence-emitted", () => {
+    const claimed = QUERY_KEY_NAMES.filter((name) =>
+      /presence|liveness/i.test(QUERY_KEY_VOCABULARY[name].emittedBy),
+    );
+    expect(claimed).toEqual(["queue", "agents"]);
+    for (const name of claimed) {
+      expect(PRESENCE_QUERY_KEYS).toContainEqual(QUERY_KEY_VOCABULARY[name].key(""));
+    }
   });
 });

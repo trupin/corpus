@@ -23,9 +23,41 @@
  * may do work a resident would have, never the reverse.
  */
 
-import { AGENT_PRESENCE_WINDOW_SECONDS, type AgentPresence, type Lane } from "@corpus/contract";
+import {
+  AGENT_PRESENCE_WINDOW_SECONDS,
+  type AgentPresence,
+  type Lane,
+  type QueryKey,
+} from "@corpus/contract";
 import { formatInstant } from "../core/time.js";
+import { AGENTS_KEY, QUEUE_KEY } from "../events/index.js";
 import type { LaneLiveness } from "./lanes.js";
+
+/**
+ * What a presence change makes stale — **both routes that carry it**.
+ *
+ * Presence is served at two grains from this one map: per lane on
+ * `GET /api/agents` (`["agents"]`), and aggregated on `QueueStatus.agent` from
+ * `GET /api/queue/status` (`["queue"]`, CONTRACT-045). §7 makes presence *"a
+ * read, never a push"*, so the only thing that reaches a client is the name of a
+ * key it should ask again on — which means a reader whose key is not named never
+ * learns at all. It cannot fall back on a poll: the UI caches with `staleTime:
+ * Infinity` and refetches on neither focus nor reconnect
+ * (`packages/kit/src/client/queryClient.ts`), so an unnamed key is stale until
+ * something unrelated invalidates it.
+ *
+ * That is exactly what SERVER-114 measured: naming only `["agents"]` left the
+ * console's agent pill — which reads the queue status, not the roster — showing
+ * `disconnected` while the server answered `live: true`, until a reload or an
+ * unrelated queue transition. **The rule this constant encodes: the emit names
+ * every key a route carrying the changed fact is cached under, not the key of
+ * the route the fact is named after.**
+ *
+ * Deliberately not the same thing as `QUEUE_QUERY_KEYS`: a queue *transition*
+ * moves counts and jobs, a presence change moves neither, and a park emitting
+ * `["jobs"]` would send the console to re-read a list that cannot have changed.
+ */
+export const PRESENCE_QUERY_KEYS: readonly QueryKey[] = [AGENTS_KEY, QUEUE_KEY];
 
 /**
  * §7's **grace window**: how long a lane stays live after its listener un-parks.
@@ -112,9 +144,10 @@ export interface LaneTrackerOptions {
   readonly graceMs?: number | undefined;
   /**
    * A lane's row changed — it parked, it released, or it lapsed. `app.ts` turns
-   * this into one `["agents"]` invalidation (SPEC.md §7: *"who is running is a
-   * read, never a push"*), so the roster is refetched over HTTP and nothing
-   * about presence travels over SSE as data.
+   * this into one invalidation naming {@link PRESENCE_QUERY_KEYS} (SPEC.md §7:
+   * *"who is running is a read, never a push"*), so both routes that carry
+   * presence are refetched over HTTP and nothing about presence travels over SSE
+   * as data.
    */
   readonly onPresenceChanged?: ((lane: Lane) => void) | undefined;
   /**

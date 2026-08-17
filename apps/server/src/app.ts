@@ -40,7 +40,6 @@ import {
   type EditSessionTracker,
 } from "./edit/index.js";
 import {
-  AGENTS_KEY,
   createInvalidationBus,
   createSseHub,
   mountEventStream,
@@ -70,6 +69,7 @@ import {
   createLaneTracker,
   createQueueService,
   mountQueueRoutes,
+  PRESENCE_QUERY_KEYS,
   type QueueInvalidate,
   type QueueMirror,
   type QueueService,
@@ -373,10 +373,14 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   // residents are parked would hand their work to the orchestrator.
   const laneTracker = createLaneTracker({
     now,
-    // §7: "who is running is a read, never a push". The frame carries the key
-    // and the roster is refetched over HTTP; no presence data goes over SSE.
+    // §7: "who is running is a read, never a push". The frame carries the keys
+    // and the routes are refetched over HTTP; no presence data goes over SSE.
+    //
+    // **Both** keys, because presence is carried by two routes: the roster
+    // (`["agents"]`) and `QueueStatus.agent` (`["queue"]`, CONTRACT-045), which
+    // is the one the console's pill actually reads. See PRESENCE_QUERY_KEYS.
     onPresenceChanged: () => {
-      (deps.invalidate ?? invalidate)([AGENTS_KEY]);
+      (deps.invalidate ?? invalidate)(PRESENCE_QUERY_KEYS);
     },
     // The lapse made this lane's pending events visible to the orchestrator's
     // unscoped claim. Waking it is what turns "visible at the next claim" into
