@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { HttpError } from "../errors.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
 import { silentLogger, type LogFields } from "../logger.js";
-import { classifyPath } from "../projection/index.js";
+import { DOCUMENT_ROOTS, classifyPath } from "../projection/index.js";
 import { createSelfWriteRegistry, type SelfWriteRegistry } from "../watcher/index.js";
 import { createDocument } from "./create.js";
 import { deleteDocument } from "./delete.js";
@@ -611,6 +611,116 @@ describe("resolveFolder", () => {
       }
       expect(accepted, segment).toBe(indexed);
     }
+  });
+
+  // SERVER-122. `.claude/agents` is the one root SPEC.md §7 names for
+  // agent-defs, and it was the one place the create path could not reach.
+  describe("SPEC.md §7's other document roots", () => {
+    it("accepts the agent-def root named by its declared path", () => {
+      expect(resolveFolder(".claude/agents", "agent-def")).toBe(".claude/agents");
+      expect(resolveFolder(" .claude/agents/ ", "agent-def")).toBe(".claude/agents");
+    });
+
+    it("files a type into its own root when the request names no folder", () => {
+      expect(resolveFolder(undefined, "agent-def")).toBe(".claude/agents");
+      // Every other type is inbox-first exactly as before: `skill` has a root
+      // but one no ordinary `*.md` is indexed from, and `note` has none at all.
+      expect(resolveFolder(undefined, "skill")).toBe("data/docs/inbox");
+      expect(resolveFolder(undefined, "note")).toBe("data/docs/inbox");
+      expect(resolveFolder(undefined, "todo")).toBe("data/docs/inbox");
+    });
+
+    it("keeps an explicit folder winning, so a document *about* an agent-def stays expressible", () => {
+      expect(resolveFolder("inbox", "agent-def")).toBe("data/docs/inbox");
+      expect(resolveFolder("reference/personas", "agent-def")).toBe("data/docs/reference/personas");
+    });
+
+    it("refuses a root whose declared type is not the type being created", () => {
+      for (const type of ["note", "skill", undefined]) {
+        let thrown: unknown;
+        try {
+          resolveFolder(".claude/agents", type);
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown, String(type)).toBeInstanceOf(HttpError);
+        const body = (thrown as HttpError).body;
+        expect(body.code === "bad_request" && body.issues.map((issue) => issue.path)).toContain(
+          "folder",
+        );
+      }
+    });
+
+    // The skills roots stay refused, and by the root's own `skill-tree` shape
+    // rather than by a list: `.claude/skills/document.md` is not a document, so
+    // no ordinary create can land there. `POST /api/skills` is that root's verb.
+    it("refuses the skill roots even when the type matches, because nothing is indexed there", () => {
+      for (const folder of [".claude/skills", ".claude/skills-archived"]) {
+        let thrown: unknown;
+        try {
+          resolveFolder(folder, "skill");
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown, folder).toBeInstanceOf(HttpError);
+        const body = (thrown as HttpError).body;
+        expect(body.code, folder).toBe("bad_request");
+        expect(
+          body.code === "bad_request" && body.issues.map((issue) => issue.path),
+          folder,
+        ).toContain("folder");
+      }
+    });
+
+    // The grammar matches a root's declared path *exactly*, which is what keeps
+    // it clear of traversal: anything carrying `..` matches nothing and is
+    // refused by the same code as before, in the same words.
+    it("leaves every escape refused, in the words it always used", () => {
+      for (const folder of [
+        "../../.claude/agents",
+        ".claude/agents/../../../etc",
+        "/.claude/agents",
+        ".claude/agents/nested",
+        ".claude/agentsx",
+        ".Claude/agents",
+      ]) {
+        let thrown: unknown;
+        try {
+          resolveFolder(folder, "agent-def");
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown, folder).toBeInstanceOf(HttpError);
+        const body = (thrown as HttpError).body;
+        expect(body.code, folder).toBe("bad_request");
+      }
+    });
+
+    // The reachable set is read out of `DOCUMENT_ROOTS`, so this asserts the
+    // equivalence rather than a list of names — a root declared later is
+    // creatable the same day, and one that stops being declared stops being
+    // reachable, with no second list to remember.
+    it("reaches exactly the declared roots outside data/ that index a plain markdown file", () => {
+      for (const root of DOCUMENT_ROOTS.filter((entry) => !entry.path.startsWith("data/"))) {
+        const indexed = classifyPath(`${root.path}/x.md`) !== null;
+        let accepted = true;
+        try {
+          resolveFolder(root.path, root.type ?? "note");
+        } catch {
+          accepted = false;
+        }
+        expect(accepted, root.path).toBe(indexed);
+      }
+    });
+
+    // `move` and the bulk act pass no type, and must not gain a door onto a
+    // root: a move promises a relocation under `data/docs/`, not a change of
+    // what kind of document something is.
+    it("stays under data/docs for a caller that names no type", () => {
+      expect(resolveFolder("finance")).toBe("data/docs/finance");
+      expect(resolveFolder(undefined)).toBe("data/docs/inbox");
+      expect(() => resolveFolder(".claude/agents")).toThrow(HttpError);
+    });
   });
 });
 

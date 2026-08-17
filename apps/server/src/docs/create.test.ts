@@ -1,6 +1,7 @@
 import { DocMutationResponseSchema, DocSchema } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument } from "../core/index.js";
+import { MENTION_TYPE, resolveMentionTarget } from "../threads/mentions.js";
 import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
@@ -275,6 +276,168 @@ describe("POST /api/docs", () => {
         folder,
       ).toBe(true);
     }
+  });
+
+  // SERVER-122. Pre-fix every one of these landed under `data/docs/` — a
+  // persona filed in the user's inbox, looking like a note. The assertions are
+  // on the **path**: "creation succeeded" passes against the bug.
+  describe("SPEC.md §7's agent-def root", () => {
+    it("files an agent-def in .claude/agents/ when no folder is named", async () => {
+      start("create-agent-def-default");
+
+      const created = await createDoc(ws, {
+        type: "agent-def",
+        title: "Researcher",
+        body: "You research.",
+      });
+
+      expect(created.path).toBe(".claude/agents/researcher.md");
+      expect(ws.exists(".claude/agents/researcher.md")).toBe(true);
+      expect(ws.exists("data/docs/inbox/researcher.md")).toBe(false);
+
+      // Projected under the root's own type, and readable in the same breath
+      // (§9.1's read-your-write): no watcher, no polling.
+      const row = ws.db.prepare("SELECT path, type FROM documents WHERE id = ?").get(created.id);
+      expect(row).toEqual({ path: ".claude/agents/researcher.md", type: "agent-def" });
+
+      const read = await ws.request(`/api/docs/${created.id}`);
+      expect(read.status).toBe(200);
+      expect(DocSchema.parse(await read.json()).path).toBe(".claude/agents/researcher.md");
+
+      // The write went through the one pipeline, so it is in the audit trail.
+      expect(ws.log("%s").some((subject) => subject.includes(created.id))).toBe(true);
+      expect(ws.git("status", "--porcelain")).toBe("");
+    });
+
+    it("accepts the root named outright, and refuses a type it does not hold", async () => {
+      start("create-agent-def-named");
+
+      const named = await createDoc(ws, {
+        type: "agent-def",
+        title: "Summarizer",
+        folder: ".claude/agents",
+      });
+      expect(named.path).toBe(".claude/agents/summarizer.md");
+
+      const mismatched = await ws.post("/api/docs", {
+        type: "note",
+        title: "Not a persona",
+        folder: ".claude/agents",
+      });
+      expect(mismatched.status).toBe(400);
+      const body = (await mismatched.json()) as {
+        code: string;
+        issues: { path: string }[];
+      };
+      expect(body.code).toBe("bad_request");
+      expect(body.issues.map((issue) => issue.path)).toContain("folder");
+      expect(ws.exists(".claude/agents/not-a-persona.md")).toBe(false);
+    });
+
+    // §11: "creating a new skill or subagent document instantly makes it
+    // autocompletable — there is no separate registry". `resolveMentionTarget`
+    // is the lookup both `@<name>` (§8) and a designation (§7) make, so this is
+    // the same answer the mention parser and the designate route would give.
+    it("resolves as @<name> and designates, the same as a hand-authored one", async () => {
+      start("create-agent-def-mention");
+
+      const created = await createDoc(ws, { type: "agent-def", title: "Researcher" });
+
+      const target = resolveMentionTarget(ws.db, MENTION_TYPE, "researcher");
+      expect(target).toEqual({ name: "researcher", docId: created.id, status: "open" });
+      // Case-insensitively, and by title too — nothing about this document is a
+      // special case of the mention index.
+      expect(resolveMentionTarget(ws.db, MENTION_TYPE, "Researcher")?.docId).toBe(created.id);
+
+      const thread = await ws.post("/api/threads", {
+        title: "Planning",
+        body: "Kick-off.",
+        requestsAgent: false,
+      });
+      expect(thread.status).toBe(201);
+      const threadId = ((await thread.json()) as { thread: { id: string } }).thread.id;
+
+      const designated = await ws.post(`/api/threads/${threadId}/resident`, {
+        name: "researcher",
+      });
+      expect(designated.status).toBe(200);
+      expect(JSON.stringify(await designated.json())).toContain(created.id);
+    });
+
+    // In this root the filename is the address, so `-2` would hand back a
+    // persona nobody asked for while `@researcher` went on meaning the older
+    // document. Under `data/docs/` the dedupe is unchanged (see the suite above).
+    it("refuses a name already taken instead of deduping it", async () => {
+      start("create-agent-def-collision");
+
+      const first = await createDoc(ws, { type: "agent-def", title: "Researcher" });
+      expect(first.path).toBe(".claude/agents/researcher.md");
+
+      const head = ws.head();
+      const again = await ws.post("/api/docs", { type: "agent-def", title: "Researcher" });
+      expect(again.status).toBe(400);
+      const body = (await again.json()) as { code: string; issues: { path: string }[] };
+      expect(body.code).toBe("bad_request");
+      expect(body.issues.map((issue) => issue.path)).toContain("title");
+
+      expect(ws.exists(".claude/agents/researcher-2.md")).toBe(false);
+      expect(ws.head()).toBe(head);
+      expect(ws.git("status", "--porcelain")).toBe("");
+    });
+
+    // The escape hatch: `type: agent-def` under `data/docs/` is a document
+    // *about* a persona, which `invocableName` already contemplates for skills
+    // — and it is what every document misfiled before this issue is. Nothing
+    // moves them, and they keep resolving exactly as they did.
+    it("keeps an explicitly foldered agent-def under data/docs, working as before", async () => {
+      start("create-agent-def-misfiled");
+
+      const misfiled = await createDoc(ws, {
+        type: "agent-def",
+        title: "Legacy",
+        folder: "inbox",
+      });
+      expect(misfiled.path).toBe("data/docs/inbox/legacy.md");
+
+      const row = ws.db.prepare("SELECT type FROM documents WHERE id = ?").get(misfiled.id);
+      expect(row).toEqual({ type: "agent-def" });
+      // Resolvable by title, as it always was: the path gives it no invocable
+      // name, so the title is the only alias it has.
+      expect(resolveMentionTarget(ws.db, MENTION_TYPE, "Legacy")?.docId).toBe(misfiled.id);
+    });
+
+    // §5's canonical block is *waived* under this root, never absent: the file
+    // carries a minted `doc_*` id like every other created document — a
+    // synthetic, path-derived one would change the moment the file was renamed
+    // — and Claude Code's own discovery keys ride in beside it, which is what
+    // §7 means by "the two sets coexist in the same YAML block".
+    it("stamps a real id and carries Claude Code's keys beside the core block", async () => {
+      start("create-agent-def-frontmatter");
+
+      const created = await createDoc(ws, {
+        type: "agent-def",
+        title: "Researcher",
+        body: "You research.",
+        extra: { name: "researcher", description: "Digs through the corpus." },
+      });
+
+      expect(created.path).toBe(".claude/agents/researcher.md");
+      expect(created.id).toMatch(/^doc_[a-z2-7]{8}$/);
+      const parsed = parseDocument(ws.read(created.path), created.path);
+      expect(parsed.data["id"]).toBe(created.id);
+      expect(parsed.data["type"]).toBe("agent-def");
+      expect(parsed.data["name"]).toBe("researcher");
+      expect(parsed.data["description"]).toBe("Digs through the corpus.");
+
+      // Sprint-013 Adjudication 6: what the write path accepted, the checker
+      // must not refuse.
+      const checked = await ws.post("/api/check", {
+        documents: [{ path: created.path, content: ws.read(created.path) }],
+      });
+      expect(checked.status).toBe(200);
+      const report = (await checked.json()) as { errors: { code: string; path: string }[] };
+      expect(report.errors).toEqual([]);
+    });
   });
 
   it("is readable immediately, with no polling", async () => {

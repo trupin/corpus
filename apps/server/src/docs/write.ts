@@ -63,8 +63,13 @@ import type { InvalidationBus } from "../events/index.js";
 import { AGENTS_KEY, TREE_KEY, dedupeKeys } from "../events/index.js";
 import type { AnchorChange, AutoCommitter, CommitOutcome } from "../git/index.js";
 import type { Logger } from "../logger.js";
-import { classifyPath, projectDocument, removeDocument } from "../projection/index.js";
-import type { ProjectionDb } from "../projection/index.js";
+import {
+  DOCUMENT_ROOTS,
+  classifyPath,
+  projectDocument,
+  removeDocument,
+} from "../projection/index.js";
+import type { DocumentRoot, ProjectionDb } from "../projection/index.js";
 import type { SelfWriteRegistry } from "../watcher/index.js";
 import { anchorClaimantIds, isIdTaken } from "./read.js";
 import { folderTreeSignature } from "./tree.js";
@@ -554,8 +559,100 @@ const projectionIndexesFolder = (folder: string): boolean =>
   classifyPath(`${folder}/${FOLDER_PROBE_FILENAME}`) !== null;
 
 /**
- * The folder a `folder` field names, as a workspace-relative path under
- * `data/docs/`, or a 400.
+ * The document roots a create may name **outright**, by their declared path —
+ * every root SPEC.md §7 adds "alongside `data/`" (SERVER-122).
+ *
+ * Read out of {@link DOCUMENT_ROOTS} rather than listed here, so a root declared
+ * later is creatable the same day and no second list can drift from the
+ * projection's. The `data/` roots are excluded because the `folder` grammar is
+ * *already* rooted at `data/docs/` — `normalizeDocFolder` owns every spelling
+ * under it, including the escapes — and a second door onto the same place would
+ * be two rules for one path.
+ *
+ * Membership is not permission: naming a root here only makes it *reachable*.
+ * {@link resolveFolder} still asks the root what it holds (its declared `type`)
+ * and asks {@link projectionIndexesFolder} whether an ordinary `*.md` written
+ * there would be indexed at all — which is what keeps `.claude/skills` refused,
+ * since that root indexes `SKILL.md` files alone and has its own verb
+ * (`POST /api/skills`).
+ */
+const NAMEABLE_ROOTS: readonly DocumentRoot[] = DOCUMENT_ROOTS.filter(
+  (root) => !root.path.startsWith("data/"),
+);
+
+/**
+ * The nameable root `folder` spells out, or `null`.
+ *
+ * The declared path **exactly**, never a folder beneath one. Nothing is lost by
+ * that — every nameable root is flat or `SKILL.md`-shaped, so a subfolder is
+ * something the projection would not index anyway — and it is what keeps this
+ * grammar clear of traversal altogether: a `folder` carrying `..` matches no
+ * root's path, so it falls through to `normalizeDocFolder` and is judged there
+ * by the same code, in the same words, as before this root existed
+ * (SERVER-122). That matters because normalization and prefix-matching disagree
+ * — `.claude/agents/../../etc` *is* `data/docs/etc` — and a matcher that ran
+ * first would answer for a path the caller did not name.
+ */
+const namedRoot = (folder: string): DocumentRoot | null =>
+  NAMEABLE_ROOTS.find((root) => root.path === folder) ?? null;
+
+/**
+ * A root a request named, or the 400 explaining why a document cannot be
+ * created there.
+ *
+ * Both refusals are questions put to the root's own declaration rather than to
+ * a list kept here: what type it holds, which is the type it *overrides* every
+ * file under it to (a `note` filed in `.claude/agents/` would be indexed as an
+ * `agent-def` — the caller would not get the document they asked for), and
+ * whether the projection indexes an ordinary `*.md` written there at all.
+ */
+function admitRoot(root: DocumentRoot, spelled: string, forType: string | undefined): string {
+  if (root.type !== null && root.type !== forType) {
+    validationError("that root holds one kind of document, and this is not it", [
+      {
+        path: "folder",
+        message:
+          `${spelled} indexes every file under it as \`type: ${root.type}\`, so a ` +
+          `\`${forType ?? "note"}\` filed there would not be the document you asked for`,
+      },
+    ]);
+  }
+  if (!projectionIndexesFolder(root.path)) {
+    validationError("folder is not a location documents are indexed from", [
+      {
+        path: "folder",
+        message:
+          `${spelled} is a document root, but it does not index an ordinary \`*.md\` file ` +
+          "written into it, so a document filed there could never be read back",
+      },
+    ]);
+  }
+  return root.path;
+}
+
+/**
+ * The root a document of `type` is created in when the request names no folder
+ * — §7's "additional document roots", each of which declares the one type it
+ * holds, or `null` for the ordinary inbox-first case.
+ *
+ * This is the spelling the product's own agent uses. `orchestrate/SKILL.md`
+ * tells it that "a new `type: agent-def` document is all it takes to make a
+ * persona addressable as `@<name>`", and Architecture Decision 2 confines it to
+ * `corpus doc create` — so `--type agent-def` with no folder has to reach
+ * `.claude/agents/`, or the instruction names something its only interface
+ * cannot do (SERVER-122). An explicit `folder` always wins, which is what keeps
+ * a document *about* an agent-def expressible: `--folder inbox` still files one
+ * under `data/docs/`, exactly as `invocableName` already contemplates for
+ * skills.
+ */
+const rootForType = (type: string | undefined): DocumentRoot | null =>
+  type === undefined
+    ? null
+    : (NAMEABLE_ROOTS.find((root) => root.type === type && projectionIndexesFolder(root.path)) ??
+      null);
+
+/**
+ * The folder a `folder` field names, as a workspace-relative path, or a 400.
  *
  * The contract's grammar is "a bare name (`finance`) or the full prefix
  * (`data/docs/finance`)" — an absolute path is neither, so it is refused rather
@@ -565,9 +662,25 @@ const projectionIndexesFolder = (folder: string): boolean =>
  * — here, at validation time, ahead of the write pipeline, because a document
  * that is written and committed before anyone notices it is unreadable has
  * already damaged the audit trail (SERVER-037).
+ *
+ * `forType` extends that grammar with §7's other document roots, and only a
+ * caller that supplies it can reach them: **a create may name a declared root
+ * by its declared path** (`.claude/agents`), and a create that names no folder
+ * at all lands in the root its `type` declares (see {@link rootForType}). Both
+ * doors go through {@link NAMEABLE_ROOTS}, so neither can admit a place the
+ * projection does not index. Omitting `forType` — which `move` and the bulk
+ * act do, having no new type to file under — leaves the answer under
+ * `data/docs/` exactly as it has always been.
  */
-export function resolveFolder(folder: string | undefined): string {
+export function resolveFolder(folder: string | undefined, forType?: string): string {
   const trimmed = folder?.trim();
+  if (trimmed === undefined || trimmed === "") {
+    const implied = rootForType(forType);
+    if (implied !== null) return implied.path;
+  } else {
+    const named = namedRoot(trimmed.replace(/\/+$/, ""));
+    if (named !== null) return admitRoot(named, trimmed, forType);
+  }
   if (trimmed !== undefined && (trimmed.startsWith("/") || /^[A-Za-z]:/.test(trimmed))) {
     validationError("folder must be a path under data/docs", [
       { path: "folder", message: `${folder ?? ""} is an absolute path, not a folder name` },

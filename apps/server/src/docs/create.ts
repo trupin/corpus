@@ -21,6 +21,7 @@ import {
   THREADS_ROOT,
 } from "../core/index.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
+import { invocableName } from "../threads/mentions.js";
 import { isIdTaken, loadDocument, toWireDoc } from "./read.js";
 import { findTemplate } from "./templates.js";
 import {
@@ -28,6 +29,7 @@ import {
   resolveFolder,
   runMutation,
   validateBeforeWrite,
+  validationError,
   type DocsWorkspace,
   type DocumentMutex,
   type MutationResult,
@@ -43,6 +45,15 @@ export type CreateOutcome = { readonly doc: Doc; readonly result: MutationResult
  * they never collide; documents dedupe by appending `-2`, `-3`, … rather than
  * overwriting, because two documents may legitimately share a title (SPEC.md
  * §5 — the id is identity, the path is presentation).
+ *
+ * **Except where the path is not presentation.** Under §7's skill and
+ * agent-definition roots the filename *is* the name the document answers to —
+ * `.claude/agents/researcher.md` is what makes `@researcher` resolve (§8) — so
+ * deduping there would silently hand back `@researcher-2`: a second persona at
+ * an address nobody asked for, while the address they did ask for goes on
+ * meaning the older document. Those roots refuse instead, and the question is
+ * put to {@link invocableName} — the very function §8 resolves a mention with —
+ * so "the filename is the address" is asked once and answered in one place.
  */
 export function allocatePath(
   workspaceRoot: string,
@@ -61,6 +72,18 @@ export function allocatePath(
     const stem = base.slice(0, MAX_SLUG_LENGTH - suffix.length).replace(/-+$/, "");
     const candidate = `${folder}/${stem}${suffix}.md`;
     if (!existsSync(resolve(workspaceRoot, candidate))) return candidate;
+    const name = invocableName(candidate);
+    if (name !== null) {
+      validationError(`the name \`${name}\` is already taken in ${folder}`, [
+        {
+          path: "title",
+          message:
+            `${candidate} already exists, and in that root the filename is the name the ` +
+            `document answers to — edit it with \`PUT /api/docs/{id}\`, or choose a title ` +
+            "that names a different agent",
+        },
+      ]);
+    }
   }
   return `${folder}/${input.id}.md`;
 }
@@ -136,7 +159,10 @@ export async function createDocument(
   actor: Actor,
   input: CreateDocRequest,
 ): Promise<CreateOutcome> {
-  const folder = resolveFolder(input.folder);
+  // The type is carried in because §7's other document roots each hold exactly
+  // one type: it decides which root an omitted `folder` means, and it is what a
+  // named root is checked against (SERVER-122).
+  const folder = resolveFolder(input.folder, input.type);
 
   // One lane for every create: two concurrent creates of the same title would
   // otherwise both see the same filename free and race to it.
