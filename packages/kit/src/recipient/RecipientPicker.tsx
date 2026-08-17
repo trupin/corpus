@@ -1,4 +1,5 @@
 import { useState, type ReactElement } from "react";
+import { LaneDot } from "./LaneDot.js";
 import type { LaneRow } from "./laneRows.js";
 import type { ComposerRecipient } from "./useComposerRecipient.js";
 
@@ -154,7 +155,7 @@ export function RecipientPicker({
                 recipient.choose(effective ? undefined : row.lane);
               }}
             >
-              <span className={`recipient-dot ${row.liveness}`} aria-hidden="true" />
+              <LaneDot liveness={row.liveness} />
               {row.name}
             </button>
           );

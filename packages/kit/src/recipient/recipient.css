@@ -60,7 +60,7 @@
   border-style: dashed;
 }
 
-.recipient-dot {
+.lane-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -75,20 +75,20 @@
  * a ring around nothing. `box-shadow: inset` rather than `border` for the same
  * reason the pill gives — a border would grow the dot and break the row.
  */
-.recipient-dot.live {
+.lane-dot.live {
   background: var(--good);
 }
 
-.recipient-dot.lapsed {
+.lane-dot.lapsed {
   background: var(--ink-3);
 }
 
-.recipient-dot.waiting {
+.lane-dot.waiting {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--ink-3);
 }
 
-.recipient-dot.unknown {
+.lane-dot.unknown {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--ink-3);
   opacity: 0.5;

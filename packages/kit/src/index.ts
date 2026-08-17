@@ -106,6 +106,7 @@ export {
   useSetThreadStatus,
   type ThreadStatusVariables,
 } from "./query/useThreadStatus.js";
+export { useSetResident, type ResidentVariables } from "./query/useResident.js";
 export { useReattachThread, type ReattachThreadVariables } from "./query/useReattachThread.js";
 export {
   hasSeenMark,
@@ -132,6 +133,11 @@ export {
 // The query-key vocabulary. Core shapes come from `@corpus/contract` so a
 // rename is a compile error rather than a silently ignored `invalidate` frame.
 export {
+  // `AGENTS_KEY` joined its siblings here in UI-109: UI-108 published the roster
+  // hook without the key the server names to invalidate it, so a board surface
+  // — or a plugin — could read the roster and had no supported way to say it had
+  // gone stale.
+  AGENTS_KEY,
   canonicalFilter,
   docKey,
   docsListKey,
@@ -361,9 +367,12 @@ export {
   statementFor,
   unknownLaneRow,
   useComposerRecipient,
+  useLaneRow,
+  useResidentLane,
   useScopeWalk,
   walkToLane,
   DEFAULT_ROW_NOTE,
+  LaneDot,
   LAPSED_FALLBACK,
   LAPSED_ORCHESTRATOR,
   LIVE_WITHOUT_SUMMARY,
@@ -379,9 +388,11 @@ export {
   UNNAMED_RESIDENT_LABEL,
   type ComposerRecipient,
   type ComposerRecipientInput,
+  type LaneDotProps,
   type LaneLiveness,
   type LaneRow,
   type RecipientPickerProps,
+  type ResidentLane,
   type ScopeNode,
   type ScopeNodeLookup,
   type ScopeWalk,

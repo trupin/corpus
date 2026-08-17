@@ -25,6 +25,7 @@ import { readStateOf, type ThreadReadState } from "../thread/threadCollapse";
 import { Backlinks } from "./Backlinks";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { RelatedPanel } from "./RelatedPanel";
+import { ScopeProvenance } from "./ScopeProvenance";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
@@ -417,6 +418,15 @@ export function DocView({
             </>
           }
         />
+
+        {/*
+         * SPEC.md §7's scope, on the artifact: which conversation this document
+         * came out of, and who is resident in it. Above the plugin slot and the
+         * body because it is context for reading them, and quiet enough that a
+         * document belonging to no conversation — the ordinary case — looks
+         * exactly as it did before (`ScopeProvenance` draws nothing at all).
+         */}
+        <ScopeProvenance docId={doc.frontmatter.id} onOpenDoc={onNavigate} />
 
         {/*
          * The DocPanel slot — the one core injection slot in v1 (SPEC.md §10):

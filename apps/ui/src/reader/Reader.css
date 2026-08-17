@@ -645,3 +645,46 @@
   letter-spacing: 0.06em;
   color: var(--ink-3);
 }
+
+/*
+ * Which conversation this document came out of (SPEC.md §7's scope; UI-109).
+ *
+ * A line rather than a banner: the archived banner above it is a *warning* about
+ * the document's state, while this is provenance, and giving them the same
+ * weight would make every scoped draft look like it had a problem. Mono, ink-3,
+ * a hairline under it to separate it from the frontmatter it follows.
+ */
+.scope-provenance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.provenance-link {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.provenance-link:hover {
+  text-decoration: underline;
+}
+
+.provenance-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.provenance-resident {
+  color: var(--ink-2);
+}

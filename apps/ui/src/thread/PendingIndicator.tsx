@@ -1,6 +1,7 @@
-import { isAgentPresent } from "@corpus/contract";
-import { humanizeElapsed, useQueueStatus } from "@corpus/kit";
-import { useEffect, useState, type ReactElement } from "react";
+import { isAgentPresent, ORCHESTRATOR_LANE } from "@corpus/contract";
+import { humanizeElapsed, useQueueStatus, type LaneRow } from "@corpus/kit";
+import type { ReactElement } from "react";
+import { useNowTick } from "./useNowTick";
 
 /**
  * The honest pending indicator of SPEC.md §8: while an agent response is
@@ -73,9 +74,6 @@ export const SLOW_AFTER_MS = 45_000;
 export const LONGER_AFTER_MS = 3 * 60_000;
 export const ELAPSED_AFTER_MS = 15 * 60_000;
 
-/** Coarse on purpose: nothing here changes faster than every 45 s. */
-const TICK_MS = 15_000;
-
 export function workingLabel(elapsedMs: number): string {
   if (elapsedMs >= ELAPSED_AFTER_MS) return `still working — ${humanizeElapsed(elapsedMs)}`;
   if (elapsedMs >= LONGER_AFTER_MS) return WORKING_TIERS.longer;
@@ -109,11 +107,148 @@ export function waitingLabel(elapsedMs: number, agentPresent: boolean): string {
   return WAITING_TIERS.fresh;
 }
 
+/**
+ * ---
+ *
+ * **And the row learns lanes** (SPEC.md §7's resident paragraphs, §8's rider of
+ * 2026-08-13; UI-109). Where the conversation sits in a designated scope, "the
+ * agent" is a resident with a name, and the two tiers above become three cases
+ * — because §7 makes *who answers* depend on whether that resident is there.
+ *
+ * The rule the whole of this section follows: **name the resident for what the
+ * resident is actually doing, and for nothing else.**
+ *
+ * - A **live** lane may be named in either vocabulary. Work claimed on it is
+ *   that resident's work — a scoped claim sees only its own lane, so nobody else
+ *   could have taken it — and work waiting on it is waiting for them.
+ * - A **lapsed or never-parked** lane may be named only while **waiting**. §7's
+ *   fallback makes its pending events visible to the orchestrator's unscoped
+ *   claim, so the wait is honestly *"they are away, and this gets picked up
+ *   anyway"* — the second half being the point, since the cost of a lapse is
+ *   that work is slower and never that it is silently not done. But a claimed
+ *   event on such a lane may have been taken by the fallback, and saying
+ *   "researcher is working" about work the orchestrator picked up is precisely
+ *   the unevidenced claim UI-097 removed. So `working` on an away lane falls
+ *   back to {@link WORKING_TIERS}, which claims nothing about who.
+ * - An **unknown** lane says nothing at all, and the row reads exactly as it did
+ *   before this feature. Same rule again: the roster has not answered, so there
+ *   is no name to use.
+ *
+ * The orchestrator's own lane is never named either, and not because it is a
+ * special case — `laneName` calls it *"agent"*, which is the word
+ * {@link WORKING_TIERS} already uses, so the general rule and the default tiers
+ * happen to agree there.
+ *
+ * **Lane wording replaces the presence clause rather than joining it.**
+ * {@link NO_AGENT_CLAUSE} is the workspace-grained fact off `QueueStatus.agent`;
+ * a lane's liveness is the roster's per-lane one, and CONTRACT-053 records that
+ * the two may legitimately disagree for one grace window. So the row states one
+ * or the other and never both in one sentence: on a designated lane the roster
+ * answers, everywhere else the queue status does, and the two facts are never
+ * merged into a single claim.
+ *
+ * **Nothing here changes the clock, or the thresholds.** The lane changes what
+ * the row says, exactly as being claimed does; the wait is still the wait.
+ *
+ * ## What it cannot see, and the two cases where that shows
+ *
+ * The lane is the **scope walk's** answer — where a message posted in this
+ * conversation would go — and not the lane the outstanding event was actually
+ * stamped with. Those are the same thing for a `comment.created`, which is what
+ * this row is nearly always about, and §7 names exactly two events that take a
+ * different lane from the scope they fall in: a `resident.designated`, which
+ * goes to the orchestrator whoever is designated, and a message that **named a
+ * recipient**, which goes to that recipient. On those two the row names the
+ * scope's resident for work another lane is holding.
+ *
+ * It is a display error and never a routing one, and it is not fixable here:
+ * `Job` carries no lane (`packages/contract/src/schemas/job.ts`), so the outstanding
+ * job the row is counting cannot say which lane it is on. UI-109's issue
+ * anticipated reading it off the job's row; the field does not exist, and adding
+ * it is contract work. Observed in the UI-109 drill: designating a conversation
+ * enqueues `resident.designated` on the orchestrator's lane, and for the few
+ * seconds before it settles the card reads "waiting for researcher".
+ */
+
+/** What a lapsed lane's absence means for the message waiting on it (SPEC.md §7). */
+export const LANE_FALLBACK_CLAUSE = "the agent will pick this up";
+
+/**
+ * The lane, reduced to what the wording needs — `LaneRow`'s own fields, so the
+ * board and the composer cannot come to spell one resident two ways.
+ */
+export type PendingLane = Pick<LaneRow, "lane" | "name" | "liveness">;
+
+/**
+ * Why this lane cannot answer right now, or `null` when it can.
+ *
+ * Two absences rather than one, because they are different facts and a person
+ * choosing what to do next needs them apart: a resident that has been here and
+ * left may come back on its own, while one that has never parked is not running
+ * at all. Both fall back the same way, which is the clause they share.
+ */
+export function laneAwayClause(lane: PendingLane): string | null {
+  if (lane.liveness === "lapsed") return `${lane.name} is away, ${LANE_FALLBACK_CLAUSE}`;
+  if (lane.liveness === "waiting") return `${lane.name} is not running, ${LANE_FALLBACK_CLAUSE}`;
+  return null;
+}
+
+/** Whether this lane is one the row may name at all: designated, and heard about. */
+function nameable(lane: PendingLane | undefined): lane is PendingLane {
+  return lane !== undefined && lane.lane !== ORCHESTRATOR_LANE && lane.liveness !== "unknown";
+}
+
+/** {@link workingLabel}, with the resident named — live lanes only. */
+export function laneWorkingLabel(elapsedMs: number, lane: PendingLane): string {
+  if (elapsedMs >= ELAPSED_AFTER_MS) {
+    return `${lane.name} is still working — ${humanizeElapsed(elapsedMs)}`;
+  }
+  if (elapsedMs >= LONGER_AFTER_MS) return `${lane.name} is still working — longer than usual`;
+  if (elapsedMs >= SLOW_AFTER_MS) return `${lane.name} is still working…`;
+  return `${lane.name} is working…`;
+}
+
+/**
+ * {@link waitingLabel}, per lane.
+ *
+ * A live lane's wait is *for someone*, which is the useful thing to say — the
+ * agent is there and has not taken this yet. An away lane's wait is *for the
+ * fallback*, and the clause says so from the first tier rather than from the
+ * third: the workspace-grained row waits three minutes before mentioning
+ * absence, because a claim takes a moment and nobody knows who would take it,
+ * but here the roster has already said this lane's listener is gone, and
+ * withholding a fact we hold would be its own kind of dishonesty.
+ */
+export function laneWaitingLabel(elapsedMs: number, lane: PendingLane): string {
+  const away = laneAwayClause(lane);
+  if (away !== null) {
+    if (elapsedMs >= ELAPSED_AFTER_MS) {
+      return `still waiting — ${humanizeElapsed(elapsedMs)}, ${away}`;
+    }
+    return elapsedMs >= SLOW_AFTER_MS ? `still waiting — ${away}` : `waiting — ${away}`;
+  }
+  if (elapsedMs >= ELAPSED_AFTER_MS) {
+    return `still waiting for ${lane.name} — ${humanizeElapsed(elapsedMs)}`;
+  }
+  if (elapsedMs >= LONGER_AFTER_MS) {
+    return `still waiting — ${lane.name} has not picked this up yet`;
+  }
+  if (elapsedMs >= SLOW_AFTER_MS) return `still waiting for ${lane.name}`;
+  return `queued — waiting for ${lane.name}`;
+}
+
 export function pendingLabel(
   state: PendingState,
   elapsedMs: number,
   agentPresent: boolean,
+  lane?: PendingLane,
 ): string {
+  if (nameable(lane)) {
+    if (state === "waiting") return laneWaitingLabel(elapsedMs, lane);
+    // A claimed event on an away lane may have been taken by the fallback, so
+    // the resident is named only where the claim is certainly theirs.
+    if (lane.liveness === "live") return laneWorkingLabel(elapsedMs, lane);
+  }
   return state === "working" ? workingLabel(elapsedMs) : waitingLabel(elapsedMs, agentPresent);
 }
 
@@ -126,10 +261,21 @@ export interface PendingIndicatorProps {
    * both states.
    */
   readonly state: PendingState;
+  /**
+   * The lane this conversation's messages are addressed to, from the shared
+   * roster vocabulary (`useResidentLane`), or `undefined` while nothing can be
+   * said about it.
+   *
+   * **An enhancement over the roster query, never a dependency of the row.**
+   * Absent, unknown or orchestrator, the tiers above are what render — which is
+   * what makes this safe against a roster that is slow, a workspace with no
+   * residents, and a server that answers `GET /api/agents` with nothing useful.
+   */
+  readonly lane?: PendingLane | undefined;
 }
 
-export function PendingIndicator({ since, state }: PendingIndicatorProps): ReactElement {
-  const [now, setNow] = useState(() => Date.now());
+export function PendingIndicator({ since, state, lane }: PendingIndicatorProps): ReactElement {
+  const now = useNowTick();
   /*
    * The roster's own verdict, aggregated over every lane (`QueueStatus.agent`,
    * CONTRACT-045) — read here rather than derived from the queue counts beside
@@ -145,15 +291,6 @@ export function PendingIndicator({ since, state }: PendingIndicatorProps): React
   const queue = useQueueStatus();
   const agent = queue.data?.agent;
   const agentPresent = agent === undefined || isAgentPresent(agent, new Date(now));
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, TICK_MS);
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
 
   const started = new Date(since).getTime();
   // An unparseable timestamp is not a reason to claim a duration.
@@ -172,13 +309,15 @@ export function PendingIndicator({ since, state }: PendingIndicatorProps): React
       role="status"
       data-working-since={since}
       data-pending-state={state}
+      /* The lane the row is speaking about, or absent when it is speaking about none. */
+      {...(nameable(lane) ? { "data-pending-lane": lane.lane } : {})}
     >
       {state === "working" ? (
         <span className="working-dot" aria-hidden="true" />
       ) : (
         <span className="queued-dot" aria-hidden="true" />
       )}
-      {pendingLabel(state, elapsed, agentPresent)}
+      {pendingLabel(state, elapsed, agentPresent, lane)}
     </div>
   );
 }

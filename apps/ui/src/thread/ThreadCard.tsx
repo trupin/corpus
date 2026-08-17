@@ -7,6 +7,7 @@ import {
   useDoc,
   useDocs,
   useMarkSeenOnce,
+  useResidentLane,
   useSetThreadStatus,
   useThread,
   type RowNotice,
@@ -20,6 +21,7 @@ import { NewChildThread } from "./NewChildThread";
 import { agentWaitSince, useOutstandingAgentRequest } from "./outstandingAgentRequest";
 import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
+import { ResidentBadge } from "./ResidentBadge";
 import { threadStatusNotice } from "./resolveNotice";
 import { MAX_NESTED_DEPTH } from "./threadDepth";
 import { ThreadPanel } from "./ThreadPanel";
@@ -222,6 +224,18 @@ export function ThreadCard({
    * nothing.
    */
   const outstanding = useOutstandingAgentRequest(threadId);
+  /**
+   * Which lane answers a message posted in this conversation (SPEC.md §7), and
+   * what that lane says — the shared walk the composer below already performs
+   * for the same `start`, so this costs no request of its own and cannot
+   * disagree with the recipient it offers.
+   *
+   * It feeds the pending row's wording only. The badge in the head asks a
+   * narrower question — *is this conversation itself a lane* — and asks it
+   * directly, because a card deep inside a scope is not the conversation that
+   * has the resident.
+   */
+  const { row: laneRow } = useResidentLane(threadId);
 
   const classes = [
     "thread-card",
@@ -265,6 +279,7 @@ export function ThreadCard({
       <div className="t-head">
         <span className="t-quote">{headLabel}</span>
         <span className="chip t-status">{status}</span>
+        <ResidentBadge threadId={threadId} />
         <button
           type="button"
           className="t-resolve"
@@ -390,6 +405,7 @@ export function ThreadCard({
         <PendingIndicator
           since={agentWaitSince(outstanding.job, turns)}
           state={outstanding.working ? "working" : "waiting"}
+          lane={laneRow}
         />
       )}
 

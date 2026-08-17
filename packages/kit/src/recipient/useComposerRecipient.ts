@@ -30,11 +30,15 @@ import { useScopeWalk } from "./useScopeWalk.js";
  * is called when the send settles — either way, because a refused message is not
  * a message that carried this pick to a second one.
  *
- * The first two prohibitions are enforced by omission of capability: nothing in
- * the kit's client can designate or release a resident (see
- * `createCorpusClient.ts`), so no composer can reach the routes that would
- * rewire a scope, and `request` is spread onto the message's own body and
- * nothing else.
+ * The first two prohibitions were once enforced by omission of capability — the
+ * kit's client had no way to designate or release — and since UI-109 they are
+ * enforced by **evidence** instead, because §11 puts designate/release in the
+ * conversation's own menu and that menu is a kit consumer. What is left, and
+ * what the test pins, is that nothing on this path issues a request to
+ * `/resident` and that `request` is spread onto the message's own body and
+ * nothing else: an override routes one message and touches no thread's
+ * frontmatter. A structural argument is nicer than an asserted one, but not so
+ * much nicer that the board should be made to reach the route some other way.
  */
 
 export interface ComposerRecipient {

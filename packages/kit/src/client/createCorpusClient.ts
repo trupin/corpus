@@ -436,6 +436,42 @@ export interface CorpusClient {
   /** `POST /api/threads/{id}/reopen` — the inverse; an engaged thread re-triggers the agent again. */
   reopenThread(id: string): Promise<ThreadMutationResponse>;
   /**
+   * `POST /api/threads/{id}/resident` — **designate** a standalone thread's
+   * resident agent (SPEC.md §7).
+   *
+   * `name` is the invocable name, never a document id: the same resolution
+   * `@<subagent>` mentions use, so a person designates by the word they already
+   * type after a sigil. The response carries the thread with `resident` resolved
+   * to `{name, docId}`.
+   *
+   * **User-only, and single-valued.** The server refuses an agent actor (`403`)
+   * and a thread with a parent (`409`); designating a thread that already has a
+   * resident replaces it rather than conflicting.
+   *
+   * ## Why this exists on the kit's client at all
+   *
+   * It did not until UI-109, and the absence was load-bearing prose:
+   * `useComposerRecipient` cited it as the structural enforcement of §7's first
+   * two prohibitions on an override — *"an override never rewires a scope, never
+   * re-designates anything"*. That argument has moved rather than lapsed. §11
+   * puts designate/release in the conversation's own menu, which is a board
+   * surface and therefore a kit consumer, so the capability has to be reachable;
+   * what enforces the prohibitions now is that the recipient path never calls
+   * these two methods and spreads `{}` or `{recipient}` onto the message body
+   * and nothing else — asserted directly (`useComposerRecipient.test.tsx`)
+   * rather than implied by a missing method.
+   */
+  designateResident(threadId: string, name: string): Promise<ThreadMutationResponse>;
+  /**
+   * `DELETE /api/threads/{id}/resident` — **release** it, returning the scope to
+   * ordinary routing (SPEC.md §7).
+   *
+   * **Idempotent**: releasing a thread that has none is the state the caller
+   * asked for, not an error, and it answers with the thread either way because a
+   * release that does write can raise §14 warnings.
+   */
+  releaseResident(threadId: string): Promise<ThreadMutationResponse>;
+  /**
    * `POST /api/threads/{id}/reattach` — points an orphaned comment at the
    * passage **a person chose** (SPEC.md §6; SERVER-059 phase B).
    *
@@ -1062,6 +1098,23 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "POST /api/threads/{id}/reopen",
         await api.POST("/api/threads/{id}/reopen", { params: { path: { id } } }),
+      );
+    },
+
+    async designateResident(threadId, name) {
+      return unwrap(
+        "POST /api/threads/{id}/resident",
+        await api.POST("/api/threads/{id}/resident", {
+          params: { path: { id: threadId } },
+          body: { name },
+        }),
+      );
+    },
+
+    async releaseResident(threadId) {
+      return unwrap(
+        "DELETE /api/threads/{id}/resident",
+        await api.DELETE("/api/threads/{id}/resident", { params: { path: { id: threadId } } }),
       );
     },
 

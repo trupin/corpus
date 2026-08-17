@@ -264,6 +264,16 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
   const docs = new Map((options.docs ?? []).map((doc) => [doc.frontmatter.id, doc]));
   const threads = new Map((options.threads ?? []).map((thread) => [thread.id, thread]));
   let jobs = options.jobs ?? [];
+  /**
+   * Designations made **through this transport** (SPEC.md §7), keyed by thread
+   * id, and the seeded lanes released through it.
+   *
+   * Seeded `options.lanes` are left exactly as the suite wrote them — their
+   * liveness is usually the point — so these two only ever add a lane or take
+   * one away.
+   */
+  const designated = new Map<string, { name: string; docId: string }>();
+  const released = new Set<string>();
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     // The body is deliberately withheld from `new Request`. These suites run in
@@ -308,7 +318,21 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
      * this feature expects to see.
      */
     if (url.pathname === "/api/agents") {
-      return json({ agents: [ORCHESTRATOR_ROW, ...(options.lanes ?? [])] } satisfies AgentRoster);
+      // Seeded lanes, minus anything released, plus every lane a designation
+      // made here — the roster *is* the set of designations, as it is on the
+      // server, so a suite can designate and then read the board.
+      const made: AgentLane[] = [...designated].map(([threadId, resident]) => ({
+        lane: threadId,
+        resident,
+        live: false,
+        since: null,
+        summary: null,
+        origin: { id: threadId, title: "Fixture thread" },
+      }));
+      const seeded = (options.lanes ?? []).filter(
+        (row) => !released.has(row.lane) && !designated.has(row.lane),
+      );
+      return json({ agents: [ORCHESTRATOR_ROW, ...seeded, ...made] } satisfies AgentRoster);
     }
     if (url.pathname === "/api/tree") return json({ folders: [] });
 
@@ -392,6 +416,29 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       const id = decodeURIComponent(rawId);
       if (verb === "seen") {
         return json({ threadId: id, lastSeenTs: "2026-07-02T09:00:00.000Z", unread: false });
+      }
+      /*
+       * `POST`/`DELETE …/resident` — SPEC.md §7's designation (UI-109).
+       *
+       * Answered rather than left to fall through, and recorded rather than
+       * echoed: designating changes `GET /api/agents` — the lane *is* the
+       * designation — so a fixture that acknowledged the write and left the
+       * roster alone would let a badge test pass against a board that never
+       * repainted. `residentLanes` is what the roster answers with from here on.
+       */
+      if (verb === "resident") {
+        const name = (call.body as { name?: string } | undefined)?.name;
+        if (request.method === "DELETE") {
+          designated.delete(id);
+          released.add(id);
+          return json({ thread: threadSummary(id, false), warnings: [] });
+        }
+        released.delete(id);
+        designated.set(id, { name: name ?? "", docId: "doc_agentdef" });
+        return json({
+          thread: { ...(threadSummary(id, false) as object), resident: designated.get(id) },
+          warnings: [],
+        });
       }
       if (verb === "resolve" || verb === "reopen") {
         /*

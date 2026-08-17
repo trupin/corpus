@@ -65,6 +65,7 @@ const RUNTIME_SURFACE = [
   "useDeleteDoc",
   "useMarkThreadSeen",
   "useSetThreadStatus",
+  "useSetResident",
   "useReattachThread",
   "useHaltQueue",
   "useResumeQueue",
@@ -77,6 +78,7 @@ const RUNTIME_SURFACE = [
   "canonicalFilter",
   "docKey",
   "docsListKey",
+  "AGENTS_KEY",
   "DOCS_KEY",
   "HEALTH_KEY",
   "INDEX_KEY",
@@ -226,6 +228,12 @@ const RUNTIME_SURFACE = [
   "NEVER_SEEN_LINE",
   "LAPSED_FALLBACK",
   "LAPSED_ORCHESTRATOR",
+  // …and the same vocabulary read by a surface that is not a composer (UI-109):
+  // is *this* conversation a lane, which lane answers *here*, and the one dot
+  // both the picker and the board draw it with.
+  "useLaneRow",
+  "useResidentLane",
+  "LaneDot",
   "humanizeElapsed",
   "useConnectionState",
   "backoffDelay",

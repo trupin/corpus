@@ -2,7 +2,7 @@
  * SPEC.md §7's *"Every message has a recipient, and where you post computes
  * it"*, as one unit.
  *
- * Five parts, and the split is the design:
+ * Seven parts, and the split is the design:
  *
  *   - `scopeWalk.ts` — the pure walk. The **only** client-side reading of §7's
  *     scope rule, and it decides nothing that reaches the wire.
@@ -13,12 +13,19 @@
  *   - `useComposerRecipient.ts` — the default, the one-message override, and the
  *     `{}`-or-`{recipient}` a composer spreads onto its request.
  *   - `RecipientPicker.tsx` — the control.
+ *   - `useResidentLane.ts` — the same two readings for a surface that is not a
+ *     composer: is *this* conversation a lane, and which lane answers *here*
+ *     (UI-109's badge, pending row and provenance line).
+ *   - `LaneDot.tsx` — the liveness dot, shared by the picker and the board so
+ *     one lane is not drawn two ways.
  *
  * It ships from the kit rather than from `apps/ui` for the reason `WeightPicker`
- * does: five first-party composers mount it, and a composer a plugin
- * contributes must be able to offer the same roster with one import.
+ * does: five first-party composers mount it, a composer a plugin contributes
+ * must be able to offer the same roster with one import — and, since UI-109, the
+ * board reads the roster through the same vocabulary rather than a parallel one.
  */
 
+export { LaneDot, type LaneDotProps } from "./LaneDot.js";
 export {
   laneLine,
   laneLiveness,
@@ -63,4 +70,5 @@ export {
   type ComposerRecipient,
   type ComposerRecipientInput,
 } from "./useComposerRecipient.js";
+export { useLaneRow, useResidentLane, type ResidentLane } from "./useResidentLane.js";
 export { designatedLanes, isThreadId, useScopeWalk, type ScopeWalkInput } from "./useScopeWalk.js";

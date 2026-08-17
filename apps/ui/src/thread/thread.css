@@ -544,3 +544,50 @@
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
+
+/* ── Who is resident (SPEC.md §7, §11; UI-109) ── */
+
+/*
+ * The resident badge in the conversation's head.
+ *
+ * Quiet by construction: mono at the head's smallest size, `--ink-3`, no border
+ * and no fill. It sits after the status chip, which stays the only bordered
+ * object in the row — a resident is a *fact about the conversation*, not a
+ * signal about it, and `packages/kit/src/row/badges.tsx` keeps those axes apart.
+ * The dot is the recipient picker's own `.lane-dot`, so the board and the
+ * composer draw one lane's liveness identically.
+ */
+.t-resident {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.t-resident .lane-dot {
+  align-self: center;
+}
+
+.t-resident-name {
+  color: var(--ink-2);
+}
+
+/*
+ * The line elides rather than wrapping: the head is one row and a lane summary
+ * is bounded but not short (200 characters, `LANE_SUMMARY_MAX_LENGTH`). The
+ * whole line stays reachable on the badge's title, and in the recipient picker,
+ * which is not width-constrained.
+ */
+.t-resident-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.t-resident-line::before {
+  content: "· ";
+}
