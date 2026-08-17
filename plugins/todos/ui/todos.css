@@ -468,11 +468,28 @@
   font-family: var(--sans);
 }
 
+/* The drop highlight, which `@corpus/kit/composer.css` deliberately does not
+   ship: the dropzone is the *surface*, and only the surface knows what it looks
+   like — the reply box lights its border, the compose panel an inset outline,
+   and this popover its own. Two declarations, the recipe that file states. */
+.todo-comment-pop.dropping {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
 .todo-cm-quote {
   font-family: var(--serif);
   font-style: italic;
   font-size: 12.5px;
   color: var(--ink-2);
+  margin-bottom: 8px;
+}
+
+/* The chip strip sits between the quote and the field. `.pending-atts:empty`
+   collapses it (kit), so a composer with nothing attached is exactly the
+   composer that was there before PLUGINS-012 — this margin only exists on the
+   openings where a file is actually pending. */
+.todo-comment-pop .pending-atts {
   margin-bottom: 8px;
 }
 

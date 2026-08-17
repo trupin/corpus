@@ -480,7 +480,7 @@ belongs to the same fix wave.
 | CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | done | P1 | — |
 | SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-071 |
 | UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-072 |
-| PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
+| PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | done | P2 | UI-070 |
 
 ## Phase 14 — Dogfood wave 4: status semantics, no edit mode, bulk staging (2026-08-08)
 
@@ -658,7 +658,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-112 | The comment popover can be moved, and what it is about stays lit while you write | done | P0 | — |
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
-| CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | todo | P1 | SERVER-113 |
+| CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | todo | P2 | SERVER-113 |
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
 
@@ -729,7 +729,7 @@ through.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | todo | P1 | — |
-| UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | todo | P1 | — |
+| UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | done | P1 | — |
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
 | SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
 | UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
