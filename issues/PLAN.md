@@ -681,6 +681,31 @@ parent-first is the one where it annexes another scope's conversation.
 | UI-118 | An explicit recipient equal to the client's computed lane is sent as absence | done | P0 | — |
 | AGENT-029 | A resident working longer than the grace window reads as absent, and gets a second listener | done | P0 | — |
 | CONTRACT-058 | `GET /api/queue/idle` does not declare the 422 it now returns (SERVER-118 finding) | done | P1 | SERVER-118 |
+
+**PR #48 re-review — REQUEST_CHANGES again, 2026-08-17.** The cold reviewer
+returned a CRITICAL and three MAJORs against the fixes themselves. **The CRITICAL
+is an orchestration failure, not a domain one**: `SERVER-117` (fix the server's
+scope walk) and `UI-118` (make an explicit pick reach the wire) ran in parallel
+and neither was told the other existed. The client keeps its own copy of that
+walk in `packages/kit/src/recipient/scopeWalk.ts`, still on the deleted
+`origin ?? parent` — which was a label bug until `UI-118` armed the picker, and
+is now a routing bug. Both suites are green and each asserts it encodes the
+other's rule.
+
+The other three are the same shape one layer out: `SERVER-118` changed a
+behaviour and its consumers were not swept — the CLI's help still promises the
+old server, and the converse skill both teaches it and has no instruction for
+the refusal, so a release timed one rearm badly strands a claimed event and
+skips the sign-off. `AGENT-031` is a defect in `AGENT-029`'s own fix: its
+discriminator is a conjunction whose second clause discards the signal the
+moment a second message arrives.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| UI-119 | The client's scope walk still follows the rule SERVER-117 deleted | todo | P0 | — |
+| AGENT-030 | The converse skill teaches the old server, and dies at the shell on a refused park | todo | P0 | — |
+| AGENT-031 | The stand-down rule is a conjunction, and the second conjunct throws away the signal | todo | P0 | — |
+| CLI-048 | `--thread`'s help asserts the behaviour SERVER-118 removed | todo | P1 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 
