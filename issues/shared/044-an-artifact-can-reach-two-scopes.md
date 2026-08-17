@@ -21,7 +21,8 @@ fable
 - Depends on: —
 - Related: SHARED-043 (the resident-agent rider this text came in with),
   SERVER-111 (the implementation that had to decide the case), SERVER-110
-  (provenance and the origin stamp)
+  (provenance and the origin stamp), **SERVER-117** (which overturned this
+  issue's adjudication and shipped parent-first — see below)
 
 ## Spec References
 
@@ -70,6 +71,13 @@ holds **because of a rule written for a different purpose**, not because the
 scope definition guarantees it, and a future path that stamps an origin from
 the acting job rather than from the payload's thread would break it silently.
 
+> **Superseded in part, 2026-08-17.** The adjudication recorded below —
+> origin-first — **was overturned on review and is no longer what the code does**.
+> Read the next section as a record of how the question was decided, not as the
+> current behaviour. What remains open for this issue is only the **spec text**:
+> §7 still asserts a guarantee its own clauses do not deliver, and still states no
+> precedence. See "Overturned on review" below.
+
 ## The decision that was taken, and by whom
 
 `SERVER-111` had to pick a precedence and picked **origin over parent**
@@ -101,14 +109,70 @@ So: the code is not changed by this issue. What is wrong is that the spec
 asserts a guarantee it does not deliver, which is how the two readings both
 came to look correct.
 
+## Overturned on review — the precedence is **parent-first** (2026-08-17)
+
+The second opinion this issue said it lacked was given by **PR #48's
+pr-reviewer**, which reached the case independently and disagreed. The
+orchestrator put both arguments to the **user, who chose parent-first**;
+`SERVER-117` implemented it (`apps/server/src/queue/scope.ts`). **No spec
+amendment was needed for that half**: parent-first is what §7 already says, so
+the change was code conforming to signed text.
+
+The argument that carried, in three parts:
+
+1. **§7 lists `origin` as a scope edge only for documents.** Its enumeration is
+   *"the thread itself; every thread whose parent chain reaches it; every
+   **document** whose origin reaches it; and every thread on such a document."*
+   For a **thread**, the spec-sanctioned routes are the parent chain and being a
+   thread on a document in scope — not the thread's own origin. Origin-first
+   invented a third membership route and ranked it above both.
+2. **Origin-first has no beneficial case.** Working through the divergences (the
+   table above): a standalone thread a job opened has no parent, so nothing is
+   ranked; a thread whose parent is already in the writer's scope agrees either
+   way; a summons agrees because §7 reads lane and origin off different things.
+   The *only* input where the two answers differ is a thread an agent opened on
+   another scope's document — and there origin-first **annexes that
+   conversation**, which is the opposite of what §7 says about the one crossing
+   it does sanction: *"answering a question does not annex the thread it was
+   asked in."*
+3. **An annexed thread has no remedy.** §7 offers `corpus doc detach` for a
+   mis-filed *document*. A thread has no equivalent, and the annexation is
+   permanent — whereas the override §7 does sanction *"never persists past the
+   message it was set on."*
+
+**Why the invariant cited for origin-first does not support it.** The
+adjudication above leaned on `core/provenance.ts` — the origin stamped on an
+artifact and the lane its follow-up work queues on must agree. The reviewer's
+counter, which the user accepted: that invariant is about **the document a job
+creates**, binding one artifact's filing to its routing. For a thread hanging on
+*someone else's* document, the artifact whose ownership is at stake is the
+**host**, and the host's scope is the answer. `core/provenance.ts`'s header
+comment has been corrected accordingly (SERVER-117) so it no longer reads as an
+argument for the behaviour that was removed.
+
+**A second, separate defect was found with it**, and is also fixed by
+SERVER-117: the walk was a single chain (`origin ?? parentId`), so it never fell
+back to the parent edge when the origin chain dead-ended. Since
+`apps/cli/src/input.ts` exports `CORPUS_JOB` once per claimed event, every
+agent-created thread carries an origin — which made §7's *"every thread on such
+a document"* unreachable for anything an agent made. The walk is now a search
+over both edges, parent branch first.
+
+**What is left for this issue** is the spec text only: §7 still asserts *"an
+artifact belongs to at most one scope"* with a reason that covers only the origin
+route, and still states no precedence for the origin/parent case. The amendment
+below should now be drafted to **record parent-first**, not to decide it.
+
 ## What the amendment must decide
 
 - [ ] Either **narrow the guarantee to what is true** — origin is single-valued,
       so no two scopes claim an artifact *by origin* — and then state the
       precedence explicitly for the origin/parent case, or **make the guarantee
       true** by constraining the scope clauses so the two routes cannot diverge
-- [ ] State the precedence **in §7**, whichever way it goes, so it is followed
-      rather than read. The rule and its arbitration belong in the same
+- [ ] State the precedence **in §7** — **parent-first**, as decided by the user
+      on 2026-08-17 and already implemented (SERVER-117); the amendment records
+      it rather than choosing it — so it is followed rather than read. The rule
+      and its arbitration belong in the same
       paragraph — §7 already learned this lesson once, and says so: *"The
       carve-outs live beside the rule because a routing rule and its exceptions
       stated in two places is how they come to disagree — which happened to this
@@ -124,11 +188,13 @@ came to look correct.
 
 - [ ] Drafted amendment text quoted to the user **verbatim**, one rider, and
       signed before anything is applied
-- [ ] `apps/server/src/queue/scope.ts`'s precedence matches the signed text, and
-      its defending comment cites the amended sentence rather than reasoning
-      from the invariant
-- [ ] The test `prefers a thread's own origin over the scope of the document it
-      hangs on` is renamed to state the rule, and fails if the precedence flips
+- [ ] `apps/server/src/queue/scope.ts`'s precedence matches the signed text —
+      **parent-first today**, so the amendment must either say so or be a
+      deliberate change of behaviour with its own server issue
+- [x] The test asserting the precedence states the rule and fails if it flips —
+      done in SERVER-117: `keeps a thread with the scope of the document it hangs
+      on, not the job that opened it`, in a `scope.test.ts` describe block that
+      enumerates every way the two edges can disagree
 
 ## Testing Strategy
 

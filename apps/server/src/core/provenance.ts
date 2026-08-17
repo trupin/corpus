@@ -3,10 +3,23 @@
 //
 // One question, asked in two places for two purposes. **Here** it answers "what
 // origin do I stamp on the document this write creates". In SERVER-111 the same
-// function answers "what lane do I enqueue this event on". Both are the walk
-// from an event to the thread it came from, and they must agree exactly — a
-// document filed into one scope while its follow-up work is queued on another is
-// a resident that owns the artifact and never hears about it.
+// function answers "which conversation did this event come from", which is where
+// `queue/scope.ts` starts its walk. Both are the step from an event to the thread
+// it came from, and they must agree exactly — **a document filed into one scope
+// while its follow-up work is queued on another is a resident that owns the
+// artifact and never hears about it.**
+//
+// **That invariant is about the document a job creates, and it stops there**
+// (SERVER-117, PR #48's review; the claim it used to make was wider and was used
+// to argue a precedence it does not support). What it binds together is one
+// artifact's filing and its routing: a job's own output is stamped with the job's
+// conversation and its follow-up work is routed from the same conversation. It
+// says nothing about an artifact a job did not create the host of — a thread
+// opened on *another* conversation's document is a conversation about that
+// document, and the ownership at stake there is the host's, not the writer's. So
+// the two paths share this starting point and nothing more: which edges are
+// followed onward, and in what order, is `queue/scope.ts`'s question and is
+// settled there by §7's own enumeration.
 //
 // Deliberately **pure and synchronous**: it reads the event object it is handed
 // and touches no filesystem, so a write path pays one store read for the event

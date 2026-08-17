@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -98,15 +98,15 @@ already open for exactly that.
 
 ## Acceptance Criteria
 
-- [ ] The reviewer's four-line case passes: `th_c` with `parent → doc_draft`
+- [x] The reviewer's four-line case passes: `th_c` with `parent → doc_draft`
       (in Ana's scope) and `origin → th_q` (undesignated) resolves to `th_root`
-- [ ] A dead-ending chain falls back rather than concluding "no scope"
-- [ ] The cycle guard still terminates, now that the walk may branch
-- [ ] Enumerate what the two edges can disagree about and **test each case**,
+- [x] A dead-ending chain falls back rather than concluding "no scope"
+- [x] The cycle guard still terminates, now that the walk may branch
+- [x] Enumerate what the two edges can disagree about and **test each case**,
       rather than testing the one that prompted this
-- [ ] `provenance.ts`'s invariant is re-read against the change: it is about the
+- [x] `provenance.ts`'s invariant is re-read against the change: it is about the
       document a job creates, and the comment should not be left implying more
-- [ ] `SHARED-044` updated to record that its adjudication was overturned on
+- [x] `SHARED-044` updated to record that its adjudication was overturned on
       review, and by what argument
 
 ## Testing Strategy
@@ -115,7 +115,77 @@ Unit in `scope.test.ts`. Every new case checked red against the current walk.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent. This is a bug — reproduce first._
+**Model: fable (claude-fable-5).** Reproduced before any code was changed, on a
+real `corpus init` workspace with a real server (port 8791; 8765 and 5173
+untouched), driven through the CLI only.
+
+### Reproduction (before the fix)
+
+Built exactly the reviewer's scenario:
+
+| artifact | how it was made | `parent` | `origin` |
+| --- | --- | --- | --- |
+| `th_lprcg63c` | `corpus thread create`, then `corpus thread designate --agent researcher` | — | — |
+| `doc_h3um5vat` | `CORPUS_JOB=evt_sqnsinfwrtqr corpus doc create --from agent` | — | `th_lprcg63c` |
+| `th_gecoorlv` | `corpus thread create` (ordinary, undesignated) | — | — |
+| `th_bdtk2jg6` | `CORPUS_JOB=evt_3l6kpftmtfow corpus thread create --parent doc_h3um5vat --from agent` | `doc_h3um5vat` | `th_gecoorlv` |
+
+The thread file on disk confirms both edges at once:
+
+```
+id: th_bdtk2jg6
+parent: doc_h3um5vat
+origin: th_gecoorlv
+```
+
+Then `corpus thread reply th_bdtk2jg6 --from user -m "@agent …"`, and the event
+the server wrote to `.corpus/queue/pending/evt_vrmxwxf7vvfi.json`:
+
+```json
+  "payload": { "threadId": "th_bdtk2jg6", "parentId": "doc_h3um5vat", … },
+  "lane": "orchestrator"
+```
+
+**`orchestrator`.** The resident that wrote the draft never hears about the
+conversation on it — verbatim the failure §7 says the scope exists to prevent.
+
+Unit-level, before the fix: 5 of the 11 newly enumerated cases in
+`scope.test.ts` fail against the old walk (`keeps a thread with the scope of the
+document it hangs on`, `reaches the resident when the origin chain dead-ends…`,
+`treats a missing origin as a dead branch…`, `prefers a distant parent chain…`,
+`escapes a cycle on the origin branch…`). The other 6 pass today and exist to
+stop the branching walk regressing into an abort-on-dead-end or a
+non-terminating branch.
+
+### After the fix
+
+Same workspace, server stopped and restarted so it ran the new code, same reply
+verb:
+
+```json
+  "id": "evt_ha4ivkdtxree",
+  "payload": { "threadId": "th_bdtk2jg6", "parentId": "doc_h3um5vat", … },
+  "lane": "th_lprcg63c"
+```
+
+and the resident's own scoped claim picks it up —
+`corpus queue claim-all --thread th_lprcg63c` returns
+`{"events":[{"id":"evt_ha4ivkdtxree", …}]}` — so the routing reaches an actual
+consumer, not just the stamp.
+
+**The annexation half, also live.** `th_gecoorlv` (the job's own conversation)
+was then designated too, so `th_bdtk2jg6`'s two edges reach two *different*
+live scopes. A third reply enqueued `evt_jxr5snputkmd` with
+`"lane": "th_lprcg63c"` — the host document's scope, not the job's. Under the old
+precedence this is exactly the event that would have been annexed.
+
+### Checks
+
+- `vitest run apps/server` — **191 files, 4015 tests, all passing** (exit 0).
+- `tsc --noEmit` in `apps/server` — exit 0 (read from the exit code, not from
+  the proxy's output line).
+- `eslint` + `prettier --check` on every touched file — clean, no suppressions.
+- Server stopped and its workspace removed; port 8791 released.
 
 ## Completion Checklist (orchestrator)
 

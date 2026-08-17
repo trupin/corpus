@@ -137,20 +137,6 @@ describe("the scope walk", () => {
     expect(laneFor({ docId: "doc_leaf", sessionId: "s1" })).toBe("th_inner");
   });
 
-  // The one artifact whose two edges disagree: a thread an agent opened on
-  // *another* conversation's document while naming its own job. §7 arbitrates on
-  // origin ("a second scope cannot claim what a first already holds"), and
-  // `core/provenance.ts` makes it decisive — a thread filed into one scope whose
-  // follow-up work queued on another is a resident that owns the artifact and
-  // never hears about it.
-  it("prefers a thread's own origin over the scope of the document it hangs on", () => {
-    thread("th_mine", { resident: "Ana" });
-    thread("th_theirs", { resident: "Bo" });
-    document("doc_theirs", "th_theirs");
-    thread("th_opened", { parent: "doc_theirs", origin: "th_mine" });
-    expect(laneFor({ threadId: "th_opened", parentId: "doc_theirs" })).toBe("th_mine");
-  });
-
   it("routes an event naming nothing to the orchestrator", () => {
     expect(laneFor({ sessionId: "s1" })).toBe(ORCHESTRATOR_LANE);
   });
@@ -166,6 +152,127 @@ describe("the scope walk", () => {
     thread("th_a", { origin: "th_b" });
     thread("th_b", { origin: "th_a" });
     expect(laneFor({ threadId: "th_a", parentId: null })).toBe(ORCHESTRATOR_LANE);
+  });
+});
+
+// Only one artifact has both edges at once: a **thread** an agent opened on some
+// document while its `CORPUS_JOB` was set, which carries `parent` *and* `origin`.
+// (`apps/cli/src/input.ts` exports `CORPUS_JOB` once per claimed event, so that
+// is every agent-created thread, not an exotic one.) Every way the two can
+// disagree is enumerated here, because the defect this file was extended for was
+// found by enumerating rather than by meeting it (SERVER-117, PR #48's review).
+//
+// The rule the whole block states, decided by the user 2026-08-17: **for a
+// thread the parent chain wins, and the walk falls back rather than concluding
+// "no scope".**
+describe("a thread whose parent and origin point at different scopes", () => {
+  // §7's enumeration gives a *thread* two routes into a scope — its parent chain,
+  // and being "a thread on such a document" — and neither is its own origin. An
+  // agent that reaches out of its scope to comment on another conversation's
+  // draft does not annex that conversation, which is what §7 says of the one
+  // crossing it does sanction: "answering a question does not annex the thread it
+  // was asked in."
+  it("keeps a thread with the scope of the document it hangs on, not the job that opened it", () => {
+    thread("th_mine", { resident: "Ana" });
+    thread("th_theirs", { resident: "Bo" });
+    document("doc_theirs", "th_theirs");
+    thread("th_opened", { parent: "doc_theirs", origin: "th_mine" });
+    expect(laneFor({ threadId: "th_opened", parentId: "doc_theirs" })).toBe("th_theirs");
+  });
+
+  // PR #48's reproduction, four lines. Ana's resident drafted `doc_draft`; a
+  // person asked the orchestrator about it in an ordinary thread `th_q`, and the
+  // subagent opened `th_c` on the draft with its job set. A reply in `th_c` must
+  // reach Ana — she wrote the artifact being discussed. Before SERVER-117 the
+  // walk went `th_c → th_q → null → orchestrator` and never visited the draft.
+  it("reaches the resident when the origin chain dead-ends and the parent chain does not", () => {
+    thread("th_root", { resident: "Ana" });
+    document("doc_draft", "th_root");
+    thread("th_q");
+    thread("th_c", { parent: "doc_draft", origin: "th_q" });
+    expect(laneFor({ threadId: "th_c", parentId: "doc_draft" })).toBe("th_root");
+  });
+
+  // The mirror image: the preferred edge is the one that dead-ends. A dead end on
+  // either edge is a dead end on that branch and never a verdict about the
+  // artifact.
+  it("falls back to the origin when the parent chain dead-ends", () => {
+    thread("th_root", { resident: "Ana" });
+    document("doc_loose", null);
+    thread("th_opened", { parent: "doc_loose", origin: "th_root" });
+    expect(laneFor({ threadId: "th_opened", parentId: "doc_loose" })).toBe("th_root");
+  });
+
+  it("routes to the orchestrator only when both edges dead-end", () => {
+    document("doc_loose", null);
+    thread("th_q");
+    thread("th_c", { parent: "doc_loose", origin: "th_q" });
+    expect(laneFor({ threadId: "th_c", parentId: "doc_loose" })).toBe(ORCHESTRATOR_LANE);
+  });
+
+  it("answers once when both edges reach the same root", () => {
+    thread("th_root", { resident: "Ana" });
+    document("doc_draft", "th_root");
+    thread("th_c", { parent: "doc_draft", origin: "th_root" });
+    expect(laneFor({ threadId: "th_c", parentId: "doc_draft" })).toBe("th_root");
+  });
+
+  // A branch that names an id this workspace does not hold — a deleted thread, an
+  // id from another corpus — is a dead end like any other. It used to end the
+  // whole walk, which threw away a live edge the walk had not looked at yet.
+  it("treats a missing origin as a dead branch and still follows the parent", () => {
+    thread("th_root", { resident: "Ana" });
+    document("doc_draft", "th_root");
+    thread("th_c", { parent: "doc_draft", origin: "th_gone" });
+    expect(laneFor({ threadId: "th_c", parentId: "doc_draft" })).toBe("th_root");
+  });
+
+  it("treats a missing parent as a dead branch and still follows the origin", () => {
+    thread("th_root", { resident: "Ana" });
+    thread("th_c", { parent: "doc_gone", origin: "th_root" });
+    expect(laneFor({ threadId: "th_c", parentId: "doc_gone" })).toBe("th_root");
+  });
+
+  // "Nearest" is measured along §7's route for a thread, not in hops: the parent
+  // chain is followed to its end — through the origin edges of the documents on
+  // it, which is §7's "every thread on such a document" — before the thread's own
+  // origin is tried at all.
+  it("prefers a distant parent chain over a designated thread one origin hop away", () => {
+    thread("th_far", { resident: "Ana" });
+    document("doc_q", "th_far");
+    thread("th_mid", { parent: "doc_q" });
+    document("doc_p", "th_mid");
+    thread("th_near", { resident: "Bo" });
+    thread("th_c", { parent: "doc_p", origin: "th_near" });
+    expect(laneFor({ threadId: "th_c", parentId: "doc_p" })).toBe("th_far");
+  });
+
+  // §5 makes the files the source of truth, so either branch can be a hand-edited
+  // loop. A cycle must cost that branch and nothing else — the walk still has to
+  // answer from the other one.
+  it("escapes a cycle on the origin branch and answers from the parent branch", () => {
+    thread("th_root", { resident: "Ana" });
+    document("doc_draft", "th_root");
+    thread("th_a", { parent: "doc_draft", origin: "th_b" });
+    thread("th_b", { origin: "th_a" });
+    expect(laneFor({ threadId: "th_a", parentId: "doc_draft" })).toBe("th_root");
+  });
+
+  it("escapes a cycle on the parent branch and answers from the origin branch", () => {
+    thread("th_root", { resident: "Ana" });
+    thread("th_c", { parent: "doc_loop", origin: "th_root" });
+    document("doc_loop", "th_c");
+    expect(laneFor({ threadId: "th_c", parentId: "doc_loop" })).toBe("th_root");
+  });
+
+  // Both branches converging on one node is what makes a visited set a
+  // termination argument rather than a cycle patch: the node is expanded once,
+  // whichever branch reaches it first.
+  it("terminates when both edges converge on one undesignated node", () => {
+    thread("th_j");
+    document("doc_p", "th_j");
+    thread("th_c", { parent: "doc_p", origin: "th_j" });
+    expect(laneFor({ threadId: "th_c", parentId: "doc_p" })).toBe(ORCHESTRATOR_LANE);
   });
 });
 
