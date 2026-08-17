@@ -756,6 +756,7 @@ through.
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
 | SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
 | SHARED-046 | SPEC.md cites a §9.4 that does not exist, and the citation has reached the published contract | todo | P1 | — |
+| SHARED-047 | §7 does not say whether parked listeners count against the concurrency bound | todo | P2 | — |
 | UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
 
 `SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
@@ -815,5 +816,6 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | CLI-043 | Lane verbs, designation, and `corpus agents` | done | P0 | CONTRACT-051, SERVER-111, SERVER-112, SERVER-109 |
 | AGENT-025 | The converse skill — a resident's own loop | done | P0 | SHARED-043, CLI-044, CLI-043 |
 | AGENT-026 | Orchestrate learns to share the queue | done | P0 | AGENT-025, CLI-043 |
+| AGENT-027 | The converse skill can still adopt work the orchestrator is holding (AGENT-026 finding) | todo | P0 | AGENT-026 |
 | UI-108 | The composer offers the recipient | done | P0 | CONTRACT-051, SERVER-111, SERVER-112 |
 | UI-109 | The board shows who is resident, and who is live | todo | P1 | CONTRACT-051, SERVER-112 |
