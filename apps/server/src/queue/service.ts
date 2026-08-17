@@ -18,6 +18,7 @@ import {
   type LaneLiveness,
   type ScopeRootLookup,
 } from "./lanes.js";
+import { NOTHING_PARKED, type LaneTracker } from "./liveness.js";
 import {
   NOOP_INVALIDATE,
   NOOP_QUEUE_MIRROR,
@@ -238,6 +239,8 @@ export class QueueService {
   private findScopeRoot: ScopeRootLookup = NO_SCOPE_LOOKUP;
   /** Late-bound: see {@link attachLaneLiveness}. Nothing is live until bound. */
   private laneIsLive: LaneLiveness = NOTHING_LIVE;
+  /** Late-bound: see {@link attachLaneTracker}. Observes no park until bound. */
+  private laneTracker: LaneTracker = NOTHING_PARKED;
   private readonly invalidate: QueueInvalidate;
   private readonly now: () => number;
   private readonly staleAfterMs: number;
@@ -315,10 +318,9 @@ export class QueueService {
   }
 
   /**
-   * Binds the lane liveness predicate — **SERVER-112's tracker**, which is what
-   * will plug in here.
+   * Binds the lane liveness predicate the claim path asks (SERVER-111's seam).
    *
-   * Until it does, {@link NOTHING_LIVE} holds and every thread lane reads as
+   * Until it is bound, {@link NOTHING_LIVE} holds and every thread lane reads as
    * lapsed, so the orchestrator's unscoped claim sees the whole queue exactly as
    * it did before lanes existed. That is deliberate and is the safe direction:
    * §7 says the cost of a lapse is that the orchestrator does the work, never
@@ -326,9 +328,54 @@ export class QueueService {
    *
    * Nothing on the claim path changes when the real predicate arrives — the
    * fallback is computed here, at claim time, and never written into an event.
+   *
+   * In production the predicate arrives through {@link attachLaneTracker}, which
+   * calls this. It stays a seam of its own because a stub predicate is the
+   * honest way to state a claim-visibility case: such a test is about
+   * `visibleTo`, and giving it a whole tracker would make it depend on how
+   * presence is *observed* to assert what a claim *sees*.
    */
   attachLaneLiveness(isLive: LaneLiveness): void {
     this.laneIsLive = isLive;
+  }
+
+  /**
+   * Binds SPEC.md §7's presence tracker (SERVER-112) — the one that observes
+   * parked scoped `idle` requests, which is what presence *is*.
+   *
+   * One call binds all three of its consumers: the claim path's predicate
+   * (delegated to {@link attachLaneLiveness}, so there is exactly one place that
+   * decides), the park observation {@link idle} feeds it, and the aggregate
+   * {@link status} publishes as `QueueStatus.agent`. They are bound together
+   * because a queue that observed parks and answered a stale predicate — or
+   * answered a live predicate while observing nothing — is not a state anything
+   * wants to be able to reach.
+   *
+   * Late-bound like every other seam here: `createServer` builds the queue
+   * before it builds the things a lapse has to notify.
+   */
+  attachLaneTracker(tracker: LaneTracker): void {
+    this.laneTracker = tracker;
+    this.attachLaneLiveness(tracker.isLive);
+  }
+
+  /**
+   * A lane went past §7's grace window: release every parked request that can
+   * now see its events.
+   *
+   * Called by the tracker's lapse hook, and it is exactly {@link wake} for the
+   * lapsed lane — the same predicate, so the wake and the claim that follows it
+   * cannot disagree about what fell back. What it reaches in practice is a
+   * parked orchestrator, because a lane with a parked listener of its own is not
+   * a lane that lapsed.
+   *
+   * The wake is a convenience and never the mechanism: the fallback is computed
+   * at claim time, and the waiter registry's poll would find the same work on
+   * its next tick. What this buys is that a lapse is noticed the instant it
+   * happens rather than up to a tick later.
+   */
+  notifyLaneLapsed(lane: Lane): void {
+    this.wake(lane);
   }
 
   /**
@@ -481,9 +528,29 @@ export class QueueService {
    * over, which is what keeps the loop's two entry points from disagreeing.
    * `scope` absent is {@link ORCHESTRATOR_LANE} — the same lane, not a third
    * behaviour, so a caller written before lanes existed means what it meant.
+   *
+   * **Holding this request is what presence is** (SPEC.md §7, SERVER-112), which
+   * is why the tracker is told here and not inside `WaiterRegistry.wait`: an
+   * `idle` whose work is already waiting never parks at all, and a resident busy
+   * enough that every one of its calls returns at once would read as absent for
+   * exactly as long as it was busiest — the orchestrator stealing its lane
+   * because the listener was working it. The observation therefore spans the
+   * whole call, and the release is a `finally`: a window that expired, was
+   * aborted by a dropped client, or threw has ended the same way as far as
+   * presence is concerned.
    */
   async idle(request: IdleRequest): Promise<QueueBatch | undefined> {
     const scope = request.scope ?? ORCHESTRATOR_LANE;
+    const release = this.laneTracker.observePark(scope);
+    try {
+      return await this.idleHolding(scope, request);
+    } finally {
+      release();
+    }
+  }
+
+  /** {@link idle}'s window, with presence already being observed around it. */
+  private async idleHolding(scope: Lane, request: IdleRequest): Promise<QueueBatch | undefined> {
     // Wall clock, not the injected `now`: the window is a duration measured
     // against the very timers the waiter parks on, while `now` exists to make
     // the *instants written into files* deterministic in tests.
@@ -818,6 +885,14 @@ export class QueueService {
    * SERVER-030 ships the transition that puts an event there. It is read the
    * same way as every other status because the directory already exists:
    * `ensureLayoutSync` creates one per contract status at every boot.
+   *
+   * **`agent` is not a count and is not derived from one** (CONTRACT-045): the
+   * counts describe the work, `agent` describes the worker, and the console used
+   * to guess the second from the first — "not halted and nothing in progress ⇒
+   * idle" — which reported an agent with nothing to do on a machine with no
+   * agent at all. It is the roster's own verdict aggregated over every lane,
+   * read from the same tracker `GET /api/agents` reads per lane, so the strip
+   * and the recipient picker cannot disagree about whether anybody is listening.
    */
   async status(): Promise<QueueStatus> {
     const depth = async (status: QueueEventStatus): Promise<number> =>
@@ -833,7 +908,16 @@ export class QueueService {
         depth("abandoned"),
       ],
     );
-    return { halted, pending, inProgress, deferred, processed, failed, abandoned };
+    return {
+      agent: this.laneTracker.presence(),
+      halted,
+      pending,
+      inProgress,
+      deferred,
+      processed,
+      failed,
+      abandoned,
+    };
   }
 
   /** Releases every parked request. Registered as a server disposer. */

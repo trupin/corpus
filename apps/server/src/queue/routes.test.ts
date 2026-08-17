@@ -90,6 +90,10 @@ describe("GET /api/queue/status", () => {
     const parsed = QueueStatusSchema.safeParse(await response.json());
     expect(parsed.success).toBe(true);
     expect(parsed.success && parsed.data).toEqual({
+      // SPEC.md §7, CONTRACT-045: the counts describe the work, `agent`
+      // describes the worker. Nothing has parked on this server, and that is a
+      // measurement — the queue is the thing a park would have reached.
+      agent: { live: false, since: null },
       halted: false,
       pending: 2,
       inProgress: 0,

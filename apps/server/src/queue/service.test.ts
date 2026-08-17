@@ -11,6 +11,8 @@ import {
 import { HttpError } from "../errors.js";
 import type { QueueMirror } from "./project.js";
 import { QUEUE_QUERY_KEYS } from "./project.js";
+import { formatInstant } from "../core/time.js";
+import { LANE_GRACE_MS, createLaneTracker } from "./liveness.js";
 import {
   createQueueService,
   DEFAULT_MAX_ATTEMPTS,
@@ -860,6 +862,9 @@ describe("status", () => {
     }
 
     expect(await service.status()).toEqual({
+      // Nothing parked on this service, and that is the measurement rather than
+      // a placeholder: the queue is the thing a park would have reached.
+      agent: { live: false, since: null },
       halted: false,
       pending: 0,
       inProgress: 2,
@@ -897,6 +902,7 @@ describe("status", () => {
     }
 
     expect(await service.status()).toEqual({
+      agent: { live: false, since: null },
       halted: false,
       pending: 1,
       inProgress: 2,
@@ -1387,6 +1393,103 @@ describe("lanes", () => {
       expect((await service.reapStale()).reaped).toEqual([event.id]);
       const read = await service.store.readEvent("pending", event.id);
       expect(read?.ok === true && read.event.lane).toBe(RESIDENT);
+    });
+  });
+
+  // SPEC.md §7's presence, at the seam the queue owns: holding an `idle` is what
+  // makes a lane live, and the whole tracker arrives through one binding
+  // (SERVER-112).
+  describe("the presence tracker", () => {
+    it("observes the park for the lane the request asked to consume", async () => {
+      const service = laned(RESIDENT);
+      const tracker = createLaneTracker({ now: () => clock });
+      service.attachLaneTracker(tracker);
+
+      const parked = service.idle({ timeoutMs: 5_000, scope: RESIDENT });
+      await vi.waitFor(() => {
+        expect(tracker.isLive(RESIDENT)).toBe(true);
+      });
+      expect(tracker.isLive(ORCHESTRATOR_LANE)).toBe(false);
+
+      await post(service, "anything");
+      await parked;
+      // The hold ended; the lane stays live for the grace window.
+      expect(tracker.isLive(RESIDENT)).toBe(true);
+      clock += LANE_GRACE_MS;
+      expect(tracker.isLive(RESIDENT)).toBe(false);
+    });
+
+    // The park an `idle` never made: with work already waiting the request
+    // returns at once, and a listener busy enough that every call returns at
+    // once would otherwise read as absent for exactly as long as it was busiest.
+    it("observes a request that never had to wait", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      const tracker = createLaneTracker({ now: () => clock });
+      service.attachLaneTracker(tracker);
+      await post(service, "th_resident");
+
+      expect((await service.idle({ timeoutMs: 20, scope: RESIDENT }))?.events).toHaveLength(1);
+      expect(tracker.isLive(RESIDENT)).toBe(true);
+    });
+
+    it("binds the claim path's predicate with the same call", async () => {
+      const service = routing({ th_resident: RESIDENT });
+      const tracker = createLaneTracker({ now: () => clock });
+      service.attachLaneTracker(tracker);
+      const theirs = await post(service, "th_resident");
+
+      // Asserted in the *live* direction: hiding a lapsed lane's work is what a
+      // queue with no tracker at all already does, so only this says the tracker
+      // reached the predicate.
+      const parked = service.idle({ timeoutMs: 5_000, scope: RESIDENT });
+      await vi.waitFor(() => {
+        expect(tracker.isLive(RESIDENT)).toBe(true);
+      });
+      expect((await service.claimAll()).events).toHaveLength(0);
+
+      service.close();
+      await parked;
+      clock += LANE_GRACE_MS;
+      expect((await service.claimAll()).events.map((event) => event.id)).toEqual([theirs.id]);
+    });
+
+    it("reports the aggregate on the queue status, from the same observation", async () => {
+      const service = makeService();
+      const tracker = createLaneTracker({ now: () => clock });
+      service.attachLaneTracker(tracker);
+      expect((await service.status()).agent).toEqual({ live: false, since: null });
+
+      const parked = service.idle({ timeoutMs: 5_000, scope: RESIDENT });
+      await vi.waitFor(() => {
+        expect(service.parked).toBe(1);
+      });
+      expect((await service.status()).agent).toEqual({ live: true, since: formatInstant(clock) });
+
+      service.close();
+      await parked;
+    });
+
+    // The lapse hook's other half: a parked orchestrator is released the moment
+    // a lane falls back, rather than waiting for the registry's next poll.
+    it("wakes a parked orchestrator when a lane lapses", async () => {
+      // The poll is turned off for the length of this window, so the only thing
+      // that can end the park is the wake itself: with the registry's ordinary
+      // tick running, a no-op here would find the same work a moment later and
+      // the test would pass against nothing.
+      const service = makeService({ pollIntervalMs: 60_000 });
+      service.attachScopeLookup(() => RESIDENT);
+      let live = true;
+      service.attachLaneLiveness((lane) => live && lane === RESIDENT);
+      await post(service, "th_resident");
+
+      const orchestrator = service.idle({ timeoutMs: 2_000 });
+      await vi.waitFor(() => {
+        expect(service.parked).toBe(1);
+      });
+
+      live = false;
+      service.notifyLaneLapsed(RESIDENT);
+      expect((await orchestrator)?.events).toHaveLength(1);
     });
   });
 

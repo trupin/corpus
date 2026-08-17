@@ -26,6 +26,7 @@ import {
   createUploadSizeGuard,
   mountAttachmentRoutes,
 } from "./attachments/index.js";
+import { mountAgentRoutes } from "./agents/index.js";
 import { mountCaptureRoutes } from "./capture/index.js";
 import { mountCheckRoutes } from "./check/index.js";
 import { mountSkillRoutes } from "./skills/index.js";
@@ -39,6 +40,7 @@ import {
   type EditSessionTracker,
 } from "./edit/index.js";
 import {
+  AGENTS_KEY,
   createInvalidationBus,
   createSseHub,
   mountEventStream,
@@ -65,6 +67,7 @@ import {
   type SemanticRetrieval,
 } from "./semantic/index.js";
 import {
+  createLaneTracker,
   createQueueService,
   mountQueueRoutes,
   type QueueInvalidate,
@@ -362,6 +365,31 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     disposers.push(dispose);
   };
 
+  // SPEC.md §7's presence (SERVER-112): a resident is live exactly while it
+  // holds a parked scoped `idle`, so this counts the `idle` requests the queue
+  // is holding and nothing else — no heartbeat, no registration, nothing to
+  // reap. Bound **unconditionally**, outside the projection block: presence is
+  // in-memory and needs no database, and a server whose lanes read lapsed while
+  // residents are parked would hand their work to the orchestrator.
+  const laneTracker = createLaneTracker({
+    now,
+    // §7: "who is running is a read, never a push". The frame carries the key
+    // and the roster is refetched over HTTP; no presence data goes over SSE.
+    onPresenceChanged: () => {
+      (deps.invalidate ?? invalidate)([AGENTS_KEY]);
+    },
+    // The lapse made this lane's pending events visible to the orchestrator's
+    // unscoped claim. Waking it is what turns "visible at the next claim" into
+    // "claimed now" rather than at the waiter registry's next poll.
+    onLapsed: (lane) => {
+      queue.notifyLaneLapsed(lane);
+    },
+  });
+  queue.attachLaneTracker(laneTracker);
+  registerDisposer(() => {
+    laneTracker.close();
+  });
+
   let editSessions: EditSessionTracker | undefined;
   /** SPEC.md §4's out-of-band commit (SERVER-090); bound with the git writer below. */
   let commitOutOfBand: CommitOutOfBandChanges | undefined;
@@ -383,10 +411,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // database. Until it is bound every event routes to the orchestrator, which
     // is what a server with no projection can honestly say.
     //
-    // Its sibling seam, `attachLaneLiveness`, is deliberately **not** bound:
-    // liveness is SERVER-112's tracker, and until it exists every thread lane
-    // reads as lapsed, so the orchestrator's unscoped claim still sees the whole
-    // queue. Binding one line here is all that will change.
+    // Its sibling seam, `attachLaneTracker`, is bound above and not here: a
+    // walk needs the database, liveness does not, and SERVER-112 is what makes
+    // the partition mean anything — with nothing live, every thread lane reads
+    // as lapsed and the orchestrator's unscoped claim sees the whole queue.
     queue.attachScopeLookup(createLaneScopeLookup(deps.projection));
 
     // Everything the write path needs is already reachable here (sprint-005
@@ -579,6 +607,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // `mountSearchRoutes` reads it per request.
     mountThreadRoutes(app, threadsWorkspace, mutex, { semantic });
     mountCaptureRoutes(app, threadsWorkspace, mutex);
+
+    // §7's roster (SERVER-112). Mounted after the thread surface because that is
+    // where a lane comes from — a designation is thread state — and inside this
+    // block because the lanes are a projection read; the liveness half needs no
+    // database and is bound above.
+    mountAgentRoutes(app, { projection: deps.projection, tracker: laneTracker, now });
 
     const jobs = createJobService({
       corpusDir: config.corpusDir,

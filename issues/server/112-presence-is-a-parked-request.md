@@ -146,11 +146,47 @@ and the summary's relative age tracks it.
 An unscoped `idle` was parked at **23:51:26** with a 480 s window, so that it would
 still be open at the lapse instant (23:42:30 + 960 s = **23:58:30**):
 
-<!-- LAPSE-EVIDENCE -->
+```
+[23:51:26] GET /api/queue/idle?timeout=480          (unscoped, held open)
+[23:57:36] t+904s   th_oip2lkt5 live=true
+[23:58:30] the unscoped park returned HTTP 200 — 424 s into a 480 s window, so it was
+           woken and did not expire — carrying the resident lane's own event:
+           {"events":[{"id":"evt_2jv77wfg2akh","type":"comment.created",
+                       "created":"2026-08-16T23:42:30Z","source":"thread",
+                       "payload":{"threadId":"th_oip2lkt5",...}}],
+            "inProgress":{"events":[{"id":"evt_vbtwqhacfyj5","type":"resident.designated",...}],
+                          "total":1,"truncated":false}}
+[23:58:36] t+964s   th_oip2lkt5 live=false since=23:42:30Z  summary="idle — last active 16m ago"
+                    orchestrator live=true  since=23:58:30Z
+[23:58:4x] POST /api/queue/claim-all  -> claimed: ['evt_2jv77wfg2akh']
+```
+
+The flip is between the t+904 s and t+964 s samples, and the wake landed at
+**exactly 23:58:30 = 23:42:30 + 960 s**. `since` did not move: the lapse is computed, never
+written, so the evidence behind the verdict outlives the verdict.
+
+SSE across the whole run carried only key names — `data: {"keys":[["agents"]]}` — for the
+park, the release and the lapse. No presence data ever went over the stream.
 
 ### 6. The resident comes back to a lane it left
 
-<!-- RETURN-EVIDENCE -->
+```
+[23:59:03] GET /api/queue/idle?timeout=6&scope=th_oip2lkt5  -> HTTP 204 (nothing to do)
+[23:59:03] GET /api/agents
+             orchestrator  live=true  since=23:58:30Z  summary="working let us work on the mortgage refinance"
+             th_oip2lkt5   live=true  since=23:59:03Z  summary="working let us work on the mortgage refinance"
+[23:59:0x] POST /api/queue/claim-all?scope=th_oip2lkt5
+             claimed: []
+             inProgress: [{"id":"evt_2jv77wfg2akh","type":"comment.created",
+                           "heldSince":"2026-08-16T23:58:57Z","originId":"th_oip2lkt5",
+                           "originTitle":"let us work on the mortgage refinance"}]
+```
+
+One park and the lane is live again, with a fresh `since` and nothing to migrate. Note the
+last block: the event the **orchestrator** claimed under the fallback still carries the
+resident's lane stamp, so it is still reported to the resident's own scoped claim as work
+its lane holds — §7's "the fallback is computed at claim time, never written into the
+events", visible from the returning resident's side.
 
 ### The grace window, and its arithmetic
 
@@ -167,6 +203,29 @@ number, not a server constant**, deliberately diverging from this issue's sugges
   to expire a `live` it has been holding. A server window of 900 s would let a client call
   a lane absent that the server had just called present — the flicker the window exists to
   stop. One number, two appliers.
+
+### Every new test checked red first
+
+Each mutation was applied alone, the suites run, then reverted:
+
+| Mutation | Went red |
+| --- | --- |
+| `liveAt` always answers `true` | 13 — the whole grace/lapse/aggregate/fallback set |
+| `liveAt` drops the grace window (parked only) | 5 — grace, per-lane deadlines, both fallback cases |
+| `idle()` observes no park | 11 — every roster/status/announce case |
+| the summary ladder prefers the derived line over the job's own | 2 — precedence and the cap |
+| the roster hardcodes `{live:false, since:null}` instead of asking the tracker | 5 |
+| the lapse announces nothing | 3 announcement cases |
+| `attachLaneTracker` does not bind the claim predicate | 3 — the two fallback cases + the binding case |
+| `notifyLaneLapsed` wakes nobody | 1 |
+
+Two tests were **not** discriminating on the first attempt and were rewritten:
+
+- *"wakes a parked orchestrator when a lane lapses"* passed against a no-op, because the
+  waiter registry's 10 ms poll found the same work a moment later. It now runs with the
+  poll set to 60 s, so only the wake can end the window.
+- *"binds the claim path's predicate"* asserted the **lapsed** direction, which is what a
+  queue with no tracker at all already does. It now asserts the live direction first.
 
 ### Corrections to my own first reading (recorded because they cost a drill)
 
