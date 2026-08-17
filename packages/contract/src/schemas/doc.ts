@@ -42,11 +42,49 @@ export const DocStatusSchema = z.enum(DOC_STATUSES).openapi({
 /**
  * Folder placement under `data/docs/`. Creation is inbox-first (SPEC.md §11
  * "zero-form, inbox-first"), so an omitted folder lands the document in
- * `data/docs/inbox/` rather than at the root.
+ * `data/docs/inbox/` rather than at the root — unless the type being created is
+ * one SPEC.md §7 gives a document root of its own, which
+ * {@link CREATE_FOLDER_DESCRIPTION} spells out. This constant is the `data/docs`
+ * default and nothing more; the roots outside it are not folders under it.
  */
 export const DEFAULT_DOC_FOLDER = "inbox";
 
-const FOLDER_DESCRIPTION =
+/**
+ * **Create and move do not share a folder grammar, so they do not share a
+ * description** (CONTRACT-062). They did until SERVER-122 gave *create* the
+ * `type`-aware half below — an omitted `folder` filing into the root the `type`
+ * declares, and a declared root nameable outright — which `move` did not get,
+ * because a move carries no new type to file under. One sentence serving both
+ * was worse than a wrong one: right for move, wrong for create, and with nothing
+ * in it telling a reader which route it was about.
+ *
+ * Both are written against `resolveFolder(folder, forType)`
+ * (`apps/server/src/docs/write.ts`), which is what a caller actually meets —
+ * and both state what a caller may conclude rather than restating how the
+ * server derives it (SERVER-114). In particular the roots are *not* enumerated
+ * here: the server reads them off its own root table, so a root declared later
+ * is reachable without a contract change, and the one example named
+ * (`.claude/agents`) is named because it is the one the product's own agent
+ * depends on.
+ */
+const CREATE_FOLDER_DESCRIPTION =
+  "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
+  `(\`data/docs/finance\`). Defaults to \`${DEFAULT_DOC_FOLDER}\` — creation is inbox-first ` +
+  "(SPEC.md §11), and the agent files inbox arrivals per its skill — **except for a type that " +
+  "SPEC.md §7 gives a document root of its own that takes ordinary markdown documents**, which " +
+  "is where an omitted `folder` files it: a " +
+  "`type: agent-def` document lands in `.claude/agents/`, so creating a persona never requires " +
+  "knowing a path. Such a root may also be named outright, by its exact declared path " +
+  "(`.claude/agents`) — that path itself, never a folder beneath it. It must hold the type being " +
+  "created: a root overrides the type of every file under it, so naming one that holds something " +
+  "else is a `400` rather than a document that is not the one you asked for. A root that does " +
+  "not take an ordinary `*.md` is out of reach for the same reason it is not a default — " +
+  "`.claude/skills` indexes `SKILL.md` files alone, so naming it is a `400` and a `type: skill` " +
+  `create with no folder still lands in \`${DEFAULT_DOC_FOLDER}\`; a skill is created with ` +
+  '`POST /api/skills`. An explicit folder always wins, so `folder: "inbox"` still files an ' +
+  "`agent-def` under `data/docs/` as a document *about* a persona.";
+
+const MOVE_FOLDER_DESCRIPTION =
   "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
   `(\`data/docs/finance\`). Defaults to \`${DEFAULT_DOC_FOLDER}\` — creation is inbox-first ` +
   "(SPEC.md §11), and the agent files inbox arrivals per its skill.";
@@ -289,7 +327,7 @@ export const CreateDocRequestSchema = z
       .string()
       .optional()
       .describe("Omit to pre-fill from the type's `template` document when one exists."),
-    folder: z.string().optional().describe(FOLDER_DESCRIPTION),
+    folder: z.string().optional().describe(CREATE_FOLDER_DESCRIPTION),
     tags: z.array(z.string()).optional().describe("Defaults to no tags."),
     status: z.enum(DOC_STATUSES).optional().describe("Defaults to `open`."),
     due: IsoDateSchema.nullable()
@@ -444,7 +482,7 @@ export const UpdateDocRequestSchema = z
 export const JobOnlyRequestSchema = z.strictObject({ job: jobField }).openapi("JobOnlyRequest");
 
 export const MoveDocRequestSchema = z
-  .strictObject({ job: jobField, folder: z.string().describe(FOLDER_DESCRIPTION) })
+  .strictObject({ job: jobField, folder: z.string().describe(MOVE_FOLDER_DESCRIPTION) })
   .openapi("MoveDocRequest");
 
 /**

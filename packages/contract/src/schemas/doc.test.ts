@@ -304,6 +304,18 @@ describe("CreateDocRequest", () => {
     expect(CreateDocRequestSchema.parse({ type: "note", title: "T", folder }).folder).toBe(folder);
   });
 
+  /**
+   * A declared root is a third accepted spelling on create alone (SERVER-122):
+   * it is not a folder under `data/docs/`, so nothing in the schema could have
+   * told a caller it is legal — the description is the whole publication of it,
+   * and the value passes validation unchanged either way (CONTRACT-062).
+   */
+  it("accepts a declared root as a folder spelling, which only create documents", () => {
+    const request = { type: "agent-def", title: "Reviewer", folder: ".claude/agents" };
+    expect(CreateDocRequestSchema.parse(request).folder).toBe(".claude/agents");
+    expect(CreateDocRequestSchema.shape.folder.meta()?.description).toContain(".claude/agents");
+  });
+
   it("creates a pinned view in one call — the new-list picker's shape", () => {
     const request = {
       type: "view",
@@ -352,6 +364,19 @@ describe("MoveDocRequest", () => {
 
   it("requires a destination", () => {
     expect(MoveDocRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  /**
+   * A move takes no type, so `resolveFolder` is called without one and the
+   * §7 roots are out of reach here (CONTRACT-062). The two `folder` fields
+   * therefore say different things, and the schemas must not share a constant.
+   */
+  it("describes a plainer folder grammar than create's", () => {
+    const move = MoveDocRequestSchema.shape.folder.meta()?.description ?? "";
+    const create = CreateDocRequestSchema.shape.folder.meta()?.description ?? "";
+    expect(move).not.toBe(create);
+    expect(move).not.toContain("agent-def");
+    expect(move).toContain("data/docs/finance");
   });
 });
 

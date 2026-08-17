@@ -2138,6 +2138,94 @@ describe("deletion cascades are documented", () => {
   });
 });
 
+/**
+ * CONTRACT-062. `CreateDocRequest.folder` and `MoveDocRequest.folder` were one
+ * constant until SERVER-122 gave create a grammar move did not get, at which
+ * point the shared sentence was right for one route and wrong for the other
+ * with nothing in it saying which. These are written against the **generated**
+ * document rather than the schema constants, for the reason CONTRACT-045
+ * records: a description hand-copied back into one place is only caught by
+ * reading the two published strings.
+ */
+describe("the two folder grammars are described separately (CONTRACT-062)", () => {
+  const folderDescription = (component: string): string => {
+    const found = componentSchemas?.[component]?.properties?.["folder"]?.description;
+    if (found === undefined) throw new Error(`No ${component}.folder description.`);
+    return found;
+  };
+
+  const create = (): string => folderDescription("CreateDocRequest");
+  const move = (): string => folderDescription("MoveDocRequest");
+
+  it("does not publish one sentence for both routes", () => {
+    expect(create()).not.toBe(move());
+  });
+
+  /**
+   * The four facts `resolveFolder(folder, forType)` implements, each asserted by
+   * the thing a caller would look for. Falsify by pointing both properties back
+   * at one constant.
+   */
+  it("states the by-type default on create, with the root it actually reaches", () => {
+    expect(create()).toContain("`type: agent-def`");
+    expect(create()).toContain(".claude/agents");
+  });
+
+  it("states that a declared root may be named outright, and only exactly", () => {
+    expect(create()).toContain("named outright");
+    expect(create()).toContain("never a folder beneath it");
+  });
+
+  it("states that a named root must hold the type being created", () => {
+    expect(create()).toContain("must hold the type being created");
+  });
+
+  it("states that an explicit folder wins over the by-type default", () => {
+    expect(create()).toContain("An explicit folder always wins");
+  });
+
+  /**
+   * The trap the wording SERVER-122 proposed would have fallen into: §7 gives
+   * `type: skill` a root of its own, and a create still files a skill in the
+   * inbox — `.claude/skills` indexes `SKILL.md` alone, so it is neither the
+   * default nor nameable. A description that promised the root would send every
+   * caller to the wrong place.
+   */
+  it("does not promise the skill root, which a create can neither default to nor name", () => {
+    expect(create()).toContain(".claude/skills");
+    expect(create()).toContain("SKILL.md");
+    expect(create()).toContain("POST /api/skills");
+  });
+
+  /**
+   * Move did not gain the grammar and this must not quietly give it one: the
+   * move-side sentence is what it has always been, and none of create's
+   * type-aware half may leak into it.
+   */
+  it("leaves move's description as the plain `data/docs/` grammar", () => {
+    expect(move()).toBe(
+      "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full " +
+        "prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first " +
+        "(SPEC.md §11), and the agent files inbox arrivals per its skill.",
+    );
+    for (const absent of ["agent-def", ".claude/", "document root"]) {
+      expect(move(), `move must not mention ${absent}`).not.toContain(absent);
+    }
+  });
+
+  /**
+   * `POST /api/docs/bulk`'s `move` act carries a third `folder`, inlined rather
+   * than registered (the act union is a `oneOf`, so it has no component name).
+   * It calls `resolveFolder` with no type either, so the type-aware grammar must
+   * appear in the whole published document exactly once — on create.
+   */
+  it("publishes the type-aware grammar on exactly one field in the document", () => {
+    const serialised = JSON.stringify(document);
+    const occurrences = serialised.split("An explicit folder always wins").length - 1;
+    expect(occurrences).toBe(1);
+  });
+});
+
 describe("queue long-poll", () => {
   it("declares both outcomes, with the timeout bounded and defaulted", () => {
     const op = operation("/api/queue/idle", "get");
