@@ -668,6 +668,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
 | CLI-046 | `corpus queue status` never shows whether an agent is there | todo | P1 | SERVER-112 |
 | CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | todo | P2 | — |
+| CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
 
 **Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
 a required field, which breaks every constructor of one: `SERVER-086` (the
