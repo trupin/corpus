@@ -658,6 +658,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-112 | The comment popover can be moved, and what it is about stays lit while you write | done | P0 | — |
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
+| UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | todo | P1 | — |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | todo | P2 | SERVER-113 |
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
