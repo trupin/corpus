@@ -182,3 +182,20 @@ implemented.
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0, cross-domain)
 - [ ] Committed with `[CONTRACT-051]` prefix
+
+## SPEC.md edit — ratified by the user, 2026-08-17
+
+PR #48's review raised as a MAJOR finding that this commit (`5356a8a9`) edited
+`SPEC.md` §9.2 — two bullets, for `POST/DELETE /api/threads/:id/resident` and
+`GET /api/agents` — with no recorded sign-off, while this file's own line 116
+says "This package never edits SPEC.md". The commit and its issue contradicted
+each other, and the orchestrator did not catch it when committing.
+
+**Surfaced to the user, who ratified the text as written**, including the
+`§9.4` citation in the `GET /api/agents` bullet. The reasoning for keeping it:
+the bullets describe routes SHARED-043's rider already signed, so nothing new is
+promised, and the §9.4 citation is one of twelve that `SHARED-046` will repoint
+in a single signed pass rather than being patched here.
+
+The line above is now false about this issue and is left standing as the record
+of what happened. `SHARED-046` owns the citation sweep.
