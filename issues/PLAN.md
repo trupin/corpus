@@ -660,6 +660,39 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | done | P1 | — |
 | UI-117 | `anchor-layer.spec.ts:475` reads `innerText` before layout has flushed (UI-116 finding) | todo | P2 | — |
+
+### PR #48 review — REQUEST_CHANGES, 2026-08-17
+
+The pr-reviewer ran cold on the phase branch and returned six MAJOR findings.
+Four are fixed before merge; two are recorded here because they are the user's.
+
+The one that matters most to how this phase was run: **finding 2 overturned my
+own adjudication of `SHARED-044`.** I recorded origin-first as decided after the
+agent I spawned for an independent read died before reading anything, and said
+so in the issue — the reviewer supplied the second opinion and disagreed, on the
+ground that §7 lists `origin` as a scope edge only for *documents*, and that
+origin-first has no beneficial case: the only input where it differs from
+parent-first is the one where it annexes another scope's conversation.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SERVER-117 | The scope walk abandons the parent edge, so a resident loses conversations on its own artifacts | todo | P0 | — |
+| SERVER-118 | `GET /api/queue/idle` accepts any thread id as a scope, and `agent.live` then lies | todo | P0 | — |
+| UI-118 | An explicit recipient equal to the client's computed lane is sent as absence | todo | P0 | — |
+| AGENT-029 | A resident working longer than the grace window reads as absent, and gets a second listener | todo | P0 | — |
+
+**Two findings are the user's, not mine to close:**
+
+- **SPEC.md was edited in this PR without sign-off** (`5356a8a9 [CONTRACT-051]`,
+  two §9.2 bullets), which breaches a standing constraint. The content describes
+  SHARED-043's already-signed rider rather than new behaviour, and the issue
+  file for that very change says "This package never edits SPEC.md" — so the
+  commit and its issue contradict each other. It also adds a fresh `§9.4`
+  citation, increasing the count `SHARED-046` was filed to reduce. Awaiting the
+  user's decision: ratify, revert, or amend.
+- The reviewer confirmed **no defect in `SERVER-115`** after enumerating all 17
+  `bus.invalidate` sites and re-deriving the declared status-pair table, which
+  is worth recording since that was the largest forced addition to this release.
 | SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | done | P0 | — |
 | AGENT-028 | Two product skills still say the empty tree is the repository's first commit (CLI-045 finding) | done | P1 | — |
 | CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | done | P0 | — |
