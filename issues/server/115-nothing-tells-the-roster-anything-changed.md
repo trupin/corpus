@@ -6,7 +6,7 @@ server (contract-coordinated)
 
 ## Status
 
-in-review
+done
 
 ## Priority
 

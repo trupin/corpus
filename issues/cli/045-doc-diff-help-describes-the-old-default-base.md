@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
