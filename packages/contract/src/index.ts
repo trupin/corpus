@@ -20,4 +20,5 @@ export * from "./openapi.js";
 export * from "./query-keys.js";
 export * from "./routes/index.js";
 export * from "./schemas/index.js";
+export * from "./scope.js";
 export * from "./turns.js";

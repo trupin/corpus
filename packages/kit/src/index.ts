@@ -387,6 +387,7 @@ export {
   RECIPIENT_REFUSED_STATEMENT,
   RECIPIENT_UNKNOWN_STATEMENT,
   RecipientPicker,
+  SCOPE_NODE_ABSENT,
   UNNAMED_RESIDENT_LABEL,
   type ComposerRecipient,
   type ComposerRecipientInput,

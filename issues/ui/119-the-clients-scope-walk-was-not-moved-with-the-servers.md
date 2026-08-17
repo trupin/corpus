@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -69,23 +69,46 @@ suites is exactly why nobody noticed.
 
 ## Acceptance Criteria
 
-- [ ] The client's walk matches the server's: parent first, both edges, dead
+- [x] The client's walk matches the server's: parent first, both edges, dead
       branch is not an abort. Match `apps/server/src/queue/scope.ts` edge for
       edge and say where you checked it
-- [ ] `scopeWalk.test.ts:73` and every sibling asserting the old order are
+- [x] `scopeWalk.test.ts:73` and every sibling asserting the old order are
       **rewritten, not deleted** — the cases are right, the expectations are not
-- [ ] `scopeWalk.ts:34-37` still states the old rule in prose (*"The two edges,
+- [x] `scopeWalk.ts:34-37` still states the old rule in prose (*"The two edges,
       and the order, are the server's: `origin ?? parent`"*). `UI-118` corrected
       two false docblocks in this file and left the one that states the rule.
       Fix it, and consider what else in the file is now describing a dead design
-- [ ] **Something must fail when these two walks diverge again.** A comment
+- [x] **Something must fail when these two walks diverge again.** A comment
       asking the next person to remember is what produced this. Options worth
       weighing: publish the walk from one place both consume; or a test that
       runs the same case table through both and asserts they agree. Say which
       you chose and why the other was not possible
-- [ ] The client's `MAX_SCOPE_WALK` bound is re-examined: the server's walk is
+- [x] The client's `MAX_SCOPE_WALK` bound is re-examined: the server's walk is
       unbounded and now covers a reachable closure rather than a chain, so a
       bound of 8 is a second way to disagree
+
+## What was done
+
+**There is now one walk.** `packages/contract/src/scope.ts` exports `walkScope`
+— the traversal, and nothing else. `apps/server/src/queue/scope.ts` keeps the
+payload→start resolution and the projection read; `packages/kit`'s
+`scopeWalk.ts` keeps the board's node lookup. Neither holds a traversal any
+more, so there is nothing left that *can* diverge.
+
+The parity-test option (`scripts/stub-server-parity.test.ts`'s pattern) was not
+available: no workspace here may import `apps/server` **and** `packages/kit`,
+and that file's own docblock names the direction taken instead — *"a rule that
+becomes shared code should lose its fixture"*.
+
+`MAX_SCOPE_WALK` moved to `useScopeWalk.ts` and became a **read budget**, 8 → 32.
+The walk is unbounded, as the server's is. Exhausting the budget stops the
+*fetches*, so the walk keeps answering `unread` and the composer says *unknown*
+— never `orchestrator`, which is the claim the old bound made at exhaustion.
+
+The lookup gained a third value. `SCOPE_NODE_ABSENT` (a settled `404`) is a dead
+branch, as a projection miss is; `undefined` is still *not read yet* and
+withholds. Before, a dangling `origin` stranded the walk on a node it would
+never read, where the server simply walked past it.
 
 ## Testing Strategy
 
@@ -96,8 +119,80 @@ checked red against the current client walk before trusting it.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent. This is a bug — reproduce first, in a
-browser: the composer naming one agent while the server would route to another._
+**Model: opus** (`claude-opus-5[1m]`), 2026-08-17.
+
+Real workspace at `/tmp/ui119-ws` (`corpus init`), real server on `:8843`, real
+Vite dev server on `:5291` proxying it, real Chromium via Playwright. Never
+`:8765`, never `:5173`.
+
+The corpus, hand-written as four files (§5 makes the files the source of truth):
+
+| id           | type   | `parent`     | `origin`  | `resident` |
+| ------------ | ------ | ------------ | --------- | ---------- |
+| `th_root`    | thread | —            | —         | **Ana**    |
+| `doc_draft`  | note   | —            | `th_root` | —          |
+| `th_q`       | thread | —            | —         | —          |
+| `th_c`       | thread | `doc_draft`  | `th_q`    | —          |
+
+`GET /api/agents` confirmed `th_root` as the only designated lane.
+
+### Reproduction (before the fix)
+
+- **Server**: `corpus thread reply th_c --message "@agent …"` →
+  `.corpus/queue/pending/evt_rh6dleryqol4.json` carries `"lane": "th_root"`.
+- **Browser**: opened `th_c` in the reader. The composer read
+  **`agent will answer — no listener yet (default here)`**, with
+  `[data-recipient-lane="orchestrator"]` at `data-recipient-default="true"`,
+  `aria-pressed="true"`, and `th_root` (Ana) at `data-recipient-default="false"`.
+
+So the composer named the orchestrator for a conversation the server routes to
+Ana. Since UI-118 the confirming press on that row is a real pick, and
+`queue/lanes.ts:147` returns it verbatim.
+
+The annexation half, added as three more files (`th_bo` resident **Bo**,
+`doc_theirs` origin `th_bo`, `th_opened` parent `doc_theirs` + origin `th_root`):
+the old walk names **Ana** for a conversation on Bo's note; the server enqueued
+`evt_5jqkgwjhulme` with `"lane": "th_bo"`.
+
+### Verification (after the fix)
+
+Same server, same corpus, kit's `dist/` rebuilt, page reloaded:
+
+- `th_c` composer: **`Ana will answer — no listener yet (default here)`**;
+  `th_root` is `data-recipient-default="true"` / `aria-pressed="true"`,
+  orchestrator is `false`. Matches `evt_rh6dleryqol4`'s `lane: th_root`.
+- `th_opened` composer: **`Bo will answer`**, `th_bo` default. Matches
+  `evt_5jqkgwjhulme`'s `lane: th_bo` — the annexation is gone.
+- **The pick, end to end**: pressed the default row in `th_c`'s picker and sent.
+  The request Playwright observed was
+  `POST /api/threads/th_c/turns {"body":…,"requestsAgent":true,"recipient":"th_root"}`,
+  and the server enqueued `evt_fujeqra4lavc` with `"lane": "th_root"`. Before the
+  fix the identical gesture would have put `"recipient":"orchestrator"` on the
+  wire.
+
+### Falsification
+
+- The old client walk (`origin ?? parent`, bound 8, absent≡unread) spliced back
+  into `walkToLane`: **6 of 18** cases in `scopeWalk.test.ts` fail, including
+  *"follows parent before origin"*, the fetch-order case, the deep-chain case and
+  all three absent cases. Restored, green.
+- The pre-SERVER-117 chain spliced into `walkScope`: **6 of 26** cases in
+  `packages/contract/src/scope.test.ts` fail — the annexation case, the
+  dead-end-origin case, the missing-origin case, the distant-parent case, the
+  origin-branch cycle, and the parent-first fetch-order case. Restored, green.
+- The survivors in both runs are the both-edges-agree shapes, which are in the
+  table precisely to pin the agreement.
+
+### Checks
+
+`npm run build -w packages/contract -w packages/kit`; `tsc --noEmit` in
+contract/kit/server/ui; `eslint` + `prettier --check` on every touched file;
+`vitest run packages/kit packages/contract apps/ui/src/recipient
+apps/server/src/queue` → 3765 passed; `vitest run plugins
+scripts/stub-server-parity.test.ts` → 540 passed.
+
+Processes started (server pid 78894, vite pid 80215) were stopped and `:8843` /
+`:5291` verified free.
 
 ## Completion Checklist (orchestrator)
 

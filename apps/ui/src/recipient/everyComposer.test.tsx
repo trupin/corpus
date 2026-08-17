@@ -311,8 +311,9 @@ describe.each(SURFACES)("$name", (surface) => {
   });
 
   /**
-   * UI-118. `computed` is *this* build's walk, over a cached roster and bounded
-   * at `MAX_SCOPE_WALK`; the server's is unbounded over the live projection. So
+   * UI-118. `computed` runs the same traversal the server routes with (UI-119),
+   * but over a **cached roster** and only as far as this page has read; the
+   * server's runs over the live projection at the moment the message lands. So
    * pressing the lane the default names is not agreement with whatever the
    * server works out a moment later — it is addressing that lane, and it has to
    * say so on the wire or the server's `422` can never happen.

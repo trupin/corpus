@@ -1,15 +1,22 @@
+import { SCOPE_NODE_ABSENT } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
-import { laneOf, MAX_SCOPE_WALK, walkToLane, type ScopeNode } from "./scopeWalk.js";
+import { laneOf, walkToLane, type ScopeNode } from "./scopeWalk.js";
 
 /**
  * The client's reading of SPEC.md §7's *"posting inside a designated scope
  * addresses that scope's resident; posting anywhere else addresses the
  * orchestrator"*.
  *
- * The table is written against the **server's** walk
- * (`apps/server/src/queue/scope.ts`), edge for edge and in its order, because
- * the two exist to agree: `origin ?? parent`, climbed until a node is a lane,
- * with the node's own designation winning before either edge is followed.
+ * The traversal itself is `@corpus/contract`'s `walkScope` and is tested there
+ * — the same function the server routes with, which is what UI-119 changed so
+ * that this table and the enqueue path could no longer answer differently. What
+ * is tested here is the seam: the board's three-valued lookup, the roster
+ * standing in for a node read, and the shapes a composer actually meets.
+ *
+ * The case list is the one this file has always had. What moved is the
+ * expectations: it used to certify `origin ?? parent`, in a docblock that said
+ * *"in its order, because the two exist to agree"*, months after SERVER-117 had
+ * replaced that with a parent-first search over both edges.
  */
 
 const graph = (nodes: Readonly<Record<string, ScopeNode>>) => (id: string) => nodes[id];
@@ -24,6 +31,8 @@ describe("walkToLane", () => {
   });
 
   it("addresses the scope's resident when the message lands on the lane itself", () => {
+    // Nothing has been read: the roster alone establishes that this id is a
+    // designated root, so the composer can say who answers without a fetch.
     const walk = walkToLane("th_root", graph({}), lanes("th_root"));
     expect(walk).toEqual({ kind: "lane", lane: "th_root" });
   });
@@ -70,9 +79,27 @@ describe("walkToLane", () => {
     });
   });
 
-  it("follows origin before parent, as the enqueue walk does", () => {
+  it("follows parent before origin, as the enqueue walk does", () => {
+    // This case has not moved and its answer has: it used to expect `th_origin`,
+    // under a name that said "as the enqueue walk does" while the enqueue walk
+    // had been answering `th_parent` since SERVER-117. §7 gives a *thread* its
+    // parent chain and being a thread on a document in scope; its own origin is
+    // neither, and putting it first annexes the conversation it was opened on.
     const nodes = { th_a: { origin: "th_origin", parent: "th_parent" } };
     expect(walkToLane("th_a", graph(nodes), lanes("th_origin", "th_parent"))).toEqual({
+      kind: "lane",
+      lane: "th_parent",
+    });
+  });
+
+  it("still reaches the origin when the parent branch reaches nothing designated", () => {
+    // The other half of the same case, and the half a chain could not express:
+    // preferring the parent is not abandoning the origin.
+    const nodes = {
+      th_a: { origin: "th_origin", parent: "doc_loose" },
+      doc_loose: { origin: null, parent: null },
+    };
+    expect(walkToLane("th_a", graph(nodes), lanes("th_origin"))).toEqual({
       kind: "lane",
       lane: "th_origin",
     });
@@ -105,9 +132,17 @@ describe("walkToLane", () => {
     });
   });
 
+  it("asks for the parent before the origin, so the fetch order is §7's too", () => {
+    const nodes = { th_c: { origin: "th_o", parent: "doc_p" } };
+    expect(walkToLane("th_c", graph(nodes), lanes("th_root"))).toEqual({
+      kind: "unread",
+      id: "doc_p",
+    });
+  });
+
   it("terminates a hand-edited cycle at the orchestrator", () => {
     // §5 makes the files the source of truth, so a pair of frontmatters can name
-    // each other; the server's own walk keeps a visited set for this reason.
+    // each other; the walk keeps a visited set for this reason.
     const nodes = {
       th_a: { origin: "th_b", parent: null },
       th_b: { origin: "th_a", parent: null },
@@ -115,13 +150,52 @@ describe("walkToLane", () => {
     expect(walkToLane("th_a", graph(nodes), lanes("th_root"))).toEqual({ kind: "orchestrator" });
   });
 
-  it("stops climbing at the bound rather than reading forever", () => {
+  it("walks a chain far deeper than the old bound of eight", () => {
+    // The bound used to live in this function and answered `orchestrator` at
+    // exhaustion — a confident wrong name a person could press. It is now a read
+    // budget in `useScopeWalk`, and what exhausting it produces there is
+    // `unread`, which withholds.
     const nodes: Record<string, ScopeNode> = {};
-    for (let index = 0; index < MAX_SCOPE_WALK + 4; index += 1) {
+    for (let index = 0; index < 30; index += 1) {
       nodes[`th_${String(index)}`] = { origin: null, parent: `th_${String(index + 1)}` };
     }
-    const deep = `th_${String(MAX_SCOPE_WALK + 4)}`;
-    expect(walkToLane("th_0", graph(nodes), lanes(deep))).toEqual({ kind: "orchestrator" });
+    expect(walkToLane("th_0", graph(nodes), lanes("th_30"))).toEqual({
+      kind: "lane",
+      lane: "th_30",
+    });
+  });
+
+  describe("a node the board has read and the corpus does not hold", () => {
+    const missing = (nodes: Readonly<Record<string, ScopeNode>>) => (id: string) =>
+      id in nodes ? nodes[id] : SCOPE_NODE_ABSENT;
+
+    it("treats a settled 404 as a dead branch and still follows the other edge", () => {
+      const nodes = {
+        th_c: { origin: "th_gone", parent: "doc_draft" },
+        doc_draft: { origin: "th_root", parent: null },
+      };
+      expect(walkToLane("th_c", missing(nodes), lanes("th_root"))).toEqual({
+        kind: "lane",
+        lane: "th_root",
+      });
+    });
+
+    it("answers the orchestrator only when every branch is absent or undesignated", () => {
+      const nodes = { th_c: { origin: "th_gone", parent: "doc_gone" } };
+      expect(walkToLane("th_c", missing(nodes), lanes("th_root"))).toEqual({
+        kind: "orchestrator",
+      });
+    });
+
+    it("withholds where the same graph is merely unread", () => {
+      // The pair that makes the third value load-bearing: identical graph, one
+      // lookup that has seen the refusal and one that has not.
+      const nodes = { th_c: { origin: "th_gone", parent: "doc_gone" } };
+      expect(walkToLane("th_c", graph(nodes), lanes("th_root"))).toEqual({
+        kind: "unread",
+        id: "doc_gone",
+      });
+    });
   });
 });
 

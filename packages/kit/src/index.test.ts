@@ -217,6 +217,10 @@ const RUNTIME_SURFACE = [
   "useScopeWalk",
   "walkToLane",
   "laneOf",
+  // The third answer a `ScopeNodeLookup` may give: *the corpus does not hold
+  // this*, which is a dead branch, as against a read that has not landed, which
+  // withholds (UI-119).
+  "SCOPE_NODE_ABSENT",
   "MAX_SCOPE_WALK",
   "laneRow",
   "laneRows",

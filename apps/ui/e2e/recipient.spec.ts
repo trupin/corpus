@@ -11,11 +11,13 @@ import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
  *
  * ## Why this spec exists at all
  *
- * The composer's default is computed **here**, from a cached roster and a walk
- * bounded at `MAX_SCOPE_WALK`; the server's is computed from the live projection
- * and is unbounded. The two agree almost always, and the interesting case is the
- * moment they do not: a resident released in another tab, a roster this page has
- * not refetched, and a person pressing the lane they mean to address.
+ * The composer's default is computed **here**, from a cached roster and the
+ * documents this page has read; the server's is computed from the live
+ * projection. Since UI-119 both run the identical traversal
+ * (`@corpus/contract`'s `walkScope`), so what can still differ is the *inputs* —
+ * and the interesting case is the moment they do: a resident released in another
+ * tab, a roster this page has not refetched, and a person pressing the lane they
+ * mean to address.
  *
  * With the pick sent as *absence* — which is what UI-108 did for the untouched
  * default, correctly, and what UI-118 found was also being done for a pick — the

@@ -702,7 +702,7 @@ moment a second message arrives.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| UI-119 | The client's scope walk still follows the rule SERVER-117 deleted | todo | P0 | — |
+| UI-119 | The client's scope walk still follows the rule SERVER-117 deleted | done | P0 | — |
 | AGENT-030 | The converse skill teaches the old server, and dies at the shell on a refused park | todo | P0 | — |
 | AGENT-031 | The stand-down rule is a conjunction, and the second conjunct throws away the signal | todo | P0 | — |
 | CLI-048 | `--thread`'s help asserts the behaviour SERVER-118 removed | done | P1 | — |

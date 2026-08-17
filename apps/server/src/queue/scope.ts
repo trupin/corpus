@@ -1,31 +1,17 @@
 // The walk `queue/lanes.ts` defers to: from an event to the designated root
 // thread whose scope it falls in (SPEC.md §7, SERVER-111).
 //
-// ## What a scope is, and why nothing stores one
+// ## The walk itself is not here
 //
-// > The **scope** of a designated thread is: the thread itself; every thread
-// > whose parent chain reaches it; every document whose **origin** (§9.2)
-// > reaches it; and every thread on such a document. … **Scope is computed,
-// > never stored.**
-//
-// So a thread designated *after* a document was created captures that document
-// retroactively — the origin was recorded when the document was written, not
-// when it became interesting — and releasing a resident needs nothing undone.
-// The consequence for this module is that membership is a walk **up**, made
-// fresh on every enqueue, and the only two edges it may follow are the two §7
-// names: a thread's `parent`, and a document's `origin`.
-//
-// ## It is a search, not a chain
-//
-// §7's four clauses compose — "every thread on such a document" is the parent
-// edge and the origin edge one after the other — so an artifact can have **both**
-// edges out of it, and a dead end on one says nothing about the other. Following
-// a single `origin ?? parentId` chain lost that: once a node had an origin its
-// parent was never consulted again, even where the origin chain ended at nothing
-// designated, and since `apps/cli/src/input.ts` exports `CORPUS_JOB` once per
-// claimed event, *every* agent-created thread has an origin. §7's "every thread
-// on such a document" was therefore unreachable for anything an agent made
-// (SERVER-117, PR #48's review). The walk below is a search over both edges.
+// It is `@corpus/contract`'s {@link walkScope}, and this module is the half that
+// is genuinely the server's: turning an event payload into a starting id, and
+// reading one node out of the projection. **The traversal moved out** because
+// the composer states the same verdict to a person before they post, and since
+// UI-118 a pick made on the strength of that statement reaches the wire verbatim
+// — so `packages/kit`'s copy was not a hint about this rule, it was this rule,
+// and it went on running the `origin ?? parent` chain for a release after
+// SERVER-117 deleted it here (UI-119). What §7 sanctions as an edge, in what
+// order, and what a dead end costs are all documented there, once.
 //
 // ## Why it reads the projection and not the corpus
 //
@@ -37,29 +23,24 @@
 // anything longer than a single call could serve a designation the same request
 // just changed.
 
-import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
+import {
+  ORCHESTRATOR_LANE,
+  SCOPE_NODE_ABSENT,
+  walkScope,
+  type Lane,
+  type ScopeWalkLookup,
+} from "@corpus/contract";
 import { originDocumentOf, resolveOrigin } from "../core/provenance.js";
 import { unknownLaneScope, unknownRecipient } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { ScopeRootLookup } from "./lanes.js";
 
 /**
- * One node of the walk: the two edges out of it, and whether it is a lane in its
- * own right.
- *
- * Every thread is also a row in `documents` (a thread *is* a document, §6), so
- * one left join answers for both kinds of node and the walk needs no prior
- * knowledge of which it is looking at. `parentId` is null for a document and for
- * a standalone thread alike; `designated` is only ever true for a standalone
- * thread, because the projection applies §7's standalone rule when it writes the
- * column.
+ * One left join answers for both kinds of node, because a thread *is* a document
+ * (§6): `parent_id` is null for a document and for a standalone thread alike,
+ * and `resident_name` is only ever set on a standalone thread, since the
+ * projection applies §7's standalone rule when it writes the column.
  */
-interface ScopeNode {
-  readonly parentId: string | null;
-  readonly origin: string | null;
-  readonly designated: boolean;
-}
-
 const NODE_SQL = `
   SELECT threads.parent_id AS parentId,
          documents.origin AS origin,
@@ -91,89 +72,38 @@ const startOf = (payload: Record<string, unknown>): string | null =>
   resolveOrigin(payload) ?? originDocumentOf(payload);
 
 /**
- * The edges out of a node, **in the order §7 sanctions them**.
+ * One node, read from the projection.
  *
- * The two can name different scopes for exactly one artifact: a thread an agent
- * opened on a document belonging to some *other* conversation while its
- * `CORPUS_JOB` was set, which carries `parent` and `origin` at once. **The parent
- * wins** (user decision, 2026-08-17, overturning SHARED-044's provisional
- * adjudication on PR #48's review), for three reasons worth keeping written down:
- *
- * 1. **§7 names `origin` as a scope edge only for documents.** Its enumeration
- *    is "the thread itself; every thread whose parent chain reaches it; every
- *    *document* whose origin reaches it; and every thread on such a document" —
- *    so a *thread*'s routes into a scope are the parent chain and being a thread
- *    on a document in scope. Ranking a thread's own origin above both would
- *    invent a third route and put it first.
- * 2. **Origin-first has no beneficial case.** Every other divergence is not one:
- *    a standalone thread a job opened has no parent, so nothing is ranked; a
- *    thread whose parent is already in the writer's scope agrees either way; and
- *    a summons agrees because §7 reads lane and origin off different things. The
- *    only input where the answers differ is a thread an agent opened on another
- *    scope's document — where origin-first **annexes that conversation**, and §7
- *    says of the one crossing it does sanction that "answering a question does
- *    not annex the thread it was asked in".
- * 3. **An annexation has no remedy.** §7 offers `corpus doc detach` for a
- *    mis-filed document; an annexed thread has nothing, and the annexation is
- *    permanent — whereas the override §7 does sanction "never persists past the
- *    message it was set on".
- *
- * A thread's own origin is still an edge, just the second one: a thread *is* a
- * document (§6), so a standalone thread a job opened reaches its scope by §7's
- * document clause, which is the case where nothing is being ranked at all.
+ * **A row this workspace does not hold is {@link SCOPE_NODE_ABSENT}, never
+ * "unread".** The projection is authoritative here: a primary-key miss is proof
+ * the corpus has no such artifact, so the branch is dead and the search carries
+ * on. `SCOPE_NODE_UNREAD` is the answer a *client* gives about a document
+ * it has not fetched, and the server has no such state — which is why the seam
+ * distinguishes them rather than folding both into `undefined`.
  */
-const edgesOf = (node: ScopeNode): readonly string[] =>
-  [node.parentId, node.origin].filter((edge): edge is string => edge !== null);
+const projectionLookup =
+  (db: ProjectionDb): ScopeWalkLookup =>
+  (id: string) => {
+    const row = db.prepare(NODE_SQL).get(id) as NodeRow | undefined;
+    if (row === undefined) return SCOPE_NODE_ABSENT;
+    return { parent: row.parentId, origin: row.origin, designated: row.residentName !== null };
+  };
 
 /**
- * Binds the walk to an open projection.
+ * Binds `@corpus/contract`'s {@link walkScope} to an open projection.
  *
- * **A preorder depth-first search over {@link edgesOf}, first designated node
- * wins.** The parent branch is explored to its end — *through* the origin edges
- * of the documents along it, which is how §7's "every thread on such a document"
- * is reached at all — before the starting thread's own origin is tried. So
- * "nearest" is nearest along §7's route for a thread, not fewest hops.
- *
- * **Every dead end is a dead end on its branch only.** An id this workspace does
- * not hold, a node with no edges, a cycle: each ends that branch and the search
- * continues with what it has not looked at yet. Only an exhausted search is "this
- * falls in no scope", which is the orchestrator's lane. Refusing the enqueue over
- * an unresolvable id would lose the work instead.
- *
- * **Termination, now that the search can branch.** A node is expanded at most
- * once: `visited` is checked and set when an id is **popped**, so the second
- * arrival is dropped whether it came round a cycle or down the other branch of a
- * diamond. Only an expansion pushes, and it pushes at most two ids, so the
- * frontier receives at most twice as many ids as there are distinct nodes and
- * every iteration removes one — the loop is bounded by the corpus and not by the
- * shape of the graph, which matters because §5 makes the *files* the source of
- * truth and a hand-edited pair of frontmatters can name each other. Note what is
- * **not** relied on: not acyclicity, not that the two edges are disjoint, and not
- * that a branch is finite. Iterative rather than recursive for the neighbouring
- * reason — the depth is a property of the corpus, not of this code.
+ * The traversal — parent branch first, both edges, a dead end costing its branch
+ * and nothing else — is documented where it lives, and is the identical function
+ * the composer states its default from. `unread` is unreachable from
+ * {@link projectionLookup}; it is answered as the orchestrator's lane anyway
+ * rather than thrown, because a routing decision on the enqueue path must return
+ * a lane for every input.
  */
 export function createLaneScopeLookup(db: ProjectionDb): ScopeRootLookup {
+  const lookup = projectionLookup(db);
   return (payload: Record<string, unknown>): Lane => {
-    const start = startOf(payload);
-    if (start === null) return ORCHESTRATOR_LANE;
-    // A stack, so the edge pushed last is followed first — hence `edgesOf`
-    // reversed, which puts the parent branch on top.
-    const frontier: string[] = [start];
-    const visited = new Set<string>();
-    for (let current = frontier.pop(); current !== undefined; current = frontier.pop()) {
-      if (visited.has(current)) continue;
-      visited.add(current);
-      const row = db.prepare(NODE_SQL).get(current) as NodeRow | undefined;
-      if (row === undefined) continue;
-      const node: ScopeNode = {
-        parentId: row.parentId,
-        origin: row.origin,
-        designated: row.residentName !== null,
-      };
-      if (node.designated) return current;
-      for (const edge of [...edgesOf(node)].reverse()) frontier.push(edge);
-    }
-    return ORCHESTRATOR_LANE;
+    const walk = walkScope(startOf(payload), lookup);
+    return walk.kind === "lane" ? walk.lane : ORCHESTRATOR_LANE;
   };
 }
 

@@ -5,6 +5,18 @@
 // — the two edges §7 names — and building each fixture out of markdown would
 // test the document projector a third time while making the graph under test
 // hard to read.
+//
+// **The traversal itself is no longer here** (UI-119). It is
+// `@corpus/contract`'s `walkScope`, tested against literal graphs in
+// `packages/contract/src/scope.test.ts`, because `packages/kit`'s composer
+// states the same verdict to a person and its copy of the rule went on running
+// the order SERVER-117 deleted — green, in a file whose comments said it encoded
+// this one's. What these cases still prove is the half that is the server's and
+// cannot move: that `NODE_SQL`'s left join puts `documents.origin`,
+// `threads.parent_id` and `threads.resident_name` into the node the walk reads,
+// for a document, for a thread, and for a `documents` row with no `threads` row.
+// So the shapes are deliberately the same as the contract's and the subject is
+// not.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

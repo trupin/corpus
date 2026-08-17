@@ -205,11 +205,11 @@ describe("an override is for one message", () => {
   });
 
   /**
-   * UI-118, the whole of it. `computed` is *this* build's walk — bounded at
-   * `MAX_SCOPE_WALK` and keyed on a cached roster — and the server's is
-   * unbounded over the live projection, so equality with it is not consent.
-   * Sending absence here is how a person addresses `th_root` and the
-   * orchestrator answers.
+   * UI-118, the whole of it. `computed` runs the same traversal the server
+   * routes with (UI-119), but off a **cached roster** and only as far as this
+   * page has read — so equality with the server's answer is a coincidence of two
+   * moments, not consent. Sending absence here is how a person addresses
+   * `th_root` and the orchestrator answers.
    */
   it("states a pick that happens to equal the computed lane — it was still a pick", async () => {
     const { result } = mount("th_root", { lanes: [RESIDENT_LANE], graph: { th_root: {} } });

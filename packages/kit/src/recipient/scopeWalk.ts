@@ -1,27 +1,41 @@
-import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
+import {
+  laneOfScopeWalk,
+  SCOPE_NODE_ABSENT,
+  SCOPE_NODE_UNREAD,
+  walkScope,
+  type Lane,
+  type ScopeWalk,
+  type ScopeWalkLookup,
+} from "@corpus/contract";
 
 /**
  * Where a message posted here would go by default — SPEC.md §7's *"Every
- * message has a recipient, and where you post computes it"*, computed on the
- * client for **display only**.
+ * message has a recipient, and where you post computes it"*, stated in a
+ * composer before anything is sent.
  *
- * ## Why this is a display and never a decision
+ * ## There is no second implementation, and that is the point
  *
- * A default nobody touched is sent by **omitting** `recipient`, so the value
- * this walk produces never reaches the wire on that path. That is the whole
- * reason there can be two implementations of one rule without them drifting: the
- * server's walk (`apps/server/src/queue/scope.ts`) decides, and this one only
- * says out loud what the server is about to decide.
+ * The traversal is `@corpus/contract`'s {@link walkScope} — **the identical
+ * function `apps/server/src/queue/scope.ts` routes with**. What is left here is
+ * the seam: turning what the board happens to hold into the node shape that walk
+ * reads.
  *
- * **What a bug here does, exactly.** It shows the wrong name in a composer, and
- * — because that name is what a person reads before deciding whether to say
+ * There used to be a copy, and this docblock used to justify it: a default
+ * nobody touched is sent by *omitting* `recipient`, so a wrong verdict here was
+ * only ever a wrong label. That justification stopped being true twice over.
+ * UI-118 made an explicit pick reach the wire, and `queue/lanes.ts` returns it
+ * verbatim; and the copy had by then been running the `origin ?? parent` chain
+ * for a release after SERVER-117 replaced it with a search over both edges —
+ * green in both suites, each file's comments claiming to encode the other's
+ * order (UI-119). A composer said *"Orchestrator will answer"* about a
+ * conversation the server routed to Ana, a person pressed the row they had just
+ * read, and Ana never heard about the conversation on the draft she wrote.
+ *
+ * **What a bug here still does.** It shows the wrong name in a composer, and —
+ * because that name is what a person reads before deciding whether to say
  * otherwise — it can talk somebody out of a pick they would have made, or into
- * one they would not. It cannot route a message by itself: what a pick puts on
- * the wire is the lane the person pressed, not this verdict
- * (`useComposerRecipient`). This paragraph used to end *"it cannot route a
- * message anywhere"*, which was true only while a pick equal to this verdict was
- * dropped — the very defect UI-118 fixed — and was therefore reassurance a
- * reader would have trusted through the window where it was false.
+ * one they would not, which a pick then puts on the wire
+ * (`useComposerRecipient`).
  *
  * ## Scope is the walk, not a marker
  *
@@ -30,11 +44,6 @@ import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
  * guarantee, which is a property of the graph and not something this function
  * checks (SHARED-044; CLI-043 and AGENT-025 word it the same way and pin the
  * absence with a test).
- *
- * The two edges, and the order, are the server's: `origin ?? parent`, climbed
- * until a node is a lane. A node's own designation wins before either edge is
- * followed, so a designated root reached from below is the answer and its own
- * ancestors are never consulted.
  *
  * ## What the client cannot see, and why it degrades rather than guesses
  *
@@ -46,68 +55,46 @@ import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
  * node it has not read — which produces {@link ScopeWalkUnread} rather than a
  * verdict. Unread is not "orchestrator": naming the orchestrator from a read
  * that has not landed is exactly the unevidenced claim UI-098 removed from the
- * console, one grain down.
+ * console, one grain down. It is also not *absent*: the server's walk treats a
+ * row the corpus does not hold as a dead branch and carries on, and the board
+ * can only make that claim about a read it has seen refused — which is
+ * {@link ScopeNodeLookup}'s third answer.
  */
 
-/** The two edges out of one node of the graph, as the server reads them. */
+/** The two edges out of one node of the graph, as the walk reads them. */
 export interface ScopeNode {
   /**
    * SPEC.md §9.2's document origin — the thread this document was written
-   * *from*, or null. Followed first, as the server follows it.
+   * *from*, or null. The **second** edge tried: §7 gives a thread its parent
+   * chain first (see {@link walkScope}).
    */
   readonly origin: string | null;
   /** The document this thread comments on, or null for a document or a standalone thread. */
   readonly parent: string | null;
 }
 
-/** Reads one node from what the board holds. `undefined` means "not read yet". */
-export type ScopeNodeLookup = (id: string) => ScopeNode | undefined;
+/**
+ * The board's answer about one id, and it has three shapes rather than two.
+ *
+ * `undefined` is *not read yet* — the board has not fetched this node, and the
+ * walk withholds. {@link SCOPE_NODE_ABSENT} is *this corpus does not hold it*,
+ * which only a settled `404` can establish, and which the walk treats as a dead
+ * branch exactly as the server's projection miss does. Collapsing the two would
+ * either invent a claim out of a pending read or strand the walk forever on a
+ * dangling `origin` the server would simply have walked past.
+ */
+export type ScopeNodeLookup = (id: string) => ScopeNode | typeof SCOPE_NODE_ABSENT | undefined;
 
 /** Whether an id names a lane a message can be addressed to — a designated root thread. */
 export type LanePredicate = (id: string) => boolean;
 
-/** The walk reached a designated scope: this lane's resident answers by default. */
-export interface ScopeWalkLane {
-  readonly kind: "lane";
-  readonly lane: Lane;
-}
-
-/** The walk reached the top with nothing designated: the orchestrator answers. */
-export interface ScopeWalkOrchestrator {
-  readonly kind: "orchestrator";
-}
-
-/**
- * The walk stopped on a node the board has not read. Carries the id so a caller
- * that *can* read it — {@link useScopeWalk} — knows what to ask for next, and so
- * a caller that cannot knows to say nothing rather than name a lane.
- */
-export interface ScopeWalkUnread {
-  readonly kind: "unread";
-  readonly id: string;
-}
-
-export type ScopeWalk = ScopeWalkLane | ScopeWalkOrchestrator | ScopeWalkUnread;
-
-/**
- * How far the walk will climb before giving up and answering `orchestrator`.
- *
- * A bound rather than a guess: the graph is acyclic by construction (§7 —
- * origin is written once, parent on create), and the visited set below already
- * terminates a hand-edited cycle. What this bounds is *requests*, because each
- * unread node costs the caller a read; a corpus whose comment chains run deeper
- * than this answers `orchestrator` where the server's unbounded walk would have
- * found a scope.
- *
- * **A send with nothing picked is unaffected** — it names no recipient, so the
- * server's walk is the only one that runs and the bound costs a label. A send
- * carrying a **pick** is a different message: the person read that label and
- * pressed a lane, so what a bound too low costs is the choice they would have
- * made, not the choice they made. (This used to say "the send is unaffected
- * either way", which was a claim about a build where a pick equal to this
- * verdict never reached the wire at all — UI-118.)
- */
-export const MAX_SCOPE_WALK = 8;
+export type {
+  ScopeWalk,
+  ScopeWalkLane,
+  ScopeWalkOrchestrator,
+  ScopeWalkUnread,
+} from "@corpus/contract";
+export { SCOPE_NODE_ABSENT } from "@corpus/contract";
 
 /**
  * Climbs from `start` to the lane a message posted there is addressed to.
@@ -116,28 +103,31 @@ export const MAX_SCOPE_WALK = 8;
  * the thread a child comment hangs off, or the document a selection comment is
  * on. `null` — the global composer's Ask, which creates a standalone thread that
  * is in no scope by construction — is the orchestrator without a walk.
+ *
+ * **Designation is answered from the roster, ahead of any node read.** That is
+ * not a deviation from the server, which asks `resident_name` of the row it has
+ * just read: `GET /api/agents` lists designated roots and only those, so an id
+ * the roster names *is* a row with a resident, and answering from it lets a
+ * composer inside its own designated thread say who answers without waiting on a
+ * document fetch. Its edges are never consulted either way — the server returns
+ * on `node.designated` before it pushes anything.
  */
 export function walkToLane(
   start: string | null,
   lookup: ScopeNodeLookup,
   isLane: LanePredicate,
 ): ScopeWalk {
-  let current = start;
-  const visited = new Set<string>();
-  while (current !== null && !visited.has(current) && visited.size < MAX_SCOPE_WALK) {
-    visited.add(current);
-    // A node's own designation wins before either edge is followed — the
-    // server's `if (node.designated) return current` read from the other side.
-    if (isLane(current)) return { kind: "lane", lane: current };
-    const node = lookup(current);
-    if (node === undefined) return { kind: "unread", id: current };
-    current = node.origin ?? node.parent;
-  }
-  return { kind: "orchestrator" };
+  const nodes: ScopeWalkLookup = (id) => {
+    if (isLane(id)) return { parent: null, origin: null, designated: true };
+    const node = lookup(id);
+    if (node === SCOPE_NODE_ABSENT) return SCOPE_NODE_ABSENT;
+    if (node === undefined) return SCOPE_NODE_UNREAD;
+    return { parent: node.parent, origin: node.origin, designated: false };
+  };
+  return walkScope(start, nodes);
 }
 
 /** The lane a walk names, for a caller that only needs the answer. */
 export function laneOf(walk: ScopeWalk): Lane | undefined {
-  if (walk.kind === "lane") return walk.lane;
-  return walk.kind === "orchestrator" ? ORCHESTRATOR_LANE : undefined;
+  return laneOfScopeWalk(walk);
 }

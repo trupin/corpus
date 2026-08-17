@@ -57,7 +57,7 @@ export {
 export {
   laneOf,
   walkToLane,
-  MAX_SCOPE_WALK,
+  SCOPE_NODE_ABSENT,
   type LanePredicate,
   type ScopeNode,
   type ScopeNodeLookup,
@@ -73,4 +73,10 @@ export {
   type ComposerRecipientRestore,
 } from "./useComposerRecipient.js";
 export { useLaneRow, useResidentLane, type ResidentLane } from "./useResidentLane.js";
-export { designatedLanes, isThreadId, useScopeWalk, type ScopeWalkInput } from "./useScopeWalk.js";
+export {
+  designatedLanes,
+  isThreadId,
+  useScopeWalk,
+  MAX_SCOPE_WALK,
+  type ScopeWalkInput,
+} from "./useScopeWalk.js";
