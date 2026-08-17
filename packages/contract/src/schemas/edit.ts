@@ -35,14 +35,23 @@ import { DocumentIdSchema } from "./id.js";
  * every repository ever created, and a revision every git range operation
  * accepts.
  *
- * It is the value the server reports as `from` when a session's first commit has
- * **no parent**: diffing against it yields the file as wholly added, which is the
- * truth about a document introduced by the repository's root commit. The
- * alternative — a nullable `from` meaning "no base" — would make every consumer
- * of every range handle a case that arises only in a workspace whose very first
- * commit is also a document edit, and would make the event's range no longer
- * passable straight back to the diff route. One well-known constant costs
- * nothing and keeps both properties.
+ * It is the value both the event and the diff route report as `from` when
+ * **nothing before the range's head ever touched this document** — that is, when
+ * the head is the document's first commit, whether or not it is also the
+ * repository's root. Diffing against it yields the file as wholly added, which is
+ * the truth about a document with no earlier revision. The alternative — a
+ * nullable `from` meaning "no base" — would make every consumer of every range
+ * handle a second null case, and would make a range no longer passable straight
+ * back to the diff route. One well-known constant costs nothing and keeps both
+ * properties.
+ *
+ * **It is not the exotic case it once was.** Both bases are resolved by walking
+ * *this document's* history rather than the branch's (SERVER-097, SERVER-113),
+ * because §4's commit windows are party-scoped and the commit sitting immediately
+ * before a document's first one is routinely another party's save to a different
+ * file — a commit at which this document did not exist. So every document's first
+ * change diffs against the empty tree, not only one created by the repository's
+ * root commit.
  *
  * Published here so the server, the CLI and any consumer that wants to *say*
  * "this document is new" spell it identically instead of each hard-coding forty
@@ -237,9 +246,14 @@ export const DocEditedPayloadSchema = z.object({
       "happened to it.",
   ),
   from: CommitShaSchema.describe(
-    "The commit the session started from: the parent of its first commit, **exclusive**. " +
-      "`EMPTY_TREE_OBJECT_ID` when that first commit has no parent, so the range is always " +
-      "well-formed and always passable straight back to `GET /api/docs/{id}/diff`.",
+    "The state this document was in before the session, **exclusive**: the newest commit before " +
+      "the session's first one that touched **this document**. Deliberately *not* that commit's " +
+      "parent — §4's commit window belongs to a party rather than to a document and gathers a " +
+      "party's saves across documents, so the commit immediately preceding a session is routinely " +
+      "the other party's save to a different file, and naming it here would be a false claim about " +
+      "this document's history. `EMPTY_TREE_OBJECT_ID` when nothing before the session ever " +
+      "touched this document, so the range is always well-formed and always passable straight back " +
+      "to `GET /api/docs/{id}/diff`, whose default base is resolved the same way.",
   ),
   to: CommitShaSchema.describe(
     "The session's last commit, **inclusive** — usually its only one, since §4 folds an editing " +
@@ -316,8 +330,18 @@ export const DOC_DIFF_MAX_CHARS = 16000;
  * useful rather than being an error:
  *
  * - `to` omitted → the newest commit that touched this document.
- * - `from` omitted → the parent of `to` (or `EMPTY_TREE_OBJECT_ID` when `to` has
- *   no parent), i.e. that one commit's own change.
+ * - `from` omitted → the newest commit **before `to` that touched this document**
+ *   (or `EMPTY_TREE_OBJECT_ID` when nothing before it did), i.e. that one
+ *   commit's own change to this document.
+ *
+ * **Both defaults walk this document's history, never the branch's**, and that is
+ * the whole of why `from` is not simply `to`'s parent (SERVER-113): §4's commit
+ * windows are party-scoped and gather a party's saves across documents, so the
+ * parent of a window commit is not this document's previous state — it is
+ * whichever *other* document the other party happened to save in the same window.
+ * Both bases would produce the same numbers and the same bytes, since every read
+ * here is path-scoped; only one of them is a true statement about where this
+ * document came from, and `from` is published in the response as a fact.
  *
  * So no arguments reads "what changed in this document's last commit", and the
  * pair handed over by a `doc.edited` event reads "what changed in that session".
@@ -329,10 +353,14 @@ export const DocDiffQuerySchema = z.object({
   from: CommitShaSchema.optional().openapi({
     param: { name: "from", in: "query", required: false },
     description:
-      "Base of the range, **exclusive** — `git diff from..to`. Omit it to use the parent of `to`, " +
-      "which reads as that single commit's own change; a `to` with no parent falls back to git's " +
-      "empty tree, so a document introduced by the repository's root commit diffs as wholly added. " +
-      "Must be a commit sha: a named revision is a `400` naming this parameter.",
+      "Base of the range, **exclusive** — `git diff from..to`. Omit it to use the newest commit " +
+      "**before `to` that touched this document**, which reads as that one commit's own change to " +
+      "it; when nothing before `to` ever touched this document the base is git's empty tree, so a " +
+      "document's first change diffs as wholly added. Deliberately **not `to`'s parent**: §4's " +
+      "commit windows are party-scoped and gather a party's saves across documents, so the parent " +
+      "of a window commit is routinely another party's save to a different file rather than this " +
+      "document's previous state. Must be a commit sha: a named revision is a `400` naming this " +
+      "parameter.",
   }),
   to: CommitShaSchema.optional().openapi({
     param: { name: "to", in: "query", required: false },
@@ -370,8 +398,10 @@ export const DocDiffSchema = z
       ),
     from: CommitShaSchema.nullable().describe(
       "The resolved base of the range, exclusive — the value used, whether supplied or defaulted. " +
-        "`EMPTY_TREE_OBJECT_ID` when `to` has no parent. `null` only in the no-history case below, " +
-        "where `to` is null too.",
+        "A default is the newest commit before `to` that touched **this document**, never `to`'s " +
+        "parent (a party-scoped commit window makes the parent routinely someone else's save to " +
+        "another file); `EMPTY_TREE_OBJECT_ID` when nothing before `to` ever touched this " +
+        "document. `null` only in the no-history case below, where `to` is null too.",
     ),
     to: CommitShaSchema.nullable().describe(
       "The resolved head of the range, inclusive. **`null` exactly when the workspace has no " +

@@ -11,7 +11,7 @@ import {
   CONTEXT_PACK_SHAPES,
 } from "./schemas/context.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
-import { DOC_DIFF_MAX_CHARS, DOC_EDITED_EVENT_TYPE } from "./schemas/edit.js";
+import { DOC_DIFF_MAX_CHARS, DOC_EDITED_EVENT_TYPE, EMPTY_TREE_OBJECT_ID } from "./schemas/edit.js";
 import { ERROR_CODES } from "./schemas/error.js";
 import {
   CORE_QUEUE_EVENT_TYPES,
@@ -1232,6 +1232,75 @@ describe("the edit-acknowledgment surface (CONTRACT-028)", () => {
     expect(componentSchemas?.[name]?.properties?.["type"]?.description).toContain(
       DOC_EDITED_EVENT_TYPE,
     );
+  });
+
+  /**
+   * CONTRACT-052. SERVER-113 moved the default base off `to`'s parent and onto
+   * the previous commit that touched **this document**, and the published
+   * document went on describing the old rule — in two places, one of which had
+   * already been stale since SERVER-097.
+   *
+   * A wrong description here is worse than a missing one: a client that computes
+   * `to`'s parent itself reads a different range and is told nothing, because
+   * both answers are well-formed diffs. So the rule is pinned where a client
+   * author reads it — the operation, the `from` parameter and the resolved
+   * `from` — including the empty-tree case and the *reason*, which is what stops
+   * it drifting back.
+   */
+  describe("the default base is this document's history, not the branch's (CONTRACT-052)", () => {
+    const baseDescriptions = (): string[] => [
+      operation(DIFF_PATH, "get").description ?? "",
+      parameter(DIFF_PATH, "get", "from")?.description ?? "",
+      componentSchemas?.["DocDiff"]?.properties?.["from"]?.description ?? "",
+    ];
+
+    it("says the base is the previous commit that touched this document, everywhere it says it", () => {
+      for (const description of baseDescriptions()) {
+        expect(description).toMatch(/before `to`[^.]*touched \*{0,2}this document/i);
+      }
+    });
+
+    it("states the empty-tree case, so a document's first change is not a surprise", () => {
+      for (const description of baseDescriptions()) {
+        expect(description).toMatch(/empty[ _]tree/i);
+      }
+      expect(operation(DIFF_PATH, "get").description).toContain(EMPTY_TREE_OBJECT_ID);
+    });
+
+    it("says why, since the reason is what keeps the rule from drifting back", () => {
+      expect(operation(DIFF_PATH, "get").description).toContain("**`from` is not `to`'s parent**");
+      expect(operation(DIFF_PATH, "get").description).toContain("party-scoped");
+      expect(parameter(DIFF_PATH, "get", "from")?.description).toContain("party-scoped");
+    });
+
+    /**
+     * The sweep the issue was written around: the retired rule is searched for
+     * across **every** description in the generated document, not only the ones
+     * the fix touched. Grepping the source for the route is exactly what let a
+     * second copy of it survive in `DocEditedPayload.from`.
+     */
+    it("leaves no description anywhere in the document claiming a parent-of-`to` base", () => {
+      // Narrow on purpose: "documents with no parent" is `isParent`'s filter
+      // prose on `GET /api/docs` and is unrelated, so every alternative here is
+      // anchored to `to` or to a session's first commit.
+      const retired = /parent of (`to`|its first commit)|`to`( has| had| with) no parent/i;
+      const offenders: string[] = [];
+      const walk = (node: unknown, pointer: string): void => {
+        if (Array.isArray(node)) {
+          node.forEach((entry, index) => walk(entry, `${pointer}/${index}`));
+          return;
+        }
+        if (node === null || typeof node !== "object") return;
+        for (const [key, value] of Object.entries(node)) {
+          if (key === "description" && typeof value === "string" && retired.test(value)) {
+            offenders.push(`${pointer}/${key}`);
+          }
+          walk(value, `${pointer}/${key}`);
+        }
+      };
+      walk(document, "");
+      expect(offenders).toEqual([]);
+    });
   });
 });
 

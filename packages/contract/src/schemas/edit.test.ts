@@ -66,9 +66,10 @@ describe("the commit sha shape", () => {
   });
 
   /**
-   * The empty-tree constant exists so a range with no parent commit is still a
-   * *range* — passable straight back to the diff route — rather than a null a
-   * consumer has to special-case. That only works if it is itself a legal sha.
+   * The empty-tree constant exists so a range whose head is a document's first
+   * commit is still a *range* — passable straight back to the diff route — rather
+   * than a null a consumer has to special-case. That only works if it is itself a
+   * legal sha.
    */
   it("keeps the empty-tree object id a legal sha", () => {
     expect(CommitShaSchema.parse(EMPTY_TREE_OBJECT_ID)).toBe(EMPTY_TREE_OBJECT_ID);
@@ -170,7 +171,7 @@ describe("the doc.edited payload", () => {
     expect(DocEditedPayloadSchema.safeParse({ ...payload, to: "" }).success).toBe(false);
   });
 
-  it("accepts the empty tree as a base, for a session whose first commit has no parent", () => {
+  it("accepts the empty tree as a base, for a session that is a document's first", () => {
     expect(DocEditedPayloadSchema.parse({ ...payload, from: EMPTY_TREE_OBJECT_ID }).from).toBe(
       EMPTY_TREE_OBJECT_ID,
     );

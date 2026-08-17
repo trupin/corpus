@@ -1,5 +1,10 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { DOC_DIFF_MAX_CHARS, DocDiffQuerySchema, DocDiffSchema } from "../schemas/edit.js";
+import {
+  DOC_DIFF_MAX_CHARS,
+  DocDiffQuerySchema,
+  DocDiffSchema,
+  EMPTY_TREE_OBJECT_ID,
+} from "../schemas/edit.js";
 import { DocumentIdSchema } from "../schemas/id.js";
 import {
   jsonContent,
@@ -52,11 +57,22 @@ export const getDocDiff = createRoute({
     "range that touched other documents contribute nothing — the range may be a commit range, but " +
     "the answer is about one document.\n\n" +
     "**The range.** `from` is exclusive and `to` inclusive (`git diff from..to`). Both are " +
-    "optional: `to` defaults to the newest commit that touched this document and `from` to the " +
-    "parent of `to`, so the bare `corpus doc diff <id>` of §4's own sentence reads as *what changed " +
-    "in this document's last commit*, while the pair carried by a `doc.edited` event reads as " +
-    "*what changed in that session*. The resolved values come back in the response, because a " +
-    "caller that omitted one must be able to say what it read.\n\n" +
+    "optional, and **both defaults walk this document's history rather than the branch's**: `to` " +
+    "is the newest commit that touched this document, and `from` the newest commit *before `to`* " +
+    `that touched this document — with git's empty tree (\`${EMPTY_TREE_OBJECT_ID}\`) when ` +
+    "nothing before `to` ever touched it, so a document's first change diffs as wholly added. The " +
+    "bare `corpus doc diff <id>` of §4's own sentence therefore reads as *what changed in this " +
+    "document's last commit*, while the pair carried by a `doc.edited` event reads as *what " +
+    "changed in that session*. The resolved values come back in " +
+    "the response, because a caller that omitted one must be able to say what it read.\n\n" +
+    "**`from` is not `to`'s parent**, and a client that computes it that way will read a different " +
+    "range and be told nothing about the difference — both answers are well-formed diffs. §4's " +
+    "commit windows are party-scoped: one commit gathers everything a party saved while its window " +
+    "was open, so the commit sitting immediately before this document's newest one is routinely " +
+    "the *other* party's save to a *different* file, at which this document may not even have " +
+    "existed. Since every read here is path-scoped the two bases usually agree on the numbers and " +
+    "the bytes — what differs is the claim `from` makes about where this document came from, and " +
+    "that claim is published.\n\n" +
     "**Only commit shas.** A syntactically invalid revision — `HEAD~1`, a tag, anything leading " +
     "with `-` — is a `400` naming the parameter, before a handler and therefore before a `git` " +
     "process exists. A well-formed sha this repository does not contain is *also* a `400` naming " +
