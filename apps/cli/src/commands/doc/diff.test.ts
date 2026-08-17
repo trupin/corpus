@@ -388,6 +388,34 @@ describe("the doc diff command spec", () => {
     expect(diffCommand.flags[0]?.description).toContain("global flag");
   });
 
+  it("states the default base SERVER-113 actually implements, in both places it is described", () => {
+    // The defect CLI-045 fixes is help text drifting from behaviour, so the
+    // rule is pinned rather than left to the next reader to re-check. Both
+    // halves are asserted the same way: what the base *is*, and — because the
+    // old wording was a plausible-sounding shorthand that survived a behaviour
+    // change unnoticed — that the shorthand is gone.
+    for (const prose of [diffCommand.description, diffCommand.flags[0]?.description ?? ""]) {
+      expect(prose).toContain("that touched this document");
+      expect(prose).toContain("empty tree");
+      expect(prose).not.toMatch(/parent of (?:`to`|the head)/);
+    }
+  });
+
+  it("says why the base is not the head's parent, since that is what stops it drifting back", () => {
+    // CONTRACT-052's reason, not a third phrasing of it: a commit window gathers
+    // one party's saves across documents, so `to`'s parent is whoever else's
+    // document happened to be saved in the same window.
+    expect(diffCommand.description).toContain("party-scoped");
+    expect(diffCommand.flags[0]?.description).toContain("party-scoped");
+  });
+
+  it("no longer confines the empty-tree base to the repository's root commit", () => {
+    // SERVER-113 widened it: every document's first change diffs against the
+    // empty tree, because both bases walk this document's history.
+    expect(diffCommand.description).not.toContain("repository's very first commit");
+    expect(diffCommand.description).toContain("not only one made by the repository's root commit");
+  });
+
   it("carries the bare call and a range taken from an event as examples", () => {
     const commands = diffCommand.examples.map((example) => example.command);
     expect(commands).toContain("corpus doc diff doc_a1b2c3");

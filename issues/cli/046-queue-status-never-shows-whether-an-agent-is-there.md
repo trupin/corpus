@@ -49,15 +49,15 @@ problem: it is documentation that will be copied.
 
 ## Acceptance Criteria
 
-- [ ] Human output states whether an agent is present, and since when
-- [ ] It distinguishes **unknown** from **absent** — a status that has not
+- [x] Human output states whether an agent is present, and since when
+- [x] It distinguishes **unknown** from **absent** — a status that has not
       answered must not render as "no agent", which is the trap UI-097 named and
       ui-dev's Domain Knowledge now records
-- [ ] The `--json` example matches what the route actually returns
-- [ ] It does not restate `AGENT_PRESENCE_WINDOW_SECONDS`; if the output
+- [x] The `--json` example matches what the route actually returns
+- [x] It does not restate `AGENT_PRESENCE_WINDOW_SECONDS`; if the output
       mentions the window it reads the contract's constant, as CLI-043's lapse
       note does
-- [ ] If the output shows both `QueueStatus.agent` and anything from
+- [x] If the output shows both `QueueStatus.agent` and anything from
       `corpus agents`, they are not presented as one fact — CONTRACT-053 records
       that the two can legitimately disagree for one grace window
 
@@ -81,14 +81,78 @@ say so rather than inventing one.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: opus (claude-opus-5[1m]).**
+
+**No server drill was run, deliberately.** This is a rendering change over a
+field whose plumbing SERVER-112 already covers end to end; a drill here would
+prove that the server fills `agent`, which is SERVER-112's evidence and not
+this issue's. What is exercised instead is the surface itself, against the real
+built command surface:
+
+```
+$ cd apps/cli && tsx src/bin/corpus.ts queue status --help
+corpus queue status — Show the halt state, the queue depth, and whether an agent is there.
+…
+`agent present, parked 2m ago` means a listener is holding a parked `corpus queue idle`
+right now; `no agent — last parked 3h ago` means one was there and has been gone longer
+than the grace window (16m) … **A server that did not report the field at all reads
+`agent presence unknown`** — an answer that never arrived is not an answer saying nobody
+is there.
+…
+  # One JSON value, the status verbatim: `{"agent":{"live":true,"since":"2026-08-16T09:00:00.000Z"},
+    "halted":false,"pending":0,…}`.
+  corpus queue status --json
+```
+
+The four renderings themselves are covered by unit tests against a real stub
+HTTP server (`testing/stub-server.ts`), which is how every other verb in this
+CLI is exercised:
+
+- `agent present, parked 2m ago` (live)
+- `no agent — last parked 3h ago` (lapsed)
+- `no agent — none has parked since the server started` (`since: null`)
+- `agent presence unknown — this server did not report it` (field absent)
+
+**Falsified before trusting green** (each mutation applied to `control.ts`, the
+suite re-run, then reverted):
+
+| Mutation                                     | Result                                                       |
+| -------------------------------------------- | ------------------------------------------------------------ |
+| `UNKNOWN_PRESENCE` → `"no agent"`            | 1 failed — the unknown-vs-absent test                        |
+| drop `out.line(presenceLine(...))`            | 2 failed — the depth+presence test and the end-to-end line   |
+| `${GRACE_WINDOW}` → literal `16m`             | 1 failed — the derivation test (value equality still agreed) |
+
+The third is the one worth noting: `AGENT_PRESENCE_WINDOW_SECONDS * 1000`
+formats to exactly `16m` today, so a value-equality assertion passed against
+the literal. The test that caught it is the one asserting the module reaches
+the constant (`import { GRACE_WINDOW … } from "../agents.js"`) and carries no
+`grace window (<digit>` of its own — CLI-043's rule, applied through the one
+module that already names the constant rather than by naming it twice.
+
+`npm test -w apps/cli`: 92 files, 1502 tests, all passing.
+`tsc --noEmit -p apps/cli`: exit 0. `eslint` on the touched files: exit 0.
+`docs/cli.md` regenerated (`npm run docs:cli -w apps/cli`) and Prettier-clean.
+
+### Design notes for review
+
+- **`halt` and `resume` deliberately do not print presence**, though the same
+  `QueueStatus` comes back from both. They are acts and report what the act
+  did; `status` is the verb asked "why is nothing happening". Pinned by a test
+  so the choice is visible rather than accidental.
+- **No second read of `GET /api/agents`.** CONTRACT-053 records that the two can
+  legitimately disagree for one grace window, so corroborating here would print
+  two facts as one. A test asserts `queue status` issues exactly one request,
+  and the help names the divergence rather than leaving a reader to hit it.
+- The vocabulary and the age rendering are `corpus agents`' own (`presenceOf`,
+  `sinceAge`, `formatAge`), read at the workspace's grain — one derivation, so
+  the two verbs cannot come to disagree about what three hours looks like.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

@@ -646,9 +646,9 @@ Read what changed in a document across a commit range.
 
 Reads `GET /api/docs/{id}/diff` (SPEC.md §4, §9.2) and prints the document's id and path, the revision range that was actually read, what changed in numbers, and the unified diff itself.
 
-**This is the follow-up to a `doc.edited` event.** That event announces that a user's edit session ended and carries the session's commit range and its change stats — never the diff body. The agent triages on the stats and comes here when the change looks like it could ripple into other documents. The event's `from` and `to` are passed through **verbatim** as `--from-rev` and `--to-rev` — including the empty-tree sha an event carries when the document was introduced by the repository's very first commit, which diffs as wholly added. Nothing needs converting.
+**This is the follow-up to a `doc.edited` event.** That event announces that a user's edit session ended and carries the session's commit range and its change stats — never the diff body. The agent triages on the stats and comes here when the change looks like it could ripple into other documents. The event's `from` and `to` are passed through **verbatim** as `--from-rev` and `--to-rev` — including the empty-tree sha an event carries for a document's **first** change, which diffs as wholly added. That is any document's first commit, not only one made by the repository's root commit, because both bases walk _this document's_ history rather than the branch's. Nothing needs converting.
 
-**Both halves are optional and default independently**: `to` to the newest commit that touched this document, `from` to the parent of `to`. So bare `corpus doc diff <id>` reads as _what changed in this document's last commit_, and the two together read as _what changed in that session_. The resolved shas are printed back on their own line, unabbreviated, so the same range can be pinned again later.
+**Both halves are optional and default independently**: `to` to the newest commit that touched this document, `from` to the newest commit **before `to` that touched this document** — git's empty tree when nothing before it did. Deliberately **not `to`'s parent**: §4's commit windows are party-scoped and gather a party's saves across documents, so the parent of a window commit is routinely another party's save to a different file rather than this document's previous state. Both bases would print the same bytes, since every read here is path-scoped; only one of them is a true statement about where this document came from, and `from` is printed back as a fact. So bare `corpus doc diff <id>` reads as _what changed in this document's last commit_, and the two together read as _what changed in that session_. The resolved shas are printed back on their own line, unabbreviated, so the same range can be pinned again later.
 
 **The diff is bounded and the cut is stated twice.** At most 16000 characters come back; a larger change is truncated at a hunk boundary — so what arrives is still a valid diff — never refused. The size line always says how much of the diff is shown (`showing 16000 of 61200 characters`), and a `#` notice after the body says the text was cut and how much is missing. Acting on half a change while believing it whole is the one failure this verb can cause, so it is said before the body and again where the body stops.
 
@@ -668,10 +668,10 @@ corpus doc diff <id> [flags]
 
 **Flags**
 
-| Flag               | Type   | Default | Description                                                                                                                                                                                                                                                                                                  |
-| ------------------ | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--from-rev <sha>` | string | —       | Base of the range, **exclusive**. Defaults to the parent of the head, which reads as that one commit's own change. Named revisions are rejected — a commit sha only, exactly as a `doc.edited` event carries it. Spelled with the `-rev` suffix because `--from` is the global flag naming the acting party. |
-| `--to-rev <sha>`   | string | —       | Head of the range, **inclusive**. Defaults to the newest commit that touched this document. A commit sha, like its base half.                                                                                                                                                                                |
+| Flag               | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--from-rev <sha>` | string | —       | Base of the range, **exclusive**. Defaults to the newest commit before `--to-rev` **that touched this document**, which reads as that one commit's own change to it; when nothing before it ever touched this document the base is git's empty tree, so a document's first change diffs as wholly added. Deliberately **not the head's parent** — commit windows are party-scoped, so the parent of a window commit is routinely another party's save to a different file rather than this document's previous state (SPEC.md §4). Named revisions are rejected — a commit sha only, exactly as a `doc.edited` event carries it. Spelled with the `-rev` suffix because `--from` is the global flag naming the acting party. |
+| `--to-rev <sha>`   | string | —       | Head of the range, **inclusive**. Defaults to the newest commit that touched this document. A commit sha, like its base half.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 **Examples**
 
@@ -1665,9 +1665,13 @@ corpus queue resume
 
 ### `corpus queue status`
 
-Show the halt state and the queue depth.
+Show the halt state, the queue depth, and whether an agent is there.
 
 Reads `GET /api/queue/status`: whether the queue is halted, plus how many events sit in each of `pending`, `in-progress`, `deferred`, `processed`, `failed` and `abandoned`. A non-zero `deferred` is **not** breakage — those events are waiting on a person's edit session and return to `pending` on their own when it ends (SPEC.md §7).
+
+A second line says **whether anybody is there to work it**, because the depth alone cannot tell _nobody has picked this up yet_ from _nobody is there to pick it up_ — the two explanations for a queue that is not moving, and they call for opposite responses. `agent present, parked 2m ago` means a listener is holding a parked `corpus queue idle` right now; `no agent — last parked 3h ago` means one was there and has been gone longer than the grace window (16m), so a healthy listener between re-arms never reads as absent; `no agent — none has parked since the server started` means none has been observed at all, which is also what a freshly restarted server reports, since presence is held in memory and nothing about it is persisted. **A server that did not report the field at all reads `agent presence unknown`** — an answer that never arrived is not an answer saying nobody is there.
+
+This is the workspace's grain: whether **some** lane has a listener, never how many. For a row per lane, with its resident and what it is doing, read `corpus agents`. The two are separate reads and may honestly disagree for one grace window — a listener parked on a lane whose designation has just been released is present here and has no row there — so treat them as two facts rather than one.
 
 ```
 corpus queue status [flags]
@@ -1675,16 +1679,22 @@ corpus queue status [flags]
 
 **Examples**
 
-Is the queue halted, and how deep is it?
+Is the queue halted, how deep is it, and is anybody working it?
 
 ```
 corpus queue status
 ```
 
-One JSON value: `{"halted":false,"pending":0,"inProgress":0,"deferred":0,"processed":12,"failed":0,"abandoned":0}`.
+One JSON value, the status verbatim: `{"agent":{"live":true,"since":"2026-08-16T09:00:00.000Z"},"halted":false,"pending":0,"inProgress":0,"deferred":0,"processed":12,"failed":0,"abandoned":0}`. `since` stays an ISO instant so you compute the age against your own clock.
 
 ```
 corpus queue status --json
+```
+
+Exits non-zero when nothing is listening — a guard before enqueuing work.
+
+```
+corpus queue status --json | jq -e '.agent.live'
 ```
 
 ## `corpus server`

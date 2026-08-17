@@ -187,13 +187,21 @@ export const diffCommand: WorkspaceCommandSpec = {
     "body. The agent triages on the stats and comes here when the change looks like it could " +
     "ripple into other documents. The event's `from` and `to` are passed through **verbatim** as " +
     `\`--${FROM_FLAG}\` and \`--${TO_FLAG}\`` +
-    " — including the empty-tree sha an event carries when the document was introduced by the " +
-    "repository's very first commit, which diffs as wholly added. Nothing needs converting.\n\n" +
+    " — including the empty-tree sha an event carries for a document's **first** change, which " +
+    "diffs as wholly added. That is any document's first commit, not only one made by the " +
+    "repository's root commit, because both bases walk _this document's_ history rather than the " +
+    "branch's. Nothing needs converting.\n\n" +
     "**Both halves are optional and default independently**: `to` to the newest commit that " +
-    "touched this document, `from` to the parent of `to`. So bare `corpus doc diff <id>` reads as " +
-    "_what changed in this document's last commit_, and the two together read as _what changed in " +
-    "that session_. The resolved shas are printed back on their own line, unabbreviated, so the " +
-    "same range can be pinned again later.\n\n" +
+    "touched this document, `from` to the newest commit **before `to` that touched this " +
+    "document** — git's empty tree when nothing before it did. Deliberately **not `to`'s " +
+    "parent**: §4's commit windows are party-scoped and gather a party's saves across documents, " +
+    "so the parent of a window commit is routinely another party's save to a different file " +
+    "rather than this document's previous state. Both bases would print the same bytes, since " +
+    "every read here is path-scoped; only one of them is a true statement about where this " +
+    "document came from, and `from` is printed back as a fact. So bare `corpus doc diff <id>` " +
+    "reads as _what changed in this document's last commit_, and the two together read as _what " +
+    "changed in that session_. The resolved shas are printed back on their own line, " +
+    "unabbreviated, so the same range can be pinned again later.\n\n" +
     `**The diff is bounded and the cut is stated twice.** At most ${String(DOC_DIFF_MAX_CHARS)} ` +
     "characters come back; a larger change is truncated at a hunk boundary — so what arrives is " +
     "still a valid diff — never refused. The size line always says how much of the diff is shown " +
@@ -216,10 +224,15 @@ export const diffCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "sha",
       description:
-        "Base of the range, **exclusive**. Defaults to the parent of the head, which reads as that " +
-        "one commit's own change. Named revisions are rejected — a commit sha only, exactly as a " +
-        "`doc.edited` event carries it. Spelled with the `-rev` suffix because `--from` is the " +
-        "global flag naming the acting party.",
+        `Base of the range, **exclusive**. Defaults to the newest commit before \`--${TO_FLAG}\` ` +
+        "**that touched this document**, which reads as that one commit's own change to it; when " +
+        "nothing before it ever touched this document the base is git's empty tree, so a " +
+        "document's first change diffs as wholly added. Deliberately **not the head's parent** — " +
+        "commit windows are party-scoped, so the parent of a window commit is routinely another " +
+        "party's save to a different file rather than this document's previous state (SPEC.md " +
+        "§4). Named revisions are rejected — a commit sha only, exactly as a `doc.edited` event " +
+        "carries it. Spelled with the `-rev` suffix because `--from` is the global flag naming " +
+        "the acting party.",
     },
     {
       name: TO_FLAG,
