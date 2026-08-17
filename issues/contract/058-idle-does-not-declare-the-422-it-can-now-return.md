@@ -1,4 +1,4 @@
-# [CONTRACT-057] `GET /api/queue/idle` does not declare the 422 it now returns
+# [CONTRACT-058] `GET /api/queue/idle` does not declare the 422 it now returns
 
 ## Domain
 
@@ -81,4 +81,4 @@ _Filled by the implementing agent; state the model._
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[CONTRACT-057]` prefix
+- [ ] Committed with `[CONTRACT-058]` prefix

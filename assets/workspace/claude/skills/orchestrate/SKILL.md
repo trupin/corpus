@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-16T00:00:00Z
+updated: 2026-08-17T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -327,7 +327,27 @@ switch.
   into does not read `live` on the following pass, that launch is not working: log it, stop
   relaunching that lane, and leave it to the fallback until a fresh `resident.designated` says
   to try again. Relaunching every pass forever is how one broken persona becomes the only thing
-  this loop does.
+  this loop does. Word that log line as **standing down, never as a failed launch** — a
+  listener that started, parked, claimed this lane's work and is now inside a long turn reads
+  not-live exactly as a dead one does (below), and a console line calling that a broken launch
+  sends an operator hunting for a persona that is at that moment answering somebody.
+
+- **A row that does not read `live` does not mean nobody is there — and you launch anyway.**
+  Presence is the parked request and nothing else, so a row reads not-live for a listener that
+  crashed, for one the server has not seen since it restarted, **and for one in the middle of a
+  turn**: a resident works its conversation inline and holds no park while it does, so any turn
+  longer than the grace window is indistinguishable from an empty lane. `live` is the only
+  reading with a definite meaning; the others all mean *nobody is parked at this instant*, and
+  no more. Nothing on the row separates them — the line printed after the state is display
+  text whose length is promised and whose content is not, so keying on it is deciding from a
+  string that may change without notice — and you must not invent a separator: no probe, no
+  holding back a pass to see what happens, no reading the lane's busyness. **Launch, and let
+  the lane settle it.** A second listener parks, costs nothing while the conversation is quiet,
+  and the first message it is asked to answer tells it what it is: its claim comes back empty
+  on work its own park had just named, which on a live lane only another listener can cause,
+  and it exits. That is a wasted session, occasionally. The failure you would buy by holding
+  back has no repair in it at all — a listener that really did die, on a lane nobody relaunches,
+  with a person waiting on the fallback indefinitely.
 
 - **But never in the same pass you took that lane's work.** This is why launching happens after
   the claim rather than at the roster read, and it is the one collision the fallback can

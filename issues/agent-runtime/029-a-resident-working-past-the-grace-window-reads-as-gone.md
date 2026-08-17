@@ -6,7 +6,7 @@ agent-runtime (may require server or contract work — see below)
 
 ## Status
 
-todo
+done
 
 ## Priority
 

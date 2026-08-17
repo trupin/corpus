@@ -679,8 +679,8 @@ parent-first is the one where it annexes another scope's conversation.
 | SERVER-117 | The scope walk abandons the parent edge, so a resident loses conversations on its own artifacts | done | P0 | — |
 | SERVER-118 | `GET /api/queue/idle` accepts any thread id as a scope, and `agent.live` then lies | done | P0 | — |
 | UI-118 | An explicit recipient equal to the client's computed lane is sent as absence | todo | P0 | — |
-| AGENT-029 | A resident working longer than the grace window reads as absent, and gets a second listener | todo | P0 | — |
-| CONTRACT-057 | `GET /api/queue/idle` does not declare the 422 it now returns (SERVER-118 finding) | todo | P1 | SERVER-118 |
+| AGENT-029 | A resident working longer than the grace window reads as absent, and gets a second listener | done | P0 | — |
+| CONTRACT-058 | `GET /api/queue/idle` does not declare the 422 it now returns (SERVER-118 finding) | todo | P1 | SERVER-118 |
 
 **Two findings are the user's, not mine to close:**
 

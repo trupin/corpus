@@ -46,8 +46,11 @@ park is the presence, and anything else you add is a second, lying account of it
 **One consumer per lane, and that includes you.** A lane has one claimant at a time. Two
 listeners on one lane is not a correctness failure — the server still never hands one event
 to two callers — but it is a conversation whose story is split in half, answered by two
-agents that cannot see each other's context. *Starting up* below is where you check, once,
-before you take the lane.
+agents that cannot see each other's context. You check for one twice, and the two checks are
+not the same check. *Starting up* below is the cheap one you make before you take the lane; it
+can tell you a listener **is** here and can never tell you one is not, because presence is the
+parked request and a listener in the middle of a turn holds no park. *The loop* carries the
+one that is decisive, at the first message the two of you are asked to answer.
 
 ## Inherited invariants
 
@@ -137,12 +140,26 @@ failures later.
    - **Your row reads `live`** — a listener already holds this lane. Exit without claiming
      anything and log why. Two of you would split the conversation's story in half, and the
      one already there has the context.
-   - **`waiting for a listener` or `lapsed`** — the lane is yours. `lapsed` means a previous
-     listener has been gone long enough that the orchestrator has been covering; that is
-     ordinary and is not a fault to report. Carry on — and carry one thing with you: both
-     states are states in which the orchestrator's claim could see this lane's pending work,
-     so it may be **holding some of it right now**. Your first claim will report that, and
-     adopts none of it (*Settling your own lane*).
+   - **`waiting for a listener` or `lapsed`** — take the lane, and take two cautions with you.
+     `lapsed` means a listener parked here once and has been gone long enough that the
+     orchestrator has been covering; `waiting` means the server has observed no park on this
+     lane at all, which is also what every lane reads for a while after the server restarts.
+     Neither is a fault to report.
+
+     **Neither says nobody is here, either.** Presence is the parked request, so a listener in
+     the middle of a turn — which is where a resident spends most of its time — holds no park
+     and reads exactly like one that crashed. `live` is the only reading on this row with a
+     definite meaning; every other reading means *nobody is parked at this instant*, and no
+     more. So this check can tell you a listener **is** here and can never tell you one is
+     not, and you must not try to make it: the line printed after the state is a summary for a
+     person to read, whose length is promised and whose content is not, so anything you decide
+     from it is decided from a string that may change without notice. Take the lane — an
+     unattended one is much the commoner case, and the fallback covers the other — and let the
+     first contested claim settle it (*The loop*).
+
+     The second caution is the orchestrator's: both states are states in which its claim could
+     see this lane's pending work, so it may be **holding some of it right now**. Your first
+     claim will report that, and adopts none of it (*Settling your own lane*).
 
 3. **Bind your persona.** The designation names an agent, and the launch that started you
    carries the `resident` from the announcement's payload — a name and the id of the
@@ -207,6 +224,37 @@ order, indefinitely:
    message nobody answered.
 
 Then repeat from step 1.
+
+**An empty claim on work your park just named means another listener is on this lane.** Your
+startup check could tell you a listener was here and could never tell you one was not, so you
+may be the second listener on this conversation and have no way to have known it. Step 1 is
+where that is found out, and it is the first moment it matters. When the park at step 6 returns
+naming events and the claim at step 1 comes back with an empty `events` array **and those same
+ids sitting in its `inProgress`**, some other caller claimed them in between — and on your lane
+that can only be another listener. The orchestrator is not a candidate: your park released
+moments ago, the lane therefore reads live for the whole grace window that follows, and an
+unscoped claim never sees a live lane's events. **Exit.** You lost the message, so you were not
+in the middle of anything and nothing is stranded; the agent that took it is answering the
+person now, and one of you leaving is the whole of the repair. Post nothing — a farewell here
+would be a turn about the agents rather than about the conversation — and log nothing, because
+you are holding no event to log it to.
+
+**Two things look like that and are not**, and both mean loop again rather than exit. An empty
+`events` whose ids are **not** in `inProgress` means the work left `pending/` by another door —
+the operator halted the queue, or somebody abandoned the event — and nobody has taken your
+lane. And an empty `events` after a park that printed `{"idle":true,"reason":"timeout"}` or
+`{"idle":true,"reason":"halted"}` is a park that named no work in the first place, which is the
+ordinary sound of a quiet conversation.
+
+**Two parked listeners cost nothing until a message arrives**, which is exactly why the check
+belongs at the claim and nowhere earlier. Parking costs no tokens and answers nobody, so a
+duplicate sitting on a silent lane splits no story; the moment the lane has something to
+answer, one of the two finds out and goes, before the person has been answered twice or in two
+voices. Which of you loses the race is not worth arbitrating and cannot be: the survivor
+rehydrates from the thread and the artifacts, the way *When your context runs heavy* already
+describes, because that is the only handoff there has ever been. And do not go looking for a
+peer any other way — there is no probe for this, the roster's summary is display text you must
+never parse, and a shortened park to "check" is the keep-alive this skill forbids.
 
 `corpus queue idle` exits `0` in every normal case. A window that elapses with nothing
 pending prints `{"idle":true,"reason":"timeout"}` — that is the ordinary outcome of a quiet
@@ -463,6 +511,15 @@ Everything you might be tempted to do about it is wrong:
 - **Do not shorten your park to lapse less.** The window is guaranteed to be longer than a
   rearm gap, which is exactly why an ordinary re-park is not read as an absence. A tighter
   loop buys no presence and spends tokens on the one thing that was already free.
+- **Your own long turn lapses your own lane, and that is the design rather than a slip.** You
+  hold no park while you work, so a turn that runs longer than the window leaves your row
+  reading exactly as an abandoned lane does, and the orchestrator may then launch a listener
+  into a lane you are sitting in. It cannot tell the difference and it is right not to guess.
+  What that costs is a second session that finds out it is second at the first message either
+  of you is asked to answer, and goes (*The loop*). It costs the conversation nothing, and it
+  must not change how you work: do not shorten the turn, do not break it up to re-park in the
+  middle, and do not park while you are holding work. The turn is the thing the person asked
+  for; looking present is not.
 - **Do not treat a `lapsed` row as breakage.** It is a fact about the past. Take the lane and
   carry on.
 - **Do not redo what the orchestrator did while you were gone.** Coming back to turns you did

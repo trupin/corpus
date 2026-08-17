@@ -2216,6 +2216,11 @@ describe("orchestrate skill body", () => {
       // becoming the loop's only activity.
       expect(routing).toMatch(/stop\s+relaunching that lane/);
       expect(routing).toMatch(/Relaunching every pass forever/);
+      // AGENT-029: the bound is a bound, not a diagnosis. A listener that
+      // started, claimed and is inside a long turn reads not-live exactly as a
+      // dead one does, so a console line calling that a failed launch sends an
+      // operator hunting a persona that is at that moment answering somebody.
+      expect(routing).toMatch(/\*\*standing down, never as a failed launch\*\*/);
       // The roster is read before the claim and acted on after it.
       const loop = body.slice(body.indexOf("## The loop"), body.indexOf("## Claiming"));
       expect(loop).toMatch(/\*\*Read the roster\.\*\*/);
@@ -2263,6 +2268,43 @@ describe("orchestrate skill body", () => {
       expect(routing).toMatch(/\*\*take the work\s+or launch the listener, never both\.\*\*/);
       expect(routing).toMatch(/Prefer taking the work/);
       expect(routing).toMatch(/Launch on a later pass, once what you took is settled/);
+    });
+
+    /**
+     * AGENT-029, the orchestrator's half. The launch rule was written as though
+     * a not-live row meant an absent listener; presence is the parked request,
+     * so it also means a listener mid-turn, and a resident's turns are long by
+     * design. The rule does not change — holding back would leave a genuinely
+     * dead listener unreplaced, which has no repair — but the reason does, and
+     * so does what the skill is allowed to do about it: nothing. The one field
+     * that separates the cases is `summary`, which the contract publishes for
+     * display and refuses to promise the content of.
+     */
+    it("knows a not-live row is ambiguous, launches anyway, and invents no separator", () => {
+      expect(routing).toMatch(
+        /\*\*A row that does not read `live` does not mean nobody is there — and you launch anyway\.\*\*/,
+      );
+      expect(routing).toMatch(/\*\*and for one in the middle of a\s+turn\*\*/);
+      expect(routing).toMatch(
+        /any turn\s+longer than the grace window is indistinguishable from an empty lane/,
+      );
+      expect(routing).toMatch(/`live` is the only\s+reading with a definite meaning/);
+      // The forbidden separators, by name — each is a plausible "fix".
+      expect(routing).toMatch(
+        /no probe, no\s+holding back a pass to see what happens, no reading the lane's busyness/,
+      );
+      expect(routing).toMatch(/whose length is promised and whose content is not/);
+      // Where the duplicate is resolved instead, in the converse skill's terms.
+      expect(routing).toMatch(/\*\*Launch, and let\s+the lane settle it\.\*\*/);
+      expect(routing).toMatch(/its claim comes back empty\s+on work its own park had just named/);
+      // And the asymmetry that makes launching the right side to err on.
+      expect(routing).toMatch(
+        /The failure you would buy by holding\s+back has no repair in it at all/,
+      );
+      // The window stays the server's number here too.
+      for (const restatement of ["16m", "16 minutes", "960"]) {
+        expect(routing, `restates the grace window as "${restatement}"`).not.toContain(restatement);
+      }
     });
 
     it("takes what the claim gives it without auditing the walk", () => {
@@ -3138,6 +3180,92 @@ describe("converse skill body", () => {
       // annotated rather than left as the only case a reader ever sees.
       expect(body).toMatch(
         /had something been, this being the\s+session's first claim it would have been somebody else's/,
+      );
+    });
+  });
+
+  /**
+   * AGENT-029 — the seam AGENT-026 and AGENT-027 each closed a hole beside.
+   *
+   * Presence is `observePark` and its one production call site is the idle
+   * path, so a resident holds no park while it works — and this skill tells it
+   * to work long turns unparked (*"You await what you launch; you do not park on
+   * it"*). Measured against a real server: a listener claimed at 14:17:16 and
+   * worked; at 14:33:16 its row read `lapsed` while the work was still running.
+   * The orchestrator's launch rule fires on exactly that reading, neither of its
+   * guards applies, and the second listener's own startup guard reads the same
+   * `live: false` — so it parks, and one conversation has two listeners with no
+   * error anywhere.
+   *
+   * The roster cannot be made to answer this here: the distinguishing signal is
+   * `summary`, whose content the contract explicitly refuses to promise. So the
+   * repair is at the lane rather than at anyone's knowledge, and what is pinned
+   * is the instrument, because it is the part a rewrite cannot rederive — **an
+   * empty `events` on work the park just named, with those ids in `inProgress`**.
+   * Both halves are load-bearing: without the held check, a halt or an abandon
+   * between the two commands retires the only listener on the lane.
+   *
+   * The claim's emptiness is decisive only because a live lane is invisible to
+   * an unscoped claim (`queue/lanes.ts`), which is why the skill has to carry
+   * that reason rather than the bare rule.
+   */
+  describe("a second listener finds out it is second, and goes", () => {
+    it("says the roster can rule a listener in and never out", () => {
+      expect(body).toMatch(/\*\*Neither says nobody is here, either\.\*\*/);
+      expect(body).toMatch(
+        /a listener in\s+the middle of a turn — which is where a resident spends most of its time — holds no park/,
+      );
+      expect(body).toMatch(/`live` is the only reading on this row with a\s+definite meaning/);
+      expect(body).toMatch(
+        /can tell you a listener \*\*is\*\* here and can never tell you one is\s+not/,
+      );
+      // And the forbidden shortcut: the one field that would answer it.
+      expect(body).toMatch(/whose length is promised and whose content is not/);
+    });
+
+    it("pins the contested claim as the instrument, with both halves of it", () => {
+      expect(body).toMatch(
+        /\*\*An empty claim on work your park just named means another listener is on this lane\.\*\*/,
+      );
+      expect(body).toMatch(
+        /an empty `events` array \*\*and those same\s+ids sitting in its `inProgress`\*\*/,
+      );
+      // Why the orchestrator is not a candidate — the half a reader cannot
+      // rederive, and the half that makes the emptiness mean anything.
+      expect(body).toMatch(
+        /your park released\s+moments ago, the lane therefore reads live for the whole grace window that follows, and an\s+unscoped claim never sees a live lane's events/,
+      );
+      expect(body).toMatch(/\*\*Exit\.\*\*/);
+      expect(body).toMatch(/Post nothing/);
+    });
+
+    it("keeps the two look-alikes that must loop instead of exiting", () => {
+      expect(body).toMatch(/\*\*Two things look like that and are not\*\*/);
+      expect(body).toMatch(/whose ids are \*\*not\*\* in `inProgress`/);
+      expect(body).toMatch(/the operator halted the queue, or somebody abandoned the event/);
+      expect(body).toMatch(/is a park that named no work in the first place/);
+    });
+
+    it("says why the check belongs at the claim and forbids every earlier probe", () => {
+      expect(body).toMatch(/\*\*Two parked listeners cost nothing until a message arrives\*\*/);
+      expect(body).toMatch(/before the person has been answered twice or in two\s+voices/);
+      expect(body).toMatch(/there is no probe for this/);
+      expect(body).toMatch(/a shortened park to "check" is the keep-alive this skill forbids/);
+      // The tie-break is deliberately not arbitrated, and the reason it can be.
+      expect(body).toMatch(/Which of you loses the race is not worth arbitrating/);
+    });
+
+    it("names a long turn as the cause, without proposing a way to look present", () => {
+      expect(body).toMatch(
+        /\*\*Your own long turn lapses your own lane, and that is the design rather than a slip\.\*\*/,
+      );
+      expect(body).toMatch(
+        /the orchestrator may then launch a listener\s+into a lane you are sitting in/,
+      );
+      expect(body).toMatch(/It cannot tell the difference and it is right not to guess/);
+      // The three repairs a reader would otherwise invent, refused by name.
+      expect(body).toMatch(
+        /do not shorten the turn, do not break it up to re-park in the\s+middle, and do not park while you are holding work/,
       );
     });
   });
