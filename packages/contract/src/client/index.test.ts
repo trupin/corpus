@@ -453,20 +453,24 @@ function createServer() {
       200,
     ),
   );
-  app.openapi(contractRoutes.designateResident, (c) =>
-    c.json(
+  // A body with no `name` — or no body at all — designates a *general* resident
+  // (SPEC.md §7, rider SHARED-048), which the stub answers as two nulls rather
+  // than by inventing a name for it.
+  app.openapi(contractRoutes.designateResident, (c) => {
+    const name = c.req.valid("json")?.name ?? null;
+    return c.json(
       {
         thread: {
           ...threadSummary,
           parent: null,
           anchor: null,
-          resident: { name: c.req.valid("json").name, docId: "doc_agentdef" },
+          resident: { name, docId: name === null ? null : "doc_agentdef" },
         },
         warnings: [],
       },
       200,
-    ),
-  );
+    );
+  });
 
   app.openapi(contractRoutes.getIndexStatus, (c) =>
     c.json(
@@ -1378,6 +1382,24 @@ describe("the roster and designation through the generated client (CONTRACT-051)
       body: { name: "researcher" },
     });
     expect(data?.thread.resident).toEqual({ name: "researcher", docId: "doc_agentdef" });
+  });
+
+  /**
+   * CONTRACT-061. §7 makes naming no profile the ordinary case, so it must be
+   * the cheapest call a consumer can write — and it is: the generated client
+   * takes no `body` at all here, which `request-body-required.test.ts` pins at
+   * compile time. Passing `{}` is the same designation; both come back as a
+   * resident with no profile rather than a name the server made up.
+   */
+  it.each([
+    ["no body at all", undefined],
+    ["an empty body", {}],
+  ])("designates a general resident with %s", async (_case, body) => {
+    const { data } = await createTestClient().api.POST("/api/threads/{id}/resident", {
+      params: { path: { id: "th_x9y8" } },
+      ...(body === undefined ? {} : { body }),
+    });
+    expect(data?.thread.resident).toEqual({ name: null, docId: null });
   });
 
   /**

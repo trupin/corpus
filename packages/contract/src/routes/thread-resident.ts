@@ -30,6 +30,11 @@ import {
  * is nobody", and §7 is emphatic that dissolving is the **absence** of a
  * resident and never a third state.
  *
+ * That split is what lets the `POST` body be **optional in full** since
+ * SHARED-048: a bare `POST` designates a general resident, and cannot be
+ * mistaken for a release, because a release is a different verb on this path.
+ * Naming a profile is the refinement, not the act.
+ *
  * ## User-only, like the rest of §9.2's user-only family
  *
  * §7: designation is *"user-only state on the thread, set and released like any
@@ -70,10 +75,22 @@ export const designateResident = createRoute({
     "thread whose parent chain reaches it, every document whose `origin` reaches it, and every " +
     "thread on such a document — is enqueued on that scope's lane instead of the orchestrator's." +
     "\n\n" +
-    "**The body names the agent, not a document.** `name` is the invocable name `@<subagent>` " +
-    "mentions already use (SPEC.md §8), and the response carries the `{name, docId}` it resolved " +
-    "to, so the caller never repeats the lookup. `404` when the thread is unknown, and `404` when " +
-    "the name resolves to no `type: agent-def` document in this workspace.\n\n" +
+    "**The body is optional in full: a bare `POST` designates a *general resident*** — an agent " +
+    "with no persona document, working the conversation as the workspace's ordinary agent does. " +
+    "§7 calls that the ordinary case, and it requires nothing to exist in the workspace first, so " +
+    "a fresh workspace with no `agent-def` documents can designate on its first day.\n\n" +
+    "**Naming a profile is the refinement.** `name`, when given, is the invocable name " +
+    "`@<subagent>` mentions already use (SPEC.md §8) — not a document id — and is how a " +
+    "conversation gets an agent that behaves differently from the default. `404` when the thread " +
+    "is unknown, and `404` when the name resolves to no `type: agent-def` document in this " +
+    "workspace: a name that misses is refused rather than degraded to a general resident, because " +
+    'a typo that looked like it worked is the worse outcome. A **blank** name (`""`, `"   "`) ' +
+    "is a `400` and not absence, for the same reason.\n\n" +
+    "**Everything else about a resident is identical either way** (SPEC.md §7) — the lane, the " +
+    "scope, presence, the lapse fallback, release, and resolution releasing it — because a " +
+    "profile says *how* the agent works and nothing about *what it owns*. The response carries " +
+    "the resolved `Resident`, whose `name` is null for a general one and whose `docId` is null " +
+    "when there is no profile document to point at, so the caller never repeats the lookup.\n\n" +
     "**Single-valued, so designating again replaces.** A thread has one resident or none, and " +
     "nothing has to arbitrate between two; designating a thread that already has one is a " +
     "replacement rather than a `409`. What is refused is designating a thread that may not have a " +
@@ -94,16 +111,18 @@ export const designateResident = createRoute({
     params: ThreadIdParamSchema,
     headers: ActorHeaderSchema,
     body: {
-      required: true,
-      description: "The agent to make resident. A designation that names nobody is not one.",
+      required: false,
+      description:
+        "Optional in full: omit the body entirely — or send `{}` — to designate a general " +
+        "resident, and give `name` to designate a profile.",
       content: { "application/json": { schema: DesignateResidentRequestSchema } },
     },
   },
   responses: {
     200: jsonContent(
       ThreadMutationResponseSchema,
-      "The thread, its `resident` now resolved to `{name, docId}`, and any warnings raised while " +
-        "writing it.",
+      "The thread, its `resident` now the resolved `{name, docId}` — both null for a general " +
+        "resident — and any warnings raised while writing it.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,

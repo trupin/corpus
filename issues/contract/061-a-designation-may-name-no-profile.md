@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -41,21 +41,21 @@ resolved to no document.
 
 ## Acceptance Criteria
 
-- [ ] `POST /api/threads/{id}/resident` accepts a body naming **no** profile
-- [ ] It still accepts `{name: "<invocable name>"}` unchanged — picking a profile
+- [x] `POST /api/threads/{id}/resident` accepts a body naming **no** profile
+- [x] It still accepts `{name: "<invocable name>"}` unchanged — picking a profile
       is the other half of the feature, not a casualty of it
-- [ ] `ResidentSchema` expresses a general resident without inventing a sentinel
+- [x] `ResidentSchema` expresses a general resident without inventing a sentinel
       name that could collide with a real agent-def title
-- [ ] `AgentRoster` rows report a general resident distinguishably from **no**
+- [x] `AgentRoster` rows report a general resident distinguishably from **no**
       resident — a lane with a general resident is designated; a thread with no
       designation is not a lane at all
-- [ ] Every refusal CONTRACT-051 enumerates still applies where it applied:
+- [x] Every refusal CONTRACT-051 enumerates still applies where it applied:
       a thread with a parent is still refused, an unknown **named** profile is
       still `404`
-- [ ] The description of each changed field says what a *consumer* may conclude,
+- [x] The description of each changed field says what a *consumer* may conclude,
       and never restates a derivation the server owns (the SERVER-114 rule)
-- [ ] `openapi.json` regenerated and committed; the drift check passes
-- [ ] The generated client typechecks, and every existing consumer of
+- [x] `openapi.json` regenerated and committed; the drift check passes
+- [x] The generated client typechecks, and every existing consumer of
       `Resident`/`DesignateResidentRequest` still compiles or is listed for its
       owning domain to fix
 
@@ -114,15 +114,132 @@ OpenAPI document contains the new shapes.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Model actually run: opus (Opus 5, 1M context). 2026-08-17.**
+
+### The shape chosen, and why the other lost
+
+**Request — `name` optional, absence is the general case.** `POST` body is
+`z.strictObject({ name: AgentNameSchema.optional() })` and the route declares
+`body.required: false`, so a **bare `POST`, or `{}`, designates a general
+resident**. §7 makes naming no profile *"the ordinary case"* that *"requires
+nothing to exist first"*, so the ordinary case is the one that costs a caller
+nothing to express — the same shape `POST /api/queue/halt` already uses, and the
+same request/response asymmetry `schemas/form-answer.ts` already uses (a request
+omits what it does not have; a response states it as null).
+
+`{name: null}` lost: it would make the ordinary case the ceremonious one, and
+`null` already has two jobs on the response side (nobody, on `residentField`; no
+profile, inside `Resident`). It is still refused, so there is exactly one
+spelling. A sentinel name lost for the reason the issue gave.
+
+The cost of absence-as-meaning is stated in the schema's doc comment rather than
+left to be discovered: a caller whose variable is `undefined` designates a
+general resident instead of getting a `400`. It is bounded on both sides — a
+blank name (`""`, `"   "`) is still a `400` and not absence, and the body is
+still strict, so `{agent: "x"}` is an `unrecognized_keys` `400` naming the key.
+
+**Response — `Resident` flat, both halves nullable, both still required.**
+Three states, and the fourth refined away:
+
+| `name` | `docId` | meaning |
+| --- | --- | --- |
+| `null` | `null` | general resident (ordinary) |
+| set | set | profiled resident |
+| set | `null` | profiled resident whose profile has gone — §7's *"the missing profile is reported rather than silently substituted"* |
+| `null` | set | not a state; `.refine()` rejects it on `path: ["docId"]` |
+
+The third row is why `docId` became nullable and not merely `name`:
+AGENT-033 requires *"no profile"* and *"a profile that has gone"* not read as the
+same thing, and a non-nullable `docId` would have foreclosed it and cost a second
+contract change.
+
+The union `{name: string, docId: string|null} | {name: null, docId: null}` lost:
+it makes the fourth combination unrepresentable, but a union publishes `oneOf`,
+which has no `type: "object"` and so cannot be a **named** component under this
+document's invariant (CONTRACT-037). `Resident` would have inlined into every
+route mentioning it and the four consuming domains would have lost the one name
+they refer to it by. The refinement buys the same guarantee at runtime.
+
+### Commands run
+
+1. `npm run build -w packages/contract` → exit 0.
+2. `npm run generate -w packages/contract` → `openapi.json` + `src/client/schema.generated.ts`.
+   **Drift check** (the property CI asserts): saved both artifacts, rebuilt,
+   regenerated, `diff -q` on both → identical. **Generation is idempotent.**
+3. §9.2 survived the regeneration: `grep -c "§9.2" openapi.json` → **50**;
+   `grep "§9.4"` → **0 matches**. No §9.4 reintroduced (SHARED-046 intact).
+4. `VITEST_MAX_THREADS=4 vitest run packages/contract` → **65 files, 2597 tests,
+   all passing**, exit 0.
+5. `eslint packages/contract` → exit 0. `prettier --check` → exit 0.
+6. `tsc --noEmit` in `packages/contract` → exit 0.
+
+### The published shapes, read out of the generated document
+
+```
+Resident.properties.name.type   = ["string", "null"]   (minLength 1, maxLength 100)
+Resident.properties.docId.type  = ["string", "null"]   (pattern ^doc_[A-Za-z0-9]+$)
+Resident.required               = ["name", "docId"]
+Resident.type                   = "object"             (the .refine() did not corrupt it)
+DesignateResidentRequest        = { properties: { name }, additionalProperties: false }
+                                  — no `required` array at all
+paths./api/threads/{id}/resident.post.requestBody.required = false
+```
+
+The generated client emits `name: string | null` on `Resident` and
+`requestBody?:` on the designation, which is the surface the CLI and the UI write
+against.
+
+### Falsification — each new assertion made to fail on purpose
+
+- **The optional body.** Flipped `body.required` back to `true`, regenerated, ran
+  `tsc --noEmit -p packages/contract`:
+  `src/client/request-body-required.test.ts(54,44): error TS1360: Type 'false'
+  does not satisfy the expected type 'true'.` The compile-time probe is the
+  non-vacuous one — a `vitest` run alone passes either way, because hono's JSON
+  validator is content-type-gated and a bodiless `POST` reaches the handler in
+  both worlds. Restored and regenerated; artifacts byte-identical again.
+- **The refinement.** Deleted the `.refine()` from `ResidentSchema`:
+  `× Resident > refuses a docId with no name, which would be a document nobody
+  named` — 1 failed, 47 passed. Restored; `diff` against the backup identical.
+
+### Downstream: what this breaks, and where
+
+The repo does **not** typecheck between this landing and its consumers — that is
+the intended forcing function, and each break is the exact line its blocked issue
+already names. Per-workspace `tsc --noEmit`:
+
+| workspace | exit | errors |
+| --- | --- | --- |
+| `packages/contract` | 0 | — |
+| `packages/kit` | 0 | — |
+| `apps/ui` | 0 | — |
+| `plugins/todos` | 0 | — |
+| `apps/server` | 2 | `src/threads/read.ts:94`, `src/threads/resident.ts:179` |
+| `apps/cli` | 2 | `src/commands/agents.ts:154`, `src/commands/thread/designate.ts:49` |
+
+`npm run build` therefore fails at `apps/cli` until CLI-049 lands. Fixtures inside
+this workspace were fixed here (`routes/index.test.ts`, `client/index.test.ts`
+mount stubs); no other domain's were touched.
+
+### Not resolved here, and deliberately
+
+- `apps/ui` and `packages/kit` **compile** but are now semantically wrong for a
+  general resident, so no type error will remind anyone: `packages/kit/src/recipient/laneRows.ts:80`
+  (`row.resident?.name ?? row.origin?.title ?? …` silently falls through to the
+  conversation title), `apps/ui/src/thread/ResidentBadge.tsx`,
+  `apps/ui/src/thread/ThreadPanel.tsx:127`, `apps/ui/src/thread/residentActions.ts`.
+  UI-122 owns all four; flagged because a green typecheck is not evidence here.
+- `resident.designated`'s payload is an open `payload` on `QueueEvent`, so it is
+  not declared in this package. Its resident half follows `Resident` by
+  construction; SERVER-121 carries it.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

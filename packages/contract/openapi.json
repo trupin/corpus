@@ -2415,7 +2415,7 @@
                 "type": "null"
               }
             ],
-            "description": "The agent resident in this conversation, or null (SPEC.md §7). **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8)."
+            "description": "The agent resident in this conversation, or null when it has none (SPEC.md §7). **Null means nobody, and never a resident with no profile**: since a designation may name no `agent-def`, a general resident is an object here whose `name` is null — so a designated conversation always carries an object, whatever it was designated with. On a roster row null therefore occurs only on the `orchestrator` lane, which belongs to no conversation; every other lane exists because something was designated. **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8)."
           },
           "turns": {
             "type": "array",
@@ -2442,16 +2442,22 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1,
             "maxLength": 100,
-            "description": "The name the agent is invocable by — the same resolution `@<subagent>` mentions use (SPEC.md §8): a `type: agent-def` document's own name, or its title, matched case-insensitively. **Not a document id.** A name that resolves to no agent-def in this workspace is a `404`.",
-            "example": "researcher"
+            "example": "researcher",
+            "description": "The **profile** this conversation's agent was designated with, or null when it was designated with none. Null is the ordinary case (SPEC.md §7): a resident with no profile is *a general resident* — an agent working the conversation as the workspace's ordinary agent does — and it is a resident in every other respect, so **null here never means there is nobody**; that is the whole field being null one level up. Where it is a name, it is the invocable name `@<subagent>` mentions use (SPEC.md §8), not a document id, and it is what a person reads. **Do not substitute a word for null and print it as a name** — beside real profile names it would be indistinguishable from one, and could collide with an agent-def titled the same."
           },
           "docId": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^doc_[A-Za-z0-9]+$",
-            "description": "The `type: agent-def` document the name resolved to, resolved at designation time and re-read on every response — so a renamed or moved agent-def shows its current id here rather than a stale one.",
+            "description": "The `type: agent-def` document `name` resolves to **right now**, or null when there is none to resolve — either because no profile was named, or because the one that was named has since been renamed or archived. Read the two fields together: `name` null is a general resident, `name` set with this null is a resident whose profile has gone (SPEC.md §7 — the designation stands, and the missing profile is reported rather than silently substituted), and both set is a profile a reader can open. It is re-resolved on every response rather than stored, so a moved agent-def shows its current id here rather than a stale one.",
             "example": "doc_a1b2c3"
           }
         },
@@ -3133,7 +3139,7 @@
                 "type": "null"
               }
             ],
-            "description": "The agent resident in this conversation, or null (SPEC.md §7). **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8)."
+            "description": "The agent resident in this conversation, or null when it has none (SPEC.md §7). **Null means nobody, and never a resident with no profile**: since a designation may name no `agent-def`, a general resident is an object here whose `name` is null — so a designated conversation always carries an object, whatever it was designated with. On a roster row null therefore occurs only on the `orchestrator` lane, which belongs to no conversation; every other lane exists because something was designated. **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8)."
           },
           "created": {
             "type": "string",
@@ -3616,13 +3622,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 100,
-            "description": "The name the agent is invocable by — the same resolution `@<subagent>` mentions use (SPEC.md §8): a `type: agent-def` document's own name, or its title, matched case-insensitively. **Not a document id.** A name that resolves to no agent-def in this workspace is a `404`.",
-            "example": "researcher"
+            "example": "researcher",
+            "description": "The **profile** to designate, by the invocable name `@<subagent>` mentions already use (SPEC.md §8): a `type: agent-def` document's own name, or its title, matched case-insensitively. **Not a document id.** A name that resolves to no agent-def in this workspace is a `404` — a typo is refused rather than degraded to a general resident, because a typo that looked like it worked is the worse outcome.\n\n**Omit it — or send no body at all — to designate a general resident**: an agent with no persona document, working the conversation as the workspace's ordinary agent does. That is the ordinary designation and needs nothing to exist in the workspace first (SPEC.md §7). Everything else is identical either way — the lane, the scope, presence, the lapse fallback, release, and resolution releasing it. A **blank** name is not absence: `\"\"` and `\"   \"` are `400`, because dropping a name by accident is a mistake and asking for no profile is a decision."
           }
         },
-        "required": [
-          "name"
-        ],
         "additionalProperties": false
       },
       "AgentRoster": {
@@ -3669,7 +3672,7 @@
                 "type": "null"
               }
             ],
-            "description": "The agent resident in this conversation, or null (SPEC.md §7). **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8)."
+            "description": "The agent resident in this conversation, or null when it has none (SPEC.md §7). **Null means nobody, and never a resident with no profile**: since a designation may name no `agent-def`, a general resident is an object here whose `name` is null — so a designated conversation always carries an object, whatever it was designated with. On a roster row null therefore occurs only on the `orchestrator` lane, which belongs to no conversation; every other lane exists because something was designated. **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8)."
           },
           "live": {
             "type": "boolean",
@@ -7475,7 +7478,7 @@
           "threads"
         ],
         "summary": "Designate a thread's resident agent (user-only)",
-        "description": "Gives a **standalone** thread a resident: a long-lived agent that owns that conversation and everything that grows out of it, rather than being dispatched to one message at a time (SPEC.md §7). From then on, work falling in that thread's **scope** — the thread, every thread whose parent chain reaches it, every document whose `origin` reaches it, and every thread on such a document — is enqueued on that scope's lane instead of the orchestrator's.\n\n**The body names the agent, not a document.** `name` is the invocable name `@<subagent>` mentions already use (SPEC.md §8), and the response carries the `{name, docId}` it resolved to, so the caller never repeats the lookup. `404` when the thread is unknown, and `404` when the name resolves to no `type: agent-def` document in this workspace.\n\n**Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.\n\n**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident claims a conversation and every artifact that grows out of it, and an agent that could designate would be choosing who answers a person's messages (SPEC.md §7 — designation is user-only state).\n\n**It enqueues `resident.designated`, on the orchestrator's lane whoever is designated** — the resident does not announce itself to itself, one of exactly two carve-outs §7 makes to the lane rule. Nothing already queued moves: a lane is stamped once, at enqueue time, and never rewritten, so designating does not re-route work the orchestrator is already holding.\n\n**One action, one commit** (SPEC.md §4), authored by the acting party. It presents no key (SPEC.md §7): it sets one frontmatter field and replaces nothing a reader was holding.",
+        "description": "Gives a **standalone** thread a resident: a long-lived agent that owns that conversation and everything that grows out of it, rather than being dispatched to one message at a time (SPEC.md §7). From then on, work falling in that thread's **scope** — the thread, every thread whose parent chain reaches it, every document whose `origin` reaches it, and every thread on such a document — is enqueued on that scope's lane instead of the orchestrator's.\n\n**The body is optional in full: a bare `POST` designates a *general resident*** — an agent with no persona document, working the conversation as the workspace's ordinary agent does. §7 calls that the ordinary case, and it requires nothing to exist in the workspace first, so a fresh workspace with no `agent-def` documents can designate on its first day.\n\n**Naming a profile is the refinement.** `name`, when given, is the invocable name `@<subagent>` mentions already use (SPEC.md §8) — not a document id — and is how a conversation gets an agent that behaves differently from the default. `404` when the thread is unknown, and `404` when the name resolves to no `type: agent-def` document in this workspace: a name that misses is refused rather than degraded to a general resident, because a typo that looked like it worked is the worse outcome. A **blank** name (`\"\"`, `\"   \"`) is a `400` and not absence, for the same reason.\n\n**Everything else about a resident is identical either way** (SPEC.md §7) — the lane, the scope, presence, the lapse fallback, release, and resolution releasing it — because a profile says *how* the agent works and nothing about *what it owns*. The response carries the resolved `Resident`, whose `name` is null for a general one and whose `docId` is null when there is no profile document to point at, so the caller never repeats the lookup.\n\n**Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.\n\n**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident claims a conversation and every artifact that grows out of it, and an agent that could designate would be choosing who answers a person's messages (SPEC.md §7 — designation is user-only state).\n\n**It enqueues `resident.designated`, on the orchestrator's lane whoever is designated** — the resident does not announce itself to itself, one of exactly two carve-outs §7 makes to the lane rule. Nothing already queued moves: a lane is stamped once, at enqueue time, and never rewritten, so designating does not re-route work the orchestrator is already holding.\n\n**One action, one commit** (SPEC.md §4), authored by the acting party. It presents no key (SPEC.md §7): it sets one frontmatter field and replaces nothing a reader was holding.",
         "parameters": [
           {
             "schema": {
@@ -7506,8 +7509,8 @@
           }
         ],
         "requestBody": {
-          "required": true,
-          "description": "The agent to make resident. A designation that names nobody is not one.",
+          "required": false,
+          "description": "Optional in full: omit the body entirely — or send `{}` — to designate a general resident, and give `name` to designate a profile.",
           "content": {
             "application/json": {
               "schema": {
@@ -7518,7 +7521,7 @@
         },
         "responses": {
           "200": {
-            "description": "The thread, its `resident` now resolved to `{name, docId}`, and any warnings raised while writing it.",
+            "description": "The thread, its `resident` now the resolved `{name, docId}` — both null for a general resident — and any warnings raised while writing it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7674,7 +7677,7 @@
           "agents"
         ],
         "summary": "The roster of lanes, their residents and their liveness",
-        "description": "Every lane of the queue: which conversation it belongs to, who is resident on it, whether a listener is parked on it right now and since when, and a short line about what it is doing (SPEC.md §7). The composer reads this to offer a recipient, and the board reads it to show who is running.\n\n**The `orchestrator` row is always present** — it exists before anything has been designated and survives the last release — so an empty list is a bug rather than a workspace with no agents.\n\n**Liveness is observed, never registered.** A lane is live exactly while its listener holds a parked scoped `GET /api/queue/idle`: there is no heartbeat to send, no registration to keep fresh and no state to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. A lane that is not live is an ordinary, recoverable state — past the grace window its pending events fall back to the orchestrator's unscoped claim, so the work is done more slowly and never silently not done.\n\n**A read, never a push** (SPEC.md §7). The roster and each lane's liveness arrive over HTTP and are refetched when an `invalidate` frame names `[\"agents\"]`; nothing about them travels over SSE, which carries key names and never data. Read-only; no acting party, and no parameters — there is one roster, and a filtered one would hide the lapsed lanes the recipient picker most needs to show.\n\n**Every row here is derived, so the frame that stales it is often named after something else.** A lane's `summary` is read off the same `events` and `jobs` rows a queue transition or a job-log append writes, and its `origin.title` is the root thread's current title — so those writes name `[\"agents\"]` too, alongside `[\"queue\"]`, `[\"jobs\"]` or `[\"docs\"]`. A client that refetches this only on designation and presence changes will show a stale roster; `GET /events` lists the full set of emitters.",
+        "description": "Every lane of the queue: which conversation it belongs to, who is resident on it, whether a listener is parked on it right now and since when, and a short line about what it is doing (SPEC.md §7). The composer reads this to offer a recipient, and the board reads it to show who is running.\n\n**The `orchestrator` row is always present** — it exists before anything has been designated and survives the last release — so an empty list is a bug rather than a workspace with no agents.\n\n**A lane's `resident` is null only on that row.** Every other lane exists because a conversation was designated, and since a designation may name no profile (SPEC.md §7) the resident of such a lane is an object whose `name` is null — a *general resident*, designated and lane-owning like any other. A row with a general resident and a row with a profiled one differ in nothing else here: same `lane`, same liveness, same fallback. A client must not print a stand-in name for the null; it is null so that it cannot be confused with, or collide with, a real profile.\n\n**Liveness is observed, never registered.** A lane is live exactly while its listener holds a parked scoped `GET /api/queue/idle`: there is no heartbeat to send, no registration to keep fresh and no state to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. A lane that is not live is an ordinary, recoverable state — past the grace window its pending events fall back to the orchestrator's unscoped claim, so the work is done more slowly and never silently not done.\n\n**A read, never a push** (SPEC.md §7). The roster and each lane's liveness arrive over HTTP and are refetched when an `invalidate` frame names `[\"agents\"]`; nothing about them travels over SSE, which carries key names and never data. Read-only; no acting party, and no parameters — there is one roster, and a filtered one would hide the lapsed lanes the recipient picker most needs to show.\n\n**Every row here is derived, so the frame that stales it is often named after something else.** A lane's `summary` is read off the same `events` and `jobs` rows a queue transition or a job-log append writes, and its `origin.title` is the root thread's current title — so those writes name `[\"agents\"]` too, alongside `[\"queue\"]`, `[\"jobs\"]` or `[\"docs\"]`. A client that refetches this only on designation and presence changes will show a stale roster; `GET /events` lists the full set of emitters.",
         "responses": {
           "200": {
             "description": "Every lane, the orchestrator's included.",

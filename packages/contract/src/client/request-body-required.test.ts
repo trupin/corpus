@@ -46,10 +46,12 @@ const MANDATORY = {
   // CONTRACT-020. A creation names the thing it creates: `name` and
   // `description` are both mandatory, so there is no bodiless form.
   "POST /api/skills": true satisfies BodyIsMandatory<paths["/api/skills"]["post"]>,
-  // CONTRACT-051. A designation names the agent it designates; there is no
-  // bodiless form, because releasing is the `DELETE` on the same path rather
-  // than a bare `POST`.
-  "POST /api/threads/{id}/resident": true satisfies BodyIsMandatory<
+  // CONTRACT-061, reversing CONTRACT-051. A designation no longer has to name a
+  // profile (SPEC.md §7, rider SHARED-048), so the body has no required field
+  // and a bare `POST` designates a general resident — the ordinary case, which
+  // §7 says must require nothing to exist first. It still cannot be confused
+  // with a release: that is the `DELETE` on the same path.
+  "POST /api/threads/{id}/resident": false satisfies BodyIsMandatory<
     paths["/api/threads/{id}/resident"]["post"]
   >,
 } as const;
@@ -72,7 +74,7 @@ describe("the generated client types demand every mandatory body", () => {
       "POST /api/jobs/{id}/log": true,
       "POST /api/check": true,
       "POST /api/skills": true,
-      "POST /api/threads/{id}/resident": true,
+      "POST /api/threads/{id}/resident": false,
     });
   });
 });

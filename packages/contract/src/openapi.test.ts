@@ -83,11 +83,13 @@ function parameter(path: string, method: string, name: string) {
 /** The subset of JSON Schema the walk below needs; `openapi3-ts` types it as `any`. */
 interface SchemaNode {
   readonly $ref?: string;
-  readonly type?: string;
+  /** An array where the schema is nullable: OpenAPI 3.1 spells that `["string", "null"]`. */
+  readonly type?: string | readonly string[];
   readonly enum?: string[];
   readonly pattern?: string;
   readonly default?: unknown;
   readonly minimum?: number;
+  readonly minLength?: number;
   readonly required?: string[];
   /** OpenAPI 3.1 is JSON Schema 2020-12, so a conditional requirement is publishable. */
   readonly dependentRequired?: Record<string, string[]>;
@@ -4106,7 +4108,10 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/jobs/{id}/log": true,
       "POST /api/threads": true,
       "POST /api/threads/{id}/reattach": true,
-      "POST /api/threads/{id}/resident": true,
+      // CONTRACT-061 moved this out of the mandatory set: since SPEC.md §7's
+      // SHARED-048 rider a designation need not name a profile, so the body is
+      // wholly optional and a bare `POST` designates a general resident.
+      "POST /api/threads/{id}/resident": false,
       "POST /api/queue/{id}/defer": true,
       "POST /api/skills": true,
       "POST /api/queue/halt": false,
@@ -4413,6 +4418,74 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     }
     expect(componentSchemas?.["Resident"]?.type).toBe("object");
     expect(componentSchemas?.["Resident"]?.required).toEqual(["name", "docId"]);
+  });
+
+  /**
+   * CONTRACT-061 / SPEC.md §7 rider SHARED-048. A designation may name no
+   * profile, so both halves of a `Resident` are nullable — and both stay
+   * **required**, because the states a caller must tell apart are read off the
+   * pair (`name` null is a general resident; `name` set with `docId` null is a
+   * profile that has gone), and an absent key would make the pair unreadable.
+   */
+  it("makes both halves of a Resident nullable, and keeps both required", () => {
+    const resident = componentSchemas?.["Resident"];
+    for (const property of ["name", "docId"] as const) {
+      expect(resident?.properties?.[property]?.type, property).toEqual(["string", "null"]);
+    }
+    expect(resident?.required).toEqual(["name", "docId"]);
+    // The refinement rejecting `{name: null, docId: "doc_…"}` is not expressible
+    // in JSON Schema, so it is stated where a reader of the document meets it.
+    expect(resident?.properties?.["docId"]?.description).toContain("Read the two fields together");
+  });
+
+  /**
+   * The trap the shape exists to avoid: a general resident carrying a display
+   * string that reaches a recipient list beside real profile names. The
+   * published document tells a client not to invent one, in the two places a
+   * client would.
+   */
+  it("tells a client not to print a stand-in name for a general resident", () => {
+    expect(componentSchemas?.["Resident"]?.properties?.["name"]?.description).toContain(
+      "Do not substitute a word for null and print it as a name",
+    );
+    expect(operation("/api/agents", "get").description).toContain(
+      "must not print a stand-in name for the null",
+    );
+  });
+
+  /**
+   * The two nulls one level apart. A roster row's `resident` null is the
+   * orchestrator's lane; a `Resident` whose `name` is null is a designated lane
+   * with no profile. Collapsing them shows a designated conversation as
+   * undesignated, so the shared field says which is which.
+   */
+  it("says a null resident is nobody, never a resident with no profile", () => {
+    for (const component of ["Thread", "ThreadSummary", "AgentLane"]) {
+      const description = componentSchemas?.[component]?.properties?.resident?.description ?? "";
+      expect(description, component).toContain(
+        "**Null means nobody, and never a resident with no profile**",
+      );
+    }
+  });
+
+  /**
+   * §7 makes naming no profile *"the ordinary case"* that *"requires nothing to
+   * exist first"*, so the ordinary case is the one that costs a caller nothing:
+   * a bodiless `POST`. Absence, never a null and never a sentinel — the body
+   * stays strict, so a misspelled key is still a named `400`.
+   */
+  it("makes the designation body optional in full, and still strict", () => {
+    const body = operation("/api/threads/{id}/resident", "post").requestBody;
+    expect(body?.required).toBe(false);
+    const schema = componentSchemas?.["DesignateResidentRequest"];
+    expect(schema?.required).toBeUndefined();
+    expect(schema?.additionalProperties).toBe(false);
+    // A name, when given, is still a real name: blank is a 400, not absence.
+    expect(schema?.properties?.["name"]?.minLength).toBe(1);
+    expect(schema?.properties?.["name"]?.description).toContain("to designate a general resident");
+    expect(operation("/api/threads/{id}/resident", "post").description).toContain(
+      "a bare `POST` designates a *general resident*",
+    );
   });
 
   it("answers a designation and a release with the thread, so §14's warnings surface", () => {
