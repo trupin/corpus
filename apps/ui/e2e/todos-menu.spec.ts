@@ -1,7 +1,7 @@
 import type { Doc, ResolvedAnchor } from "@corpus/contract";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
-import { stubCorpus, type StubRow } from "./stubCorpus";
+import { multipartBodyOf, stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * PLUGINS-009 in a real browser: the quick actions on a **todo item row** in
@@ -413,13 +413,14 @@ test.describe("the comment action", () => {
    * asserted too, but as an extra, and as the computed colour rather than the
    * class name.
    *
-   * **It stops before the send**, and that is a fixture limit rather than a
-   * choice: `stubCorpus` records every request with `JSON.parse(postData())`
-   * (`stubCorpus.ts`), which throws on a `multipart/form-data` body, so no
-   * spec in this suite has ever posted an attachment on **any** surface. The
-   * wire, the bytes on disk under `.corpus/attachments/<thread>/<ts>/` and the
-   * markdown link in the turn are the issue's real-app drill — this file's
-   * header already states that division of evidence.
+   * **It stops before the send** — the test below it does not. That split used
+   * to be a fixture limit rather than a choice: `stubCorpus` recorded every
+   * request with `JSON.parse(postData())`, which throws on a
+   * `multipart/form-data` body, so no spec in this suite had ever posted an
+   * attachment on **any** surface. UI-116 lifted it. The bytes on disk under
+   * `.corpus/attachments/<thread>/<ts>/` and the markdown link in the turn
+   * remain the issue's real-app drill — this file's header already states that
+   * division of evidence.
    */
   test("takes files by picker, paste and drop, and previews them as chips", async ({ page }) => {
     await openTodosBoard(page);
@@ -488,6 +489,53 @@ test.describe("the comment action", () => {
     // And a chip comes back off.
     await composer.getByLabel("Remove pasted.png").click();
     await expect(chips).toHaveCount(2);
+  });
+
+  /**
+   * The other half of the test above, now that `stubCorpus` can record a
+   * multipart body (UI-116): the files a plugin's composer showed chips for
+   * actually leave the browser, on the same `POST /api/threads` as the quote.
+   *
+   * The chips are the easy half — a chip is an object URL and some DOM. What
+   * this asserts is the request: two file parts under the name the route
+   * declares, the prose under multipart's spelling of it, and the item's
+   * selector still attached, because a comment that reached the server having
+   * quietly dropped either is the failure a chip cannot show.
+   */
+  test("posts the files it took, on the same request as the item's quote", async ({ page }) => {
+    await openTodosBoard(page);
+    await itemRow(page, 2).click({ button: "right" });
+    await act(page, "comment").click();
+    const composer = page.locator("[data-todo-comment]");
+    await expect(composer).toHaveCount(1);
+
+    await page.setInputFiles('[data-attach-input="todo-item-comment"]', [
+      { name: "quote.txt", mimeType: "text/plain", buffer: Buffer.from("page 4\n") },
+      { name: "invoice.txt", mimeType: "text/plain", buffer: Buffer.from("482.00 GBP\n") },
+    ]);
+    await expect(composer.locator(".att-chip")).toHaveCount(2);
+
+    const posted = page.waitForRequest(
+      (request) => request.url().endsWith("/api/threads") && request.method() === "POST",
+    );
+    await page.locator("[data-todo-comment] textarea").fill("which plumber was it?");
+    await page.getByText("Comment ⌘↵").click();
+
+    const body = multipartBodyOf(await posted);
+    expect(body?.files.map((file) => [file.field, file.filename, file.size])).toEqual([
+      ["files", "quote.txt", 7],
+      ["files", "invoice.txt", 11],
+    ]);
+    const text = (field: string): string | undefined =>
+      body?.text.find((part) => part.field === field)?.value;
+    // `text`, not `body`: the multipart branch's spelling of a turn's prose
+    // (`packages/contract/src/client/upload.ts`), and a `400` from the real
+    // server if a composer sends the JSON one.
+    expect(text("text")).toBe("which plumber was it?");
+    expect(text("parent")).toBe(LIST_ID);
+    // One JSON-encoded part, so the file did not cost the comment its anchor.
+    const selector = JSON.parse(text("selector") ?? "null") as { readonly exact?: string };
+    expect(selector.exact).toBe("Call the plumber");
   });
 });
 

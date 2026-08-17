@@ -10,6 +10,7 @@ import {
   unreadableAnswer,
   unterminatedFence,
   validateFormAnswer,
+  type CaptureResult,
   type ConflictError,
   type CreateThreadResponse,
   type DeleteDocResult,
@@ -23,6 +24,7 @@ import {
   type FormAnswerRequest,
   type FormAnswerResponse,
   type AgentLane,
+  type AppendTurnResponse,
   type AgentRoster,
   type Job,
   type JobList,
@@ -48,7 +50,8 @@ import {
   type ValidationError,
   type ViewQuery,
 } from "@corpus/contract";
-import type { Page, Route } from "@playwright/test";
+import type { Page, Request, Route } from "@playwright/test";
+import { Buffer } from "node:buffer";
 import * as YAML from "yaml";
 import {
   canonicalInstant,
@@ -105,6 +108,8 @@ import {
  */
 type StubPayload =
   | AgentRoster
+  | AppendTurnResponse
+  | CaptureResult
   | ConflictError
   | CreateThreadResponse
   | DeleteDocResult
@@ -303,11 +308,159 @@ function nextStubKey(): string {
   return stubKeys.toString(16).padStart(64, "0");
 }
 
+/** One text part of a multipart body, in wire order. */
+export interface MultipartTextPart {
+  readonly field: string;
+  readonly value: string;
+}
+
+/**
+ * One file part. Enough to say *which* file went and under what part name — the
+ * question a spec about attachments actually asks — and no more: the bytes
+ * themselves are the server's business, and this stub has no disk.
+ */
+export interface MultipartFilePart {
+  readonly field: string;
+  readonly filename: string;
+  /** The part's own `Content-Type`, or `""` when it declared none. */
+  readonly type: string;
+  /** Byte length of the part's content. */
+  readonly size: number;
+}
+
+/**
+ * A `multipart/form-data` body, split into its two kinds of part (SPEC.md §6).
+ *
+ * **Deliberately not a general parser** (UI-116). It reads the three things the
+ * contract's own builders put on the wire — `Content-Disposition`'s `name` and
+ * `filename`, and a part's `Content-Type` — and nothing else: no nested
+ * multiparts, no `Content-Transfer-Encoding`, no RFC 2231 continuations, no
+ * header folding. `packages/contract/src/client/upload.ts` is the only thing
+ * that builds these bodies, and it builds them with `FormData`, so a part this
+ * cannot read is a part the application cannot send.
+ */
+export interface MultipartBody {
+  readonly text: readonly MultipartTextPart[];
+  readonly files: readonly MultipartFilePart[];
+}
+
 export interface StubRequest {
   readonly method: string;
   readonly path: string;
   readonly search: string;
+  /**
+   * The parsed JSON body, or `undefined` when the request carried none **or was
+   * multipart** — a multipart body is not JSON and pretending otherwise is what
+   * used to throw here. Read {@link StubRequest.multipart} for those.
+   */
   readonly body: unknown;
+  /** Present only for `multipart/form-data`; `body` is `undefined` alongside it. */
+  readonly multipart?: MultipartBody;
+}
+
+/** `boundary=` off a `multipart/form-data` content type, quoted or bare. */
+const MULTIPART_BOUNDARY = /^multipart\/form-data\s*;.*\bboundary=(?:"([^"]*)"|([^;\s]+))/i;
+
+/** `name="…"` / `filename="…"` out of a part's `Content-Disposition`. */
+const PART_NAME = /\bname="([^"]*)"/;
+const PART_FILENAME = /\bfilename="([^"]*)"/;
+const PART_TYPE = /^content-type:[ \t]*([^\r\n]*)$/im;
+
+/**
+ * Splits a multipart body into its parts.
+ *
+ * Byte-wise on purpose: a file part is arbitrary bytes, and decoding the whole
+ * body as UTF-8 first would both corrupt a PNG and make its reported size a
+ * count of replacement characters rather than of bytes. Only the headers and the
+ * *text* parts are decoded, which are the two places the format promises text.
+ */
+function parseMultipart(boundary: string, raw: Buffer): MultipartBody {
+  const text: MultipartTextPart[] = [];
+  const files: MultipartFilePart[] = [];
+  const delimiter = Buffer.from(`--${boundary}`, "utf8");
+  const separator = Buffer.from("\r\n\r\n", "utf8");
+
+  let at = raw.indexOf(delimiter);
+  while (at !== -1) {
+    const after = at + delimiter.length;
+    // The closing delimiter is `--boundary--`; everything past it is epilogue.
+    if (raw.subarray(after, after + 2).toString("utf8") === "--") break;
+    const headerEnd = raw.indexOf(separator, after);
+    if (headerEnd === -1) break;
+    const headers = raw.subarray(after, headerEnd).toString("utf8");
+    const next = raw.indexOf(delimiter, headerEnd);
+    // The CRLF before the next delimiter belongs to the delimiter, not the part.
+    const contentEnd = (next === -1 ? raw.length : next) - 2;
+    const content = raw.subarray(headerEnd + separator.length, Math.max(contentEnd, headerEnd));
+
+    const field = PART_NAME.exec(headers)?.[1];
+    const filename = PART_FILENAME.exec(headers)?.[1];
+    if (field !== undefined) {
+      if (filename === undefined) text.push({ field, value: content.toString("utf8") });
+      else {
+        files.push({
+          field,
+          filename,
+          type: PART_TYPE.exec(headers)?.[1]?.trim() ?? "",
+          size: content.length,
+        });
+      }
+    }
+    at = next;
+  }
+
+  return { text, files };
+}
+
+/**
+ * A multipart body read the way a JSON body's handlers read theirs, so one
+ * handler can answer both halves of a route that declares both (SPEC.md §6).
+ *
+ * **Field names are kept verbatim** — the multipart branch spells a turn's prose
+ * `text` where the JSON branch spells it `body`
+ * (`packages/contract/src/client/upload.ts`), and folding the two spellings into
+ * one here would let a composer send the wrong one and still be answered. Only
+ * the two *encodings* the format forces are undone: every multipart value is a
+ * string, so `requestsAgent` arrives as `"true"`, and the selector arrives as
+ * one JSON-encoded part.
+ */
+/**
+ * The multipart body of a request, or `undefined` when it carried none.
+ *
+ * Exported for the specs that answer a route **themselves** — a refusal
+ * registered ahead of the stub, which never reaches the recorder — so a test
+ * about what happens to a refused upload can still say what it refused. Without
+ * it such a test can assert only that a request went, which is satisfied by a
+ * composer that attached nothing.
+ */
+export function multipartBodyOf(request: Request): MultipartBody | undefined {
+  const boundary = MULTIPART_BOUNDARY.exec(request.headers()["content-type"] ?? "");
+  if (boundary === null) return undefined;
+  return parseMultipart(
+    boundary[1] ?? boundary[2] ?? "",
+    request.postDataBuffer() ?? Buffer.alloc(0),
+  );
+}
+
+/**
+ * A posted turn's prose, under whichever name it arrived: `body` on a JSON body,
+ * `text` on a multipart one. Empty when neither is present, which is an
+ * attachment-only turn (SPEC.md §6) rather than an error.
+ */
+function prose(input: Record<string, unknown>): string {
+  if (typeof input["body"] === "string") return input["body"];
+  if (typeof input["text"] === "string") return input["text"];
+  return "";
+}
+
+function fieldsOf(body: MultipartBody): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (const part of body.text) {
+    if (part.field === "requestsAgent") fields[part.field] = part.value === "true";
+    else if (part.field === "selector") fields[part.field] = JSON.parse(part.value) as unknown;
+    else fields[part.field] = part.value;
+  }
+  return fields;
 }
 
 /**
@@ -627,6 +780,7 @@ export async function stubCorpus(
   const jobs: StubJob[] = [...(options.jobs ?? [])];
   const requests: StubRequest[] = [];
   let created = 0;
+  let appended = 0;
 
   const json = async (route: Route, payload: StubPayload, status = 200): Promise<void> => {
     await route.fulfill({
@@ -895,13 +1049,40 @@ export async function stubCorpus(
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();
-    const raw = request.postData();
+    /*
+     * The request, recorded before it is answered — JSON as it always was, and
+     * multipart **beside** it rather than instead of it (UI-116).
+     *
+     * This line used to be `JSON.parse(request.postData())` unconditionally,
+     * which throws on a `multipart/form-data` body: the route handler died, the
+     * request hung, and so no spec in the suite had ever posted an attachment on
+     * any surface. Every composer §11's rider binds now can, so the send path
+     * has to be recordable, and the JSON path has to keep behaving exactly as it
+     * did — every other spec in this directory reads `body`.
+     */
+    const multipart = multipartBodyOf(request);
+    const raw = multipart === undefined ? request.postData() : null;
     requests.push({
       method,
       path: url.pathname,
       search: url.search,
       body: raw === null ? undefined : (JSON.parse(raw) as unknown),
+      ...(multipart === undefined ? {} : { multipart }),
     });
+
+    /**
+     * The fields of the request now being answered, whichever way they arrived.
+     * The routes the contract declares in **both** encodings read this rather
+     * than `requests.at(-1)?.body`, so one branch answers both halves; the
+     * JSON-only routes below still read `body` directly, because for them the
+     * two are the same thing and the indirection would only hide it.
+     */
+    const inputOf = (): Record<string, unknown> => {
+      const entry = requests.at(-1);
+      if (entry === undefined) return {};
+      if (entry.multipart !== undefined) return fieldsOf(entry.multipart);
+      return (entry.body ?? {}) as Record<string, unknown>;
+    };
 
     /*
      * `GET /api/jobs` — the queue's own rows, filtered the way the server
@@ -1024,7 +1205,7 @@ export async function stubCorpus(
      */
     if (url.pathname === "/api/threads" && method === "POST") {
       created += 1;
-      const input = (requests.at(-1)?.body ?? {}) as Record<string, unknown>;
+      const input = inputOf();
       const parentId = typeof input["parent"] === "string" ? input["parent"] : "";
       const thread = seeded({
         id: `th_new${String(created)}`,
@@ -1044,7 +1225,10 @@ export async function stubCorpus(
       const firstTurn: StubTurn = {
         author: "user",
         ts: canonicalInstant(thread.updated),
-        body: typeof input["body"] === "string" ? input["body"] : "",
+        // `body` on the JSON branch, `text` on the multipart one, and absent on
+        // an attachment-only first turn — which SPEC.md §6 allows, and which is
+        // why the fallback is the empty string rather than a refusal.
+        body: prose(input),
         model: null,
       };
       thread.body = renderTurn(firstTurn);
@@ -1106,6 +1290,131 @@ export async function stubCorpus(
           eventId: input["requestsAgent"] === true ? `evt_new${String(created)}` : null,
           warnings: [],
         } satisfies CreateThreadResponse,
+        201,
+      );
+    }
+
+    /*
+     * `POST /api/threads/{id}/turns` — the reply box's send (SPEC.md §6, §8).
+     *
+     * Absent until UI-116, so every reply this suite ever sent fell through to
+     * the `{}` fallback at the bottom of this handler. That was survivable on
+     * the JSON branch — `unwrap` hands `{}` back and the optimistic turn simply
+     * never reconciles — but not on the multipart one: `uploadTurn` **parses**
+     * its response with `AppendTurnResponseSchema`, so `{}` is thrown as a
+     * failed upload and an attachment send could not be seen to succeed at all.
+     *
+     * It writes the turn into the thread's body for the reason
+     * `commitAnswerTurn` does: the turns a thread reports are parsed back out of
+     * these bytes, so a stub that answered `201` and changed nothing would let a
+     * spec assert a reply the corpus does not contain.
+     */
+    const appendTurn = /^\/api\/threads\/([^/]+)\/turns$/.exec(url.pathname);
+    if (appendTurn !== null && method === "POST") {
+      const id = decodeURIComponent(appendTurn[1] ?? "");
+      const doc = store.get(id);
+      if (doc === undefined || doc.type !== "thread") {
+        return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
+      }
+      const input = inputOf();
+      const files = requests.at(-1)?.multipart?.files ?? [];
+      /*
+       * An attachment-only turn is a real turn (SPEC.md §6). The server writes
+       * the markdown links to the stored bytes; this stub has no disk, so it
+       * writes the filenames — enough that the turn is not silently empty, and
+       * visibly not a claim about where anything landed.
+       */
+      const body =
+        prose(input) === ""
+          ? files.map((file) => `![${file.filename}](${file.filename})`).join("\n")
+          : prose(input);
+      stampUpdated(doc);
+      const turn: StubTurn = {
+        author: "user",
+        ts: canonicalInstant(doc.updated),
+        body,
+        model: null,
+      };
+      doc.body = `${doc.body.trimEnd()}\n\n${renderTurn(turn)}`;
+      const turns = parseThreadTurns(doc.body);
+      // §8's tri-state, read exactly as `POST /api/threads` reads it: the stub
+      // parses no mentions, so an omitted flag enqueues nothing.
+      const requestsAgent = input["requestsAgent"] === true;
+      if (requestsAgent) doc.agent = "requested";
+      // Its own counter, deliberately: `created` numbers the *documents* this
+      // stub invents, and several specs read `th_new1` / `anc_new1` off it. A
+      // reply creates no document, so borrowing that counter would renumber
+      // every thread created after a reply in the same test.
+      appended += 1;
+      return json(
+        route,
+        {
+          thread: {
+            id,
+            title: doc.title,
+            status: threadStatusOf(doc),
+            parent: doc.parent,
+            anchor: null,
+            agent: doc.agent,
+            resident: null,
+            created: SEEDED_AT,
+            updated: doc.updated,
+            turnCount: turns.length,
+            lastAuthor: "user",
+            lastTs: turn.ts,
+          },
+          turn,
+          eventId: requestsAgent ? `evt_turn${String(appended)}` : null,
+          warnings: [],
+        } satisfies AppendTurnResponse,
+        201,
+      );
+    }
+
+    /*
+     * `POST /api/capture` — the global composer's second submit (SPEC.md §11).
+     *
+     * Multipart-only on the wire, which is why it had no handler here before
+     * UI-116: the recorder threw on the body before this branch could have run.
+     * One call, two documents — the inbox note and its filing thread — because
+     * that is what the route's result names, and a board asserting "it appeared"
+     * has to have something to find.
+     */
+    if (url.pathname === "/api/capture" && method === "POST") {
+      const input = inputOf();
+      created += 1;
+      const text = prose(input);
+      const doc = seeded({
+        id: `doc_cap${String(created)}`,
+        type: "note",
+        title: text.split("\n")[0]?.slice(0, 60) ?? "Captured",
+        path: `data/docs/inbox/cap${String(created)}.md`,
+        body: text,
+      });
+      store.set(doc.id, doc);
+      const filing = seeded({
+        id: `th_cap${String(created)}`,
+        type: "thread",
+        title: `Filing: ${doc.title}`,
+        path: `data/docs/threads/th_cap${String(created)}.md`,
+        parent: doc.id,
+      });
+      filing.body = renderTurn({
+        author: "user",
+        ts: canonicalInstant(filing.updated),
+        body: text,
+        model: null,
+      });
+      filing.agent = input["requestsAgent"] === true ? "requested" : "none";
+      store.set(filing.id, filing);
+      return json(
+        route,
+        {
+          docId: doc.id,
+          threadId: filing.id,
+          eventId: input["requestsAgent"] === true ? `evt_cap${String(created)}` : null,
+          warnings: [],
+        } satisfies CaptureResult,
         201,
       );
     }
