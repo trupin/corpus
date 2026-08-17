@@ -30,6 +30,30 @@ describe("residentOrNull", () => {
       docId: "doc_a1b2c3",
     });
   });
+
+  // SPEC.md §7's SHARED-048 rider. Two nulls under a present `resident:` key is
+  // a **general** resident — a designated conversation whose agent has no
+  // persona document — and folding it into "nobody" here would silently undo
+  // every general designation on the next read of the file. Releasing removes
+  // the key, which is why absence and this stay different states.
+  it("reads both halves null as a general resident, not as no resident", () => {
+    expect(residentOrNull({ name: null, docId: null })).toEqual({ name: null, docId: null });
+  });
+
+  // The combination that is not a state: a document nobody named. `ResidentSchema`
+  // refines it away, so it degrades to no resident like any other malformed value.
+  it("reads a document id with no name as no resident", () => {
+    expect(residentOrNull({ name: null, docId: "doc_a1b2c3" })).toBeNull();
+  });
+
+  // A profile that has gone: the designation stands, and the miss is reported.
+  // Distinguishable from the general case by the name being there.
+  it("reads a name with a null document as a designation whose profile is missing", () => {
+    expect(residentOrNull({ name: "researcher", docId: null })).toEqual({
+      name: "researcher",
+      docId: null,
+    });
+  });
 });
 
 describe("storedResident", () => {
@@ -44,5 +68,11 @@ describe("storedResident", () => {
   // passage. The routes refuse to write one there; this is the other way in.
   it("reads nothing off a thread that has a parent", () => {
     expect(storedResident(resident, "doc_parent1")).toBeNull();
+  });
+
+  it("reads a general designation off a standalone thread, and none off a parented one", () => {
+    const general = { name: null, docId: null };
+    expect(storedResident(general, null)).toEqual(general);
+    expect(storedResident(general, "doc_parent1")).toBeNull();
   });
 });

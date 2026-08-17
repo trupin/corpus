@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -38,22 +38,22 @@ reaches that lookup at all; a **named** one still must, and must still refuse.
 
 ## Acceptance Criteria
 
-- [ ] A designation naming no profile succeeds on a standalone thread and makes
+- [x] A designation naming no profile succeeds on a standalone thread and makes
       the thread a lane
-- [ ] A designation naming a profile behaves exactly as it does today, including
+- [x] A designation naming a profile behaves exactly as it does today, including
       the `404` for a name that resolves to nothing
-- [ ] The thread's frontmatter records a general residency in a form that
+- [x] The thread's frontmatter records a general residency in a form that
       round-trips through the projection and is legible on disk to a person
       reading the markdown
-- [ ] `GET /api/agents` lists the lane with a general resident, `live` computed
+- [x] `GET /api/agents` lists the lane with a general resident, `live` computed
       exactly as it is for a profiled one
-- [ ] `resident.designated` is enqueued on the **orchestrator's** lane as today,
+- [x] `resident.designated` is enqueued on the **orchestrator's** lane as today,
       carrying whatever CONTRACT-061 defined for a general resident
-- [ ] Lane routing, scope walking, presence, the grace-window fallback, release,
+- [x] Lane routing, scope walking, presence, the grace-window fallback, release,
       and **resolution releasing the resident** are provably unchanged — each
       covered by a test that would fail if a general resident took a different
       path
-- [ ] `assertRecipientResolvable` / `assertScopeIsLane` treat a general-resident
+- [x] `assertRecipientResolvable` / `assertScopeIsLane` treat a general-resident
       lane as a lane: `isDesignatedRoot` currently requires
       `resident_name IS NOT NULL`, which a general residency must still satisfy
       or presence and recipients silently break
@@ -131,15 +131,146 @@ a server that quietly routed general residents to the orchestrator.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Model: opus.** Run 2026-08-17, real `corpus init` workspace at
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s121ws`, real server on **8838**
+(not 8765, not 5173), real files, real git, real queue directory. Server stopped
+and port confirmed free at the end.
+
+### The decision, first
+
+**A general residency is `resident_designated INTEGER NOT NULL DEFAULT 0`, a new
+column beside `resident_name` / `resident_doc_id`** — never a reserved value in
+the name. Two independent questions since the rider: *is this a lane* and *which
+profile*. `isDesignatedRoot`, the scope walk's `NODE_SQL` and the roster's
+`DESIGNATED_LANES_SQL` all moved to the flag; the name columns are now
+legitimately NULL on a designated row. A sentinel string in `resident_name` was
+refused because it reaches the roster, the composer's recipient list and the
+board badge indistinguishable from a real agent-def of that title, and because
+`residentOrNull` would then have to un-say it in three readers. `SCHEMA_VERSION`
+17 → 18; every value is re-derived from the thread files, so the rebuild the bump
+triggers is the whole migration.
+
+**On disk** the general residency is the same `{name, docId}` mapping the wire
+carries, with both halves null — one grammar, not two:
+
+```yaml
+resident:
+  name: null
+  docId: null
+```
+
+### 1–3. Designate with no profile, on a fresh workspace with no agent-defs
+
+`POST /api/threads/th_reymyuos/resident` with **no body and no content-type**:
+
+- `200`, `thread.resident = {"name": null, "docId": null}`, `warnings: []`
+- markdown on disk carries the block above (verified by reading the file)
+- `git log`: `291acac user resident designate: general resident on Can we talk
+  about the archive? (th_reymyuos) by user` — one commit, authored `user`
+- `GET /api/agents` lists two lanes: `orchestrator` (resident `null`) and
+  `th_reymyuos` with `resident {"name": null, "docId": null}`, `live: false`,
+  `origin {id, title}`
+- projection: `th_reymyuos|1|<null>|<null>` (`resident_designated`, name, docId)
+- `resident.designated` written with **`lane: orchestrator`** and payload
+  `{"threadId": "th_reymyuos", "resident": {"name": null, "docId": null}}`
+
+### 4. Lane routing, the partition, presence, the fallback
+
+Posting `requestsAgent: true` in the thread stamped `comment.created` with
+`lane: th_reymyuos` (the designation stayed on `orchestrator`).
+
+With a scoped `idle` parked on the lane: `GET /api/agents` reports `live: true`
+for it, `GET /api/queue/status` reports `agent.live true`; the **unscoped**
+`claim-all` returned only `[('resident.designated', …)]` and the **scoped** one
+returned `[('comment.created', …)]`. Presence, the partition and the addressing
+guard therefore all admit a general resident.
+
+### 5. Resolution releases it
+
+`POST .../resolve` → roster back to `['orchestrator']`, `resident:` key gone from
+the frontmatter (`grep -c '^resident:'` → 0), `resident_designated` → 0, one
+commit `thread resolve: … by user`.
+
+### 6. Identical with a named profile
+
+Seeded `.claude/agents/researcher.md`, designated `{"name":"researcher"}` on a
+second thread: `{"name":"researcher","docId":"doc_agentdef9aac2cc9"}`, commit
+`resident designate: researcher on …`, row `1|researcher|doc_agentdef9aac2cc9`.
+**The same script** then produced the same output at every step — live `true`,
+unscoped claim blind to the lane, scoped claim seeing it, resolve emptying the
+roster. The only differences anywhere are the resident's two fields and the word
+in the commit subject.
+
+### Refusal matrix, against the running server
+
+| request | status |
+| --- | --- |
+| bare `POST`, no body | `200` |
+| `{}` | `200` |
+| `{"name": null}` | `400` |
+| `{"name": "   "}` / `{"name": ""}` | `400` |
+| `{"name": "nobody"}` | `404` |
+| `{"agent": "researcher"}` (strict body) | `400` |
+| bare `POST` as `x-corpus-author: agent` | `403` |
+| bare `POST` on an unknown thread | `404` |
+| bare **and** named `POST` on a parented thread | `409` |
+
+### Replacement both ways, and a profile that has gone
+
+general → profiled → general on one thread: one commit each way
+(`resident designate: researcher on …`, then `resident designate: general
+resident on …`). After deleting the agent-def, the profiled thread reads
+`{"name": "researcher", "docId": null}` while the general one reads
+`{"name": null, "docId": null}` — §7's "the missing profile is reported rather
+than silently substituted", and the two states stay distinguishable. The gone
+profile is **still a lane** (`resident_designated` = 1).
+
+`corpus db doctor`: *projection is clean — 17 documents from 17 files (4ms)*.
+
+### Falsification (the issue's requirement, done three ways)
+
+Each break was applied to the shipped code, the suites re-run, then reverted.
+
+1. `isDesignatedRoot` + `NODE_SQL` back to `resident_name` — **12 tests red**,
+   across routing (4), the lane predicate (1), recipient resolution (1), the park
+   guard (1), roster liveness (1) and the end-to-end partition (4).
+2. `DESIGNATED_LANES_SQL` back to `resident_name` — **4 tests red**: the roster
+   listing, the general-vs-gone distinction, general liveness, and the lane
+   leaving the roster on release.
+3. Projector writing the flag from the name (`resident?.name == null ? 0 : 1`) —
+   **8 tests red**, including the round-trip through a rebuilt projection.
+
+A server quietly routing general residents to the orchestrator fails every one of
+these; none of them is satisfiable by the profiled path alone.
+
+### Checks
+
+- `VITEST_MAX_THREADS=4 vitest run apps/server`: **191 files, 4065 tests, all
+  passing**
+- `tsc --noEmit` in `apps/server`: exit 0
+- `eslint apps/server/src`: no issues; `prettier --check apps/server/src`: clean
+- `npm run build` stops at `apps/cli` (CLI-049 has not landed) — expected, not
+  this issue's; `packages/contract` and `packages/kit` build clean, which is what
+  `apps/server` resolves against
+
+### Unresolved
+
+Nothing blocking. One behaviour change worth naming for review: `currentResident`
+previously answered a **stale** `docId` when the name resolved to nothing; it now
+answers `null`. That is what CONTRACT-061's third row requires and what its
+`docId` description states ("what `name` resolves to right now"), and it is the
+failure the re-read was introduced to prevent — but it changes what `GET
+/api/threads/{id}` and `GET /api/agents` say about a designation whose agent-def
+was deleted, so UI-122 and AGENT-033 should expect `null` there rather than a
+dead id.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

@@ -39,12 +39,14 @@ export interface RosterDeps {
 /**
  * The lanes a designation created, **by the same predicate the walk uses**.
  *
- * `queue/scope.ts`'s `isDesignatedRoot` asks `parent_id IS NULL AND resident_name
- * IS NOT NULL`, and this asks it of every row rather than of one. They have to
- * agree: a lane the enqueue path will stamp events with and the roster does not
- * list is work addressed to a conversation nobody can see is being addressed,
- * and a row here for a thread the walk would not route to is a recipient the
- * composer offers and the queue refuses.
+ * `queue/scope.ts`'s `isDesignatedRoot` asks `parent_id IS NULL AND
+ * resident_designated = 1`, and this asks it of every row rather than of one.
+ * They have to agree: a lane the enqueue path will stamp events with and the
+ * roster does not list is work addressed to a conversation nobody can see is
+ * being addressed, and a row here for a thread the walk would not route to is a
+ * recipient the composer offers and the queue refuses. Keying either on
+ * `resident_name` would have dropped every **general** resident's lane off this
+ * list while the queue went on routing to it (SHARED-048, SERVER-121).
  *
  * The title comes from `documents`, which every projected file has a row in — a
  * thread is a document (§6) — and is read at response time so a renamed
@@ -57,13 +59,14 @@ const DESIGNATED_LANES_SQL = `
          threads.resident_doc_id AS residentDocId
   FROM threads
   JOIN documents ON documents.id = threads.id
-  WHERE threads.parent_id IS NULL AND threads.resident_name IS NOT NULL
+  WHERE threads.parent_id IS NULL AND threads.resident_designated = 1
   ORDER BY documents.title, threads.id`;
 
 interface DesignatedRow {
   readonly id: string;
   readonly title: string;
-  readonly residentName: string;
+  /** The profile the designation named; `null` for a general resident. */
+  readonly residentName: string | null;
   readonly residentDocId: string | null;
 }
 
@@ -196,11 +199,12 @@ function row(deps: RosterDeps, lane: Lane, identity: LaneIdentity): AgentLane {
  * missing, and the roster showing the name is how a person sees *who* was
  * designated rather than a blank.
  *
- * A row whose `resident_doc_id` is missing — only reachable from a hand-edited
- * frontmatter, since the write path always stores both — still names a lane,
- * because `resident_name` is what the walk keys on. It reads as a lane with no
- * resident rather than as no lane, which is the difference between "we cannot
- * say who owns this" and "this conversation is not owned".
+ * **Both halves null is a *general* resident, never "nobody"** (SHARED-048,
+ * SERVER-121). The row exists because `resident_designated` is 1, so there is
+ * somebody here; what is null is the profile they were designated with. That is
+ * the whole reason this returns a `Resident` object with two nulls rather than
+ * `null`: on a roster row `resident: null` means the lane belongs to no
+ * conversation, which is true only of the orchestrator's.
  */
 function residentOf(projection: ProjectionDb, entry: DesignatedRow): Resident | null {
   const stored = residentOrNull({ name: entry.residentName, docId: entry.residentDocId });

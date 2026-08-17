@@ -15,6 +15,16 @@
 // entirely, and a corpus that predates a field must not become unreadable
 // because of it. What the value cannot do is be *half* honoured: the wire
 // promises `{name, docId}` or null, so anything else is null.
+//
+// **Both keys present with null values is a designation, not the absence of
+// one** (SPEC.md §7's SHARED-048 rider, SERVER-121). Since a designation may
+// name no profile, `{name: null, docId: null}` is how a *general* resident
+// spells itself on disk — a conversation that is designated and has no persona
+// document — and it is the one shape a reader must not fold into "nobody".
+// Releasing still **removes the key**, which is why absence and this are
+// different states and why nothing here has to tell a third one apart. Both keys
+// are still required to be present: `{}` and `{name: null}` are not the shape,
+// so a bare mapping under `resident:` stays a plugin's business.
 
 import { ResidentSchema, type Resident } from "@corpus/contract";
 
