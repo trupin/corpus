@@ -26,7 +26,7 @@ opus
 ## Spec References
 
 - SPEC.md **§7** — *"Who is running is a **read**, never a push"*
-- SPEC.md **§9.4** — invalidate keys
+- SPEC.md **§9.2** — invalidate keys
 
 ## Summary
 

@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§9.4** — invalidate keys
+- SPEC.md **§9.2** — invalidate keys
 
 ## Summary
 
@@ -187,8 +187,8 @@ test asserts the claimed count equals the rendered bullet count.
   watcher edits** though `watcher.ts:291` emits both, while `["docs"]` does.
   Incomplete rather than wrong, and a different family from this issue's, so it
   is recorded here rather than fixed silently.
-- **SPEC.md has no §9.4.** This issue, SERVER-115, SPEC §7 (line 329) and SPEC
-  §9.2's `GET /api/agents` bullet (line 459) all cite "§9.4 — invalidate keys";
+- **SPEC.md has no §9.2.** This issue, SERVER-115, SPEC §7 (line 329) and SPEC
+  §9.2's `GET /api/agents` bullet (line 459) all cite "§9.2 — invalidate keys";
   §9 stops at 9.3. A dangling spec cross-reference, needing sign-off rather than
   an agent's edit. Flagged, not touched.
 

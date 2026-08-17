@@ -4273,7 +4273,7 @@ export interface components {
              *
              *     **Information, never a gate.** Nothing is refused because of it, there is nothing to acquire and nothing to release, and no document is ever read-only. Correctness is the `key`'s job; this is politeness — a writer that ignores it is impolite, not incorrect. The agent is expected to leave the document alone and come back, and may defer its claimed queue event (`POST /api/queue/{id}/defer`, `blockedOn` this document) to say so; that deferral returns to `pending` on its own once the session ends.
              *
-             *     **Asymmetric on purpose**, because the two writers are: a person's editing is a session the server tracks, while the agent's writing is a sequence of one-shot commands with no session to report. So this never reports the agent, and the person instead sees the agent's writes land live (SPEC.md §9.4). Neither is a lock in the other direction.
+             *     **Asymmetric on purpose**, because the two writers are: a person's editing is a session the server tracks, while the agent's writing is a sequence of one-shot commands with no session to report. So this never reports the agent, and the person instead sees the agent's writes land live (SPEC.md §9.2). Neither is a lock in the other direction.
              */
             userEditing: boolean;
         };

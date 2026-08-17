@@ -25,9 +25,9 @@ opus
 ## Spec References
 
 - SPEC.md **§7** — *"Who is running is a **read**, never a push: the roster and
-  each lane's liveness are read behind the ordinary invalidate keys (§9.4), like
+  each lane's liveness are read behind the ordinary invalidate keys (§9.2), like
   any other projection."*
-- SPEC.md **§9.4** — invalidate keys
+- SPEC.md **§9.2** — invalidate keys
 
 ## Summary
 

@@ -17,7 +17,7 @@ import {
  * framed. Every query here is cached under a key the server names over SSE, so a
  * rename, an edit or a resolve landing out of band repaints both hosts with no
  * reload and no polling — including **the agent's own writes**, which reach this
- * hook as `["docs", id]` frames exactly as they always have (SPEC.md §9.4).
+ * hook as `["docs", id]` frames exactly as they always have (SPEC.md §9.2).
  * Nothing here ever read lock state, and there is none to read: SPEC.md §7
  * replaced it with a key the writer presents, and §11 makes the board never
  * read-only.
