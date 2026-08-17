@@ -594,6 +594,9 @@ export function DocView({
           // A comment on a document selection is not yet in a conversation, so
           // the nearest scope §11's rule can mean is the document itself.
           weightScope={docWeightScope(doc.frontmatter.id)}
+          // …and the scope walk starts at the same document: a comment on it is
+          // a thread on it, which is exactly what §7's walk climbs from.
+          recipientScope={doc.frontmatter.id}
           // Set only on a draft the layer re-opened after a refusal: the words
           // and the files the refused send was carrying (UI-111).
           restore={anchors.draft.restore}

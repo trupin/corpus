@@ -73,6 +73,9 @@ export function useCreateThread(
         // names a comment carrying a file among the surfaces that may state
         // one), so attaching a file cannot silently drop it.
         ...(input.weight === undefined ? {} : { weight: input.weight }),
+        // SPEC.md §7's recipient rides the multipart branch too: a summons that
+        // survived only the JSON path would be dropped by attaching a file.
+        ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
         files,
       });
     },

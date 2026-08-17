@@ -8,8 +8,10 @@ import {
   GLOBAL_COMPOSE_WEIGHT_SCOPE,
   handleComposerKeyDown,
   PendingAttachments,
+  RecipientPicker,
   useAttachmentIntake,
   useAutocomplete,
+  useComposerRecipient,
   useComposerWeight,
   WeightPicker,
   type PendingAttachment,
@@ -67,6 +69,18 @@ export const CAPTURE_LABEL = `Capture ${COMPOSER_SECONDARY_KEY}`;
 /** Why Capture can be unavailable while Ask is not: a document needs a body. */
 export const CAPTURE_NEEDS_TEXT = "A capture becomes a document — it needs a line of text.";
 
+/**
+ * Said while a recipient is picked and Capture is still available.
+ *
+ * `POST /api/capture` carries no `recipient` (CONTRACT-051): a capture files a
+ * thought and the filing is the orchestrator's. Saying so is the alternative to
+ * a composer that shows a pick and quietly drops it — the picker sits above both
+ * buttons, and only one of them can honour it.
+ */
+export const CAPTURE_IGNORES_RECIPIENT =
+  "Save to inbox/ — the agent files it. A capture is always the orchestrator's; " +
+  "the recipient applies to Ask.";
+
 export interface ComposeOverlayProps {
   readonly onClose: () => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -87,6 +101,13 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
    * true`, so the control is always live on this surface.
    */
   const weight = useComposerWeight(GLOBAL_COMPOSE_WEIGHT_SCOPE);
+  /**
+   * `null`: Ask creates a **standalone** thread, which is in no scope by
+   * construction, so the computed default here is the orchestrator without a
+   * walk. Picking a resident is §7's summons — the one deliberate crossing of a
+   * scope boundary — and it routes this message and nothing else.
+   */
+  const recipient = useComposerRecipient({ start: null });
   const live = composerReachesAgent({ requestsAgent: true });
 
   useEffect(() => {
@@ -137,7 +158,11 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
           text: body,
           files: attachments.map((attachment) => attachment.file),
           weight: weight.request,
+          recipient: recipient.request,
         });
+        // Either way: an override routes the message it was set on and never
+        // the next one (SPEC.md §7).
+        recipient.clear();
         if (ok) {
           intake.release(attachments);
           onClose();
@@ -151,7 +176,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         textarea.current?.focus();
       })();
     },
-    [canAsk, canCapture, compose, intake, onClose, text, weight.request],
+    [canAsk, canCapture, compose, intake, onClose, recipient, text, weight.request],
   );
 
   /**
@@ -215,6 +240,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
 
         <WeightPicker weight={weight} live={live} surface="compose" />
+        <RecipientPicker recipient={recipient} live={live} surface="compose" />
 
         <div className="compose-actions">
           <AttachButton surface="compose" onFiles={intake.add} />
@@ -224,7 +250,13 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
             type="button"
             className="btn-capture"
             disabled={!canCapture}
-            title={canCapture ? "Save to inbox/ — the agent files it" : CAPTURE_NEEDS_TEXT}
+            title={
+              canCapture
+                ? recipient.overridden
+                  ? CAPTURE_IGNORES_RECIPIENT
+                  : "Save to inbox/ — the agent files it"
+                : CAPTURE_NEEDS_TEXT
+            }
             onClick={() => {
               submit("capture");
             }}

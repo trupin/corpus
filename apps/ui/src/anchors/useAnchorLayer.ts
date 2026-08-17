@@ -157,8 +157,13 @@ export interface AnchorLayerOptions {
 interface CommentPost {
   readonly body: string;
   readonly requestsAgent: boolean;
-  /** Spread onto the request; `{}` when the composer stated no weight. */
-  readonly weight: { readonly weight?: string };
+  /**
+   * What the composer stated, spread onto the request; `{}` when it stated
+   * nothing. The weight the work should be done at (SPEC.md §11) and the lane it
+   * was addressed to (§7) — the latter present **only** on an override, because
+   * the default recipient travels by being absent.
+   */
+  readonly stated: { readonly weight?: string; readonly recipient?: string };
   /**
    * The composer's attachments, held with the rest of it — a comment that waits
    * out an edit session keeps its screenshot the way it keeps its words (§6).
@@ -241,7 +246,7 @@ export interface AnchorLayer {
   readonly submitComment: (
     body: string,
     requestsAgent: boolean,
-    weight: { readonly weight?: string },
+    stated: { readonly weight?: string; readonly recipient?: string },
     /** Taken from the composer; this layer frees them once the post settles. */
     attachments?: readonly PendingAttachment[],
   ) => void;
@@ -783,7 +788,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
           // Absent unless the composer stated one; a comment that waited out an
           // edit session carries the weight it was written with, not the one
           // standing when the buffer finally flushed.
-          ...input.weight,
+          ...input.stated,
           // Multipart or JSON is `useCreateThread`'s branch; an empty list must
           // not be sent as one, or a plain comment goes out as a file upload.
           ...(input.files.length === 0 ? {} : { files: input.files.map((held) => held.file) }),
@@ -813,7 +818,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     (
       text: string,
       requestsAgent: boolean,
-      weight: { readonly weight?: string },
+      stated: { readonly weight?: string; readonly recipient?: string },
       attachments: readonly PendingAttachment[] = [],
     ) => {
       if (draft === null) return;
@@ -825,7 +830,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       // leftovers as well as its own.
       const { restore: _spent, ...source } = draft;
       setDraft(null);
-      const job: CommentPost = { body: text, requestsAgent, weight, files: attachments };
+      const job: CommentPost = { body: text, requestsAgent, stated, files: attachments };
       if (editing) {
         queued.current = job;
         pendingDraft.current = { source, key };

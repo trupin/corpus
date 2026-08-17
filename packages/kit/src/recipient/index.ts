@@ -1,0 +1,66 @@
+/**
+ * SPEC.md §7's *"Every message has a recipient, and where you post computes
+ * it"*, as one unit.
+ *
+ * Five parts, and the split is the design:
+ *
+ *   - `scopeWalk.ts` — the pure walk. The **only** client-side reading of §7's
+ *     scope rule, and it decides nothing that reaches the wire.
+ *   - `useScopeWalk.ts` — where the walk's nodes come from: the same cached
+ *     document and thread reads the board already holds.
+ *   - `laneRows.ts` — how a roster row reads: the name, the liveness and the one
+ *     line. Pure, because the honesty is in the wording.
+ *   - `useComposerRecipient.ts` — the default, the one-message override, and the
+ *     `{}`-or-`{recipient}` a composer spreads onto its request.
+ *   - `RecipientPicker.tsx` — the control.
+ *
+ * It ships from the kit rather than from `apps/ui` for the reason `WeightPicker`
+ * does: five first-party composers mount it, and a composer a plugin
+ * contributes must be able to offer the same roster with one import.
+ */
+
+export {
+  laneLine,
+  laneLiveness,
+  laneName,
+  laneRow,
+  laneRows,
+  unknownLaneRow,
+  LAPSED_FALLBACK,
+  LAPSED_ORCHESTRATOR,
+  LIVE_WITHOUT_SUMMARY,
+  NEVER_SEEN_LINE,
+  ORCHESTRATOR_LABEL,
+  UNNAMED_RESIDENT_LABEL,
+  type LaneLiveness,
+  type LaneRow,
+} from "./laneRows.js";
+export {
+  DEFAULT_ROW_NOTE,
+  RECIPIENT_GROUP_LABEL,
+  RECIPIENT_INERT_TITLE,
+  RECIPIENT_LIVE_TITLE,
+  RECIPIENT_PICKER_LABEL,
+  RECIPIENT_UNKNOWN_STATEMENT,
+  RecipientPicker,
+  statementFor,
+  type RecipientPickerProps,
+} from "./RecipientPicker.js";
+export {
+  laneOf,
+  walkToLane,
+  MAX_SCOPE_WALK,
+  type LanePredicate,
+  type ScopeNode,
+  type ScopeNodeLookup,
+  type ScopeWalk,
+  type ScopeWalkLane,
+  type ScopeWalkOrchestrator,
+  type ScopeWalkUnread,
+} from "./scopeWalk.js";
+export {
+  useComposerRecipient,
+  type ComposerRecipient,
+  type ComposerRecipientInput,
+} from "./useComposerRecipient.js";
+export { designatedLanes, isThreadId, useScopeWalk, type ScopeWalkInput } from "./useScopeWalk.js";

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import type { QueueStatus } from "@corpus/contract";
-import { QUEUE_KEY } from "@corpus/kit";
+import { humanizeElapsed, QUEUE_KEY } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { QueryClient } from "@tanstack/react-query";
 import { act, cleanup, render } from "@testing-library/react";
@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { liveQueue, QUIET_QUEUE, readerTransport } from "../testing/readerFixture";
 import {
   ELAPSED_AFTER_MS,
-  humanizeElapsed,
   LONGER_AFTER_MS,
   NO_AGENT_CLAUSE,
   PendingIndicator,

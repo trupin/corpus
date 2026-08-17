@@ -1,4 +1,14 @@
-import type { Doc, DocRow, Job, QueueStatus, RelatedDoc, Thread, Warning } from "@corpus/contract";
+import type {
+  AgentLane,
+  AgentRoster,
+  Doc,
+  DocRow,
+  Job,
+  QueueStatus,
+  RelatedDoc,
+  Thread,
+  Warning,
+} from "@corpus/contract";
 import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
@@ -71,6 +81,15 @@ export interface ReaderTransportOptions {
    * runs no agent; a test asserting the other wording seeds a live one.
    */
   readonly queue?: QueueStatus;
+  /**
+   * Designated lanes `GET /api/agents` answers with, beside the orchestrator's
+   * unconditional row (SPEC.md §7's roster, UI-108).
+   *
+   * Empty by default, and that is what keeps every suite written before UI-108
+   * describing the composer correctly: with one lane there is nothing to choose
+   * between, so the recipient control draws nothing at all.
+   */
+  readonly lanes?: readonly AgentLane[];
   /** `"<METHOD> <pathname>"` → status, for the failure paths. */
   readonly failing?: Readonly<Record<string, number>>;
   /**
@@ -226,6 +245,20 @@ export function liveQueue(since: string): QueueStatus {
   return { ...QUIET_QUEUE, agent: { live: true, since } };
 }
 
+/**
+ * The orchestrator's roster row — always present, because the contract says so:
+ * "a caller that finds an empty list has found a bug rather than a workspace
+ * with no agents".
+ */
+const ORCHESTRATOR_ROW: AgentLane = {
+  lane: "orchestrator",
+  resident: null,
+  live: false,
+  since: null,
+  summary: null,
+  origin: null,
+};
+
 export function readerTransport(options: ReaderTransportOptions = {}): ReaderTransport {
   const calls: ReaderCall[] = [];
   const docs = new Map((options.docs ?? []).map((doc) => [doc.frontmatter.id, doc]));
@@ -267,6 +300,16 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
 
     if (url.pathname === "/api/jobs") return json({ jobs: answerJobs(jobs, url) });
     if (url.pathname === "/api/queue/status") return json(options.queue ?? QUIET_QUEUE);
+    /*
+     * `GET /api/agents` — §7's roster (UI-108). The orchestrator's row is
+     * unconditional on the wire, so it is answered rather than seeded; a suite
+     * that wants a designated lane adds it through `lanes`. With one lane the
+     * recipient picker draws nothing, which is what every suite written before
+     * this feature expects to see.
+     */
+    if (url.pathname === "/api/agents") {
+      return json({ agents: [ORCHESTRATOR_ROW, ...(options.lanes ?? [])] } satisfies AgentRoster);
+    }
     if (url.pathname === "/api/tree") return json({ folders: [] });
 
     if (url.pathname === "/api/docs" && request.method === "GET") {

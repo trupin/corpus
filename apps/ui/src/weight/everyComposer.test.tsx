@@ -178,6 +178,7 @@ function commentPopoverProbe(body: string): Probe {
         left={80}
         pending={false}
         weightScope="doc:doc_a"
+        recipientScope="doc_a"
         onSubmit={onSubmit}
         onClose={() => undefined}
       />

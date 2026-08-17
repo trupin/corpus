@@ -5,7 +5,9 @@ import {
   composerReachesAgent,
   handleComposerKeyDown,
   PendingAttachments,
+  RecipientPicker,
   useAttachmentIntake,
+  useComposerRecipient,
   useComposerWeight,
   useCreateThread,
   WeightPicker,
@@ -67,6 +69,9 @@ export function NewChildThread({
    * case in §11's clothing. Presentation only, as before: the choice is kept.
    */
   const weight = useComposerWeight(childThreadWeightScope(parentThreadId));
+  // The child thread's parent is this thread, so the walk starts where the
+  // comment lands — the same node the server's enqueue walk would start from.
+  const recipient = useComposerRecipient({ start: parentThreadId });
   const live = composerReachesAgent({ requestsAgent: false });
 
   // Either alone is a comment (SPEC.md §6): a first turn needs text, a file, or
@@ -88,6 +93,7 @@ export function NewChildThread({
         // until the person says otherwise, and the child card's composer is
         // where they say it.
         requestsAgent: false,
+        ...recipient.request,
         ...weight.request,
         // Present only when there are files: an empty list would send a plain
         // comment as a multipart upload (`useCreateThread`).
@@ -97,6 +103,8 @@ export function NewChildThread({
       },
       {
         onSuccess: () => {
+          // §7: an override routes one message and never persists past it.
+          recipient.clear();
           setText("");
           // By id, not by emptying: a file added while the post was in flight
           // was never sent and must survive it.
@@ -104,6 +112,7 @@ export function NewChildThread({
           onDone();
         },
         onError: (error) => {
+          recipient.clear();
           onNotify({ tone: "error", message: `Comment failed — ${error.message}` });
         },
       },
@@ -137,6 +146,7 @@ export function NewChildThread({
         }}
       />
       <WeightPicker weight={weight} live={live} surface={`child:${parentThreadId}`} />
+      <RecipientPicker recipient={recipient} live={live} surface={`child:${parentThreadId}`} />
       <div className="composer-foot">
         <AttachButton surface={`child:${parentThreadId}`} onFiles={intake.add} />
         <span className="composer-hint">creates a child thread</span>

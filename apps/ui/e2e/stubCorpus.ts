@@ -22,6 +22,8 @@ import {
   type Form,
   type FormAnswerRequest,
   type FormAnswerResponse,
+  type AgentLane,
+  type AgentRoster,
   type Job,
   type JobList,
   type MarkSeenResult,
@@ -102,6 +104,7 @@ import {
  * the unhandled-route fallback (UI-085) is the only one shipped.
  */
 type StubPayload =
+  | AgentRoster
   | ConflictError
   | CreateThreadResponse
   | DeleteDocResult
@@ -352,6 +355,17 @@ export interface StubOptions {
    * without an agent process is actually in.
    */
   readonly agent?: QueueStatus["agent"];
+  /**
+   * The lanes `GET /api/agents` answers with (SPEC.md §7's roster) — **beyond**
+   * the orchestrator's row, which the stub always includes because the contract
+   * says it is unconditional.
+   *
+   * Seeded for `agent`'s reason and one of its own: a composer's recipient
+   * picker draws nothing at all when the roster names one lane (UI-108), so a
+   * spec that wants the control has to designate something, and a spec that does
+   * not gets the composer exactly as it was before the feature.
+   */
+  readonly lanes?: readonly AgentLane[];
 }
 
 export interface StubCorpus {
@@ -949,6 +963,31 @@ export async function stubCorpus(
         abandoned: 0,
         halted: false,
       } satisfies QueueStatus);
+    }
+
+    /*
+     * `GET /api/agents` — §7's roster (SPEC.md §7, UI-108).
+     *
+     * The orchestrator's row is unconditional on the wire ("a caller that finds
+     * an empty list has found a bug rather than a workspace with no agents"), so
+     * it is here rather than seeded, and `options.lanes` adds the designated ones
+     * a spec asked for. Its liveness follows `options.agent` for the same reason
+     * the contract aggregates the two: `QueueStatus.agent.live` is true exactly
+     * when some lane is, and a stub that let them disagree would be teaching the
+     * suite a state the server cannot produce.
+     */
+    if (url.pathname === "/api/agents") {
+      const orchestrator: AgentLane = {
+        lane: "orchestrator",
+        resident: null,
+        live: options.agent?.live ?? false,
+        since: options.agent?.since ?? null,
+        summary: null,
+        origin: null,
+      };
+      return json(route, {
+        agents: [orchestrator, ...(options.lanes ?? [])],
+      } satisfies AgentRoster);
     }
 
     if (url.pathname === "/api/docs" && method === "GET") {

@@ -1,5 +1,5 @@
 import { isAgentPresent } from "@corpus/contract";
-import { useQueueStatus } from "@corpus/kit";
+import { humanizeElapsed, useQueueStatus } from "@corpus/kit";
 import { useEffect, useState, type ReactElement } from "react";
 
 /**
@@ -75,16 +75,6 @@ export const ELAPSED_AFTER_MS = 15 * 60_000;
 
 /** Coarse on purpose: nothing here changes faster than every 45 s. */
 const TICK_MS = 15_000;
-
-/** `18m`, `2h 05m`, `1d 03h` — the shape the row already uses for ages. */
-export function humanizeElapsed(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${String(minutes)}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${String(hours)}h ${String(minutes % 60).padStart(2, "0")}m`;
-  const days = Math.floor(hours / 24);
-  return `${String(days)}d ${String(hours % 24).padStart(2, "0")}h`;
-}
 
 export function workingLabel(elapsedMs: number): string {
   if (elapsedMs >= ELAPSED_AFTER_MS) return `still working — ${humanizeElapsed(elapsedMs)}`;

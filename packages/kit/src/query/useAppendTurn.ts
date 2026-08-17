@@ -30,6 +30,20 @@ export interface AppendTurnVariables {
    */
   readonly weight?: string;
   /**
+   * The lane this turn is addressed to (SPEC.md §7): `orchestrator`, or the id
+   * of a designated root thread.
+   *
+   * **Omit it for the default**, which the server computes from where the turn
+   * is posted. A composer that has worked out the default itself still omits it
+   * — absence is the ordinary case, and it is the only spelling of it, so the
+   * client's rule and the server's cannot come apart. Present only on §7's
+   * one-message override, which routes that message and nothing else.
+   *
+   * On **both** request shapes, for the reason `weight` is: a recipient that
+   * survived only the JSON path would be silently dropped by attaching a file.
+   */
+  readonly recipient?: string;
+  /**
    * Attachments (SPEC.md §6). Present and non-empty switches the request to
    * `multipart/form-data`; a turn carrying files may have an empty `body`.
    */
@@ -68,14 +82,21 @@ export function useAppendTurn(
       const requestsAgent =
         variables.requestsAgent === undefined ? {} : { requestsAgent: variables.requestsAgent };
       const weight = variables.weight === undefined ? {} : { weight: variables.weight };
+      const recipient = variables.recipient === undefined ? {} : { recipient: variables.recipient };
       // Two requests, one call site: the JSON route cannot carry a repeated
       // binary part, and the multipart route names the prose field `text`.
       if (files.length === 0)
-        return client.appendTurn(threadId, { body: variables.body, ...requestsAgent, ...weight });
+        return client.appendTurn(threadId, {
+          body: variables.body,
+          ...requestsAgent,
+          ...weight,
+          ...recipient,
+        });
       return client.appendTurnWithFiles(threadId, {
         ...(variables.body === "" ? {} : { text: variables.body }),
         ...requestsAgent,
         ...weight,
+        ...recipient,
         files,
       });
     },

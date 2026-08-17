@@ -1,4 +1,4 @@
-import type { DocRow, QueueStatus } from "@corpus/contract";
+import type { AgentRoster, DocRow, QueueStatus } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -108,6 +108,26 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
         failed: 0,
         abandoned: 0,
       } satisfies QueueStatus);
+    }
+    /*
+     * `GET /api/agents` — §7's roster (UI-108). Answered rather than left to the
+     * `{}` fallback for the reason UI-098 learned the hard way here: the first
+     * surface to read a new field turns a silent stub gap into a crash in a
+     * component that always renders.
+     */
+    if (url.pathname === "/api/agents") {
+      return json({
+        agents: [
+          {
+            lane: "orchestrator",
+            resident: null,
+            live: false,
+            since: null,
+            summary: null,
+            origin: null,
+          },
+        ],
+      } satisfies AgentRoster);
     }
     if (url.pathname === "/api/docs" && request.method === "POST") {
       return json({ doc: created("doc_created"), warnings: [] }, 201);

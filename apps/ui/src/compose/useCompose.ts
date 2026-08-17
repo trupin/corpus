@@ -41,6 +41,20 @@ export interface ComposeInput {
    * request is a request wherever it starts".
    */
   readonly weight: { readonly weight?: string };
+  /**
+   * The lane the Ask is addressed to (SPEC.md §7) — `{}` for the computed
+   * default, which for a standalone thread is always the orchestrator, and
+   * `{recipient}` only when a lane was picked. A pick here is §7's **summons**:
+   * the event is stamped with the recipient's lane so it reaches them at all,
+   * and what they write files into the thread this Ask creates, because routing
+   * follows the recipient and filing follows the conversation.
+   *
+   * **Capture carries none, and cannot**: `POST /api/capture` has no `recipient`
+   * (CONTRACT-051), because a capture creates a standalone thread that is in no
+   * scope by construction — offering a routing choice before there is a
+   * conversation to route. So this rides the Ask branch only.
+   */
+  readonly recipient: { readonly recipient?: string };
 }
 
 export interface ComposeApi {
@@ -79,6 +93,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
             body: text,
             requestsAgent: true,
             ...input.weight,
+            ...input.recipient,
             ...(files.length === 0 ? {} : { files }),
           });
           for (const warning of result.warnings) {

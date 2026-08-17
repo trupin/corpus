@@ -39,6 +39,7 @@ function open(overrides: Partial<Parameters<typeof CommentPopover>[0]> = {}): {
         left={80}
         pending={false}
         weightScope="doc:doc_a"
+        recipientScope="doc_a"
         onSubmit={onSubmit}
         onClose={onClose}
         {...overrides}

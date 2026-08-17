@@ -4,7 +4,9 @@ import {
   composerReachesAgent,
   handleComposerKeyDown,
   PendingAttachments,
+  RecipientPicker,
   useAttachmentIntake,
+  useComposerRecipient,
   useComposerWeight,
   WeightPicker,
   type PendingAttachment,
@@ -101,15 +103,25 @@ export interface CommentPopoverProps {
    */
   readonly weightScope: string;
   /**
+   * The conversation this comment lands in — the document it is on, or the
+   * thread whose turn it hangs off (SPEC.md §7's scope walk starts there).
+   * The host owns it for `weightScope`'s reason: the host knows what is being
+   * commented on, and this popover is one component in two placements.
+   */
+  readonly recipientScope: string | null;
+  /**
    * What a previous send left behind when the server refused it, or nothing on
    * a fresh selection. The host holds it, because the host is what unmounts
    * this composer on submit.
    */
   readonly restore?: CommentRestore | undefined;
   /**
-   * The third argument is the stated weight, spread onto the request: `{}` when
-   * nothing was chosen. Passed as an object rather than a `string | undefined`
-   * so absence has one spelling all the way to the wire.
+   * The third argument is what this composer **states**, spread onto the
+   * request: the weight it was set at and the recipient it was addressed to,
+   * each present only when stated and `{}` when neither was. Passed as an object
+   * rather than as two `string | undefined`s so absence has one spelling all the
+   * way to the wire — which for the recipient is the whole mechanism, since the
+   * computed default is sent by omitting the field (SPEC.md §7).
    *
    * The fourth is the attachments, **taken** from the composer as they are
    * handed over: their previews are not revoked, so the host can put them back
@@ -119,7 +131,7 @@ export interface CommentPopoverProps {
   readonly onSubmit: (
     body: string,
     requestsAgent: boolean,
-    weight: { readonly weight?: string },
+    stated: { readonly weight?: string; readonly recipient?: string },
     attachments: readonly PendingAttachment[],
   ) => void;
   readonly onClose: () => void;
@@ -137,6 +149,7 @@ export function CommentPopover({
   left,
   pending,
   weightScope,
+  recipientScope,
   restore,
   onSubmit,
   onClose,
@@ -154,6 +167,7 @@ export function CommentPopover({
    * pointer, which is the bug UI-073 and UI-074 exist about.
    */
   const weight = useComposerWeight(weightScope);
+  const recipient = useComposerRecipient({ start: recipientScope });
   const live = composerReachesAgent({ requestsAgent: asking });
 
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Popover, onEscape: onClose });
@@ -169,7 +183,10 @@ export function CommentPopover({
     if (!canSend) return;
     // Taken, not read: the popover closes on submit, and the snapshot has to
     // outlive it for the host to put back if the post is refused.
-    onSubmit(text.trim(), asking, weight.request, intake.take());
+    // The pick is handed over with the message and never kept: this popover
+    // unmounts on submit, so there is nowhere for an override to persist to —
+    // §7's third prohibition, enforced by the surface's own lifetime.
+    onSubmit(text.trim(), asking, { ...weight.request, ...recipient.request }, intake.take());
   };
 
   return createPortal(
@@ -237,6 +254,7 @@ export function CommentPopover({
         }}
       />
       <WeightPicker weight={weight} live={live} surface="comment" />
+      <RecipientPicker recipient={recipient} live={live} surface="comment" />
       <div className="composer-foot">
         <AttachButton surface="comment" onFiles={intake.add} />
         <button

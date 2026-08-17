@@ -201,7 +201,7 @@ export function useTurnComments({
     (
       text: string,
       requestsAgent: boolean,
-      weight: { readonly weight?: string },
+      stated: { readonly weight?: string; readonly recipient?: string },
       attachments: readonly PendingAttachment[] = [],
     ): void => {
       if (draft === null) return;
@@ -228,7 +228,7 @@ export function useTurnComments({
           selector: draft.selector,
           body: text,
           requestsAgent,
-          ...weight,
+          ...stated,
           // Present only when there are files: the empty list would send a
           // plain comment as multipart (`useCreateThread`).
           ...(attachments.length === 0
@@ -322,6 +322,7 @@ export function useTurnComments({
           // A comment on a selection **inside** a turn is made in this
           // conversation, so it shares the reply box's standing choice.
           weightScope={threadWeightScope(threadId)}
+          recipientScope={threadId}
           restore={draft.restore}
           onSubmit={submit}
           onClose={() => {

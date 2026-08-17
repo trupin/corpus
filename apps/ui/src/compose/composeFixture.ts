@@ -1,3 +1,4 @@
+import type { AgentLane, AgentRoster } from "@corpus/contract";
 /**
  * A recording transport for the composer's suites.
  *
@@ -7,6 +8,15 @@
  * what the assertions are actually about: which field carried the text, whether
  * `requestsAgent` was the string `"true"`, and how many `files` parts there were.
  */
+
+const ORCHESTRATOR_ROW: AgentLane = {
+  lane: "orchestrator",
+  resident: null,
+  live: false,
+  since: null,
+  summary: null,
+  origin: null,
+};
 
 export interface RecordedRequest {
   readonly method: string;
@@ -42,6 +52,13 @@ export interface ComposeTransportOptions {
    * before this feature still describes the composer correctly.
    */
   readonly docs?: Readonly<Record<string, unknown>>;
+  /**
+   * Designated lanes `GET /api/agents` answers with, beside the orchestrator's
+   * unconditional row (SPEC.md §7's roster, UI-108). With one lane the composer
+   * offers no recipient control at all, which is what every suite written before
+   * this feature expects.
+   */
+  readonly lanes?: readonly AgentLane[];
 }
 
 /** JSON bodies reach `fetch` as a string; anything else is not a body this fixture reads. */
@@ -100,6 +117,9 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
       return json({ code: "bad_request", message: "the server said no", issues: [] }, failure);
     }
 
+    if (url.pathname === "/api/agents") {
+      return json({ agents: [ORCHESTRATOR_ROW, ...(options.lanes ?? [])] } satisfies AgentRoster);
+    }
     if (url.pathname === "/api/docs") {
       const items = options.rows ?? [];
       return json({ items, page: { total: items.length, limit: 50, offset: 0 } });

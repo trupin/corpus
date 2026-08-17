@@ -5,10 +5,12 @@ import {
   composerReachesAgent,
   handleComposerKeyDown,
   PendingAttachments,
+  RecipientPicker,
   threadWeightScope,
   useAppendTurn,
   useAttachmentIntake,
   useAutocomplete,
+  useComposerRecipient,
   useComposerWeight,
   WeightPicker,
   type PendingAttachment,
@@ -80,6 +82,8 @@ export function ThreadComposer({
    * choice, and the choice never touches the toggle in return.
    */
   const weight = useComposerWeight(threadWeightScope(threadId));
+  // A reply lands in this thread, so this thread is where the scope walk starts.
+  const recipient = useComposerRecipient({ start: threadId });
   const live = composerReachesAgent({ requestsAgent: asking });
 
   const applyCompletionResult = useCallback((result: { text: string; caret: number }) => {
@@ -123,12 +127,18 @@ export function ThreadComposer({
         // note-only turn still states what it was asked at. Nothing enqueues, so
         // nothing reads it — and the composer said so before sending.
         ...weight.request,
+        // `{}` unless a lane other than the computed default was picked — the
+        // default travels by being absent, which is what stops the UI's rule and
+        // the server's from ever disagreeing about it (SPEC.md §7).
+        ...recipient.request,
         ...(attachments.length === 0
           ? {}
           : { files: attachments.map((attachment) => attachment.file) }),
       },
       {
         onSuccess: (result) => {
+          // §7: an override "never persists past the message it was set on".
+          recipient.clear();
           intake.release(attachments);
           // SPEC.md §14: a non-fatal problem "surfaces loudly". The turn landed
           // either way — files are the source of truth — so this is a notice
@@ -140,6 +150,11 @@ export function ThreadComposer({
         onError: (error) => {
           // Nothing was written — the server refuses the whole turn when the
           // upload fails — so the composer goes back to exactly what it held.
+          // The recipient is the exception, and deliberately: a refusal may *be*
+          // the lane (a `422` for a scope dissolved between the roster read and
+          // the post), so the pick is dropped and made again rather than
+          // inherited by a message it was never set on.
+          recipient.clear();
           setText(body);
           setCaret(body.length);
           intake.restore(attachments);
@@ -147,7 +162,7 @@ export function ThreadComposer({
         },
       },
     );
-  }, [append, asking, hasContent, intake, onNotify, text, weight.request]);
+  }, [append, asking, hasContent, intake, onNotify, recipient, text, weight.request]);
 
   return (
     <div
@@ -188,6 +203,7 @@ export function ThreadComposer({
       />
 
       <WeightPicker weight={weight} live={live} surface={threadId} />
+      <RecipientPicker recipient={recipient} live={live} surface={threadId} />
 
       <div className="composer-foot">
         <AttachButton surface={threadId} onFiles={intake.add} />

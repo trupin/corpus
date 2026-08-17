@@ -1,4 +1,5 @@
 import {
+  AGENTS_KEY,
   DOCS_KEY,
   INDEX_KEY,
   JOBS_KEY,
@@ -34,6 +35,7 @@ import {
  */
 
 export {
+  AGENTS_KEY,
   DOCS_KEY,
   INDEX_KEY,
   JOBS_KEY,

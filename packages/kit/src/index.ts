@@ -81,6 +81,10 @@ export {
 } from "./query/useJobLog.js";
 export { usePluginQuery } from "./query/usePluginQuery.js";
 export { useQueueStatus } from "./query/useQueueStatus.js";
+// SPEC.md §7's roster — who is running, read behind `["agents"]` like any other
+// projection. A read and never a push, so there is no poll and no `staleTime`
+// override here or anywhere downstream.
+export { useAgentsRoster, type AgentRosterView } from "./query/useAgentsRoster.js";
 // The semantic index's health report — the console strip's index pill reads it,
 // and it refreshes on the `["index"]` frames the embed worker already emits.
 export { useIndexStatus } from "./query/useIndexStatus.js";
@@ -341,6 +345,52 @@ export {
   type WeightLevel,
   type WeightPickerProps,
 } from "./weight/index.js";
+
+// SPEC.md §7's recipient — the composer offers the live roster, the default is
+// computed from where the message is posted, and an override routes one message.
+// Here for `WeightPicker`'s reason: the sentence binds every composer in the app
+// and every composer a plugin contributes. Stylesheet subpath:
+// `import "@corpus/kit/recipient.css"`.
+export {
+  laneLine,
+  laneLiveness,
+  laneName,
+  laneOf,
+  laneRow,
+  laneRows,
+  statementFor,
+  unknownLaneRow,
+  useComposerRecipient,
+  useScopeWalk,
+  walkToLane,
+  DEFAULT_ROW_NOTE,
+  LAPSED_FALLBACK,
+  LAPSED_ORCHESTRATOR,
+  LIVE_WITHOUT_SUMMARY,
+  MAX_SCOPE_WALK,
+  NEVER_SEEN_LINE,
+  ORCHESTRATOR_LABEL,
+  RECIPIENT_GROUP_LABEL,
+  RECIPIENT_INERT_TITLE,
+  RECIPIENT_LIVE_TITLE,
+  RECIPIENT_PICKER_LABEL,
+  RECIPIENT_UNKNOWN_STATEMENT,
+  RecipientPicker,
+  UNNAMED_RESIDENT_LABEL,
+  type ComposerRecipient,
+  type ComposerRecipientInput,
+  type LaneLiveness,
+  type LaneRow,
+  type RecipientPickerProps,
+  type ScopeNode,
+  type ScopeNodeLookup,
+  type ScopeWalk,
+  type ScopeWalkInput,
+} from "./recipient/index.js";
+
+// One spelling of "how long ago" for the whole board (SPEC.md §7's roster line
+// and §8's pending row sit one composer apart).
+export { humanizeElapsed } from "./time/elapsed.js";
 
 // The live-update connection.
 export { useConnectionState } from "./events/useConnectionState.js";

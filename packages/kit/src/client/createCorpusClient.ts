@@ -1,4 +1,5 @@
 import type {
+  AgentRoster,
   AppendTurnResponse,
   CaptureResult,
   CreateDocRequest,
@@ -87,6 +88,17 @@ export interface PluginRequestInit {
 
 export interface AppendTurnInput {
   readonly body: string;
+  /**
+   * The lane this message is addressed to (SPEC.md §7) — `orchestrator`, or the
+   * id of a designated root thread.
+   *
+   * **Omit it for the default**, which the server computes from where the
+   * message is posted: inside a designated scope it addresses that scope's
+   * resident, anywhere else the orchestrator. Absence is the ordinary case and
+   * the only spelling of it, which is what stops a client's own idea of the
+   * default from ever disagreeing with the server's.
+   */
+  readonly recipient?: string;
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
   readonly requestsAgent?: boolean;
   /**
@@ -109,6 +121,8 @@ export interface AppendTurnInput {
  */
 export interface AppendTurnUpload {
   readonly text?: string | undefined;
+  /** As {@link AppendTurnInput.recipient}: omit for the computed default. */
+  readonly recipient?: string | undefined;
   readonly requestsAgent?: boolean | undefined;
   /** As {@link AppendTurnInput.weight}: omit for "the orchestrator decides". */
   readonly weight?: string | undefined;
@@ -127,6 +141,8 @@ export interface AppendTurnUpload {
  */
 export interface CreateThreadUpload {
   readonly parent?: string | undefined;
+  /** As {@link AppendTurnInput.recipient}: omit for the computed default. */
+  readonly recipient?: string | undefined;
   /**
    * The context strings are genuinely absent rather than present-and-undefined:
    * every part of a multipart body is a part that was sent, so an `undefined`
@@ -227,6 +243,18 @@ export interface CorpusClient {
   getJobLog(eventId: string, cursor: number, options?: RequestOptions): Promise<JobLog>;
   /** `GET /api/queue/status` — halted flag plus per-status counts (SPEC.md §7). */
   getQueueStatus(options?: RequestOptions): Promise<QueueStatus>;
+  /**
+   * `GET /api/agents` — every lane, who is resident on it, and whether anybody
+   * is listening (SPEC.md §7's roster).
+   *
+   * Parameterless and read-only, like {@link getQueueStatus}: §7 makes the
+   * roster *"a read, never a push"*, so this answers over HTTP and the SSE
+   * stream only ever names `["agents"]`. There is deliberately no designate or
+   * release method beside it — designation is user-only state (§7), and a
+   * plugin that could re-designate a conversation through the kit would be
+   * rewiring a scope on the strength of an import.
+   */
+  getAgentRoster(options?: RequestOptions): Promise<AgentRoster>;
   /**
    * `GET /api/index/status` — the semantic index's own health report behind the
    * console strip's index pill (SPEC.md §9.1, §11's index-pill rider).
@@ -810,6 +838,10 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       );
     },
 
+    async getAgentRoster(options) {
+      return unwrap("GET /api/agents", await api.GET("/api/agents", { ...signalOf(options) }));
+    },
+
     async getIndexStatus(options) {
       return unwrap(
         "GET /api/index/status",
@@ -833,6 +865,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
             // to nothing here but is a second spelling of absence one refactor
             // away from becoming a `null` the server has to interpret.
             ...(input.weight === undefined ? {} : { weight: input.weight }),
+            ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
           },
         }),
       );
@@ -848,6 +881,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           ...(input.text === undefined ? {} : { text: input.text }),
           ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
           ...(input.weight === undefined ? {} : { weight: input.weight }),
+          ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
           files: input.files,
         }),
       );
@@ -997,6 +1031,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           ...(input.text === undefined ? {} : { text: input.text }),
           ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
           ...(input.weight === undefined ? {} : { weight: input.weight }),
+          ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
           files: input.files,
         }),
       );
