@@ -1,6 +1,6 @@
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { reportInProgress } from "./in-progress.js";
-import { LANE_FLAG, resolveLaneScope } from "./lane.js";
+import { CLAIM_ALL_LANE_FLAG, resolveLaneScope } from "./lane.js";
 
 /**
  * The atomic step of the agent loop (SPEC.md §7). Its **stdout** is deliberately
@@ -70,7 +70,7 @@ export const claimAllCommand: WorkspaceCommandSpec = {
     "orchestrator, more slowly and without the conversation's warmth, and never silently not " +
     "done. The output shape is identical either way, empty batch included.",
   args: [],
-  flags: [LANE_FLAG],
+  flags: [CLAIM_ALL_LANE_FLAG],
   examples: [
     {
       command: "corpus queue claim-all",

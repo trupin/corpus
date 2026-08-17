@@ -705,7 +705,7 @@ moment a second message arrives.
 | UI-119 | The client's scope walk still follows the rule SERVER-117 deleted | todo | P0 | — |
 | AGENT-030 | The converse skill teaches the old server, and dies at the shell on a refused park | todo | P0 | — |
 | AGENT-031 | The stand-down rule is a conjunction, and the second conjunct throws away the signal | todo | P0 | — |
-| CLI-048 | `--thread`'s help asserts the behaviour SERVER-118 removed | todo | P1 | — |
+| CLI-048 | `--thread`'s help asserts the behaviour SERVER-118 removed | done | P1 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 

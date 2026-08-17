@@ -2,7 +2,7 @@ import { DEFAULT_IDLE_TIMEOUT_SECONDS } from "@corpus/contract";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { abortOnInterrupt, type SignalTarget } from "../../signals.js";
 import { reportInProgress } from "./in-progress.js";
-import { LANE_FLAG, resolveLaneScope } from "./lane.js";
+import { IDLE_LANE_FLAG, resolveLaneScope } from "./lane.js";
 import { pollWindow } from "./poll.js";
 
 /**
@@ -16,11 +16,16 @@ import { pollWindow } from "./poll.js";
  * is live exactly while it holds a parked `--thread` idle — there is nothing to
  * register, no heartbeat to send and nothing to reap — which is why this verb
  * has a lane and there is no verb anywhere in this CLI that announces an agent.
- * The lane changes which events the park waits for and which lane
+ * An **accepted** lane changes which events the park waits for and which lane
  * `corpus agents` reports as live, and changes nothing else: the same `--wait`,
  * the same `--json`, the same held report, and the same
  * `{"idle":true,"reason":"timeout"}` on expiry, which the converse skill's loop
  * depends on being stable.
+ *
+ * Accepted is the operative word since SERVER-118: because the park is the
+ * presence, a `--thread` naming no lane is refused with the server's `422`
+ * rather than parked, so this verb's lane can fail where `claim-all`'s cannot.
+ * `lane.ts` carries the rule and the reason the two verbs differ.
  */
 
 /** Why a window ended with no events. Halted is a state the server owns, so it is asked. */
@@ -119,10 +124,13 @@ export const idleCommand: WorkspaceCommandSpec = {
     "conversation's lane, and a resident is live exactly while it holds such a park — there is " +
     "nothing to register, no heartbeat to send and nothing to reap, which is why no verb in this " +
     "CLI announces an agent and `corpus agents` only ever _reads_ who is there. An agent that " +
-    "stops parking stops being present, however it stopped. Everything else about the verb is " +
-    "unchanged by the lane: the same `--wait`, the same output shapes, the same held report, and " +
-    'the same `{"idle":true,"reason":"timeout"}` on expiry — a scoped window that ends empty ' +
-    "prints exactly what an unscoped one does.",
+    "stops parking stops being present, however it stopped. That is also why **a `--thread` " +
+    "naming no lane is refused rather than parked** (exit 5, the server's `422`): a park the " +
+    "roster cannot name would leave `corpus agents` reporting a lane that does not exist. See " +
+    "`--thread` below for the three ways on. Everything else about an accepted park is unchanged " +
+    "by the lane: the same `--wait`, the same output shapes, the same held report, and the same " +
+    '`{"idle":true,"reason":"timeout"}` on expiry — a scoped window that ends empty prints ' +
+    "exactly what an unscoped one does.",
   args: [],
   flags: [
     {
@@ -135,7 +143,7 @@ export const idleCommand: WorkspaceCommandSpec = {
         "most its own maximum, so a longer window is served by successive requests. `0` is a " +
         "single non-blocking probe: is anything queued right now?",
     },
-    LANE_FLAG,
+    IDLE_LANE_FLAG,
   ],
   examples: [
     {
