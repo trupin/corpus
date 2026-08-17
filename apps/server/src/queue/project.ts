@@ -1,6 +1,6 @@
 import type { QueryKey, QueueEventStatus } from "@corpus/contract";
 import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
-import { DOCS_KEY, JOBS_KEY, QUEUE_KEY } from "../events/index.js";
+import { AGENTS_KEY, DOCS_KEY, JOBS_KEY, QUEUE_KEY, jobKey } from "../events/index.js";
 import type { QueueStore, ReadEventResult, StoredEvent } from "./store.js";
 
 /**
@@ -37,6 +37,59 @@ export const NOOP_QUEUE_MIRROR: QueueMirror = {
  * Attention column lagged behind the console until a reload (SERVER-028).
  */
 export const QUEUE_QUERY_KEYS: readonly QueryKey[] = [QUEUE_KEY, JOBS_KEY, DOCS_KEY];
+
+/**
+ * The same set **plus §7's roster**, for a change that moves an event into or
+ * out of `in-progress`.
+ *
+ * A lane row's `summary` is read at response time off the newest **in-progress**
+ * event on that lane and the `jobs.last_line` joined to it (`agents/roster.ts`),
+ * so exactly those moves change what `GET /api/agents` answers — the rule
+ * SERVER-114 established, applied here: *an emit names every key a route
+ * carrying the changed fact is cached under, not the key of the route the fact
+ * is named after*. Reproduced before the fix: a claim on a designated lane moved
+ * its summary from `null` to `working Claims review` and announced
+ * `[["queue"],["jobs"],["docs"]]`.
+ *
+ * **Not every queue frame belongs here, and that is the point.** An enqueue
+ * writes a `pending` event, and `halt`/`resume` write a sentinel that is not an
+ * event at all; neither touches a row the roster reads, so neither may send
+ * every open client to refetch it. {@link queueTransitionKeys} is where a call
+ * site says which of the two it is, by naming the statuses it moved between.
+ */
+export const QUEUE_TRANSITION_QUERY_KEYS: readonly QueryKey[] = [...QUEUE_QUERY_KEYS, AGENTS_KEY];
+
+/**
+ * The keys a queue change names, chosen by the statuses it moved an event
+ * between — `undefined` for "there was no event on that side", which is what an
+ * enqueue's origin and a removal's destination are.
+ *
+ * Total over the statuses rather than a judgement per verb: a caller states
+ * what it did and the rule answers, so a new transition cannot be added with a
+ * hand-picked key list the way the seven sites of SERVER-115 were.
+ */
+export function queueTransitionKeys(
+  ...statuses: readonly (QueueEventStatus | undefined)[]
+): readonly QueryKey[] {
+  return statuses.includes("in-progress") ? QUEUE_TRANSITION_QUERY_KEYS : QUEUE_QUERY_KEYS;
+}
+
+/**
+ * What an append to one job's log makes stale: the console's list, that job's
+ * own log — and the roster, but only while the job is the work a lane is
+ * **holding**.
+ *
+ * `jobs.last_line` is the first thing a lane's summary reports (§7), and it is
+ * read through `events.status = 'in-progress'`, so an append to a finished job's
+ * log changes the console and nothing about who is running. `holdsWork` is that
+ * distinction, asked of the projection by the caller, which is the only place
+ * the event's status is known.
+ */
+export function jobLogKeys(eventId: string, holdsWork: boolean): readonly QueryKey[] {
+  const keys: QueryKey[] = [JOBS_KEY, jobKey(eventId)];
+  if (holdsWork) keys.push(AGENTS_KEY);
+  return keys;
+}
 
 export type QueueInvalidate = (keys: readonly QueryKey[]) => void;
 

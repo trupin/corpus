@@ -530,12 +530,16 @@ describe("runServerProcess — boot", () => {
       // have been debounced, batched and — if suppression failed — broadcast.
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // One frame per transition, each the whole `QUEUE_QUERY_KEYS` table —
-      // and none from the watcher, which is what this test is about.
+      // One frame per transition and none from the watcher, which is what this
+      // test is about — and each frame is the table its transition owes
+      // (SERVER-115): the enqueue leaves the event in `pending/`, held by
+      // nobody, so it names no roster; the claim takes it into `in-progress/`
+      // and the completion out again, and both move what `GET /api/agents`
+      // reports the lane is doing.
       expect(batches).toEqual([
         '[["queue"],["jobs"],["docs"]]',
-        '[["queue"],["jobs"],["docs"]]',
-        '[["queue"],["jobs"],["docs"]]',
+        '[["queue"],["jobs"],["docs"],["agents"]]',
+        '[["queue"],["jobs"],["docs"],["agents"]]',
       ]);
     } finally {
       await server.close();

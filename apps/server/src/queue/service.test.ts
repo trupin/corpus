@@ -10,7 +10,7 @@ import {
 } from "@corpus/contract";
 import { HttpError } from "../errors.js";
 import type { QueueMirror } from "./project.js";
-import { QUEUE_QUERY_KEYS } from "./project.js";
+import { QUEUE_QUERY_KEYS, QUEUE_TRANSITION_QUERY_KEYS } from "./project.js";
 import { formatInstant } from "../core/time.js";
 import { LANE_GRACE_MS, createLaneTracker } from "./liveness.js";
 import {
@@ -457,7 +457,12 @@ describe("defer", () => {
       deferReason: "the user is editing it",
     });
     expect(mirror.upserts.at(-1)).toMatchObject({ status: "deferred", blockedOn: "doc_edited01" });
-    expect(invalidations).toEqual([QUEUE_QUERY_KEYS]);
+    // The event leaves `in-progress/`, so the lane that was reported as working
+    // on it stops being — hence `["agents"]` alongside the queue's own keys
+    // (SERVER-115). Asserted by value as well as by symbol: a table that lost a
+    // key would still satisfy the symbol.
+    expect(invalidations).toEqual([[["queue"], ["jobs"], ["docs"], ["agents"]]]);
+    expect(invalidations).toEqual([QUEUE_TRANSITION_QUERY_KEYS]);
   });
 
   it("is not a failure: the failed count stays put and the deferred count moves", async () => {

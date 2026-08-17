@@ -510,6 +510,184 @@ describe("the watcher — runtime roots", () => {
   });
 });
 
+/**
+ * SERVER-115: the out-of-band half of §7's roster.
+ *
+ * A lane row is computed at read time, so a change that never mentions an agent
+ * still changes what `GET /api/agents` answers — and the watcher is the emitter
+ * for every such change the server did not make itself. Three of the seven sites
+ * this issue fixed live in this file: the queue-event case (which held a second,
+ * silently diverging copy of `QUEUE_QUERY_KEYS`), the job case, and the document
+ * path.
+ *
+ * Whole frames are asserted, never "a key was somewhere in the batch": the
+ * defect survived because the existing assertions asked whether a key was
+ * present rather than what the frame was.
+ */
+describe("the watcher — §7's roster", () => {
+  const LANE = "th_resident1";
+  /**
+   * Deliberately carries **no `id:`**. An agent-def under `.claude/agents/` gets
+   * a *synthetic* id derived from its path when the file declares none — which
+   * is precisely what makes renaming one change its document id, and therefore
+   * what a roster row's `resident.docId` resolves to.
+   */
+  const AGENT_DEF = "---\nname: researcher\ndescription: digs.\n---\nBody.\n";
+
+  const designatedThread = (title: string): string =>
+    [
+      "---",
+      `id: ${LANE}`,
+      "type: thread",
+      `title: ${title}`,
+      "created: 2026-08-16T09:00:00Z",
+      "updated: 2026-08-16T09:00:00Z",
+      "status: open",
+      "agent: none",
+      "resident:",
+      "  name: researcher",
+      "  docId: doc_researcher",
+      "---",
+      "",
+      "## user · 2026-08-16T09:00:00Z",
+      "",
+      "Let us review the claims.",
+      "",
+    ].join("\n");
+
+  const event = (status: string): string =>
+    JSON.stringify({
+      id: "evt_lane0000000a",
+      type: "comment.created",
+      created: "2026-08-16T09:00:00Z",
+      source: "cli",
+      payload: { threadId: LANE },
+      status,
+      updated: "2026-08-16T09:00:00Z",
+      lane: LANE,
+    });
+
+  /** Seeds a designated lane and its agent-def, before the watcher starts. */
+  function seedLane(title = "Claims review"): void {
+    write(".claude/agents/researcher.md", AGENT_DEF);
+    write(`data/threads/${LANE}.md`, designatedThread(title));
+  }
+
+  it("names the roster when an event leaves in-progress out of band", async () => {
+    seedLane();
+    write(".corpus/queue/in-progress/evt_lane0000000a.json", event("in-progress"));
+    mkdirSync(abs(".corpus/queue/processed"), { recursive: true });
+    await startWatching();
+
+    renameSync(
+      abs(".corpus/queue/in-progress/evt_lane0000000a.json"),
+      abs(".corpus/queue/processed/evt_lane0000000a.json"),
+    );
+
+    // The previous status is the projection's to remember: a move arrives as two
+    // independent events and neither carries where the file came from, so
+    // without that read this is indistinguishable from an arrival.
+    await vi.waitFor(() => {
+      expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["agents"]]);
+    }, WAIT);
+  });
+
+  it("does not name it for an event dropped straight into pending/", async () => {
+    seedLane();
+    await startWatching();
+
+    write(".corpus/queue/pending/evt_lane0000000a.json", event("pending"));
+
+    await waitForKey(["queue"]);
+    // A lane reports the work it is *holding*; a pending event is held by
+    // nobody, so this frame is the queue's own table and nothing more.
+    expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"]]);
+    expect(flat()).not.toContain(JSON.stringify(["agents"]));
+  });
+
+  it("names it for a log line appended to the job a lane is holding", async () => {
+    seedLane();
+    write(".corpus/queue/in-progress/evt_lane0000000a.json", event("in-progress"));
+    await startWatching();
+
+    write(".corpus/jobs/evt_lane0000000a.jsonl", '{"line":"reading the claims table","at":1}\n');
+
+    await vi.waitFor(() => {
+      expect(batches).toContainEqual([["jobs"], ["jobs", "evt_lane0000000a"], ["agents"]]);
+    }, WAIT);
+  });
+
+  it("does not name it for a log line on a job nobody is holding", async () => {
+    seedLane();
+    write(".corpus/queue/processed/evt_lane0000000a.json", event("processed"));
+    await startWatching();
+
+    write(".corpus/jobs/evt_lane0000000a.jsonl", '{"line":"after the fact","at":1}\n');
+
+    await vi.waitFor(() => {
+      expect(batches).toContainEqual([["jobs"], ["jobs", "evt_lane0000000a"]]);
+    }, WAIT);
+    expect(flat()).not.toContain(JSON.stringify(["agents"]));
+  });
+
+  it("names it when a designated conversation is retitled on disk", async () => {
+    seedLane("Claims review");
+    await startWatching();
+
+    write(`data/threads/${LANE}.md`, designatedThread("Claims review, out of band"));
+
+    await vi.waitFor(() => {
+      expect(batches).toContainEqual([["docs"], ["docs", LANE], ["threads", LANE], ["agents"]]);
+    }, WAIT);
+  });
+
+  /**
+   * The eighth emitter, which the issue's table did not list and CONTRACT-055
+   * suspected: `resident.docId` is re-resolved against `agent-def` documents on
+   * every roster response, and an agent-def under `.claude/agents/` carries a
+   * *synthetic* id derived from its path. So renaming the file gives the same
+   * agent a different id, and a roster held from before the rename points at a
+   * document the workspace no longer has.
+   */
+  it("names it when the resident's agent-def is renamed on disk", async () => {
+    seedLane();
+    await startWatching();
+    const before = rows<{ resident: string }>(
+      "SELECT resident_doc_id AS resident FROM threads WHERE id = ?",
+      LANE,
+    );
+    const idOf = (path: string): unknown =>
+      rows("SELECT id FROM documents WHERE path = ?", path)[0];
+    const wasResolvedTo = idOf(".claude/agents/researcher.md");
+    expect(wasResolvedTo).toBeDefined();
+
+    renameSync(abs(".claude/agents/researcher.md"), abs(".claude/agents/researcher-senior.md"));
+
+    await vi.waitFor(() => {
+      expect(flat()).toContain(JSON.stringify(["agents"]));
+    }, WAIT);
+    // The id the name now resolves to is a different one, while the *stored*
+    // designation is untouched — it is the resolution that moved, which is
+    // exactly why no per-path heuristic could have caught this.
+    expect(idOf(".claude/agents/researcher-senior.md")).not.toEqual(wasResolvedTo);
+    expect(rows("SELECT resident_doc_id AS resident FROM threads WHERE id = ?", LANE)).toEqual(
+      before,
+    );
+  });
+
+  it("leaves an unrelated document's frame alone", async () => {
+    seedLane();
+    write("data/docs/note.md", doc("doc_note", "Note", "Nothing to do with a lane."));
+    await startWatching();
+
+    write("data/docs/note.md", doc("doc_note", "Note", "Still nothing to do with a lane."));
+
+    await waitForKey(["docs", "doc_note"]);
+    expect(batches).toContainEqual([["docs"], ["docs", "doc_note"]]);
+    expect(flat()).not.toContain(JSON.stringify(["agents"]));
+  });
+});
+
 describe("the watcher — self-write suppression", () => {
   it("says nothing about a write the server registered", async () => {
     await startWatching();

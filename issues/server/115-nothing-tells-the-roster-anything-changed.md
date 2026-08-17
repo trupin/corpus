@@ -6,7 +6,7 @@ server (contract-coordinated)
 
 ## Status
 
-todo
+in-review
 
 ## Priority
 
@@ -69,16 +69,16 @@ cleaning up in a different corner.
 
 ## Acceptance Criteria
 
-- [ ] Every listed emitter names `["agents"]` where it changes what the roster
+- [x] Every listed emitter names `["agents"]` where it changes what the roster
       would answer, and does not where it does not — a blanket addition that
       makes unrelated writes re-read the roster is a different defect
-- [ ] The duplicate `QUEUE_QUERY_KEYS` at `watcher.ts:457` is removed in favour
+- [x] The duplicate `QUEUE_QUERY_KEYS` at `watcher.ts:457` is removed in favour
       of the shared constant, or the duplication is justified in a comment
-- [ ] `CONTRACT-055` lands the vocabulary change; the server does not ship a
+- [x] `CONTRACT-055` lands the vocabulary change; the server does not ship a
       frame the published description denies
-- [ ] Tests assert the **whole key list** at each site, as SERVER-114's does —
+- [x] Tests assert the **whole key list** at each site, as SERVER-114's does —
       "something was emitted" is what let this survive
-- [ ] Each test checked red against the current emit
+- [x] Each test checked red against the current emit
 
 ## Technical Design
 
@@ -100,7 +100,85 @@ show a roster going stale and then not, it is worth more than any of them.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent._
+**Model: opus.** Real `corpus init` workspaces at `/tmp/s115-ws` (pre-fix) and
+`/tmp/s115-ws2` (post-fix), real server on port 8791, frames read off a live
+`curl -N /events`, roster read with `GET /api/agents` before and after every
+action.
+
+### Pre-fix reproduction — all seven listed sites, plus the eighth
+
+Setup: agent-def `.claude/agents/researcher.md`, standalone thread
+`th_nr3ynds6` "Claims review", `thread designate --agent researcher`.
+
+| # | Action | Frame emitted | Roster before → after |
+| --- | --- | --- | --- |
+| A1 | `queue claim-all --thread th_nr3ynds6` | `[["queue"],["jobs"],["docs"]]` | `summary: null` → `"working Claims review"` |
+| A2 | `doc edit th_… --title "Claims review, revised"` | `[["docs"],["docs",th]]` | `summary: "working Claims review"` → `"working Claims review, revised"` |
+| A3 | `job log evt_… "reading the claims table"` | `[["jobs"],["jobs",evt]]` | `summary` → `"reading the claims table"` |
+| A4 | out-of-band `sed` on the thread's `title:` | `[["docs"],["docs",th],["threads",th]]` | `origin.title` → `"Claims review, out of band"` |
+| A5 | out-of-band `mv in-progress/evt.json processed/` | `[["queue"],["jobs"],["docs"]]` | `summary: "reading the claims table"` → `null` |
+| A6 | `db rebuild` | `[["docs"],["tree"],["queue"],["jobs"]]` | unchanged (idempotent rebuild) |
+| A7 | out-of-band `mv .claude/agents/researcher.md researcher-senior.md` | `[["docs"],["docs",old],["docs",new]]` | `resident.docId: doc_agentdef9aac2cc9` → `doc_agentdefd48a7cd0` |
+| A8 | `doc delete th_…` | `[["docs"],["docs",th],["threads",th]]` | lane row present → gone |
+
+Not one frame named `["agents"]`. A1 is the row `UI-108` measured through a real
+browser (page issued no second `/api/agents` request over 6 s).
+
+**A7 settles the eighth emitter as real**: an agent-def under `.claude/agents/`
+that declares no `id:` carries a *synthetic* id derived from its path, so
+renaming the file gives the same agent a different document id while the
+designation still resolves (by its title alias). A held roster then points a
+reader at a document the workspace no longer has.
+
+### Post-fix — the same actions, on a fresh workspace and a rebuilt server
+
+| # | Action | Frame emitted | Roster moved? |
+| --- | --- | --- | --- |
+| B1 | `thread reply` with `@agent` (enqueue) | `[["docs"],…]` then `[["queue"],["jobs"],["docs"]]` | no |
+| B2 | `queue claim-all --thread th_…` | **`[["queue"],["jobs"],["docs"],["agents"]]`** | yes — `null` → `"working Claims review"` |
+| B3 | `job log evt_… "reading the claims table"` | **`[["jobs"],["jobs",evt],["agents"]]`** | yes |
+| B4 | `doc edit th_… --title "Claims review, revised"` | **`[["docs"],["docs",th],["agents"]]`** | yes |
+| B5 | `doc edit doc_xzcgl5mo --title "Still unrelated"` | `[["docs"],["docs",doc]]` | no |
+| B6 | `queue halt --reason maintenance` | `[["queue"],["jobs"],["docs"]]` | no |
+| B7 | `queue resume` | `[["queue"],["jobs"],["docs"]]` | no |
+| B8 | out-of-band retitle of the designated thread | **`[["docs"],["docs",th],["threads",th],["agents"]]`** | yes |
+| B9 | out-of-band `mv in-progress/ → processed/` | **`[["queue"],["jobs"],["docs"],["agents"]]`** | yes |
+| B10 | out-of-band drop into `pending/` | `[["queue"],["jobs"],["docs"]]` | no |
+| B11 | out-of-band rename of the agent-def | **`[["docs"],["docs",old],["docs",new],["agents"]]`** | yes — `docId` re-resolved |
+| B12 | `db rebuild` | **`[["docs"],["tree"],["queue"],["jobs"],["agents"]]`** | no (unconditional, by decision) |
+| B13 | `doc delete th_…` | **`[["docs"],["docs",th],["threads",th],["agents"]]`** | yes — lane gone |
+
+Every row satisfies *names `["agents"]` iff `GET /api/agents` changed*, except
+B12, which is the same deliberate exception `["tree"]` already has on that route.
+
+### Cost of the measurement
+
+`rosterSignature` vs `folderTreeSignature` over 2020 documents (2000 iterations
+each, after warm-up):
+
+| designated lanes | `rosterSignature` | `folderTreeSignature` |
+| --- | --- | --- |
+| 0 | 3.1 µs | 645.6 µs |
+| 1 | 39.1 µs | 609.8 µs |
+| 5 | 159.4 µs | 612.3 µs |
+| 20 | 644.7 µs | 630.7 µs |
+
+Linear in *lanes*, flat in corpus size — which is why it is taken unflagged on
+every mutation where the tree signature had to be gated behind `mayChangeTree`.
+
+### Red-check
+
+Every new and changed assertion was run against the pre-fix emit and observed
+to fail: 12 red across `queue/project.test.ts`, `projection/routes.test.ts`,
+`events/frames.test.ts` and `agents/staleness.test.ts`, plus 4 red in
+`watcher/watcher.test.ts`. Re-inlining the watcher's copy of the key list named
+`watcher/watcher.ts` in the containment test's offender list. Making the
+addition *blanket* — always returning the transition table, always pushing
+`["agents"]` after a write — turned the enqueue, halt/resume, unrelated-document
+and turn-append tests red, which is the other half of the acceptance criterion.
+
+Full `apps/server` suite: **4005 passed, 0 failed**. Typecheck, eslint and
+prettier clean.
 
 ## Completion Checklist (orchestrator)
 

@@ -143,16 +143,30 @@ export function capSummary(line: string): string {
  * and "working" without a subject says less than when it was last heard from.
  */
 function summarize(deps: RosterDeps, lane: Lane, since: string | null): string | null {
-  const work = deps.projection.prepare(LANE_WORK_SQL).get(lane) as LaneWorkRow | undefined;
-  if (work !== undefined) {
-    if (work.lastLine !== null && work.lastLine !== "") return capSummary(work.lastLine);
-    const origin = resolveOrigin(deps.projection, work.payloadJson);
-    if (origin !== null) return capSummary(`working ${origin.title}`);
-  }
+  const work = workSummary(deps.projection, lane);
+  if (work !== null) return work;
   if (since === null) return null;
   const seen = Date.parse(since);
   if (Number.isNaN(seen)) return null;
   return capSummary(`idle — last active ${relativeAge(Math.max(0, deps.now() - seen))}`);
+}
+
+/**
+ * Rungs 1–2 of {@link summarize} on their own: what the lane's held work says
+ * about itself, read from the projection and from nothing else.
+ *
+ * Split out because it is the half of a summary that a **write** can move — a
+ * job-log append, a queue transition, a rename of the document the held event
+ * came from — while rungs 3 and 4 move only with presence and the clock, which
+ * `PRESENCE_QUERY_KEYS` and the liveness timer already announce (SERVER-114).
+ * {@link rosterSignature} is the caller that needs exactly this split.
+ */
+function workSummary(projection: ProjectionDb, lane: Lane): string | null {
+  const work = projection.prepare(LANE_WORK_SQL).get(lane) as LaneWorkRow | undefined;
+  if (work === undefined) return null;
+  if (work.lastLine !== null && work.lastLine !== "") return capSummary(work.lastLine);
+  const origin = resolveOrigin(projection, work.payloadJson);
+  return origin === null ? null : capSummary(`working ${origin.title}`);
 }
 
 /** The two halves of a row that are configuration rather than observation. */
@@ -188,9 +202,9 @@ function row(deps: RosterDeps, lane: Lane, identity: LaneIdentity): AgentLane {
  * resident rather than as no lane, which is the difference between "we cannot
  * say who owns this" and "this conversation is not owned".
  */
-function residentOf(deps: RosterDeps, entry: DesignatedRow): Resident | null {
+function residentOf(projection: ProjectionDb, entry: DesignatedRow): Resident | null {
   const stored = residentOrNull({ name: entry.residentName, docId: entry.residentDocId });
-  return currentResident(deps.projection, stored);
+  return currentResident(projection, stored);
 }
 
 /**
@@ -207,9 +221,55 @@ export function buildRoster(deps: RosterDeps): AgentRoster {
   const designated = (deps.projection.prepare(DESIGNATED_LANES_SQL).all() as DesignatedRow[]).map(
     (entry) =>
       row(deps, entry.id, {
-        resident: residentOf(deps, entry),
+        resident: residentOf(deps.projection, entry),
         origin: { id: entry.id, title: entry.title },
       }),
   );
   return { agents: [orchestrator, ...designated] };
+}
+
+/**
+ * Everything `GET /api/agents` would answer that is **derived from the
+ * projection** — the lanes, their residents, the conversations they own and
+ * what their held work says — as one comparable string.
+ *
+ * It exists because a lane row is computed at read time and never stored, so
+ * the roster goes stale on writes named after other resources: a thread's title
+ * is a row's `origin.title`, an agent-def's path decides its resident's `docId`,
+ * and a deletion takes a lane away. Naming `["agents"]` on every write instead
+ * would send every autosave of every note to re-read the roster; guessing per
+ * call site is what produced SERVER-114 and this issue's seven siblings. So the
+ * emitter **measures**, exactly as `folderTreeSignature` decides `["tree"]`
+ * (SERVER-018, SERVER-020): capture before the write reaches the projection,
+ * compare after, and name the key iff the answer moved.
+ *
+ * **Presence is deliberately absent.** `live`, `since` and the `idle — last
+ * active …` summary they produce come from the in-memory tracker and the clock,
+ * not from any row a write touches; including them would make two measurements
+ * of an unchanged workspace differ by the passage of a minute. The liveness
+ * tracker announces those itself, on `PRESENCE_QUERY_KEYS` (SERVER-114), which
+ * is why this can be the projection's half alone and still leave nothing
+ * unannounced.
+ *
+ * Cost is bounded by the number of *designated* lanes — the agents a person put
+ * in charge of a conversation, which is a handful at most and usually none —
+ * rather than by the size of the corpus. Measured over 2020 documents: **3 µs**
+ * with no designated lane, then ~32 µs per lane (39 µs at one, 159 µs at five),
+ * against **~620 µs, flat, for `folderTreeSignature`** on the same rows. The
+ * corpus-size independence is the point: one indexed query for the lanes, and
+ * per lane one `events`/`jobs` lookup narrowed by the `events_status` index.
+ * That is what makes measuring on every mutation affordable where the tree
+ * signature (a walk of every document path) had to be gated behind a flag.
+ */
+export function rosterSignature(projection: ProjectionDb): string {
+  const lanes = projection.prepare(DESIGNATED_LANES_SQL).all() as DesignatedRow[];
+  return JSON.stringify([
+    workSummary(projection, ORCHESTRATOR_LANE),
+    ...lanes.map((entry) => [
+      entry.id,
+      entry.title,
+      residentOf(projection, entry),
+      workSummary(projection, entry.id),
+    ]),
+  ]);
 }

@@ -23,6 +23,7 @@ import {
   NOOP_INVALIDATE,
   NOOP_QUEUE_MIRROR,
   QUEUE_QUERY_KEYS,
+  queueTransitionKeys,
   rebuildQueueMirrorSync,
   type QueueInvalidate,
   type QueueMirror,
@@ -457,7 +458,9 @@ export class QueueService {
     // before the wake, so a line about the job precedes anything the woken agent
     // appends to the same log.
     await this.notifyEnqueued(event);
-    this.invalidate(QUEUE_QUERY_KEYS);
+    // No `["agents"]`: the event lands in `pending/`, and a lane's row reports
+    // the work it is **holding** — nobody is holding this yet (SERVER-115).
+    this.invalidate(queueTransitionKeys(undefined, "pending"));
     this.wake(laneOf(event));
     return event;
   }
@@ -634,7 +637,7 @@ export class QueueService {
         this.mirror.upsertEvent(event);
         claimed.push(event);
       }
-      if (touched) this.invalidate(QUEUE_QUERY_KEYS);
+      if (touched) this.invalidate(queueTransitionKeys("pending", "in-progress"));
       return { events: claimed, held };
     });
   }
@@ -731,7 +734,8 @@ export class QueueService {
         requeued.push(id);
       }
       if (requeued.length > 0) {
-        this.invalidate(QUEUE_QUERY_KEYS);
+        // `deferred/` → `pending/`: work re-entering the queue, still unheld.
+        this.invalidate(queueTransitionKeys("deferred", "pending"));
         this.wakeLanes(requeuedLanes);
         this.logger.info("deferred events re-entered the queue", {
           docId,
@@ -791,7 +795,9 @@ export class QueueService {
       };
       await this.store.writeEvent("pending", event);
       this.mirror.upsertEvent(event);
-      this.invalidate(QUEUE_QUERY_KEYS);
+      // A retry of work a lane was **holding** takes it out of that lane's hands
+      // and out of its summary; a retry of a failed or deferred job does not.
+      this.invalidate(queueTransitionKeys(from, "pending"));
       this.wake(laneOf(event));
       return event;
     });
@@ -842,7 +848,11 @@ export class QueueService {
           reapedLanes.push(laneOf(event));
         }
       }
-      if (reaped.length > 0 || failed.length > 0) this.invalidate(QUEUE_QUERY_KEYS);
+      // Everything a reap moves comes out of `in-progress/`, so a lane that was
+      // reported as working stops being.
+      if (reaped.length > 0 || failed.length > 0) {
+        this.invalidate(queueTransitionKeys("in-progress"));
+      }
       this.wakeLanes(reapedLanes);
       return { reaped, failed };
     });
@@ -854,6 +864,14 @@ export class QueueService {
       ...(reason === undefined ? {} : { reason }),
     };
     await this.store.writeHalt(sentinel);
+    // **No `["agents"]`, and that is a decision** (SERVER-115): a halt writes a
+    // sentinel, not an event. It moves no `events` row and no `jobs` row, and
+    // §7's roster reads neither the sentinel nor anything derived from it — a
+    // resident holding work is still holding it, and an idle lane is still
+    // idle. What a halt changes is `QueueStatus.halted`, which is `["queue"]`.
+    // Naming the roster here would send every open client to refetch a response
+    // that cannot have moved, which is the "blanket addition" this issue was
+    // careful to distinguish from the fix.
     this.invalidate(QUEUE_QUERY_KEYS);
     // Parked waiters are deliberately *not* woken: halting means the agent stops
     // picking up work, so they park out their window.
@@ -862,6 +880,9 @@ export class QueueService {
 
   async resume(): Promise<QueueStatus> {
     await this.store.clearHalt();
+    // The converse of {@link halt}, and roster-neutral for the same reason:
+    // lifting the switch lets claims happen, and it is the claim that will move
+    // a lane's row — announced then, by the transition that makes it true.
     this.invalidate(QUEUE_QUERY_KEYS);
     // One halt switch across every lane (SPEC.md §7), so lifting it concerns
     // every parked agent — including ones whose lane has nothing pending, which
@@ -992,7 +1013,10 @@ export class QueueService {
       const event = this.stamp(current.event, to, options.fields);
       await this.store.writeEvent(to, event);
       this.mirror.upsertEvent(event);
-      this.invalidate(QUEUE_QUERY_KEYS);
+      // The general shape of a settlement — complete, fail, defer, abandon — so
+      // the roster is named whenever `in-progress` is one of the two ends, which
+      // for every verb routed through here is the `from`.
+      this.invalidate(queueTransitionKeys(from, to));
       // SPEC.md §4: "a queue event finished, however it finished" closes the
       // open commit window, so the agent's stewardship for one event is one
       // commit rather than one per document it touched (SERVER-092). Only here,
@@ -1019,7 +1043,7 @@ export class QueueService {
     if (from !== "failed") await this.store.move(from, "failed", id);
     await this.store.writeEvent("failed", event);
     this.mirror.upsertEvent(event);
-    this.invalidate(QUEUE_QUERY_KEYS);
+    this.invalidate(queueTransitionKeys(from, "failed"));
     this.logger.error("quarantined malformed queue event", { id, reason: read.reason });
     return event;
   }
