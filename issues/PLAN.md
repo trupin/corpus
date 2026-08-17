@@ -660,7 +660,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | todo | P1 | — |
 | SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | done | P0 | — |
-| CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | todo | P0 | — |
+| CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | done | P0 | — |
 | SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | todo | P0 | CONTRACT-055 |
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | — |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
@@ -755,6 +755,7 @@ through.
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | done | P1 | — |
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
 | SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
+| SHARED-046 | SPEC.md cites a §9.4 that does not exist, and the citation has reached the published contract | todo | P1 | — |
 | UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
 
 `SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
