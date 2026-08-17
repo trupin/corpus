@@ -659,7 +659,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | done | P1 | — |
-| UI-117 | `anchor-layer.spec.ts:475` reads `innerText` before layout has flushed (UI-116 finding) | todo | P2 | — |
+| UI-117 | `anchor-layer.spec.ts:475` reads between two generations of highlight (UI-116 finding) | done | P2 | — |
 
 ### PR #48 review — REQUEST_CHANGES, 2026-08-17
 
