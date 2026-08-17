@@ -2951,6 +2951,142 @@ describe("converse skill body", () => {
     expect(body).toMatch(/under `deferred` and\s+never `failed`/);
   });
 
+  /**
+   * AGENT-027 — the other half of AGENT-026's collision, and the same failure.
+   *
+   * AGENT-026's live drill measured it: a listener launched for a lapsed lane
+   * parked, the lane went live, and its **first** scoped claim reported the
+   * orchestrator's in-flight event in `inProgress`. This skill's reconciliation
+   * then read the thread, found nothing answering the turn, did the work and
+   * completed the orchestrator's event. Two agents answered one message and
+   * nothing anywhere reported an error — both skills behaved exactly as written.
+   *
+   * AGENT-026 closed the path the orchestrator controls (*per lane, per pass,
+   * take the work or launch the listener, never both*). It cannot close the
+   * other two — a person re-designating a thread, or an operator running
+   * `/converse` by hand, while the orchestrator holds that lane's work under the
+   * fallback. This side has to decline it.
+   *
+   * **The signals do not distinguish the two cases at the row**, and that is
+   * measured rather than assumed: `apps/server/src/queue/held.ts` filters the
+   * held report by lane alone and the row carries `id`, `type`, `heldSince`,
+   * `originId`, `originTitle` and no claimant; `corpus agents` prints the same
+   * `summary` on every row and the contract forbids parsing it. So the skill
+   * cannot classify a row from the server's answer, and it must not try. What it
+   * can do is ask a first-person question — *did I claim this, in this session?*
+   * — and that is exact for the case reconciliation exists for (its own dropped
+   * settling call) while the cross-session case is recovered by `reap-stale`
+   * instead, as a `pending/` row on the same lane. Declining therefore delays a
+   * crashed listener's work; it never strands it.
+   */
+  describe("reconciliation adopts only what this listener claimed", () => {
+    it("asks whose a row is before asking what the corpus says about it", () => {
+      expect(body).toMatch(
+        /\*\*A held row older than your first claim on this lane is not yours\.\*\*/,
+      );
+      expect(body).toMatch(/did I claim this event, in this session\?/);
+      expect(body).toMatch(
+        /On your \*\*first\*\* claim of a\s+session the answer is no for every row, necessarily/,
+      );
+      expect(body).toMatch(/`heldSince` is the same test in mechanical form/);
+      // Order is the whole of it: the corpus-evidence test is what does the
+      // damage, and it only does it when nothing has disqualified the row first.
+      const ownership = body.indexOf("A held row older than your first claim on this lane");
+      const evidence = body.indexOf("For a row you did claim in this session");
+      expect(ownership, "the ownership test is missing").toBeGreaterThan(-1);
+      expect(evidence, "the evidence test is missing").toBeGreaterThan(ownership);
+    });
+
+    it("keeps the evidence test, but only under the qualifier that makes it safe", () => {
+      // The sentence that did the damage is still here — reconciliation needs
+      // it — so what is pinned is the paragraph it now lives in. A rewrite that
+      // lifts it back out to the top of the section restores the defect exactly.
+      const damaging = "If nothing answers it, the work did not happen: do it now";
+      const at = body.indexOf(damaging);
+      expect(at, `"${damaging}" is missing`).toBeGreaterThan(-1);
+      expect(body.indexOf(damaging, at + 1), "stated twice, once unqualified").toBe(-1);
+      const paragraph = body.slice(0, at).split("\n\n").at(-1) ?? "";
+      expect(paragraph, "the evidence test is stated unqualified").toContain(
+        "For a row you did claim in this session",
+      );
+      // And the recognised half of it, which is the ordinary reason to reconcile.
+      expect(body).toMatch(/settle it now with the ordinary verbs, log that it settled late/);
+    });
+
+    it("names the orchestrator's fallback as what it is usually looking at, and why", () => {
+      expect(body).toMatch(
+        /\*\*What you are usually looking at is the orchestrator, mid-dispatch\.\*\*/,
+      );
+      expect(body).toMatch(/a lane stamp is written once and\s+never rewritten/);
+      // SERVER-111's reason for the wider filter. Without it a later editor
+      // reads the row as a leak and "fixes" the server instead of obeying it.
+      expect(body).toMatch(
+        /reported on strict\s+lane equality instead, the list would hide from the orchestrator/,
+      );
+      // The two ways in that the orchestrator cannot prevent, named as ordinary.
+      expect(body).toMatch(/re-designating this thread, or starting a listener by hand/);
+    });
+
+    it("says why the corpus cannot settle the question, which is how the defect arrived", () => {
+      expect(body).toMatch(/\*\*A row that is not yours is left exactly where it is\.\*\*/);
+      expect(body).toMatch(/above all do not do the work/);
+      expect(body).toMatch(/\*\*The corpus cannot answer this question\s+for you\*\*/);
+      expect(body).toMatch(/looks identical to an event nobody ever worked/);
+      expect(body).toMatch(/in both cases no reply is posted yet/);
+      // The consequence, stated as the thing it is: not a crash, a duplicate.
+      expect(body).toMatch(/answered by two agents/);
+      expect(body).toMatch(/with no error raised anywhere/);
+    });
+
+    it("keeps the recovery reconciliation exists for, by naming the path that carries it", () => {
+      expect(body).toMatch(
+        /\*\*Declining a row strands nothing, which is what makes declining safe\.\*\*/,
+      );
+      expect(body).toMatch(/crashed mid-event does get its work back/);
+      expect(body).toMatch(/reconciliation was never that path/);
+      expect(body).toMatch(/returns work nobody can account for to `pending\/`/);
+      expect(body).toMatch(/\*\*the lane it was claimed from\*\*/);
+      expect(body).toMatch(/an ordinary\s+row in `events` — to be worked, not adopted/);
+      // The trade, so the delay reads as chosen rather than as a bug to fix.
+      expect(body).toMatch(/a delayed answer costs the person a wait/);
+      // And the one thing a long-held row actually indicates.
+      expect(body).toMatch(/nothing is running the orchestrator's loop/);
+    });
+
+    it("parks before it claims, so the boundary the rule measures against stops moving", () => {
+      expect(body).toMatch(/\*\*Park before you claim anything\.\*\*/);
+      expect(body).toMatch(/parking is what makes the lane read `live`/);
+      expect(body).toMatch(
+        /Claiming first leaves a window in which the same conversation is being\s+handed to two places/,
+      );
+    });
+
+    it("corrects the loop's own account of the held list", () => {
+      // The sentence a rewrite restores: "It is your lane's held work and
+      // nobody else's" was true about lanes and false about claimants, which is
+      // the exact confusion the defect is made of.
+      expect(body).not.toMatch(/your lane's held work\s+and nobody else's/);
+      expect(body).toMatch(
+        /It is your \*\*lane's\*\* held work, which is not the same thing as\s+your own/,
+      );
+      expect(body).toMatch(/it may be\s+holding work off this one, under the fallback/);
+    });
+
+    it("carries the rule to the two places a listener actually meets it", () => {
+      // Arriving after a lapse — the section a returning resident reads.
+      expect(body).toMatch(/\*\*Do not adopt what the orchestrator is still holding\.\*\*/);
+      expect(body).toMatch(/nothing on the row to say it is\s+in flight/);
+      expect(body).toMatch(/do not race the work it\s+is still doing/);
+      // And the roster branch at startup, at the moment the state is read.
+      expect(body).toMatch(/it may be \*\*holding some of it right now\*\*/);
+      // The worked example must not contradict either: its empty held list is
+      // annotated rather than left as the only case a reader ever sees.
+      expect(body).toMatch(
+        /had something been, this being the\s+session's first claim it would have been somebody else's/,
+      );
+    });
+  });
+
   it("orders the settling call after the writes, with the exit that proves it", () => {
     // Measured against a running server: `--job` naming a settled event is
     // exit 5, so settling early does not fail — it makes the rest of this

@@ -817,6 +817,6 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | CLI-043 | Lane verbs, designation, and `corpus agents` | done | P0 | CONTRACT-051, SERVER-111, SERVER-112, SERVER-109 |
 | AGENT-025 | The converse skill — a resident's own loop | done | P0 | SHARED-043, CLI-044, CLI-043 |
 | AGENT-026 | Orchestrate learns to share the queue | done | P0 | AGENT-025, CLI-043 |
-| AGENT-027 | The converse skill can still adopt work the orchestrator is holding (AGENT-026 finding) | todo | P0 | AGENT-026 |
+| AGENT-027 | The converse skill can still adopt work the orchestrator is holding (AGENT-026 finding) | done | P0 | AGENT-026 |
 | UI-108 | The composer offers the recipient | done | P0 | CONTRACT-051, SERVER-111, SERVER-112 |
 | UI-109 | The board shows who is resident, and who is live | done | P1 | CONTRACT-051, SERVER-112 |

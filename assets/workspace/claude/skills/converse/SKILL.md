@@ -5,7 +5,7 @@ id: doc_skillconverse
 type: skill
 title: Converse
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-16T00:00:00Z
+updated: 2026-08-17T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -139,7 +139,10 @@ failures later.
      one already there has the context.
    - **`waiting for a listener` or `lapsed`** — the lane is yours. `lapsed` means a previous
      listener has been gone long enough that the orchestrator has been covering; that is
-     ordinary and is not a fault to report. Carry on.
+     ordinary and is not a fault to report. Carry on — and carry one thing with you: both
+     states are states in which the orchestrator's claim could see this lane's pending work,
+     so it may be **holding some of it right now**. Your first claim will report that, and
+     adopts none of it (*Settling your own lane*).
 
 3. **Bind your persona.** The designation names an agent, and the launch that started you
    carries the `resident` from the announcement's payload — a name and the id of the
@@ -164,6 +167,14 @@ failures later.
    arrival turn is a message nobody asked for in a conversation you are supposed to be
    sitting quietly in. Your first turn is an answer to something.
 
+6. **Park before you claim anything.** `corpus queue idle --thread th_4b8e2c` is the last
+   step of starting up, and the loop below then begins at its step 1 with whatever parking
+   returned. The order is not a formality: parking is what makes the lane read `live`, and
+   until it does, the orchestrator's own claim can still take this lane's pending work under
+   the fallback. Claiming first leaves a window in which the same conversation is being
+   handed to two places, and it is a window you opened. If work is already pending the park
+   returns at once and costs nothing; if not, you had nothing to claim.
+
 ## The loop
 
 **This is a procedure, not a script.** Its load-bearing step is you doing the work, and no
@@ -176,8 +187,10 @@ order, indefinitely:
 1. **Claim your lane.** `corpus queue claim-all --thread th_4b8e2c` prints one payload with
    two lists: `events`, the batch you just claimed, and `inProgress`, what the server still
    thinks you are doing. Nothing else happens until you have read both.
-2. **Reconcile the held list** (*Settling your own lane* below). It is your lane's held work
-   and nobody else's — the orchestrator does not see it and you do not see the orchestrator's.
+2. **Reconcile the held list** (*Settling your own lane* below), beginning with which of its
+   rows are yours at all. It is your **lane's** held work, which is not the same thing as
+   your own: the orchestrator does not see this list and you never see its, but it may be
+   holding work off this one, under the fallback, while you read it.
 3. **Work each claimed event, in claim order, one at a time.** They are messages in one
    conversation, so they are ordered by construction and the later one was written by
    somebody who had read the earlier one's context. There is no overlap set to compute here
@@ -328,16 +341,55 @@ picks it up. It is settled accounting, not a dangling event, and it goes under `
 never `failed`. A stale-key refusal is a different thing entirely and is never a deferral:
 re-read what the refusal printed, reconcile, write again.
 
-**Reconcile the held list against the conversation.** Every claim reports what the server
-still holds for your lane, with `heldSince` as an instant you age against your own clock.
-Unlike the orchestrator, you can usually account for a row from the corpus itself rather than
-from a memory you no longer have: read the thread the row names, at the turn the event names.
-If a reply answering that turn is already there, the work was done and only the settling call
-was missed — settle it now with the ordinary verbs, log that it settled late, and **do not do
-it again**. If nothing answers it, the work did not happen: do it now. Where you genuinely
-cannot tell, leave the row exactly where it is. Completing an event to shorten a list tells
-the server a job was done that nobody did, and the person waiting on it gets no reply and no
-failed row to explain the silence.
+**Reconcile the held list — starting from whose it is.** Every claim reports what the server
+still holds **for your lane**, and your lane is not the same thing as you. The list is
+filtered by lane and by nothing else: no row says who claimed it, and none ever will. So a
+row has to pass one test before it may be read against the conversation at all.
+
+**A held row older than your first claim on this lane is not yours.** Ask it first-person —
+*did I claim this event, in this session?* — because your own claims are exactly the ones
+whose ids you have, having claimed them and worked them here. On your **first** claim of a
+session the answer is no for every row, necessarily: the list is `in-progress/` as it stood
+*before* this call's moves, so whoever took those rows took them while you were holding
+nothing. `heldSince` is the same test in mechanical form, for a row you half-recognise — an
+instant earlier than your session's own first claim is an instant at which you held nothing.
+
+**What you are usually looking at is the orchestrator, mid-dispatch.** While your lane had no
+listener — before the first one started, or after one lapsed — its pending work was visible
+to the orchestrator's unscoped claim under the fallback, and a lane stamp is written once and
+never rewritten. So what the orchestrator took stays stamped for your lane and appears in
+your held list the moment you park. That is deliberate rather than a leak: reported on strict
+lane equality instead, the list would hide from the orchestrator exactly the work the fallback
+had just handed it. A person re-designating this thread, or starting a listener by hand, is
+all it takes to put you here.
+
+**A row that is not yours is left exactly where it is.** Do not settle it, do not read the
+thread against it, and above all do not do the work. **The corpus cannot answer this question
+for you** — that is the trap, and it is worth stating because the shortcut is so reasonable:
+an event a subagent is working on *right now* looks identical to an event nobody ever worked,
+since in both cases no reply is posted yet. Reading "nothing answers that turn" as "the work
+did not happen" is how one message comes to be answered by two agents, neither of which can
+see the other, with no error raised anywhere — the person simply receives the answer twice.
+
+**For a row you did claim in this session**, the corpus is the evidence you want, and this is
+what reconciliation is *for*: read the thread the row names, at the turn the event names. If a
+reply answering that turn is already there, the work was done and only the settling call was
+missed — settle it now with the ordinary verbs, log that it settled late, and **do not do it
+again**. If nothing answers it, the work did not happen: do it now. Where you genuinely cannot
+tell, leave the row exactly where it is. Completing an event to shorten a list tells the server
+a job was done that nobody did, and the person waiting on it gets no reply and no failed row to
+explain the silence.
+
+**Declining a row strands nothing, which is what makes declining safe.** A listener that
+crashed mid-event does get its work back, and reconciliation was never that path: the
+orchestrator's `corpus queue reap-stale` returns work nobody can account for to `pending/`, on
+**the lane it was claimed from**, so it arrives at a later scoped claim of yours as an ordinary
+row in `events` — to be worked, not adopted. That is slower than reconciling it would have
+been, by the staleness window and the orchestrator's next pass, and the trade is the whole
+point: a delayed answer costs the person a wait, while a duplicated one costs them their
+reading of every answer you have ever given them. A row that sits in your list for hours is
+telling you nothing is running the orchestrator's loop — an operator's problem, and visible as
+a problem precisely because you left it alone.
 
 ## Provenance: every write names the job
 
@@ -419,6 +471,13 @@ Everything you might be tempted to do about it is wrong:
   Do not apologise for them, do not undo them, and do not re-answer the message they answered.
   If one of them got something wrong, correct it the way you would correct anything — say what
   changed and why, in a turn of your own.
+- **Do not adopt what the orchestrator is still holding.** Arriving is the moment your held
+  list is most likely to be somebody else's work: what the fallback handed over is stamped
+  with your lane, so your first claim reports it to you with nothing on the row to say it is
+  in flight. *A held row older than your first claim on this lane is not yours* — leave it,
+  and let the agent that claimed it settle it. This is the same rule as the bullet above, one
+  step earlier: do not redo the work the orchestrator finished, and do not race the work it
+  is still doing.
 - **Do not conclude a lapse from a quiet lane.** A conversation with nothing in it is a
   conversation with nothing in it, and a timeout on your park is the ordinary sound of that.
 
@@ -529,10 +588,12 @@ export CORPUS_JOB=evt_7c1d9a
 corpus job log evt_7c1d9a "claimed comment.created on th_4b8e2c — working it inline"
 ```
 
-Nothing is held, so there is nothing to reconcile. The turn asks for the rate assumption to
-be written down where the rest of the plan can find it. That is one document and one reply,
-in this session — no dispatch, because there is nothing here a subagent would do better than
-the agent that has been in the conversation since the first message:
+Nothing is held, so there is nothing to reconcile — and had something been, this being the
+session's first claim it would have been somebody else's and left where it was. The turn asks
+for the rate assumption to be written down where the rest of the plan can find it. That is one
+document and one reply, in this session — no dispatch, because there is nothing here a
+subagent would do better than the agent that has been in the conversation since the first
+message:
 
 ```bash
 corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'EOF'
