@@ -42,6 +42,7 @@ const EXPECTED_TREE = [
   "README.md",
   "claude/agents/.gitkeep",
   "claude/skills/comment/SKILL.md",
+  "claude/skills/converse/SKILL.md",
   "claude/skills/orchestrate/SKILL.md",
   "data/docs/inbox/.gitkeep",
   "data/docs/templates/note.md",
@@ -196,7 +197,7 @@ describe("template tree", () => {
 
 describe("seed documents", () => {
   it("gives every markdown file complete SPEC §5 frontmatter", () => {
-    expect(documents.length).toBe(7);
+    expect(documents.length).toBe(8);
     for (const { relPath, frontmatter } of documents) {
       expect(DocumentIdSchema.safeParse(frontmatter.id).success, `${relPath}: id`).toBe(true);
       expect(typeof frontmatter.type, `${relPath}: type`).toBe("string");
@@ -222,11 +223,19 @@ describe("seed documents", () => {
   });
 
   it("uses one fixed authoring timestamp, advanced only where a skill body was rewritten", () => {
-    // The tree shares one `created` stamp. `updated` matches it everywhere
-    // except the two skills, whose AGENT-002/AGENT-003 bodies advanced it — the
+    // The tree shares one `created` stamp — the template's authoring date, which
+    // a file added later still carries, because the tree is authored as one
+    // artifact. `updated` matches it everywhere except the files whose bodies
+    // have since been rewritten: the three skills (AGENT-002/AGENT-003/AGENT-025)
+    // and the README that AGENT-025 taught about residents. That is the
     // template's own "updated tracks content" rule, applied to itself.
     expect(new Set(documents.map(({ frontmatter }) => frontmatter.created)).size).toBe(1);
-    const rewritten = ["claude/skills/orchestrate/SKILL.md", "claude/skills/comment/SKILL.md"];
+    const rewritten = [
+      "claude/skills/orchestrate/SKILL.md",
+      "claude/skills/comment/SKILL.md",
+      "claude/skills/converse/SKILL.md",
+      "README.md",
+    ];
     for (const { relPath, frontmatter } of documents) {
       if (rewritten.includes(relPath)) {
         expect(String(frontmatter.updated) > String(frontmatter.created), relPath).toBe(true);
@@ -296,53 +305,96 @@ describe("templates", () => {
 });
 
 describe("skills", () => {
+  /**
+   * The two skills that carry the loop's doctrine in full, and against which
+   * every rule below about *how a rule is worded* is pinned.
+   *
+   * `converse` is deliberately not in this list (AGENT-025). It is a core skill
+   * — it ships, it is checked by `coreSkills` and by the `installedSkills`
+   * sweep, and it has its own `describe` block — but it states the reply
+   * grammar, the key loop, the patch choice and the fence rules **by reference**
+   * to the comment skill rather than restating them, which is the design the
+   * issue asked for: three copies of one doctrine is three things to keep in
+   * step. Adding it here would demand those copies.
+   */
   const skills = [
     { name: "orchestrate", relPath: "claude/skills/orchestrate/SKILL.md" },
     { name: "comment", relPath: "claude/skills/comment/SKILL.md" },
   ];
 
-  it.each(skills)("$name carries both frontmatter field sets", ({ name, relPath }) => {
+  /** Every skill the template itself ships — the checks that bind any skill, doctrine or not. */
+  const coreSkills = [...skills, { name: "converse", relPath: "claude/skills/converse/SKILL.md" }];
+
+  it.each(coreSkills)("$name carries both frontmatter field sets", ({ name, relPath }) => {
     const { frontmatter } = documentAt(relPath);
     expect(frontmatter.name).toBe(name);
     expect(frontmatter.name).toBe(path.basename(path.dirname(relPath)));
     expect(typeof frontmatter.description).toBe("string");
     expect(frontmatter.description).not.toBe("");
     expect(frontmatter.type).toBe("skill");
-    expect(frontmatter.title).toBe(name === "orchestrate" ? "Orchestrate" : "Comment");
+    expect(frontmatter.title).toBe(name[0]?.toUpperCase() + name.slice(1));
   });
 
-  it.each(skills)("$name states the CLI-only invariant", ({ relPath }) => {
+  it.each(coreSkills)("$name states the CLI-only invariant", ({ relPath }) => {
     const body = documentAt(relPath).body;
     expect(body).toMatch(/`corpus` CLI/);
     expect(body).toMatch(/never (?:hand-)?edit(?:ed)?\b/i);
   });
 
-  it.each(skills)("$name carries its required section headings", ({ name, relPath }) => {
+  it.each(coreSkills)("$name carries its required section headings", ({ name, relPath }) => {
     const headings = documentAt(relPath)
       .body.split("\n")
       .filter((line) => line.startsWith("## "))
       .map((line) => line.slice(3).toLowerCase());
-    const required =
-      name === "orchestrate"
-        ? [
-            "purpose",
-            "invariants",
-            "the loop",
-            "claiming",
-            "routing",
-            "delegation",
-            "user edit",
-            "concurrency",
-            "writing a document",
-            "job logs",
-            "completing",
-            "halt",
-            "stewardship",
-            "skills",
-            "loop breaks",
-            "worked example",
-          ]
-        : ["gather context", "inbox filing", "reply", "forms", "skill genesis", "worked example"];
+    const requiredBySkill: Record<string, readonly string[]> = {
+      orchestrate: [
+        "purpose",
+        "invariants",
+        "the loop",
+        "claiming",
+        "routing",
+        "delegation",
+        "user edit",
+        "concurrency",
+        "writing a document",
+        "job logs",
+        "completing",
+        "halt",
+        "stewardship",
+        "skills",
+        "loop breaks",
+        "worked example",
+      ],
+      comment: [
+        "gather context",
+        "inbox filing",
+        "reply",
+        "forms",
+        "skill genesis",
+        "worked example",
+      ],
+      converse: [
+        "purpose",
+        "invariants",
+        "differently",
+        "starting up",
+        "the loop",
+        "scope",
+        "inline",
+        "delegating",
+        "settling",
+        "provenance",
+        "summoned",
+        "lapse",
+        "context runs heavy",
+        "retirement",
+        "worked example",
+      ],
+    };
+    const required = requiredBySkill[name] ?? [];
+    expect(required.length, `${relPath}: no required-heading list for "${name}"`).toBeGreaterThan(
+      0,
+    );
     for (const keyword of required) {
       expect(
         headings.some((heading) => heading.includes(keyword)),
@@ -2478,6 +2530,332 @@ describe("comment skill body", () => {
     expect(heredocs.length).toBeGreaterThan(0);
     for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
     expect(body).not.toMatch(/-m "\$\(/);
+  });
+});
+
+/**
+ * AGENT-025 — the **converse** skill, a resident's own loop (SPEC.md §7 as
+ * amended by SHARED-043).
+ *
+ * What is pinned here is only what a plausible-looking rewrite gets wrong, and
+ * every one of the four has a failure that is silent in the running product:
+ *
+ * - **The lane is carried explicitly, or the resident works the wrong queue.**
+ *   An omitted `--thread` is not an error — it means the *orchestrator's* lane —
+ *   so a worked example missing the flag teaches a listener to claim and park on
+ *   somebody else's conversation, and nothing anywhere reports it. That is why
+ *   the flag is checked mechanically on every queue command the skill *works*,
+ *   not merely asserted in prose.
+ * - **Inline work is doctrine, not an oversight.** §7 is careful that a resident
+ *   is *outside* the delegate-everything rule's subject rather than an exception
+ *   to it, so the skill has to carry the reason or a later editor "fixes" it
+ *   back into dispatch and deletes the whole point of a resident.
+ * - **Presence is the parked request and nothing else.** Any keep-alive, any
+ *   registration, any shortened park is a second and lying account of presence.
+ * - **A lapse is not breakage.** A resident that treats the orchestrator's
+ *   fallback as a failure re-does work that was already done, in a conversation
+ *   the person is reading.
+ */
+describe("converse skill body", () => {
+  const body = documentAt("claude/skills/converse/SKILL.md").body;
+
+  it("carries no skeleton remnants and no dev-harness references", () => {
+    for (const marker of ["arrives with agent", "skeleton", "tbd", "<fill", "placeholder"]) {
+      expect(body.toLowerCase(), `contains "${marker}"`).not.toContain(marker);
+    }
+    for (const marker of ["SPEC.md", "CLAUDE.md", "issues/", "/implement", "/decompose"]) {
+      expect(body, `contains "${marker}"`).not.toContain(marker);
+    }
+  });
+
+  it("gives every section a substantive body, not a bare heading", () => {
+    const sections = new Map<string, string[]>();
+    let current: string | null = null;
+    let inFence = false;
+    for (const line of body.split("\n")) {
+      if (line.trimStart().startsWith("```")) inFence = !inFence;
+      if (!inFence && line.startsWith("## ")) {
+        current = line.slice(3);
+        sections.set(current, []);
+      } else if (current !== null) {
+        sections.get(current)?.push(line);
+      }
+    }
+    expect(sections.size).toBe(15);
+    for (const [heading, lines] of sections) {
+      expect(
+        lines.join("\n").trim().length,
+        `"${heading}" is a heading with no substance`,
+      ).toBeGreaterThan(400);
+    }
+  });
+
+  describe("the lane is carried explicitly", () => {
+    /** Every `corpus queue …` the skill actually *works*, as opposed to naming in prose. */
+    const workedQueueUses = fencedBlocks(body)
+      .filter((block) => block.info === "bash")
+      // The extractor reads code, so the fence has to be put back around the
+      // block's content — handed bare lines it finds nothing and every
+      // assertion below would pass over an empty set.
+      .flatMap((block) => extractCorpusInvocationUses(["```bash", block.content, "```"].join("\n")))
+      .filter(({ tokens }) => tokens[0] === "queue");
+
+    it("spells --thread on every scoped queue command it works", () => {
+      const scoped = workedQueueUses.filter(
+        ({ tokens }) => tokens[1] === "idle" || tokens[1] === "claim-all",
+      );
+      // Anti-vacuity in both directions: some example has to claim and some
+      // example has to park, or "every one carries the flag" holds over nothing.
+      expect(scoped.filter(({ tokens }) => tokens[1] === "claim-all").length).toBeGreaterThan(0);
+      expect(scoped.filter(({ tokens }) => tokens[1] === "idle").length).toBeGreaterThan(0);
+      for (const use of scoped) {
+        expect(use.flags, `\`corpus ${use.tokens.join(" ")}\` with no lane`).toContain("--thread");
+      }
+    });
+
+    it("works no queue command that would reach another lane", () => {
+      // `reap-stale` takes no lane, so it reaps every one of them; the skill
+      // rules it out in prose and must not then show it in a copyable block.
+      for (const use of workedQueueUses) {
+        expect(use.tokens[1], "a lane-less queue command in a worked block").not.toBe("reap-stale");
+      }
+      expect(body).toMatch(/`corpus queue reap-stale` is not yours to run/);
+      expect(body).toMatch(/it reaches every lane/);
+    });
+
+    it("invents no environment variable for the lane, and says why", () => {
+      expect(body, "invents a lane variable").not.toMatch(/CORPUS_LANE/);
+      expect(body).toMatch(/There is no environment variable for a lane/);
+      // The asymmetry that makes a variable worse here than elsewhere.
+      expect(body).toMatch(
+        /a wrong `CORPUS_JOB` is refused, but a wrong lane is honoured in\s+silence/,
+      );
+      // An omission is not a typo: it is a different, valid lane.
+      expect(body).toMatch(/worse than a typo, because it is not\s+an error at all/);
+      expect(body).toMatch(/`--thread orchestrator` is refused as a\s+usage error/);
+      expect(body).toMatch(/exactly one spelling, which is the absent flag/);
+    });
+  });
+
+  it("states inline work as outside the delegation rule, never as an exception", () => {
+    expect(body).toMatch(/\*\*1\. You work your conversation inline\.\*\*/);
+    expect(body).toMatch(
+      /\*\*not an\s+exception\*\* to that rule — it is outside the rule's subject/,
+    );
+    // The reason, which is what stops a later editor restoring the dispatch.
+    expect(body).toMatch(
+      /you hold one lane, and every other lane, the\s+orchestrator's included, keeps moving/,
+    );
+    expect(body).toMatch(/Delegation would give that away and buy nothing back/);
+    // And the boundary: two departures, and inventing a third is a mistake.
+    expect(body).toMatch(/\*\*Everything else binds unchanged\.\*\*/);
+    expect(body).toMatch(/treat any third one you find yourself\s+inventing as a mistake/);
+  });
+
+  it("settles first-person, and only what it claimed", () => {
+    expect(body).toMatch(/\*\*2\. You settle your own lane\.\*\*/);
+    expect(body).toMatch(/Nobody settles work they did not claim/);
+    expect(body).toMatch(/The orchestrator does not settle for you and you never settle for it/);
+    for (const verb of ["corpus queue complete", "corpus queue fail", "corpus queue defer"]) {
+      expect(body, `missing "${verb}"`).toContain(verb);
+    }
+    expect(body).toContain("--reason");
+    expect(body).toContain("--blocked-on");
+    // A deferral is lane-preserving and is not a failure.
+    expect(body).toMatch(/\*\*Deferral keeps the lane\.\*\*/);
+    expect(body).toMatch(/under `deferred` and\s+never `failed`/);
+  });
+
+  it("orders the settling call after the writes, with the exit that proves it", () => {
+    // Measured against a running server: `--job` naming a settled event is
+    // exit 5, so settling early does not fail — it makes the rest of this
+    // agent's own work unfileable, which is the silent half.
+    expect(body).toMatch(/\*\*Settle last, after every write the event served\.\*\*/);
+    expect(body).toMatch(/refused at exit `5`/);
+    expect(body).toMatch(/settled work cannot acquire a scope/);
+    expect(body).toMatch(/silently makes the rest of your own work unfileable/);
+    // And the provenance loop the ordering exists for.
+    expect(body).toContain("export CORPUS_JOB=evt_7c1d9a");
+    expect(body).toContain("--job <evt_…>");
+    expect(body).toMatch(/\*\*Omitting it is free\.\*\*/);
+    expect(body).toMatch(/\*\*Misnaming it is not\.\*\*/);
+    expect(body).toMatch(/`corpus doc detach` is user-only/);
+  });
+
+  it("makes presence the parked request and forbids every substitute for it", () => {
+    expect(body).toMatch(
+      /\*\*You are present because you are parked, and for no other reason\.\*\*/,
+    );
+    expect(body).toMatch(/nothing\s+to register, no heartbeat to send/);
+    expect(body).toMatch(/\*\*Never write a\s+keep-alive\*\*/);
+    expect(body).toMatch(/no announcement turn, no periodic ping, no shortened park/);
+    // The startup read is ordered against the park, which is what gives it meaning.
+    expect(body).toMatch(/\*\*The ordering is what makes this check mean anything\.\*\*/);
+    expect(body).toMatch(/after you park, `live` on your row is you/);
+    expect(body).toMatch(/\*\*One consumer per lane, and that includes you\.\*\*/);
+    expect(body).toMatch(/split the conversation's story in half/);
+    // And no arrival turn, which is the keep-alive's polite cousin.
+    expect(body).toMatch(/\*\*Say nothing yet\.\*\*/);
+  });
+
+  it("treats a lapse as the design working, and restates no window", () => {
+    expect(body).toMatch(/\*\*Do not treat a `lapsed` row as breakage\.\*\*/);
+    expect(body).toMatch(/\*\*Do not redo what the orchestrator did while you were gone\.\*\*/);
+    expect(body).toMatch(
+      /slower, and without\s+this conversation's warmth, but never silently not done/,
+    );
+    expect(body).toMatch(/\*\*Do not shorten your park to lapse less\.\*\*/);
+    expect(body).toMatch(/longer than a\s+rearm gap/);
+    // The number is the server's, and naming it here is how the two drift apart.
+    expect(body).toMatch(/that\s+number is the server's and this skill does not restate it/);
+    for (const restatement of ["16m", "16 minutes", "960"]) {
+      expect(body, `restates the grace window as "${restatement}"`).not.toContain(restatement);
+    }
+  });
+
+  it("describes scope as the walk it is, never as a guarantee of exclusivity", () => {
+    // SHARED-044: §7's "an artifact belongs to at most one scope" is not
+    // delivered by its own clauses, and the CLI's help deliberately describes
+    // the walk instead. This text does the same — a resident told it owns its
+    // scope exclusively would act on an inventory the server never promised.
+    expect(body).toMatch(/\*\*Scope membership is\s+a walk, not a label\*\*/);
+    expect(body).toMatch(/follows\s+a thread's parents and a document's `origin`/);
+    expect(body).toMatch(
+      /\*\*Reason from the lane, never from your own idea of what belongs to you\.\*\*/,
+    );
+    expect(body).toMatch(/Do not build a mental\s+inventory/);
+    expect(body).not.toMatch(/belongs to at most one scope/);
+    expect(body).not.toMatch(/exclusively yours/);
+    // The stamp is made once, which is why designating moves nothing.
+    expect(body).toMatch(/\*\*The stamp is made once and never rewritten\.\*\*/);
+    expect(body).toMatch(/\*\*You never see the designation event\.\*\*/);
+  });
+
+  it("answers a summons where it was asked, and annexes nothing", () => {
+    expect(body).toMatch(/\*\*Reply where the event's payload says\.\*\*/);
+    expect(body).toMatch(/no walk, no\s+classification/);
+    expect(body).toMatch(/Routing follows the recipient;\s+filing follows the conversation/);
+    expect(body).toMatch(/\*\*An override never rewires anything\*\*/);
+    expect(body).toMatch(/do not adopt its documents into this conversation/);
+  });
+
+  it("delegates a side task under the orchestrator's rules, and awaits it", () => {
+    expect(body).toMatch(/\*\*You await what you launch; you do not park on it\.\*\*/);
+    // The reason the two skills diverge here, so the choice reads as a decision.
+    expect(body).toMatch(
+      /Nothing of yours is behind this\s+work except the next message in this one conversation/,
+    );
+    expect(body).toMatch(/one piece of work with\s+one status and one reply/);
+    // The boundary a dispatch may never cross, which is what a second claimant is.
+    expect(body).toMatch(/never runs a claim, a park, or a terminal call/);
+    expect(body).toMatch(/A subagent that inherits a lane is a\s+second claimant/);
+  });
+
+  it("binds the reply grammar by reference rather than restating it", () => {
+    // The comment skill is the manual for a turn; three copies of one doctrine
+    // is three things to keep in step, and the issue asked for one.
+    expect(body).toMatch(/The \*\*comment\*\* skill is your working manual for a turn/);
+    expect(body).toMatch(/none of it is repeated here/);
+    // Including the one sentence in it that is written for the other lane.
+    expect(body).toMatch(/the terminal call on the event belongs to the\s+orchestrate skill alone/);
+    expect(body).toMatch(/written for a subagent working on the orchestrator's lane/);
+    // The weight table is declared in exactly one file, and this is not it.
+    expect(body).toMatch(/do not restate the table here/);
+    expect(readWeightLevels(body)).toEqual([]);
+  });
+
+  it("ends the designation on a roster read, because nothing else will", () => {
+    expect(body).toMatch(/\*\*neither of them sends you an event\*\*/);
+    expect(body).toMatch(/\*\*Never re-park on a dissolved lane\.\*\*/);
+    // The exact failure: the park is accepted, so a skipped check waits forever.
+    expect(body).toMatch(/accepted and parks; it does not error/);
+    expect(body).toMatch(/waits forever\s+on a conversation that no longer has it/);
+    // A sign-off on an open thread, nothing on a resolved one.
+    expect(body).toMatch(/\*\*If it is resolved, post nothing\.\*\*/);
+    expect(body).toMatch(/Reopening a resolved thread later does not bring you back/);
+    // Measured in the live drill: a release landed while the listener was
+    // parked and was read at the top of the next pass, one rearm later. That
+    // latency is stated as correct so it does not get "fixed" with a poll.
+    expect(body).toMatch(/\*\*Finding out one rearm late is correct, not a gap\.\*\*/);
+    expect(body).toMatch(/every message written in between was\s+stamped for the orchestrator/);
+  });
+
+  /**
+   * Both found by a real Claude Code session driven by this text alone
+   * (AGENT-025's drill), and both are the AGENT-019 failure shape: a worked
+   * example beats the rule that contradicts it.
+   *
+   * The session copied `--model claude-sonnet-4-5` out of the example onto its
+   * first real turn, which is the one field in the whole product that exists to
+   * be checkable — a copied one is false while looking exactly right. And the
+   * example printed a `key` line after `corpus doc create`, which that verb does
+   * not print (measured: `created doc_… — data/docs/…`, no key), leaving the
+   * session unsure how to edit what it had just made.
+   */
+  it("marks the two things in its worked example that are not text to reuse", () => {
+    expect(body).toMatch(
+      /is what ran in this example; on your turn the name is what is running as you/,
+    );
+    expect(body).toMatch(
+      /copying the string out of an example is the one way to make the field say\s+something false/,
+    );
+    expect(body).toMatch(/\*\*a create prints its id and its path, not a\s+key\*\*/);
+    expect(body).toMatch(/`corpus doc show <id>` first and present what it printed/);
+    // And the example itself must not contradict that: no key line after a create.
+    for (const block of fencedBlocks(body).filter((fence) => fence.info === "bash")) {
+      const lines = block.content.split("\n");
+      for (const [index, line] of lines.entries()) {
+        if (!line.trimStart().startsWith("created doc_")) continue;
+        expect(lines[index + 1] ?? "", "a create followed by a key it does not print").not.toMatch(
+          /^key [0-9a-f]{64}$/,
+        );
+      }
+    }
+  });
+
+  it("hands a successor the corpus, never a transcript", () => {
+    expect(body).toMatch(/A degraded listener holding a lane is worse\s+than no listener at all/);
+    expect(body).toMatch(/presence is what keeps the fallback from firing/);
+    expect(body).toMatch(/\*\*Do not park again\.\*\*/);
+    expect(body).toMatch(/There is no transcript handoff and you must not attempt one/);
+    expect(body).toMatch(/The thread and its artifacts are the memory/);
+    // Which is what makes stewardship machinery rather than good manners here.
+    expect(body).toMatch(/\*\*Stewardship is how you remember\.\*\*/);
+  });
+
+  it("runs the loop as discrete steps and never chains the claim to the park", () => {
+    expect(body).toMatch(/\*\*This is a procedure, not a script\.\*\*/);
+    expect(body).toMatch(/\*\*never chained\*\*/);
+    expect(body).toMatch(/answered by\s+nobody, with no error anywhere/);
+    // No fenced block may exist that a reader could paste as the whole loop.
+    for (const block of fencedBlocks(body).filter((fence) => fence.info === "bash")) {
+      const lines = block.content.split("\n").map((line) => line.trim());
+      const claims = lines.some((line) => line.startsWith("corpus queue claim-all"));
+      const parks = lines.some((line) => line.startsWith("corpus queue idle"));
+      expect(claims && parks, "a block a reader could copy as the whole loop").toBe(false);
+    }
+    expect(body.match(/\bsleep\b/gi) ?? []).toHaveLength(1);
+    expect(body).not.toContain("while true");
+    // Work in one lane is one conversation, so it is serial by construction.
+    expect(body).toMatch(/in claim order, one at a time/);
+    expect(body).toMatch(/There is no overlap set to compute here/);
+    // Halted is quiet, not an exit.
+    expect(body).toContain('{"idle":true,"reason":"halted"}');
+    expect(body).toContain('{"idle":true,"reason":"timeout"}');
+  });
+
+  it("hedges nothing and quotes every multi-line argument", () => {
+    for (const hedge of [
+      "use your judgment",
+      "consider whether",
+      "you may want",
+      "if appropriate",
+    ]) {
+      expect(body.toLowerCase(), `hedges with "${hedge}"`).not.toContain(hedge);
+    }
+    const heredocs = body.match(/<<-?\s*\S+/g) ?? [];
+    expect(heredocs.length).toBeGreaterThan(0);
+    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
   });
 });
 
