@@ -6,6 +6,7 @@ import type {
   Job,
   QueueStatus,
   RelatedDoc,
+  Resident,
   Thread,
   Warning,
 } from "@corpus/contract";
@@ -284,7 +285,9 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
    * liveness is usually the point — so these two only ever add a lane or take
    * one away.
    */
-  const designated = new Map<string, { name: string; docId: string }>();
+  // The contract's own `Resident`, both halves nullable since CONTRACT-061, so a
+  // fixture cannot store a shape the wire refuses.
+  const designated = new Map<string, Resident>();
   const released = new Set<string>();
 
   /**
@@ -465,6 +468,13 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
        * designation — so a fixture that acknowledged the write and left the
        * roster alone would let a badge test pass against a board that never
        * repainted. `residentLanes` is what the roster answers with from here on.
+       *
+       * **A body with no `name` designates a general resident** (SHARED-048,
+       * SERVER-121): the resolved resident comes back with both halves null,
+       * exactly as the route answers it. It was `{name: "", …}` before UI-122 —
+       * a shape the contract refuses — and a fixture that kept it would have let
+       * every general-designation test pass against a state the server cannot
+       * produce.
        */
       if (verb === "resident") {
         const name = (call.body as { name?: string } | undefined)?.name;
@@ -474,7 +484,10 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
           return json({ thread: threadSummary(id, false), warnings: [] });
         }
         released.delete(id);
-        designated.set(id, { name: name ?? "", docId: "doc_agentdef" });
+        designated.set(
+          id,
+          name === undefined ? { name: null, docId: null } : { name, docId: "doc_agentdef" },
+        );
         return json({
           thread: { ...(threadSummary(id, false) as object), resident: designated.get(id) },
           warnings: [],

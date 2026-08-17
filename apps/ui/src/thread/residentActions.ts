@@ -15,15 +15,34 @@ import type { MenuAction } from "../menu/menuModel";
  * thread, so it belongs in that list; a dialog beside it would be a second
  * surface with its own drift.
  *
+ * ## The act leads; the profiles refine it
+ *
+ * §7's rider makes naming a profile optional and naming none *"the ordinary
+ * case … requires nothing to exist first"*, so the first item is the
+ * designation itself and the directory is what follows it. It used to be the
+ * other way round, and in a workspace with no `agent-def` documents that left
+ * one disabled line saying there was nothing to pick — the feature v0.10.0 is
+ * named for was unreachable from the UI (UI-122). **The general offer therefore
+ * does not depend on the directory at all**: not on what it holds, and not on
+ * whether it has answered.
+ *
  * ## The names come from the mention directory, because they are the same names
  *
  * §7 designates by the **invocable name** — the one `@<subagent>` would have
  * written — resolved against the workspace's `type: agent-def` documents (§8).
- * So the offer is that directory, read through the very query the `@`
+ * So the refinement is that directory, read through the very query the `@`
  * autocomplete reads (`MENTION_DOC_TYPE`), and a person picks the word they
- * already type rather than learning a second vocabulary. A directory that has
- * not answered offers nothing rather than an empty list that looks like a
- * workspace with no agents.
+ * already type rather than learning a second vocabulary.
+ *
+ * ## The vocabulary for *who* is resident is the kit's, not this file's
+ *
+ * A `Resident` has three shapes since CONTRACT-061, and the board badge and the
+ * composer's recipient row render the same three. Everything this file says
+ * about them therefore reads `LaneRow.kind` and `LaneRow.profile` rather than
+ * re-deriving them from a name — `packages/kit/src/recipient/laneRows.ts` is
+ * where a lane turns into words, and a menu that decided for itself what a
+ * missing profile is called would be the second description drifting from the
+ * first.
  *
  * ## Only where a designation is legal, and only for a person
  *
@@ -49,8 +68,10 @@ export interface AgentDefRow {
  * is blank is dropped rather than offered — an item labelled with nothing is not
  * an offer, and designating by an empty name is a `400`.
  */
-export function agentDefRows(rows: readonly DocRow[] | undefined): readonly AgentDefRow[] {
-  if (rows === undefined) return [];
+export function agentDefRows(
+  rows: readonly DocRow[] | undefined,
+): readonly AgentDefRow[] | undefined {
+  if (rows === undefined) return undefined;
   return rows
     .map((row) => ({ id: row.id, name: row.title.trim() }))
     .filter((row) => row.name !== "");
@@ -59,11 +80,48 @@ export function agentDefRows(rows: readonly DocRow[] | undefined): readonly Agen
 /** What a designation item's second line says. */
 export const DESIGNATE_META = "owns this conversation and everything that grows out of it";
 
+/** …and a general one's, which leads with what it is not before what it does. */
+export const GENERAL_META = `no profile — ${DESIGNATE_META}`;
+
 /** …and a release's, which states the consequence rather than the act. */
 export const RELEASE_META = "back to ordinary routing — nothing already queued moves";
 
-/** Said in place of the offer when the workspace defines no agents to designate. */
-export const NO_AGENT_DEFS = "no agent-def documents in this workspace";
+/** The act itself, offered whatever the agent-def directory holds. */
+export const DESIGNATE_LABEL = "Designate a resident";
+
+/** …and the same act on a conversation that already has a profiled resident. */
+export const REPLACE_GENERAL_LABEL = "Replace with a general resident";
+
+/**
+ * Releasing a resident there is no profile to name.
+ *
+ * The profiled case says "Release researcher"; this one names nobody rather than
+ * a word standing in for a profile (CONTRACT-061), and the meta beside it
+ * already says what release does.
+ */
+export const RELEASE_GENERAL_LABEL = "Release the resident";
+
+/**
+ * Said when the workspace defines no profiles — **beside** the offer rather than
+ * in place of it.
+ *
+ * It used to be `NO_AGENT_DEFS`, and it used to substitute for the whole offer:
+ * a disabled "Designate a resident" whose second line read *"no agent-def
+ * documents in this workspace"*. That was a dead end, and it was the defect
+ * UI-122 exists to remove — but it is still worth saying, for the reason it was
+ * worth saying then. A menu that simply stopped after one item leaves a person
+ * who came looking for their agent-defs with nothing to distinguish *"this
+ * workspace has none"* from *"this menu forgot to offer them"*.
+ *
+ * What changed is what it has to be: news rather than a diagnostic. The absence
+ * of profiles is not a misconfiguration — §7 makes a profile the refinement and
+ * not the requirement — so it says so in the same breath, and it sits on a
+ * disabled line under an offer that works.
+ */
+export const NO_PROFILES_LABEL = "No profiles yet";
+
+export const NO_PROFILES_META =
+  "a resident does not need one — add a type: agent-def document to offer one here";
 
 export interface ResidentActionsInput {
   /** True for a thread on a document, which §7 forbids a resident. */
@@ -78,9 +136,20 @@ export interface ResidentActionsInput {
   readonly resident: LaneRow | undefined;
   /** Whether `GET /api/agents` has answered at all (UI-098's rule). */
   readonly rosterAnswered: boolean;
-  /** The workspace's agent-defs, from the mention directory. */
-  readonly agents: readonly AgentDefRow[];
+  /**
+   * The workspace's agent-defs, from the mention directory, or `undefined` while
+   * it has not answered.
+   *
+   * The distinction is smaller than it was and still real: since UI-122 the
+   * directory gates only the *refinement*, so a general designation is offered
+   * either way and the menu never dead-ends on it. What it still decides is
+   * whether {@link NO_PROFILES_LABEL} may be said, and an unanswered read saying
+   * "no profiles yet" would be UI-098's rule broken for the length of one fetch.
+   */
+  readonly agents: readonly AgentDefRow[] | undefined;
   readonly pending: boolean;
+  /** Designate with no profile: §7's general resident. */
+  readonly onDesignateGeneral: () => void;
   readonly onDesignate: (name: string) => void;
   readonly onRelease: () => void;
 }
@@ -89,8 +158,8 @@ export interface ResidentActionsInput {
  * The items to append to a conversation's menu — possibly none.
  *
  * Ordered as the decision is made: release first where there is something to
- * release, since it is one item and the alternative is a list; then the offers,
- * in the directory's own order.
+ * release, since it is one item and the alternative is a list; then the act
+ * itself; then the profiles that refine it, in the directory's own order.
  */
 export function residentActions(input: ResidentActionsInput): readonly MenuAction[] {
   if (input.hasParent) return [];
@@ -98,11 +167,15 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
   // cannot tell "designate" from "replace", and either label would be a claim.
   if (!input.rosterAnswered) return [];
 
+  const { resident, agents } = input;
   const items: MenuAction[] = [];
-  if (input.resident !== undefined) {
+  if (resident !== undefined) {
     items.push({
       id: "resident-release",
-      label: `Release ${input.resident.name}`,
+      // Named where there is a profile to name, and by nobody where there is
+      // not: a general resident has none, and `LaneRow.name` falls through to
+      // the conversation's own title, which would read as releasing the thread.
+      label: resident.profile === null ? RELEASE_GENERAL_LABEL : `Release ${resident.profile}`,
       meta: RELEASE_META,
       disabled: input.pending,
       run: () => {
@@ -110,27 +183,44 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
       },
     });
   }
-  if (input.agents.length === 0) {
+  // The act itself — offered whatever the directory holds, and skipped only
+  // where it would change nothing: §7 makes designation single-valued, so
+  // designating a general resident over a general resident is a write with no
+  // effect, and an item that does nothing is not an action.
+  if (resident?.kind !== "general") {
     items.push({
-      id: "resident-none",
-      label: "Designate a resident",
-      meta: NO_AGENT_DEFS,
+      id: "resident-designate-general",
+      label: resident === undefined ? DESIGNATE_LABEL : REPLACE_GENERAL_LABEL,
+      meta: GENERAL_META,
+      disabled: input.pending,
+      run: () => {
+        input.onDesignateGeneral();
+      },
+    });
+  }
+  if (agents === undefined) return items;
+  if (agents.length === 0) {
+    items.push({
+      id: "resident-no-profiles",
+      label: NO_PROFILES_LABEL,
+      meta: NO_PROFILES_META,
       disabled: true,
       run: () => {
-        /* Nothing to designate; the item exists to say so rather than to act. */
+        /* News, not an offer: the act above is the one that works. */
       },
     });
     return items;
   }
-  for (const agent of input.agents) {
-    // A lane already resident on this thread is not offered again: §7 makes
-    // designation single-valued, so designating the same agent twice is a write
-    // that changes nothing, and an item that does nothing is not an action.
-    if (agent.name === input.resident?.name) continue;
+  for (const agent of agents) {
+    // Whoever is already resident is not re-offered, for the reason above. It is
+    // matched on the **profile** rather than on the row's display name: those
+    // differ for a general resident, whose name is its conversation's, and an
+    // agent-def titled the same as the conversation would otherwise vanish from
+    // the list.
+    if (agent.name === resident?.profile) continue;
     items.push({
       id: `resident-designate-${agent.id}`,
-      label:
-        input.resident === undefined ? `Designate ${agent.name}` : `Replace with ${agent.name}`,
+      label: resident === undefined ? `Designate ${agent.name}` : `Replace with ${agent.name}`,
       meta: DESIGNATE_META,
       disabled: input.pending,
       run: () => {
@@ -140,3 +230,23 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
   }
   return items;
 }
+
+/**
+ * What the board says once a designation lands — kept beside the actions so the
+ * menu's vocabulary and the notice's are one file apart rather than two
+ * components apart.
+ *
+ * `profile` is the resolved `Resident.name` off the response, so `null` is a
+ * general resident and never a name this surface failed to read. The general
+ * sentence names nobody rather than substituting a word for the missing profile
+ * (CONTRACT-061).
+ */
+export function designatedNotice(profile: string | null): string {
+  const consequence = "messages in this conversation and everything that grows out of it go to it";
+  return profile === null
+    ? `This conversation has a resident, with no profile — ${consequence}.`
+    : `${profile} is resident here — ${consequence}.`;
+}
+
+export const RELEASED_NOTICE =
+  "Resident released — this conversation is back on the agent's own lane.";

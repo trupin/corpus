@@ -49,13 +49,33 @@ describe("useSetResident", () => {
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const { result } = renderHook(() => useSetResident(), { wrapper: harness.Wrapper });
 
-    result.current.mutate({ id: "th_root", name: "claims-review" });
+    result.current.mutate({ id: "th_root", designate: "claims-review" });
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
     expect(wire.calls).toEqual([
       { method: "POST", path: "/api/threads/th_root/resident", body: { name: "claims-review" } },
+    ]);
+  });
+
+  /**
+   * SPEC.md §7's ordinary case, which "requires nothing to exist first". It is
+   * the same `POST` with the name left out — never a sentinel name, which would
+   * reach a person's recipient list dressed as a profile (CONTRACT-061).
+   */
+  it("designates a general resident by naming no profile at all", async () => {
+    const wire = transport();
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useSetResident(), { wrapper: harness.Wrapper });
+
+    result.current.mutate({ id: "th_root", designate: null });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(wire.calls).toEqual([
+      { method: "POST", path: "/api/threads/th_root/resident", body: {} },
     ]);
   });
 
@@ -66,7 +86,7 @@ describe("useSetResident", () => {
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const { result } = renderHook(() => useSetResident(), { wrapper: harness.Wrapper });
 
-    result.current.mutate({ id: "th_root" });
+    result.current.mutate({ id: "th_root", release: true });
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
@@ -89,7 +109,7 @@ describe("useSetResident", () => {
     });
     const { result } = renderHook(() => useSetResident(), { wrapper: harness.Wrapper });
 
-    result.current.mutate({ id: "th_root", name: "claims-review" });
+    result.current.mutate({ id: "th_root", designate: "claims-review" });
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
@@ -111,7 +131,7 @@ describe("useSetResident", () => {
       { wrapper: harness.Wrapper },
     );
 
-    result.current.mutate({ id: "th_root", name: "nobody" });
+    result.current.mutate({ id: "th_root", designate: "nobody" });
 
     await waitFor(() => {
       expect(result.current.isError).toBe(true);

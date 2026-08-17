@@ -38,6 +38,7 @@ import {
   type ReattachThreadResponse,
   type Relation,
   type RelatedDocs,
+  type Resident,
   type ResolvedAnchor,
   type SearchResults,
   type StaleKeyError,
@@ -799,6 +800,58 @@ export async function stubCorpus(
   const requests: StubRequest[] = [];
   let created = 0;
   let appended = 0;
+
+  /*
+   * The roster **is** the set of designations, as it is on the server (SPEC.md
+   * §7 names a lane after its designated root thread), so designating, releasing
+   * and resolving all go through these three rather than each rewriting `lanes`.
+   * A designation this stub acknowledged without touching the roster would leave
+   * every badge and every recipient picker reading the state before it.
+   */
+  const laneOf = (id: string): AgentLane | undefined => lanes.find((row) => row.lane === id);
+
+  const dropLane = (id: string): void => {
+    const index = lanes.findIndex((row) => row.lane === id);
+    if (index !== -1) lanes.splice(index, 1);
+  };
+
+  const setLane = (id: string, resident: Resident): void => {
+    dropLane(id);
+    lanes.push({
+      lane: id,
+      resident,
+      // A designation creates a lane nobody has parked on yet: presence is the
+      // parked `idle` and nothing else, and no agent runs in this suite.
+      live: false,
+      since: null,
+      summary: null,
+      origin: { id, title: store.get(id)?.title ?? id },
+    });
+  };
+
+  /** One stored thread as a `ThreadMutationResponse`, resident and all. */
+  const threadMutation = (doc: StoredDoc): ThreadMutationResponse => {
+    const parent = doc.parent === null ? undefined : store.get(doc.parent);
+    const anchor = parent?.anchors.find((entry) => entry.threadId === doc.id);
+    const turns = parseThreadTurns(doc.body);
+    return {
+      thread: {
+        id: doc.id,
+        title: doc.title,
+        status: threadStatusOf(doc),
+        parent: doc.parent,
+        anchor: anchor?.anchorId ?? null,
+        agent: doc.agent,
+        resident: laneOf(doc.id)?.resident ?? null,
+        created: SEEDED_AT,
+        updated: doc.updated,
+        turnCount: turns.length,
+        lastAuthor: turns.at(-1)?.author ?? "user",
+        lastTs: turns.at(-1)?.ts ?? SEEDED_AT,
+      },
+      warnings: [],
+    };
+  };
 
   const json = async (route: Route, payload: StubPayload, status = 200): Promise<void> => {
     await route.fulfill({
@@ -1625,6 +1678,56 @@ export async function stubCorpus(
     }
 
     /*
+     * `POST`/`DELETE /api/threads/{id}/resident` — SPEC.md §7's designation.
+     *
+     * **There was no handler here at all until UI-122**, which meant every
+     * designation any spec had ever sent was answered `200 {}` by the fallback
+     * at the foot of this function: a shape the client does not validate, a
+     * roster that never changed, and a green run proving nothing (the trap
+     * UI-116 wrote down). It is modelled rather than acknowledged for the reason
+     * `readerFixture` gives: the lane *is* the designation, so a stub that wrote
+     * nothing to `lanes` would let a badge test pass against a board that never
+     * repainted.
+     *
+     * The three states of `Resident` are all reachable: a body with no `name`
+     * designates a **general** resident (`{name: null, docId: null}`), a name
+     * that resolves to a seeded `type: agent-def` document designates a profiled
+     * one, and a name that resolves to nothing is the route's own `404` — never
+     * degraded to a general resident, which is exactly the "typo that looked
+     * like it worked" the contract refuses.
+     */
+    const residentRoute = /^\/api\/threads\/([^/]+)\/resident$/.exec(url.pathname);
+    if (residentRoute !== null && (method === "POST" || method === "DELETE")) {
+      const id = decodeURIComponent(residentRoute[1] ?? "");
+      const doc = store.get(id);
+      if (doc === undefined || doc.type !== "thread") {
+        return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
+      }
+      if (method === "DELETE") {
+        dropLane(id);
+        return json(route, threadMutation(doc));
+      }
+      const body = (requests.at(-1)?.body ?? {}) as { name?: unknown };
+      const name = typeof body.name === "string" ? body.name : undefined;
+      let resident: Resident = { name: null, docId: null };
+      if (name !== undefined) {
+        const profile = [...store.values()].find(
+          (row) => row.type === "agent-def" && row.title.toLowerCase() === name.toLowerCase(),
+        );
+        if (profile === undefined) {
+          return json(
+            route,
+            { code: "not_found", message: `no agent-def named ${name}` } satisfies NotFoundError,
+            404,
+          );
+        }
+        resident = { name: profile.title, docId: profile.id };
+      }
+      setLane(id, resident);
+      return json(route, threadMutation(doc));
+    }
+
+    /*
      * `POST /api/threads/{id}/seen` (SPEC.md §7) and the resolve/reopen pair
      * (§6). Both mutate the store rather than answering flatly, because both are
      * what UI-077's rules key on: reading a conversation is what lets the rule
@@ -1653,24 +1756,11 @@ export async function stubCorpus(
       const parent = doc.parent === null ? undefined : store.get(doc.parent);
       const anchor = parent?.anchors.find((entry) => entry.threadId === id);
       if (anchor !== undefined) anchor.threadStatus = doc.status;
-      const turns = parseThreadTurns(doc.body);
-      return json(route, {
-        thread: {
-          id,
-          title: doc.title,
-          status: threadStatusOf(doc),
-          parent: doc.parent,
-          anchor: anchor?.anchorId ?? null,
-          agent: doc.agent,
-          resident: null,
-          created: SEEDED_AT,
-          updated: doc.updated,
-          turnCount: turns.length,
-          lastAuthor: turns.at(-1)?.author ?? "user",
-          lastTs: turns.at(-1)?.ts ?? SEEDED_AT,
-        },
-        warnings: [],
-      } satisfies ThreadMutationResponse);
+      // SPEC.md §7: "a thread that is **resolved** releases its resident with
+      // it… and reopening does not bring it back". Modelled, because the badge
+      // and the lane going is exactly what a spec on this path asserts.
+      if (verb === "resolve") dropLane(id);
+      return json(route, threadMutation(doc));
     }
 
     /*

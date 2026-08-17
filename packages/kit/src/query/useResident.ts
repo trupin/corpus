@@ -32,6 +32,12 @@ import type { SettledCallbacks } from "./settledCallbacks.js";
  * carries a `{name, docId}` this client could not have computed — and a name
  * that resolves to nothing is a `404`. There is nothing honest to paint before
  * the answer arrives.
+ *
+ * A **general** designation is the one case a client could have predicted the
+ * answer to — `{name: null, docId: null}` needs no lookup — and it is not
+ * painted either. It is one round trip on a thread the person is looking at, and
+ * a hook with two write paths, one optimistic, would be two behaviours to keep
+ * honest for a saving nobody can perceive.
  */
 
 function invalidateResident(queryClient: QueryClient, threadId: string): void {
@@ -41,15 +47,29 @@ function invalidateResident(queryClient: QueryClient, threadId: string): void {
   void queryClient.invalidateQueries({ queryKey: AGENTS_KEY });
 }
 
-/** Which way the designation goes; `name` is absent for a release. */
-export interface ResidentVariables {
-  readonly id: string;
-  /**
-   * The agent's **invocable name** — what `@<subagent>` would have written, not
-   * a document id. `undefined` releases whoever is resident.
-   */
-  readonly name?: string | undefined;
-}
+/**
+ * Which way the designation goes, **spelled rather than inferred from an absent
+ * field**.
+ *
+ * It used to be `{id, name?}`, where no name meant a release. SHARED-048 took
+ * that spelling away: a designation may now name **no** profile, so "no name" is
+ * two different acts — designate a general resident, and dissolve the
+ * designation — and the two would have been one `undefined` apart, with the
+ * wrong one silently dropping a resident somebody had chosen. `designate: null`
+ * is the general one and `release` is the other, and neither can be reached by
+ * forgetting to set a variable.
+ */
+export type ResidentVariables =
+  | {
+      readonly id: string;
+      /**
+       * The agent's **invocable name** — what `@<subagent>` would have written,
+       * not a document id — or `null` for §7's general resident, which names no
+       * profile at all.
+       */
+      readonly designate: string | null;
+    }
+  | { readonly id: string; readonly release: true };
 
 /**
  * `callbacks` are teardown-safe ({@link SettledCallbacks}), for the reason
@@ -65,8 +85,12 @@ export function useSetResident(
   const { onSuccess, onError } = callbacks;
 
   return useMutation<ThreadMutationResponse, Error, ResidentVariables>({
-    mutationFn: ({ id, name }) =>
-      name === undefined ? client.releaseResident(id) : client.designateResident(id, name),
+    mutationFn: (variables) =>
+      "release" in variables
+        ? client.releaseResident(variables.id)
+        : // `?? undefined` is the seam between two spellings of "no profile":
+          // this hook says `null`, and the route's body says the key is absent.
+          client.designateResident(variables.id, variables.designate ?? undefined),
     onSuccess(result, variables) {
       invalidateResident(queryClient, variables.id);
       onSuccess?.(result, variables);

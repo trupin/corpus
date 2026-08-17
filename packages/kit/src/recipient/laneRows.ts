@@ -24,9 +24,40 @@ import { humanizeElapsed } from "../time/elapsed.js";
  * legitimately disagree for one grace window. Nothing here reads the queue
  * status, so the picker never presents the two as one fact; the console strip's
  * pill is the workspace-grained answer and this is the per-lane one.
+ *
+ * ## Who is resident is a second axis, and this module owns both
+ *
+ * Since SHARED-048 a designation may name **no** profile, so `Resident` has
+ * three renderable shapes and a surface that reduced them to a name would print
+ * one of them wrong (CONTRACT-061 — *"do not substitute a word for null and
+ * print it as a name"*). {@link LaneRow} therefore carries the kind and the
+ * profile beside the name, and every word any surface says about that axis is an
+ * export of this file: the board badge, the conversation's menu and the
+ * recipient picker read one vocabulary rather than each inventing a label
+ * (UI-122).
  */
 
 export type LaneLiveness = "live" | "lapsed" | "waiting" | "unknown";
+
+/**
+ * **Which of §7's residents a lane has**, or that it cannot be said.
+ *
+ * - `orchestrator` — the workspace's own lane, which belongs to no conversation
+ *   and was designated by nobody.
+ * - `general` — designated with **no profile**. §7 calls this the ordinary case:
+ *   an agent working the conversation as the workspace's ordinary agent does.
+ * - `profiled` — designated with a profile that still resolves to an `agent-def`
+ *   document.
+ * - `profile-gone` — designated with a profile that has since been renamed or
+ *   archived. §7 keeps the designation and requires the miss be *reported*
+ *   rather than silently substituted, which is what {@link MISSING_PROFILE_NOTE}
+ *   is for. Not the same state as `general`: one is ordinary and one is worth
+ *   mentioning.
+ * - `unknown` — the roster has no row to read, or carries a designated lane with
+ *   no resident on it at all. Says nothing either way, UI-098's rule at this
+ *   grain.
+ */
+export type LaneResidentKind = "orchestrator" | "general" | "profiled" | "profile-gone" | "unknown";
 
 export interface LaneRow {
   readonly lane: Lane;
@@ -35,6 +66,21 @@ export interface LaneRow {
   readonly liveness: LaneLiveness;
   /** The one line beside the name. Empty only for `unknown`, which has nothing to say. */
   readonly line: string;
+  /** Which kind of resident this lane has — see {@link LaneResidentKind}. */
+  readonly kind: LaneResidentKind;
+  /**
+   * The profile this lane's resident was designated with, or `null` when it was
+   * designated with none — **never a word standing in for one**. It is what a
+   * surface names the resident by when there is a name to give (the menu's
+   * "Release researcher"), and `null` is what stops it inventing one.
+   */
+  readonly profile: string | null;
+  /**
+   * What is worth saying about *who* is resident, as opposed to whether they are
+   * there — which is {@link LaneRow.line}. Empty for every kind but
+   * `profile-gone`, whose missing profile §7 requires be reported.
+   */
+  readonly note: string;
   /** The conversation this lane is, or null for the orchestrator's. */
   readonly conversation: string | null;
 }
@@ -51,6 +97,35 @@ export const ORCHESTRATOR_LABEL = "agent";
 
 /** A designated lane whose frontmatter names no resident still names a conversation. */
 export const UNNAMED_RESIDENT_LABEL = "this conversation";
+
+/**
+ * What a **general resident** is called on a surface that shows one lane on the
+ * conversation the lane *is* — the board badge (SPEC.md §11).
+ *
+ * There, {@link laneName}'s answer (the conversation's own title) would be a
+ * tautology, so the badge prints the role instead. Deliberately not a name and
+ * unmistakable as one: it names the role and negates the profile in the same
+ * breath, which is what keeps CONTRACT-061's prohibition — *"a badge printing
+ * `agent` or `general` beside real profile names is the trap"* — from being
+ * re-opened by the surface that needed a word most. It is also not "no
+ * resident": there is one, and it owns this conversation.
+ *
+ * A **list** of lanes uses {@link laneName} instead, because a role word repeats
+ * across every general lane and a person cannot pick between two rows reading
+ * the same thing; the conversation's title tells them apart, which is what
+ * `LaneOrigin.title` is on the wire for.
+ */
+export const GENERAL_RESIDENT_LABEL = "resident, no profile";
+
+/**
+ * What a lane whose profile has gone says about it — SPEC.md §7's *"the missing
+ * profile is reported rather than silently substituted"*, as the report.
+ *
+ * Stated as what happened rather than as a fault: the designation stands and the
+ * resident goes on owning its scope, so this is news about the profile and never
+ * an error about the conversation.
+ */
+export const MISSING_PROFILE_NOTE = "its profile is gone — renamed or archived since";
 
 /** A live lane the server had nothing else to say about. */
 export const LIVE_WITHOUT_SUMMARY = "listening";
@@ -74,10 +149,37 @@ export function laneLiveness(row: AgentLane, now: Date): LaneLiveness {
   return row.since === null ? "waiting" : "lapsed";
 }
 
-/** The name to render for a lane: its resident's, or the orchestrator's label. */
+/**
+ * The name to render for a lane **in a list of lanes**: its resident's profile,
+ * or the conversation it owns when the designation named none, or the
+ * orchestrator's label.
+ *
+ * A general resident falls through to the conversation rather than to a word for
+ * the state: two general lanes named alike would be two rows a person cannot
+ * choose between, and a word here sits beside real profile names with nothing to
+ * tell them apart (CONTRACT-061). A surface showing one lane *on* its own
+ * conversation prints {@link GENERAL_RESIDENT_LABEL} instead.
+ */
 export function laneName(row: AgentLane): string {
   if (row.lane === ORCHESTRATOR_LANE) return ORCHESTRATOR_LABEL;
   return row.resident?.name ?? row.origin?.title ?? UNNAMED_RESIDENT_LABEL;
+}
+
+/** Which of §7's residents this lane has — see {@link LaneResidentKind}. */
+export function laneResidentKind(row: AgentLane): LaneResidentKind {
+  if (row.lane === ORCHESTRATOR_LANE) return "orchestrator";
+  // A designated lane the roster lists with nobody on it. Off-contract rather
+  // than impossible (`residentField`: null "occurs only on the orchestrator
+  // lane"), so it is read as *we cannot say* — never as a general resident,
+  // which is a designation somebody made.
+  if (row.resident === null) return "unknown";
+  if (row.resident.name === null) return "general";
+  return row.resident.docId === null ? "profile-gone" : "profiled";
+}
+
+/** What is worth saying about who is resident, beyond naming them. */
+export function laneNote(kind: LaneResidentKind): string {
+  return kind === "profile-gone" ? MISSING_PROFILE_NOTE : "";
 }
 
 function lastSeen(since: string, now: Date): string | null {
@@ -104,11 +206,15 @@ export function laneLine(row: AgentLane, liveness: LaneLiveness, now: Date): str
 
 export function laneRow(row: AgentLane, now: Date): LaneRow {
   const liveness = laneLiveness(row, now);
+  const kind = laneResidentKind(row);
   return {
     lane: row.lane,
     name: laneName(row),
     liveness,
     line: laneLine(row, liveness, now),
+    kind,
+    profile: row.resident?.name ?? null,
+    note: laneNote(kind),
     conversation: row.origin?.title ?? null,
   };
 }
@@ -125,6 +231,11 @@ export function unknownLaneRow(lane: Lane): LaneRow {
     name: lane === ORCHESTRATOR_LANE ? ORCHESTRATOR_LABEL : UNNAMED_RESIDENT_LABEL,
     liveness: "unknown",
     line: "",
+    // Not `general`, which is a designation somebody made: a lane nobody has
+    // described says nothing about who is on it, in either direction.
+    kind: lane === ORCHESTRATOR_LANE ? "orchestrator" : "unknown",
+    profile: null,
+    note: "",
     conversation: null,
   };
 }

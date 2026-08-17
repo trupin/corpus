@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, type MouseEvent, type ReactElement } f
 import { useContextMenu } from "../menu/ContextMenuHost";
 import type { MenuAction } from "../menu/menuModel";
 import { CollapsedThread, type ThreadSummary } from "./CollapsedThread";
+import { designatedNotice, RELEASED_NOTICE } from "./residentActions";
 import { threadStatusNotice } from "./resolveNotice";
 import { ThreadCard, type ThreadHost } from "./ThreadCard";
 import { ThreadMenuItems } from "./ThreadMenuItems";
@@ -124,19 +125,25 @@ export function ThreadPanel({
    */
   const setResident = useSetResident({
     onSuccess: (result, variables) => {
-      const name = result.thread.resident?.name;
+      /*
+       * Read off the **variables** rather than off `result.thread.resident`,
+       * which no longer distinguishes the two acts: since SHARED-048 a
+       * designation may resolve to `{name: null}`, so a null resident name is a
+       * general resident on the way in and a release on the way out, and the
+       * response alone cannot say which one this was.
+       */
       onNotify({
         tone: "info",
         message:
-          variables.name === undefined || name === undefined
-            ? "Resident released — this conversation is back on the agent's own lane."
-            : `${name} is resident here — messages in this conversation and everything that grows out of it go to it.`,
+          "release" in variables
+            ? RELEASED_NOTICE
+            : designatedNotice(result.thread.resident?.name ?? null),
       });
     },
     onError: (error, variables) => {
       onNotify({
         tone: "error",
-        message: `${variables.name === undefined ? "Release" : "Designation"} failed — ${error.message}`,
+        message: `${"release" in variables ? "Release" : "Designation"} failed — ${error.message}`,
       });
     },
   });
@@ -200,11 +207,14 @@ export function ThreadPanel({
             hasParent={summary.parent !== null}
             actions={actions}
             pending={setResident.isPending}
+            onDesignateGeneral={() => {
+              setResident.mutate({ id: summary.id, designate: null });
+            }}
             onDesignate={(name) => {
-              setResident.mutate({ id: summary.id, name });
+              setResident.mutate({ id: summary.id, designate: name });
             }}
             onRelease={() => {
-              setResident.mutate({ id: summary.id });
+              setResident.mutate({ id: summary.id, release: true });
             }}
             onDone={close}
           />

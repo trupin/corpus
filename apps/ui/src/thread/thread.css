@@ -576,6 +576,31 @@
 }
 
 /*
+ * A general resident's role word, where a profiled lane wears a name. It stays
+ * in `--ink-3` and leans, so it reads as a description of the lane rather than
+ * as something somebody titled a document — the one visual affordance keeping
+ * CONTRACT-061's "never a name" true on the surface that has to print a word.
+ */
+.t-resident-kind {
+  font-style: italic;
+}
+
+/*
+ * The missing-profile report (SPEC.md §7). Same elision rule as the line beside
+ * it: the head is one row, and the whole of it stays on the badge's title.
+ */
+.t-resident-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.t-resident-note::before {
+  content: "· ";
+}
+
+/*
  * The line elides rather than wrapping: the head is one row and a lane summary
  * is bounded but not short (200 characters, `LANE_SUMMARY_MAX_LENGTH`). The
  * whole line stays reachable on the badge's title, and in the recipient picker,

@@ -3,8 +3,14 @@ import type { LaneRow } from "@corpus/kit";
 import { describe, expect, it, vi } from "vitest";
 import {
   agentDefRows,
-  NO_AGENT_DEFS,
+  designatedNotice,
   residentActions,
+  DESIGNATE_LABEL,
+  GENERAL_META,
+  NO_PROFILES_LABEL,
+  NO_PROFILES_META,
+  RELEASE_GENERAL_LABEL,
+  REPLACE_GENERAL_LABEL,
   type ResidentActionsInput,
 } from "./residentActions";
 
@@ -13,7 +19,18 @@ const RESIDENT: LaneRow = {
   name: "researcher",
   liveness: "live",
   line: "reading the policy",
+  kind: "profiled",
+  profile: "researcher",
+  note: "",
   conversation: "Q3 planning",
+};
+
+/** §7's general resident: designated, and named by its conversation because it has no profile. */
+const GENERAL: LaneRow = {
+  ...RESIDENT,
+  name: "Q3 planning",
+  kind: "general",
+  profile: null,
 };
 
 function input(overrides: Partial<ResidentActionsInput> = {}): ResidentActionsInput {
@@ -26,6 +43,7 @@ function input(overrides: Partial<ResidentActionsInput> = {}): ResidentActionsIn
       { id: "doc_b", name: "editor" },
     ],
     pending: false,
+    onDesignateGeneral: vi.fn(),
     onDesignate: vi.fn(),
     onRelease: vi.fn(),
     ...overrides,
@@ -46,22 +64,68 @@ describe("agentDefRows", () => {
     expect(agentDefRows(rows)).toEqual([]);
   });
 
-  it("offers nothing at all from a directory that has not answered", () => {
-    expect(agentDefRows(undefined)).toEqual([]);
+  /**
+   * Not an empty list. UI-098's rule: a directory that has not answered is not a
+   * workspace with no agent-defs, and only the second may be said out loud.
+   */
+  it("keeps a directory that has not answered distinguishable from an empty one", () => {
+    expect(agentDefRows(undefined)).toBeUndefined();
   });
 });
 
 describe("residentActions", () => {
-  it("offers every agent the workspace defines, by its invocable name", () => {
+  /**
+   * The defect UI-122 exists for. A fresh workspace has no `agent-def`
+   * documents, and until this the whole offer was replaced by one disabled line
+   * saying so — the feature v0.10.0 is named for could not be reached from the
+   * UI at all.
+   */
+  it("offers the act itself in a workspace that defines no profiles", () => {
+    const actions = residentActions(input({ agents: [] }));
+    expect(ids(actions)).toEqual(["resident-designate-general", "resident-no-profiles"]);
+    const [designate] = actions;
+    expect(designate?.label).toBe(DESIGNATE_LABEL);
+    expect(designate?.disabled).toBe(false);
+    expect(designate?.meta).toBe(GENERAL_META);
+  });
+
+  it("designates with no profile, naming nobody", () => {
+    const onDesignateGeneral = vi.fn();
+    const onDesignate = vi.fn();
+    const actions = residentActions(input({ agents: [], onDesignateGeneral, onDesignate }));
+    actions[0]?.run(() => undefined);
+    expect(onDesignateGeneral).toHaveBeenCalledWith();
+    expect(onDesignate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Worth saying, and not worth saying as a fault: §7 makes a profile the
+   * refinement rather than the requirement, so the line says the absence is fine
+   * in the same breath as reporting it — and it sits under an offer that works.
+   */
+  it("states the absence of profiles without reading as an error", () => {
+    const actions = residentActions(input({ agents: [] }));
+    const note = actions.find((action) => action.id === "resident-no-profiles");
+    expect(note?.disabled).toBe(true);
+    expect(note?.label).toBe(NO_PROFILES_LABEL);
+    expect(note?.meta).toBe(NO_PROFILES_META);
+    expect(note?.meta).toContain("a resident does not need one");
+  });
+
+  it("offers the general act first, then every profile the workspace defines", () => {
     const actions = residentActions(input());
-    expect(ids(actions)).toEqual(["resident-designate-doc_a", "resident-designate-doc_b"]);
-    expect(actions[0]?.label).toBe("Designate researcher");
+    expect(ids(actions)).toEqual([
+      "resident-designate-general",
+      "resident-designate-doc_a",
+      "resident-designate-doc_b",
+    ]);
+    expect(actions[1]?.label).toBe("Designate researcher");
   });
 
   it("designates by the name and nothing else", () => {
     const onDesignate = vi.fn();
     const actions = residentActions(input({ onDesignate }));
-    actions[1]?.run(() => undefined);
+    actions[2]?.run(() => undefined);
     expect(onDesignate).toHaveBeenCalledWith("editor");
   });
 
@@ -78,17 +142,35 @@ describe("residentActions", () => {
   /**
    * UI-098's rule. Without the roster we cannot tell "Designate" from "Replace
    * with", and either label would be a claim about a state nobody reported.
+   * Unchanged by UI-122: the general offer is unconditional on the *directory*,
+   * never on the roster.
    */
   it("offers nothing while the roster has not answered", () => {
     expect(residentActions(input({ rosterAnswered: false }))).toEqual([]);
+    expect(residentActions(input({ rosterAnswered: false, agents: [] }))).toEqual([]);
+  });
+
+  /**
+   * The directory in flight. The offer stands — that is the whole point — but
+   * "No profiles yet" is withheld, because it would be a claim about a read
+   * nobody has received.
+   */
+  it("offers the act, and says nothing about profiles, while the directory is in flight", () => {
+    const actions = residentActions(input({ agents: undefined }));
+    expect(ids(actions)).toEqual(["resident-designate-general"]);
   });
 
   it("offers the release first, and does not re-offer whoever is already resident", () => {
     const actions = residentActions(input({ resident: RESIDENT }));
-    expect(ids(actions)).toEqual(["resident-release", "resident-designate-doc_b"]);
+    expect(ids(actions)).toEqual([
+      "resident-release",
+      "resident-designate-general",
+      "resident-designate-doc_b",
+    ]);
     expect(actions[0]?.label).toBe("Release researcher");
-    // Single-valued, so the second is a replacement and says so.
-    expect(actions[1]?.label).toBe("Replace with editor");
+    // Single-valued, so the rest are replacements and say so.
+    expect(actions[1]?.label).toBe(REPLACE_GENERAL_LABEL);
+    expect(actions[2]?.label).toBe("Replace with editor");
   });
 
   it("releases without naming anybody", () => {
@@ -99,18 +181,71 @@ describe("residentActions", () => {
   });
 
   /**
-   * A workspace with no `agent-def` documents. Saying why there is nothing to
-   * pick is worth one disabled line; an empty menu would look like a bug.
+   * A general resident has no profile, and `LaneRow.name` falls through to the
+   * conversation's own title — so naming it here would read as releasing the
+   * thread. It names nobody instead (CONTRACT-061: never a word where a profile
+   * name goes).
    */
-  it("says why there is nothing to designate rather than staying silent", () => {
-    const actions = residentActions(input({ agents: [] }));
-    expect(ids(actions)).toEqual(["resident-none"]);
-    expect(actions[0]?.disabled).toBe(true);
-    expect(actions[0]?.meta).toBe(NO_AGENT_DEFS);
+  it("releases a general resident without inventing a profile to name", () => {
+    const actions = residentActions(input({ resident: GENERAL }));
+    expect(actions[0]?.label).toBe(RELEASE_GENERAL_LABEL);
+    expect(actions[0]?.label).not.toContain("Q3 planning");
   });
 
-  it("disables every item while a designation is in flight", () => {
+  it("does not re-offer a general designation to a conversation that already has one", () => {
+    const actions = residentActions(input({ resident: GENERAL }));
+    expect(ids(actions)).toEqual([
+      "resident-release",
+      "resident-designate-doc_a",
+      "resident-designate-doc_b",
+    ]);
+    expect(actions[1]?.label).toBe("Replace with researcher");
+  });
+
+  /**
+   * The two are matched on the profile rather than on the row's display name,
+   * which for a general resident is its conversation's title — otherwise an
+   * agent-def titled the same as the conversation would silently vanish from the
+   * list.
+   */
+  it("keeps offering an agent-def that happens to share the conversation's title", () => {
+    const actions = residentActions(
+      input({ resident: GENERAL, agents: [{ id: "doc_c", name: "Q3 planning" }] }),
+    );
+    expect(ids(actions)).toContain("resident-designate-doc_c");
+  });
+
+  /**
+   * §7 reports a designation whose profile has since been renamed or archived
+   * rather than substituting for it — so the resident is still named, and still
+   * not re-offered.
+   */
+  it("names a resident whose profile has gone, and still does not re-offer it", () => {
+    const gone: LaneRow = { ...RESIDENT, kind: "profile-gone", note: "its profile is gone" };
+    const actions = residentActions(input({ resident: gone }));
+    expect(actions[0]?.label).toBe("Release researcher");
+    expect(ids(actions)).not.toContain("resident-designate-doc_a");
+  });
+
+  it("disables every offer while a designation is in flight", () => {
     const actions = residentActions(input({ resident: RESIDENT, pending: true }));
     expect(actions.every((action) => action.disabled === true)).toBe(true);
+  });
+
+  it("disables the general offer too while one is in flight", () => {
+    const actions = residentActions(input({ agents: [], pending: true }));
+    expect(actions[0]?.disabled).toBe(true);
+  });
+});
+
+describe("designatedNotice", () => {
+  it("names the profile where the designation resolved to one", () => {
+    expect(designatedNotice("researcher")).toContain("researcher is resident here");
+  });
+
+  it("says a general resident is here without inventing a name for it", () => {
+    const notice = designatedNotice(null);
+    expect(notice).toContain("has a resident, with no profile");
+    expect(notice).not.toContain("released");
   });
 });

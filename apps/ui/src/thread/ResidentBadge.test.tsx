@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import type { AgentLane } from "@corpus/contract";
+import { GENERAL_RESIDENT_LABEL, MISSING_PROFILE_NOTE } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -149,5 +150,85 @@ describe("the words the badge uses", () => {
       expect(badge(container)?.dataset["residentLiveness"]).toBe("waiting");
     });
     expect(badge(container)?.textContent).toContain("no listener yet");
+  });
+});
+
+/**
+ * §7's three residents, on the surface that shows one of them at a time. The
+ * badge has to tell them apart without inventing a name for the one that has
+ * none (CONTRACT-061) and without any of them reading as *no resident*.
+ */
+describe("the three shapes a resident has", () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  const GENERAL: AgentLane = designated({ resident: { name: null, docId: null } });
+
+  it("names a profiled resident, and says so", async () => {
+    const { container } = renderBadge("th_root", [designated()]);
+
+    await waitFor(() => {
+      expect(badge(container)?.dataset["residentKind"]).toBe("profiled");
+    });
+    expect(badge(container)?.textContent).toContain("researcher");
+  });
+
+  /**
+   * The user's reported case, one surface on. A general resident is real and
+   * owns this conversation, so the badge draws — and what it draws is a role,
+   * never a word sitting where a profile name goes.
+   */
+  it("shows a general resident as a role rather than as a name", async () => {
+    const { container } = renderBadge("th_root", [GENERAL]);
+
+    await waitFor(() => {
+      expect(badge(container)?.dataset["residentKind"]).toBe("general");
+    });
+    expect(container.querySelector(".t-resident-kind")?.textContent).toBe(GENERAL_RESIDENT_LABEL);
+    expect(container.querySelector(".t-resident-name")).toBeNull();
+    // Not "agent", not "general", and not the conversation's own title — which
+    // is what a *list* of lanes names it by, and would say nothing here.
+    expect(badge(container)?.textContent).not.toContain("Q3 planning");
+  });
+
+  it("does not read a general resident as no resident at all", async () => {
+    const { container } = renderBadge("th_root", [GENERAL]);
+
+    await waitFor(() => {
+      expect(badge(container)).not.toBeNull();
+    });
+    // The badge exists, has a dot, and says who is listening — the whole
+    // difference from a conversation the roster does not name.
+    expect(container.querySelector(".lane-dot")).not.toBeNull();
+    expect(badge(container)?.textContent).toContain("reading the policy");
+  });
+
+  /**
+   * SPEC.md §7: a profile renamed or archived after designation does not end the
+   * designation — "the missing profile is reported rather than silently
+   * substituted". The report is here, and it is not the general state.
+   */
+  it("reports a profile that has gone, still naming the resident", async () => {
+    const { container } = renderBadge("th_root", [
+      designated({ resident: { name: "researcher", docId: null } }),
+    ]);
+
+    await waitFor(() => {
+      expect(badge(container)?.dataset["residentKind"]).toBe("profile-gone");
+    });
+    expect(container.querySelector(".t-resident-name")?.textContent).toBe("researcher");
+    expect(container.querySelector(".t-resident-note")?.textContent).toBe(MISSING_PROFILE_NOTE);
+    // Readable without a pointer and without colour, like the liveness line.
+    expect(badge(container)?.getAttribute("title")).toContain(MISSING_PROFILE_NOTE);
+  });
+
+  it("says nothing about a profile on a resident that never had one", async () => {
+    const { container } = renderBadge("th_root", [GENERAL]);
+
+    await waitFor(() => {
+      expect(badge(container)?.dataset["residentKind"]).toBe("general");
+    });
+    expect(container.querySelector(".t-resident-note")).toBeNull();
   });
 });

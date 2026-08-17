@@ -234,6 +234,14 @@ const RUNTIME_SURFACE = [
   "NEVER_SEEN_LINE",
   "LAPSED_FALLBACK",
   "LAPSED_ORCHESTRATOR",
+  // Who is resident, as against whether they are there — one vocabulary for the
+  // three shapes a `Resident` now has, so the badge, the menu and the picker
+  // cannot each invent a label for a designation that named no profile
+  // (CONTRACT-061, UI-122).
+  "laneResidentKind",
+  "laneNote",
+  "GENERAL_RESIDENT_LABEL",
+  "MISSING_PROFILE_NOTE",
   // …and the same vocabulary read by a surface that is not a composer (UI-109):
   // is *this* conversation a lane, which lane answers *here*, and the one dot
   // both the picker and the board draw it with.

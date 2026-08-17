@@ -34,6 +34,8 @@ export interface ThreadMenuItemsProps {
   /** The conversation's own actions, which come first. */
   readonly actions: readonly MenuAction[];
   readonly pending: boolean;
+  /** Designate with no profile — §7's ordinary case, which needs no directory. */
+  readonly onDesignateGeneral: () => void;
   readonly onDesignate: (name: string) => void;
   readonly onRelease: () => void;
   readonly onDone: () => void;
@@ -44,6 +46,7 @@ export function ThreadMenuItems({
   hasParent,
   actions,
   pending,
+  onDesignateGeneral,
   onDesignate,
   onRelease,
   onDone,
@@ -65,6 +68,7 @@ export function ThreadMenuItems({
       rosterAnswered: roster.lanes !== undefined,
       agents: agentDefRows(agents.data?.items),
       pending,
+      onDesignateGeneral,
       onDesignate,
       onRelease,
     }),

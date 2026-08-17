@@ -4,12 +4,15 @@ import {
   laneLine,
   laneLiveness,
   laneName,
+  laneNote,
+  laneResidentKind,
   laneRow,
   laneRows,
   unknownLaneRow,
   LAPSED_FALLBACK,
   LAPSED_ORCHESTRATOR,
   LIVE_WITHOUT_SUMMARY,
+  MISSING_PROFILE_NOTE,
   NEVER_SEEN_LINE,
   ORCHESTRATOR_LABEL,
   UNNAMED_RESIDENT_LABEL,
@@ -48,6 +51,59 @@ describe("laneName", () => {
 
   it("still names something when there is neither a resident nor a title", () => {
     expect(laneName(lane({ resident: null, origin: null }))).toBe(UNNAMED_RESIDENT_LABEL);
+  });
+
+  /**
+   * §7's general resident, in a **list** of lanes. It is named by the
+   * conversation it owns rather than by a word for the state: a word would sit
+   * beside real profile names indistinguishable from one, and would repeat
+   * across every general lane, leaving a picker with two rows nobody can choose
+   * between (CONTRACT-061).
+   */
+  it("names a general resident by the conversation, never by a word for the state", () => {
+    const name = laneName(lane({ resident: { name: null, docId: null } }));
+    expect(name).toBe("The claims conversation");
+    expect(name).not.toContain("general");
+    expect(name).not.toBe(ORCHESTRATOR_LABEL);
+  });
+});
+
+describe("laneResidentKind", () => {
+  it("is the orchestrator's own lane, which nobody designated", () => {
+    expect(laneResidentKind(ORCHESTRATOR)).toBe("orchestrator");
+  });
+
+  it("is general when the designation named no profile — §7's ordinary case", () => {
+    expect(laneResidentKind(lane({ resident: { name: null, docId: null } }))).toBe("general");
+  });
+
+  it("is profiled when the name still resolves to an agent-def", () => {
+    expect(laneResidentKind(lane())).toBe("profiled");
+  });
+
+  /**
+   * SPEC.md §7: the designation stands and "the missing profile is reported
+   * rather than silently substituted". Distinguishing it from `general` is the
+   * whole point — one is ordinary, one is worth mentioning.
+   */
+  it("tells a resident whose profile has gone from one that never had a profile", () => {
+    expect(laneResidentKind(lane({ resident: { name: "claims-review", docId: null } }))).toBe(
+      "profile-gone",
+    );
+  });
+
+  it("says nothing at all about a designated lane the roster left empty", () => {
+    expect(laneResidentKind(lane({ resident: null }))).toBe("unknown");
+  });
+});
+
+describe("laneNote", () => {
+  it("reports a missing profile, and says nothing about any other kind", () => {
+    expect(laneNote("profile-gone")).toBe(MISSING_PROFILE_NOTE);
+    expect(laneNote("general")).toBe("");
+    expect(laneNote("profiled")).toBe("");
+    expect(laneNote("orchestrator")).toBe("");
+    expect(laneNote("unknown")).toBe("");
   });
 });
 
@@ -122,8 +178,17 @@ describe("laneLine", () => {
       name: UNNAMED_RESIDENT_LABEL,
       liveness: "unknown",
       line: "",
+      kind: "unknown",
+      profile: null,
+      note: "",
       conversation: null,
     });
+  });
+
+  it("does not read a lane it has never heard of as a general resident", () => {
+    // The two are one word apart and mean opposite things: `general` is a
+    // designation somebody made, `unknown` is an answer nobody gave (UI-098).
+    expect(unknownLaneRow("th_ghost").kind).not.toBe("general");
   });
 });
 
@@ -135,6 +200,9 @@ describe("laneRows", () => {
         name: ORCHESTRATOR_LABEL,
         liveness: "live",
         line: "reviewing the draft",
+        kind: "orchestrator",
+        profile: null,
+        note: "",
         conversation: null,
       },
       {
@@ -142,6 +210,9 @@ describe("laneRows", () => {
         name: "claims-review",
         liveness: "live",
         line: "reviewing the draft",
+        kind: "profiled",
+        profile: "claims-review",
+        note: "",
         conversation: "The claims conversation",
       },
     ]);
@@ -149,5 +220,34 @@ describe("laneRows", () => {
 
   it("builds one row the same way whichever entry point is used", () => {
     expect(laneRows([lane()], NOW)[0]).toEqual(laneRow(lane(), NOW));
+  });
+
+  /**
+   * The row a general resident produces, in full — the state a fresh workspace
+   * reaches in one gesture (UI-122). `profile` is null so no surface can name it
+   * by a profile it does not have, and the liveness half is identical to a
+   * profiled lane's, which is §7's *"everything else about a resident is
+   * identical either way"*.
+   */
+  it("carries a general resident with no profile and no note", () => {
+    expect(laneRow(lane({ resident: { name: null, docId: null } }), NOW)).toEqual({
+      lane: "th_root",
+      name: "The claims conversation",
+      liveness: "live",
+      line: "reviewing the draft",
+      kind: "general",
+      profile: null,
+      note: "",
+      conversation: "The claims conversation",
+    });
+  });
+
+  it("reports a profile that has gone, and still names the resident", () => {
+    const row = laneRow(lane({ resident: { name: "claims-review", docId: null } }), NOW);
+    expect(row.kind).toBe("profile-gone");
+    expect(row.profile).toBe("claims-review");
+    expect(row.note).toBe(MISSING_PROFILE_NOTE);
+    // The report is about the profile; presence is a separate axis and unmoved.
+    expect(row.liveness).toBe("live");
   });
 });
