@@ -22,6 +22,15 @@ import { parseViewFlags, VIEW_KEY_FLAGS } from "./frontmatter.js";
  * does not touch a file: the server assigns the id, pre-fills the body from the
  * type's template when none was given, files the document and commits it with
  * the acting party as git author.
+ *
+ * **Which root a document lands in is the server's answer, not this verb's**
+ * (SERVER-122). An omitted `folder` files the document in the root its `type`
+ * declares — `data/docs/inbox/` for ordinary types, `.claude/agents/` for
+ * `agent-def` — and an explicit `folder` always wins, including over that. Both
+ * doors are one rule reading the server's own root declaration, so a root added
+ * later is creatable with no edit here. This verb sends `type` and `folder` as
+ * typed and renders the path that comes back; it pre-validates neither, and it
+ * must never construct one (architecture decision 2).
  */
 
 export async function runDocCreate(
@@ -76,8 +85,17 @@ export const createCommand: WorkspaceCommandSpec = {
     "from `-m`, from `--file`, or from stdin — the heredoc form the agent's skills use — and " +
     "omitting all three is legal: the server pre-fills from the type's `template` document when " +
     "one exists. Bytes are passed through untouched; there is no markdown processing in the CLI. " +
-    "An omitted `--folder` files the document in `data/docs/inbox/` (creation is inbox-first); a " +
-    "folder the server rejects is reported verbatim rather than pre-validated here. " +
+    "An omitted `--folder` files the document in the root its `--type` declares: `data/docs/inbox/` " +
+    "for every ordinary type (creation is inbox-first), and `.claude/agents/` for `--type " +
+    "agent-def`, which SPEC.md §7 gives its own document root — so a persona takes no extra flag. " +
+    "**An explicit `--folder` always wins**, including over that, which is what keeps a document " +
+    "_about_ a persona expressible: `--type agent-def --folder inbox` still files under " +
+    "`data/docs/`. A root of its own may also be named outright, by its exact declared path " +
+    "(`--folder .claude/agents`), and a root named that way must hold the type asked for. " +
+    "`--type skill` is the one type with no folder form at all — a skill is `<name>/SKILL.md`, a " +
+    "directory plus a fixed filename rather than a folder question, so `corpus skill create` owns " +
+    "genesis there and `.claude/skills` is refused as a `--folder`. A folder the server rejects is " +
+    "reported verbatim rather than pre-validated here. " +
     "`--pinned`, `--order`, `--query` and `--column` write the SPEC.md §11 **view keys** at " +
     "creation, so `--type view --pinned true` is a board column in one command — the board picks " +
     "it up over SSE with no reload. A column the board's own “＋ New list” would have written " +
@@ -106,7 +124,10 @@ export const createCommand: WorkspaceCommandSpec = {
       valueName: "path",
       description:
         "Folder under `data/docs/`, as a bare name (`finance`) or the full prefix " +
-        "(`data/docs/finance`). Defaults to `inbox`.",
+        "(`data/docs/finance`); a type SPEC.md §7 gives its own document root may instead name " +
+        "that root by its exact declared path (`.claude/agents`). Defaults to the root `--type` " +
+        "declares — `inbox` for ordinary types, `.claude/agents` for `agent-def` — and an " +
+        "explicit folder always wins over that default.",
     },
     {
       name: "tags",
@@ -138,6 +159,12 @@ export const createCommand: WorkspaceCommandSpec = {
       command: 'corpus doc create --type note --title "Mortgage options" --folder finance',
       description:
         "Create a note in `data/docs/finance/`, with the body pre-filled from the `note` template.",
+    },
+    {
+      command:
+        "corpus doc create --type agent-def --title \"Analyst\" --from agent <<'EOF'\nYou read the corpus and answer with evidence.\nEOF",
+      description:
+        "A persona, in one command: no `--folder`, because `agent-def` has its own root — the document lands at `.claude/agents/analyst.md` and is designatable as `@analyst` immediately, with no separate registry (SPEC.md §11).",
     },
     {
       command:

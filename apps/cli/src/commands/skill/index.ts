@@ -7,9 +7,13 @@ import { createCommand } from "./create.js";
  * verbs — `corpus doc show`, `corpus doc edit`, and `corpus doc archive`, which
  * is what disabling a skill *is*.
  *
- * **One verb, deliberately.** Only genesis has no document equivalent, because a
- * skill is the one document that lives outside `data/docs/` and `corpus doc
- * create` files everything under it. Recovery used to live here too, as
+ * **One verb, deliberately.** Only genesis has no document equivalent. It is not
+ * that `corpus doc create` cannot leave `data/docs/` — since SERVER-122 it files
+ * an `agent-def` in `.claude/agents/` — but that a skill is not a folder
+ * question at all: it is `<name>/SKILL.md`, a directory plus a filename derived
+ * from nothing the caller sends, which naming a folder cannot express. The
+ * `.claude/skills` root refuses a folder-create for exactly that reason.
+ * Recovery used to live here too, as
  * `corpus skill rollback`; it is gone (rider signed 2026-08-12), because §7's
  * loop safety is a write whose content came from history — read the history with
  * `corpus doc diff`, work out the content you want back, and write it with
@@ -28,9 +32,11 @@ export const skillTopic: TopicSpec = {
   description:
     "Skills are documents, so reading, editing, archiving — and reverting — one is `corpus doc …` " +
     "like anything else. `create` is what has no document equivalent: it is SPEC.md §7's skill " +
-    "genesis, a recurring pattern becoming a skill written under `.claude/skills/` rather than " +
-    "`data/docs/`, which is the one thing `corpus doc create` cannot do. It is performed by the " +
-    "server and lands as a normal attributed commit.\n\n" +
+    "genesis, a recurring pattern becoming a skill written as `.claude/skills/<name>/SKILL.md`. " +
+    "That is the one shape `corpus doc create` cannot ask for — not because it never leaves " +
+    "`data/docs/` (an `agent-def` lands in `.claude/agents/` with no flag) but because a skill is " +
+    "a directory plus a fixed filename rather than a folder, so `--folder .claude/skills` is " +
+    "refused there. It is performed by the server and lands as a normal attributed commit.\n\n" +
     "**Undoing a bad edit to a skill is not a verb here.** It is an ordinary write whose content " +
     "came from history: read what changed with `corpus doc diff <id>`, work out the content you " +
     "want back, and write it with `corpus doc edit <id> --key <key>`. That path reconciles " +
