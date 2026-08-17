@@ -1,7 +1,7 @@
 import { useHaltQueue, useIndexStatus, useJobs, useQueueStatus, useResumeQueue } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
 import { useToast } from "../shell/Toasts";
-import { UNKNOWN_QUEUE_STATUS, resolveSelectedJob } from "./consoleModel";
+import { resolveSelectedJob } from "./consoleModel";
 import { ConsoleStrip } from "./ConsoleStrip";
 import { IndexStatusRow } from "./IndexPill";
 import { JobDetail } from "./JobDetail";
@@ -40,7 +40,13 @@ export function Console(): ReactElement {
   const resume = useResumeQueue();
   const [chosen, setChosen] = useState<string | null>(null);
 
-  const status = queue.data ?? UNKNOWN_QUEUE_STATUS;
+  /*
+   * The query's own answer, passed down **unsubstituted** (UI-098). The strip
+   * decides what stands in for what: its counts can honestly show zeroes while
+   * nothing has answered, and its agent pill cannot honestly show anything at
+   * all. Substituting here would have made that a decision nobody could see.
+   */
+  const status = queue.data;
   const rows = jobs.data?.jobs ?? [];
   const selectedId = resolveSelectedJob(rows, chosen);
   const selected = rows.find((job) => job.eventId === selectedId) ?? null;
@@ -49,7 +55,9 @@ export function Console(): ReactElement {
     const failed = (error: Error): void => {
       notify({ tone: "error", message: error.message });
     };
-    if (status.halted) {
+    // The button is disabled while `status` is undefined, so this is only
+    // reached with a status the server actually sent.
+    if (status?.halted === true) {
       resume.mutate(undefined, {
         onSuccess: () => {
           notify({ tone: "info", message: "Resumed — the queue is claimable again." });
@@ -89,7 +97,6 @@ export function Console(): ReactElement {
         open={layout.open}
         status={status}
         index={index.data}
-        controlsEnabled={queue.data !== undefined}
         onToggle={layout.toggle}
         onToggleHalt={onToggleHalt}
       />

@@ -1,8 +1,14 @@
 import type { IndexStatus, Job, QueueStatus } from "@corpus/contract";
-import { QUEUE_EVENT_STATUSES, SEMANTIC_INDEX_STATES } from "@corpus/contract";
+import {
+  AGENT_PRESENCE_WINDOW_SECONDS,
+  QUEUE_EVENT_STATUSES,
+  SEMANTIC_INDEX_STATES,
+} from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import {
   JOB_DOT_CLASSES,
+  UNKNOWN_QUEUE_STATUS,
+  agentDotClass,
   agentPillText,
   agentState,
   blockedOn,
@@ -137,20 +143,139 @@ describe("the started clock", () => {
   });
 });
 
+/**
+ * UI-098. `idle` used to be the else-branch — not halted, nothing in progress —
+ * so a machine with no agent running at all reported an agent with nothing to
+ * do. SPEC.md §11 now makes `idle` "a claim that requires evidence", and the
+ * evidence is `QueueStatus.agent`.
+ *
+ * The ladder itself belongs to the contract (`agentActivity`, CONTRACT-045) and
+ * is pinned by `packages/contract/src/schemas/queue.test.ts`; what these assert
+ * is that the pill *reads* it — including in the two places a surface could
+ * quietly build a second one: the precedence, and the unanswered read.
+ */
 describe("the agent pill", () => {
-  it("is idle with nothing in flight", () => {
-    expect(agentState(IDLE)).toBe("idle");
-    expect(agentPillText(IDLE)).toBe("agent: idle · queue 0");
+  const NOW = new Date("2026-07-19T10:01:00.000Z");
+  /** Well past the grace window from `IDLE.agent.since`, computed from it. */
+  const LATER = new Date(
+    Date.parse("2026-07-19T10:00:00.000Z") + (AGENT_PRESENCE_WINDOW_SECONDS + 60) * 1000,
+  );
+  const AWAY: QueueStatus = { ...IDLE, agent: { live: false, since: null } };
+
+  it("is idle with an agent parked and nothing in flight", () => {
+    expect(agentState(IDLE, NOW)).toBe("idle");
+    expect(agentPillText(IDLE, NOW)).toBe("agent: idle · queue 0");
   });
 
   it("is working while anything is in progress", () => {
-    expect(agentPillText({ ...IDLE, inProgress: 1, pending: 2 })).toBe("agent: working · queue 2");
+    expect(agentPillText({ ...IDLE, inProgress: 1, pending: 2 }, NOW)).toBe(
+      "agent: working · queue 2",
+    );
   });
 
   // Halted outranks working: the sentinel is set, so nothing further is claimed
   // and calling the agent "working" because one job is finishing would mislead.
   it("is halted even with a job still in progress", () => {
-    expect(agentState({ ...IDLE, halted: true, inProgress: 3 })).toBe("halted");
+    expect(agentState({ ...IDLE, halted: true, inProgress: 3 }, NOW)).toBe("halted");
+  });
+
+  // The bug this issue is named for: nothing in progress used to mean idle.
+  it("says disconnected, not idle, when nobody is parked", () => {
+    expect(agentState(AWAY, NOW)).toBe("disconnected");
+    expect(agentPillText({ ...AWAY, pending: 3 }, NOW)).toBe("agent: disconnected · queue 3");
+  });
+
+  // CONTRACT-045's decision, not re-litigated here: `inProgress > 0` is a fact
+  // about events, not about anybody holding them. An agent that claimed work and
+  // died leaves the count standing forever, and `working` about a corpse is the
+  // same unevidenced claim as `idle` about an empty machine.
+  it("says disconnected rather than working when the holder of the work is gone", () => {
+    expect(agentState({ ...AWAY, inProgress: 3 }, NOW)).toBe("disconnected");
+  });
+
+  it("still lets halted outrank disconnected", () => {
+    expect(agentState({ ...AWAY, halted: true, inProgress: 3 }, NOW)).toBe("halted");
+  });
+
+  /*
+   * The one that proves the pill is time-dependent at all: same status object,
+   * two clocks. The threshold is the contract's window — derived there from the
+   * idle timeout — so no duration is written down in the UI and a change to the
+   * rearm carries this with it.
+   */
+  it("expires a presence it has been holding past the grace window", () => {
+    expect(agentState(IDLE, NOW)).toBe("idle");
+    expect(agentState(IDLE, LATER)).toBe("disconnected");
+  });
+
+  it("holds the presence right up to the window's edge", () => {
+    const edge = new Date(
+      Date.parse("2026-07-19T10:00:00.000Z") + AGENT_PRESENCE_WINDOW_SECONDS * 1000,
+    );
+    expect(agentState(IDLE, edge)).toBe("idle");
+  });
+
+  /*
+   * The mistake this issue is most likely to be got wrong by: `unknown` is not
+   * `disconnected`. A status that has not arrived is not a status reporting that
+   * nobody is there, and `UNKNOWN_QUEUE_STATUS` carries `live: false` only
+   * because the field is required — a pre-answer placeholder, not a verdict.
+   */
+  it("makes no claim at all before the server has answered", () => {
+    expect(agentState(undefined, NOW)).toBe("unknown");
+    expect(agentPillText(undefined, NOW)).toBe("agent: unknown");
+  });
+
+  /*
+   * The same rule arriving by a different road: a response that omitted the
+   * field (an older server, a proxy that trimmed it, a stub answering `{}`) has
+   * not reported an absence either — and it must not take the shell down on its
+   * way to saying so. `apps/ui/src/testing/boardFixture.ts` answers exactly this
+   * for `/api/queue/status`, and before the guard the whole `Shell` suite threw
+   * `Cannot read properties of undefined (reading 'live')`.
+   */
+  it("says unknown, and does not throw, when the response omitted the field", () => {
+    const partial = { halted: false, pending: 2 } as unknown as QueueStatus;
+    expect(agentState(partial, NOW)).toBe("unknown");
+    expect(agentPillText(partial, NOW)).toBe("agent: unknown");
+    expect(agentDotClass(agentState(partial, NOW))).toBe("dot unknown");
+  });
+
+  it("does not read the counts' placeholder as a report that nobody is there", () => {
+    // Not `agentState(UNKNOWN_QUEUE_STATUS)`: the point is that the placeholder
+    // never gets to be the argument. What stands in for the counts is a separate
+    // decision from what the pill says, and only the counts have a stand-in.
+    expect(UNKNOWN_QUEUE_STATUS.agent).toEqual({ live: false, since: null });
+    expect(agentState(undefined, NOW)).not.toBe(agentState(UNKNOWN_QUEUE_STATUS, NOW));
+  });
+
+  it.each([
+    ["idle", "dot"],
+    ["working", "dot busy"],
+    ["halted", "dot halted"],
+    // §11: disconnected is not an error state and is not styled as a failure.
+    ["disconnected", "dot away"],
+    ["unknown", "dot unknown"],
+  ] as const)("dresses %s in %s", (state, expected) => {
+    expect(agentDotClass(state)).toBe(expected);
+  });
+
+  it("keeps disconnected off halted's dot and off the working pulse", () => {
+    expect(agentDotClass("disconnected")).not.toBe(agentDotClass("halted"));
+    expect(agentDotClass("disconnected")).not.toBe(agentDotClass("idle"));
+    expect(agentDotClass("disconnected")).not.toContain("busy");
+    // And `unknown` is not `disconnected`: the two say different things.
+    expect(agentDotClass("unknown")).not.toBe(agentDotClass("disconnected"));
+  });
+
+  // The index pill borrows this pill's dot vocabulary (SPEC.md §11's index-pill
+  // rider), so a state added here must not silently become an index treatment.
+  it("leaves the index pill's own vocabulary alone", () => {
+    const agentDots = (["idle", "working", "halted", "disconnected", "unknown"] as const).map(
+      agentDotClass,
+    );
+    expect(agentDots).not.toContain(indexDotClass({ state: "stale" }));
+    expect(agentDots).not.toContain(indexDotClass({ state: "disabled" }));
   });
 });
 

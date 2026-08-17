@@ -278,7 +278,9 @@ test.describe("the collapsed strip's index pill", () => {
     await page.route("**/api/index/status", (route) => route.abort("connectionrefused"));
     await page.goto("/");
 
-    await expect(page.locator(".console-strip .agent-pill")).toHaveText("agent: idle · queue 0");
+    // The agent pill makes no claim either, for the same reason and about a
+    // different fact: nothing answered `GET /api/queue/status` here (UI-098).
+    await expect(page.locator(".console-strip .agent-pill")).toHaveText("agent: unknown");
     await expect(pill(page)).toHaveCount(0);
     await expect(page.locator(".index-status")).toHaveCount(0);
   });

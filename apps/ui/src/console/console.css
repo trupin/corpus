@@ -114,6 +114,33 @@
 }
 
 /*
+ * Nobody is parked (SPEC.md §11, UI-098). The neutral treatment the abandoned
+ * job dot and the disabled index dot wear, for their reason and for one of its
+ * own: §11 is explicit that "disconnected is not an error state and is not
+ * styled as a failure" — with no agent running it is simply the truth, and the
+ * thing it prompts is starting the agent, not fixing a fault. So never
+ * `--signal`, which is halted's and means needs-you; never `--good`, which is
+ * idle's and would say somebody is there; and no `animation`, because the pulse
+ * is `working`'s alone and is only legible while nothing else borrows it.
+ */
+.agent-pill .dot.away {
+  background: var(--ink-3);
+}
+
+/*
+ * The server has not answered, so the pill is not saying anything — a ring
+ * around nothing rather than a colour. `box-shadow` rather than `border`
+ * deliberately: a border would grow the dot to 9px and break the row of them.
+ *
+ * Distinct from `.away` because the two states differ: nobody is there is a
+ * report, nobody has said is the lack of one.
+ */
+.agent-pill .dot.unknown {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+
+/*
  * A backlog nobody is draining — `--sepia`, the console's own "hasn't run yet"
  * hue, already spoken by the pending and deferred job dots. Never `--signal`:
  * stale is waiting, not broken, and red in this strip means needs-you.

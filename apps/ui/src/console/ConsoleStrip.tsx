@@ -3,7 +3,7 @@ import { useHealth } from "@corpus/kit";
 import type { KeyboardEvent, ReactElement } from "react";
 import { usePluginRegistry } from "../plugins/registry";
 import { AgentPill } from "./AgentPill";
-import { consoleCounts } from "./consoleModel";
+import { UNKNOWN_QUEUE_STATUS, consoleCounts } from "./consoleModel";
 import { IndexPill } from "./IndexPill";
 
 /**
@@ -81,7 +81,21 @@ export function ConsoleCounts({ status }: { readonly status: QueueStatus }): Rea
 
 export interface ConsoleStripProps {
   readonly open: boolean;
-  readonly status: QueueStatus;
+  /**
+   * The queue status, or `undefined` while `GET /api/queue/status` has not
+   * answered — including when it never will.
+   *
+   * The strip splits it rather than substituting once (UI-098). The **counts**
+   * take `UNKNOWN_QUEUE_STATUS`, whose zeroes are true of a server that is not
+   * there, and the **HALT button** takes its disabled state from the same
+   * absence, since halting on a guess would be a write. The **agent pill** takes
+   * the `undefined` itself: the placeholder's `agent: {live: false}` is a
+   * required field with nothing behind it, and handing it to a pill that now
+   * reads presence would publish "no agent is connected" about a server that has
+   * merely not replied. One substitution for two questions is how that happens,
+   * so there is one substitution and it stops short of the pill.
+   */
+  readonly status: QueueStatus | undefined;
   /**
    * The semantic index's report, or `undefined` while the server has not
    * answered — including when it never will.
@@ -94,8 +108,6 @@ export interface ConsoleStripProps {
    * the reachability notice two spans to the right is the fact that is true.
    */
   readonly index: IndexStatus | undefined;
-  /** False while the queue status is unknown — halting would be a guess. */
-  readonly controlsEnabled: boolean;
   readonly onToggle: () => void;
   readonly onToggleHalt: () => void;
 }
@@ -104,10 +116,11 @@ export function ConsoleStrip({
   open,
   status,
   index,
-  controlsEnabled,
   onToggle,
   onToggleHalt,
 }: ConsoleStripProps): ReactElement {
+  /** The counts' stand-in. Never the pill's — see {@link ConsoleStripProps}. */
+  const counts = status ?? UNKNOWN_QUEUE_STATUS;
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -130,17 +143,18 @@ export function ConsoleStrip({
       <span>console</span>
       <AgentPill status={status} />
       {index === undefined ? null : <IndexPill status={index} />}
-      <ConsoleCounts status={status} />
+      <ConsoleCounts status={counts} />
       <span className="spacer" />
       <PluginWarnings />
       <ServerStatus />
       <button
         type="button"
-        className={status.halted ? "halt-btn halted" : "halt-btn"}
-        disabled={!controlsEnabled}
-        aria-pressed={status.halted}
+        className={counts.halted ? "halt-btn halted" : "halt-btn"}
+        // Halting while the status is unknown would be a guess, and a write.
+        disabled={status === undefined}
+        aria-pressed={counts.halted}
         title={
-          status.halted
+          counts.halted
             ? "Resume the queue — removes the .corpus/HALT sentinel"
             : "Halt the queue — writes the .corpus/HALT sentinel; nothing is claimed until resume"
         }
@@ -150,7 +164,7 @@ export function ConsoleStrip({
           onToggleHalt();
         }}
       >
-        HALT {status.halted ? "●" : "○"}
+        HALT {counts.halted ? "●" : "○"}
       </button>
     </div>
   );

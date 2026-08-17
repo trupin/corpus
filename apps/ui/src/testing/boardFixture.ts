@@ -1,4 +1,4 @@
-import type { DocRow } from "@corpus/contract";
+import type { DocRow, QueueStatus } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -85,6 +85,30 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
     }
     if (url.pathname === "/api/tree") return json(options.tree ?? { folders: [] });
     if (url.pathname === "/api/jobs") return json({ jobs: [] });
+    /*
+     * The console strip is mounted by every shell these fixtures render, so its
+     * one read gets a real answer rather than the `{}` the catch-all gave it.
+     * That `{}` type-checked as nothing (the catch-all is `unknown`) and was
+     * wrong in the way UI-102 named for `stubCorpus`: a body missing a required
+     * field, invisible until something read it. UI-098 read it, and the whole
+     * `Shell` suite threw on `agent.live`.
+     *
+     * `agent` says nobody is parked, which is true of every spec here — none
+     * starts an agent — and is the honest fixture rather than the convenient
+     * one.
+     */
+    if (url.pathname === "/api/queue/status") {
+      return json({
+        agent: { live: false, since: null },
+        halted: false,
+        pending: 0,
+        inProgress: 0,
+        deferred: 0,
+        processed: 0,
+        failed: 0,
+        abandoned: 0,
+      } satisfies QueueStatus);
+    }
     if (url.pathname === "/api/docs" && request.method === "POST") {
       return json({ doc: created("doc_created"), warnings: [] }, 201);
     }

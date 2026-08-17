@@ -264,13 +264,32 @@ Every new assertion was checked red before being trusted green:
 - `.dot.away { background: var(--signal) }` → the new Playwright dot spec red with
   `Expected rgb(155,161,168), Received rgb(196,85,46)`.
 
+### One thing the suite found that the plan did not anticipate
+
+Making the pill read `status.agent` turned a **fixture** into a crash. The board
+suites' shared transport (`apps/ui/src/testing/boardFixture.ts`) answered
+`/api/queue/status` from its catch-all `json({})`, so `agent` was absent and the
+whole `Shell` suite threw `Cannot read properties of undefined (reading 'live')`
+— eleven tests, taking the shell down rather than the pill. Both halves fixed:
+
+- the fixture now answers a real `QueueStatus` (the UI-102 lesson, applied to the
+  other stub);
+- `agentState` answers `unknown` for a status that did not carry the field. Not
+  `disconnected` — a response that did not tell us is not a response telling us
+  nobody is there, which is the same distinction as the placeholder's, arriving
+  by a different road. This is deliberately defensive code past what the types
+  allow: the value comes off the network into a strip that always renders, and a
+  `TypeError` there is a blank page, not a degraded pill.
+
 ### Checks
 
-- `vitest run apps/ui/src/console/` — 137 passed (4 files).
+- `vitest run apps/ui packages/kit` — 3803 passed (192 files).
+- `vitest run apps/ui/src/console/` — 138 passed (4 files).
 - `tsc --noEmit -p apps/ui` — exit 0.
 - `eslint apps/ui/src/console apps/ui/e2e/console*.spec.ts` — clean.
-- `playwright test e2e/console.spec.ts e2e/console-index.spec.ts` (on 5292, proxy
-  pointed at a dead 8799 to reproduce CI's no-server condition) — 24 passed.
+- `playwright test e2e/console.spec.ts e2e/console-index.spec.ts e2e/smoke.spec.ts`
+  (on 5292, proxy pointed at a dead 8799 to reproduce CI's no-server condition) —
+  37 passed.
 
 ## Completion Checklist (domain agent)
 
