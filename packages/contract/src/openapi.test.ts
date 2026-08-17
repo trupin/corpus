@@ -2155,6 +2155,139 @@ describe("queue long-poll", () => {
 });
 
 /**
+ * CONTRACT-058. The server refuses a `scope` that names no lane with a `422`
+ * (SERVER-118); the route declared `200/204/400/401` and nothing else, so the
+ * document and the generated client were one refusal behind — a consumer
+ * generating handlers from the contract had no branch for a response it would
+ * receive.
+ *
+ * The assertions below are written against the **generated** document rather
+ * than the route object, because that is what a client author reads and what an
+ * `openapi-typescript` run turns into types. Two things are pinned: that the
+ * refusal is declared at all, and that its published prose does not say less
+ * than the server's own message — which already names all three recoveries.
+ */
+describe("a park on a scope that is not a lane (CONTRACT-058)", () => {
+  const idle = () => operation("/api/queue/idle", "get");
+  const refusal = () => idle().responses?.["422"];
+
+  it("declares the 422, carrying the ApiError member the server sends", () => {
+    const media = refusal()?.content?.["application/json"] as { schema?: SchemaNode } | undefined;
+    expect(media?.schema?.$ref).toBe("#/components/schemas/UnknownRecipientError");
+  });
+
+  it("publishes every recovery the server's own message names", () => {
+    const description = refusal()?.description ?? "";
+    // The server's message, verbatim in intent: omit it, designate a resident,
+    // or pick one from the roster. A contract that named fewer would send a
+    // caller to the API for advice the error already gave it.
+    expect(description).toContain("omitting `scope`");
+    expect(description).toContain("designating a resident");
+    expect(description).toContain("GET /api/agents");
+    // And that the refusal cost the caller nothing, so it can simply retry.
+    expect(description).toContain("nothing was parked and no work was claimed");
+  });
+
+  it("says what makes a scope invalid, in both senses SPEC.md §7 gives", () => {
+    const description = refusal()?.description ?? "";
+    expect(description).toContain("holds no such thread");
+    expect(description).toContain("holds no resident");
+  });
+
+  /**
+   * The refusal is only intelligible beside the reason it exists: parking *is*
+   * presence, so an admitted park on a non-lane makes `agent.live` true about a
+   * lane the roster does not list. Without it the `422` reads as fussiness
+   * about a parameter.
+   */
+  it("gives the operation's own account of why a park is refused", () => {
+    const description = idle().description ?? "";
+    expect(description).toContain("a `scope` that names no lane is refused");
+    expect(description).toContain("before the park is admitted");
+    expect(description).toContain("Omitting `scope` is always fine");
+  });
+
+  /**
+   * `claim-all` takes the same `scope` and deliberately does **not** refuse it:
+   * draining a lapsed lane's already-stamped events is exactly what the
+   * listener still holding it is for, and refusing there would strand them for
+   * a whole grace window. Pinned so that a later pass tidying the two verbs
+   * into agreement has to read the reason first.
+   */
+  it("leaves claim-all undeclared, and both routes say why", () => {
+    expect(operation("/api/queue/claim-all", "post").responses?.["422"]).toBeUndefined();
+    expect(idle().description ?? "").toContain("`claim-all` deliberately does not refuse it");
+  });
+});
+
+/**
+ * CONTRACT-058's second question. The refusal above reuses `unknown_recipient`,
+ * a code spelled for a parameter that is not the one at fault — which reads
+ * fine to whoever wrote it and confusingly to everyone else unless the document
+ * says so plainly. The decision was to keep one code and publish the reason;
+ * these assertions are what make "the description matches the name" checkable.
+ */
+describe("unknown_recipient is the code for a lane that is not one (CONTRACT-058)", () => {
+  const component = () => componentSchemas?.["UnknownRecipientError"];
+
+  it("did not mint a second code for the same fact", () => {
+    expect(ERROR_CODES).toContain("unknown_recipient");
+    expect(ERROR_CODES).not.toContain("unknown_lane");
+    expect(ERROR_CODES).not.toContain("unknown_scope");
+    expect(ERROR_CODES).toHaveLength(9);
+  });
+
+  it("states in the published component that the name is not the whole scope", () => {
+    const description = component()?.description ?? "";
+    expect(description).toContain("The value you named is not a lane");
+    // Both parameters, named, in the place a client author reads.
+    expect(description).toContain("`recipient` of a post");
+    expect(description).toContain("`scope` of a queue park");
+    // And the rule that justifies one code: one refusal, one remedy.
+    expect(description).toContain("one refusal with one remedy");
+  });
+
+  it("says the same on the field, which is where the spelling is jarring", () => {
+    const recipient = component()?.properties?.["recipient"]?.description ?? "";
+    expect(recipient).toContain("Whichever parameter carried it");
+    expect(recipient).toContain("spelled `recipient` because the code is");
+  });
+
+  /**
+   * Every `422` in the document carries a member of the `ApiError` union, so a
+   * client that narrows on `code` can reach all of them. Written as a sweep
+   * rather than a list: the way this drifts is a new route declaring a `422`
+   * with a body of its own, which no per-route assertion would notice.
+   */
+  it("keeps every declared 422 inside the ApiError union", () => {
+    const inUnion = new Set(["UnknownJobError", "UnknownRecipientError"]);
+    const offenders: string[] = [];
+    const inspected: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        const media = op?.responses?.["422"]?.content?.["application/json"] as
+          { schema?: SchemaNode } | undefined;
+        if (!media) continue;
+        inspected.push(endpointSignature(method, path));
+        const schema = media.schema;
+        const branches = schema?.$ref !== undefined ? [schema] : (schema?.anyOf ?? schema?.oneOf);
+        const names = (branches ?? []).map((branch) => branch.$ref?.split("/").pop() ?? "");
+        if (names.length === 0 || names.some((name) => !inUnion.has(name))) {
+          offenders.push(`${endpointSignature(method, path)} → ${names.join("|") || "<inline>"}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+    // Non-vacuity, and the sweep's own extent: nine posting/writing routes plus
+    // the park. A refactor that stopped matching would report zero offenders
+    // over zero operations and look like a pass.
+    expect(inspected).toContain("GET /api/queue/idle");
+    expect(inspected).toHaveLength(10);
+  });
+});
+
+/**
  * Halt and fail both accept an annotation the caller may simply not have —
  * `corpus queue halt` with no argument stays a bare `POST`. They are the only
  * two operations whose body may be omitted in full, so they state

@@ -19,6 +19,7 @@ import {
   jsonContent,
   NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
+  UNKNOWN_SCOPE_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
 
@@ -80,13 +81,22 @@ export const idleQueue = createRoute({
     "fresh — so `scope` decides both which lane's work this call waits for and which lane " +
     "`GET /api/agents` reports as live. An agent that stops parking stops being present, and its " +
     "lane's pending work falls back to the orchestrator's unscoped claim once the grace window " +
-    "has passed.",
+    "has passed.\n\n" +
+    "**Because parking is presence, a `scope` that names no lane is refused** with `422`, before " +
+    "the park is admitted and therefore before it can be observed (SPEC.md §7). A thread id is a " +
+    "thread id on the wire, so this is a refusal only the workspace can make: the value must name " +
+    "a standalone thread that holds a resident. Omitting `scope` is always fine — it means the " +
+    "orchestrator's lane — and a lane whose resident is released *while its listener is parked* " +
+    "keeps that park to its end; what is refused is a value that was never a lane, not one that " +
+    "has stopped being one. `claim-all` deliberately does not refuse it: draining a lapsed lane's " +
+    "already-stamped events is the listener's job, and refusing there would strand them.",
   request: { query: IdleQuerySchema },
   responses: {
     200: jsonContent(IdleResultSchema, "Pending events exist; claim them next."),
     204: { description: "The window expired with nothing pending. Re-invoke to park again." },
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
+    422: UNKNOWN_SCOPE_RESPONSE,
   },
 });
 

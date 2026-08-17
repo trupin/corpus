@@ -2473,6 +2473,8 @@ export interface paths {
          *     A `200` also carries `inProgress`: what the server still thinks the agent is doing. It is reported here and on `claim-all` — the loop's two entry points — and nowhere else; the `204` that ends an empty window has no body and therefore no list. See `claim-all` for the reconciliation contract.
          *
          *     **Parking here is what presence *is*** (SPEC.md §7). A resident is live exactly while it holds a parked scoped `idle` — there is no heartbeat to send and no registration to keep fresh — so `scope` decides both which lane's work this call waits for and which lane `GET /api/agents` reports as live. An agent that stops parking stops being present, and its lane's pending work falls back to the orchestrator's unscoped claim once the grace window has passed.
+         *
+         *     **Because parking is presence, a `scope` that names no lane is refused** with `422`, before the park is admitted and therefore before it can be observed (SPEC.md §7). A thread id is a thread id on the wire, so this is a refusal only the workspace can make: the value must name a standalone thread that holds a resident. Omitting `scope` is always fine — it means the orchestrator's lane — and a lane whose resident is released *while its listener is parked* keeps that park to its end; what is refused is a value that was never a lane, not one that has stopped being one. `claim-all` deliberately does not refuse it: draining a lapsed lane's already-stamped events is the listener's job, and refusing there would strand them.
          */
         get: {
             parameters: {
@@ -2520,6 +2522,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description `scope` names no lane, so **nothing was parked and no work was claimed**: this workspace holds no such thread, or that thread holds no resident and is therefore not a lane at all (SPEC.md §7). Recover by omitting `scope` to take the orchestrator's lane, designating a resident on that thread first, or picking a lane from `GET /api/agents`. The body is `unknown_recipient` — the one code for “the value you named is not a lane”, whichever parameter named it — and carries the refused value in `recipient`. Refused rather than silently parked because parking is what presence *is*: a park the server admitted on a non-lane would report an agent listening on a lane the roster does not list, for as long as the loop kept re-parking. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownRecipientError"];
                     };
                 };
             };
@@ -4938,11 +4949,12 @@ export interface components {
             /** @description Display name of the model that wrote this turn (SPEC.md §11) — a **display string, not an enum**: §7 keeps model names in the orchestrator skill, so this contract never enumerates them and a workspace that changes its tiers changes nothing here. **One model, never a list.** Where a request ran in stages at different weights (§7), this names the model of the **deciding** stage — the one that drew the conclusion or wrote the words. It does not accumulate the stages, and a reader must not treat it as the whole account of what ran: the per-stage record is the job's log, for as long as that log lasts. **It is not a weight.** A weight is an instruction stated before the work (§7, honoured and not weighed again); this is a fact about what happened. The two are deliberately separate fields of separate things (CONTRACT-039) and merging them would make §7's guarantee unverifiable. At most 200 characters, non-blank, and on one line: it is persisted as a plain YAML scalar in the thread document's frontmatter. **`null` when no model is named** — a turn a person wrote, or a turn appended before the server recorded this. Null is the honest answer and never a default: an unknown that says so is worth more than a plausible attribution nobody can check. Clients render nothing for it, never a placeholder such as "unknown". */
             model: string | null;
         };
+        /** @description The value you named is not a lane: this workspace holds no such thread, or that thread holds no resident and is therefore not a lane at all (SPEC.md §7). **`unknown_recipient` is the one code for that fact whatever named it** — the `recipient` of a post, or the `scope` of a queue park — because the two are one refusal with one remedy: name a lane that exists, or name none. It is spelled for the parameter that first produced it, not for the only one that can; a second code would hand a client two branches for one recovery. Nothing was written or parked, and `recipient` carries the offending value either way. */
         UnknownRecipientError: {
             /** @enum {string} */
             code: "unknown_recipient";
             message: string;
-            /** @description The value that named no lane — a thread this workspace does not hold, or one that holds no resident and is therefore not a lane at all. */
+            /** @description The value that named no lane — a thread this workspace does not hold, or one that holds no resident and is therefore not a lane at all. **Whichever parameter carried it**: the `recipient` of a post, or the `scope` of a queue park. The field is spelled `recipient` because the code is; which parameter was at fault is the operation you called. */
             recipient: string;
         };
         CreateThreadRequest: {

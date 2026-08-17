@@ -157,21 +157,42 @@ export const UnknownJobErrorSchema = z
   .openapi("UnknownJobError");
 
 /**
- * A `recipient` that names no lane a message can be addressed to (SPEC.md §7,
- * CONTRACT-051).
+ * **The value you named is not a lane** (SPEC.md §7; CONTRACT-051 introduced it
+ * for `recipient`, CONTRACT-058 settled its name once `scope` reached it too).
  *
- * **A code of its own rather than a second `unknown_job` body**, for the reason
- * {@link StaleKeyErrorSchema} gives about sharing `409` with
- * `ReattachConflictError`: two different refusals that share a status must stay
- * tellable apart at the place clients actually branch — the `code`. Both live on
- * `422` because both are a well-formed request naming something that does not
- * exist, but a caller recovers from them differently: a bad `job` costs the
- * write its provenance, a bad `recipient` costs it its routing, and the
- * remedies are not the same call.
+ * ## Why one code for two parameters
  *
- * It carries the offending value for the same reason `UnknownJobError` carries
- * `job` — a client that offered a picker needs to know *which* entry went stale
- * so it can drop that row rather than reload the world.
+ * The code is spelled `recipient` because a `recipient` is what first produced
+ * it, but the fact it reports has never mentioned a parameter: a thread this
+ * workspace does not hold, or one that holds no resident and is therefore not a
+ * lane at all. Two requests now reach it — the `recipient` of a post, and the
+ * `scope` of a queue park (`GET /api/queue/idle`, SERVER-118) — and they are
+ * **one refusal with one remedy**: name a lane that exists, or name none.
+ *
+ * A second code would hand a client two branches for one recovery, which is the
+ * mistake the split from `unknown_job` exists to avoid making in the *other*
+ * direction: `job` and `recipient` are two codes precisely because their
+ * remedies differ (a bad `job` costs the write its provenance, a bad lane costs
+ * it its routing, and they are not the same call). Sameness of remedy is the
+ * test, and these two pass it.
+ *
+ * **Renaming it to `unknown_lane` was considered and declined.** `ERROR_CODES`
+ * is a published discriminant: the rename would touch the CLI's renderer, the
+ * kit's composer recovery, the UI's fixtures and every server test that asserts
+ * the code — a breaking change across four domains to correct a name that one
+ * sentence of published prose corrects instead. The prose is that sentence, and
+ * it is in the component description below rather than only here, because the
+ * reader who is confused by the name is the one reading `openapi.json` and not
+ * this file. If a breaking window opens for another reason, `unknown_lane` with
+ * a `lane` field is the shape to take.
+ *
+ * ## Why it carries the value
+ *
+ * The same reason `UnknownJobError` carries `job` — a client that offered a
+ * picker needs to know *which* entry went stale so it can drop that row rather
+ * than reload the world. The field keeps the `recipient` spelling because the
+ * code does; one name for one fact beats two spellings a consumer has to check
+ * for.
  */
 export const UnknownRecipientErrorSchema = z
   .object({
@@ -181,10 +202,23 @@ export const UnknownRecipientErrorSchema = z
       .string()
       .describe(
         "The value that named no lane — a thread this workspace does not hold, or one that holds " +
-          "no resident and is therefore not a lane at all.",
+          "no resident and is therefore not a lane at all. **Whichever parameter carried it**: " +
+          "the `recipient` of a post, or the `scope` of a queue park. The field is spelled " +
+          "`recipient` because the code is; which parameter was at fault is the operation you " +
+          "called.",
       ),
   })
-  .openapi("UnknownRecipientError");
+  .openapi("UnknownRecipientError", {
+    description:
+      "The value you named is not a lane: this workspace holds no such thread, or that thread " +
+      "holds no resident and is therefore not a lane at all (SPEC.md §7). **`unknown_recipient` " +
+      "is the one code for that fact whatever named it** — the `recipient` of a post, or the " +
+      "`scope` of a queue park — because the two are one refusal with one remedy: name a lane " +
+      "that exists, or name none. It is spelled for the parameter that first produced it, not " +
+      "for the only one that can; a second code would hand a client two branches for one " +
+      "recovery. Nothing was written or parked, and `recipient` carries the offending value " +
+      "either way.",
+  });
 
 export const ApiErrorSchema = z
   .discriminatedUnion("code", [
