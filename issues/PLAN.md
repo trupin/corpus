@@ -662,6 +662,8 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | todo | P2 | SERVER-113 |
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
+| CLI-046 | `corpus queue status` never shows whether an agent is there | todo | P1 | SERVER-112 |
+| CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | todo | P2 | — |
 
 **Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
 a required field, which breaks every constructor of one: `SERVER-086` (the
@@ -789,7 +791,7 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | SERVER-111 | The queue learns lanes | done | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
 | SERVER-112 | Presence is a parked request — liveness and the roster | done | P0 | SERVER-111 |
 | CLI-044 | Mutating verbs carry the job they serve | done | P0 | CONTRACT-050, SERVER-110 |
-| CLI-043 | Lane verbs, designation, and `corpus agents` | todo | P0 | CONTRACT-051, SERVER-111, SERVER-112, SERVER-109 |
+| CLI-043 | Lane verbs, designation, and `corpus agents` | done | P0 | CONTRACT-051, SERVER-111, SERVER-112, SERVER-109 |
 | AGENT-025 | The converse skill — a resident's own loop | todo | P0 | SHARED-043, CLI-044, CLI-043 |
 | AGENT-026 | Orchestrate learns to share the queue | todo | P0 | AGENT-025, CLI-043 |
 | UI-108 | The composer offers the recipient | todo | P0 | CONTRACT-051, SERVER-111, SERVER-112 |
