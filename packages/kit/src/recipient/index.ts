@@ -48,6 +48,7 @@ export {
   RECIPIENT_INERT_TITLE,
   RECIPIENT_LIVE_TITLE,
   RECIPIENT_PICKER_LABEL,
+  RECIPIENT_REFUSED_STATEMENT,
   RECIPIENT_UNKNOWN_STATEMENT,
   RecipientPicker,
   statementFor,
@@ -69,6 +70,7 @@ export {
   useComposerRecipient,
   type ComposerRecipient,
   type ComposerRecipientInput,
+  type ComposerRecipientRestore,
 } from "./useComposerRecipient.js";
 export { useLaneRow, useResidentLane, type ResidentLane } from "./useResidentLane.js";
 export { designatedLanes, isThreadId, useScopeWalk, type ScopeWalkInput } from "./useScopeWalk.js";

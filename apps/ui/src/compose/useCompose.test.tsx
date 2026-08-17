@@ -38,7 +38,7 @@ describe("useCompose", () => {
             weight: {},
             recipient: {},
           }),
-        ).toBe(true);
+        ).toEqual({ ok: true });
       });
 
       const [call] = wire.to("/api/threads");
@@ -114,7 +114,7 @@ describe("useCompose", () => {
             weight: {},
             recipient: {},
           }),
-        ).toBe(true);
+        ).toEqual({ ok: true });
       });
 
       expect(wire.to("/api/capture")).toHaveLength(1);
@@ -165,14 +165,17 @@ describe("useCompose", () => {
     const { result } = mount(wire, notices);
 
     await act(async () => {
-      expect(
-        await result.current.submit("capture", {
-          text: "too big",
-          files: [],
-          weight: {},
-          recipient: {},
-        }),
-      ).toBe(false);
+      const outcome = await result.current.submit("capture", {
+        text: "too big",
+        files: [],
+        weight: {},
+        recipient: {},
+      });
+      expect(outcome.ok).toBe(false);
+      // The refusal itself, not just "it failed": the overlay settles its
+      // recipient pick against it, and only a `422` naming that pick may keep
+      // it (UI-118).
+      expect(outcome.ok ? undefined : outcome.error).toBeInstanceOf(Error);
     });
     expect(notices).toHaveLength(1);
     expect(notices[0]?.tone).toBe("error");

@@ -33,11 +33,18 @@ export interface AppendTurnVariables {
    * The lane this turn is addressed to (SPEC.md §7): `orchestrator`, or the id
    * of a designated root thread.
    *
-   * **Omit it for the default**, which the server computes from where the turn
-   * is posted. A composer that has worked out the default itself still omits it
-   * — absence is the ordinary case, and it is the only spelling of it, so the
-   * client's rule and the server's cannot come apart. Present only on §7's
-   * one-message override, which routes that message and nothing else.
+   * **Omit it when nobody picked**, which is the ordinary case: the server
+   * computes the default from where the turn is posted, and a composer that has
+   * worked the default out for display still omits it — absence is the only
+   * spelling of "nobody chose", so the client's rule and the server's cannot
+   * come apart about it.
+   *
+   * **Present for every pick**, including one that names the lane the composer
+   * had already computed. That is not redundancy: the two walks can disagree
+   * (this side's is bounded and reads a cached roster), and a person who pressed
+   * a lane addressed *that lane*, which the server may then refuse with a `422`
+   * rather than quietly route somewhere else (UI-118, SERVER-111). It still
+   * routes that message and nothing else.
    *
    * On **both** request shapes, for the reason `weight` is: a recipient that
    * survived only the JSON path would be silently dropped by attaching a file.

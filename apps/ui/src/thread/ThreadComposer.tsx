@@ -149,12 +149,15 @@ export function ThreadComposer({
         },
         onError: (error) => {
           // Nothing was written — the server refuses the whole turn when the
-          // upload fails — so the composer goes back to exactly what it held.
-          // The recipient is the exception, and deliberately: a refusal may *be*
-          // the lane (a `422` for a scope dissolved between the roster read and
-          // the post), so the pick is dropped and made again rather than
-          // inherited by a message it was never set on.
-          recipient.clear();
+          // upload fails — so the composer goes back to exactly what it held,
+          // the recipient included. A refusal may *be* the lane (a `422` for a
+          // scope dissolved between the roster read and the post), and that is
+          // the one case where dropping the pick would do harm: the text comes
+          // back, the person presses send again, and this build's own walk —
+          // over the same stale roster that produced the pick — quietly routes
+          // the retry somewhere they never addressed. `refuse` keeps the pick
+          // for exactly that error and clears it for every other (UI-118).
+          recipient.refuse(error);
           setText(body);
           setCaret(body.length);
           intake.restore(attachments);

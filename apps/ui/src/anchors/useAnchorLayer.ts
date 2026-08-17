@@ -15,7 +15,7 @@ import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from ".
 import type { AnchorReport } from "../editor/useAutosave";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import { readStateOf } from "../thread/threadCollapse";
-import type { CommentRestore } from "./CommentPopover";
+import { restoredRecipient, type CommentRestore } from "./CommentPopover";
 import {
   anchorDecorationPlugin,
   anchorPluginKey,
@@ -160,8 +160,9 @@ interface CommentPost {
   /**
    * What the composer stated, spread onto the request; `{}` when it stated
    * nothing. The weight the work should be done at (SPEC.md §11) and the lane it
-   * was addressed to (§7) — the latter present **only** on an override, because
-   * the default recipient travels by being absent.
+   * was addressed to (§7) — the latter present whenever somebody **picked** one,
+   * including a pick that names the lane the composer had already computed,
+   * because only a default nobody touched travels by being absent (UI-118).
    */
   readonly stated: { readonly weight?: string; readonly recipient?: string };
   /**
@@ -798,13 +799,24 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
             forget();
             releaseAttachments(input.files);
           },
-          onError: () => {
+          onError: (error) => {
             // Nothing was written — the server refuses the whole thread when the
             // upload fails — so the composer comes back holding exactly what it
             // held, at the selection it was opened on (UI-111). Losing a
             // screenshot to a refused post is the failure this prevents; losing
-            // the sentence beside it was the same bug, unreported.
-            setDraft({ ...source, restore: { text: input.body, attachments: input.files } });
+            // the sentence beside it was the same bug, unreported. The lane it
+            // was addressed to comes back for a third reason: a `422` refusing
+            // the pick means this build's roster is behind, and a retry that
+            // fell back to the computed default would silently address somebody
+            // else (UI-118).
+            setDraft({
+              ...source,
+              restore: {
+                text: input.body,
+                attachments: input.files,
+                recipient: restoredRecipient(input.stated, error),
+              },
+            });
           },
         },
       );

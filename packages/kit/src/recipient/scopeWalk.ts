@@ -7,12 +7,21 @@ import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
  *
  * ## Why this is a display and never a decision
  *
- * The default is sent by **omitting** `recipient`, so the value this walk
- * produces never reaches the wire. That is the whole reason there can be two
- * implementations of one rule without them drifting: the server's walk
- * (`apps/server/src/queue/scope.ts`) decides, and this one only says out loud
- * what the server is about to decide. A bug here shows the wrong name in a
- * composer; it cannot route a message anywhere.
+ * A default nobody touched is sent by **omitting** `recipient`, so the value
+ * this walk produces never reaches the wire on that path. That is the whole
+ * reason there can be two implementations of one rule without them drifting: the
+ * server's walk (`apps/server/src/queue/scope.ts`) decides, and this one only
+ * says out loud what the server is about to decide.
+ *
+ * **What a bug here does, exactly.** It shows the wrong name in a composer, and
+ * — because that name is what a person reads before deciding whether to say
+ * otherwise — it can talk somebody out of a pick they would have made, or into
+ * one they would not. It cannot route a message by itself: what a pick puts on
+ * the wire is the lane the person pressed, not this verdict
+ * (`useComposerRecipient`). This paragraph used to end *"it cannot route a
+ * message anywhere"*, which was true only while a pick equal to this verdict was
+ * dropped — the very defect UI-118 fixed — and was therefore reassurance a
+ * reader would have trusted through the window where it was false.
  *
  * ## Scope is the walk, not a marker
  *
@@ -87,8 +96,16 @@ export type ScopeWalk = ScopeWalkLane | ScopeWalkOrchestrator | ScopeWalkUnread;
  * origin is written once, parent on create), and the visited set below already
  * terminates a hand-edited cycle. What this bounds is *requests*, because each
  * unread node costs the caller a read; a corpus whose comment chains run deeper
- * than this answers with the lane its own enqueue would have chosen only for the
- * first {@link MAX_SCOPE_WALK} levels, and the send is unaffected either way.
+ * than this answers `orchestrator` where the server's unbounded walk would have
+ * found a scope.
+ *
+ * **A send with nothing picked is unaffected** — it names no recipient, so the
+ * server's walk is the only one that runs and the bound costs a label. A send
+ * carrying a **pick** is a different message: the person read that label and
+ * pressed a lane, so what a bound too low costs is the choice they would have
+ * made, not the choice they made. (This used to say "the send is unaffected
+ * either way", which was a claim about a build where a pick equal to this
+ * verdict never reached the wire at all — UI-118.)
  */
 export const MAX_SCOPE_WALK = 8;
 

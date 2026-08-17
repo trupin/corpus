@@ -32,6 +32,12 @@ export interface ComposeTransport {
   readonly fetch: typeof globalThis.fetch;
   readonly calls: RecordedRequest[];
   readonly to: (path: string) => RecordedRequest[];
+  /**
+   * **The other tab** (SPEC.md §7): releases a lane behind this page's back, so
+   * `GET /api/agents` stops naming it while this page's cache still does. The
+   * next post naming it is refused `422`, exactly as the server refuses it.
+   */
+  readonly releaseLane: (lane: string) => void;
 }
 
 export interface ComposeTransportOptions {
@@ -77,6 +83,16 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
   const calls: RecordedRequest[] = [];
   const eventId = options.eventId === undefined ? "evt_1" : options.eventId;
   const warnings = options.warnings ?? [];
+  /**
+   * Lanes released **behind this page's back** — the other tab (SPEC.md §7).
+   * `GET /api/agents` stops naming them while whatever this page has cached
+   * still does, which is the disagreement UI-118 is about and the only way to
+   * make the server's `422` reachable from a composer.
+   */
+  const released = new Set<string>();
+  const isLane = (lane: string): boolean =>
+    lane === "orchestrator" ||
+    (options.lanes ?? []).some((row) => row.lane === lane && !released.has(row.lane));
 
   /**
    * The multipart body is read off `init` rather than through `new Request(…)`:
@@ -118,7 +134,27 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
     }
 
     if (url.pathname === "/api/agents") {
-      return json({ agents: [ORCHESTRATOR_ROW, ...(options.lanes ?? [])] } satisfies AgentRoster);
+      const lanes = (options.lanes ?? []).filter((row) => !released.has(row.lane));
+      return json({ agents: [ORCHESTRATOR_ROW, ...lanes] } satisfies AgentRoster);
+    }
+
+    /*
+     * The server's `assertRecipientResolvable` (SPEC.md §7): a `recipient` that
+     * names no lane is a `422` and nothing is written. Modelled rather than
+     * accepted, because a fixture that took a stale pick would let a suite
+     * assert a routing the server would have refused (UI-118).
+     */
+    const stated = (form ?? body) as { recipient?: unknown } | undefined;
+    const lane = stated?.recipient;
+    if (typeof lane === "string" && !isLane(lane)) {
+      return json(
+        {
+          code: "unknown_recipient",
+          message: `\`${lane}\` names no lane (SPEC.md §7). Nothing was written.`,
+          recipient: lane,
+        },
+        422,
+      );
     }
     if (url.pathname === "/api/docs") {
       const items = options.rows ?? [];
@@ -158,5 +194,12 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
     return json({});
   };
 
-  return { fetch, calls, to: (path) => calls.filter((call) => call.path === path) };
+  return {
+    fetch,
+    calls,
+    to: (path) => calls.filter((call) => call.path === path),
+    releaseLane: (lane) => {
+      released.add(lane);
+    },
+  };
 }

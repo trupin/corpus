@@ -17,7 +17,7 @@ import {
   type ReactElement,
   type RefObject,
 } from "react";
-import { CommentPopover, type CommentRestore } from "../anchors/CommentPopover";
+import { CommentPopover, restoredRecipient, type CommentRestore } from "../anchors/CommentPopover";
 import { escapeSelectorValue } from "../anchors/cssEscape";
 import { domRangeOfRendered, renderedTextOf } from "../anchors/renderedRange";
 import { setAnchorHighlights } from "../anchors/textHighlight";
@@ -240,12 +240,16 @@ export function useTurnComments({
             forget();
             releaseAttachments(attachments);
           },
-          onError: () => {
+          onError: (error) => {
             forget();
             // Nothing was written, so the composer comes back holding what it
             // held — a refused comment must not cost the screenshot that was
-            // the point of making it (UI-111).
-            setDraft({ ...source, restore: { text, attachments } });
+            // the point of making it (UI-111), nor the lane it was addressed
+            // to, which is the part of it nobody can see is missing (UI-118).
+            setDraft({
+              ...source,
+              restore: { text, attachments, recipient: restoredRecipient(stated, error) },
+            });
           },
         },
       );

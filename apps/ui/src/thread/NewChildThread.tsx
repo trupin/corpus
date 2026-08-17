@@ -112,7 +112,10 @@ export function NewChildThread({
           onDone();
         },
         onError: (error) => {
-          recipient.clear();
+          // Kept when the refusal *is* the lane, dropped otherwise (UI-118):
+          // nothing was written, so a retry that silently fell back to this
+          // build's computed default would route where nobody addressed.
+          recipient.refuse(error);
           onNotify({ tone: "error", message: `Comment failed — ${error.message}` });
         },
       },

@@ -13,8 +13,18 @@ import type { ComposerRecipient } from "./useComposerRecipient.js";
  * default is never a guess a person has to check — it follows from where they
  * are"*, and the way a surface keeps that promise is by saying who will answer
  * before anything is typed. The statement line does that; the row of lanes is
- * the override, and it is only an override once a lane other than the computed
- * default is pressed.
+ * where a person may say otherwise, and it is only an *override* once a lane
+ * other than the computed default is pressed.
+ *
+ * **Pressing is a fact even when it changes nothing.** Every row can be pressed,
+ * including the one the default already marks, and pressing it states that lane
+ * on the wire (`useComposerRecipient`). It reads like a no-op and is not: the
+ * default is this build's own walk over a cached roster, and a person pressing
+ * the lane it names is addressing *that lane* rather than agreeing to whatever
+ * the server works out a moment later. Keyed on the effective row instead, the
+ * one press that says so was the one press this control could not hear —
+ * UI-118, where a released resident meant the message went to the orchestrator
+ * with nothing anywhere saying so.
  *
  * ## Why it is a row and not a floating droplist
  *
@@ -77,9 +87,28 @@ export const RECIPIENT_UNKNOWN_STATEMENT = "who answers follows from where you a
 /** Marks the row a send with nothing picked would go to. */
 export const DEFAULT_ROW_NOTE = "default here";
 
-export function statementFor(row: LaneRow | undefined, overridden: boolean): string {
+/**
+ * What the statement says about a lane the **server refused** (SPEC.md §7's
+ * `422 unknown_recipient`, UI-118).
+ *
+ * It stays on the row after the toast has gone, because a toast that dismisses
+ * itself in six seconds is not where a person finds out where their message did
+ * not go. It says *nothing was sent* in the server's own words rather than
+ * softening it: the send is the thing that did not happen, and the composer
+ * still holds the text to prove it.
+ */
+export const RECIPIENT_REFUSED_STATEMENT = "is not a lane any more — nothing was sent; pick again";
+
+/**
+ * @param picked whether the person **chose** this row, rather than it being
+ * where posting here happens to go. The verb changes on the act and not on the
+ * difference: a pick that names the default's own lane is still a choice about
+ * this one message, and UI-118 is what happens when the two are conflated.
+ */
+export function statementFor(row: LaneRow | undefined, picked: boolean, refused = false): string {
   if (row === undefined) return RECIPIENT_UNKNOWN_STATEMENT;
-  const verb = overridden ? "will answer this message" : "will answer";
+  if (refused) return `${row.name} ${RECIPIENT_REFUSED_STATEMENT}`;
+  const verb = picked ? "will answer this message" : "will answer";
   return row.line === "" ? `${row.name} ${verb}` : `${row.name} ${verb} — ${row.line}`;
 }
 
@@ -108,6 +137,7 @@ export function RecipientPicker({
       data-recipient-picker={surface}
       data-recipient-live={live ? "true" : "false"}
       data-recipient-overridden={recipient.overridden ? "true" : "false"}
+      data-recipient-refused={recipient.refused ?? ""}
     >
       <div
         className="recipient-lanes"
@@ -126,6 +156,12 @@ export function RecipientPicker({
           // gone. Both are decoration over the statement line, which is the one
           // that says it in words.
           const isDefault = row.lane === recipient.computed;
+          // Whether the person pressed *this* row, which is a different question
+          // from whether a message would go to it (UI-118). They coincide for
+          // every row but one — the default, which is where sending goes whether
+          // or not anybody said so, and which is therefore the only row on which
+          // pressing has ever been able to mean nothing.
+          const picked = row.lane === recipient.chosen;
           return (
             <button
               key={row.lane}
@@ -134,6 +170,8 @@ export function RecipientPicker({
               aria-pressed={effective}
               data-recipient-lane={row.lane}
               data-recipient-default={isDefault ? "true" : "false"}
+              data-recipient-chosen={picked ? "true" : "false"}
+              data-recipient-refused={row.lane === recipient.refused ? "true" : "false"}
               data-recipient-liveness={row.liveness}
               title={row.line === "" ? row.name : `${row.name} — ${row.line}`}
               onFocus={() => {
@@ -149,10 +187,14 @@ export function RecipientPicker({
                 setPreviewed(null);
               }}
               onClick={() => {
-                // Pressing the standing pick clears it — going back to the
-                // computed default has to stay one gesture away, because that is
-                // the ordinary case and the one §7 calls "never a guess".
-                recipient.choose(effective ? undefined : row.lane);
+                // Keyed on the **pick** and never on the effective row: keyed on
+                // the latter, pressing the default while nothing was chosen sent
+                // `choose(undefined)` — the person's one way of saying "this
+                // lane, deliberately" was the one press the control could not
+                // hear (UI-118). Pressing your own pick still clears it, so
+                // going back to the computed default stays one gesture away,
+                // which is what §7's "never a guess" needs it to be.
+                recipient.choose(picked ? undefined : row.lane);
               }}
             >
               <LaneDot liveness={row.liveness} />
@@ -162,8 +204,14 @@ export function RecipientPicker({
         })}
       </div>
       <span className="recipient-says" data-recipient-statement={surface}>
-        {statementFor(shown, recipient.overridden && shown?.lane === recipient.chosen)}
-        {shown !== undefined && shown.lane === recipient.computed ? (
+        {statementFor(
+          shown,
+          shown?.lane === recipient.chosen,
+          shown !== undefined && shown.lane === recipient.refused,
+        )}
+        {shown !== undefined &&
+        shown.lane === recipient.computed &&
+        shown.lane !== recipient.refused ? (
           <span className="recipient-default-note"> ({DEFAULT_ROW_NOTE})</span>
         ) : null}
       </span>

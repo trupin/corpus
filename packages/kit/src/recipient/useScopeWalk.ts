@@ -42,9 +42,12 @@ import { MAX_SCOPE_WALK, walkToLane, type ScopeNode, type ScopeWalk } from "./sc
  * node is read as a document as well as a thread. Where that document read has
  * not landed, the walk says `unread` rather than following the parent edge
  * alone: following one of two edges would be a *wrong* answer where waiting is
- * merely a slow one. And nothing here reaches the wire in any case — the
- * computed default is sent by **omitting** `recipient`, so the server's walk is
- * always the one that decides.
+ * merely a slow one. Nothing here reaches the wire on the ordinary path — a
+ * default nobody touched is sent by **omitting** `recipient`, so the server's
+ * walk is the one that decides — but this verdict is what a person reads before
+ * deciding whether to pick, and a pick does reach the wire
+ * (`useComposerRecipient`). Degrading to *unknown* is what keeps this walk from
+ * talking anybody into or out of a choice on a read that has not landed.
  */
 
 /** A node id names a thread when it carries the thread prefix (SPEC.md §5). */

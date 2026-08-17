@@ -57,9 +57,22 @@ export interface ComposeInput {
   readonly recipient: { readonly recipient?: string };
 }
 
+/**
+ * What one submit did.
+ *
+ * The refusal rides along rather than being swallowed by the narration: the
+ * overlay has to settle its own recipient pick against it, and a
+ * `422 unknown_recipient` is the one failure where dropping that pick would
+ * quietly reroute the retry (UI-118, `ComposerRecipient.refuse`). The toast is
+ * still this hook's to write — the caller reads the error, it does not narrate
+ * it a second time.
+ */
+export type ComposeOutcome =
+  { readonly ok: true } | { readonly ok: false; readonly error: unknown };
+
 export interface ComposeApi {
-  /** Resolves `true` when the corpus changed; `false` after a failure it has narrated. */
-  readonly submit: (mode: ComposeMode, input: ComposeInput) => Promise<boolean>;
+  /** Resolves `{ok: true}` when the corpus changed; the refusal when it did not. */
+  readonly submit: (mode: ComposeMode, input: ComposeInput) => Promise<ComposeOutcome>;
   readonly isPending: boolean;
 }
 
@@ -82,7 +95,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
   const capture = useCapture();
 
   const submit = useCallback(
-    async (mode: ComposeMode, input: ComposeInput): Promise<boolean> => {
+    async (mode: ComposeMode, input: ComposeInput): Promise<ComposeOutcome> => {
       const text = input.text.trim();
       const files = input.files;
       try {
@@ -100,7 +113,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
             notify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
           }
           notify({ tone: "info", message: askMessage(result.eventId !== null) });
-          return true;
+          return { ok: true };
         }
 
         const result = await capture.mutateAsync({
@@ -113,13 +126,13 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
           notify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
         }
         notify({ tone: "info", message: captureMessage(result.eventId !== null) });
-        return true;
+        return { ok: true };
       } catch (cause) {
         notify({
           tone: "error",
           message: `${mode === "ask" ? "Ask" : "Capture"} failed — ${(cause as Error).message}`,
         });
-        return false;
+        return { ok: false, error: cause };
       }
     },
     [capture, createThread, notify],

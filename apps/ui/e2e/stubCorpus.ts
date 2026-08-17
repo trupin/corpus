@@ -1,5 +1,6 @@
 import {
   DEFAULT_RECENT_JOBS,
+  ORCHESTRATOR_LANE,
   extractFormSource,
   formAnswerRecord,
   formatFormAnswerBody,
@@ -46,6 +47,7 @@ import {
   type Thread,
   type ThreadMutationResponse,
   type ThreadStatus,
+  type UnknownRecipientError,
   type UpdateDocResponse,
   type ValidationError,
   type ViewQuery,
@@ -129,6 +131,7 @@ type StubPayload =
   | SearchResults
   | Thread
   | ThreadMutationResponse
+  | UnknownRecipientError
   | UpdateDocResponse
   | ValidationError;
 
@@ -567,6 +570,17 @@ export interface StubCorpus {
    * is otherwise indistinguishable from "was right on first paint".
    */
   readonly claimJob: (eventId: string) => Promise<void>;
+  /**
+   * **The other tab** — a resident released while this page is looking at a
+   * composer (SPEC.md §7, UI-118).
+   *
+   * `GET /api/agents` stops naming the lane from here on, and the page is told
+   * nothing: no invalidate frame is pushed, so its cached roster still names it
+   * and its recipient picker still offers it. That disagreement is exactly what
+   * lets a stale pick reach the wire and be refused, and it cannot be seeded —
+   * it is two moments, not a state.
+   */
+  readonly releaseLane: (lane: string) => Promise<void>;
 }
 
 function seeded(row: StubRow): StoredDoc {
@@ -778,6 +792,9 @@ export async function stubCorpus(
   // A mutable copy: `claimJob` moves an event's status, and the seed the spec
   // handed in is not the stub's to rewrite.
   const jobs: StubJob[] = [...(options.jobs ?? [])];
+  // Mutable for `releaseLane`'s reason: a roster is what the server holds *now*,
+  // and the page's copy of it is what it last read.
+  const lanes: AgentLane[] = [...(options.lanes ?? [])];
   const requests: StubRequest[] = [];
   let created = 0;
   let appended = 0;
@@ -1129,6 +1146,36 @@ export async function stubCorpus(
      * Neither was visible: the missing count is only read as a number nothing
      * renders yet, and the extra key was silently ignored (UI-102).
      */
+    /*
+     * `assertRecipientResolvable`, as the server holds it (SPEC.md §7,
+     * `apps/server/src/queue/scope.ts`): a `recipient` naming no lane is a `422`
+     * and **nothing is written**.
+     *
+     * Modelled here rather than accepted, because the refusal is the behaviour
+     * under test: a pick can go stale between the roster read and the post, and
+     * a stub that took one anyway would let a spec assert a routing the server
+     * would never have performed (UI-118). `orchestrator` always resolves; an
+     * absent field is the ordinary case and needs no lookup.
+     */
+    const recipientRefusal = (input: Record<string, unknown>): Promise<void> | undefined => {
+      const lane = input["recipient"];
+      if (typeof lane !== "string") return undefined;
+      if (lane === ORCHESTRATOR_LANE || lanes.some((row) => row.lane === lane)) return undefined;
+      return json(
+        route,
+        {
+          code: "unknown_recipient",
+          message:
+            `\`${lane}\` names no lane: either this workspace holds no such thread, or that ` +
+            "thread holds no resident and is therefore not a lane at all (SPEC.md §7). Nothing " +
+            "was written — post without a recipient to reach whoever owns the conversation you " +
+            "are posting in, or pick a live agent from the roster.",
+          recipient: lane,
+        } satisfies UnknownRecipientError,
+        422,
+      );
+    };
+
     if (url.pathname === "/api/queue/status") {
       return json(route, {
         // `agent` is required since CONTRACT-045 and it is read by §8's pending
@@ -1166,9 +1213,7 @@ export async function stubCorpus(
         summary: null,
         origin: null,
       };
-      return json(route, {
-        agents: [orchestrator, ...(options.lanes ?? [])],
-      } satisfies AgentRoster);
+      return json(route, { agents: [orchestrator, ...lanes] } satisfies AgentRoster);
     }
 
     if (url.pathname === "/api/docs" && method === "GET") {
@@ -1204,8 +1249,10 @@ export async function stubCorpus(
      * optimistic decoration that the first refetch clears.
      */
     if (url.pathname === "/api/threads" && method === "POST") {
-      created += 1;
       const input = inputOf();
+      const refusedRecipient = recipientRefusal(input);
+      if (refusedRecipient !== undefined) return refusedRecipient;
+      created += 1;
       const parentId = typeof input["parent"] === "string" ? input["parent"] : "";
       const thread = seeded({
         id: `th_new${String(created)}`,
@@ -1317,6 +1364,8 @@ export async function stubCorpus(
         return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
       }
       const input = inputOf();
+      const refused = recipientRefusal(input);
+      if (refused !== undefined) return refused;
       const files = requests.at(-1)?.multipart?.files ?? [];
       /*
        * An attachment-only turn is a real turn (SPEC.md §6). The server writes
@@ -1965,6 +2014,14 @@ export async function stubCorpus(
       return Promise.resolve(
         commitAnswerTurn(doc, formatFormAnswerBody(formAnswerRecord(form, answer))),
       );
+    },
+    releaseLane: (lane) => {
+      const index = lanes.findIndex((row) => row.lane === lane);
+      if (index === -1) throw new Error(`releaseLane: no lane ${lane}`);
+      lanes.splice(index, 1);
+      const doc = store.get(lane);
+      if (doc !== undefined) doc.extra = { ...doc.extra, resident: null };
+      return Promise.resolve();
     },
     claimJob: (eventId) => {
       const index = jobs.findIndex((job) => job.eventId === eventId);

@@ -154,22 +154,27 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
       setText("");
       setCaret(0);
       void (async () => {
-        const ok = await compose.submit(mode, {
+        const outcome = await compose.submit(mode, {
           text: body,
           files: attachments.map((attachment) => attachment.file),
           weight: weight.request,
           recipient: recipient.request,
         });
-        // Either way: an override routes the message it was set on and never
-        // the next one (SPEC.md §7).
-        recipient.clear();
-        if (ok) {
+        if (outcome.ok) {
+          // An override routes the message it was set on and never the next one
+          // (SPEC.md §7), and this message landed.
+          recipient.clear();
           intake.release(attachments);
           onClose();
           return;
         }
-        // Nothing is lost on a failure: the text and the chips come back and the
-        // panel stays open, because the person still means to send this.
+        // Nothing is lost on a failure: the text, the chips **and the lane** come
+        // back and the panel stays open, because the person still means to send
+        // this. The lane is the one that matters most here: a `422` refusing the
+        // pick is the server saying this build's roster is behind, and a retry
+        // that fell back to the computed default would silently address someone
+        // else (UI-118).
+        recipient.refuse(outcome.error);
         setText(body);
         setCaret(body.length);
         intake.restore(attachments);

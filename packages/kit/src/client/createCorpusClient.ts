@@ -30,7 +30,11 @@ import type {
   UpdateDocRequest,
   UpdateDocResponse,
 } from "@corpus/contract";
-import { ReattachConflictErrorSchema, StaleKeyErrorSchema } from "@corpus/contract";
+import {
+  ReattachConflictErrorSchema,
+  StaleKeyErrorSchema,
+  UnknownRecipientErrorSchema,
+} from "@corpus/contract";
 import {
   createCorpusClient as createContractClient,
   isApiError,
@@ -690,6 +694,28 @@ export function staleKeyDoc(error: unknown): Doc | null {
   if (!(error instanceof CorpusRequestError) || error.status !== 409) return null;
   const parsed = StaleKeyErrorSchema.safeParse(error.payload);
   return parsed.success ? parsed.data.doc : null;
+}
+
+/**
+ * The lane a **`422 unknown_recipient`** refused, or `null` when the failure was
+ * something else (SPEC.md §7; `UnknownRecipientErrorSchema`).
+ *
+ * Read for the reason the contract states in the schema's own docblock — *"a
+ * client that offered a picker needs to know **which** entry went stale so it
+ * can drop that row rather than reload the world"*. A composer needs it for one
+ * thing more: the refusal is the only evidence it will ever get that its own
+ * roster is behind the server's, and it has to be sure the refusal names the
+ * lane **this** message was addressed to before it acts on it.
+ *
+ * Parsed with the contract's own schema rather than by reading `code` off the
+ * payload, exactly as {@link reattachRefusalReason} and {@link staleKeyDoc} are:
+ * a `422` this build does not recognise reads as `null` instead of handing a
+ * half-shaped object to a surface that would then draw a claim from it.
+ */
+export function unknownRecipientLane(error: unknown): string | null {
+  if (!(error instanceof CorpusRequestError) || error.status !== 422) return null;
+  const parsed = UnknownRecipientErrorSchema.safeParse(error.payload);
+  return parsed.success ? parsed.data.recipient : null;
 }
 
 interface FetchResult<T> {

@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
-import { ORCHESTRATOR_LABEL } from "@corpus/kit";
+import { CorpusRequestError, ORCHESTRATOR_LABEL } from "@corpus/kit";
 import { createCorpusTestHarness, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CommentPopover } from "../anchors/CommentPopover";
+import { CommentPopover, restoredRecipient } from "../anchors/CommentPopover";
 import { composeTransport } from "../compose/composeFixture";
 import { ComposeOverlay } from "../compose/ComposeOverlay";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
@@ -310,11 +310,32 @@ describe.each(SURFACES)("$name", (surface) => {
     expect(sent["recipient"]).toBe(surface.other);
   });
 
-  it("goes back to stating nothing when the default is picked back", async () => {
+  /**
+   * UI-118. `computed` is *this* build's walk, over a cached roster and bounded
+   * at `MAX_SCOPE_WALK`; the server's is unbounded over the live projection. So
+   * pressing the lane the default names is not agreement with whatever the
+   * server works out a moment later — it is addressing that lane, and it has to
+   * say so on the wire or the server's `422` can never happen.
+   */
+  it("carries a pick that happens to equal the computed lane — it was still a pick", async () => {
+    const probe = surface.mount([residentLane()]);
+    await offered();
+    fireEvent.click(laneOption(surface.computed));
+    await waitFor(() => {
+      expect(laneOption(surface.computed).dataset["recipientChosen"]).toBe("true");
+    });
+    const sent = await probe.send();
+    expect(sent["recipient"]).toBe(surface.computed);
+  });
+
+  it("goes back to stating nothing when the pick is pressed off again", async () => {
     const probe = surface.mount([residentLane()]);
     await offered();
     fireEvent.click(laneOption(surface.other));
-    fireEvent.click(laneOption(surface.computed));
+    fireEvent.click(laneOption(surface.other));
+    await waitFor(() => {
+      expect(laneOption(surface.other).dataset["recipientChosen"]).toBe("false");
+    });
     const sent = await probe.send();
     expect("recipient" in sent).toBe(false);
   });
@@ -339,6 +360,218 @@ describe.each(SURFACES)("$name", (surface) => {
       expect(option.tagName).toBe("BUTTON");
       expect(option.getAttribute("type")).toBe("button");
     }
+  });
+});
+
+/**
+ * A pick can go stale between the roster read and the post — the person releases
+ * the resident in one tab and posts from another — and the server refuses it
+ * with a `422` naming the lane (SPEC.md §7, `assertRecipientResolvable`). What
+ * the surface must not do is swallow that and quietly try again somewhere else.
+ */
+describe("a pick the server refuses", () => {
+  it("says so, keeps the message, and does not silently reroute the retry", async () => {
+    const transport = readerTransport({
+      lanes: [residentLane()],
+      threads: [threadFixture({ id: RESIDENT_THREAD_ID, turns: [] })],
+    });
+    const notices: string[] = [];
+    render(
+      <ReaderHost transport={transport}>
+        <ThreadComposer
+          threadId={RESIDENT_THREAD_ID}
+          resolved={false}
+          onNotify={(notice) => notices.push(notice.message)}
+        />
+      </ReaderHost>,
+    );
+    await offered();
+
+    // The other tab: the resident is released, and this page is told nothing.
+    transport.releaseLane(RESIDENT_THREAD_ID);
+    // The person presses the lane they mean to address — still the default here,
+    // because this page's roster has not refetched.
+    fireEvent.click(laneOption(RESIDENT_THREAD_ID));
+    const field = screen.getByLabelText<HTMLTextAreaElement>("Reply");
+    fireEvent.change(field, { target: { value: "are these numbers still right?" } });
+    fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+
+    const path = `/api/threads/${RESIDENT_THREAD_ID}/turns`;
+    await waitFor(() => {
+      expect(transport.of("POST", path).length).toBe(1);
+    });
+    // It reached the wire at all, which is what lets the server refuse it.
+    expect((transport.of("POST", path)[0]?.body as Stated)["recipient"]).toBe(RESIDENT_THREAD_ID);
+
+    // The refusal is said in the server's own words…
+    await waitFor(() => {
+      expect(notices.join(" ")).toContain("names no lane");
+    });
+    // …and stays on the row after the toast is gone.
+    await waitFor(() => {
+      expect(laneOption(RESIDENT_THREAD_ID).dataset["recipientRefused"]).toBe("true");
+    });
+    expect(document.querySelector("[data-recipient-statement]")?.textContent).toContain(
+      "is not a lane any more",
+    );
+    // The message came back whole — words and lane alike.
+    expect(screen.getByLabelText<HTMLTextAreaElement>("Reply").value).toBe(
+      "are these numbers still right?",
+    );
+
+    // The retry is refused again rather than delivered to the orchestrator: the
+    // person addressed a lane, and nothing here substitutes another for it.
+    fireEvent.keyDown(screen.getByLabelText("Reply"), { key: "Enter", metaKey: true });
+    await waitFor(() => {
+      expect(transport.of("POST", path).length).toBe(2);
+    });
+    expect((transport.of("POST", path)[1]?.body as Stated)["recipient"]).toBe(RESIDENT_THREAD_ID);
+  });
+
+  it("refetches the roster, so the picker stops offering the released lane as the default", async () => {
+    const transport = readerTransport({
+      lanes: [residentLane()],
+      threads: [threadFixture({ id: RESIDENT_THREAD_ID, turns: [] })],
+    });
+    render(
+      <ReaderHost transport={transport}>
+        <ThreadComposer threadId={RESIDENT_THREAD_ID} resolved={false} onNotify={() => undefined} />
+      </ReaderHost>,
+    );
+    await offered();
+
+    transport.releaseLane(RESIDENT_THREAD_ID);
+    fireEvent.click(laneOption(RESIDENT_THREAD_ID));
+    const field = screen.getByLabelText<HTMLTextAreaElement>("Reply");
+    fireEvent.change(field, { target: { value: "still there?" } });
+    fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+
+    // Nothing else would: `useAgentsRoster` has no poll, and the SSE frame that
+    // would have said so never arrived — which is why the pick went stale.
+    await waitFor(() => {
+      expect(laneOption("orchestrator").dataset["recipientDefault"]).toBe("true");
+    });
+    // The refused lane is still on screen, because the pick that names it is.
+    expect(laneOption(RESIDENT_THREAD_ID).dataset["recipientRefused"]).toBe("true");
+  });
+});
+
+describe("a pick the server refuses — the other three surfaces", () => {
+  it("the global composer keeps and marks it, and the panel stays open", async () => {
+    const transport = composeTransport({ lanes: [residentLane()] });
+    render(<ComposeHost transport={transport} />);
+    await offered();
+
+    transport.releaseLane(RESIDENT_THREAD_ID);
+    // On Ask the resident is the *override* — §7's summons — so this is the
+    // same staleness reached from the other side.
+    fireEvent.click(laneOption(RESIDENT_THREAD_ID));
+    const field = screen.getByLabelText<HTMLTextAreaElement>("Ask the agent, or capture a thought");
+    fireEvent.change(field, { target: { value: "can you re-run this?" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Ask/u }));
+
+    await waitFor(() => {
+      expect(transport.to("/api/threads")).toHaveLength(1);
+    });
+    expect((transport.to("/api/threads")[0]?.json as Stated)["recipient"]).toBe(RESIDENT_THREAD_ID);
+    await waitFor(() => {
+      expect(laneOption(RESIDENT_THREAD_ID).dataset["recipientRefused"]).toBe("true");
+    });
+    expect(
+      screen.getByLabelText<HTMLTextAreaElement>("Ask the agent, or capture a thought").value,
+    ).toBe("can you re-run this?");
+  });
+
+  it("a comment on a turn keeps and marks it", async () => {
+    const transport = readerTransport({ lanes: [residentLane()] });
+    render(
+      <ReaderHost transport={transport}>
+        <NewChildThread
+          parentThreadId={RESIDENT_THREAD_ID}
+          anchorText="the line the comment hangs off"
+          onDone={() => undefined}
+          onCancel={() => undefined}
+          onNotify={() => undefined}
+        />
+      </ReaderHost>,
+    );
+    await offered();
+
+    transport.releaseLane(RESIDENT_THREAD_ID);
+    fireEvent.click(laneOption(RESIDENT_THREAD_ID));
+    const field = screen.getByLabelText<HTMLTextAreaElement>("Comment on this turn");
+    fireEvent.change(field, { target: { value: "is this still the number?" } });
+    fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads").length).toBe(1);
+    });
+    expect((transport.of("POST", "/api/threads")[0]?.body as Stated)["recipient"]).toBe(
+      RESIDENT_THREAD_ID,
+    );
+    await waitFor(() => {
+      expect(laneOption(RESIDENT_THREAD_ID).dataset["recipientRefused"]).toBe("true");
+    });
+  });
+
+  /**
+   * The popover does not survive its own send — its host unmounts it on submit
+   * and re-opens it holding what it held (UI-111) — so its pick comes back the
+   * way its words do, and comes back **marked** where the server named it.
+   */
+  it("a comment on a selection comes back holding the refused pick", async () => {
+    const transport = readerTransport({ lanes: [residentLane()] });
+    const onSubmit = vi.fn();
+    render(
+      <ReaderHost transport={transport}>
+        <CommentPopover
+          quote="assume a 30-year fixed at 6.1%"
+          top={120}
+          left={80}
+          pending={false}
+          weightScope={`thread:${RESIDENT_THREAD_ID}`}
+          recipientScope={RESIDENT_THREAD_ID}
+          restore={{
+            text: "is this still the number?",
+            attachments: [],
+            recipient: { chosen: RESIDENT_THREAD_ID, refused: true },
+          }}
+          onSubmit={onSubmit}
+          onClose={() => undefined}
+        />
+      </ReaderHost>,
+    );
+    await offered();
+
+    await waitFor(() => {
+      expect(laneOption(RESIDENT_THREAD_ID).dataset["recipientRefused"]).toBe("true");
+    });
+    // …and the retry still addresses it, rather than falling back to a default
+    // computed from the same roster the server has just called stale.
+    fireEvent.keyDown(screen.getByLabelText("Comment"), { key: "Enter", metaKey: true });
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalled();
+    });
+    const [, , stated] = onSubmit.mock.calls[0] as [string, boolean, Record<string, unknown>];
+    expect(stated["recipient"]).toBe(RESIDENT_THREAD_ID);
+  });
+
+  it("names the refused lane in the host's restore, and only for a 422 naming it", () => {
+    const refusedByName = new CorpusRequestError("POST /api/threads", 422, {
+      code: "unknown_recipient",
+      message: "no lane",
+      recipient: RESIDENT_THREAD_ID,
+    });
+    expect(restoredRecipient({ recipient: RESIDENT_THREAD_ID }, refusedByName)).toEqual({
+      chosen: RESIDENT_THREAD_ID,
+      refused: true,
+    });
+    // An upload that failed says nothing about the lane: the pick comes back
+    // unmarked rather than wearing a verdict the server never gave.
+    expect(
+      restoredRecipient({ recipient: RESIDENT_THREAD_ID }, new Error("upload failed")),
+    ).toEqual({ chosen: RESIDENT_THREAD_ID, refused: false });
+    expect(restoredRecipient({}, refusedByName)).toBeUndefined();
   });
 });
 

@@ -60,6 +60,22 @@
   border-style: dashed;
 }
 
+/* The lane the server refused (SPEC.md §7's `422`, UI-118). It keeps its
+   pressed fill — the message is still addressed there and the text is still in
+   the box — and says the refusal in the statement line; this only stops it
+   reading as a working choice. Never `display: none`: a row that vanished would
+   take the person's own pick off the screen with it. */
+.recipient-opt[data-recipient-refused="true"] {
+  color: var(--signal);
+  border-color: var(--signal);
+  background: var(--signal-wash);
+  text-decoration: line-through;
+}
+
+.recipient-pick:not([data-recipient-refused=""]) .recipient-says {
+  color: var(--signal);
+}
+
 .lane-dot {
   width: 6px;
   height: 6px;

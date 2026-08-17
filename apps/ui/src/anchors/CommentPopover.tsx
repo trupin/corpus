@@ -8,7 +8,9 @@ import {
   useAttachmentIntake,
   useComposerRecipient,
   useComposerWeight,
+  unknownRecipientLane,
   WeightPicker,
+  type ComposerRecipientRestore,
   type PendingAttachment,
 } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
@@ -86,6 +88,36 @@ export const COMMENT_MOVE_HINT = "Move this composer — drag it, or use the arr
 export interface CommentRestore {
   readonly text: string;
   readonly attachments: readonly PendingAttachment[];
+  /**
+   * The lane the refused comment was addressed to, and whether the server
+   * refused **that lane** (SPEC.md §7's `422`, UI-118).
+   *
+   * It comes back for the reason the words and the attachments do, and for one
+   * more: this composer's pick is the only part of a refused send that the
+   * person cannot see was lost. Dropping it would put the retry back on the
+   * computed default — worked out here, from the same cached roster that
+   * produced the pick the server has just said is stale — and route it to
+   * somebody they never addressed, without a word anywhere.
+   */
+  readonly recipient?: ComposerRecipientRestore | undefined;
+}
+
+/**
+ * The recipient half of a {@link CommentRestore}, from what the refused send
+ * stated and how the server refused it.
+ *
+ * A host builds it in its `onError` and knows both halves already. `refused` is
+ * true only for a `422` naming **this** lane: any other failure leaves the pick
+ * intact but unrefused, so the composer comes back holding it without claiming
+ * a verdict the server never gave (UI-118).
+ */
+export function restoredRecipient(
+  stated: { readonly recipient?: string },
+  error: unknown,
+): ComposerRecipientRestore | undefined {
+  const lane = stated.recipient;
+  if (lane === undefined) return undefined;
+  return { chosen: lane, refused: unknownRecipientLane(error) === lane };
 }
 
 export interface CommentPopoverProps {
@@ -120,8 +152,9 @@ export interface CommentPopoverProps {
    * request: the weight it was set at and the recipient it was addressed to,
    * each present only when stated and `{}` when neither was. Passed as an object
    * rather than as two `string | undefined`s so absence has one spelling all the
-   * way to the wire — which for the recipient is the whole mechanism, since the
-   * computed default is sent by omitting the field (SPEC.md §7).
+   * way to the wire — which for the recipient is the whole mechanism, since a
+   * default nobody touched is sent by omitting the field (SPEC.md §7). A pick is
+   * present whether or not it matches that default (UI-118).
    *
    * The fourth is the attachments, **taken** from the composer as they are
    * handed over: their previews are not revoked, so the host can put them back
@@ -167,7 +200,7 @@ export function CommentPopover({
    * pointer, which is the bug UI-073 and UI-074 exist about.
    */
   const weight = useComposerWeight(weightScope);
-  const recipient = useComposerRecipient({ start: recipientScope });
+  const recipient = useComposerRecipient({ start: recipientScope, restore: restore?.recipient });
   const live = composerReachesAgent({ requestsAgent: asking });
 
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Popover, onEscape: onClose });
@@ -183,9 +216,12 @@ export function CommentPopover({
     if (!canSend) return;
     // Taken, not read: the popover closes on submit, and the snapshot has to
     // outlive it for the host to put back if the post is refused.
-    // The pick is handed over with the message and never kept: this popover
-    // unmounts on submit, so there is nowhere for an override to persist to —
-    // §7's third prohibition, enforced by the surface's own lifetime.
+    // The pick is handed over with the message and never kept here: this
+    // popover unmounts on submit, so there is nowhere for an override to
+    // persist to — §7's third prohibition, enforced by the surface's own
+    // lifetime. A *refused* send is the one exception, and it is not a
+    // persisting override: nothing was written, so `restore` brings the same
+    // unsent message back whole — words, files and the lane it named alike.
     onSubmit(text.trim(), asking, { ...weight.request, ...recipient.request }, intake.take());
   };
 

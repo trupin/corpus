@@ -52,6 +52,17 @@ export interface ReaderTransport {
   readonly writeAsOther: (docId: string, body: string) => Doc;
   /** Settles or raises a job mid-test, for a queue transition arriving over SSE. */
   readonly setJobs: (jobs: readonly Job[]) => void;
+  /**
+   * **The other tab** (SPEC.md §7): releases a lane's resident behind this
+   * page's back, so `GET /api/agents` stops naming it while whatever this page
+   * has already cached still does.
+   *
+   * That disagreement is the whole of UI-118 and it cannot be seeded — it is two
+   * moments, not a state — and it is what arms the recipient check below: a pick
+   * naming a lane this transport no longer holds is a `422 unknown_recipient`,
+   * exactly as `apps/server/src/queue/scope.ts` refuses one.
+   */
+  readonly releaseLane: (lane: string) => void;
 }
 
 export interface ReaderTransportOptions {
@@ -275,6 +286,40 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
   const designated = new Map<string, { name: string; docId: string }>();
   const released = new Set<string>();
 
+  /**
+   * Is `lane` one this transport would call a lane right now — the server's
+   * `isDesignatedRoot`, over the same set `GET /api/agents` answers with.
+   */
+  const isLane = (lane: string): boolean =>
+    lane === "orchestrator" ||
+    designated.has(lane) ||
+    (options.lanes ?? []).some((row) => row.lane === lane && !released.has(row.lane));
+
+  /**
+   * The `422` a posting request naming no lane is refused with (SPEC.md §7,
+   * `assertRecipientResolvable`), or `undefined`.
+   *
+   * Modelled here rather than left to the `{}` fallback because the refusal is
+   * the point: a pick can go stale between the roster read and the post, and a
+   * fixture that accepted one anyway would let a suite assert a routing the
+   * server would never have performed (UI-118).
+   */
+  const recipientRefusal = (stated: unknown): Response | undefined => {
+    const lane = (stated as { recipient?: unknown } | undefined)?.recipient;
+    if (typeof lane !== "string" || isLane(lane)) return undefined;
+    return json(
+      {
+        code: "unknown_recipient",
+        message:
+          `\`${lane}\` names no lane: either this workspace holds no such thread, or that ` +
+          "thread holds no resident and is therefore not a lane at all (SPEC.md §7). Nothing " +
+          "was written.",
+        recipient: lane,
+      },
+      422,
+    );
+  };
+
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     // The body is deliberately withheld from `new Request`. These suites run in
     // jsdom, so a multipart body is jsdom's `FormData` while `Request` is
@@ -493,6 +538,8 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       }
       if (verb === "turns" && rawTs === undefined) {
         if (thread === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
+        const refused = recipientRefusal(call.parts ?? call.body);
+        if (refused !== undefined) return refused;
         const text =
           call.parts?.["text"] ?? (call.body as { body?: string } | undefined)?.body ?? "";
         const references = (call.files ?? []).map(
@@ -520,6 +567,8 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     }
 
     if (url.pathname === "/api/threads" && request.method === "POST") {
+      const refusedRecipient = recipientRefusal(call.parts ?? call.body);
+      if (refusedRecipient !== undefined) return refusedRecipient;
       /*
        * The ids are **contract-shaped** (`^th_[A-Za-z0-9]+$`, `^anc_…`), and
        * that is not cosmetic: the multipart branch of `createThread` parses this
@@ -563,6 +612,10 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     },
     setJobs: (next) => {
       jobs = next;
+    },
+    releaseLane: (lane) => {
+      released.add(lane);
+      designated.delete(lane);
     },
   };
 }
