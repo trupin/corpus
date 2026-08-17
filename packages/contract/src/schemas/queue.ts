@@ -336,11 +336,26 @@ export const MAX_IDLE_TIMEOUT_SECONDS = 480;
  * as `960` is the point: change the loop's rearm and the window follows it, and
  * `queue.test.ts` pins the bound so it can never quietly stop following.
  *
+ * **The multiplicand is the maximum, not the default** (CONTRACT-060). They are
+ * the same number today, which is exactly why getting it wrong was invisible:
+ * this read `DEFAULT_IDLE_TIMEOUT_SECONDS * 2` while the paragraph above — and
+ * the server's docblock, and SERVER-112's own report — argued the max. The
+ * default is only what a client gets when it asks for nothing; the max is what
+ * bounds *every* park, including the longest one the server will admit
+ * (`IdleQuerySchema` rejects more), and the CLI's segmenting loop parks for
+ * `min(remaining, MAX_IDLE_TIMEOUT_SECONDS)` precisely so it never asks for
+ * more. So the longest gap between two contacts from a healthy listener is a
+ * max-length park, and a window built on the default would — the moment the two
+ * diverged, which is the moment somebody raises the cap — call a listener gone
+ * that was doing what the contract permits.
+ *
  * The server applies it before answering `AgentPresence.live`; a client applies
  * the same number to the same instant only to *expire* a verdict it has held too
- * long ({@link isAgentPresent}). One window, one definition, two appliers.
+ * long ({@link isAgentPresent}). One window, one definition, two appliers — and
+ * one derivation: `LANE_GRACE_MS` is this constant times 1000 and re-derives
+ * nothing.
  */
-export const AGENT_PRESENCE_WINDOW_SECONDS = DEFAULT_IDLE_TIMEOUT_SECONDS * 2;
+export const AGENT_PRESENCE_WINDOW_SECONDS = MAX_IDLE_TIMEOUT_SECONDS * 2;
 
 /**
  * Queue depth, halt state — and, since CONTRACT-045, **who is or is not there to

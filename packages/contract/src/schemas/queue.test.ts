@@ -498,7 +498,30 @@ describe("the agent presence window", () => {
   });
 
   it("tolerates one wholly missed rearm and calls two a departure", () => {
-    expect(AGENT_PRESENCE_WINDOW_SECONDS).toBe(DEFAULT_IDLE_TIMEOUT_SECONDS * 2);
+    expect(AGENT_PRESENCE_WINDOW_SECONDS).toBe(MAX_IDLE_TIMEOUT_SECONDS * 2);
+  });
+
+  /**
+   * CONTRACT-060 — the assertion above, written so it cannot pass by coincidence.
+   *
+   * `DEFAULT_IDLE_TIMEOUT_SECONDS === MAX_IDLE_TIMEOUT_SECONDS` today, so
+   * `MAX * 2` and `DEFAULT * 2` are the same number and either spelling passes.
+   * The multiplicand that is *correct* is the max: the default is what a client
+   * gets when it asks for nothing, the max is what bounds every park the server
+   * will admit, and the longest gap between two contacts from a healthy listener
+   * is therefore a max-length park. A window on the default would fail §7's one
+   * bound the moment somebody raised the cap, and every test above would still
+   * be green.
+   *
+   * So this states the property the multiple exists to deliver, in terms that do
+   * not mention the default at all: the window survives one wholly missed rearm
+   * **at the longest park the contract permits**. Diverge the two constants and
+   * put the window back on the default and this is the assertion that goes red —
+   * here, where the constant is chosen, rather than in a consumer that happened
+   * to re-derive it.
+   */
+  it("survives a missed rearm even at the longest park the contract permits", () => {
+    expect(AGENT_PRESENCE_WINDOW_SECONDS).toBeGreaterThanOrEqual(MAX_IDLE_TIMEOUT_SECONDS * 2);
   });
 });
 

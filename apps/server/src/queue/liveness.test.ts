@@ -38,13 +38,19 @@ describe("the grace window", () => {
   // rearm gap" — and the mechanism depends on it: a healthy listener un-parks
   // for a moment every time it re-parks, so a window inside that gap reads an
   // ordinary rearm as a departure. The rearm gap is bounded by the contract's
-  // idle timeout, so this is the arithmetic, pinned.
+  // idle timeout, so the server asserts the bound it relies on.
+  //
+  // CONTRACT-060: what it deliberately no longer asserts is the *multiple*.
+  // This used to pin `MAX_IDLE_TIMEOUT_SECONDS * 1000 * 2` while the contract
+  // computed the window from `DEFAULT_IDLE_TIMEOUT_SECONDS` — two derivations
+  // from two multiplicands, both green only because the two constants are 480.
+  // Diverge them and this test failed while the contract, where the constant is
+  // chosen, stayed green. The multiplicand is `queue.test.ts`'s to pin; the only
+  // thing this module derives is milliseconds from seconds, and that identity is
+  // the first assertion below.
   it("is longer than a rearm gap, and is the contract's one number", () => {
     expect(LANE_GRACE_MS).toBe(AGENT_PRESENCE_WINDOW_SECONDS * 1000);
     expect(LANE_GRACE_MS).toBeGreaterThan(MAX_IDLE_TIMEOUT_SECONDS * 1000);
-    // Two whole park cycles: one wholly missed rearm is tolerated, two is a
-    // departure.
-    expect(LANE_GRACE_MS).toBe(MAX_IDLE_TIMEOUT_SECONDS * 1000 * 2);
   });
 });
 

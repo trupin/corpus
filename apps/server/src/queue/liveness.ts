@@ -65,11 +65,22 @@ export const PRESENCE_QUERY_KEYS: readonly QueryKey[] = [AGENTS_KEY, QUEUE_KEY];
  * **Derived from the contract, never chosen here.** §7 deliberately leaves the
  * length open but guarantees exactly one bound on it — *"the window is longer
  * than a rearm gap"* — and the rearm gap is bounded by the idle timeout, which
- * the contract fixes at `MAX_IDLE_TIMEOUT_SECONDS = 480`. A park cannot outlive
- * that and the skill re-invokes immediately, so a healthy listener is un-parked
- * for milliseconds and absent for at most one whole park cycle when a rearm is
- * missed. `AGENT_PRESENCE_WINDOW_SECONDS` is `480 × 2 = 960 s`: it tolerates one
- * wholly missed rearm and calls two a departure.
+ * the contract fixes at `MAX_IDLE_TIMEOUT_SECONDS = 480`. It is the **max**, not
+ * the default, that bounds the gap: the default is what a client gets when it
+ * asks for nothing, while the max is what every park is admitted under and what
+ * the CLI's segmenting loop parks for. A park cannot outlive it and the skill
+ * re-invokes immediately, so a healthy listener is un-parked for milliseconds
+ * and absent for at most one whole park cycle when a rearm is missed.
+ * `AGENT_PRESENCE_WINDOW_SECONDS` is that max doubled — `480 × 2 = 960 s`: it
+ * tolerates one wholly missed rearm and calls two a departure.
+ *
+ * **The multiple is not restated here** (CONTRACT-060). This file multiplies the
+ * contract's seconds by 1000 and does nothing else; the choice of multiplicand
+ * belongs to `AGENT_PRESENCE_WINDOW_SECONDS` and is pinned in `queue.test.ts`.
+ * Until CONTRACT-060 this docblock argued the max while the contract computed
+ * the default, and both tests passed because the two constants are equal — a
+ * second derivation is a second place for the rule to be wrong, which is the
+ * whole reason the number is the contract's.
  *
  * The number is **the contract's** rather than a server constant beside
  * `DEFAULT_STALE_AFTER_MS`, because it is one number two processes have to agree
