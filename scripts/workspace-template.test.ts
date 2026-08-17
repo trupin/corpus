@@ -2008,12 +2008,14 @@ describe("orchestrate skill body", () => {
       const steps = loop.split("\n").filter((line) => /^\d+\. \*\*/.test(line));
       expect(steps.length).toBeGreaterThanOrEqual(8);
       // Dispatch is a step of the procedure, and it says it is not a command.
-      expect(loop).toMatch(/\*\*Dispatch every claimed event to a subagent\*\*/);
+      // The label carries the listener launches too since AGENT-026, so it is
+      // matched as a prefix rather than as a closed bold span.
+      expect(loop).toMatch(/\*\*Dispatch every claimed event to a subagent/);
       expect(loop).toMatch(/\*\*This\s+step is work, not a command\*\*/);
       // Claim, then dispatch, then park — in that order, as steps.
       const order = [
         "**Claim, then read what it printed.**",
-        "**Dispatch every claimed event to a subagent**",
+        "**Dispatch every claimed event to a subagent",
         "**Park, alone.**",
       ].map((label) => loop.indexOf(label));
       expect(order).not.toContain(-1);
@@ -2052,6 +2054,289 @@ describe("orchestrate skill body", () => {
       const fences = fencedBlocks(example);
       expect(fences.length).toBeGreaterThan(0);
       for (const fence of fences) expect(fence.content).not.toContain("corpus queue idle");
+    });
+  });
+
+  /**
+   * AGENT-026, SPEC.md §7 as amended by SHARED-043. The orchestrator's claim
+   * stopped being the whole queue: it is one lane, widened at claim time to
+   * include every lane whose listener has lapsed.
+   *
+   * Every rule pinned here has a failure that is silent in the running product,
+   * and each was measured against a real server rather than reasoned:
+   *
+   * - **The unscoped call is this lane's only spelling.** `--thread` is not an
+   *   error for the orchestrator, it is *somebody else's conversation*, so an
+   *   example that scoped one would park this loop on a resident's lane and
+   *   leave its own undrained, with nothing reported anywhere.
+   * - **A designation is a launch, not a job.** Completing at launch time is
+   *   what keeps a weeks-long listener out of `in-progress/`; an unrouted
+   *   `resident.designated` fails as an unknown type and no listener ever starts.
+   * - **The claim is not audited.** Measured: an unscoped claim came back empty
+   *   while a live lane held a pending event, and handed that same event over
+   *   once the lane lapsed. An orchestrator that re-derives the walk hands back
+   *   work nobody else can see.
+   * - **A lapse is never announced in the thread.** The person can already see
+   *   the lane; a turn apologising for a missing resident is an operator's
+   *   diagnostic posted into their conversation.
+   * - **The window is the contract's number.** Same guard the converse skill and
+   *   CLI-043's help carry: a restated 16m drifts from the verdict it explains.
+   */
+  describe("sharing the queue", () => {
+    const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
+    const claiming = body.slice(body.indexOf("## Claiming"), body.indexOf("## Routing"));
+
+    it("owns one lane and spells it with the absent flag", () => {
+      expect(body).toMatch(
+        /\*\*The queue is partitioned into lanes, and you own one of them\.\*\*/,
+      );
+      expect(body).toMatch(
+        /\*\*Your lane is the unscoped one, and the absent flag is how it is spelled\.\*\*/,
+      );
+      // The old claim — that this session is the only process that claims
+      // anything — is gone rather than softened: left in, it authorises taking
+      // a live conversation's work back off its resident.
+      expect(body).not.toMatch(/the \*\*only\*\* process that\s+claims/);
+      expect(body).toMatch(/you are the only one that claims \*\*your\*\* lane/);
+      expect(body).toMatch(/now holds per lane/);
+    });
+
+    it("works no queue command that would reach another lane", () => {
+      // The mechanical half of the rule above: `--thread` names a resident's
+      // conversation, and nothing this skill runs may carry one.
+      const worked = fencedBlocks(body)
+        .filter((block) => block.info === "bash")
+        .flatMap((block) =>
+          extractCorpusInvocationUses(["```bash", block.content, "```"].join("\n")),
+        )
+        .filter(({ tokens }) => tokens[0] === "queue");
+      expect(
+        worked.length,
+        "no worked queue command — the guard would pass vacuously",
+      ).toBeGreaterThan(0);
+      for (const use of worked) {
+        expect(
+          use.flags,
+          `\`corpus ${use.tokens.join(" ")}\` scoped to another lane`,
+        ).not.toContain("--thread");
+      }
+    });
+
+    it("routes a designation to a launch that completes at launch time", () => {
+      const rows = routing.split("\n").filter((line) => line.startsWith("| "));
+      const designation = rows.find((row) => row.includes("`resident.designated`")) ?? "";
+      expect(designation, "no routing row for resident.designated").not.toBe("");
+      expect(designation).toMatch(/\*\*converse\*\*/);
+      expect(designation).toContain("threadId");
+      expect(designation).toContain("resident");
+      // The launch, and the three things a subagent cannot inherit.
+      expect(routing).toMatch(/\*\*Launching a listener\.\*\*/);
+      expect(routing).toMatch(/invoked as `\/converse <the payload's threadId>`/);
+      expect(routing).toMatch(/the `agent-def` document id both/);
+      // Settled at launch, because the listener outlives the event by weeks.
+      expect(routing).toMatch(/\*\*complete the event as soon as the launch is\s+made\*\*/);
+      expect(routing).toMatch(/The listener's lifetime is not the job's/);
+      expect(routing).toMatch(/You never wait on it, you never settle for it/);
+      expect(routing).toMatch(/sign-off rather than an outcome to\s+verify/);
+      // The one thing that does fail it.
+      expect(routing).toMatch(/fails the event is a launch that did not happen/);
+    });
+
+    it("launches once per lane per pass, and stops when a launch does not take", () => {
+      // Re-designation of a live lane, which arrives whether or not it is needed.
+      expect(routing).toMatch(/\*\*A lane that already has a listener gets nothing\.\*\*/);
+      expect(routing).toMatch(/re-designating is the only way a person can ask for a listener/);
+      expect(routing).toMatch(/Launch nothing, log why, complete/);
+      // The roster, not the batch, is what triggers a launch — and the restart
+      // case, which no event announces at all.
+      expect(routing).toMatch(/\*\*A lane with nobody on it gets one, once a pass\.\*\*/);
+      expect(routing).toMatch(/\*\*once per pass,\s+per lane, and never per event\*\*/);
+      expect(routing).toMatch(
+        /where every\s+designation is still sitting on its thread and every listener is gone/,
+      );
+      expect(routing).toMatch(
+        /a `resident.designated` for a lane\s+you have already launched into this pass launches nothing further/,
+      );
+      // And the bound on retrying, which is what stops a broken persona
+      // becoming the loop's only activity.
+      expect(routing).toMatch(/stop\s+relaunching that lane/);
+      expect(routing).toMatch(/Relaunching every pass forever/);
+      // The roster is read before the claim and acted on after it.
+      const loop = body.slice(body.indexOf("## The loop"), body.indexOf("## Claiming"));
+      expect(loop).toMatch(/\*\*Read the roster\.\*\*/);
+      expect(loop).toContain("corpus agents");
+      const order = [
+        "**Read the roster.**",
+        "**Claim, then read what it printed.**",
+        "**Dispatch every claimed event to a subagent, and launch the listeners the roster asked",
+      ].map((label) => loop.indexOf(label));
+      expect(order).not.toContain(-1);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      expect(loop).toMatch(/Launching comes \*\*after\*\* the claim rather\s+than before it/);
+    });
+
+    /**
+     * The one defect the live drill turned up, and it was invisible to reading:
+     * a session driven by the text alone launched a listener for a lapsed lane
+     * from the roster read and then claimed that lane's work in the same pass.
+     * The listener parked, went live, and its **first** scoped claim reported
+     * the orchestrator's in-flight events in `inProgress` — because the held
+     * report uses the same lane predicate the claim does, so a lane going live
+     * moves those rows into the resident's view. The converse skill's
+     * reconciliation then had it read the thread, find no answer yet, and do the
+     * work the orchestrator's subagent was doing; the orchestrator had to stand
+     * its own subagent down mid-flight.
+     *
+     * Nothing in the product reports this — both agents are behaving correctly
+     * against their own skills — so the rule is pinned with the mechanism, not
+     * just the prohibition. A rewrite that keeps "launch a listener for every
+     * unattended lane" and drops the ordering reintroduces it exactly.
+     */
+    it("never launches into a lane in the pass it took that lane's work", () => {
+      expect(routing).toMatch(/\*\*But never in the same pass you took that lane's work\.\*\*/);
+      expect(routing).toMatch(
+        /why launching happens after\s+the claim rather than at the roster read/,
+      );
+      // The mechanism, which is the part a reader cannot rederive.
+      expect(routing).toMatch(/still stamped for that lane/);
+      expect(routing).toMatch(/in the held list its own first claim prints/);
+      expect(routing).toMatch(
+        /reconciliation cannot tell your live dispatch from an event\s+somebody abandoned/,
+      );
+      expect(routing).toMatch(/a reply you did not write/);
+      // The rule, and which way it resolves.
+      expect(routing).toMatch(/\*\*take the work\s+or launch the listener, never both\.\*\*/);
+      expect(routing).toMatch(/Prefer taking the work/);
+      expect(routing).toMatch(/Launch on a later pass, once what you took is settled/);
+    });
+
+    it("takes what the claim gives it without auditing the walk", () => {
+      expect(claiming).toMatch(
+        /\*\*What the claim hands you is yours, and you do not audit it\.\*\*/,
+      );
+      expect(claiming).toMatch(/A live\s+lane's events are never in it/);
+      expect(claiming).toMatch(/do not check whether an event's thread has a resident/);
+      expect(claiming).toMatch(/do not hold work back for an agent that might come\s+back/);
+      // SHARED-044: scope is the walk, never a guarantee of exclusivity. The
+      // agent is told what it may reason from — the lane — and nothing more.
+      expect(claiming).toMatch(/Scope membership is a \*\*walk\*\*/);
+      expect(claiming).toMatch(/following a\s+thread's parents and a document's `origin`/);
+      expect(claiming).toMatch(/you cannot reproduce it and nothing asks you to/);
+      expect(body).not.toMatch(/belongs to at most one scope/);
+      expect(claiming).toMatch(/The event arrived on your claim, so it is yours to work/);
+    });
+
+    it("works a lapsed lane's events without saying so in the thread", () => {
+      expect(claiming).toMatch(/\*\*A lapsed lane's work is ordinary work/);
+      expect(claiming).toMatch(/the same routing\s+row to the same comment-skill subagent/);
+      expect(claiming).toMatch(
+        /\*\*Never apologise for a resident and never announce that one is missing\.\*\*/,
+      );
+      expect(claiming).toMatch(/operator's\s+diagnostic posted into somebody's conversation/);
+      // Where it does go, and the once-per-lane courtesy that follows it.
+      expect(claiming).toMatch(
+        /corpus job log evt_2e4f8b "claimed comment.created on th_4b8e2c under the fallback/,
+      );
+      expect(claiming).toMatch(/launch one for that lane, once/);
+      expect(claiming).toMatch(/eight messages while it was unattended gets eight\s+listeners/);
+    });
+
+    it("keeps settlement on the report when the held row disappears", () => {
+      // Measured: the held report uses the same predicate as the claim, so an
+      // event taken under the fallback leaves the list the moment its lane goes
+      // live again — while the orchestrator is still working it.
+      expect(claiming).toMatch(
+        /\*\*A held row can leave your list while you are still working it\.\*\*/,
+      );
+      expect(claiming).toMatch(/take an event id and no lane/);
+      expect(claiming).toMatch(/\*\*settlement follows the report, never the list\.\*\*/);
+    });
+
+    it("restates the grace window nowhere", () => {
+      expect(body).toMatch(/a grace window the server owns and this skill does not restate/);
+      for (const restatement of ["16m", "16 minutes", "960"]) {
+        expect(body, `restates the grace window as "${restatement}"`).not.toContain(restatement);
+      }
+    });
+
+    it("puts a resident outside the delegate-everything rule rather than beside it", () => {
+      const delegation = body.slice(body.indexOf("## Delegation"), body.indexOf("## Writing a"));
+      expect(delegation).toMatch(
+        /\*\*That rule is about this lane, and a resident is outside its subject rather than an exception\s+to it\.\*\*/,
+      );
+      expect(delegation).toMatch(/you are the queue's general path/);
+      expect(delegation).toMatch(/do not "correct" it into a dispatch/);
+      // The boundary rule is scoped to the events this lane claimed, and a
+      // listener's own queue calls are ownership rather than a violation.
+      expect(delegation).toMatch(
+        /\*\*Queue state never crosses the boundary — the boundary being your lane\.\*\*/,
+      );
+      expect(delegation).toMatch(/\*\*A listener is not one of those subagents/);
+      expect(delegation).toMatch(/It is that lane's owner, not your delegate on this one/);
+      expect(delegation).toMatch(/Nobody settles work they did\s+not claim/);
+      expect(delegation).toMatch(/including the\s+events you took from its lane/);
+    });
+
+    it("counts working subagents against the bound, never parked listeners", () => {
+      const concurrency = body.slice(
+        body.indexOf("## Concurrency"),
+        body.indexOf("## Progress and job logs"),
+      );
+      expect(concurrency).toMatch(
+        /\*\*The bound counts subagents working events, and a resident listener is not one of those\.\*\*/,
+      );
+      expect(concurrency).toMatch(/ten designated conversations could dispatch nothing at all/);
+      expect(concurrency).toMatch(/limits work in flight, never agents in existence/);
+      // Ordering is per lane too: two lanes on one document is the ordinary
+      // two-writers case, which the key already governs.
+      expect(concurrency).toMatch(/neither can nor\s+should order your work against a resident's/);
+      expect(concurrency).toMatch(/the key on the write, not a schedule/);
+    });
+
+    it("says which lane a quoted mention wakes, rather than assuming its own", () => {
+      const reflecting = body.slice(
+        body.indexOf("## Reflecting on a user edit"),
+        body.indexOf("## Concurrency"),
+      );
+      // Measured: an agent turn quoting `@agent` in a designated conversation
+      // wakes that conversation's resident and never reaches this claim. A
+      // skill claiming otherwise would have the orchestrator watching for
+      // something it cannot see.
+      expect(reflecting).toMatch(
+        /\*\*The turn's lane is where it lands, and it is not always yours\.\*\*/,
+      );
+      expect(reflecting).toMatch(/enqueues on the lane of the \*\*thread it was posted in\*\*/);
+      expect(reflecting).toMatch(/never appears on your claim/);
+      expect(reflecting).toMatch(/no marker anywhere saying a machine wrote the\s+mention/);
+      expect(reflecting).toMatch(/\*write no `@agent`\* rather than\s+\*detect one\*/);
+    });
+
+    it("keeps the reaper lane-blind, and states why that is not a trespass", () => {
+      expect(claiming).toMatch(/\*\*`corpus queue reap-stale` takes no lane/);
+      expect(claiming).toMatch(
+        /work stranded by a resident that died is stuck whoever\s+claimed it/,
+      );
+      expect(claiming).toMatch(/on \*\*the lane it was claimed from\*\*/);
+      expect(claiming).toMatch(/the fallback rather than the reaper decides who may\s+then see it/);
+      expect(claiming).toMatch(/a resident never\s+does/);
+    });
+
+    it("tells the operator how a broken converse skill looks, and how to put it back", () => {
+      const recovery = body.slice(body.indexOf("## If the loop breaks"));
+      expect(recovery).toMatch(/use `comment` or `converse` in place of `orchestrate`/);
+      // The symptom, which is nothing like a broken loop: the queue is fine and
+      // one conversation is not.
+      expect(recovery).toMatch(
+        /\*\*A broken `converse` shows up differently, and is worth recognising as its own thing\.\*\*/,
+      );
+      expect(recovery).toMatch(
+        /its lane reads live on `corpus agents` while\s+nothing gets answered in it/,
+      );
+      expect(recovery).toMatch(/the orchestrator quietly does that\s+conversation's work/);
+      expect(recovery).toMatch(/listeners already running keep the text they started with/);
+      // And the same latency stated where the edit is made rather than only here.
+      expect(body).toMatch(/an edit to it reaches the\s+\*\*next listener launched\*\*/);
+      expect(body).toMatch(/never restart somebody's listener to hurry it along/);
     });
   });
 
