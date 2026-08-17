@@ -661,7 +661,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | todo | P1 | — |
 | SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | done | P0 | — |
 | CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | done | P0 | — |
-| SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | todo | P0 | CONTRACT-055 |
+| SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | done | P0 | CONTRACT-055 |
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | — |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | todo | P2 | SERVER-113 |
@@ -669,6 +669,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | CLI-046 | `corpus queue status` never shows whether an agent is there | todo | P1 | SERVER-112 |
 | CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | todo | P2 | — |
 | CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
+| CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | todo | P1 | — |
 
 **Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
 a required field, which breaks every constructor of one: `SERVER-086` (the
@@ -818,4 +819,4 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | AGENT-026 | Orchestrate learns to share the queue | done | P0 | AGENT-025, CLI-043 |
 | AGENT-027 | The converse skill can still adopt work the orchestrator is holding (AGENT-026 finding) | todo | P0 | AGENT-026 |
 | UI-108 | The composer offers the recipient | done | P0 | CONTRACT-051, SERVER-111, SERVER-112 |
-| UI-109 | The board shows who is resident, and who is live | todo | P1 | CONTRACT-051, SERVER-112 |
+| UI-109 | The board shows who is resident, and who is live | done | P1 | CONTRACT-051, SERVER-112 |
