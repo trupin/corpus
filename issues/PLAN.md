@@ -660,13 +660,14 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
 | UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | todo | P1 | — |
 | SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | done | P0 | — |
+| AGENT-028 | Two product skills still say the empty tree is the repository's first commit (CLI-045 finding) | todo | P1 | — |
 | CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | done | P0 | — |
 | SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | done | P0 | CONTRACT-055 |
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | — |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
-| CLI-045 | `corpus doc diff --help` describes the old default base | todo | P2 | SERVER-113 |
+| CLI-045 | `corpus doc diff --help` describes the old default base | done | P2 | SERVER-113 |
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
-| CLI-046 | `corpus queue status` never shows whether an agent is there | todo | P1 | SERVER-112 |
+| CLI-046 | `corpus queue status` never shows whether an agent is there | done | P1 | SERVER-112 |
 | CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | todo | P2 | — |
 | CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
 | CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | todo | P1 | — |
