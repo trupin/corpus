@@ -4070,10 +4070,23 @@ describe("one rule, one skill", () => {
   });
 
   /**
-   * A rule one skill owns and another relies on. `restatements` is the
-   * mechanism's own vocabulary — the words a paraphrase cannot avoid — so the
-   * registry catches what the passage pin cannot: the same rule written twice in
-   * different words, which is how AGENT-029 shipped it into both files.
+   * A rule one skill owns and another relies on. `restatements` is a per-rule
+   * detector for the shapes the rule gets written in, so the registry catches
+   * what the passage pin cannot: the same rule written twice in different words,
+   * which is how AGENT-029 shipped it into both files.
+   *
+   * **It is a net, not a proof — and only one of the two rules below is
+   * exhaustive.** The weight table's detector reads the table's own rows, so no
+   * restatement of a level can miss it. The stand-down rule's is a collocation
+   * match over prose, and a paraphrase that avoids the collocation passes: *"the
+   * id it expected to claim comes back held by another caller"* states the whole
+   * rule and matches nothing here. Its vocabulary covers the shapes the rule has
+   * actually been written in — the two historical ones and the near neighbours a
+   * rewrite reaches for first — and deliberately no wider, because a pin that
+   * fires on unrelated prose is a pin somebody baselines away, which costs more
+   * than a narrow one. So: widen the vocabulary the moment a paraphrase gets
+   * past it, and never read a green run as proof that no second skill states the
+   * rule. That judgement is still a reader's.
    */
   interface SingleOwnerRule {
     readonly rule: string;
@@ -4084,8 +4097,14 @@ describe("one rule, one skill", () => {
   }
 
   // A sentence states the peer-listener discriminator when it says both halves:
-  // that a park named an id, and that somebody else came back holding it.
-  const PARK_NAMED = /park (?:had just |just |never )?nam(?:ed|es|e)|named (?:as )?pending/i;
+  // that a park designated an id, and that somebody else came back holding it.
+  // The first half is the collocation "park" + a designating verb (or that verb
+  // applied to "pending"): `named` is what both skills have used, the rest are
+  // the words a rewrite reaches for next. Requiring the word `park` — or the
+  // word `pending` — is what keeps it off ordinary prose about claiming; both
+  // halves must land in the same sentence before anything is reported.
+  const PARK_NAMED =
+    /park[^.]{0,24}?\b(?:nam|list|reserv|announc|flagg?|mark)(?:ed|es|e|ing)?\b|\b(?:nam|list|reserv|announc|flagg?|mark)(?:ed|es)?\s+(?:as\s+)?pending/i;
   const HELD_ELSEWHERE =
     /`inProgress`|held by|another (?:listener|caller)|second listener|claim comes back/i;
 
@@ -4154,6 +4173,35 @@ describe("one rule, one skill", () => {
       "the registry would have passed over the sentence that shipped",
     ).not.toEqual([]);
     expect(standDown?.restatements(skillBody.orchestrate) ?? ["unchecked"]).toEqual([]);
+  });
+
+  it("catches the near paraphrases, and says out loud which one it does not", () => {
+    // The docblock above claims a net rather than a proof. These are the claim,
+    // executable: a substituted designating verb is caught, and the paraphrase
+    // that drops the mechanism's vocabulary altogether is not. If somebody
+    // widens the vocabulary far enough to catch the last one, this test fails
+    // and the docblock's admission gets rewritten with it — which is the only
+    // way that admission cannot quietly become false.
+    const standDown = SINGLE_OWNER_RULES.find(({ rule }) =>
+      rule.startsWith("how a second listener"),
+    );
+    const caught = [
+      "the event its park listed as pending comes back held by another caller",
+      "an event this park flagged as pending returns held by another caller",
+      "the row your park marked pending is held by another caller when you claim",
+    ];
+    for (const sentence of caught) {
+      expect(
+        standDown?.restatements(sentence) ?? [],
+        `a designating-verb paraphrase now evades the pin: "${sentence}"`,
+      ).not.toEqual([]);
+    }
+    expect(
+      standDown?.restatements("the id it expected to claim comes back held by another caller") ?? [
+        "unchecked",
+      ],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
   });
 });
 
