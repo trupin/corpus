@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -78,7 +78,27 @@ already written and is the acceptance test.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model, and the reproduction first._
+**Model: Opus 5 (1M context)**, plugins-dev agent, 2026-08-16 — found and fixed
+incidentally while implementing PLUGINS-012 in the same test file.
+
+**The reproduction settled it, and the answer was the third possibility.** This
+issue warned against assuming the shortcut was broken, and named one alternative
+(the browser eating `⇧F10`). It was neither.
+
+`PLUGINS-015` made the todo item row a container and moved focus to
+`.todo-item-open`. `todos-menu.spec.ts` still called `focus()` on the `<div>`
+row — which has no `tabindex`, so the call is a **no-op**. Nothing was focused,
+so `⇧F10` reached nothing. The shortcut was never broken; the spec was aiming at
+an element that had stopped being focusable.
+
+**Why the unit tests stayed green through it**, which is the part worth keeping:
+`fireEvent.keyDown` dispatches at the node you hand it regardless of focus, so
+the unit suite exercised the handler without ever exercising the *route to* the
+handler. Only a real browser, where focus decides who receives a key, could tell
+the difference. That is the same lesson as UI-110's `position: sticky` — an
+assertion about a mechanism has to go through the mechanism.
+
+Fixed with an `itemOpen()` locator. `todos-menu.spec.ts` 9/9 pass.
 
 ## Completion Checklist (domain agent)
 

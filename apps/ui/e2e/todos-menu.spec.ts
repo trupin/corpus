@@ -223,6 +223,16 @@ async function openTodosBoard(page: Page, options: StubOptions = {}): Promise<To
 const itemRow = (page: Page, at: number): Locator =>
   page.locator(`.todos-column .check[data-todos-item="${String(at)}"]`);
 
+/**
+ * The row's **open control** — where the keyboard sits on an item row since
+ * PLUGINS-015 made the row a container of two controls (a checkbox and this).
+ * The row itself stopped being focusable then, so `itemRow(…).focus()` became a
+ * no-op and ⇧F10 reached nothing; this spec was still focusing the container.
+ * `plugins/todos/ui/TodosColumnMenu.test.tsx` states the same focus model
+ * (`openControlFor`), which is why the unit tests stayed green over it.
+ */
+const itemOpen = (page: Page, at: number): Locator => itemRow(page, at).locator(".todo-item-open");
+
 const menu = (page: Page): Locator => page.locator("[data-todo-menu]");
 const act = (page: Page, id: string): Locator => menu(page).locator(`[data-act="${id}"]`);
 
@@ -271,7 +281,7 @@ test.describe("right-clicking a todo item row", () => {
 
   test("behaves like every other menu: ⇧F10, arrows, ↵ and esc", async ({ page }) => {
     await openTodosBoard(page);
-    await itemRow(page, 2).focus();
+    await itemOpen(page, 2).focus();
     await page.keyboard.press("Shift+F10");
     await expect(menu(page)).toHaveCount(1);
     // Key-opened means the first item is focused, as ⇧F10 does everywhere.
@@ -287,8 +297,8 @@ test.describe("right-clicking a todo item row", () => {
 
     await page.keyboard.press("Escape");
     await expect(menu(page)).toHaveCount(0);
-    // Focus goes back to the row, and the board is untouched.
-    await expect(itemRow(page, 2)).toBeFocused();
+    // Focus goes back where it came from, and the board is untouched.
+    await expect(itemOpen(page, 2)).toBeFocused();
     await expect(page.locator(".reader")).toHaveCount(0);
 
     // `↵` activates — the board's own `rows.open` must not claim it first.
@@ -384,6 +394,100 @@ test.describe("the comment action", () => {
     // is the one described in DEV-STRICTMODE below.
     await expect(page.locator(`.reader[data-reader-doc="${LIST_ID}"]`)).toHaveCount(1);
     await expect(composer).toHaveCount(0);
+  });
+
+  /**
+   * PLUGINS-012 — SPEC.md §11's rider: *"any composer a plugin contributes"*
+   * takes files by all three of §6's routes, previewed as chips before sending.
+   *
+   * In a **real browser**, which is the point: the picker is a real
+   * `<input type=file>`, the drop a real `DataTransfer`, and the paste a real
+   * `ClipboardEvent` — none of which jsdom can produce faithfully. The drill for
+   * PLUGINS-012 caught exactly that gap: a paste dispatched without a live
+   * `clipboardData` silently added nothing while every component test passed.
+   *
+   * **Each route is asserted by the chip it produces, never by a class**, for
+   * the reason UI-111's Testing Strategy gives: a dropzone whose `onDrop` was
+   * never wired still wears `.dropping`, so a spec that stops at the class list
+   * passes against a composer that takes no files at all. The highlight is
+   * asserted too, but as an extra, and as the computed colour rather than the
+   * class name.
+   *
+   * **It stops before the send**, and that is a fixture limit rather than a
+   * choice: `stubCorpus` records every request with `JSON.parse(postData())`
+   * (`stubCorpus.ts`), which throws on a `multipart/form-data` body, so no
+   * spec in this suite has ever posted an attachment on **any** surface. The
+   * wire, the bytes on disk under `.corpus/attachments/<thread>/<ts>/` and the
+   * markdown link in the turn are the issue's real-app drill — this file's
+   * header already states that division of evidence.
+   */
+  test("takes files by picker, paste and drop, and previews them as chips", async ({ page }) => {
+    await openTodosBoard(page);
+    await itemRow(page, 2).click({ button: "right" });
+    await act(page, "comment").click();
+    const composer = page.locator("[data-todo-comment]");
+    await expect(composer).toHaveCount(1);
+
+    const chips = composer.locator(".att-chip");
+    await expect(chips).toHaveCount(0);
+
+    // Route 1 — the 📎 picker, driven through the real file input.
+    await composer.getByLabel("Attach files").click();
+    await page.setInputFiles('[data-attach-input="todo-item-comment"]', {
+      name: "picked.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("the plumber quote, page 4\n"),
+    });
+    await expect(chips).toHaveCount(1);
+    await expect(chips.first()).toContainText("picked.txt");
+    // Not an image: a glyph, no thumbnail.
+    await expect(chips.first().locator("img")).toHaveCount(0);
+
+    // Route 2 — a drop, with the highlight lit while the file is over the box.
+    const transfer = await page.evaluateHandle(async () => {
+      const dt = new DataTransfer();
+      const png = await fetch(
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      );
+      dt.items.add(new File([await png.blob()], "dropped.png", { type: "image/png" }));
+      return dt;
+    });
+    const plain = await composer.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await composer.dispatchEvent("dragenter", { dataTransfer: transfer });
+    const lit = await composer.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(lit).not.toBe(plain);
+    await composer.dispatchEvent("drop", { dataTransfer: transfer });
+    await expect(composer).toHaveJSProperty("className", "todo-comment-pop");
+    await expect(chips).toHaveCount(2);
+    // An image chip previews at the 34px `design/index.html` gives it.
+    const thumbnail = chips.nth(1).locator("img");
+    await expect(thumbnail).toHaveAttribute("alt", "dropped.png");
+    expect(await thumbnail.evaluate((el) => el.clientHeight)).toBe(34);
+
+    // Route 3 — a paste carrying a file. `dispatchEvent` cannot hand over a
+    // `clipboardData`, so the event is built in the page where it is real.
+    await page.evaluate(async () => {
+      const dt = new DataTransfer();
+      const png = await fetch(
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      );
+      dt.items.add(new File([await png.blob()], "pasted.png", { type: "image/png" }));
+      const field = document.querySelector("[data-todo-comment] textarea");
+      if (field === null) throw new Error("no composer field");
+      field.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
+    });
+    await expect(chips).toHaveCount(3);
+    await expect(chips.nth(2)).toContainText("pasted.png");
+    // The screenshot is an attachment, never base64 dropped into the words.
+    await expect(page.locator("[data-todo-comment] textarea")).toHaveValue("");
+
+    // A comment may be attachment-only (SPEC.md §6): three files, no words, and
+    // the send is armed.
+    await expect(page.getByText("Comment ⌘↵")).toBeEnabled();
+
+    // And a chip comes back off.
+    await composer.getByLabel("Remove pasted.png").click();
+    await expect(chips).toHaveCount(2);
   });
 });
 
