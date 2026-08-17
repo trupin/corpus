@@ -680,7 +680,9 @@ parent-first is the one where it annexes another scope's conversation.
 | SERVER-118 | `GET /api/queue/idle` accepts any thread id as a scope, and `agent.live` then lies | done | P0 | — |
 | UI-118 | An explicit recipient equal to the client's computed lane is sent as absence | done | P0 | — |
 | AGENT-029 | A resident working longer than the grace window reads as absent, and gets a second listener | done | P0 | — |
-| CONTRACT-058 | `GET /api/queue/idle` does not declare the 422 it now returns (SERVER-118 finding) | todo | P1 | SERVER-118 |
+| CONTRACT-058 | `GET /api/queue/idle` does not declare the 422 it now returns (SERVER-118 finding) | done | P1 | SERVER-118 |
+| CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
+| SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 
 **Two findings are the user's, not mine to close:**
 
