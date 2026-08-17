@@ -11,7 +11,7 @@ import {
   CONTEXT_PACK_SHAPES,
 } from "./schemas/context.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
-import { DOC_DIFF_MAX_CHARS, DOC_EDITED_EVENT_TYPE } from "./schemas/edit.js";
+import { DOC_DIFF_MAX_CHARS, DOC_EDITED_EVENT_TYPE, EMPTY_TREE_OBJECT_ID } from "./schemas/edit.js";
 import { ERROR_CODES } from "./schemas/error.js";
 import {
   CORE_QUEUE_EVENT_TYPES,
@@ -178,6 +178,29 @@ function requestBodyDefaults(): DefaultedProperty[] {
   return found;
 }
 
+/** Prose keys — the nodes a reader of the published document actually reads. */
+const PROSE_KEYS = new Set(["description", "summary", "title", "example"]);
+
+/**
+ * Every prose node in the whole document, by JSON pointer.
+ *
+ * A sweep, not a lookup: CONTRACT-052's issue named three stale descriptions
+ * and walking the generated artifact found five, because the two it missed sat
+ * where nobody thought to grep. A claim asserted only where it was last written
+ * is a claim that survives being copied somewhere else.
+ */
+function* allDescriptions(node: unknown = document, path = "#"): Generator<[string, string]> {
+  if (Array.isArray(node)) {
+    for (const [index, value] of node.entries()) yield* allDescriptions(value, `${path}/${index}`);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  for (const [key, value] of Object.entries(node)) {
+    if (PROSE_KEYS.has(key) && typeof value === "string") yield [`${path}/${key}`, value];
+    yield* allDescriptions(value, `${path}/${key}`);
+  }
+}
+
 describe("generated OpenAPI document", () => {
   it("is an OpenAPI 3.1 document stamped with the contract version", () => {
     expect(document.openapi).toBe("3.1.0");
@@ -295,6 +318,31 @@ describe("generated OpenAPI document", () => {
       expect(description, `${name}.emittedBy`).toContain(entry.emittedBy);
       expect(description, `${name}.refetchedBy`).toContain(entry.refetchedBy);
     }
+  });
+
+  /**
+   * The document said "these ten shapes and no others" while listing nine — a
+   * count hand-written beside a rendered list, which is the one arrangement
+   * guaranteed to drift (CONTRACT-055's sweep found it). The claim is now
+   * interpolated, so this asserts the two agree rather than asserting a number.
+   *
+   * Written as a walk over every description in the document, not a lookup on
+   * `/events`: a closed-vocabulary claim is exactly the sort of sentence that
+   * gets copied to a second route later.
+   */
+  it("claims a shape count nowhere that disagrees with the shapes it lists", () => {
+    const description = operation("/events", "get").description ?? "";
+    const bullets = description.split("\n").filter((line) => line.startsWith("- `["));
+    expect(bullets).toHaveLength(QUERY_KEY_NAMES.length);
+
+    const claims = [...allDescriptions()].flatMap(([location, prose]) =>
+      [...prose.matchAll(/these (\S+) shapes and no others/g)].map(([, count]) => ({
+        location,
+        count,
+      })),
+    );
+    expect(claims.length).toBeGreaterThan(0);
+    expect(claims.filter((claim) => claim.count !== String(QUERY_KEY_NAMES.length))).toEqual([]);
   });
 
   /**
@@ -1233,6 +1281,75 @@ describe("the edit-acknowledgment surface (CONTRACT-028)", () => {
       DOC_EDITED_EVENT_TYPE,
     );
   });
+
+  /**
+   * CONTRACT-052. SERVER-113 moved the default base off `to`'s parent and onto
+   * the previous commit that touched **this document**, and the published
+   * document went on describing the old rule — in two places, one of which had
+   * already been stale since SERVER-097.
+   *
+   * A wrong description here is worse than a missing one: a client that computes
+   * `to`'s parent itself reads a different range and is told nothing, because
+   * both answers are well-formed diffs. So the rule is pinned where a client
+   * author reads it — the operation, the `from` parameter and the resolved
+   * `from` — including the empty-tree case and the *reason*, which is what stops
+   * it drifting back.
+   */
+  describe("the default base is this document's history, not the branch's (CONTRACT-052)", () => {
+    const baseDescriptions = (): string[] => [
+      operation(DIFF_PATH, "get").description ?? "",
+      parameter(DIFF_PATH, "get", "from")?.description ?? "",
+      componentSchemas?.["DocDiff"]?.properties?.["from"]?.description ?? "",
+    ];
+
+    it("says the base is the previous commit that touched this document, everywhere it says it", () => {
+      for (const description of baseDescriptions()) {
+        expect(description).toMatch(/before `to`[^.]*touched \*{0,2}this document/i);
+      }
+    });
+
+    it("states the empty-tree case, so a document's first change is not a surprise", () => {
+      for (const description of baseDescriptions()) {
+        expect(description).toMatch(/empty[ _]tree/i);
+      }
+      expect(operation(DIFF_PATH, "get").description).toContain(EMPTY_TREE_OBJECT_ID);
+    });
+
+    it("says why, since the reason is what keeps the rule from drifting back", () => {
+      expect(operation(DIFF_PATH, "get").description).toContain("**`from` is not `to`'s parent**");
+      expect(operation(DIFF_PATH, "get").description).toContain("party-scoped");
+      expect(parameter(DIFF_PATH, "get", "from")?.description).toContain("party-scoped");
+    });
+
+    /**
+     * The sweep the issue was written around: the retired rule is searched for
+     * across **every** description in the generated document, not only the ones
+     * the fix touched. Grepping the source for the route is exactly what let a
+     * second copy of it survive in `DocEditedPayload.from`.
+     */
+    it("leaves no description anywhere in the document claiming a parent-of-`to` base", () => {
+      // Narrow on purpose: "documents with no parent" is `isParent`'s filter
+      // prose on `GET /api/docs` and is unrelated, so every alternative here is
+      // anchored to `to` or to a session's first commit.
+      const retired = /parent of (`to`|its first commit)|`to`( has| had| with) no parent/i;
+      const offenders: string[] = [];
+      const walk = (node: unknown, pointer: string): void => {
+        if (Array.isArray(node)) {
+          node.forEach((entry, index) => walk(entry, `${pointer}/${index}`));
+          return;
+        }
+        if (node === null || typeof node !== "object") return;
+        for (const [key, value] of Object.entries(node)) {
+          if (key === "description" && typeof value === "string" && retired.test(value)) {
+            offenders.push(`${pointer}/${key}`);
+          }
+          walk(value, `${pointer}/${key}`);
+        }
+      };
+      walk(document, "");
+      expect(offenders).toEqual([]);
+    });
+  });
 });
 
 /**
@@ -2038,6 +2155,139 @@ describe("queue long-poll", () => {
 });
 
 /**
+ * CONTRACT-058. The server refuses a `scope` that names no lane with a `422`
+ * (SERVER-118); the route declared `200/204/400/401` and nothing else, so the
+ * document and the generated client were one refusal behind — a consumer
+ * generating handlers from the contract had no branch for a response it would
+ * receive.
+ *
+ * The assertions below are written against the **generated** document rather
+ * than the route object, because that is what a client author reads and what an
+ * `openapi-typescript` run turns into types. Two things are pinned: that the
+ * refusal is declared at all, and that its published prose does not say less
+ * than the server's own message — which already names all three recoveries.
+ */
+describe("a park on a scope that is not a lane (CONTRACT-058)", () => {
+  const idle = () => operation("/api/queue/idle", "get");
+  const refusal = () => idle().responses?.["422"];
+
+  it("declares the 422, carrying the ApiError member the server sends", () => {
+    const media = refusal()?.content?.["application/json"] as { schema?: SchemaNode } | undefined;
+    expect(media?.schema?.$ref).toBe("#/components/schemas/UnknownRecipientError");
+  });
+
+  it("publishes every recovery the server's own message names", () => {
+    const description = refusal()?.description ?? "";
+    // The server's message, verbatim in intent: omit it, designate a resident,
+    // or pick one from the roster. A contract that named fewer would send a
+    // caller to the API for advice the error already gave it.
+    expect(description).toContain("omitting `scope`");
+    expect(description).toContain("designating a resident");
+    expect(description).toContain("GET /api/agents");
+    // And that the refusal cost the caller nothing, so it can simply retry.
+    expect(description).toContain("nothing was parked and no work was claimed");
+  });
+
+  it("says what makes a scope invalid, in both senses SPEC.md §7 gives", () => {
+    const description = refusal()?.description ?? "";
+    expect(description).toContain("holds no such thread");
+    expect(description).toContain("holds no resident");
+  });
+
+  /**
+   * The refusal is only intelligible beside the reason it exists: parking *is*
+   * presence, so an admitted park on a non-lane makes `agent.live` true about a
+   * lane the roster does not list. Without it the `422` reads as fussiness
+   * about a parameter.
+   */
+  it("gives the operation's own account of why a park is refused", () => {
+    const description = idle().description ?? "";
+    expect(description).toContain("a `scope` that names no lane is refused");
+    expect(description).toContain("before the park is admitted");
+    expect(description).toContain("Omitting `scope` is always fine");
+  });
+
+  /**
+   * `claim-all` takes the same `scope` and deliberately does **not** refuse it:
+   * draining a lapsed lane's already-stamped events is exactly what the
+   * listener still holding it is for, and refusing there would strand them for
+   * a whole grace window. Pinned so that a later pass tidying the two verbs
+   * into agreement has to read the reason first.
+   */
+  it("leaves claim-all undeclared, and both routes say why", () => {
+    expect(operation("/api/queue/claim-all", "post").responses?.["422"]).toBeUndefined();
+    expect(idle().description ?? "").toContain("`claim-all` deliberately does not refuse it");
+  });
+});
+
+/**
+ * CONTRACT-058's second question. The refusal above reuses `unknown_recipient`,
+ * a code spelled for a parameter that is not the one at fault — which reads
+ * fine to whoever wrote it and confusingly to everyone else unless the document
+ * says so plainly. The decision was to keep one code and publish the reason;
+ * these assertions are what make "the description matches the name" checkable.
+ */
+describe("unknown_recipient is the code for a lane that is not one (CONTRACT-058)", () => {
+  const component = () => componentSchemas?.["UnknownRecipientError"];
+
+  it("did not mint a second code for the same fact", () => {
+    expect(ERROR_CODES).toContain("unknown_recipient");
+    expect(ERROR_CODES).not.toContain("unknown_lane");
+    expect(ERROR_CODES).not.toContain("unknown_scope");
+    expect(ERROR_CODES).toHaveLength(9);
+  });
+
+  it("states in the published component that the name is not the whole scope", () => {
+    const description = component()?.description ?? "";
+    expect(description).toContain("The value you named is not a lane");
+    // Both parameters, named, in the place a client author reads.
+    expect(description).toContain("`recipient` of a post");
+    expect(description).toContain("`scope` of a queue park");
+    // And the rule that justifies one code: one refusal, one remedy.
+    expect(description).toContain("one refusal with one remedy");
+  });
+
+  it("says the same on the field, which is where the spelling is jarring", () => {
+    const recipient = component()?.properties?.["recipient"]?.description ?? "";
+    expect(recipient).toContain("Whichever parameter carried it");
+    expect(recipient).toContain("spelled `recipient` because the code is");
+  });
+
+  /**
+   * Every `422` in the document carries a member of the `ApiError` union, so a
+   * client that narrows on `code` can reach all of them. Written as a sweep
+   * rather than a list: the way this drifts is a new route declaring a `422`
+   * with a body of its own, which no per-route assertion would notice.
+   */
+  it("keeps every declared 422 inside the ApiError union", () => {
+    const inUnion = new Set(["UnknownJobError", "UnknownRecipientError"]);
+    const offenders: string[] = [];
+    const inspected: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        const media = op?.responses?.["422"]?.content?.["application/json"] as
+          { schema?: SchemaNode } | undefined;
+        if (!media) continue;
+        inspected.push(endpointSignature(method, path));
+        const schema = media.schema;
+        const branches = schema?.$ref !== undefined ? [schema] : (schema?.anyOf ?? schema?.oneOf);
+        const names = (branches ?? []).map((branch) => branch.$ref?.split("/").pop() ?? "");
+        if (names.length === 0 || names.some((name) => !inUnion.has(name))) {
+          offenders.push(`${endpointSignature(method, path)} → ${names.join("|") || "<inline>"}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+    // Non-vacuity, and the sweep's own extent: nine posting/writing routes plus
+    // the park. A refactor that stopped matching would report zero offenders
+    // over zero operations and look like a pass.
+    expect(inspected).toContain("GET /api/queue/idle");
+    expect(inspected).toHaveLength(10);
+  });
+});
+
+/**
  * Halt and fail both accept an annotation the caller may simply not have —
  * `corpus queue halt` with no argument stays a bare `POST`. They are the only
  * two operations whose body may be omitted in full, so they state
@@ -2252,6 +2502,7 @@ describe("the deferred queue state (CONTRACT-021)", () => {
   it("counts deferrals separately from failures on the console strip's status", () => {
     const status = componentSchemas?.["QueueStatus"];
     expect(Object.keys(status?.properties ?? {})).toEqual([
+      "agent",
       "halted",
       "pending",
       "inProgress",
@@ -2338,6 +2589,141 @@ describe("the deferred queue state (CONTRACT-021)", () => {
     const description = operation("/events", "get").description ?? "";
     expect(description).toContain("complete, fail, defer, abandon");
     expect(description).toContain("the end of an edit session that re-enters a deferred event");
+  });
+});
+
+/**
+ * CONTRACT-045 — presence, published once and read at two grains.
+ *
+ * The console strip used to derive `idle` by elimination from the counts, so a
+ * machine with no agent reported an agent with nothing to do. What removes that
+ * is not merely a new field but a **single** notion of liveness: the roster's,
+ * aggregated. So these tests are about the published document agreeing with
+ * itself — the two sites must carry the same words, because a copy that drifts
+ * by a sentence is how the strip and the recipient picker come to answer the
+ * same question differently.
+ */
+describe("one notion of presence, at two grains (CONTRACT-045)", () => {
+  const presence = () => componentSchemas?.["AgentPresence"];
+  const lane = () => componentSchemas?.["AgentLane"];
+
+  it("puts the worker on the queue status, beside the work", () => {
+    const status = componentSchemas?.["QueueStatus"];
+    expect(status?.properties?.["agent"]?.$ref).toBe("#/components/schemas/AgentPresence");
+    expect(status?.required).toContain("agent");
+  });
+
+  it("demands both halves of a presence, so a verdict never travels without its evidence", () => {
+    expect(Object.keys(presence()?.properties ?? {})).toEqual(["live", "since"]);
+    expect(presence()?.required).toEqual(["live", "since"]);
+  });
+
+  /**
+   * The sharing itself, read off the generated document rather than the source:
+   * the roster row and the queue status publish the same schema objects, so
+   * their prose is identical character for character. A hand-copied description
+   * is what this fails on.
+   */
+  it.each(["live", "since"])(
+    "publishes %s in the same words on a roster row and on the queue status",
+    (field) => {
+      const fromLane = JSON.stringify(lane()?.properties?.[field]);
+      const fromPresence = JSON.stringify(presence()?.properties?.[field]);
+      expect(fromLane).toBe(fromPresence);
+      expect(fromLane.length).toBeGreaterThan(200);
+    },
+  );
+
+  it("says what presence is, and that the grace window is already applied", () => {
+    const live = JSON.stringify(presence()?.properties?.["live"]);
+    expect(live).toContain("Presence is the parked scoped `idle` and nothing else");
+    expect(live).toContain("**The grace window is already applied**");
+  });
+
+  it("says `since` advances on every re-arm, which is what makes it the evidence's age", () => {
+    expect(JSON.stringify(presence()?.properties?.["since"])).toContain(
+      "It advances every time the listener re-arms",
+    );
+  });
+
+  /** The identity itself, stated where a server author will read it. */
+  it("states that the aggregate is the roster's own verdict and not a second one", () => {
+    expect(presence()?.description).toContain(
+      "`live` is true exactly when some lane of `GET /api/agents` is live",
+    );
+    expect(operation("/api/queue/status", "get").description).toContain(
+      "the roster's own liveness aggregated",
+    );
+  });
+
+  /**
+   * A pill that never refetches is a pill that never notices the agent left, so
+   * the queue key owes a frame on a presence change as much as on a transition.
+   */
+  it("names presence changes among the queue key's emitters", () => {
+    const description = operation("/events", "get").description ?? "";
+    expect(description).toContain("every change to agent presence");
+    expect(description).toContain("a listener parking, its hold ending, and the grace window");
+  });
+});
+
+/**
+ * CONTRACT-055 — the converse of the case above.
+ *
+ * For presence the vocabulary was already right and the server was the side out
+ * of step, which is why SERVER-114 needed no contract change. Here the server is
+ * about to become correct (SERVER-115 makes seven emitters name `["agents"]`)
+ * and the published description is what would be lying, so the wording lands
+ * first. These pin it in the **generated** document, where a client author who
+ * never opens the package reads it.
+ */
+describe("the roster is staled by writes named after other resources (CONTRACT-055)", () => {
+  const events = () => operation("/events", "get").description ?? "";
+
+  it("publishes the rule the emitters follow, above the list rather than inside one entry", () => {
+    expect(events()).toContain(
+      "**An emitter names every key a route carrying the changed fact is cached under, not the " +
+        "key of the route the fact is named after**",
+    );
+  });
+
+  it("says a queue transition and a job-log append each name the roster key", () => {
+    expect(events()).toContain('**A queue transition names `["agents"]` in the same frame**');
+    expect(events()).toContain('**A transition and an append each name `["agents"]` in the same');
+  });
+
+  it("says why on the roster entry, since the coupling is invisible at the call site", () => {
+    expect(events()).toContain("a lane row is computed at read time and never stored");
+    expect(events()).toContain("a lane's `summary` is read off the same `events` and `jobs` rows");
+  });
+
+  /**
+   * The roster's own route is where a UI author implementing `useAgents` lands,
+   * and `["agents"]` alone would tell them to refetch on designation and
+   * presence — which is the stale roster this issue exists to prevent.
+   */
+  it("warns on the roster route itself, not only in the stream's vocabulary", () => {
+    const roster = operation("/api/agents", "get").description ?? "";
+    expect(roster).toContain("**Every row here is derived");
+    expect(roster).toContain(
+      "A client that refetches this only on designation and presence changes will show a stale " +
+        "roster",
+    );
+  });
+
+  /**
+   * The sweep as a test. No published description may present the roster's
+   * emitters as designation and presence and stop there — the sentence this
+   * issue replaced. Non-vacuity is checked against the retired wording in
+   * CONTRACT-055's log.
+   */
+  it("leaves no description anywhere claiming the roster moves on presence alone", () => {
+    const offenders = [...allDescriptions()].filter(
+      ([, prose]) =>
+        /lapsing past the grace window\.\s+Refetch/.test(prose) ||
+        /`\["agents"\]`[^.]*only (?:on|when)[^.]*presence/.test(prose),
+    );
+    expect(offenders.map(([location]) => location)).toEqual([]);
   });
 });
 
@@ -2494,6 +2880,11 @@ describe("a key on every read, and on every write that overwrites", () => {
       "stale_key",
       // CONTRACT-050: a `job` naming no event, or work already settled.
       "unknown_job",
+      // CONTRACT-051: a `recipient` naming no lane. Its own code rather than a
+      // second `unknown_job` body, for the reason `stale_key` has one beside
+      // `conflict`: two refusals sharing a status must differ where clients
+      // narrow, or one of them is unreachable.
+      "unknown_recipient",
       "internal_error",
     ]);
   });
@@ -3168,6 +3559,11 @@ describe("the forms surface", () => {
   it("keeps the answer body to the answer", () => {
     expect(Object.keys(componentSchemas?.["FormAnswerRequest"]?.properties ?? {})).toEqual([
       "job",
+      // CONTRACT-051. An answer is a message, and §7 gives every message a
+      // recipient — the lane it is addressed to, defaulted from where it is
+      // posted. It sits beside `job` because the two are the request's whole
+      // relationship to the queue: what work it serves, and who does the next.
+      "recipient",
       "answers",
       "note",
     ]);
@@ -3516,6 +3912,11 @@ describe("multipart, attachments and the stream", () => {
       "stale_key",
       // CONTRACT-050: a `job` naming no event, or work already settled.
       "unknown_job",
+      // CONTRACT-051: a `recipient` naming no lane. Its own code rather than a
+      // second `unknown_job` body, for the reason `stale_key` has one beside
+      // `conflict`: two refusals sharing a status must differ where clients
+      // narrow, or one of them is unreachable.
+      "unknown_recipient",
       "internal_error",
     ]);
     expect(Object.keys(componentSchemas ?? {})).not.toContain("PayloadTooLargeError");
@@ -3647,7 +4048,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(19);
+    expect(bodies).toHaveLength(20);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -3705,6 +4106,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/jobs/{id}/log": true,
       "POST /api/threads": true,
       "POST /api/threads/{id}/reattach": true,
+      "POST /api/threads/{id}/resident": true,
       "POST /api/queue/{id}/defer": true,
       "POST /api/skills": true,
       "POST /api/queue/halt": false,
@@ -3875,5 +4277,281 @@ describe("a stated weight rides the request (CONTRACT-039)", () => {
     const payload = componentSchemas?.["QueueEvent"]?.properties?.payload;
     expect(payload?.description).toContain("`weight`");
     expect(payload?.description).toContain("the orchestrator decides");
+  });
+});
+
+/**
+ * CONTRACT-051 — lanes, designation and the roster, published. SPEC.md §7 as
+ * amended by SHARED-043 (signed 2026-08-13, corrected 2026-08-15).
+ *
+ * The properties pinned here are the ones a later tidy-up undoes without
+ * noticing: that a lane and a document's origin stay different things, that the
+ * queue event's wire shape gained nothing, and that every lane-shaped field is
+ * spelled from one vocabulary.
+ */
+describe("lanes, designation and the roster (CONTRACT-051)", () => {
+  const POSTING_BODIES = [
+    ["/api/threads", "post"],
+    ["/api/threads/{id}/turns", "post"],
+    ["/api/threads/{id}/turns/{ts}/form", "post"],
+  ] as const;
+
+  /** The JSON schema an operation declares for one status. */
+  function responseSchema(path: string, method: string, status: string): SchemaNode | undefined {
+    const media = operation(path, method).responses?.[status]?.content?.["application/json"];
+    return (media as { schema?: SchemaNode } | undefined)?.schema;
+  }
+
+  /** Every representation of a body, so a multipart twin is never skipped. */
+  function bodySchemas(path: string, method: string): SchemaNode[] {
+    const content = operation(path, method).requestBody?.content ?? {};
+    return Object.values(content).flatMap((media) => {
+      const schema = (media as { schema?: SchemaNode }).schema;
+      if (schema?.$ref === undefined) return schema ? [schema] : [];
+      const resolved = componentSchemas?.[schema.$ref.split("/").pop() ?? ""];
+      return resolved ? [resolved] : [];
+    });
+  }
+
+  it("declares the three new endpoints, and only those", () => {
+    const added = ENDPOINT_INVENTORY.filter(
+      (entry) => entry.includes("/resident") || entry.includes("/api/agents"),
+    );
+    expect([...added]).toEqual([
+      "POST /api/threads/{id}/resident",
+      "DELETE /api/threads/{id}/resident",
+      "GET /api/agents",
+    ]);
+  });
+
+  it("carries `recipient` on every posting body, multipart twins included", () => {
+    for (const [path, method] of POSTING_BODIES) {
+      const schemas = bodySchemas(path, method);
+      expect(schemas.length, `${method} ${path}`).toBeGreaterThan(0);
+      for (const schema of schemas) {
+        expect(Object.keys(schema.properties ?? {}), `${method} ${path}`).toContain("recipient");
+        // Omitting it is the ordinary case: the default follows from where the
+        // message was posted, so it is never required and never defaulted.
+        expect(schema.required ?? [], `${method} ${path}`).not.toContain("recipient");
+        expect(
+          Object.hasOwn(schema.properties?.recipient ?? {}, "default"),
+          `${method} ${path}`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("spells a recipient as the orchestrator or a thread, and nothing else", () => {
+    const recipient = componentSchemas?.["CreateThreadRequest"]?.properties?.recipient;
+    const branches = recipient?.anyOf ?? [];
+    expect(branches).toHaveLength(2);
+    expect(branches[0]?.enum).toEqual(["orchestrator"]);
+    expect(branches[1]?.pattern).toBe("^th_[A-Za-z0-9]+$");
+  });
+
+  /**
+   * The distinction §7 corrected itself twice over: the lane routes the work,
+   * the origin files it. A description that let them blur is how a summons
+   * becomes claimable by nobody, so the recipient's own prose has to carry it.
+   */
+  it("keeps the lane and the origin apart in the recipient's own description", () => {
+    const description =
+      componentSchemas?.["CreateThreadRequest"]?.properties?.recipient?.description ?? "";
+    for (const phrase of [
+      "routing follows the recipient, filing follows the conversation",
+      "routes this message and nothing else",
+      "never rewires a scope",
+      "computed from where the message is posted",
+    ]) {
+      expect(description.toLowerCase(), phrase).toContain(phrase.toLowerCase());
+    }
+  });
+
+  it("takes a `scope` on both queue verbs, optional and undefaulted", () => {
+    for (const [path, method] of [
+      ["/api/queue/idle", "get"],
+      ["/api/queue/claim-all", "post"],
+    ] as const) {
+      const scope = parameter(path, method, "scope");
+      expect(scope?.in, `${method} ${path}`).toBe("query");
+      expect(scope?.required, `${method} ${path}`).toBe(false);
+      expect(Object.hasOwn(scope?.schema ?? {}, "default"), `${method} ${path}`).toBe(false);
+      expect(scope?.description, `${method} ${path}`).toContain("Omitted means `orchestrator`");
+    }
+  });
+
+  /**
+   * The wire shape of a queue event is unchanged: §7 stamps a lane, but the
+   * stamp is server-side bookkeeping like the event's status, and publishing it
+   * would hand a routing decision back to the party the routing was for.
+   */
+  it("adds nothing to the queue event, which still carries no lane", () => {
+    expect(Object.keys(componentSchemas?.["QueueEvent"]?.properties ?? {})).toEqual([
+      "id",
+      "type",
+      "created",
+      "source",
+      "payload",
+    ]);
+  });
+
+  it("publishes `resident.designated` wherever an event type is described", () => {
+    for (const component of ["QueueEvent", "InProgressEvent", "Job"]) {
+      const description = componentSchemas?.[component]?.properties?.type?.description ?? "";
+      expect(description, component).toContain("resident.designated");
+    }
+  });
+
+  it("gives Thread and ThreadSummary a required, nullable resident", () => {
+    for (const component of ["Thread", "ThreadSummary"]) {
+      expect(componentSchemas?.[component]?.required ?? [], component).toContain("resident");
+      const resident = componentSchemas?.[component]?.properties?.resident;
+      // `z.union([Resident, z.null()])`, never `Resident.nullable()` — the
+      // second rewrites the shared component for every route referencing it.
+      expect(resident?.anyOf?.[0]?.$ref, component).toBe("#/components/schemas/Resident");
+      expect(resident?.anyOf?.[1]?.type, component).toBe("null");
+    }
+    expect(componentSchemas?.["Resident"]?.type).toBe("object");
+    expect(componentSchemas?.["Resident"]?.required).toEqual(["name", "docId"]);
+  });
+
+  it("answers a designation and a release with the thread, so §14's warnings surface", () => {
+    for (const method of ["post", "delete"] as const) {
+      const ok = operation("/api/threads/{id}/resident", method).responses?.["200"];
+      expect(JSON.stringify(ok), method).toContain("ThreadMutationResponse");
+    }
+  });
+
+  it("declares exactly the refusals each half of designation can produce", () => {
+    expect(Object.keys(operation("/api/threads/{id}/resident", "post").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+      // User-only, like every other user-only endpoint in §9.2's family.
+      "403",
+      // An unknown thread, or a name resolving to no agent-def.
+      "404",
+      // A thread that may not have a resident at all: it has a parent.
+      "409",
+    ]);
+    // Releasing refuses nothing the state can refuse — it is idempotent, so
+    // there is no `409` for a thread with nobody to release.
+    expect(Object.keys(operation("/api/threads/{id}/resident", "delete").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+      "403",
+      "404",
+    ]);
+  });
+
+  it("takes no input on the roster, and therefore declares no 400", () => {
+    const op = operation("/api/agents", "get");
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters).toBeUndefined();
+    expect(Object.keys(op.responses ?? {})).toEqual(["200", "401"]);
+  });
+
+  it("shapes a roster row as the rider's six fields", () => {
+    expect(Object.keys(componentSchemas?.["AgentLane"]?.properties ?? {})).toEqual([
+      "lane",
+      "resident",
+      "live",
+      "since",
+      "summary",
+      "origin",
+    ]);
+    expect(componentSchemas?.["AgentLane"]?.required).toEqual([
+      "lane",
+      "resident",
+      "live",
+      "since",
+      "summary",
+      "origin",
+    ]);
+    expect(componentSchemas?.["AgentRoster"]?.required).toEqual(["agents"]);
+  });
+
+  /**
+   * The roster's `origin` is the conversation a lane *is*, not §9.2's document
+   * origin — the field most likely to be read as the other one, so it says so.
+   */
+  it("says the roster's origin is not a document's origin", () => {
+    const description = componentSchemas?.["AgentLane"]?.properties?.origin?.description ?? "";
+    expect(description).toContain("Not a document's `origin`");
+    expect(componentSchemas?.["LaneOrigin"]?.type).toBe("object");
+    expect(componentSchemas?.["LaneOrigin"]?.required).toEqual(["id", "title"]);
+  });
+
+  /**
+   * §7 promises a *bound* on the summary and nothing about its content, which
+   * is what lets the server change how it derives one without a contract
+   * change. A client that parsed it would have made that promise for us.
+   */
+  it("bounds the summary and promises nothing else about it", () => {
+    const summary = componentSchemas?.["AgentLane"]?.properties?.summary;
+    expect(summary?.anyOf?.[0]?.maxLength ?? summary?.maxLength).toBe(200);
+    expect(summary?.description).toContain("display only");
+    expect(summary?.description).toContain("never parse it");
+  });
+
+  /**
+   * Designation's lifecycle is not only on its own two routes: §7 has
+   * resolution release a resident, and §8 has reopening not restore one. Both
+   * are published where a reader of `resolve`/`reopen` will actually meet them,
+   * because a rule stated only next to the route that does not perform it is
+   * how the two come to disagree.
+   */
+  it("says on resolve that it releases, and on reopen that it does not restore", () => {
+    expect(operation("/api/threads/{id}/resolve", "post").description).toContain(
+      "Resolving releases the thread's resident with it",
+    );
+    expect(operation("/api/threads/{id}/reopen", "post").description).toContain(
+      "Reopening does not restore a resident",
+    );
+  });
+
+  it("says liveness is a read behind an invalidate key, never a push", () => {
+    const description = operation("/api/agents", "get").description ?? "";
+    expect(description).toContain("A read, never a push");
+    expect(description).toContain('["agents"]');
+    expect(operation("/events", "get").description).toContain('`["agents"]`');
+  });
+
+  /**
+   * Two refusals on one status, told apart by `code` — the arrangement
+   * `stale_key` established beside `conflict` on `409`. A single body would
+   * have made one of them unreachable to a client that narrows on the code.
+   */
+  it("widens the 422 to name a bad recipient beside a bad job, without merging them", () => {
+    for (const [path, method] of POSTING_BODIES) {
+      const schema = responseSchema(path, method, "422");
+      expect(
+        schema?.anyOf?.map((branch) => branch.$ref),
+        `${method} ${path}`,
+      ).toEqual([
+        "#/components/schemas/UnknownJobError",
+        "#/components/schemas/UnknownRecipientError",
+      ]);
+    }
+    expect(componentSchemas?.["UnknownRecipientError"]?.properties?.code?.enum).toEqual([
+      "unknown_recipient",
+    ]);
+    expect(componentSchemas?.["UnknownRecipientError"]?.required).toEqual([
+      "code",
+      "message",
+      "recipient",
+    ]);
+  });
+
+  /**
+   * The document writes take a job and no recipient, so they keep the narrow
+   * `422`; capture takes neither and declares none. No route publishes a
+   * refusal it cannot produce.
+   */
+  it("leaves the job-only routes' 422 narrow, and capture's absent", () => {
+    const jobOnly = responseSchema("/api/docs", "post", "422");
+    expect(jobOnly?.$ref).toBe("#/components/schemas/UnknownJobError");
+    expect(operation("/api/capture", "post").responses?.["422"]).toBeUndefined();
   });
 });

@@ -371,8 +371,18 @@ test.describe("a comment whose selection began inside inline markup", () => {
     await expect(highlights).toHaveCount(2);
     await expect(highlights.first()).toHaveText("Moushmi Verma");
     await expect(highlights.nth(1)).toHaveText(" on repositioning Fernando under Mesbah");
-    const drawn = await highlights.allInnerTexts();
-    expect(drawn.join("")).not.toContain("*");
+    /*
+     * No composer is opened here — the document arrives with its anchor already
+     * resolved — so there is only ever the server's generation of `.anchor-hl`
+     * and no empty window to fall into. But the read is still the non-waiting
+     * `$$eval` form (see UI-117's note below), and it backs a *negative* claim,
+     * which an empty array would satisfy while proving nothing. So it is
+     * asserted positively as well, over `textContent`: if it ever reads
+     * nothing, it fails rather than passes.
+     */
+    const drawn = (await highlights.allTextContents()).join("");
+    expect(drawn).toBe("Moushmi Verma on repositioning Fernando under Mesbah");
+    expect(drawn).not.toContain("*");
     await expect(page.locator(".reader .anchor-pip")).toHaveCount(1);
     // Nothing was demoted to the list below the body.
     await expect(page.locator("[data-thread-section]")).toHaveCount(0);
@@ -481,14 +491,49 @@ test.describe("a comment captured on a file the editor prints differently", () =
 
     await commentOnTheParagraph(page);
 
-    // The stub stores the anchor and resolves it on the next read, by §6's
-    // rungs — so a highlight here is the server's answer, not the optimistic
-    // decoration, which the refetch clears.
-    const highlight = page.locator(".reader .doc-body .anchor-hl");
+    /*
+     * The stub stores the anchor and resolves it on the next read, by §6's
+     * rungs — so a highlight here is the server's answer, not the optimistic
+     * decoration, which the refetch clears. `[data-thread]` is what *makes* it
+     * the server's answer rather than merely asserting it in prose: the
+     * composer paints its own `.anchor-hl` over the same words from the moment
+     * it opens, carrying `data-provisional` and no thread id
+     * (`anchorDecorations.ts`), and it splits on the same `**` into the same
+     * two spans.
+     *
+     * That scoping is also what removes a race, and the mechanism is worth
+     * spelling out, because this line used to fail on it (UI-117):
+     *
+     * `.anchor-hl` has **two generations** across a send, and the count is 2 in
+     * both. `useAnchorLayer`'s `post` forgets the provisional range in the
+     * mutation's `onSuccess`; the server's anchors land only once the
+     * invalidated document read resolves and `applyAnchors` runs. Sampling the
+     * selector every frame through this flow, with the refetch slowed, gives
+     * `0 → 2 (provisional) → 0 → 2 (server)`.
+     *
+     * So `toHaveCount(2)` on the *unscoped* selector could be satisfied by the
+     * provisional pair and return — a count assertion says two nodes matched at
+     * some instant, and nothing about which generation they belonged to or
+     * whether they are still there. A read taken after it could then land in
+     * the empty window. `allInnerTexts()` and `allTextContents()` are both
+     * `$$eval`: one atomic page evaluation with **no waiting at all**, and `[]`
+     * when nothing matches — and `[].join("")` is `""`, which is exactly the
+     * value a loaded full-suite run failed with here.
+     *
+     * `innerText` is the more fragile of the two reads on principle — it is
+     * defined over *rendered* text, so it answers for layout and computed
+     * visibility, where `textContent` is a pure tree read — but that is not
+     * what broke this line, and swapping the read alone would not have fixed
+     * it. What fixes it is **waiting**: for the generation that is final, and
+     * then for the text, rather than reading either once.
+     */
+    const highlight = page.locator(".reader .doc-body .anchor-hl[data-thread]");
     // Two spans, because the `**` the quote crosses has no position to be
     // inside of — the same shape UI-062's fixture draws.
     await expect(highlight).toHaveCount(2);
-    expect((await highlight.allInnerTexts()).join("")).toBe("Moushmi Verma wrote it up on Monday.");
+    await expect
+      .poll(async () => (await highlight.allTextContents()).join(""))
+      .toBe("Moushmi Verma wrote it up on Monday.");
     await expect(page.locator('[data-thread-section="detached"]')).toHaveCount(0);
   });
 });

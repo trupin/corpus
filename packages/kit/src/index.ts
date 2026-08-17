@@ -28,6 +28,7 @@ export {
   CorpusRequestError,
   reattachRefusalReason,
   staleKeyDoc,
+  unknownRecipientLane,
   type AppendTurnInput,
   type AppendTurnUpload,
   type CaptureInput,
@@ -81,6 +82,10 @@ export {
 } from "./query/useJobLog.js";
 export { usePluginQuery } from "./query/usePluginQuery.js";
 export { useQueueStatus } from "./query/useQueueStatus.js";
+// SPEC.md §7's roster — who is running, read behind `["agents"]` like any other
+// projection. A read and never a push, so there is no poll and no `staleTime`
+// override here or anywhere downstream.
+export { useAgentsRoster, type AgentRosterView } from "./query/useAgentsRoster.js";
 // The semantic index's health report — the console strip's index pill reads it,
 // and it refreshes on the `["index"]` frames the embed worker already emits.
 export { useIndexStatus } from "./query/useIndexStatus.js";
@@ -102,6 +107,7 @@ export {
   useSetThreadStatus,
   type ThreadStatusVariables,
 } from "./query/useThreadStatus.js";
+export { useSetResident, type ResidentVariables } from "./query/useResident.js";
 export { useReattachThread, type ReattachThreadVariables } from "./query/useReattachThread.js";
 export {
   hasSeenMark,
@@ -128,6 +134,11 @@ export {
 // The query-key vocabulary. Core shapes come from `@corpus/contract` so a
 // rename is a compile error rather than a silently ignored `invalidate` frame.
 export {
+  // `AGENTS_KEY` joined its siblings here in UI-109: UI-108 published the roster
+  // hook without the key the server names to invalidate it, so a board surface
+  // — or a plugin — could read the roster and had no supported way to say it had
+  // gone stale.
+  AGENTS_KEY,
   canonicalFilter,
   docKey,
   docsListKey,
@@ -156,7 +167,11 @@ export {
 export { Row, type ListItemComponent, type RowProps } from "./row/Row.js";
 export {
   AgeChip,
+  // One call for the row's agent signal, so no row implementation has to decide
+  // for itself which of the two dots an unclaimed event gets (SPEC.md §8).
+  AgentActivityDot,
   NeedsYouBadge,
+  QueuedDot,
   UnreadBadge,
   // A plugin's own `ListItem` replaces `Row` wholesale, so the rule deciding
   // which unread pill a row draws ships with the badge rather than staying
@@ -164,6 +179,7 @@ export {
   // again, one surface at a time.
   unreadBadgeProps,
   WorkingDot,
+  type AgentActivityDotProps,
   type AgeChipProps,
   type NeedsYouBadgeProps,
   type UnreadBadgeProps,
@@ -200,7 +216,11 @@ export {
   type RowActionSubject,
   type RowNotice,
 } from "./row/useRowActions.js";
-export { useAgentActivity, type AgentActivity } from "./row/useRowSignals.js";
+export {
+  useAgentActivity,
+  type AgentActivity,
+  type AgentActivityState,
+} from "./row/useRowSignals.js";
 
 // Rendered markdown (SPEC.md §10 names `MarkdownView` in the kit contract), and
 // the `[[ref]]` grammar of SPEC.md §5 that only it knows how to render. The
@@ -282,11 +302,19 @@ export {
 // app *and* every composer a plugin contributes, and a plugin may import
 // nothing but this package.
 export {
+  AttachButton,
   COMPOSER_NEWLINE_HINT,
   COMPOSER_PRIMARY_KEY,
   COMPOSER_SECONDARY_KEY,
   handleComposerKeyDown,
+  PendingAttachments,
+  releaseAttachments,
+  useAttachmentIntake,
+  type AttachButtonProps,
+  type AttachmentIntake,
   type ComposerKeyOptions,
+  type PendingAttachment,
+  type PendingAttachmentsProps,
 } from "./components/Composer/index.js";
 
 // SPEC.md §11's "every composer can choose how much thought the work gets"
@@ -324,6 +352,60 @@ export {
   type WeightLevel,
   type WeightPickerProps,
 } from "./weight/index.js";
+
+// SPEC.md §7's recipient — the composer offers the live roster, the default is
+// computed from where the message is posted, and an override routes one message.
+// Here for `WeightPicker`'s reason: the sentence binds every composer in the app
+// and every composer a plugin contributes. Stylesheet subpath:
+// `import "@corpus/kit/recipient.css"`.
+export {
+  laneLine,
+  laneLiveness,
+  laneName,
+  laneOf,
+  laneRow,
+  laneRows,
+  statementFor,
+  unknownLaneRow,
+  useComposerRecipient,
+  useLaneRow,
+  useResidentLane,
+  useScopeWalk,
+  walkToLane,
+  DEFAULT_ROW_NOTE,
+  LaneDot,
+  LAPSED_FALLBACK,
+  LAPSED_ORCHESTRATOR,
+  LIVE_WITHOUT_SUMMARY,
+  MAX_SCOPE_WALK,
+  NEVER_SEEN_LINE,
+  ORCHESTRATOR_LABEL,
+  RECIPIENT_GROUP_LABEL,
+  RECIPIENT_INERT_TITLE,
+  RECIPIENT_LIVE_TITLE,
+  RECIPIENT_PICKER_LABEL,
+  RECIPIENT_REFUSED_STATEMENT,
+  RECIPIENT_UNKNOWN_STATEMENT,
+  RecipientPicker,
+  SCOPE_NODE_ABSENT,
+  UNNAMED_RESIDENT_LABEL,
+  type ComposerRecipient,
+  type ComposerRecipientInput,
+  type ComposerRecipientRestore,
+  type LaneDotProps,
+  type LaneLiveness,
+  type LaneRow,
+  type RecipientPickerProps,
+  type ResidentLane,
+  type ScopeNode,
+  type ScopeNodeLookup,
+  type ScopeWalk,
+  type ScopeWalkInput,
+} from "./recipient/index.js";
+
+// One spelling of "how long ago" for the whole board (SPEC.md §7's roster line
+// and §8's pending row sit one composer apart).
+export { humanizeElapsed } from "./time/elapsed.js";
 
 // The live-update connection.
 export { useConnectionState } from "./events/useConnectionState.js";

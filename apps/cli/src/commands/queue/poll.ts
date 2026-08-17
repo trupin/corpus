@@ -58,6 +58,17 @@ export interface PollWindowOptions {
   readonly windowMs: number;
   /** Aborted on SIGINT/SIGTERM; an aborted poll resolves rather than throwing. */
   readonly signal: AbortSignal;
+  /**
+   * The lane to park on (SPEC.md §7), or absent for the orchestrator's — which
+   * the contract makes the same lane rather than a third behaviour, so absence
+   * is passed as an omitted parameter and never as a spelled-out default.
+   *
+   * Every segment of one window carries it: the window is one park as far as the
+   * caller is concerned, and a rearm that dropped the lane would silently move
+   * the listener — and therefore the resident's presence — to the orchestrator
+   * mid-park.
+   */
+  readonly scope?: string | undefined;
   readonly now?: () => number;
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** Overridable only so tests can exercise a multi-segment window quickly. */
@@ -78,7 +89,12 @@ export async function pollWindow(options: PollWindowOptions): Promise<PollOutcom
 
     const segmentSeconds = segmentFor(deadline - now(), maxSegmentSeconds);
     requests += 1;
-    const attempt = await requestIdle(options.client, segmentSeconds, options.signal);
+    const attempt = await requestIdle(
+      options.client,
+      segmentSeconds,
+      options.signal,
+      options.scope,
+    );
 
     if (attempt.kind === "failure") {
       if (options.signal.aborted) return { kind: "interrupted", requests };
@@ -132,6 +148,7 @@ async function requestIdle(
   client: CliClient,
   segmentSeconds: number,
   signal: AbortSignal,
+  scope: string | undefined,
 ): Promise<IdleAttempt> {
   // The park owns its own deadline, which is why it goes through `untimedApi`:
   // the global `--timeout` is the transport timeout for ordinary requests and
@@ -141,7 +158,10 @@ async function requestIdle(
 
   try {
     const result = await client.untimedApi.GET("/api/queue/idle", {
-      params: { query: { timeout: segmentSeconds } },
+      // An absent lane is an omitted parameter, not `scope: undefined`: the
+      // orchestrator's lane is what the server reads from silence, and spelling
+      // it would be the second spelling `lane.ts` refuses.
+      params: { query: { timeout: segmentSeconds, ...(scope === undefined ? {} : { scope }) } },
       signal: combined,
     });
 

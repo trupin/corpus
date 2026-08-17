@@ -38,6 +38,62 @@ export const FROM_FLAG: FlagSpec = {
     "request is sent.",
 };
 
+export const JOB_ENV_VAR = "CORPUS_JOB";
+
+/**
+ * The queue event a write is doing the work of (SPEC.md §9.2, CLI-044).
+ *
+ * Modelled on `--from`/`CORPUS_FROM` rather than on `--model`, and the reason is
+ * the whole point of the feature: **an agent exports `CORPUS_JOB` once when it
+ * claims an event, and every write it makes afterwards is attributed without it
+ * having to remember.** §9.2 is explicit that forgetting costs provenance rather
+ * than correctness — nothing is refused — so a mechanism that relied on the
+ * agent naming the job per command would be a mechanism that quietly stops
+ * working, which is the failure §7's key was redesigned to escape.
+ *
+ * Shape only, client-side. Whether the id names a live event is the server's
+ * `422` to answer (it reads the queue; the CLI does not), and validating
+ * existence here would be a second source of truth about what is claimable.
+ */
+export const JOB_FLAG: FlagSpec = {
+  name: "job",
+  type: "string",
+  valueName: "evt_…",
+  description:
+    "The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to " +
+    "the thread that work came from and records it as the created document's `origin`, which is " +
+    `what makes a conversation's artifacts findable. Set \`${JOB_ENV_VAR}=evt_…\` once when you ` +
+    "claim an event and every write in that session carries it; this flag still wins over the " +
+    "variable. **Omitting it is not an error** — the write lands and records no origin, so " +
+    "forgetting costs provenance and never correctness. **Naming an event that does not exist, " +
+    "or one already settled, is refused** (exit 5, the server's `422`): a caller that mistyped a " +
+    "job id wanted the attribution, and quietly dropping it would leave it believing it had one.",
+};
+
+/**
+ * `--job` ?? `CORPUS_JOB` ?? absent — and absence has one spelling, the field
+ * omitted, because §9.2 gives a write with no job no origin rather than a null
+ * one. An empty variable is treated as unset: `CORPUS_JOB=` is how a shell
+ * clears it, and reading that as "the job named empty string" would turn a
+ * clear into a `422`.
+ */
+export function resolveJob(
+  flags: ParsedFlags,
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  const flag = flags.string("job");
+  const raw = flag ?? env[JOB_ENV_VAR];
+  if (raw === undefined || raw === "") return undefined;
+  if (!raw.startsWith("evt_")) {
+    throw new UsageError(`a job id looks like \`evt_…\`, got "${raw}"`, {
+      hint:
+        `Pass the id of the event you are working — the one \`corpus queue claim-all\` printed. ` +
+        `If \`${JOB_ENV_VAR}\` is set to something stale, unset it or override it with \`--job\`.`,
+    });
+  }
+  return raw;
+}
+
 function isActor(value: string): value is Actor {
   return (ACTORS as readonly string[]).includes(value);
 }

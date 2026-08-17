@@ -1,10 +1,15 @@
 /** @vitest-environment jsdom */
 import type { ResolvedAnchor } from "@corpus/contract";
-import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openItems, parseBodyItems, updateItemInBody, type TodoItem } from "../items.js";
-import { fixtureKey, wrapperFor, type RecordedCall, type Transport } from "./testing.js";
+import {
+  sentJson,
+  statefulTodoWire,
+  STATEFUL_BODY as BODY,
+  wrapperFor,
+  type StatefulWire,
+  type StatefulWireOptions,
+} from "./testing.js";
 import { TodosColumn } from "./TodosColumn.js";
 
 afterEach(cleanup);
@@ -13,145 +18,21 @@ afterEach(cleanup);
  * The quick actions on a todo **item row**, end to end through the column
  * (PLUGINS-009 / sprint-023 TEST-1066–1072).
  *
- * These tests mount the real column over a **stateful** transport: the item
- * routes rewrite a body, and `GET /lists` is recomputed from that body every
- * time it is asked. That is what makes "the row refreshes without a reload" an
- * assertion about the application rather than about a fixture — a column that
- * did not re-read would keep showing the item it just checked off.
+ * These tests mount the real column over `statefulTodoWire` — the item routes
+ * rewrite a body and `GET /lists` is recomputed from it — so "the row refreshes
+ * without a reload" is an assertion about the application rather than about a
+ * fixture.
  */
 
 const NOW = new Date("2026-07-20T12:00:00.000Z");
 
-const BODY = [
-  "Chores that landed in the inbox.",
-  "",
-  "- [x] Send the signed form",
-  "- [ ] Book the passport appointment (due: 2026-08-01)",
-  "- [ ] Call the plumber",
-  "",
-].join("\n");
-
-interface Wire extends Transport {
-  /** The document body as the stub currently holds it. */
-  body(): string;
-  readonly pluginWrites: () => readonly RecordedCall[];
-}
-
-interface WireOptions {
-  /** Status the item route answers with; 200 applies the write. */
-  readonly itemStatus?: number;
-  readonly anchors?: readonly ResolvedAnchor[];
-}
-
-/** The JSON a recorded call carried, which `pluginRequest` always sends as a string. */
-function sentJson(init: RequestInit | undefined): Record<string, unknown> {
-  return JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<string, unknown>;
-}
-
-/** A transport that actually applies the plugin's item writes to a body. */
-function statefulWire(options: WireOptions = {}): Wire {
-  let body = BODY;
-  const calls: RecordedCall[] = [];
-  const status = options.itemStatus ?? 200;
-
-  const json = (value: unknown, code: number): Response =>
-    new Response(JSON.stringify(value), {
-      status: code,
-      headers: { "content-type": "application/json" },
-    });
-
-  const listView = (): Record<string, unknown> => {
-    const items: readonly TodoItem[] = parseBodyItems(body);
-    return {
-      docId: "doc_week",
-      title: "Week of Jul 20",
-      path: "data/docs/todos/doc_week.md",
-      status: "open",
-      open: openItems(items).length,
-      done: items.length - openItems(items).length,
-      items,
-    };
-  };
-
-  const fetchStub: typeof globalThis.fetch = (input, init) => {
-    const url = input instanceof Request ? input.url : String(input);
-    calls.push({ url, init });
-    const path = new URL(url).pathname;
-    const method = input instanceof Request ? input.method : (init?.method ?? "GET");
-
-    if (path.startsWith("/api/x/todos/lists")) {
-      return Promise.resolve(json({ lists: [listView()] }, 200));
-    }
-
-    const item = /^\/api\/x\/todos\/([^/]+)\/items\/(\d+)$/.exec(path);
-    if (item !== null && method === "PUT") {
-      if (status !== 200) {
-        return Promise.resolve(
-          json({ code: "conflict", message: "it changed under you; nothing was written" }, status),
-        );
-      }
-      body = updateItemInBody(body, Number(item[2]), sentJson(init));
-      return Promise.resolve(json({ docId: item[1], index: Number(item[2]) }, 200));
-    }
-
-    if (path === "/api/threads" && method === "POST") {
-      return Promise.resolve(
-        json({ thread: { id: "th_new1" }, anchorId: "anc_new1", warnings: [] }, 201),
-      );
-    }
-    if (path === "/api/jobs") return Promise.resolve(json({ jobs: [] }, 200));
-    if (path.startsWith("/api/docs/")) {
-      return Promise.resolve(
-        json(
-          {
-            key: fixtureKey("doc_week"),
-            userEditing: false,
-            frontmatter: {
-              id: "doc_week",
-              type: "todo",
-              title: "Week of Jul 20",
-              created: "2026-07-20T09:00:00.000Z",
-              updated: "2026-07-20T09:00:00.000Z",
-              tags: [],
-              status: "open",
-              anchors: {},
-              due: null,
-              reviewed: null,
-              evergreen: false,
-              pinned: false,
-              order: null,
-              query: null,
-              column: null,
-              extra: {},
-            },
-            body,
-            path: "data/docs/todos/doc_week.md",
-            anchors: options.anchors ?? [],
-          },
-          200,
-        ),
-      );
-    }
-    const rows = [docRowFixture({ id: "doc_week", type: "todo", title: "Week of Jul 20" })];
-    return Promise.resolve(json({ items: rows, page: { total: 1, limit: 50, offset: 0 } }, 200));
-  };
-
-  return {
-    fetch: fetchStub,
-    calls,
-    body: () => body,
-    pluginCalls: () => calls.filter((call) => call.url.includes("/api/x/todos")),
-    pluginWrites: () => calls.filter((call) => /\/api\/x\/todos\/[^/]+\/items\//.test(call.url)),
-  };
-}
-
 interface Mounted {
-  readonly wire: Wire;
+  readonly wire: StatefulWire;
   readonly onOpen: ReturnType<typeof vi.fn>;
 }
 
-function mount(options: WireOptions = {}): Mounted {
-  const wire = statefulWire(options);
+function mount(options: StatefulWireOptions = {}): Mounted {
+  const wire = statefulTodoWire(options);
   const onOpen = vi.fn();
   render(<TodosColumn viewDocId="doc_col" title="Todos" query={{}} onOpen={onOpen} now={NOW} />, {
     wrapper: wrapperFor(wire).Wrapper,
@@ -165,6 +46,16 @@ const rows = (): HTMLElement[] => [
 
 const rowFor = (text: string): HTMLElement =>
   rows().find((node) => node.textContent?.includes(text) === true) as HTMLElement;
+
+/**
+ * The row's open control — where the keyboard sits on a row since PLUGINS-015.
+ *
+ * The row itself is a container now (it holds a checkbox and this), so it is not
+ * the focusable thing any more; the menu opens from whichever of its controls
+ * has focus and returns focus there.
+ */
+const openControlFor = (text: string): HTMLElement =>
+  rowFor(text).querySelector<HTMLElement>(".todo-item-open") as HTMLElement;
 
 const menu = (): HTMLElement | null => document.querySelector("[data-todo-menu]");
 
@@ -211,7 +102,7 @@ describe("the todos column's item menu", () => {
     mount();
     await settled();
     const row = rowFor("Call the plumber");
-    row.focus();
+    openControlFor("Call the plumber").focus();
     fireEvent.keyDown(row, { key: "F10", shiftKey: true });
     await waitFor(() => {
       expect(menu()).not.toBeNull();
@@ -337,7 +228,7 @@ describe("the todos column's item menu", () => {
     const { onOpen } = mount();
     await settled();
     const row = rowFor("Call the plumber");
-    row.focus();
+    openControlFor("Call the plumber").focus();
     fireEvent.keyDown(row, { key: "F10", shiftKey: true });
     await waitFor(() => {
       expect(menu()).not.toBeNull();
@@ -347,7 +238,7 @@ describe("the todos column's item menu", () => {
       expect(menu()).toBeNull();
     });
     expect(onOpen).not.toHaveBeenCalled();
-    // Focus goes back to the row the menu was opened on, not onto the body.
-    expect(document.activeElement).toBe(rowFor("Call the plumber"));
+    // Focus goes back to the control the menu was opened from, not onto the body.
+    expect(document.activeElement).toBe(openControlFor("Call the plumber"));
   });
 });

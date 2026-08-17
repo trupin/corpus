@@ -21,8 +21,9 @@ assets/workspace/
   gitignore                              # installs as .gitignore
   claude/                                # installs as .claude/
     skills/
-      orchestrate/SKILL.md               # the agent loop (SPEC §7)
+      orchestrate/SKILL.md               # the agent loop, on the orchestrator's lane (SPEC §7)
       comment/SKILL.md                   # handles comment.created / form.respond (SPEC §7-§8)
+      converse/SKILL.md                  # a resident's own loop, on its conversation's lane (SPEC §7)
     agents/.gitkeep                      # subagent personas — `type: agent-def` documents
   data/
     docs/
@@ -40,7 +41,7 @@ frontmatter, a unique `id`, and `evergreen: true` so a day-one workspace does no
 its own seed content already sitting in Attention. `created` and `updated` carry a single
 fixed timestamp — the template's authoring date — across the whole tree.
 
-The two `SKILL.md` files carry Claude Code's `name`/`description` and Corpus's
+The three `SKILL.md` files carry Claude Code's `name`/`description` and Corpus's
 `id`/`type`/`title`/… in one YAML block (SPEC.md §7). `name` must equal the containing
 directory name or Claude Code will not discover the skill.
 

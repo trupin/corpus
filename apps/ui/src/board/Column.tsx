@@ -1,14 +1,14 @@
 import type { DocRow } from "@corpus/contract";
 import { useDocs, type RowNotice } from "@corpus/kit";
 import type { OpenPayload } from "@corpus/kit/plugin";
-import { useState, type DragEvent, type ReactElement } from "react";
+import { useEffect, useState, type DragEvent, type ReactElement } from "react";
 import { PluginMissingCard } from "../plugins/PluginMissingCard";
 import { usePluginRegistry } from "../plugins/registry";
 import { resolveColumnType } from "../plugins/slots";
 import { Reader } from "../reader/Reader";
 import { ColumnHead } from "./ColumnHead";
 import { ColumnList } from "./ColumnList";
-import { renderedWidth } from "./columnWidth";
+import { readingFloor, renderedWidth } from "./columnWidth";
 import { openDocId, type ColumnLocalState, type NavEntry } from "./useBoardLocalState";
 import { useColumnWidth } from "./useColumnWidth";
 import type { BoardColumn, PluginColumnRef } from "./viewDoc";
@@ -214,12 +214,39 @@ export function Column(props: ColumnProps): ReactElement {
   const { column, isActive, isDragging, isFlashing, local, onActivate, onOpen } = props;
   const [draggable, setDraggable] = useState(false);
   const open = openDocId(local);
+  /**
+   * The floor this column has been grown to, if any (UI-113).
+   *
+   * Transient by design — see `renderedWidth`. It ratchets up when a reader
+   * opens in a column too narrow to show it, never comes back down on close,
+   * and is cleared the moment the user resizes, because their gesture is the
+   * authority on width and a surviving floor would refuse to be narrowed.
+   */
+  const [grownTo, setGrownTo] = useState(0);
+
   const size = useColumnWidth({
     viewDocId: column.id,
     title: column.title,
     stored: column.width,
     onNotify: props.onNotify,
   });
+
+  // Grow when a reader opens in a column too narrow to show it — the one
+  // automatic width change the user asked to keep ("it can resize up
+  // automatically but not down").
+  const reading = open !== null;
+  useEffect(() => {
+    if (!reading) return;
+    const width = typeof window === "undefined" ? 0 : window.innerWidth;
+    setGrownTo((current) => Math.max(current, readingFloor(size.width, width)));
+  }, [reading, size.width]);
+
+  // A resize is the user speaking about width, so the floor stops speaking. Held
+  // to the gesture rather than to the resulting number: dragging *up* should
+  // clear it too, or the column would silently refuse to be narrowed afterwards.
+  useEffect(() => {
+    if (size.resizing) setGrownTo(0);
+  }, [size.resizing]);
 
   const className = [
     "col",
@@ -239,11 +266,7 @@ export function Column(props: ColumnProps): ReactElement {
       aria-label={`${column.title} list`}
       style={{
         width: `${String(
-          renderedWidth(
-            size.width,
-            open !== null,
-            typeof window === "undefined" ? 0 : window.innerWidth,
-          ),
+          renderedWidth(size.width, grownTo, typeof window === "undefined" ? 0 : window.innerWidth),
         )}px`,
       }}
       draggable={draggable}

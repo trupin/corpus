@@ -2,8 +2,9 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { PendingAttachments } from "./PendingAttachments";
-import { useAttachmentIntake, type AttachmentIntake } from "./useAttachmentIntake";
+import { AttachButton } from "./AttachButton.js";
+import { PendingAttachments } from "./PendingAttachments.js";
+import { useAttachmentIntake, type AttachmentIntake } from "./useAttachmentIntake.js";
 
 afterEach(cleanup);
 
@@ -14,7 +15,6 @@ beforeEach(() => {
   created.length = 0;
   revoked.length = 0;
   let sequence = 0;
-  // jsdom implements neither half of the object-URL API.
   Object.defineProperty(URL, "createObjectURL", {
     configurable: true,
     writable: true,
@@ -36,6 +36,12 @@ beforeEach(() => {
 
 let latest: AttachmentIntake | null = null;
 
+/**
+ * The whole published trio wired the way a composer wires it — the hook's drag
+ * handlers on the surface, its paste handler on the field, the chip strip above
+ * it and the 📎 in the foot. A plugin has exactly these imports available and
+ * nothing else, so the test composes them the same way.
+ */
 function Host(): ReactElement {
   const intake = useAttachmentIntake();
   latest = intake;
@@ -50,6 +56,7 @@ function Host(): ReactElement {
     >
       <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
       <input aria-label="text" onPaste={intake.onPaste} />
+      <AttachButton surface="host" onFiles={intake.add} />
       <span data-child>nested</span>
     </div>
   );
@@ -87,7 +94,6 @@ describe("useAttachmentIntake", () => {
 
     const textOnly = pasteEvent([], "plain words");
     const handled = fireEvent.paste(input, textOnly as never);
-    // Not prevented: the browser's own text insertion still runs.
     expect(handled).toBe(true);
     expect(container.querySelectorAll(".att-chip")).toHaveLength(1);
   });
@@ -99,7 +105,6 @@ describe("useAttachmentIntake", () => {
 
     fireEvent.dragEnter(zone);
     expect(zone.className).toContain("dropping");
-    // Entering a child fires enter-then-leave; a boolean would strobe here.
     fireEvent.dragEnter(child);
     fireEvent.dragLeave(zone);
     expect(zone.className).toContain("dropping");
@@ -155,5 +160,63 @@ describe("useAttachmentIntake", () => {
       latest?.release(snapshot as never);
     });
     expect(revoked).toEqual(["blob:preview-1"]);
+  });
+});
+
+/**
+ * The 📎 route, asserted through the markup a host actually gets — the two
+ * details the component exists to stop every composer from re-deriving.
+ */
+describe("AttachButton", () => {
+  it("opens its own hidden input, named by surface and taking many files", () => {
+    render(<Host />);
+    const picker = document.querySelector<HTMLInputElement>('[data-attach-input="host"]');
+    expect(picker).not.toBeNull();
+    expect(picker?.type).toBe("file");
+    expect(picker?.multiple).toBe(true);
+    expect(picker?.hidden).toBe(true);
+
+    let clicked = 0;
+    picker?.addEventListener("click", () => {
+      clicked += 1;
+    });
+    fireEvent.click(screen.getByLabelText("Attach files"));
+    expect(clicked).toBe(1);
+  });
+
+  /**
+   * Re-picking the *same* file fires no `change` event unless the input's value
+   * was cleared first, and the attachment then silently does not arrive.
+   *
+   * The assertion has to watch the **write**, not the resulting value: a file
+   * input reads `""` before anything is picked, so `expect(picker.value)` is
+   * vacuous and passes against a component that clears nothing (checked — it
+   * did). So `value` is replaced with an accessor that reports a browser's
+   * post-pick spelling and records what is assigned to it.
+   */
+  it("hands the files to the composer and clears its value for a re-pick", () => {
+    const { container } = render(<Host />);
+    const picker = document.querySelector<HTMLInputElement>('[data-attach-input="host"]');
+    if (picker === null) throw new Error("no picker");
+
+    const list = {
+      0: png(),
+      length: 1,
+      item: (index: number) => (index === 0 ? png() : null),
+    } as unknown as FileList;
+    Object.defineProperty(picker, "files", { configurable: true, value: list });
+
+    const writes: string[] = [];
+    Object.defineProperty(picker, "value", {
+      configurable: true,
+      get: () => "C:\\fakepath\\shot.png",
+      set: (next: string) => {
+        writes.push(next);
+      },
+    });
+
+    fireEvent.change(picker);
+    expect(container.querySelectorAll(".att-chip")).toHaveLength(1);
+    expect(writes).toEqual([""]);
   });
 });

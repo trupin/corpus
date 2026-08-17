@@ -147,19 +147,27 @@ describe("badges", () => {
     expect(container.querySelector(".needs-you")).toBeNull();
   });
 
-  it("pulses the working dot while the agent owes the thread a reply", () => {
+  /**
+   * `awaitingAgent` says the reply has not arrived; it does **not** say anybody
+   * is writing one, and the queue's answer for this row may be silent for a
+   * dozen honest reasons (UI-097). So the row shows the still dot, which claims
+   * exactly what is known: the agent owes this thread something.
+   */
+  it("marks a row as waiting while the agent owes the thread a reply", () => {
     const { container } = renderRow({
       row: docRowFixture({ type: "thread", parent: "doc_a", awaitingAgent: true }),
     });
-    const dot = container.querySelector(".working-dot");
+    const dot = container.querySelector(".queued-dot");
     expect(dot?.getAttribute("title")).toContain("Agent has not replied");
+    expect(container.querySelector(".working-dot")).toBeNull();
   });
 
-  it("clears the working dot once the reply has landed", () => {
+  it("clears the dot once the reply has landed", () => {
     const { container } = renderRow({
       row: docRowFixture({ type: "thread", parent: "doc_a", awaitingAgent: false }),
     });
     expect(container.querySelector(".working-dot")).toBeNull();
+    expect(container.querySelector(".queued-dot")).toBeNull();
   });
 
   /**
@@ -230,7 +238,13 @@ describe("badges", () => {
     expect(container.querySelector(".working-dot")).toBeNull();
   });
 
-  it("labels a running job with no log line yet", async () => {
+  /**
+   * UI-097. A `pending` event is **unclaimed** — the queue holds it and nobody
+   * has taken it — so the row must not pulse. A backlog nobody is working would
+   * otherwise light up every row it named, which is the row-sized version of the
+   * "agent is working…" a person saw with no agent running at all.
+   */
+  it("does not pulse for a queued event nobody has claimed", async () => {
     const { container } = renderRow(
       { row: docRowFixture({ id: "doc_401k" }) },
       {
@@ -250,8 +264,52 @@ describe("badges", () => {
       },
     );
     await waitFor(() => {
-      expect(container.querySelector(".working-dot")?.getAttribute("title")).toContain("pending");
+      expect(container.querySelector(".queued-dot")?.getAttribute("title")).toBe(
+        "Queued — waiting to be picked up",
+      );
     });
+    expect(container.querySelector(".working-dot")).toBeNull();
+  });
+
+  /**
+   * And the other direction, on one row: a claimed event outranks an unclaimed
+   * one, because one event being held makes "the agent is working on this" true
+   * while any number of queued ones does not.
+   */
+  it("pulses when any of the row's events has actually been claimed", async () => {
+    const { container } = renderRow(
+      { row: docRowFixture({ id: "doc_401k" }) },
+      {
+        "/api/jobs": {
+          jobs: [
+            {
+              eventId: "evt_queued",
+              status: "pending",
+              started: NOW.toISOString(),
+              updated: NOW.toISOString(),
+              lastLine: null,
+              originId: "doc_401k",
+              originTitle: "401k rollover",
+            },
+            {
+              eventId: "evt_held",
+              status: "in-progress",
+              started: NOW.toISOString(),
+              updated: NOW.toISOString(),
+              lastLine: "filing into finance/",
+              originId: "doc_401k",
+              originTitle: "401k rollover",
+            },
+          ],
+        },
+      },
+    );
+    await waitFor(() => {
+      expect(container.querySelector(".working-dot")?.getAttribute("title")).toBe(
+        "filing into finance/",
+      );
+    });
+    expect(container.querySelector(".queued-dot")).toBeNull();
   });
 });
 

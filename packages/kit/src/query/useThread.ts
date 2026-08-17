@@ -1,7 +1,29 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useQuery, type UseQueryOptions, type UseQueryResult } from "@tanstack/react-query";
 import { useCorpusClient, usePendingTurnStore } from "../client/context.js";
+import type { CorpusClient } from "../client/createCorpusClient.js";
 import { threadKey } from "./keys.js";
-import { mergePendingTurns, type ThreadView } from "./pendingTurns.js";
+import { mergePendingTurns, type PendingTurnStore, type ThreadView } from "./pendingTurns.js";
+
+/**
+ * The one definition of "read thread `id`".
+ *
+ * Shared for {@link docQueryOptions}'s reason and one sharper one: the merge
+ * below is not decoration. A second `queryFn` registered under `threadKey(id)`
+ * — which is what a `useQueries` walk over ancestor threads would be — would
+ * win the next refetch and drop the user's own optimistic turn out of the
+ * conversation they are looking at.
+ */
+export function threadQueryOptions(
+  client: CorpusClient,
+  pendingTurns: PendingTurnStore,
+  id: string,
+): UseQueryOptions<ThreadView, Error, ThreadView, readonly unknown[]> {
+  return {
+    queryKey: threadKey(id),
+    queryFn: async ({ signal }) =>
+      mergePendingTurns(await client.getThread(id, { signal }), pendingTurns.list(id)),
+  };
+}
 
 /**
  * `GET /api/threads/{id}` — one thread and its turns.
@@ -21,9 +43,7 @@ export function useThread(id: string | undefined): UseQueryResult<ThreadView, Er
   const pendingTurns = usePendingTurnStore();
   const threadId = id ?? "";
   return useQuery({
-    queryKey: threadKey(threadId),
-    queryFn: async ({ signal }) =>
-      mergePendingTurns(await client.getThread(threadId, { signal }), pendingTurns.list(threadId)),
+    ...threadQueryOptions(client, pendingTurns, threadId),
     enabled: threadId !== "",
   });
 }

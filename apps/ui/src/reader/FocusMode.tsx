@@ -127,8 +127,8 @@ function FocusReader({
   });
 
   const navigate = useCallback(
-    (next: string) => {
-      stack.push(next, surface.currentScroll());
+    (next: string, reveal?: RevealTarget) => {
+      stack.push(next, surface.currentScroll(), reveal);
     },
     [stack, surface],
   );

@@ -21,6 +21,7 @@ const SERVER_THREAD = {
   parent: null,
   anchor: null,
   agent: "none",
+  resident: null,
   turns: [{ author: "agent", ts: "2026-07-27T09:00:00Z", body: "First." }],
 } as unknown as Thread;
 

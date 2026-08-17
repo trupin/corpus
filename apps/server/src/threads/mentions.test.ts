@@ -1,10 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createThreadWorkspace, type WriteWorkspace } from "./thread-fixture.js";
 import {
+  INVOCATION_TYPE,
+  MENTION_TYPE,
   NO_MENTIONS,
   invocableName,
   parseMentions,
   requestsAgent,
+  resolveMentionTarget,
   scanMentionTokens,
 } from "./mentions.js";
 
@@ -139,6 +142,42 @@ describe("parseMentions", () => {
 describe("requestsAgent", () => {
   it("is false for a body with nothing in it", () => {
     expect(requestsAgent(NO_MENTIONS)).toBe(false);
+  });
+});
+
+// The lookup a designation makes (SPEC.md §7, SERVER-109). It shares this
+// module's index so that a designation and a mention of one name can never
+// resolve to two documents.
+describe("resolveMentionTarget", () => {
+  it("resolves an agent-def by the name a mention would use", () => {
+    expect(resolveMentionTarget(ws.db, MENTION_TYPE, "researcher")).toMatchObject({
+      name: "researcher",
+      status: "open",
+    });
+  });
+
+  it("ignores case and surrounding whitespace, which a typed name can carry", () => {
+    expect(resolveMentionTarget(ws.db, MENTION_TYPE, "  ReSeArChEr ")).toMatchObject({
+      name: "researcher",
+    });
+  });
+
+  it("answers an archived target with its status rather than nothing", () => {
+    expect(resolveMentionTarget(ws.db, MENTION_TYPE, "retired")).toMatchObject({
+      name: "retired",
+      status: "archived",
+    });
+  });
+
+  it("does not cross the sigils' types: a skill is not a subagent", () => {
+    expect(resolveMentionTarget(ws.db, MENTION_TYPE, "comment")).toBeNull();
+    expect(resolveMentionTarget(ws.db, INVOCATION_TYPE, "comment")).toMatchObject({
+      name: "comment",
+    });
+  });
+
+  it("answers nothing for a name no document responds to", () => {
+    expect(resolveMentionTarget(ws.db, MENTION_TYPE, "nobody")).toBeNull();
   });
 });
 

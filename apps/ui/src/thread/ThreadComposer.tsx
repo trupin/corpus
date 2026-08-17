@@ -1,13 +1,19 @@
 import {
+  AttachButton,
   AutocompleteMenu,
   COMPOSER_PRIMARY_KEY,
   composerReachesAgent,
   handleComposerKeyDown,
+  PendingAttachments,
+  RecipientPicker,
   threadWeightScope,
   useAppendTurn,
+  useAttachmentIntake,
   useAutocomplete,
+  useComposerRecipient,
   useComposerWeight,
   WeightPicker,
+  type PendingAttachment,
   type RowNotice,
 } from "@corpus/kit";
 import {
@@ -19,8 +25,6 @@ import {
   type ReactElement,
 } from "react";
 import { GrowingTextarea } from "./GrowingTextarea";
-import { PendingAttachments } from "./PendingAttachments";
-import { useAttachmentIntake, type PendingAttachment } from "./useAttachmentIntake";
 
 /**
  * The thread composer (`design/index.html`'s `.composer`): one field, the shared
@@ -67,7 +71,6 @@ export function ThreadComposer({
   const [caret, setCaret] = useState(0);
   const [asking, setAsking] = useState(true);
   const input = useRef<HTMLTextAreaElement>(null);
-  const picker = useRef<HTMLInputElement>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
   const intake = useAttachmentIntake();
   const append = useAppendTurn(threadId);
@@ -79,6 +82,8 @@ export function ThreadComposer({
    * choice, and the choice never touches the toggle in return.
    */
   const weight = useComposerWeight(threadWeightScope(threadId));
+  // A reply lands in this thread, so this thread is where the scope walk starts.
+  const recipient = useComposerRecipient({ start: threadId });
   const live = composerReachesAgent({ requestsAgent: asking });
 
   const applyCompletionResult = useCallback((result: { text: string; caret: number }) => {
@@ -122,12 +127,18 @@ export function ThreadComposer({
         // note-only turn still states what it was asked at. Nothing enqueues, so
         // nothing reads it — and the composer said so before sending.
         ...weight.request,
+        // `{}` unless a lane other than the computed default was picked — the
+        // default travels by being absent, which is what stops the UI's rule and
+        // the server's from ever disagreeing about it (SPEC.md §7).
+        ...recipient.request,
         ...(attachments.length === 0
           ? {}
           : { files: attachments.map((attachment) => attachment.file) }),
       },
       {
         onSuccess: (result) => {
+          // §7: an override "never persists past the message it was set on".
+          recipient.clear();
           intake.release(attachments);
           // SPEC.md §14: a non-fatal problem "surfaces loudly". The turn landed
           // either way — files are the source of truth — so this is a notice
@@ -138,7 +149,15 @@ export function ThreadComposer({
         },
         onError: (error) => {
           // Nothing was written — the server refuses the whole turn when the
-          // upload fails — so the composer goes back to exactly what it held.
+          // upload fails — so the composer goes back to exactly what it held,
+          // the recipient included. A refusal may *be* the lane (a `422` for a
+          // scope dissolved between the roster read and the post), and that is
+          // the one case where dropping the pick would do harm: the text comes
+          // back, the person presses send again, and this build's own walk —
+          // over the same stale roster that produced the pick — quietly routes
+          // the retry somewhere they never addressed. `refuse` keeps the pick
+          // for exactly that error and clears it for every other (UI-118).
+          recipient.refuse(error);
           setText(body);
           setCaret(body.length);
           intake.restore(attachments);
@@ -146,11 +165,19 @@ export function ThreadComposer({
         },
       },
     );
-  }, [append, asking, hasContent, intake, onNotify, text, weight.request]);
+  }, [append, asking, hasContent, intake, onNotify, recipient, text, weight.request]);
 
   return (
     <div
-      className={intake.dropping ? "composer dropping" : "composer"}
+      // `in-use` is the half of "stays visible while you scroll" that CSS cannot
+      // ask for: `:focus-within` covers a composer being typed in, but nothing
+      // in CSS can ask whether a textarea holds text. Both halves are wanted —
+      // focus is the case the issue was filed for, and an unsent draft is the
+      // step after it, where you click into the document to check something and
+      // scrolling would otherwise carry your half-written reply away (UI-110).
+      className={["composer", intake.dropping ? "dropping" : "", hasContent ? "in-use" : ""]
+        .filter(Boolean)
+        .join(" ")}
       data-dropzone={threadId}
       onDragEnter={intake.onDragEnter}
       onDragOver={intake.onDragOver}
@@ -179,31 +206,10 @@ export function ThreadComposer({
       />
 
       <WeightPicker weight={weight} live={live} surface={threadId} />
+      <RecipientPicker recipient={recipient} live={live} surface={threadId} />
 
       <div className="composer-foot">
-        <button
-          type="button"
-          className="clip"
-          title="Attach files from disk"
-          aria-label="Attach files"
-          onClick={() => {
-            picker.current?.click();
-          }}
-        >
-          📎
-        </button>
-        <input
-          ref={picker}
-          type="file"
-          multiple
-          hidden
-          data-attach-input={threadId}
-          onChange={(event) => {
-            intake.add(event.target.files);
-            // Re-picking the same file must fire `change` again.
-            event.target.value = "";
-          }}
-        />
+        <AttachButton surface={threadId} onFiles={intake.add} />
         <button
           type="button"
           className={asking ? "toggle on" : "toggle"}

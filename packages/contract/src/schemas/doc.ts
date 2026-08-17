@@ -109,6 +109,36 @@ const ORDER_DESCRIPTION =
   "(`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder " +
   "may write midpoints between neighbours instead of renumbering every column.";
 
+/**
+ * The three tag fields on an update, and the one sentence that separates them:
+ * `tags` **states the set**, `addTags`/`removeTags` **state the change**.
+ *
+ * Only the second kind can keep §7's promise. A whole set is not a delta a
+ * server can merge — it is a value that overwrites — so two callers that each
+ * read a list, appended to it and sent it back would each land a `200` and one
+ * of the two tags would be gone. Naming the delta lets the server compute the
+ * result against the file it is holding, inside the write lane, which is the
+ * same thing `POST /api/docs/bulk`'s `tag` act has always done.
+ */
+const TAGS_DESCRIPTION =
+  "Replace the document's tag set with exactly this list. **Prefer `addTags`/`removeTags` when " +
+  "you mean to change one tag**: this field carries the whole set, so it overwrites whatever " +
+  "another writer added between your read and your write. Use it when you genuinely mean *these " +
+  "and no others* — reordering the set, or clearing it with `[]`.";
+
+const ADD_TAGS_DESCRIPTION =
+  "Tags to add, merged **server-side against the file as it stands** (SPEC.md §7's canonical " +
+  "keyless write — a write that names its own delta merges with whatever else happened). " +
+  "Existing order is preserved and additions are appended, so no read is needed first and no " +
+  "concurrent tag can be lost. Adding a tag the document already carries is a no-op, not a " +
+  "failure. Cannot be combined with `tags`, which states the whole set instead.";
+
+const REMOVE_TAGS_DESCRIPTION =
+  "Tags to remove, applied server-side against the file as it stands. Removing a tag the " +
+  "document does not carry is a no-op, not a failure. May be sent alongside `addTags`; a tag " +
+  "named in both is removed, exactly as `POST /api/docs/bulk`'s `tag` act resolves it. Cannot " +
+  "be combined with `tags`.";
+
 const VIEW_QUERY_DESCRIPTION =
   "The stored board query of a `type: view` document (SPEC.md §11): a flat map from " +
   "`GET /api/docs` parameter names to a value or an array of values — arrays OR together, like " +
@@ -308,6 +338,15 @@ export const CreateDocRequestSchema = z
  * as a rule someone has to re-derive, and the refinement below is what makes the
  * key **required, not optional, where it applies**: an optional field a server
  * may ignore is a lock with extra steps.
+ *
+ * **`addTags` / `removeTags` are what make §7's sentence true of this route**
+ * (SERVER-102). §7 holds adding a tag up as the canonical write that "merges
+ * with whatever else happened rather than overwriting it", and `tags` alone
+ * cannot do that: it carries the **whole set**, so a client that wanted to add
+ * one tag had to read the list, merge it itself and send the result — and two
+ * such writers each lose the other's tag, reproducibly. The delta is not a
+ * guard bolted onto that; it is the wire shape the sentence always described,
+ * and the one `POST /api/docs/bulk`'s `tag` act has had all along.
  */
 export const UpdateDocRequestSchema = z
   .strictObject({
@@ -316,7 +355,9 @@ export const UpdateDocRequestSchema = z
     key: documentKeyRequestField,
     title: z.string().min(1).optional(),
     body: z.string().optional(),
-    tags: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional().describe(TAGS_DESCRIPTION),
+    addTags: z.array(z.string().min(1)).optional().describe(ADD_TAGS_DESCRIPTION),
+    removeTags: z.array(z.string().min(1)).optional().describe(REMOVE_TAGS_DESCRIPTION),
     status: z.enum(DOC_STATUSES).optional(),
     due: IsoDateSchema.nullable().optional(),
     reviewed: IsoDateTimeSchema.nullable()
@@ -347,6 +388,27 @@ export const UpdateDocRequestSchema = z
     message: MISSING_DOCUMENT_KEY_MESSAGE,
     path: ["key"],
   })
+  /**
+   * **Stating the set and stating a change to it are contradictory**, so a
+   * request that does both is refused rather than silently resolved in some
+   * order (SERVER-102). There is no reading of `{tags: ["a"], addTags: ["b"]}`
+   * that is not a guess about which the caller meant, and the client most likely
+   * to send it is one half-migrated from the whole-set field — exactly the
+   * caller that must be told, not accommodated.
+   *
+   * Reported at `addTags`, the field that is new: a caller sending only `tags`
+   * never sees this, and the one that added a delta is the one being asked to
+   * choose.
+   */
+  .refine(
+    (patch) => patch.tags === undefined || (patch.addTags ?? patch.removeTags) === undefined,
+    {
+      message:
+        "send either `tags` (the whole set) or `addTags`/`removeTags` (a change to it), not both — " +
+        "they are contradictory instructions and the server will not guess which you meant.",
+      path: ["addTags"],
+    },
+  )
   .openapi("UpdateDocRequest")
   /**
    * The keyed-write rule, **published as JSON Schema rather than only as prose**

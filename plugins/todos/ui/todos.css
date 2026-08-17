@@ -20,8 +20,15 @@
  *
  * The **document** no longer has rules here: since PLUGINS-006 a todo document
  * renders in the core editor, whose own stylesheet draws GFM task lists (the
- * kit's `markdown.css`). What is left is the aggregate column's read-only
- * rendering of the same shape, so `.check` styles a button, never a form.
+ * kit's `markdown.css`). What is left is the aggregate column's rendering of
+ * the same shape.
+ *
+ * Since PLUGINS-015 `.check` styles a **container**, not a control: the box
+ * checks the item and `.todo-item-open` opens it. The padding therefore lives on
+ * the two children rather than on the row, so that every pixel of the row
+ * belongs to one of them — a strip of row that answers no click is the same
+ * defect this issue fixed, in a smaller size. `.todo-more` is still a lone
+ * button and carries the padding itself.
  */
 
 .check-list {
@@ -34,9 +41,7 @@
 
 .check {
   display: flex;
-  gap: 10px;
   align-items: baseline;
-  padding: 8px 10px;
   border-radius: 8px;
   font-size: 13.5px;
   width: 100%;
@@ -52,6 +57,49 @@
   font-family: var(--mono);
   color: var(--accent-ink);
   flex: none;
+  padding: 8px 0 8px 10px;
+  border-radius: 8px 0 0 8px;
+}
+
+.check .box:hover {
+  color: var(--accent);
+}
+
+.check .box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* A completed box is a record, not work: it recedes, and so does its label. */
+.check.done .box {
+  color: var(--ink-3);
+}
+
+.check.done .todo-item-text {
+  color: var(--ink-2);
+  text-decoration: line-through;
+}
+
+.check .todo-item-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border-radius: 0 8px 8px 0;
+  text-align: left;
+  color: inherit;
+}
+
+.check .todo-item-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.check.todo-more {
+  padding: 8px 10px;
 }
 
 .check .todo-item-text {
@@ -74,6 +122,10 @@
 /* Overdue is the design's `--signal`; a completed item drops back to `--ink-3`. */
 .check .due[data-overdue="true"] {
   color: var(--signal);
+}
+
+.check.done .due[data-overdue="true"] {
+  color: var(--ink-3);
 }
 
 /* ── The DocPanel ────────────────────────────────────────────────── */
@@ -322,12 +374,46 @@
 
 .todos-column .check {
   font-size: 12.5px;
+}
+
+.todos-column .check .box {
+  padding: 5px 0 5px 10px;
+}
+
+.todos-column .check .todo-item-open {
+  padding: 5px 10px;
+}
+
+.todos-column .check.todo-more {
   padding: 5px 10px;
 }
 
 .todos-column .todo-more {
   color: var(--ink-3);
   font-size: 11.5px;
+}
+
+/* The rider's "also show completed" control (SPEC.md §12, signed 2026-08-12). */
+.todos-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 10px;
+}
+
+.todos-show-done {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.todos-show-done:hover {
+  color: var(--accent-ink);
+}
+
+.todos-show-done[aria-pressed="true"] {
+  color: var(--accent-ink);
 }
 
 /*
@@ -382,11 +468,28 @@
   font-family: var(--sans);
 }
 
+/* The drop highlight, which `@corpus/kit/composer.css` deliberately does not
+   ship: the dropzone is the *surface*, and only the surface knows what it looks
+   like — the reply box lights its border, the compose panel an inset outline,
+   and this popover its own. Two declarations, the recipe that file states. */
+.todo-comment-pop.dropping {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
 .todo-cm-quote {
   font-family: var(--serif);
   font-style: italic;
   font-size: 12.5px;
   color: var(--ink-2);
+  margin-bottom: 8px;
+}
+
+/* The chip strip sits between the quote and the field. `.pending-atts:empty`
+   collapses it (kit), so a composer with nothing attached is exactly the
+   composer that was there before PLUGINS-012 — this margin only exists on the
+   openings where a file is actually pending. */
+.todo-comment-pop .pending-atts {
   margin-bottom: 8px;
 }
 

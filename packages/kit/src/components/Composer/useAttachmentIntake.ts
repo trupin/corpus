@@ -12,9 +12,14 @@ import {
  * clipboard paste, and a drag onto the composer — normalised into **one**
  * pending list, because a turn does not care which one the person used.
  *
- * Shared rather than private: UI-010's global composer captures files the same
- * three ways, and a second implementation is how one of them silently loses the
- * paste-with-files branch.
+ * **Why this lives in the kit** (UI-070). SPEC.md §11's rider binds *every*
+ * composer — "the global composer, a thread's reply box, a comment on a document
+ * selection, a comment on a turn or on a selection within one, **and any
+ * composer a plugin contributes**" — and a plugin may import nothing but
+ * `@corpus/kit` (§10). While this hook sat in `apps/ui`, the one composer
+ * outside that tree was the one composer that could not take a file, and the
+ * only ways to fix it were to copy the hook into the plugin or to move it here.
+ * `composerKeys.ts` next door settled the same argument the same way.
  *
  * Two details are load-bearing and easy to get wrong:
  *
@@ -81,13 +86,29 @@ function releasePreview(attachment: PendingAttachment): void {
   URL.revokeObjectURL(attachment.previewUrl);
 }
 
-export function useAttachmentIntake(): AttachmentIntake {
-  const [pending, setPending] = useState<readonly PendingAttachment[]>([]);
+/**
+ * Revokes a taken snapshot's previews from **outside** a composer.
+ *
+ * A composer that closes on submit hands its attachments to whoever posts them
+ * — `take()` deliberately leaves them unrevoked so a refusal can put them back —
+ * and that owner is then the only thing left to free them once the post lands.
+ * {@link AttachmentIntake.release} is the same act from inside a composer that
+ * is still mounted.
+ */
+export function releaseAttachments(snapshot: readonly PendingAttachment[]): void {
+  for (const attachment of snapshot) releasePreview(attachment);
+}
+
+/**
+ * `initial` seeds the list — what a composer re-opened on a refused send holds
+ * (UI-111). Those previews were made by the composer that closed and survived
+ * its unmount because `take()` handed ownership out; seeding is how ownership
+ * comes back.
+ */
+export function useAttachmentIntake(initial: readonly PendingAttachment[] = []): AttachmentIntake {
+  const [pending, setPending] = useState<readonly PendingAttachment[]>(initial);
   const [dropping, setDropping] = useState(false);
   const depth = useRef(0);
-  // Mirrors state so the unmount cleanup revokes what is actually held: an
-  // effect closing over `pending` would revoke whatever the list was at its
-  // last run, which is a leak on the way out and a blank thumbnail on the way in.
   const live = useRef<readonly PendingAttachment[]>([]);
   live.current = pending;
 
@@ -138,8 +159,6 @@ export function useAttachmentIntake(): AttachmentIntake {
     (event: ClipboardEvent) => {
       const files = event.clipboardData?.files;
       if (files === undefined || files.length === 0) return;
-      // Files win: the text fallback beside them is a filename or a data URL,
-      // and neither belongs in the composer.
       event.preventDefault();
       add(files);
     },
@@ -153,7 +172,6 @@ export function useAttachmentIntake(): AttachmentIntake {
   }, []);
 
   const onDragOver = useCallback((event: DragEvent) => {
-    // Without this the browser navigates to the dropped file.
     event.preventDefault();
   }, []);
 

@@ -1,6 +1,17 @@
-import type { Doc, DocRow, Job, RelatedDoc, Thread, Warning } from "@corpus/contract";
+import type {
+  AgentLane,
+  AgentRoster,
+  Doc,
+  DocRow,
+  Job,
+  QueueStatus,
+  RelatedDoc,
+  Thread,
+  Warning,
+} from "@corpus/contract";
 import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
+import { unknownRecipientBody } from "./serverRefusals";
 
 /**
  * A recording transport for the reader's suites.
@@ -42,6 +53,17 @@ export interface ReaderTransport {
   readonly writeAsOther: (docId: string, body: string) => Doc;
   /** Settles or raises a job mid-test, for a queue transition arriving over SSE. */
   readonly setJobs: (jobs: readonly Job[]) => void;
+  /**
+   * **The other tab** (SPEC.md §7): releases a lane's resident behind this
+   * page's back, so `GET /api/agents` stops naming it while whatever this page
+   * has already cached still does.
+   *
+   * That disagreement is the whole of UI-118 and it cannot be seeded — it is two
+   * moments, not a state — and it is what arms the recipient check below: a pick
+   * naming a lane this transport no longer holds is a `422 unknown_recipient`,
+   * exactly as `apps/server/src/queue/scope.ts` refuses one.
+   */
+  readonly releaseLane: (lane: string) => void;
 }
 
 export interface ReaderTransportOptions {
@@ -62,6 +84,24 @@ export interface ReaderTransportOptions {
    * §8, UI-058). Empty by default: a quiet queue is the ordinary state.
    */
   readonly jobs?: readonly Job[];
+  /**
+   * `GET /api/queue/status`, whose `agent` field says whether anybody is parked
+   * (CONTRACT-045) — read by §8's pending row, which will not say "no agent is
+   * connected" without it (UI-097).
+   *
+   * The default answers **nobody**, because that is the truth about a suite that
+   * runs no agent; a test asserting the other wording seeds a live one.
+   */
+  readonly queue?: QueueStatus;
+  /**
+   * Designated lanes `GET /api/agents` answers with, beside the orchestrator's
+   * unconditional row (SPEC.md §7's roster, UI-108).
+   *
+   * Empty by default, and that is what keeps every suite written before UI-108
+   * describing the composer correctly: with one lane there is nothing to choose
+   * between, so the recipient control draws nothing at all.
+   */
+  readonly lanes?: readonly AgentLane[];
   /** `"<METHOD> <pathname>"` → status, for the failure paths. */
   readonly failing?: Readonly<Record<string, number>>;
   /**
@@ -148,6 +188,7 @@ export function threadFixture(overrides: Partial<Thread> = {}): Thread {
     parent: null,
     anchor: null,
     agent: "none",
+    resident: null,
     turns: [],
     ...overrides,
   };
@@ -196,11 +237,83 @@ function answerJobs(jobs: readonly Job[], url: URL): readonly Job[] {
   return answer.slice(0, Number.isFinite(recent) && recent > 0 ? recent : DEFAULT_RECENT_JOBS);
 }
 
+/**
+ * A workspace with nobody parked and nothing queued — what a suite that runs no
+ * agent process is honestly in (CONTRACT-045).
+ */
+export const QUIET_QUEUE: QueueStatus = {
+  agent: { live: false, since: null },
+  halted: false,
+  pending: 0,
+  inProgress: 0,
+  deferred: 0,
+  processed: 0,
+  failed: 0,
+  abandoned: 0,
+};
+
+/** The same workspace with an agent parked, for the row that says so. */
+export function liveQueue(since: string): QueueStatus {
+  return { ...QUIET_QUEUE, agent: { live: true, since } };
+}
+
+/**
+ * The orchestrator's roster row — always present, because the contract says so:
+ * "a caller that finds an empty list has found a bug rather than a workspace
+ * with no agents".
+ */
+const ORCHESTRATOR_ROW: AgentLane = {
+  lane: "orchestrator",
+  resident: null,
+  live: false,
+  since: null,
+  summary: null,
+  origin: null,
+};
+
 export function readerTransport(options: ReaderTransportOptions = {}): ReaderTransport {
   const calls: ReaderCall[] = [];
   const docs = new Map((options.docs ?? []).map((doc) => [doc.frontmatter.id, doc]));
   const threads = new Map((options.threads ?? []).map((thread) => [thread.id, thread]));
   let jobs = options.jobs ?? [];
+  /**
+   * Designations made **through this transport** (SPEC.md §7), keyed by thread
+   * id, and the seeded lanes released through it.
+   *
+   * Seeded `options.lanes` are left exactly as the suite wrote them — their
+   * liveness is usually the point — so these two only ever add a lane or take
+   * one away.
+   */
+  const designated = new Map<string, { name: string; docId: string }>();
+  const released = new Set<string>();
+
+  /**
+   * Is `lane` one this transport would call a lane right now — the server's
+   * `isDesignatedRoot`, over the same set `GET /api/agents` answers with.
+   */
+  const isLane = (lane: string): boolean =>
+    lane === "orchestrator" ||
+    designated.has(lane) ||
+    (options.lanes ?? []).some((row) => row.lane === lane && !released.has(row.lane));
+
+  /**
+   * The `422` a posting request naming no lane is refused with (SPEC.md §7,
+   * `assertRecipientResolvable`), or `undefined`.
+   *
+   * Modelled here rather than left to the `{}` fallback because the refusal is
+   * the point: a pick can go stale between the roster read and the post, and a
+   * fixture that accepted one anyway would let a suite assert a routing the
+   * server would never have performed (UI-118).
+   *
+   * The body comes from `serverRefusals.ts` rather than being written out here
+   * (UI-120): this copy had lost the server's recovery sentence, and no
+   * assertion noticed because they all match on `names no lane`.
+   */
+  const recipientRefusal = (stated: unknown): Response | undefined => {
+    const lane = (stated as { recipient?: unknown } | undefined)?.recipient;
+    if (typeof lane !== "string" || isLane(lane)) return undefined;
+    return json(unknownRecipientBody(lane), 422);
+  };
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     // The body is deliberately withheld from `new Request`. These suites run in
@@ -236,6 +349,31 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     }
 
     if (url.pathname === "/api/jobs") return json({ jobs: answerJobs(jobs, url) });
+    if (url.pathname === "/api/queue/status") return json(options.queue ?? QUIET_QUEUE);
+    /*
+     * `GET /api/agents` — §7's roster (UI-108). The orchestrator's row is
+     * unconditional on the wire, so it is answered rather than seeded; a suite
+     * that wants a designated lane adds it through `lanes`. With one lane the
+     * recipient picker draws nothing, which is what every suite written before
+     * this feature expects to see.
+     */
+    if (url.pathname === "/api/agents") {
+      // Seeded lanes, minus anything released, plus every lane a designation
+      // made here — the roster *is* the set of designations, as it is on the
+      // server, so a suite can designate and then read the board.
+      const made: AgentLane[] = [...designated].map(([threadId, resident]) => ({
+        lane: threadId,
+        resident,
+        live: false,
+        since: null,
+        summary: null,
+        origin: { id: threadId, title: "Fixture thread" },
+      }));
+      const seeded = (options.lanes ?? []).filter(
+        (row) => !released.has(row.lane) && !designated.has(row.lane),
+      );
+      return json({ agents: [ORCHESTRATOR_ROW, ...seeded, ...made] } satisfies AgentRoster);
+    }
     if (url.pathname === "/api/tree") return json({ folders: [] });
 
     if (url.pathname === "/api/docs" && request.method === "GET") {
@@ -319,6 +457,29 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       if (verb === "seen") {
         return json({ threadId: id, lastSeenTs: "2026-07-02T09:00:00.000Z", unread: false });
       }
+      /*
+       * `POST`/`DELETE …/resident` — SPEC.md §7's designation (UI-109).
+       *
+       * Answered rather than left to fall through, and recorded rather than
+       * echoed: designating changes `GET /api/agents` — the lane *is* the
+       * designation — so a fixture that acknowledged the write and left the
+       * roster alone would let a badge test pass against a board that never
+       * repainted. `residentLanes` is what the roster answers with from here on.
+       */
+      if (verb === "resident") {
+        const name = (call.body as { name?: string } | undefined)?.name;
+        if (request.method === "DELETE") {
+          designated.delete(id);
+          released.add(id);
+          return json({ thread: threadSummary(id, false), warnings: [] });
+        }
+        released.delete(id);
+        designated.set(id, { name: name ?? "", docId: "doc_agentdef" });
+        return json({
+          thread: { ...(threadSummary(id, false) as object), resident: designated.get(id) },
+          warnings: [],
+        });
+      }
       if (verb === "resolve" || verb === "reopen") {
         /*
          * The flip is **recorded**, as the server records it (SPEC.md §6): the
@@ -372,6 +533,8 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       }
       if (verb === "turns" && rawTs === undefined) {
         if (thread === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
+        const refused = recipientRefusal(call.parts ?? call.body);
+        if (refused !== undefined) return refused;
         const text =
           call.parts?.["text"] ?? (call.body as { body?: string } | undefined)?.body ?? "";
         const references = (call.files ?? []).map(
@@ -399,12 +562,24 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     }
 
     if (url.pathname === "/api/threads" && request.method === "POST") {
-      const created = threadFixture({ id: `th_child_${String(threads.size)}` });
+      const refusedRecipient = recipientRefusal(call.parts ?? call.body);
+      if (refusedRecipient !== undefined) return refusedRecipient;
+      /*
+       * The ids are **contract-shaped** (`^th_[A-Za-z0-9]+$`, `^anc_…`), and
+       * that is not cosmetic: the multipart branch of `createThread` parses this
+       * response with `CreateThreadResponseSchema`, while the JSON branch goes
+       * through `openapi-fetch` and validates nothing. A `th_child_0` here
+       * therefore answered every plain comment happily and refused every comment
+       * carrying a file — which read as "attachments do not work" (UI-111). The
+       * shapes are the contract's: `th_` then alphanumerics only, so the second
+       * underscore `th_child_0` carried is what made it invalid.
+       */
+      const created = threadFixture({ id: `th_child${String(threads.size)}` });
       threads.set(created.id, created);
       return json(
         {
           thread: created,
-          anchorId: "a_1",
+          anchorId: "anc_1",
           eventId: null,
           warnings: options.threadWarnings ?? [],
         },
@@ -432,6 +607,10 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     },
     setJobs: (next) => {
       jobs = next;
+    },
+    releaseLane: (lane) => {
+      released.add(lane);
+      designated.delete(lane);
     },
   };
 }
@@ -507,6 +686,7 @@ function threadSummary(id: string, resolved: boolean): unknown {
     parent: null,
     anchor: null,
     agent: "none",
+    resident: null,
     created: "2026-07-01T09:00:00.000Z",
     updated: "2026-07-01T09:05:00.000Z",
     turnCount: 1,

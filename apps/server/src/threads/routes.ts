@@ -24,9 +24,11 @@ import { createThread, threadRequestBody } from "./create.js";
 import { answerThreadForm } from "./forms.js";
 import { loadThread, toWireThread } from "./read.js";
 import { reattachThread } from "./reattach.js";
+import { designateResident, releaseResident } from "./resident.js";
 import { markThreadSeen } from "./seen.js";
 import { setThreadStatus } from "./status.js";
 import { assertJobResolvable } from "../docs/create.js";
+import { assertRecipientResolvable } from "../queue/scope.js";
 import { appendThreadTurn, turnRequestBody } from "./turns.js";
 import type { ThreadsWorkspace } from "./workspace.js";
 
@@ -71,6 +73,11 @@ export function mountThreadRoutes(
   mountCreateThread(app, async (c) => {
     const actor = actorOf(c.req.valid("header"));
     const input = threadRequestBody(c.req.valid("json"));
+    // §7's recipient, refused here for the same reason `job` is refused on the
+    // two routes below: the route declares the `422`, and a declared refusal
+    // that never fires is a route that accepts a value and ignores it. Before
+    // the verb, so "nothing was written" is true of the refusal.
+    assertRecipientResolvable(workspace.projection, input.recipient);
     const { thread, anchorId, eventId, result } = await createThread(
       workspace,
       mutex,
@@ -89,6 +96,7 @@ export function mountThreadRoutes(
     // and records no origin — but the route declares the `422`, and a declared
     // refusal that never fires is §9.2's silent ignore.
     assertJobResolvable(workspace, input.job);
+    assertRecipientResolvable(workspace.projection, input.recipient);
     const { thread, turn, eventId, result } = await appendThreadTurn(
       workspace,
       mutex,
@@ -110,6 +118,7 @@ export function mountThreadRoutes(
     // attributes the answer to the work that asked the question. Validated for
     // the same reason as the other attribution-only writes.
     assertJobResolvable(workspace, c.req.valid("json").job);
+    assertRecipientResolvable(workspace.projection, c.req.valid("json").recipient);
     const { thread, turn, eventId, result } = await answerThreadForm(
       workspace,
       mutex,
@@ -148,6 +157,35 @@ export function mountThreadRoutes(
     const { id } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
     const { thread, result } = await setThreadStatus(workspace, mutex, actor, id, "open");
+    if (result !== null) reportWarnings(workspace, id, result);
+    return c.json({ thread, warnings: result === null ? [] : serializeWarnings(result) }, 200);
+  });
+
+  // Designation and release (SPEC.md §7). Both answer with the thread and its
+  // warnings for the reason resolve/reopen do: each rewrites the thread's
+  // frontmatter and auto-commits it, so a workspace git hook that refuses the
+  // commit leaves the change on disk and uncommitted — drift the person who
+  // designated has to be told about. A `null` result is the no-op case
+  // (designating the resident the thread already has, or releasing one it does
+  // not have): nothing was written, so there is nothing to warn about.
+  app.openapi(contractRoutes.designateResident, async (c) => {
+    const { id } = c.req.valid("param");
+    const actor = actorOf(c.req.valid("header"));
+    const { thread, result } = await designateResident(
+      workspace,
+      mutex,
+      actor,
+      id,
+      c.req.valid("json"),
+    );
+    if (result !== null) reportWarnings(workspace, id, result);
+    return c.json({ thread, warnings: result === null ? [] : serializeWarnings(result) }, 200);
+  });
+
+  app.openapi(contractRoutes.releaseResident, async (c) => {
+    const { id } = c.req.valid("param");
+    const actor = actorOf(c.req.valid("header"));
+    const { thread, result } = await releaseResident(workspace, mutex, actor, id);
     if (result !== null) reportWarnings(workspace, id, result);
     return c.json({ thread, warnings: result === null ? [] : serializeWarnings(result) }, 200);
   });

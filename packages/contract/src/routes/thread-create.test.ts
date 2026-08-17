@@ -45,6 +45,7 @@ function createApp() {
           parent: body.parent ?? null,
           anchor: body.selector ? "anc_k4f7" : null,
           agent: "none" as const,
+          resident: null,
           turns: [],
         },
         anchorId: body.selector ? "anc_k4f7" : null,

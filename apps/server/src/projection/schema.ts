@@ -114,8 +114,27 @@
  * table nothing reads cost every upgrading workspace its whole semantic index,
  * because only the explicit rebuild carried `chunk_embeddings` across. Both
  * paths carry them now, so the cost of this bump is what it says it is.
+ *
+ * 15 → 16 (SERVER-109): `threads.resident_name` and `threads.resident_doc_id` —
+ * SPEC.md §7's resident, the agent a standalone conversation belongs to
+ * (SHARED-043). Two new columns, so a v15 database does not have them and no
+ * value in one could be carried over; both are read straight off the thread
+ * file's `resident` frontmatter, so the rebuild this bump triggers is the whole
+ * migration. They are projected rather than read per row because the enqueue
+ * path asks "is this root thread designated" for every event (SERVER-111), and
+ * that question must cost one SQLite read rather than a file open.
+ *
+ * 16 → 17 (SERVER-111): `events.lane` — SPEC.md §7's lane, the agent whose work
+ * an event is. It mirrors the stamp the queue writes onto the event file, which
+ * is where the authority stays; the column exists so the console and the roster
+ * can ask "what is on this lane" with a `WHERE` instead of reading every file in
+ * five directories. A v16 database has no such column, and every value is
+ * re-derivable from the files, so the rebuild this bump triggers is the whole
+ * migration — an event written before lanes existed simply has no stamp, and
+ * `NOT NULL DEFAULT 'orchestrator'` records the reading `queue/lanes.ts` already
+ * gives it.
  */
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 17;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -303,7 +322,15 @@ CREATE TABLE threads (
   updated TEXT,
   turn_count INTEGER NOT NULL,
   last_author TEXT,
-  last_ts TEXT
+  last_ts TEXT,
+  -- SPEC.md §7's resident (SHARED-043, SERVER-109): the agent this conversation
+  -- belongs to, as the file spells it, or NULL for the threads nobody
+  -- designated — which is nearly all of them. Both halves, because they answer
+  -- different questions: the name is what a person reads and what survives its
+  -- agent-def being deleted, the id is what a reader opens. Never set for a
+  -- thread with a parent: only a standalone thread may designate.
+  resident_name TEXT,
+  resident_doc_id TEXT
 );
 
 CREATE TABLE anchors (
@@ -334,7 +361,15 @@ CREATE TABLE events (
   status TEXT NOT NULL,
   created TEXT,
   payload_json TEXT NOT NULL,
-  blocked_on TEXT
+  blocked_on TEXT,
+  -- SPEC.md §7's lane (SHARED-043, SERVER-111): whose work this event is —
+  -- the orchestrator's, or the id of a designated root thread. A mirror of the
+  -- stamp on the event file, which stays authoritative; this column is here so a
+  -- reader can filter by lane in SQL rather than by reading five directories.
+  -- NOT NULL because the orchestrator's lane is a lane like any other and has a
+  -- name: an event file with no stamp reads as the orchestrator's, and the
+  -- default writes that reading down rather than inventing a second spelling.
+  lane TEXT NOT NULL DEFAULT 'orchestrator'
 );
 
 CREATE TABLE seen (

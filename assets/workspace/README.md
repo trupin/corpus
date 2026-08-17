@@ -3,7 +3,7 @@ id: doc_seedreadme
 type: note
 title: Workspace README
 created: 2026-07-26T00:00:00Z
-updated: 2026-07-26T00:00:00Z
+updated: 2026-08-16T00:00:00Z
 tags: []
 status: open
 anchors: {}
@@ -45,6 +45,20 @@ then invoke the orchestrate skill:
 ```
 
 It claims work, does it, and parks between events. Leave it running.
+
+**A conversation can have its own agent.** Give a standalone thread a resident and that
+conversation, and everything that grows out of it, is answered by an agent that stays in it
+rather than by the general loop:
+
+```bash
+corpus thread designate th_4b8e2c --agent researcher
+```
+
+The orchestrator starts a listener for it — the `converse` skill, the third of the three in
+`.claude/skills/` — and `corpus agents` shows who is running where. `corpus thread release`
+hands the conversation back, and resolving the thread does the same. While nobody is
+listening on a designated conversation its messages are answered by the general loop instead:
+slower, and without the conversation's context, but never not at all.
 
 **3. Talk to it.** In the board, select a passage and comment on it, or open the composer
 (`c`) and Ask or Capture. A comment reaches the agent when it mentions `@agent`, names a

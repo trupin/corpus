@@ -2,6 +2,7 @@ import { DEFAULT_IDLE_TIMEOUT_SECONDS } from "@corpus/contract";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { abortOnInterrupt, type SignalTarget } from "../../signals.js";
 import { reportInProgress } from "./in-progress.js";
+import { IDLE_LANE_FLAG, resolveLaneScope } from "./lane.js";
 import { pollWindow } from "./poll.js";
 
 /**
@@ -10,6 +11,21 @@ import { pollWindow } from "./poll.js";
  * exactly one line. Everything else here follows from that: the timeout is a
  * success, an interrupt is a success, and the only bytes on stdout are the
  * outcome.
+ *
+ * **Parking scoped is what a resident's presence _is_** (SPEC.md §7). A resident
+ * is live exactly while it holds a parked `--thread` idle — there is nothing to
+ * register, no heartbeat to send and nothing to reap — which is why this verb
+ * has a lane and there is no verb anywhere in this CLI that announces an agent.
+ * An **accepted** lane changes which events the park waits for and which lane
+ * `corpus agents` reports as live, and changes nothing else: the same `--wait`,
+ * the same `--json`, the same held report, and the same
+ * `{"idle":true,"reason":"timeout"}` on expiry, which the converse skill's loop
+ * depends on being stable.
+ *
+ * Accepted is the operative word since SERVER-118: because the park is the
+ * presence, a `--thread` naming no lane is refused with the server's `422`
+ * rather than parked, so this verb's lane can fail where `claim-all`'s cannot.
+ * `lane.ts` carries the rule and the reason the two verbs differ.
  */
 
 /** Why a window ended with no events. Halted is a state the server owns, so it is asked. */
@@ -34,6 +50,9 @@ export async function runIdle(
 ): Promise<void> {
   const { client, out } = context;
   const waitSeconds = context.flags.number("wait") ?? DEFAULT_IDLE_TIMEOUT_SECONDS;
+  // Resolved before the park, so a misspelled lane is a usage error rather than
+  // eight minutes of silence followed by one.
+  const scope = resolveLaneScope(context.flags);
 
   const controller = new AbortController();
   const dispose = abortOnInterrupt(controller, dependencies.signals);
@@ -43,6 +62,7 @@ export async function runIdle(
       client,
       windowMs: Math.max(0, waitSeconds) * 1000,
       signal: controller.signal,
+      scope,
       ...(dependencies.now === undefined ? {} : { now: dependencies.now }),
       ...(dependencies.sleep === undefined ? {} : { sleep: dependencies.sleep }),
       ...(dependencies.maxSegmentSeconds === undefined
@@ -99,7 +119,18 @@ export const idleCommand: WorkspaceCommandSpec = {
     "stderr with ages rendered as `held 3h`; under `--json` `heldSince` stays an ISO instant so " +
     "you compute the age against your own clock, and `total` plus `truncated` say whether the " +
     "20-row cap cut the list. A timeout carries no list at all — the `204` has no body, and an " +
-    "agent with nothing to claim has nothing to reconcile against.",
+    "agent with nothing to claim has nothing to reconcile against.\n\n" +
+    "**Parking here is what presence _is_** (SPEC.md §7). With `--thread` this parks on that " +
+    "conversation's lane, and a resident is live exactly while it holds such a park — there is " +
+    "nothing to register, no heartbeat to send and nothing to reap, which is why no verb in this " +
+    "CLI announces an agent and `corpus agents` only ever _reads_ who is there. An agent that " +
+    "stops parking stops being present, however it stopped. That is also why **a `--thread` " +
+    "naming no lane is refused rather than parked** (exit 5, the server's `422`): a park the " +
+    "roster cannot name would leave `corpus agents` reporting a lane that does not exist. See " +
+    "`--thread` below for the three ways on. Everything else about an accepted park is unchanged " +
+    "by the lane: the same `--wait`, the same output shapes, the same held report, and the same " +
+    '`{"idle":true,"reason":"timeout"}` on expiry — a scoped window that ends empty prints ' +
+    "exactly what an unscoped one does.",
   args: [],
   flags: [
     {
@@ -112,6 +143,7 @@ export const idleCommand: WorkspaceCommandSpec = {
         "most its own maximum, so a longer window is served by successive requests. `0` is a " +
         "single non-blocking probe: is anything queued right now?",
     },
+    IDLE_LANE_FLAG,
   ],
   examples: [
     {
@@ -126,6 +158,12 @@ export const idleCommand: WorkspaceCommandSpec = {
     {
       command: "corpus queue idle --wait 0 --json",
       description: "Probe the queue without blocking, for a script that must not park.",
+    },
+    {
+      command: "corpus queue idle --thread th_4b8e2c --json",
+      description:
+        "A resident's park: it waits for that conversation's lane only, and holding this park is " +
+        "what makes the lane read `live` in `corpus agents`.",
     },
   ],
   handler: (context) => runIdle(context),

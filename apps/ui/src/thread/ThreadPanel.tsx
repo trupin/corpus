@@ -1,11 +1,12 @@
-import { useSetThreadStatus, type RowNotice } from "@corpus/kit";
+import { useSetResident, useSetThreadStatus, type RowNotice } from "@corpus/kit";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useMemo, type MouseEvent, type ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
-import { MenuItems } from "../menu/MenuItems";
 import type { MenuAction } from "../menu/menuModel";
 import { CollapsedThread, type ThreadSummary } from "./CollapsedThread";
 import { threadStatusNotice } from "./resolveNotice";
 import { ThreadCard, type ThreadHost } from "./ThreadCard";
+import { ThreadMenuItems } from "./ThreadMenuItems";
 import { useThreadCollapse } from "./ThreadCollapseContext";
 import { RESOLVED_STATUS, type ThreadCollapseSubject } from "./threadCollapse";
 import { MAX_DRAWN_DEPTH } from "./threadDepth";
@@ -36,7 +37,7 @@ export interface ThreadPanelProps {
   readonly depth?: number;
   /** True for ~1.2s after the 💬 popover jumped here. */
   readonly flashing?: boolean;
-  readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
+  readonly onOpenDoc: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -112,6 +113,34 @@ export function ThreadPanel({
     },
   });
 
+  /**
+   * Designating and releasing this conversation's resident (SPEC.md §7).
+   *
+   * Mounted here rather than inside the menu because the menu closes on the same
+   * click that writes: an observer that unmounts with its own request drops the
+   * report, which is what hook-level `SettledCallbacks` exist to prevent (UI-012,
+   * UI-015). The reads the items need are the other way round and live in
+   * `ThreadMenuItems`, which is not mounted until the menu opens.
+   */
+  const setResident = useSetResident({
+    onSuccess: (result, variables) => {
+      const name = result.thread.resident?.name;
+      onNotify({
+        tone: "info",
+        message:
+          variables.name === undefined || name === undefined
+            ? "Resident released — this conversation is back on the agent's own lane."
+            : `${name} is resident here — messages in this conversation and everything that grows out of it go to it.`,
+      });
+    },
+    onError: (error, variables) => {
+      onNotify({
+        tone: "error",
+        message: `${variables.name === undefined ? "Release" : "Designation"} failed — ${error.message}`,
+      });
+    },
+  });
+
   const toggle = useCallback(() => {
     collapse.setCollapsed(subject, !collapsed);
   }, [collapse, collapsed, subject]);
@@ -165,10 +194,24 @@ export function ThreadPanel({
         label: `Actions for ${panelMenuLabel(summary)}`,
         clientX: event.clientX,
         clientY: event.clientY,
-        items: (close) => <MenuItems actions={actions} onDone={close} />,
+        items: (close) => (
+          <ThreadMenuItems
+            threadId={summary.id}
+            hasParent={summary.parent !== null}
+            actions={actions}
+            pending={setResident.isPending}
+            onDesignate={(name) => {
+              setResident.mutate({ id: summary.id, name });
+            }}
+            onRelease={() => {
+              setResident.mutate({ id: summary.id });
+            }}
+            onDone={close}
+          />
+        ),
       });
     },
-    [collapsed, host, menu, onOpenDoc, setStatus, summary, toggle],
+    [collapsed, host, menu, onOpenDoc, setResident, setStatus, summary, toggle],
   );
 
   const classes = [

@@ -1,4 +1,5 @@
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { JOB_FLAG, resolveJob } from "../../input.js";
 import { runArchiveToggle } from "./archive-toggle.js";
 
 /**
@@ -23,11 +24,17 @@ import { runArchiveToggle } from "./archive-toggle.js";
  */
 
 export async function runDocUnarchive(context: WorkspaceCommandContext): Promise<void> {
+  const job = resolveJob(context.flags, context.env);
   await runArchiveToggle(context, {
     wantArchived: false,
     post: (ctx, id) =>
       ctx.client.request((api) =>
-        api.POST("/api/docs/{id}/unarchive", { params: { path: { id } } }),
+        api.POST("/api/docs/{id}/unarchive", {
+          params: { path: { id } },
+          // SPEC.md §9.2: attribution only — unarchiving creates no document,
+          // so it records no origin, but an unresolvable job is still refused.
+          ...(job === undefined ? {} : { body: { job } }),
+        }),
       ),
     moved: (id) => `unarchived ${id}`,
     settled: (id) => `${id} is not archived`,
@@ -54,7 +61,7 @@ export const unarchiveCommand: WorkspaceCommandSpec = {
     "server refuses rather than merging the two, and its message names the directory to move or " +
     "remove first.",
   args: [{ name: "id", required: true, description: "The document's id." }],
-  flags: [],
+  flags: [JOB_FLAG],
   examples: [
     {
       command: "corpus doc unarchive doc_a1b2c3",

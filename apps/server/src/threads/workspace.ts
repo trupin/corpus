@@ -10,6 +10,7 @@
  * marks, §7).
  */
 
+import type { Lane } from "@corpus/contract";
 import type { AttachmentLimits } from "../attachments/index.js";
 import type { DocsWorkspace } from "../docs/index.js";
 
@@ -22,6 +23,16 @@ export interface EnqueueInput {
   readonly type: string;
   readonly source: string;
   readonly payload: Record<string, unknown>;
+  /**
+   * The lane this message named (SPEC.md §7's `recipient`), or `undefined` for
+   * the ordinary case — routing computed from where it was posted.
+   *
+   * It rides here rather than in `payload` because it is not part of what the
+   * event *says*: the lane routes the work and the payload files it, and the two
+   * are read off different things. An agent never sees this — the wire event
+   * gained no field for lanes — it only ever finds the event in its own lane.
+   */
+  readonly recipient?: Lane | undefined;
 }
 
 /**

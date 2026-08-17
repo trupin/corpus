@@ -13,6 +13,7 @@
 
 import {
   ThreadAgentSchema,
+  type Resident,
   type Thread,
   type ThreadAgent,
   type ThreadStatus,
@@ -28,9 +29,11 @@ import {
   turnModelsOf,
   withTurnModels,
 } from "../core/index.js";
+import { storedResident } from "../core/resident.js";
 import { loadDocument, type LoadedDocument } from "../docs/index.js";
 import { notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
+import { MENTION_TYPE, resolveMentionTarget } from "./mentions.js";
 
 /**
  * What *reading* a thread needs, which is strictly less than what writing one
@@ -60,7 +63,36 @@ export interface LoadedThread {
   readonly parent: string | null;
   readonly anchor: string | null;
   readonly agent: ThreadAgent;
+  /** §7's resident, its `docId` re-resolved from the name (see {@link currentResident}). */
+  readonly resident: Resident | null;
   readonly turns: Turn[];
+}
+
+/**
+ * The stored designation, with its `docId` refreshed against the workspace as it
+ * now stands (SPEC.md §7, CONTRACT-051: *"resolved at designation time and
+ * re-read on every response"*).
+ *
+ * The re-read matters because an agent-def's id is **derived from its path**
+ * when the file carries none — the synthetic id every `.claude/agents/*.md`
+ * gets — so moving or renaming one gives the same agent a different id, and a
+ * response repeating the stored one would send a reader to a document that is no
+ * longer there.
+ *
+ * **The name is the durable half and is never rewritten here.** When it resolves
+ * to nothing — the agent-def was deleted, or renamed to something else — the
+ * stored pair is returned exactly as it was written: §7's designation survives
+ * its persona going missing, and the roster shows the name so a reader can see
+ * *who* was designated rather than a blank. Handling a gone persona is the
+ * converse skill's job (AGENT-025), not this reader's.
+ */
+export function currentResident(
+  projection: ProjectionDb,
+  stored: Resident | null,
+): Resident | null {
+  if (stored === null) return null;
+  const target = resolveMentionTarget(projection, MENTION_TYPE, stored.name);
+  return target === null ? stored : { name: stored.name, docId: target.docId };
 }
 
 const asString = (value: unknown): string | null =>
@@ -107,6 +139,7 @@ export function readThread(workspace: ThreadReader, loaded: LoadedDocument): Loa
   const fallback = turns[0]?.ts ?? formatInstant(workspace.now());
   const created = asInstant(data["created"]) ?? fallback;
   const agent = ThreadAgentSchema.safeParse(data["agent"]);
+  const parent = asId(data["parent"], isDocumentId);
 
   return {
     loaded,
@@ -119,9 +152,10 @@ export function readThread(workspace: ThreadReader, loaded: LoadedDocument): Loa
     // unresolved conversation (this is `docs/read.ts`'s rule, kept identical).
     status: loaded.row.status === "resolved" ? "resolved" : "open",
     tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === "string") : [],
-    parent: asId(data["parent"], isDocumentId),
+    parent,
     anchor: asId(data["anchor"], isAnchorId),
     agent: agent.success ? agent.data : "none",
+    resident: currentResident(workspace.projection, storedResident(data["resident"], parent)),
     turns,
   };
 }
@@ -138,6 +172,7 @@ export function toWireThread(thread: LoadedThread): Thread {
     parent: thread.parent,
     anchor: thread.anchor,
     agent: thread.agent,
+    resident: thread.resident === null ? null : { ...thread.resident },
     turns: thread.turns.map((turn) => ({ ...turn })),
   };
 }
@@ -158,6 +193,11 @@ export function toThreadSummary(thread: LoadedThread): ThreadSummary {
     parent: thread.parent,
     anchor: thread.anchor,
     agent: thread.agent,
+    // §7's resident (CONTRACT-051, SERVER-109), read off the thread's own
+    // frontmatter. `null` for a thread nobody designated — which is a fact about
+    // it rather than a missing value — and always `null` on an anchored or
+    // whole-document thread, because only a standalone thread may designate.
+    resident: thread.resident === null ? null : { ...thread.resident },
     created: thread.created,
     updated: thread.updated,
     turnCount: thread.turns.length,

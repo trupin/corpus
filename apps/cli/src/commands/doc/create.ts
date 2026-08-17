@@ -6,6 +6,8 @@ import {
   splitTags,
   warningSuffix,
   type InputDependencies,
+  JOB_FLAG,
+  resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { parseViewFlags, VIEW_KEY_FLAGS } from "./frontmatter.js";
@@ -27,6 +29,7 @@ export async function runDocCreate(
   dependencies: InputDependencies = {},
 ): Promise<void> {
   const type = requireFlag(context, "type", "type");
+  const job = resolveJob(context.flags, context.env);
   const title = requireFlag(context, "title", "text");
   const body = await resolveBody(context, dependencies);
   const tags = splitTags(context.flags.string("tags"));
@@ -40,6 +43,11 @@ export async function runDocCreate(
       body: {
         type,
         title,
+        // SPEC.md §9.2: the work this write serves, so the document records the
+        // conversation it came from. Omitted when neither `--job` nor
+        // `CORPUS_JOB` names one — a write with no job records no origin, and
+        // that is a fact about the document rather than a missing field.
+        ...(job === undefined ? {} : { job }),
         // Every optional field is *omitted* rather than sent as undefined: the
         // contract distinguishes "no body" (pre-fill from the template) from an
         // explicitly empty one.
@@ -123,6 +131,7 @@ export const createCommand: WorkspaceCommandSpec = {
     },
     ...VIEW_KEY_FLAGS,
     ...bodyFlags("The document body"),
+    JOB_FLAG,
   ],
   examples: [
     {

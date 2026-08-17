@@ -169,6 +169,49 @@ describe("the queue mirrored into the projection", () => {
     expect(JSON.parse(readFileSync(to, "utf8"))).toMatchObject({ status: "in-progress" });
   });
 
+  // SPEC.md §7's lane (SERVER-111), mirrored so a reader can filter in SQL.
+  describe("the lane column", () => {
+    const laneOfRow = (db: ProjectionDb, id: string): string | undefined =>
+      (db.prepare("SELECT lane FROM events WHERE id = ?").get(id) as { lane: string } | undefined)
+        ?.lane;
+
+    it("carries the stamp, and keeps it across every transition", async () => {
+      const { queue, db } = boot();
+      queue.attachScopeLookup(() => "th_resident");
+      const event = await queue.enqueue({
+        type: "comment.created",
+        source: "cli",
+        payload: { threadId: "th_resident" },
+      });
+
+      expect(laneOfRow(db, event.id)).toBe("th_resident");
+      await queue.claimAll({ scope: "th_resident" });
+      expect(laneOfRow(db, event.id)).toBe("th_resident");
+      await queue.complete(event.id);
+      expect(laneOfRow(db, event.id)).toBe("th_resident");
+    });
+
+    it("reads an unstamped event as the orchestrator's, on the boot scan too", () => {
+      const first = boot();
+      const legacyId = "evt_legacy000000";
+      writeFileSync(
+        join(config.corpusDir, "queue", "pending", `${legacyId}.json`),
+        JSON.stringify({
+          id: legacyId,
+          type: "comment.created",
+          created: "2026-07-19T10:05:00Z",
+          source: "cli",
+          payload: {},
+        }),
+        "utf8",
+      );
+      shutdown(first);
+
+      const restarted = boot();
+      expect(laneOfRow(restarted.db, legacyId)).toBe("orchestrator");
+    });
+  });
+
   it("leaves a corrupt event file as the one row of drift, until a write path quarantines it", async () => {
     const first = boot();
     const good = await first.queue.enqueue({

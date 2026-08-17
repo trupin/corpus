@@ -117,6 +117,7 @@ import { AGENT_DELETE_MESSAGE, anchoredThreadParent, planDelete } from "./delete
 import { assertMovable, planMove } from "./move.js";
 import { loadDocument, type LoadedDocument } from "./read.js";
 import { resolveWholeResultSet } from "./selection.js";
+import { nextTags } from "./tags.js";
 import {
   DestinationOccupiedError,
   applyOperations,
@@ -257,23 +258,6 @@ function planFrontmatter(
     keys: docKeys(loaded),
     validate: { path: loaded.path, text },
   };
-}
-
-/**
- * §11's tag act: **a delta, never a replacement** — "adds or removes the named
- * tags and never replaces a document's tag set". Existing order is preserved and
- * additions are appended, so tagging twenty documents leaves twenty tag sets
- * that still differ from each other.
- */
-function nextTags(current: unknown, add: readonly string[], remove: readonly string[]): string[] {
-  const removed = new Set(remove);
-  const tags = (Array.isArray(current) ? current : [])
-    .filter((tag): tag is string => typeof tag === "string")
-    .filter((tag) => !removed.has(tag));
-  for (const tag of add) {
-    if (!removed.has(tag) && !tags.includes(tag)) tags.push(tag);
-  }
-  return tags;
 }
 
 /** A refusal the act reports for one document rather than failing over. */

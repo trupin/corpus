@@ -116,6 +116,9 @@ function selectAndRightClick(root: Element, phrase: string, nth: number): void {
 
 const PHRASE = "revisit the rate assumption";
 
+/** A screenshot, as a drop hands one over. */
+const shot = (): File => new File(["x"], "shot.png", { type: "image/png" });
+
 describe("commenting on a selection inside a turn", () => {
   it("offers Comment on selection in the turn's own menu", async () => {
     const { container } = render(<Host transport={wire()} />);
@@ -236,6 +239,93 @@ describe("commenting on a selection inside a turn", () => {
     expect(sent.selector.exact).toBe("Let's revisit the rate assumption.");
   });
 
+  /**
+   * SPEC.md §11's rider, signed 2026-08-05: *"a comment on a turn or on a
+   * selection within one"* is in the list of surfaces that take files. Driven
+   * through the real popover with a real drop, and asserted on the wire — the
+   * multipart parts the fixture records (UI-111).
+   */
+  it("carries a dropped file onto the child thread's first turn", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    selectAndRightClick(await loaded(container), PHRASE, 1);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Comment on selection/ }));
+    const popover = await screen.findByRole("dialog", { name: "New comment" });
+
+    fireEvent.drop(popover, { dataTransfer: { files: [shot()] } });
+    expect(popover.querySelectorAll(".att-chip")).toHaveLength(1);
+
+    // No text at all: §6 allows a first turn that is the file.
+    const send = document.querySelector("[data-comment-send]");
+    if (send === null) throw new Error("no send control");
+    expect(send.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(send);
+
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const call = transport.of("POST", "/api/threads")[0];
+    expect(call?.files).toEqual(["shot.png"]);
+    expect(call?.parts?.["parent"]).toBe("th_a");
+    expect(call?.parts?.["selector"]).toContain(PHRASE);
+    expect(call?.parts?.["text"]).toBeUndefined();
+  });
+
+  it("gives the file back when the server refuses the comment", async () => {
+    const transport = wire({ failing: { "POST /api/threads": 409 } });
+    const { container } = render(<Host transport={transport} />);
+    selectAndRightClick(await loaded(container), PHRASE, 1);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Comment on selection/ }));
+    const popover = await screen.findByRole("dialog", { name: "New comment" });
+
+    fireEvent.drop(popover, { dataTransfer: { files: [shot()] } });
+    fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "Look at this." } });
+    const send = document.querySelector("[data-comment-send]");
+    if (send === null) throw new Error("no send control");
+    fireEvent.click(send);
+
+    // It closes on send, as it always has, and comes back holding both halves
+    // of what was refused rather than nothing.
+    const reopened = await screen.findByRole("dialog", { name: "New comment" });
+    await waitFor(() => {
+      expect(reopened.querySelectorAll(".att-chip")).toHaveLength(1);
+    });
+    expect(screen.getByLabelText<HTMLTextAreaElement>("Comment").value).toBe("Look at this.");
+    expect(reopened.querySelector(".att-chip")?.textContent).toContain("shot.png");
+  });
+
+  /** The other surface the rider names: the whole-turn 💬 box (UI-111). */
+  it("attaches a file to a comment on the whole turn", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+    fireEvent.click(screen.getByRole("button", { name: /Comment on the user turn/ }));
+    const composer = container.querySelector<HTMLElement>(".child-composer");
+    if (composer === null) throw new Error("no child composer");
+
+    fireEvent.dragEnter(composer);
+    expect(composer.className).toContain("dropping");
+    fireEvent.drop(composer, { dataTransfer: { files: [shot()] } });
+    expect(composer.querySelectorAll(".att-chip")).toHaveLength(1);
+
+    const send = composer.querySelector(".send");
+    if (send === null) throw new Error("no send control");
+    expect(send.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(send);
+
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const call = transport.of("POST", "/api/threads")[0];
+    expect(call?.files).toEqual(["shot.png"]);
+    expect(call?.parts?.["requestsAgent"]).toBe("false");
+    // Accepted, so the box closes — the chips go with it rather than lingering
+    // over a comment that has already been made.
+    await waitFor(() => {
+      expect(container.querySelector(".child-composer")).toBeNull();
+    });
+  });
+
   it("declines when the right-click lands outside any turn body", async () => {
     const { container } = render(<Host transport={wire()} />);
     await loaded(container);
@@ -270,6 +360,59 @@ describe("the anchor's highlight", () => {
     await loaded(container);
     await waitFor(() => {
       expect(anchorHighlightCount()).toBe(1);
+    });
+  });
+
+  /**
+   * UI-112, in a turn: SPEC.md §11 says a selection commented on inside a turn
+   * "is highlighted in the turn the way an anchor is highlighted in a document",
+   * and until now it was highlighted only once the server had resolved it — after
+   * the comment was posted, which is the moment it stops being useful. The
+   * browser's own selection is gone as soon as focus reaches the composer, so
+   * while writing there was nothing marking the words at all.
+   */
+  it("lights the selection the moment the composer opens, before anything is posted", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    selectAndRightClick(await loaded(container), PHRASE, 1);
+    expect(anchorHighlightCount()).toBe(0);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Comment on selection/ }));
+    await screen.findByRole("dialog", { name: "New comment" });
+    expect(anchorHighlightCount()).toBe(1);
+    expect(transport.of("POST", "/api/threads")).toHaveLength(0);
+
+    // Nothing about the browser's selection is what holds it: the composer has
+    // the focus, and the mark is painted from the offsets that were captured.
+    globalThis.getSelection?.()?.removeAllRanges();
+    expect(anchorHighlightCount()).toBe(1);
+  });
+
+  it("keeps it lit across the send, and puts it out when the comment is abandoned", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    selectAndRightClick(await loaded(container), PHRASE, 1);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Comment on selection/ }));
+    const input = await screen.findByLabelText("Comment");
+    expect(anchorHighlightCount()).toBe(1);
+
+    // Abandoned: the mark goes with the composer, leaving nothing behind.
+    fireEvent.keyDown(input, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "New comment" })).toBeNull();
+    });
+    expect(anchorHighlightCount()).toBe(0);
+
+    // Sent: the mark stays up, and is still up while the request is in flight.
+    selectAndRightClick(container.querySelector(".turn-markdown") as Element, PHRASE, 1);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Comment on selection/ }));
+    fireEvent.change(await screen.findByLabelText("Comment"), { target: { value: "Still true?" } });
+    const send = document.querySelector("[data-comment-send]");
+    if (send === null) throw new Error("no send control");
+    fireEvent.click(send);
+    expect(anchorHighlightCount()).toBe(1);
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads")).toHaveLength(1);
     });
   });
 

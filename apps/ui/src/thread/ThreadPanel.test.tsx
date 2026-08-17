@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { DocRow } from "@corpus/contract";
+import type { AgentLane, DocRow } from "@corpus/contract";
 import { resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -402,6 +402,139 @@ describe("the fold claims no key of its own", () => {
     expect(
       document.querySelector<HTMLElement>('[role="menuitem"][data-act="collapse"]')?.textContent,
     ).toContain("Collapse");
+  });
+});
+
+/**
+ * SPEC.md §7's designation, offered where a person acts on the conversation
+ * (UI-109). The menu is the same declared list §11 binds to "exactly that
+ * item's existing actions" — a designation *is* an action on this thread — and
+ * these tests drive it through the real menu rather than through
+ * `residentActions`, which is unit-tested next door.
+ */
+describe("designating a resident", () => {
+  const standalone = (): DocRow =>
+    threadRowFixture({
+      id: "th_solo",
+      parent: null,
+      anchorQuote: null,
+      turnCount: 1,
+      lastAuthor: "user",
+      status: "open",
+    });
+
+  function standaloneWire(lanes: readonly AgentLane[] = []): ReaderTransport {
+    return readerTransport({
+      lanes,
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      rows: {
+        // The `@` autocomplete's own directory read — same filter, same key.
+        "?limit=50&type=agent-def": [
+          { ...threadRowFixture({ id: "doc_agentdef" }), type: "agent-def", title: "researcher" },
+        ],
+      },
+    });
+  }
+
+  const openMenu = (): void => {
+    fireEvent.contextMenu(panel("th_solo")?.querySelector(".thread-card") as HTMLElement, {
+      clientX: 20,
+      clientY: 20,
+    });
+  };
+
+  const acts = (): readonly (string | null)[] =>
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((item) =>
+      item.getAttribute("data-act"),
+    );
+
+  it("offers the workspace's agents, and designates the one chosen", async () => {
+    const transport = standaloneWire();
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(acts()).toContain("resident-designate-doc_agentdef");
+    });
+    const item = document.querySelector<HTMLElement>(
+      '[data-act="resident-designate-doc_agentdef"]',
+    );
+    expect(item?.textContent).toContain("Designate researcher");
+
+    fireEvent.click(item as HTMLElement);
+    await waitFor(() => {
+      expect(
+        transport.calls.some(
+          (call) => call.method === "POST" && call.path === "/api/threads/th_solo/resident",
+        ),
+      ).toBe(true);
+    });
+    // By the invocable name, never a document id (SPEC.md §7).
+    const write = transport.calls.find((call) => call.path === "/api/threads/th_solo/resident");
+    expect(write?.body).toEqual({ name: "researcher" });
+
+    // …and the badge follows, because designating invalidates `["agents"]`.
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident")?.textContent).toContain("researcher");
+    });
+  });
+
+  it("offers the release once there is one, and takes the badge away again", async () => {
+    const transport = standaloneWire([
+      {
+        lane: "th_solo",
+        resident: { name: "researcher", docId: "doc_agentdef" },
+        live: false,
+        since: null,
+        summary: null,
+        origin: { id: "th_solo", title: "Q3 planning" },
+      },
+    ]);
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(acts()).toContain("resident-release");
+    });
+    expect(
+      document.querySelector<HTMLElement>('[data-act="resident-release"]')?.textContent,
+    ).toContain("Release researcher");
+
+    fireEvent.click(document.querySelector('[data-act="resident-release"]') as HTMLElement);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident")).toBeNull();
+    });
+    expect(
+      transport.calls.some(
+        (call) => call.method === "DELETE" && call.path === "/api/threads/th_solo/resident",
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * SPEC.md §7: "a thread on a document is *about* that document, and a resident
+   * owns a conversation rather than a passage". The menu on a comment offers
+   * exactly what it always offered.
+   */
+  it("offers nothing of the kind on a thread that hangs off a document", async () => {
+    render(<Slots transport={wire()} rows={[openRow()]} />);
+    await waitFor(() => {
+      expect(panel("th_open")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    fireEvent.contextMenu(panel("th_open")?.querySelector(".thread-card") as HTMLElement, {
+      clientX: 20,
+      clientY: 20,
+    });
+    await waitFor(() => {
+      expect(acts()).toEqual(["collapse", "resolve"]);
+    });
   });
 });
 

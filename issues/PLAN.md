@@ -378,7 +378,7 @@ belongs to the same fix wave.
 | UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
 | SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | done | P1 | — |
-| UI-070 | Attachments in every composer, through one kit surface | todo | P1 | SHARED-012 |
+| UI-070 | Attachments in every composer, through one kit surface | done | P1 | SHARED-012 |
 | UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | done | P1 | UI-062 |
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
 | UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
@@ -480,7 +480,7 @@ belongs to the same fix wave.
 | CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | done | P1 | — |
 | SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-071 |
 | UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-072 |
-| PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
+| PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | done | P2 | UI-070 |
 
 ## Phase 14 — Dogfood wave 4: status semantics, no edit mode, bulk staging (2026-08-08)
 
@@ -509,18 +509,18 @@ cheapest moment for that to happen.
 | PLUGINS-016 | A plugin doc type can derive its own status | todo | P1 | SHARED-036 |
 | SERVER-085 | The board, queries and the file all agree on a derived status | todo | P1 | SHARED-036, PLUGINS-016 |
 | UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-016, SERVER-085, UI-093 |
-| PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | todo | P1 | SHARED-036 |
+| PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | done | P1 | SHARED-036 |
 | UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
 | SHARED-038 | `--unstable` reaches §2.4 before it reaches the code | done | P1 | — |
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
 | CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
-| UI-095 | Clicking a comment does not take you to it, opened | todo | P1 | — |
+| UI-095 | Clicking a comment does not take you to it, opened | done | P1 | — |
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
-| UI-097 | A request nobody has picked up says "agent is working…" | todo | P1 | SHARED-033 |
-| CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | todo | P1 | SHARED-033 |
-| SERVER-086 | The server does not record that an agent is there | todo | P1 | CONTRACT-045 |
-| UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-086 |
+| UI-097 | A request nobody has picked up says "agent is working…" | done | P1 | SHARED-033 |
+| CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | done | P1 | SHARED-033 |
+| SERVER-086 | The server does not record that an agent is there | done (absorbed by SERVER-112) | P1 | CONTRACT-045 |
+| UI-098 | The console says `agent: idle` when no agent exists | done | P1 | CONTRACT-045, SERVER-086 |
 | UI-099 | Commenting on a document selection leaves no visible anchor | done | P0 | — |
 | UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | done | P0 | — |
 | UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | done | P1 | UI-103 |
@@ -569,8 +569,8 @@ changes behaviour and nothing below waits on them.
 | SERVER-094 | A window never outlives the server silently | done | P1 | SERVER-091 |
 | SERVER-095 | Resizing a board column wakes the agent to reflect on it (user report) | done | P0 | — |
 | SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | todo | P2 | — |
-| SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | todo | P1 | — |
-| SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | todo | P1 | — |
+| SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | done | P1 | — |
+| SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | done | P1 | — |
 | SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
 
 ## Phase 30 — A key instead of a lock (2026-08-11)
@@ -634,6 +634,167 @@ guarantees the watcher commits it as the `user` edit it is.
 | CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | done | P1 | — |
 | INFRA-027 | `issues/PLAN.md` and the issue files disagree, and nothing checks (PR #44 review) | done | P1 | — |
 
+### Phase 33 — the reader's shape follows the person using it (2026-08-16)
+
+Filed from use rather than from a plan. The user, writing a comment on a long
+section: *"I often have to scroll up to see what I'm commenting on… I want to be
+able to keep typing while seeing the content I'm commenting on."* The reply box
+sits in ordinary flow, so reading what you are answering and seeing where you
+type it are currently exclusive.
+
+Three more from the same sitting, all the same shape — **the surface you write
+in gets in the way of the thing you are writing about**. `UI-111` is not a
+feature request but a **spec-compliance defect**: §11's rider of 2026-08-05 says
+"every composer takes attachments" and names "a comment on a document selection"
+in its own list, and that popover has no attachment code at all. `UI-112` is the
+comment modal sitting on the evidence, and a highlight that arrives only after
+the comment is posted — `useTurnComments.tsx` says it outright: "the highlight is
+the anchor the server resolved", i.e. painted at the moment it stops mattering.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| UI-110 | The composer you are typing in stays visible while you scroll what you are commenting on | done | P0 | — |
+| UI-111 | The comment popover takes no attachments, and §11 says every composer does | done | P0 | — |
+| UI-112 | The comment popover can be moved, and what it is about stays lit while you write | done | P0 | — |
+| UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
+| SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
+| UI-116 | No e2e spec has ever posted an attachment, on any surface (PLUGINS-012 finding) | done | P1 | — |
+| UI-117 | `anchor-layer.spec.ts:475` reads between two generations of highlight (UI-116 finding) | done | P2 | — |
+
+### PR #48 review — REQUEST_CHANGES, 2026-08-17
+
+The pr-reviewer ran cold on the phase branch and returned six MAJOR findings.
+Four are fixed before merge; two are recorded here because they are the user's.
+
+The one that matters most to how this phase was run: **finding 2 overturned my
+own adjudication of `SHARED-044`.** I recorded origin-first as decided after the
+agent I spawned for an independent read died before reading anything, and said
+so in the issue — the reviewer supplied the second opinion and disagreed, on the
+ground that §7 lists `origin` as a scope edge only for *documents*, and that
+origin-first has no beneficial case: the only input where it differs from
+parent-first is the one where it annexes another scope's conversation.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SERVER-117 | The scope walk abandons the parent edge, so a resident loses conversations on its own artifacts | done | P0 | — |
+| SERVER-118 | `GET /api/queue/idle` accepts any thread id as a scope, and `agent.live` then lies | done | P0 | — |
+| UI-118 | An explicit recipient equal to the client's computed lane is sent as absence | done | P0 | — |
+| AGENT-029 | A resident working longer than the grace window reads as absent, and gets a second listener | done | P0 | — |
+| CONTRACT-058 | `GET /api/queue/idle` does not declare the 422 it now returns (SERVER-118 finding) | done | P1 | SERVER-118 |
+
+**PR #48 re-review — REQUEST_CHANGES again, 2026-08-17.** The cold reviewer
+returned a CRITICAL and three MAJORs against the fixes themselves. **The CRITICAL
+is an orchestration failure, not a domain one**: `SERVER-117` (fix the server's
+scope walk) and `UI-118` (make an explicit pick reach the wire) ran in parallel
+and neither was told the other existed. The client keeps its own copy of that
+walk in `packages/kit/src/recipient/scopeWalk.ts`, still on the deleted
+`origin ?? parent` — which was a label bug until `UI-118` armed the picker, and
+is now a routing bug. Both suites are green and each asserts it encodes the
+other's rule.
+
+The other three are the same shape one layer out: `SERVER-118` changed a
+behaviour and its consumers were not swept — the CLI's help still promises the
+old server, and the converse skill both teaches it and has no instruction for
+the refusal, so a release timed one rearm badly strands a claimed event and
+skips the sign-off. `AGENT-031` is a defect in `AGENT-029`'s own fix: its
+discriminator is a conjunction whose second clause discards the signal the
+moment a second message arrives.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| UI-119 | The client's scope walk still follows the rule SERVER-117 deleted | done | P0 | — |
+| AGENT-030 | The converse skill teaches the old server, and dies at the shell on a refused park | done | P0 | — |
+| AGENT-031 | The stand-down rule is a conjunction, and the second conjunct throws away the signal | done | P0 | — |
+| CLI-048 | `--thread`'s help asserts the behaviour SERVER-118 removed | done | P1 | — |
+
+**PR #48 third review — one MAJOR, 2026-08-17.** The reviewer was asked to hunt
+for rules written down twice, having caused the previous round's CRITICAL, and
+found one this round had created: `AGENT-029` wrote the stand-down rule into
+**both** skills and `AGENT-031` fixed only `converse`. The copies now
+contradict, and orchestrate's is the justification for its "let the lane settle
+it" invariant. **Fourth finding in three passes from one rule in two places.**
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| AGENT-032 | The stand-down rule is written in both skills, and they now contradict | done | P0 | — |
+| CONTRACT-060 | The grace window is derived two different ways, and both tests pass by coincidence | done | P1 | — |
+| UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
+| SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
+| UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | todo | P1 | — |
+| CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
+| SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
+
+**Two findings are the user's, not mine to close:**
+
+- **SPEC.md was edited in this PR without sign-off** (`5356a8a9 [CONTRACT-051]`,
+  two §9.2 bullets), which breaches a standing constraint. The content describes
+  SHARED-043's already-signed rider rather than new behaviour, and the issue
+  file for that very change says "This package never edits SPEC.md" — so the
+  commit and its issue contradict each other. It also adds a fresh `§9.4`
+  citation, increasing the count `SHARED-046` was filed to reduce. Awaiting the
+  user's decision: ratify, revert, or amend.
+- The reviewer confirmed **no defect in `SERVER-115`** after enumerating all 17
+  `bus.invalidate` sites and re-deriving the declared status-pair table, which
+  is worth recording since that was the largest forced addition to this release.
+| SERVER-114 | An agent arriving never reaches the console — presence invalidates the wrong key (UI-098 finding) | done | P0 | — |
+| AGENT-028 | Two product skills still say the empty tree is the repository's first commit (CLI-045 finding) | done | P1 | — |
+| CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | done | P0 | — |
+| SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | done | P0 | CONTRACT-055 |
+| SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | — |
+| CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
+| CLI-045 | `corpus doc diff --help` describes the old default base | done | P2 | SERVER-113 |
+| CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
+| CLI-046 | `corpus queue status` never shows whether an agent is there | done | P1 | SERVER-112 |
+| CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | todo | P2 | — |
+| CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
+| CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | todo | P1 | — |
+| CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | todo | P1 | — |
+
+**Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
+a required field, which breaks every constructor of one: `SERVER-086` (the
+server's status handler) and `UI-098` (the console model and its fixtures). Both
+are pulled into this release rather than left — a contract nothing satisfies is
+not a shippable state, and the rule this release is being run under is that a
+release which starts a feature finishes it. `CONTRACT-045`'s own report also
+notes that `SERVER-086` is now partly superseded: its standalone "last agent
+contact" scalar is exactly the second definition of liveness the shared
+vocabulary removed, so it must aggregate `SERVER-112`'s tracker rather than keep
+its own clock.
+
+**Third scope addition, 2026-08-16 — `CONTRACT-055` + `SERVER-115`, forced by
+this release's own UI work.** `SERVER-114`'s sweep found six more emitters that
+never name `["agents"]` although they change what the roster would answer — queue
+transitions, job-log appends, a designated thread's title, projection rebuild,
+out-of-band thread edits and queue-event moves, and deleting a designated root
+thread. They are latent **only because nothing caches `/api/agents` yet**, and
+`UI-108` and `UI-109` exist to put the roster on screen. The day either lands a
+cached `useAgents`, all seven become live staleness bugs: a recipient picker that
+keeps offering an agent that left, a board that keeps showing a resident whose
+thread was deleted. So this release either fixes them or ships the feature and
+the bugs together. `SERVER-116` (the index's "degraded ranking" word, same shape,
+three routes and one key) is **not** pulled in: it is a different subsystem, and
+its fix is a real design question — the obvious emit makes every progress tick
+re-read every board column.
+
+**Second scope addition, 2026-08-16 — `PLUGINS-012`.** `UI-111` audited every
+surface §11's attachment rider names and fixed all but one: the Todos plugin's
+*Comment on item* composer, which it could not reach, because a plugin may import
+only `@corpus/kit` and the kit published no intake hook at the time. `UI-070` has
+now published it — that was its entire purpose. So this release would otherwise
+ship a §11 claim ("every composer takes attachments") with one composer in the
+repo still refusing files, which is exactly the half-finished feature the release
+rule forbids. Pulled in.
+
+**Scope for v0.10.0** (agreed 2026-08-16). This phase carries the four issues
+above plus three that share their theme and their files: `UI-070` (attachments
+through one kit surface — `UI-111` is its missing half, and doing them apart
+means extracting the same surface twice), `UI-095` (clicking a comment does not
+take you to it) and `PLUGINS-015` (the Todos checkbox opens the item instead of
+checking it). Two correctness bugs ride along because they sit in files this
+phase is already in: `SERVER-102` (adding a tag races on a single document) and
+`SERVER-097` (a `doc.edited` range starts at a commit that touched a different
+document — in the provenance path v0.9.0 shipped).
+
 ### Unrowed backlog — issues that existed with no PLAN row (INFRA-027, 2026-08-13)
 
 Seven issue files were on disk and in nobody's plan, which is the quieter half of
@@ -651,6 +812,41 @@ ones their own files carry.
 | CLI-039 | A hung `git gc` leaves children the timeout does not kill | todo | P2 | — |
 | SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | todo | P2 | — |
 | SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
+
+### Found in flight during Phase 33, deliberately not in v0.10.0 (2026-08-16)
+
+Both were surfaced by `UI-070`'s agent while running the suite for an unrelated
+change, and neither is caused by this phase's work. They are filed rather than
+folded in: the release scope grew twice already, and a harness bug and a keyboard
+route are not what this release is about.
+
+`INFRA-028` is the more useful of the two, because it explains a confusion this
+repo has been living with. Vite proxies `/api` to `127.0.0.1:8765` by default, so
+running `npm run e2e` beside a live workspace server makes two "server
+unreachable" specs fail against a server that is, in fact, reachable. That has
+been written off repeatedly as "the pair that needs 8765 free" — a true statement
+of the symptom that leaves every local run carrying two failures a reader has to
+remember to discount. Two expected failures is how three unexpected ones get
+through.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | todo | P1 | — |
+| UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | done | P1 | — |
+| SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
+| SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
+| SHARED-046 | SPEC.md cites a §9.4 that does not exist, and the citation has reached the published contract | todo | P1 | — |
+| SHARED-047 | §7 does not say whether parked listeners count against the concurrency bound | todo | P2 | — |
+| UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
+
+`SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
+had to pick a precedence between an artifact's own `origin` and its `parent`
+chain when the two reach different designated scopes, and §7 states a guarantee
+("an artifact belongs to at most one scope") whose stated reason — origin is
+single-valued — covers only one of the two routes into a scope. The code took
+origin-first and ships that way; what needs a signed rider is the spec sentence
+that made both readings look correct. It needs user sign-off, so it cannot ride
+in v0.10.0 unattended.
 
 ### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 
@@ -691,14 +887,15 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | --- | --- | --- | --- | --- |
 | SHARED-043 | A resident agent for a conversation (AUTHORIZED 2026-08-13, applied to §7/§8/§9.2) | done | P0 | — |
 | CONTRACT-050 | Every write can name the job it serves | done | P0 | SHARED-043 |
-| CONTRACT-051 | Lanes, designation, and the roster on the wire | todo | P0 | SHARED-043 |
+| CONTRACT-051 | Lanes, designation, and the roster on the wire | done | P0 | SHARED-043 |
 | SERVER-110 | Stamp a document with the thread it came from | done | P0 | CONTRACT-050 |
-| SERVER-109 | Designate a resident, and dissolve it cleanly | todo | P0 | CONTRACT-051 |
-| SERVER-111 | The queue learns lanes | todo | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
-| SERVER-112 | Presence is a parked request — liveness and the roster | todo | P0 | SERVER-111 |
-| CLI-044 | Mutating verbs carry the job they serve | todo | P0 | CONTRACT-050, SERVER-110 |
-| CLI-043 | Lane verbs, designation, and `corpus agents` | todo | P0 | CONTRACT-051, SERVER-111, SERVER-112, SERVER-109 |
-| AGENT-025 | The converse skill — a resident's own loop | todo | P0 | SHARED-043, CLI-044, CLI-043 |
-| AGENT-026 | Orchestrate learns to share the queue | todo | P0 | AGENT-025, CLI-043 |
-| UI-108 | The composer offers the recipient | todo | P0 | CONTRACT-051, SERVER-111, SERVER-112 |
-| UI-109 | The board shows who is resident, and who is live | todo | P1 | CONTRACT-051, SERVER-112 |
+| SERVER-109 | Designate a resident, and dissolve it cleanly | done | P0 | CONTRACT-051 |
+| SERVER-111 | The queue learns lanes | done | P0 | CONTRACT-051, SERVER-110, SERVER-109 |
+| SERVER-112 | Presence is a parked request — liveness and the roster | done | P0 | SERVER-111 |
+| CLI-044 | Mutating verbs carry the job they serve | done | P0 | CONTRACT-050, SERVER-110 |
+| CLI-043 | Lane verbs, designation, and `corpus agents` | done | P0 | CONTRACT-051, SERVER-111, SERVER-112, SERVER-109 |
+| AGENT-025 | The converse skill — a resident's own loop | done | P0 | SHARED-043, CLI-044, CLI-043 |
+| AGENT-026 | Orchestrate learns to share the queue | done | P0 | AGENT-025, CLI-043 |
+| AGENT-027 | The converse skill can still adopt work the orchestrator is holding (AGENT-026 finding) | done | P0 | AGENT-026 |
+| UI-108 | The composer offers the recipient | done | P0 | CONTRACT-051, SERVER-111, SERVER-112 |
+| UI-109 | The board shows who is resident, and who is live | done | P1 | CONTRACT-051, SERVER-112 |

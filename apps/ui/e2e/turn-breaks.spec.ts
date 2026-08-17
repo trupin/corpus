@@ -93,6 +93,7 @@ async function stubThread(page: Page): Promise<void> {
             parent: null,
             anchor: null,
             agent: "engaged",
+            resident: null,
             created: "2026-07-01T09:00:00.000Z",
             updated: turn.ts,
             turnCount: appended.length + 1,
@@ -118,6 +119,7 @@ async function stubThread(page: Page): Promise<void> {
         parent: null,
         anchor: null,
         agent: "engaged",
+        resident: null,
         turns: [
           { author: "agent", ts: "2026-07-01T09:05:00.000Z", body: AGENT_TURN, model: null },
           ...appended,

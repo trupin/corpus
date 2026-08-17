@@ -41,11 +41,38 @@ export interface ComposeInput {
    * request is a request wherever it starts".
    */
   readonly weight: { readonly weight?: string };
+  /**
+   * The lane the Ask is addressed to (SPEC.md §7) — `{}` for the computed
+   * default, which for a standalone thread is always the orchestrator, and
+   * `{recipient}` only when a lane was picked. A pick here is §7's **summons**:
+   * the event is stamped with the recipient's lane so it reaches them at all,
+   * and what they write files into the thread this Ask creates, because routing
+   * follows the recipient and filing follows the conversation.
+   *
+   * **Capture carries none, and cannot**: `POST /api/capture` has no `recipient`
+   * (CONTRACT-051), because a capture creates a standalone thread that is in no
+   * scope by construction — offering a routing choice before there is a
+   * conversation to route. So this rides the Ask branch only.
+   */
+  readonly recipient: { readonly recipient?: string };
 }
 
+/**
+ * What one submit did.
+ *
+ * The refusal rides along rather than being swallowed by the narration: the
+ * overlay has to settle its own recipient pick against it, and a
+ * `422 unknown_recipient` is the one failure where dropping that pick would
+ * quietly reroute the retry (UI-118, `ComposerRecipient.refuse`). The toast is
+ * still this hook's to write — the caller reads the error, it does not narrate
+ * it a second time.
+ */
+export type ComposeOutcome =
+  { readonly ok: true } | { readonly ok: false; readonly error: unknown };
+
 export interface ComposeApi {
-  /** Resolves `true` when the corpus changed; `false` after a failure it has narrated. */
-  readonly submit: (mode: ComposeMode, input: ComposeInput) => Promise<boolean>;
+  /** Resolves `{ok: true}` when the corpus changed; the refusal when it did not. */
+  readonly submit: (mode: ComposeMode, input: ComposeInput) => Promise<ComposeOutcome>;
   readonly isPending: boolean;
 }
 
@@ -68,7 +95,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
   const capture = useCapture();
 
   const submit = useCallback(
-    async (mode: ComposeMode, input: ComposeInput): Promise<boolean> => {
+    async (mode: ComposeMode, input: ComposeInput): Promise<ComposeOutcome> => {
       const text = input.text.trim();
       const files = input.files;
       try {
@@ -79,13 +106,14 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
             body: text,
             requestsAgent: true,
             ...input.weight,
+            ...input.recipient,
             ...(files.length === 0 ? {} : { files }),
           });
           for (const warning of result.warnings) {
             notify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
           }
           notify({ tone: "info", message: askMessage(result.eventId !== null) });
-          return true;
+          return { ok: true };
         }
 
         const result = await capture.mutateAsync({
@@ -98,13 +126,13 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
           notify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
         }
         notify({ tone: "info", message: captureMessage(result.eventId !== null) });
-        return true;
+        return { ok: true };
       } catch (cause) {
         notify({
           tone: "error",
           message: `${mode === "ask" ? "Ask" : "Capture"} failed — ${(cause as Error).message}`,
         });
-        return false;
+        return { ok: false, error: cause };
       }
     },
     [capture, createThread, notify],

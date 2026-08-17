@@ -133,6 +133,7 @@ function createApp() {
           parent: "doc_a1b2c3",
           anchor: thread.anchor,
           agent: "none" as const,
+          resident: null,
           created: "2026-07-19T10:05:00Z",
           updated: "2026-07-19T10:05:00Z",
           turnCount: 1,

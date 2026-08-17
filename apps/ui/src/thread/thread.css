@@ -122,6 +122,33 @@
 }
 
 /* ── Composer ── */
+
+/* **A composer in use stays on screen** (UI-110, SPEC.md §11).
+   The problem it solves, in the words it was reported in: *"I often have to
+   scroll up to see what I'm commenting on… I want to be able to keep typing
+   while seeing the content I'm commenting on."* In ordinary flow the reply box
+   sits after the last turn, so reading what you are answering and seeing where
+   you type it are exclusive on anything longer than a screen.
+
+   Sticky rather than fixed, and **only while in use**: an empty composer nobody
+   is touching returns to flow and costs the column no vertical space, which is
+   the difference between an affordance and a permanent bar. Sticky also scopes
+   itself for free — the box pins to the bottom of the scrolling surface only
+   while its own card is in view, so a document showing several threads does not
+   grow several floating boxes.
+
+   `bottom: -1px` rather than `0`: the card's own bottom border sits a hairline
+   below, and pinning flush leaves a 1px seam of scrolled content visible under
+   the composer on fractional-DPI displays. */
+.composer:focus-within,
+.composer.in-use {
+  position: sticky;
+  bottom: -1px;
+  /* Above the turns it scrolls over, below the popovers and menus that must
+     still open on top of it. */
+  z-index: 2;
+}
+
 .composer {
   margin-top: 9px;
   display: flex;
@@ -209,56 +236,18 @@
   cursor: default;
 }
 
-/* ── Attachments ── */
-.pending-atts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.pending-atts:empty {
-  display: none;
-}
-
-.att-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-family: var(--mono);
-  color: var(--ink-2);
-  background: var(--surface-2);
-}
-
-.att-chip img {
-  height: 34px;
-  border-radius: 4px;
-  display: block;
-}
-
-.att-chip button {
-  color: var(--ink-3);
-  font-size: 11px;
-  padding: 0 2px;
-}
-
-.att-chip button:hover {
-  color: var(--signal);
-}
-
-.clip {
-  font-size: 13px;
-  color: var(--ink-3);
-  padding: 0 4px;
-}
-
-.clip:hover {
-  color: var(--accent-ink);
-}
-
+/* ── Attachments ──
+ *
+ * A composer's *pending* chips (`.pending-atts`, `.att-chip`) and its 📎
+ * (`.clip`) are not here: they ship from `@corpus/kit/composer.css` with
+ * `PendingAttachments` and `AttachButton`, which every composer in the app now
+ * imports from the kit so that a plugin's composer can import them too (UI-070).
+ * `main.tsx` loads that sheet with the other kit stylesheets.
+ *
+ * What stays is this file's own: how a *sent* attachment renders inside a turn,
+ * and the reply box's drop highlight (`.composer.dropping`, above), which is
+ * per-surface by design.
+ */
 .turn-att-img {
   max-width: 240px;
   max-height: 180px;
@@ -554,4 +543,51 @@
   text-decoration-color: var(--accent);
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
+}
+
+/* ── Who is resident (SPEC.md §7, §11; UI-109) ── */
+
+/*
+ * The resident badge in the conversation's head.
+ *
+ * Quiet by construction: mono at the head's smallest size, `--ink-3`, no border
+ * and no fill. It sits after the status chip, which stays the only bordered
+ * object in the row — a resident is a *fact about the conversation*, not a
+ * signal about it, and `packages/kit/src/row/badges.tsx` keeps those axes apart.
+ * The dot is the recipient picker's own `.lane-dot`, so the board and the
+ * composer draw one lane's liveness identically.
+ */
+.t-resident {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.t-resident .lane-dot {
+  align-self: center;
+}
+
+.t-resident-name {
+  color: var(--ink-2);
+}
+
+/*
+ * The line elides rather than wrapping: the head is one row and a lane summary
+ * is bounded but not short (200 characters, `LANE_SUMMARY_MAX_LENGTH`). The
+ * whole line stays reachable on the badge's title, and in the recipient picker,
+ * which is not width-constrained.
+ */
+.t-resident-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.t-resident-line::before {
+  content: "· ";
 }

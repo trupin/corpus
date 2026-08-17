@@ -161,7 +161,7 @@ export const PatchRefusalReasonSchema = z.enum(PATCH_REFUSAL_REASONS).openapi({
  * ## Why it narrows `ConflictError` rather than adding an error code
  *
  * Exactly as `ReattachConflictError` does: it adds fields to `{code, message}`
- * instead of an eighth member of `ERROR_CODES`, so it still parses as an
+ * instead of a new member of `ERROR_CODES`, so it still parses as an
  * `ApiError` and no consumer that switches on `code` grows a branch. `409`
  * already carries two shapes — `stale_key` (its own code, because it carries a
  * whole document) and the re-attach conflict — and the rule that keeps them

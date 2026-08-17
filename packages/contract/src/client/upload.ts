@@ -33,6 +33,20 @@ export interface UploadOptions {
 
 export interface TurnUpload {
   readonly threadId: string;
+  /**
+   * The queue event this write is doing the work of (SPEC.md §9.2). Optional
+   * everywhere: a write that names no job records no origin, and forgetting it
+   * costs provenance rather than correctness. An id naming no event is a `422`.
+   */
+  readonly job?: string;
+  /**
+   * Which lane this message is addressed to (SPEC.md §7) — `orchestrator`, or a
+   * designated root thread's id. **Omit it for the default**, which is computed
+   * from where the message is posted; stating one routes this message and
+   * nothing else. `../schemas/lane.ts` carries the decision.
+   */
+  readonly recipient?: string;
+
   /** Markdown body. Optional: a turn may be attachment-only, but not empty. */
   readonly text?: string;
   /**
@@ -66,6 +80,19 @@ export interface CaptureUpload {
  * first turn may be attachment-only — but not empty.
  */
 export interface ThreadUpload {
+  /**
+   * The queue event this write is doing the work of (SPEC.md §9.2). Optional
+   * everywhere: a write that names no job records no origin, and forgetting it
+   * costs provenance rather than correctness. An id naming no event is a `422`.
+   */
+  readonly job?: string;
+  /**
+   * Which lane this message is addressed to (SPEC.md §7) — `orchestrator`, or a
+   * designated root thread's id. **Omit it for the default**, which is computed
+   * from where the message is posted; stating one routes this message and
+   * nothing else. `../schemas/lane.ts` carries the decision.
+   */
+  readonly recipient?: string;
   readonly parent?: string;
   /** Text-quote selector; serialised into one JSON-encoded part. */
   readonly selector?: {
@@ -102,6 +129,11 @@ export class UploadError extends Error {
  */
 export function buildTurnFormData(upload: Omit<TurnUpload, "threadId">): FormData {
   const form = new FormData();
+  // The JSON twin has carried `job` since CONTRACT-050 and `recipient` since
+  // CONTRACT-051; a multipart body that could not send them would make an
+  // attachment the one thing that costs a turn its provenance or its routing.
+  if (upload.job !== undefined) form.append("job", upload.job);
+  if (upload.recipient !== undefined) form.append("recipient", upload.recipient);
   if (upload.text !== undefined) form.append("text", upload.text);
   if (upload.requestsAgent !== undefined) {
     form.append("requestsAgent", String(upload.requestsAgent));
@@ -122,6 +154,9 @@ export function buildTurnFormData(upload: Omit<TurnUpload, "threadId">): FormDat
  */
 export function buildThreadFormData(upload: ThreadUpload): FormData {
   const form = new FormData();
+  // As `buildTurnFormData`: both travel on the JSON twin, so both travel here.
+  if (upload.job !== undefined) form.append("job", upload.job);
+  if (upload.recipient !== undefined) form.append("recipient", upload.recipient);
   if (upload.parent !== undefined) form.append("parent", upload.parent);
   if (upload.selector !== undefined) form.append("selector", JSON.stringify(upload.selector));
   if (upload.title !== undefined) form.append("title", upload.title);

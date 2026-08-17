@@ -17,6 +17,7 @@ const THREAD = {
   parent: "doc_a",
   anchor: null,
   agent: "requested",
+  resident: null,
   turns: [],
 };
 

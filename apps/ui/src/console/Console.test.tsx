@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import type { IndexStatus, Job, QueueStatus } from "@corpus/contract";
+import { AGENT_PRESENCE_WINDOW_SECONDS } from "@corpus/contract";
 import { INDEX_KEY, JOBS_KEY, QUEUE_KEY, docsListKey } from "@corpus/kit";
 import { createCorpusTestHarness, type CorpusTestHarness } from "@corpus/kit/testing";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMemo, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +30,17 @@ const HEALTH_BODY = {
   workspace: "/tmp/corpus-workspace",
 };
 
+/**
+ * An agent parked **now**.
+ *
+ * A fixed instant would have been fine while nothing read `agent`; since UI-098
+ * the pill expires a presence whose evidence has aged past the grace window, so
+ * a hard-coded 2026-07-19 would quietly turn every assertion in this file that
+ * merely happens to render the strip into `agent: disconnected`. Parked-now is
+ * also simply what a live agent looks like.
+ */
 const IDLE_QUEUE: QueueStatus = {
+  agent: { live: true, since: new Date().toISOString() },
   halted: false,
   pending: 0,
   inProgress: 0,
@@ -289,6 +300,124 @@ describe("the collapsed strip", () => {
   it("disables HALT while the queue status is unknown", () => {
     renderConsole(vi.fn().mockReturnValue(new Promise(() => {})));
     expect(screen.getByRole("button", { name: /HALT/ }).hasAttribute("disabled")).toBe(true);
+  });
+
+  /*
+   * UI-098, at the surface the bug was reported on. `idle` used to be the
+   * else-branch, so these three assertions are the whole issue: nobody parked
+   * reads `disconnected` with the depth beside it, the dot is neither idle's
+   * green nor halted's red nor the pulse, and an unanswered read says neither
+   * thing.
+   */
+  describe("the agent pill's presence", () => {
+    const AWAY: QueueStatus = { ...IDLE_QUEUE, agent: { live: false, since: null } };
+
+    it("says disconnected, with the queue depth beside it, when nobody is parked", async () => {
+      const { container } = renderConsole(transport({ queue: { ...AWAY, pending: 3 } }).fetch);
+
+      await waitFor(() => {
+        expect(container.querySelector(".agent-pill")?.textContent).toBe(
+          "agent: disconnected · queue 3",
+        );
+      });
+      // Not styled as a failure (SPEC.md §11), and it does not pulse.
+      expect(container.querySelector(".agent-pill .dot")?.className).toBe("dot away");
+      expect(container.querySelector(".agent-pill")?.getAttribute("data-agent-state")).toBe(
+        "disconnected",
+      );
+    });
+
+    // CONTRACT-045: `inProgress > 0` is a fact about events, not about anybody
+    // holding them. An agent that claimed work and died leaves the count up.
+    it("prefers disconnected over working when the holder of the work is gone", async () => {
+      const { container } = renderConsole(transport({ queue: { ...AWAY, inProgress: 2 } }).fetch);
+
+      await waitFor(() => {
+        expect(container.querySelector(".agent-pill")?.textContent).toBe(
+          "agent: disconnected · queue 0",
+        );
+      });
+      expect(container.querySelector(".c-counts")?.textContent).toBe(
+        "2 running · 0 done · 0 failed",
+      );
+    });
+
+    it("still reads halted before disconnected", async () => {
+      const { container } = renderConsole(
+        transport({ queue: { ...AWAY, halted: true, inProgress: 1 } }).fetch,
+      );
+
+      await waitFor(() => {
+        expect(container.querySelector(".agent-pill")?.textContent).toBe("agent: halted · queue 0");
+      });
+    });
+
+    /*
+     * The trap this issue is most easily got wrong by: `UNKNOWN_QUEUE_STATUS`
+     * carries `agent: {live: false}` because the field is required, and a pill
+     * that read it would announce "no agent is connected" about a server that
+     * has simply not replied. The counts still show their honest zeroes beside
+     * it — that substitution is legitimate and stops short of the pill.
+     */
+    it("makes no claim at all while the server has not answered", async () => {
+      const { container } = renderConsole(vi.fn().mockReturnValue(new Promise(() => {})));
+
+      await waitFor(() => {
+        expect(container.querySelector(".agent-pill")?.textContent).toBe("agent: unknown");
+      });
+      expect(container.querySelector(".agent-pill .dot")?.className).toBe("dot unknown");
+      expect(container.querySelector(".c-counts")?.textContent).toBe(
+        "0 running · 0 done · 0 failed",
+      );
+    });
+
+    it("makes no claim when the server will never answer either", async () => {
+      const { container } = renderConsole(
+        vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("status").textContent).toBe("server unreachable");
+      });
+      expect(container.querySelector(".agent-pill")?.textContent).toBe("agent: unknown");
+    });
+
+    /*
+     * The acceptance criterion nothing else can cover: an agent that walks away
+     * produces **no queue transition**, so no `["queue"]` frame arrives to
+     * prompt a refetch. Without its own clock the pill would sit on `idle` for
+     * as long as nothing else happened — the original bug with extra steps.
+     *
+     * The `calls` assertion is what stops this passing trivially: the flip has
+     * to come from the tick re-evaluating cached data, not from a second read.
+     */
+    it("flips to disconnected on its own clock, with no new data", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const stub = transport({
+          queue: { ...IDLE_QUEUE, agent: { live: true, since: new Date().toISOString() } },
+        });
+        const { container } = renderConsole(stub.fetch);
+
+        await waitFor(() => {
+          expect(container.querySelector(".agent-pill")?.textContent).toBe("agent: idle · queue 0");
+        });
+        const reads = stub.calls.filter((call) => call === "/api/queue/status").length;
+        expect(reads).toBeGreaterThan(0);
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync((AGENT_PRESENCE_WINDOW_SECONDS + 60) * 1000);
+        });
+
+        expect(container.querySelector(".agent-pill")?.textContent).toBe(
+          "agent: disconnected · queue 0",
+        );
+        expect(container.querySelector(".agent-pill .dot")?.className).toBe("dot away");
+        expect(stub.calls.filter((call) => call === "/api/queue/status")).toHaveLength(reads);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   // TEST-89, at the boundary this test can reach: the button is the server's

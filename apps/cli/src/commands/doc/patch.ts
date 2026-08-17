@@ -14,6 +14,8 @@ import {
   stdinStream,
   warningSuffix,
   type InputDependencies,
+  JOB_FLAG,
+  resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { describeAnchors } from "./edit.js";
@@ -324,7 +326,7 @@ async function sendPatch(
   request: PatchDocRequest,
 ): ReturnType<typeof postPatch> {
   try {
-    return await postPatch(context, id, request);
+    return await postPatch(context, id, request, resolveJob(context.flags, context.env));
   } catch (error) {
     const refusal = patchRefusal(error, id);
     if (refusal !== undefined) throw refusal;
@@ -332,7 +334,12 @@ async function sendPatch(
   }
 }
 
-function postPatch(context: WorkspaceCommandContext, id: string, request: PatchDocRequest) {
+function postPatch(
+  context: WorkspaceCommandContext,
+  id: string,
+  request: PatchDocRequest,
+  job: string | undefined,
+) {
   return context.client.request((api) =>
     api.POST("/api/docs/{id}/patch", {
       params: { path: { id } },
@@ -343,6 +350,8 @@ function postPatch(context: WorkspaceCommandContext, id: string, request: PatchD
       body: {
         old: request.old,
         new: request.new,
+        // SPEC.md §9.2: the work this write serves (CLI-044).
+        ...(job === undefined ? {} : { job }),
         ...(request.all === undefined ? {} : { all: request.all }),
       },
     }),
@@ -485,6 +494,7 @@ export const patchCommand: WorkspaceCommandSpec = {
         "many were replaced. It lifts uniqueness, never the requirement to match: an excerpt " +
         "occurring zero times is refused whether or not this is set.",
     },
+    JOB_FLAG,
   ],
   examples: [
     {

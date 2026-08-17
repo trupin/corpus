@@ -89,6 +89,7 @@ async function stubThread(page: Page): Promise<void> {
         parent: null,
         anchor: null,
         agent: "engaged",
+        resident: null,
         turns: [{ author: "agent", ts: "2026-07-01T09:05:00.000Z", body: BODY, model: null }],
       } satisfies Thread),
     });

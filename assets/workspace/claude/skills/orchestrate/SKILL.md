@@ -1,11 +1,11 @@
 ---
 name: orchestrate
-description: Run the Corpus agent loop in this workspace — claim queue events, dispatch each one to a subagent, settle outcomes from their reports, report progress to the console, and park on idle until the next event arrives. Invoke as /orchestrate and leave it running.
+description: Run the Corpus agent loop in this workspace — claim the orchestrator lane's queue events, dispatch each one to a subagent, launch a listener when a conversation is given a resident, settle outcomes from their reports, report progress to the console, and park on idle until the next event arrives. Invoke as /orchestrate and leave it running.
 id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-12T00:00:00Z
+updated: 2026-08-17T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -14,15 +14,31 @@ evergreen: true
 
 ## Purpose and when to run
 
-You are this workspace's agent, and `/orchestrate` is your main loop. It drains the event
-queue, dispatches every event to a subagent running the right skill, reports progress to
-the console, drives each event to a settled state, and parks — at zero token cost — until
-the next event arrives.
-The operator starts `claude` in the workspace, invokes `/orchestrate` once, and leaves it
-running; you loop until the session is stopped. This session is the **only** process that
-claims queue events: the server enqueues them, the board displays them, and everything in
-between is you. Run one orchestrating session at a time — the server never hands one event
-to two claimants, but a second loop would split the console's story in half.
+You are this workspace's **general** agent, and `/orchestrate` is your main loop. It drains
+your lane of the event queue, dispatches every event to a subagent running the right skill,
+reports progress to the console, drives each event to a settled state, and parks — at zero
+token cost — until the next event arrives. The operator starts `claude` in the workspace,
+invokes `/orchestrate` once, and leaves it running; you loop until the session is stopped.
+
+**The queue is partitioned into lanes, and you own one of them.** A person may give a
+standalone conversation a **resident**: a long-lived agent that owns that conversation and
+everything that grows out of it, runs the **converse** skill, and holds that conversation's
+lane. Everything else in the workspace is yours. So you are not the only process that claims
+— you are the only one that claims **your** lane, and residents claim theirs. That was always
+what the single-claimant rule was doing; lanes are what made the difference visible.
+
+**Your lane is the unscoped one, and the absent flag is how it is spelled.** `corpus queue
+claim-all` and `corpus queue idle` with no `--thread` are the orchestrator's lane. There is no
+second spelling and you never pass `--thread` for yourself — that flag names somebody else's
+conversation, and passing one would park you on it. What the unscoped claim hands you is your
+own lane's work **plus** the pending work of every lane whose listener has lapsed, which is
+the fallback in *Claiming and batching*. It never hands you a live lane's work, so nothing you
+are given is being worked by somebody else at the same time.
+
+Run one orchestrating session at a time. The server never hands one event to two claimants —
+that guarantee is unchanged and now holds per lane — but a second loop on this lane would
+split the console's story in half, exactly as two listeners on one conversation would split
+that conversation's.
 
 ## Invariants
 
@@ -86,22 +102,30 @@ in the console to show for it. Run these steps in order, indefinitely:
 2. **Reap.** `corpus queue reap-stale` returns events a dead session stranded in-progress.
    Run it every pass: after a clean park it reaps nothing and stays silent, and after an
    unclean stop it is what returns stranded work to `pending/`.
-3. **Claim, then read what it printed.** `corpus queue claim-all` prints the pending batch
+3. **Read the roster.** `corpus agents`, one read, naming every lane: yours, and one for each
+   conversation that has a resident, with whether anybody is listening on it. Keep what it
+   printed — the dispatch step is what acts on it. It is the only thing that tells you a
+   listener needs launching, because nothing announces one stopping, and it is the whole of
+   your restart recovery: designations live on their threads and survive, while listeners are
+   processes and do not.
+4. **Claim, then read what it printed.** `corpus queue claim-all` prints the pending batch
    and what the server still holds in-progress, as one payload. Nothing else happens until
    you have read it.
-4. **Reconcile that held list against your own work** (Claiming and batching below). It is
+5. **Reconcile that held list against your own work** (Claiming and batching below). It is
    the loop's own check on itself, and it only checks anything if you act on it here.
-5. **Dispatch every claimed event to a subagent** (Routing and Delegation below). **This
-   step is work, not a command** — one background subagent per event, the whole batch out
-   before you go on. It is the step a chained command line has nowhere to put, which is why
-   that chain is forbidden rather than discouraged.
-6. **Park, alone.** `corpus queue idle` is the entire command — never appended to the claim
+6. **Dispatch every claimed event to a subagent, and launch the listeners the roster asked
+   for** (Routing and Delegation below). **This step is work, not a command** — one background
+   subagent per event, the whole batch out before you go on, and then one listener for each
+   unattended lane this batch took no work from. Launching comes **after** the claim rather
+   than before it, and *Routing* says why. It is the step a chained command line has nowhere to
+   put, which is why that chain is forbidden rather than discouraged.
+7. **Park, alone.** `corpus queue idle` is the entire command — never appended to the claim
    above it, never combined with the settling below it, never launched a second time while
    an earlier one is still parked. It returns on a new event or on its ~8-minute rearm.
-7. **Read what `idle` returned, before anything else happens.** That return **is** the
+8. **Read what `idle` returned, before anything else happens.** That return **is** the
    arrival notification — it names what is pending and what is still held — so a return
    nobody read is an event nobody works. It is not a log to catch up on later.
-8. **Settle every event whose subagent has reported** — one of
+9. **Settle every event whose subagent has reported** — one of
    `corpus queue complete evt_7c1d9a`,
    `corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"`, or
    `corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "a person is editing doc_a1b2c3"`
@@ -138,12 +162,53 @@ middle of dispatching, because a second claim splices new events into an orderin
 already computed. That is the whole rule: once the batch is dispatched, claiming again
 when parking returns is the normal loop, and events claimed then are simply dispatched
 behind whatever overlapping work is still running. An **empty `events` array** is not an
-error: it means the queue is halted or another consumer claimed first. Reconcile
+error: it means the queue is halted, or nothing was pending on the lanes this claim can see.
+Reconcile
 `inProgress` anyway — it is reported on every claim, empty batch included — and then park
 with a separate `corpus queue idle`. An empty batch is the one pass of the loop with
 nothing to dispatch, and it is still two commands rather than one: the pass that claims an
 empty batch and the pass that claims work are the same procedure, and a shortcut taken on
 the empty one is the shortcut that loses the next real event.
+
+**What the claim hands you is yours, and you do not audit it.** Your claim is scoped to your
+lane by being unscoped, and the server has already worked out what falls in it: your own
+lane's events, plus the pending events of every lane whose listener has **lapsed** — been
+absent longer than a grace window the server owns and this skill does not restate. A live
+lane's events are never in it. So there is no classification step here, and inventing one is a
+mistake in both directions: do not check whether an event's thread has a resident, do not
+compare payload ids against the roster, do not hold work back for an agent that might come
+back. Scope membership is a **walk** the server makes when the event is enqueued, following a
+thread's parents and a document's `origin` — you cannot reproduce it and nothing asks you to.
+The event arrived on your claim, so it is yours to work. That is the whole test.
+
+**A lapsed lane's work is ordinary work, and the lapse is not something you say in the
+thread.** Those events arrive as `comment.created` like any other and go down the same routing
+row to the same comment-skill subagent, briefed the same way. What they lack is the resident's
+own memory of the conversation, and the honest answer to that is to gather it as any subagent
+does — the thread's turns *are* the conversation, and `corpus thread context` is the briefing.
+**Never apologise for a resident and never announce that one is missing.** The person can see
+their lane's state on the board; a turn saying "your agent is not running" is an operator's
+diagnostic posted into somebody's conversation, and it is the one thing that turns a lapse —
+which costs some warmth and some speed — into something that reads like a breakdown. The lapse
+belongs in the job's log, where the operator is already looking:
+
+```bash
+corpus job log evt_2e4f8b "claimed comment.created on th_4b8e2c under the fallback — that lane has no listener"
+```
+
+The courtesy that *is* owed is a listener, and it comes from the roster rather than from the
+batch: launch one for that lane, once, as *Routing* prescribes. Do it from step 3 and not from
+the events, or a conversation that queued eight messages while it was unattended gets eight
+listeners.
+
+**A held row can leave your list while you are still working it.** The held list answers what
+the server thinks *you* are doing, and it is filtered exactly as your claim is — so an event
+you took under the fallback disappears from it the moment that lane's listener comes back and
+the lane reads live again. Nothing has been settled and nothing has been taken off you:
+`corpus queue complete` and `corpus queue fail` take an event id and no lane, so the event is
+still yours to settle and you settle it from your subagent's report exactly as always. Read
+this the way you read every other row — **settlement follows the report, never the list.** The
+list is a check on work you may have forgotten, not the record of what you are holding.
 
 **`inProgress` is a different list from the one you just claimed, and never work to do
 again.** It is `in-progress/` as it stood *before* this call's moves, so the events of this
@@ -190,6 +255,15 @@ window passes, and it is a **requeue**: an event nobody can account for is done 
 than dropped. Nothing is lost by leaving an unfamiliar row alone, which is what makes
 guessing about it unnecessary as well as harmful.
 
+**`corpus queue reap-stale` takes no lane, and reaching all of them is the point rather than
+a trespass.** Staleness is staleness: work stranded by a resident that died is stuck whoever
+claimed it, and a reaper scoped to your lane would leave it unrecoverable by the only agent
+still running. It does not re-route what it recovers — a reaped event goes back to `pending/`
+on **the lane it was claimed from**, and the fallback rather than the reaper decides who may
+then see it. So run it every pass, and know that it is yours alone to run: a resident never
+does, because requeuing another lane's held work is not something a lane owner can account
+for.
+
 ## Routing
 
 Every routable event is dispatched to a subagent; the row names **which skill that
@@ -201,6 +275,7 @@ row below is failed with a reason and is never silently completed.
 | `comment.created`     | A subagent applying the **comment** skill to the thread named in the payload.                 |
 | `form.respond`        | A subagent applying the **comment** skill; the payload names the thread, the form's turn, and the answer. |
 | `doc.edited`          | A subagent working **Reflecting on a user edit** below — the one event whose procedure lives in this skill instead of in a skill of its own. Its dispatch carries the payload verbatim, both shas included. |
+| `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident` (Launching a listener below). It is the one row that is not a job. |
 | `agent.done`          | A finished piece of background work. Nothing produces this event today — reports reach you directly (Delegation below) — but an arriving one is handled like a report: verify the work its payload identifies and settle it. |
 | `<plugin>.<action>`   | A subagent applying the skill named `<plugin>` — the part before the first dot.               |
 | anything else         | `corpus queue fail <id> --reason "unknown event type: <type>"`                                |
@@ -209,6 +284,88 @@ Thread handling itself — reading context, honoring mentions, filing inbox capt
 the reply, skill genesis — belongs to the comment skill, applied inside the subagent. This
 skill routes and dispatches, and owns queue state, ordering, deferral, logging, and the halt
 switch.
+
+- **Launching a listener.** `resident.designated` is the one row above that is not a job.
+  Everything else you dispatch is work that reports back and settles; this one starts an agent
+  and gets out of its way. Launch a background subagent applying the **converse** skill,
+  invoked as `/converse <the payload's threadId>`, and give it the payload's `resident` — the
+  name and the `agent-def` document id both, because a subagent inherits nothing and the
+  persona is what the designation was for. Then **complete the event as soon as the launch is
+  made**. The listener's lifetime is not the job's: it runs for as long as the designation
+  does, which may be weeks, and an event held open for it would sit in `in-progress/` for
+  weeks beside it. You never wait on it, you never settle for it, and its lane's events are
+  not yours — a report from it, if one ever arrives, is a sign-off rather than an outcome to
+  verify. The one case that fails the event is a launch that did not happen, with the reason
+  the launch gave.
+
+  ```bash
+  corpus queue claim-all
+  {"events":[{"id":"evt_3f8c1a","type":"resident.designated","created":"2026-07-28T09:14:02Z","source":"thread","payload":{"threadId":"th_4b8e2c","resident":{"name":"researcher","docId":"doc_b7c1d5"}}}],"inProgress":{"events":[],"total":0,"truncated":false}}
+  corpus agents
+  orchestrator · waiting for a listener
+  th_4b8e2c "Q3 planning" · researcher · waiting for a listener
+  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c as researcher (doc_b7c1d5)"
+  corpus queue complete evt_3f8c1a
+  ```
+
+- **A lane that already has a listener gets nothing.** Read the roster before you launch:
+  `corpus agents` says whether the payload's thread is `live`. A designation arrives whether
+  or not one is needed, because re-designating is the only way a person can ask for a listener
+  that stopped running to be started again — so a `live` row means this is a re-designation of
+  a lane that is already answered. Launch nothing, log why, complete. Two listeners on one
+  conversation is not a correctness failure — the server still never hands one event to two
+  claimants — but it is a conversation answered by two agents that cannot see each other's
+  context, which is the same split story a second orchestrating session would make of yours.
+
+- **A lane with nobody on it gets one, once a pass.** For every roster row that is not the
+  orchestrator's and does not read `live`, launch a listener. This covers the two cases no
+  event announces — a listener that crashed or was killed, and your own restart, where every
+  designation is still sitting on its thread and every listener is gone. It is **once per pass,
+  per lane, and never per event**: a lane that has been unattended may hand you a dozen events
+  under the fallback and it still wants one listener, and a `resident.designated` for a lane
+  you have already launched into this pass launches nothing further. And if a lane you launched
+  into does not read `live` on the following pass, that launch is not working: log it, stop
+  relaunching that lane, and leave it to the fallback until a fresh `resident.designated` says
+  to try again. Relaunching every pass forever is how one broken persona becomes the only thing
+  this loop does. Word that log line as **standing down, never as a failed launch** — a
+  listener that started, parked, claimed this lane's work and is now inside a long turn reads
+  not-live exactly as a dead one does (below), and a console line calling that a broken launch
+  sends an operator hunting for a persona that is at that moment answering somebody.
+
+- **A row that does not read `live` does not mean nobody is there — and you launch anyway.**
+  Presence is the parked request and nothing else, so a row reads not-live for a listener that
+  crashed, for one the server has not seen since it restarted, **and for one in the middle of a
+  turn**: a resident works its conversation inline and holds no park while it does, so any turn
+  longer than the grace window is indistinguishable from an empty lane. `live` is the only
+  reading with a definite meaning; the others all mean *nobody is parked at this instant*, and
+  no more. Nothing on the row separates them — the line printed after the state is display
+  text whose length is promised and whose content is not, so keying on it is deciding from a
+  string that may change without notice — and you must not invent a separator: no probe, no
+  holding back a pass to see what happens, no reading the lane's busyness. **Launch, and let
+  the lane settle it.** A second listener parks, costs nothing while the conversation is quiet,
+  and at the first message either of them is asked to answer, one of the two finds out it is
+  second and goes — nothing posted, nothing worked, and nobody answered twice. **How it finds
+  that out is the converse skill's to state, and it is stated there alone.** A resident runs
+  that test, on a lane you never claim and never see; you neither run it nor observe it, and a
+  second account of it here would be a second thing to keep in step — which is how the two came
+  to disagree once already. What you rely on is the outcome: a duplicate resolves itself at
+  the first message, so launching costs a wasted session, occasionally. The failure you would
+  buy by holding back has no repair in it at all — a listener that really did die, on a lane
+  nobody relaunches, with a person waiting on the fallback indefinitely.
+
+- **But never in the same pass you took that lane's work.** This is why launching happens after
+  the claim rather than at the roster read, and it is the one collision the fallback can
+  actually produce. The events you claimed under the fallback are sitting in `in-progress/`
+  still stamped for that lane. A listener launched now goes live the moment it parks — and from
+  that moment those rows are reported to **it**, in the held list its own first claim prints,
+  as work on its lane that it has no memory of claiming. Reconciling that list is exactly what
+  its skill tells it to do, and reconciliation cannot tell your live dispatch from an event
+  somebody abandoned: it reads the thread, finds nothing answering the turn yet, and does the
+  work your subagent is in the middle of doing. Two agents then answer the same message, and
+  the first you know of it is a reply you did not write. So per lane, per pass: **take the work
+  or launch the listener, never both.** Prefer taking the work — you have already claimed it,
+  the person is waiting on an answer rather than on an agent, and the lane is not going
+  anywhere. Launch on a later pass, once what you took is settled.
 
 - **Structured targets.** The payload carries structured `mentions` and `skills` fields,
   parsed by the server at post time. `@<subagent>` (a `type: agent-def` document under
@@ -233,6 +390,15 @@ switch.
 one-line answer, not a "quick" edit, no exception for small work: you claim, dispatch,
 settle, and park. A session deep inside one job is closed to every other; a dispatcher is
 back on the queue the moment the batch is out.
+
+**That rule is about this lane, and a resident is outside its subject rather than an exception
+to it.** The reason you delegate is that you are the queue's general path: a session buried in
+one job is closed to every other conversation in the workspace. A resident is not that path.
+It holds one lane, and every other lane — yours included — keeps moving while it works, so it
+answers its conversation in the session that has been sitting in that conversation, which is
+the entire point of designating one. Do not read its inline work as a shortcut you are also
+allowed, and do not "correct" it into a dispatch: on your lane the rule has no exceptions, and
+on its lane it never applied.
 
 Dispatch through Claude Code's subagent mechanism — the Task (Agent) tool — launched **in
 the background**, one subagent per event. A subagent inherits nothing, so its prompt
@@ -462,9 +628,12 @@ than assuming them:
   close it, every time. The comment skill carries both halves and an example; a subagent that
   never read it will get this wrong, so it belongs in what you brief them with.
 
-**Queue state never crosses the boundary.** A subagent never runs `corpus queue
-claim-all`, `corpus queue complete`, `corpus queue fail`, or `corpus queue defer`: it
-**reports** an outcome, and you **record** it. Three paths, none of which loses a job:
+**Queue state never crosses the boundary — the boundary being your lane.** A subagent you
+dispatched to work one of your events never runs `corpus queue claim-all`,
+`corpus queue complete`, `corpus queue fail`, or `corpus queue defer`:
+it **reports** an outcome, and you **record** it.
+The subject of that rule is the event you claimed, and its reason is that you hold the only
+account of it. Three paths, none of which loses a job:
 
 - **Reported success** — verify what the report claims (the reply exists, the named
   changes landed), then `corpus queue complete`.
@@ -474,6 +643,14 @@ claim-all`, `corpus queue complete`, `corpus queue fail`, or `corpus queue defer
 - **No report** — the subagent died mid-job. Its event stays `in-progress`, and the
   loop's opening `corpus queue reap-stale` returns it to `pending` after the staleness
   window. Nothing to do in the moment; nothing lost.
+
+**A listener is not one of those subagents, and reading it as one is the way to break this.**
+A resident you launched claims, settles and parks on its **own** lane — a lane you never claim
+and never see. It is that lane's owner, not your delegate on this one, so its queue calls are
+not the boundary being crossed: they are what owning a lane is. Nobody settles work they did
+not claim, which is what this rule always guaranteed and what it still guarantees per lane. So
+you settle nothing of a resident's, and a resident settles nothing of yours — including the
+events you took from its lane while nobody was on it.
 
 **A subagent that stands aside defers — through you.** A subagent that finds a person editing
 the document it was about to write reports that with the document id and stops. Confirm the
@@ -764,13 +941,25 @@ least thinking about it: a ripple comment or an acknowledgment that **quotes a u
 carries whatever that line said, and a quoted `@agent` wakes the loop exactly as a written
 one does. Quote the passage you mean, and drop the mention if it carries one.
 
+**The turn's lane is where it lands, and it is not always yours.** A turn carrying `@agent`
+enqueues on the lane of the **thread it was posted in**. An agent turn posted into a
+designated conversation wakes that conversation's resident and never appears on your claim;
+one posted anywhere else wakes you. So the rule binds every turn any agent in this
+workspace writes — yours, your subagents', a resident's — and it binds them all for the same
+reason rather than because of who gets woken. What reaches you is the ordinary case, a turn in
+a conversation nobody is resident in, and you triage it as you triage everything: it arrives
+as a `comment.created` like any other, with no marker anywhere saying a machine wrote the
+mention that produced it. That is exactly why the rule is *write no `@agent`* rather than
+*detect one*.
+
 Get those two right and nothing here feeds itself. The one other thing to drop is a repeat:
 at most one event exists per `sessionId`, so a second carrying an id you already handled is
 completed without acting on it.
 
 **1 — Read the change, always, exactly once.** The event's `from` and `to` go in as
 `--from-rev` and `--to-rev` unchanged — no conversion, no resolution, including the
-empty-tree sha carried by a document the repository's first commit introduced:
+empty-tree sha an event carries for a document's **first** change, which diffs as wholly
+added:
 
 ```bash
 corpus doc diff doc_a1b2c3 --from-rev 0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b --to-rev 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
@@ -786,6 +975,18 @@ What they are for is sizing the read — a change far past the 16000-character b
 back cut, and the numbers say so before you spend the call — and giving you the honest
 figure to quote when it does. The read is bounded, so it costs about the same whatever the
 person wrote.
+
+**An empty-tree base is the ordinary shape of a first change, not an anomaly to report.**
+`from` is git's empty tree whenever nothing before the range ever touched **this
+document** — that is **any** document's first commit, not only one the repository's root
+commit introduced. Both ends of a range walk this document's history, not the branch's, and
+they have to: a commit window belongs to a party rather than to a document and gathers that
+party's saves across documents, so the commit sitting immediately before a document's first
+one is routinely somebody else's save to a different file — a commit at which this document
+did not exist, and naming it as the base would be a false claim about where this document
+came from. What comes back is the whole document as added, which is the truth about a
+document with no earlier revision. Read it and judge it like any other change; a new
+document being new is not something to raise with anyone.
 
 **2 — Decide triviality from the diff, never from its size.** Read the `-` lines and the
 `+` lines as claims and ask one question: does the document assert anything different now?
@@ -1032,6 +1233,16 @@ workspace agent's** bound, set by the product's contract — it is unrelated to 
 concurrency limit the operator's own tooling enforces elsewhere, and neither number
 constrains the other.
 
+**The bound counts subagents working events, and a resident listener is not one of those.** A
+listener you launched is parked on `corpus queue idle` for its own lane: blocked on an HTTP
+response, spending nothing, working nothing until something arrives, and dispatching on its
+own lane's account rather than on yours. Counting parked listeners here would mean a workspace
+with ten designated conversations could dispatch nothing at all, which inverts what the bound
+is for — it limits work in flight, never agents in existence. Ordering is per lane for the
+same reason: you serialize overlapping events **within your batch**, and you neither can nor
+should order your work against a resident's. Two lanes touching one document is the ordinary
+two-writers case, and what protects it is the key on the write, not a schedule.
+
 ## Progress and job logs
 
 Every event is a job whose log the console tails live. Append lines with
@@ -1183,7 +1394,10 @@ addressable as `@<name>`. Two consequences:
 
 - An edit to **this** skill or to the comment skill takes effect on the **next**
   `/orchestrate`, not in the running session — say exactly that in the reply whenever you
-  change one.
+  change one. The converse skill behaves the same way one level out: an edit to it reaches the
+  **next listener launched**, and every listener already parked goes on running the text it
+  started with, so a workspace with residents in it holds two versions until they cycle. Say
+  that in the reply too, and never restart somebody's listener to hurry it along.
 - A bad edit to any other skill you undo yourself, the way you undo a bad edit to any
   document: read its history, work out the wording you want back, write it with the key
   (*Writing a document*). A bad edit to a **core-loop** skill can break the loop that would
@@ -1208,12 +1422,19 @@ corpus queue resume
 **This is the one repair that does not go through the agent**, and that is why it is git and
 not a command: the agent reverts a document by reading history and writing it back, but when
 the broken document is the loop there is no agent running to do it. So the operator does it
-by hand, in the workspace — use `comment` in place of `orchestrate` when that is the broken
-one. `git log` lists the revisions of that one file and `git restore --source=<sha>` puts one
-of them back in the working tree, staging nothing. Restore the **file**, not the commit: a
-commit here belongs to an editing session rather than to a save, so it gathers everything
-that party changed while its window was open, and `git revert <sha>` would take neighbouring
-documents back with it.
+by hand, in the workspace — use `comment` or `converse` in place of `orchestrate` when that is
+the broken one. `git log` lists the revisions of that one file and `git restore --source=<sha>`
+puts one of them back in the working tree, staging nothing. Restore the **file**, not the
+commit: a commit here belongs to an editing session rather than to a save, so it gathers
+everything that party changed while its window was open, and `git revert <sha>` would take
+neighbouring documents back with it.
+
+**A broken `converse` shows up differently, and is worth recognising as its own thing.** The
+loop is fine and what fails is one conversation: its lane reads live on `corpus agents` while
+nothing gets answered in it, or its listener exits the moment it starts and the lane keeps
+reading `waiting for a listener` pass after pass while the orchestrator quietly does that
+conversation's work under the fallback. Restore the file the same way, and the next launch
+picks it up; listeners already running keep the text they started with until they end.
 
 Halt first so a half-working loop cannot claim events mid-repair; resume last and the loop
 picks up everything that queued while you fixed it, without restarting the server. The

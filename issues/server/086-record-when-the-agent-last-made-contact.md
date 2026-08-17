@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done (absorbed by SERVER-112)
 
 ## Priority
 
@@ -140,3 +140,22 @@ _[Agent fills: model run on, commands, observed output.]_
 
 - [ ] `/evaluate` passes
 - [ ] Committed with `[SERVER-086]` prefix
+
+## Resolution — absorbed by SERVER-112 (2026-08-16)
+
+This issue was filed to make the server "record that an agent is there", and its
+Technical Design proposed a standalone *last agent contact* scalar kept by the
+status handler.
+
+**That scalar was the defect, not the fix.** `CONTRACT-045` and `CONTRACT-051`
+settled on one shared presence vocabulary precisely so there would not be two
+definitions of liveness in the system; a second clock maintained beside
+`SERVER-112`'s tracker is exactly the thing that vocabulary exists to prevent.
+
+`SERVER-112` built the tracker, and filling this issue's field turned out to be
+two lines against it — `agent: this.laneTracker.presence()`, where the aggregate
+is a loop over the same per-lane map the roster reads (`live` iff some lane is,
+`since` the max of theirs). No separate clock, no cross-lane machinery, and the
+red typecheck and the two `queue/routes.test.ts` failures went with it.
+
+Closed as done with no separate commit; the change is in `[SERVER-112]`.

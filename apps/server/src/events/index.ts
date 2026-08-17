@@ -15,6 +15,7 @@
 export { createInvalidationBus } from "./bus.js";
 export type { InvalidationBus, InvalidationBusOptions, InvalidationListener } from "./bus.js";
 export {
+  AGENTS_KEY,
   DOCS_KEY,
   JOBS_KEY,
   QUEUE_KEY,

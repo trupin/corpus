@@ -2,9 +2,20 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { QueueEventStatus } from "@corpus/contract";
-import { DOCS_KEY, JOBS_KEY, QUEUE_KEY } from "../events/index.js";
-import { QUEUE_QUERY_KEYS, scanQueueSync } from "./project.js";
+import {
+  QUERY_KEY_NAMES,
+  QUERY_KEY_VOCABULARY,
+  QUEUE_EVENT_STATUSES,
+  type QueueEventStatus,
+} from "@corpus/contract";
+import { AGENTS_KEY, DOCS_KEY, JOBS_KEY, QUEUE_KEY, jobKey } from "../events/index.js";
+import {
+  QUEUE_QUERY_KEYS,
+  QUEUE_TRANSITION_QUERY_KEYS,
+  jobLogKeys,
+  queueTransitionKeys,
+  scanQueueSync,
+} from "./project.js";
 import { QueueStore, type StoredEvent } from "./store.js";
 
 /**
@@ -44,6 +55,95 @@ describe("the queue's invalidation key table", () => {
     // `GET /api/docs?needs=me` counts documents named by a *failed* event
     // (`docs/needs.ts` FAILED_JOB_SQL), so a transition ages that collection.
     expect(QUEUE_QUERY_KEYS).toContainEqual(DOCS_KEY);
+  });
+
+  // SERVER-115. A lane's `summary` is read at response time off the newest
+  // **in-progress** event on that lane and the `jobs.last_line` joined to it, so
+  // a move into or out of that directory changes what `GET /api/agents` answers
+  // while touching nothing anybody would call an agent.
+  it("adds the roster for a move into or out of `in-progress`", () => {
+    expect(QUEUE_TRANSITION_QUERY_KEYS).toEqual([["queue"], ["jobs"], ["docs"], ["agents"]]);
+    expect(QUEUE_TRANSITION_QUERY_KEYS).toEqual([...QUEUE_QUERY_KEYS, AGENTS_KEY]);
+  });
+
+  /**
+   * The whole rule, over the whole domain — every ordered pair of statuses plus
+   * the `undefined` ends an enqueue and a removal have.
+   *
+   * Exhaustive rather than exemplary because the defect this fixes was a *set*
+   * of call sites each deciding for itself: a table that covers every pair
+   * leaves no pair for a future transition to decide differently.
+   */
+  it("names the roster for exactly the pairs that touch `in-progress`", () => {
+    const ends = [...QUEUE_EVENT_STATUSES, undefined];
+    for (const from of ends) {
+      for (const to of ends) {
+        const expected =
+          from === "in-progress" || to === "in-progress"
+            ? QUEUE_TRANSITION_QUERY_KEYS
+            : QUEUE_QUERY_KEYS;
+        expect(queueTransitionKeys(from, to)).toEqual(expected);
+      }
+    }
+    // The one-ended form the reaper uses: everything it moves comes out of
+    // `in-progress/`, whatever it moves into.
+    expect(queueTransitionKeys("in-progress")).toEqual(QUEUE_TRANSITION_QUERY_KEYS);
+    // An enqueue: no event on the `from` side, `pending` on the `to` side.
+    expect(queueTransitionKeys(undefined, "pending")).toEqual(QUEUE_QUERY_KEYS);
+  });
+
+  it("names the roster for an append to a held job's log, and not to a finished one's", () => {
+    expect(jobLogKeys("evt_a1b2c3d4e5f6", true)).toEqual([
+      ["jobs"],
+      ["jobs", "evt_a1b2c3d4e5f6"],
+      ["agents"],
+    ]);
+    expect(jobLogKeys("evt_a1b2c3d4e5f6", false)).toEqual([["jobs"], ["jobs", "evt_a1b2c3d4e5f6"]]);
+    expect(jobLogKeys("evt_a1b2c3d4e5f6", true)).toEqual([
+      JOBS_KEY,
+      jobKey("evt_a1b2c3d4e5f6"),
+      AGENTS_KEY,
+    ]);
+  });
+});
+
+/**
+ * The converse of the cross-check `queue/liveness.test.ts` wrote for SERVER-114:
+ * there, the contract's published `emittedBy` says a presence change makes two
+ * routes stale and `PRESENCE_QUERY_KEYS` is held to it; here it says a queue
+ * transition and a job-log append make the **roster** stale, and these tables
+ * are held to that.
+ *
+ * It has to live in `apps/server` and not beside the vocabulary it reads:
+ * `packages/contract` may not import a consumer (CONTRACT-055), so only this
+ * side can put the prose and the emitter in the same assertion. Which is the
+ * whole point — between CONTRACT-055 landing and SERVER-115 landing, the
+ * published description promised a frame the server did not send, and nothing
+ * anywhere could fail because of it.
+ */
+describe("what the contract publishes about the roster, held against the emitters", () => {
+  /** The keys whose published description says a queue transition emits them. */
+  const claimedByTransition = QUERY_KEY_NAMES.filter((name) =>
+    /queue transition/i.test(QUERY_KEY_VOCABULARY[name].emittedBy),
+  );
+
+  it("covers every key the contract says a queue transition emits", () => {
+    expect(claimedByTransition).toEqual(["docs", "queue", "jobs", "agents"]);
+    for (const name of claimedByTransition) {
+      expect(QUEUE_TRANSITION_QUERY_KEYS).toContainEqual(QUERY_KEY_VOCABULARY[name].key(""));
+    }
+  });
+
+  it("carries the coupling the `queue` and `jobs` entries spell out in prose", () => {
+    // Both entries were amended by CONTRACT-055 to say a transition names
+    // `["agents"]` in the *same frame* — the coupling this issue makes true.
+    expect(QUERY_KEY_VOCABULARY.queue.emittedBy).toMatch(/names `\["agents"\]` in the same frame/);
+    expect(QUERY_KEY_VOCABULARY.jobs.emittedBy).toMatch(/name `\["agents"\]` in the same frame/);
+    expect(QUERY_KEY_VOCABULARY.agents.emittedBy).toMatch(/job-log append/);
+  });
+
+  it("names the roster on a job-log append, as the `jobs` entry promises", () => {
+    expect(jobLogKeys("evt_000000000000", true)).toContainEqual(AGENTS_KEY);
   });
 });
 

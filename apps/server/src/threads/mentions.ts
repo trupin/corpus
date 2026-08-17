@@ -156,6 +156,30 @@ function targetIndex(projection: ProjectionDb, type: string): Map<string, Resolv
   return index;
 }
 
+/**
+ * One name, resolved the way a mention of it would resolve (SPEC.md §8) — the
+ * lookup a designation makes (§7, SERVER-109).
+ *
+ * Shares {@link targetIndex} with `parseMentions` rather than querying for the
+ * one row, because the answer must be the *same* answer: the aliases a document
+ * responds to (its invocable name and its title), the case-insensitivity, and
+ * the id-order tie-break are all decisions this index already makes, and a
+ * second `WHERE title = ?` would resolve `@researcher` and
+ * `POST .../resident {"name":"researcher"}` to different documents the first
+ * time a workspace held two.
+ *
+ * Trimmed before lookup — a mention token cannot carry surrounding whitespace
+ * and a typed name can — and the resolved target's **own** name is what a caller
+ * stores, never the spelling that found it.
+ */
+export function resolveMentionTarget(
+  projection: ProjectionDb,
+  type: string,
+  name: string,
+): ResolvedTarget | null {
+  return targetIndex(projection, type).get(name.trim().toLowerCase()) ?? null;
+}
+
 /** Parse a turn body's mentions and invocations, resolved against the projection (§8). */
 export function parseMentions(projection: ProjectionDb, body: string): ParsedMentions {
   let generic = false;

@@ -1,5 +1,6 @@
 import type { DocRow } from "@corpus/contract";
 import type { ReactElement } from "react";
+import type { AgentActivity } from "./useRowSignals.js";
 
 /**
  * The row's badge vocabulary, ported from `design/index.html`.
@@ -112,6 +113,39 @@ export interface WorkingDotProps {
  */
 export function WorkingDot({ title }: WorkingDotProps): ReactElement {
   return <span className="working-dot" role="status" aria-label={title} title={title} />;
+}
+
+/**
+ * The same dot for work **nobody has taken** — a hollow ring that does not pulse
+ * (SPEC.md §8's rider, signed 2026-08-12; UI-097).
+ *
+ * The pulse is the claim. It is what a person reads as "something is happening
+ * right now", so a queue of unclaimed events pulsing across a column said the
+ * agent was busy with every one of them while no agent was running at all. A
+ * still, unfilled ring says the opposite in the same glance and in the same
+ * place: the row is spoken for, and nothing has started.
+ */
+export function QueuedDot({ title }: WorkingDotProps): ReactElement {
+  return <span className="queued-dot" role="status" aria-label={title} title={title} />;
+}
+
+export interface AgentActivityDotProps {
+  readonly activity: AgentActivity;
+}
+
+/**
+ * The row's agent signal, whichever of the two it is — so a row draws it with
+ * one call and cannot draw the pulsing one for an unclaimed event by mistake.
+ *
+ * It exists because there are two row implementations and there will be more:
+ * every plugin `ListItem` renders this signal itself ({@link WorkingDot} is a
+ * kit export precisely so it can), and a rule about what may pulse that each of
+ * them re-derives is a rule that holds in some of them.
+ */
+export function AgentActivityDot({ activity }: AgentActivityDotProps): ReactElement | null {
+  if (activity.state === "working") return <WorkingDot title={activity.title} />;
+  if (activity.state === "waiting") return <QueuedDot title={activity.title} />;
+  return null;
 }
 
 export interface AgeChipProps {

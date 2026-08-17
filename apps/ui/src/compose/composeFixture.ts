@@ -1,3 +1,5 @@
+import type { AgentLane, AgentRoster } from "@corpus/contract";
+import { unknownRecipientBody } from "../testing/serverRefusals";
 /**
  * A recording transport for the composer's suites.
  *
@@ -7,6 +9,15 @@
  * what the assertions are actually about: which field carried the text, whether
  * `requestsAgent` was the string `"true"`, and how many `files` parts there were.
  */
+
+const ORCHESTRATOR_ROW: AgentLane = {
+  lane: "orchestrator",
+  resident: null,
+  live: false,
+  since: null,
+  summary: null,
+  origin: null,
+};
 
 export interface RecordedRequest {
   readonly method: string;
@@ -22,6 +33,12 @@ export interface ComposeTransport {
   readonly fetch: typeof globalThis.fetch;
   readonly calls: RecordedRequest[];
   readonly to: (path: string) => RecordedRequest[];
+  /**
+   * **The other tab** (SPEC.md §7): releases a lane behind this page's back, so
+   * `GET /api/agents` stops naming it while this page's cache still does. The
+   * next post naming it is refused `422`, exactly as the server refuses it.
+   */
+  readonly releaseLane: (lane: string) => void;
 }
 
 export interface ComposeTransportOptions {
@@ -42,6 +59,13 @@ export interface ComposeTransportOptions {
    * before this feature still describes the composer correctly.
    */
   readonly docs?: Readonly<Record<string, unknown>>;
+  /**
+   * Designated lanes `GET /api/agents` answers with, beside the orchestrator's
+   * unconditional row (SPEC.md §7's roster, UI-108). With one lane the composer
+   * offers no recipient control at all, which is what every suite written before
+   * this feature expects.
+   */
+  readonly lanes?: readonly AgentLane[];
 }
 
 /** JSON bodies reach `fetch` as a string; anything else is not a body this fixture reads. */
@@ -60,6 +84,16 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
   const calls: RecordedRequest[] = [];
   const eventId = options.eventId === undefined ? "evt_1" : options.eventId;
   const warnings = options.warnings ?? [];
+  /**
+   * Lanes released **behind this page's back** — the other tab (SPEC.md §7).
+   * `GET /api/agents` stops naming them while whatever this page has cached
+   * still does, which is the disagreement UI-118 is about and the only way to
+   * make the server's `422` reachable from a composer.
+   */
+  const released = new Set<string>();
+  const isLane = (lane: string): boolean =>
+    lane === "orchestrator" ||
+    (options.lanes ?? []).some((row) => row.lane === lane && !released.has(row.lane));
 
   /**
    * The multipart body is read off `init` rather than through `new Request(…)`:
@@ -100,6 +134,26 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
       return json({ code: "bad_request", message: "the server said no", issues: [] }, failure);
     }
 
+    if (url.pathname === "/api/agents") {
+      const lanes = (options.lanes ?? []).filter((row) => !released.has(row.lane));
+      return json({ agents: [ORCHESTRATOR_ROW, ...lanes] } satisfies AgentRoster);
+    }
+
+    /*
+     * The server's `assertRecipientResolvable` (SPEC.md §7): a `recipient` that
+     * names no lane is a `422` and nothing is written. Modelled rather than
+     * accepted, because a fixture that took a stale pick would let a suite
+     * assert a routing the server would have refused (UI-118).
+     *
+     * The body comes from `serverRefusals.ts` rather than being written out here
+     * (UI-120): this copy was a sentence of its own invention, and no assertion
+     * noticed because they all match on `names no lane`.
+     */
+    const stated = (form ?? body) as { recipient?: unknown } | undefined;
+    const lane = stated?.recipient;
+    if (typeof lane === "string" && !isLane(lane)) {
+      return json(unknownRecipientBody(lane), 422);
+    }
     if (url.pathname === "/api/docs") {
       const items = options.rows ?? [];
       return json({ items, page: { total: items.length, limit: 50, offset: 0 } });
@@ -138,5 +192,12 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
     return json({});
   };
 
-  return { fetch, calls, to: (path) => calls.filter((call) => call.path === path) };
+  return {
+    fetch,
+    calls,
+    to: (path) => calls.filter((call) => call.path === path),
+    releaseLane: (lane) => {
+      released.add(lane);
+    },
+  };
 }

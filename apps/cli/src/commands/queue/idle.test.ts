@@ -213,6 +213,65 @@ describe("corpus queue idle", () => {
     expect(collectRegistryProblems({ summary: "s.", commands: [idleCommand], topics: [] })).toEqual(
       [],
     );
-    expect(idleCommand.flags.map((flag) => flag.name)).toEqual(["wait"]);
+    expect(idleCommand.flags.map((flag) => flag.name)).toEqual(["wait", "thread"]);
+  });
+});
+
+/**
+ * The lane (SPEC.md §7). Parking scoped is what a resident's presence **is**, so
+ * the assertions below are about the parameter actually reaching the wire — a
+ * dropped `scope` would not fail loudly, it would silently park the resident on
+ * the orchestrator's lane and report the conversation as having no listener.
+ */
+describe("corpus queue idle --thread", () => {
+  it("parks on the named lane, and sends nothing when none is named", async () => {
+    const stub = await idleStub(() => "events");
+
+    await runIdle(stubContext(stub, { flags: { wait: 5, thread: "th_4b8e2c" } }).context, {
+      signals: fakeSignals(),
+    });
+    expect(stub.requestsTo("/api/queue/idle")[0]?.query.get("scope")).toBe("th_4b8e2c");
+
+    await runIdle(stubContext(stub, { flags: { wait: 5 } }).context, { signals: fakeSignals() });
+    // Absent, not `scope=orchestrator`: the server reads its own lane from
+    // silence, and a second spelling is one a caller can hit by accident.
+    expect(stub.requestsTo("/api/queue/idle")[1]?.query.has("scope")).toBe(false);
+  });
+
+  it("prints the same empty-window payload scoped as unscoped", async () => {
+    const stub = await idleStub(() => "expire");
+
+    const scoped = stubContext(stub, { flags: { wait: 0, thread: "th_4b8e2c" }, json: true });
+    await runIdle(scoped.context, { signals: fakeSignals() });
+    const unscoped = stubContext(stub, { flags: { wait: 0 }, json: true });
+    await runIdle(unscoped.context, { signals: fakeSignals() });
+
+    // The converse skill's loop depends on this being stable.
+    expect(scoped.stdout()).toBe(unscoped.stdout());
+    expect(JSON.parse(scoped.stdout())).toEqual({ idle: true, reason: "timeout" });
+  });
+
+  it("prints the same event lines scoped as unscoped", async () => {
+    const stub = await idleStub(() => "events");
+
+    const scoped = stubContext(stub, { flags: { wait: 5, thread: "th_4b8e2c" } });
+    await runIdle(scoped.context, { signals: fakeSignals() });
+    const unscoped = stubContext(stub, { flags: { wait: 5 } });
+    await runIdle(unscoped.context, { signals: fakeSignals() });
+
+    expect(scoped.stdout()).toBe(unscoped.stdout());
+  });
+
+  it("refuses a lane that is not a thread id before it parks at all", async () => {
+    const stub = await idleStub(() => "events");
+
+    const harness = stubContext(stub, { flags: { wait: 5, thread: "orchestrator" } });
+    await expect(runIdle(harness.context, { signals: fakeSignals() })).rejects.toThrow(
+      /orchestrator/,
+    );
+
+    // Nothing was sent: a bad lane costs a usage error, not eight minutes of
+    // silence followed by one.
+    expect(stub.requests).toEqual([]);
   });
 });

@@ -121,6 +121,60 @@ export function pickOutstandingJob(jobs: readonly Job[], threadId: string): Job 
 }
 
 /**
+ * The outstanding request a thread card reports: **one wait, and who is holding
+ * it** (SPEC.md §8's rider, signed 2026-08-12; UI-097).
+ *
+ * Two fields rather than one job, because the two questions have different
+ * answers when a thread has several events outstanding — and it is an ordinary
+ * shape, not a corner: ask twice while the agent is slow and there are two.
+ *
+ * - `job` is the **oldest**, and it is what the clock counts from. Two queued
+ *   events are one wait as far as the person reading the card is concerned, and
+ *   it began with the first of them ({@link pickOutstandingJob}).
+ * - `working` is true when **any** of them is `in-progress`, which is the
+ *   direction that makes the claim true: one event being held is enough for
+ *   "the agent is working on this thread", while any number of unclaimed ones is
+ *   not. So a thread that asked twice, was answered once and is being worked
+ *   reads as working, counting from the first ask — which is exactly the state
+ *   the person is in.
+ *
+ * **`deferred` is `working: false`.** It was claimed and then parked because
+ * somebody is editing the document it needs (SPEC.md §7): the reply is still
+ * coming, so it stays outstanding, but nobody is working it this minute and the
+ * row must not say otherwise. Naming *why* it is waiting is worth doing and is
+ * not done here — it needs the blocking document, and that is a wider row than
+ * this issue's split.
+ */
+export interface OutstandingAgentRequest {
+  /** The oldest unfinished job on this thread — the one the clock runs from. */
+  readonly job: Job;
+  /** Whether some unfinished job on this thread has actually been claimed. */
+  readonly working: boolean;
+}
+
+/**
+ * {@link pickOutstandingJob} plus the claim question, over one list.
+ *
+ * Separate from the pick so the oldest-wins rule and the any-claimed rule stay
+ * legible as the two different rules they are: one is about *when* the wait
+ * started and the other about *what is happening to it now*, and folding them
+ * into a single scan would make the second look like a property of the job the
+ * first chose. It is not — the oldest job may be the pending one while a later
+ * ask is being worked.
+ */
+export function pickOutstandingRequest(
+  jobs: readonly Job[],
+  threadId: string,
+): OutstandingAgentRequest | null {
+  const job = pickOutstandingJob(jobs, threadId);
+  if (job === null) return null;
+  const working = jobs.some(
+    (candidate) => candidate.originId === threadId && candidate.status === "in-progress",
+  );
+  return { job, working };
+}
+
+/**
  * When the escalation currently in progress began, or `null` when there is none.
  *
  * A `truncated` shared answer is not one continuous state: the queue saturates,
@@ -158,7 +212,8 @@ function useEscalationStart(escalated: boolean): number | null {
 }
 
 /**
- * The oldest unfinished job this thread is waiting on, or `null`.
+ * The outstanding request this thread is waiting on, or `null` — the oldest
+ * unfinished job, and whether anything on this thread has been claimed.
  *
  * **One request for every card on the screen, and a complete answer anyway.**
  * The ordinary read is the shared outstanding query — one cache entry for the
@@ -195,7 +250,7 @@ function useEscalationStart(escalated: boolean): number | null {
  * transition. A saturated queue transitions constantly, so the pending row would
  * flicker on and off throughout the wait it is reporting.
  */
-export function useOutstandingAgentJob(threadId: string): Job | null {
+export function useOutstandingAgentRequest(threadId: string): OutstandingAgentRequest | null {
   const outstanding = useOutstandingJobs();
   const exact = useJobs(
     { originId: threadId, status: OUTSTANDING_JOB_STATUS_PARAM },
@@ -204,7 +259,7 @@ export function useOutstandingAgentJob(threadId: string): Job | null {
   const escalatedAt = useEscalationStart(outstanding.truncated);
   const answer =
     escalatedAt !== null && exact.dataUpdatedAt >= escalatedAt ? exact.data : undefined;
-  return pickOutstandingJob(answer?.jobs ?? outstanding.jobs, threadId);
+  return pickOutstandingRequest(answer?.jobs ?? outstanding.jobs, threadId);
 }
 
 /** The one field of a turn this module needs: when it was posted. */

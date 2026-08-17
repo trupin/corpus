@@ -1,6 +1,8 @@
 import type { TopicSpec } from "../../registry/types.js";
 import { contextCommand } from "./context.js";
 import { createCommand } from "./create.js";
+import { designateCommand } from "./designate.js";
+import { releaseCommand } from "./release.js";
 import { replyCommand } from "./reply.js";
 import { showCommand } from "./show.js";
 import { reopenCommand, resolveCommand } from "./status.js";
@@ -17,6 +19,12 @@ import { reopenCommand, resolveCommand } from "./status.js";
  * the agent unable to start a conversation about a document at all (CLI-022).
  * The quote is the anchor: a command line has no selection, so the caller names
  * the text and the server resolves it.
+ *
+ * `designate`/`release` are the odd pair here, and deliberately: they are the
+ * **user's** verbs (SPEC.md §7), not the agent's, so they sit beside the other
+ * thread writes rather than under `corpus agents` — which is a read of who is
+ * running and must stay one. Designation is thread state, set and released like
+ * any other thread field, and this is where thread state lives.
  */
 export const threadTopic: TopicSpec = {
   name: "thread",
@@ -28,7 +36,9 @@ export const threadTopic: TopicSpec = {
     "every turn), `context` is the bounded briefing around it (the anchored passage plus the " +
     "excerpts that bear on it, Retrieval Phase C), `reply` is the agent's half of the " +
     "conversation, and `resolve`/`reopen` control " +
-    "whether later turns keep waking it (SPEC.md §8).",
+    "whether later turns keep waking it (SPEC.md §8). `designate` and `release` are the user's " +
+    "half of SPEC.md §7's residency: they put a long-lived agent in charge of a standalone " +
+    "conversation and everything that grows out of it, and take it away again.",
   commands: [
     createCommand,
     showCommand,
@@ -36,5 +46,7 @@ export const threadTopic: TopicSpec = {
     replyCommand,
     resolveCommand,
     reopenCommand,
+    designateCommand,
+    releaseCommand,
   ],
 };

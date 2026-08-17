@@ -37,6 +37,14 @@ interface FakeRepo {
   readonly shortstat?: Map<string, string> | undefined;
   /** Range key `from..to` → the count `rev-list --count` would print. Default `"1"`. */
   readonly counts?: Map<string, string> | undefined;
+  /**
+   * sha → the paths that commit touched, for the path-limited walk `from` is now
+   * resolved by (SERVER-097). A sha absent from the map touched **every** path,
+   * which is what keeps every case that predates the walk saying what it said:
+   * their graphs are one document's, so its previous commit and the branch's
+   * previous commit are the same commit.
+   */
+  readonly touches?: Map<string, readonly string[]> | undefined;
 }
 
 /**
@@ -81,7 +89,17 @@ function fakeGit(repo: FakeRepo): Git & { readonly calls: string[][] } {
       }
       if (argv[0] === "rev-list") {
         const spec = argv[2] ?? "";
-        return Promise.resolve(ok(`${repo.counts?.get(spec) ?? "1"}\n`));
+        if (argv[1] === "--count") return Promise.resolve(ok(`${repo.counts?.get(spec) ?? "1"}\n`));
+        // `rev-list --max-count=1 <sha> -- <path>`: git's own path-limited walk,
+        // newest first, answering the first ancestor in which that file changed.
+        const path = argv[4] ?? "";
+        let cursor: string | null | undefined = spec;
+        while (typeof cursor === "string") {
+          const touched = repo.touches?.get(cursor);
+          if (touched === undefined || touched.includes(path)) return Promise.resolve(ok(cursor));
+          cursor = repo.parents.get(cursor);
+        }
+        return Promise.resolve(ok(""));
       }
       return Promise.resolve(no());
     },
@@ -201,6 +219,56 @@ describe("edit session tracker — the idle path (SPEC.md §4)", () => {
 
     await h.advance(IDLE_MS);
     expect(h.enqueued[0]?.payload).toMatchObject({ from: EMPTY_TREE_OBJECT_ID, to: "0000fff" });
+  });
+
+  // SERVER-097. §4's window is a *party's*, so the commit immediately before a
+  // session's first one is whatever the other party last did — to whichever
+  // document. `from` is a claim about **this** document's prior state.
+  it("skips past commits that never touched this document to find `from`", async () => {
+    const h = harness({
+      parents: new Map([
+        // The document's own previous revision …
+        ["ba5e001", null],
+        // … two commits by the other party, to another document …
+        ["a9e0071", "ba5e001"],
+        ["a9e0072", "a9e0071"],
+        // … then the session's own commit.
+        ["c0ffee1", "a9e0072"],
+      ]),
+      touches: new Map([
+        ["ba5e001", [PATH]],
+        ["a9e0071", [OTHER_PATH]],
+        ["a9e0072", [OTHER_PATH]],
+        ["c0ffee1", [PATH]],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "c0ffee1" });
+    // Stated from the other side too, because this is the shape the bug had: the
+    // branch's previous commit is named nowhere.
+    expect(JSON.stringify(h.enqueued[0]?.payload)).not.toContain("a9e007");
+  });
+
+  it("uses git's empty tree when nothing before the session touched this document", async () => {
+    // The document was introduced by the session's own commit — a create and the
+    // saves that fold into it. Its parent exists, but it is another document's,
+    // so there is no prior state of *this* file to name.
+    const h = harness({
+      parents: new Map([
+        ["a9e0071", null],
+        ["c0ffee1", "a9e0071"],
+      ]),
+      touches: new Map([
+        ["a9e0071", [OTHER_PATH]],
+        ["c0ffee1", [PATH]],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: EMPTY_TREE_OBJECT_ID, to: "c0ffee1" });
   });
 
   it("keeps one session across repeated saves inside the window", async () => {

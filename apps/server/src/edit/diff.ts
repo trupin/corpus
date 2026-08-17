@@ -79,6 +79,43 @@ export async function newestCommitFor(git: Git, path: string): Promise<string | 
 }
 
 /**
+ * The newest commit **before `sha` that touched `path`**, or `null` when this
+ * document has no earlier revision.
+ *
+ * This is what a range's `from` has to be, and it is not `sha`'s parent
+ * (SERVER-097). §4's commit window belongs to a **party**, not to a document, so
+ * the commit sitting immediately before a session's first one is whatever the
+ * *other* party last did — to whichever document. Reproduced in the user's own
+ * workspace as a `doc.edited` whose `from` was an agent commit to a different
+ * document entirely, and party-scoped windows (SHARED-040) make that the routine
+ * case rather than the unlucky one.
+ *
+ * What it costs is nothing that was ever right: every commit skipped over left
+ * this file byte-identical, so `git diff from..to -- path` and
+ * `rev-list --count from..to -- path` — both already path-scoped — report the
+ * same numbers either way. What changes is only the **claim**: §4 calls `from`
+ * the state the document was in before the session, and now it is one.
+ *
+ * The walk starts at `sha`'s parent rather than at `sha` with `--skip=1`, so it
+ * stays correct for a `sha` that does not itself touch `path` — and a root
+ * commit, having no parent, is the same `null` as a document with no history.
+ * Both reach the caller as `EMPTY_TREE_OBJECT_ID`, which is what the range
+ * already published for a document introduced by the repository's root commit
+ * and what `GET /api/docs/{id}/diff` already accepts back.
+ */
+export async function previousCommitFor(
+  git: Git,
+  sha: string,
+  path: string,
+): Promise<string | null> {
+  const parent = await parentOf(git, sha);
+  if (parent === null) return null;
+  const result = await git.exec(["rev-list", "--max-count=1", parent, "--", path]);
+  const found = result.stdout.trim();
+  return result.ok && found !== "" ? found : null;
+}
+
+/**
  * `git diff --shortstat`'s one line, e.g. ` 1 file changed, 5 insertions(+), 2
  * deletions(-)`. Either count is absent when it is zero, and the whole line is
  * absent when nothing changed — so the parse reads what is there rather than
@@ -265,8 +302,28 @@ const unknownRevision = (parameter: "from" | "to", ref: string): never => {
  *
  * The range is resolved before anything is read, and both defaults are computed
  * from the document's own history: `to` is the newest commit that touched its
- * file and `from` is that commit's parent, so the bare `corpus doc diff <id>`
- * §4 spells reads as "what changed in this document's last commit".
+ * file and `from` is the newest commit **before it that touched the same file**,
+ * so the bare `corpus doc diff <id>` §4 spells reads as "what changed in this
+ * document's last commit".
+ *
+ * `from` is {@link previousCommitFor} rather than {@link parentOf} for the reason
+ * that function documents (SERVER-097, and SERVER-113 for this route): under §4's
+ * party-scoped commit window the commit immediately preceding a document's newest
+ * one is routinely the *other* party's work on a *different* document, so the
+ * parent is a false claim about this document's provenance — measured live as a
+ * default base whose only file was a neighbour's. The numbers do not move, since
+ * every commit skipped over left this file byte-identical and both readers below
+ * are path-scoped; what moves is the claim. It is also what the `doc.edited`
+ * acknowledgment already publishes, so the event an agent receives and the route
+ * it calls to see that change now name the same base instead of disagreeing.
+ * A document whose first commit is its only one therefore diffs against
+ * `EMPTY_TREE_OBJECT_ID` — "nothing before this touched it", which the contract
+ * already accepts back as a `from` and which yields the same whole-file-added
+ * diff a base predating the file did.
+ *
+ * An explicitly named `from` is untouched by any of this: a caller that quotes a
+ * range gets exactly that range, including one starting at a commit that never
+ * touched this document.
  *
  * The diff is taken at the path the document holds **now**. A document moved
  * across the range therefore shows what git shows for its current path, which is
@@ -343,7 +400,7 @@ export async function readDocDiff(
 
     const from =
       query.from === undefined
-        ? ((await parentOf(git, to)) ?? EMPTY_TREE_OBJECT_ID)
+        ? ((await previousCommitFor(git, to, path)) ?? EMPTY_TREE_OBJECT_ID)
         : ((await resolveRangeEnd(git, query.from)) ?? unknownRevision("from", query.from));
 
     const stats = await readRangeStats(git, from, to, path);

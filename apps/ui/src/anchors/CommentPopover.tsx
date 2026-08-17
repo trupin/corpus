@@ -1,28 +1,57 @@
 import {
+  AttachButton,
   COMPOSER_PRIMARY_KEY,
   composerReachesAgent,
   handleComposerKeyDown,
+  PendingAttachments,
+  RecipientPicker,
+  useAttachmentIntake,
+  useComposerRecipient,
   useComposerWeight,
+  unknownRecipientLane,
   WeightPicker,
+  type ComposerRecipientRestore,
+  type PendingAttachment,
 } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { ASK_AGENT_LABEL, NOTE_ONLY_LABEL } from "../thread/ThreadComposer";
+import { usePopoverDrag } from "./popoverDrag";
 
 /**
  * The composer that opens on 💬 Comment — a composer, not a dialog.
  *
- * It takes one thing (what you want to say), offers one choice (whether the
- * agent is being asked), and submits. Nothing about the anchor is configurable:
- * the quote is the text that was selected, shown so the person can see what
- * they are commenting on, and SPEC.md §6 makes it a selector rather than a
- * setting.
+ * It takes what you want to say **and what you want to say it with**, offers one
+ * choice (whether the agent is being asked), and submits. Nothing about the
+ * anchor is configurable: the quote is the text that was selected, shown so the
+ * person can see what they are commenting on, and SPEC.md §6 makes it a selector
+ * rather than a setting.
+ *
+ * **It takes attachments by all three of §6's routes** — the 📎 picker, a paste
+ * and a drop — because §11's rider says every composer does, naming "a comment
+ * on a document selection" in its own list: *"a comment is a comment wherever it
+ * starts; which surface it was written in decides nothing about what it can
+ * carry"* (UI-111). The intake, the chips and the button are the reply box's,
+ * not a second implementation of them.
+ *
+ * **A comment may be attachment-only.** §6 allows a first turn that is a file
+ * and no words, and the transport already does — `POST /api/threads` goes
+ * multipart with an omitted `text` — so the send button answers to either.
  *
  * **The toggle is the tri-state `requestsAgent`**, exactly as
  * `ThreadComposer`'s is: `○ note only` sends an explicit `false`, because an
  * omitted flag means "enqueue if the body mentions the agent" and would turn a
  * note into a job (sprint-011 Adjudication 11).
+ *
+ * **It can be moved off what it is about** (UI-112). It opens at the selection,
+ * which for anything longer than a phrase is on top of the evidence — the figure
+ * two lines up, the sentence a pronoun refers to. The grip at its head picks it
+ * up, by pointer or by arrow key, and the position lasts as long as this
+ * opening: a place chosen to clear one passage says nothing about the next. What
+ * makes that affordable is the other half of UI-112 — the words are lit in the
+ * document from the moment this opens, so the box no longer has to sit on them
+ * to say which they were.
  *
  * It registers in the escape chain at `Popover` priority, above the reader and
  * above focus mode, so Escape closes the popover and leaves the document open
@@ -32,8 +61,64 @@ import { ASK_AGENT_LABEL, NOTE_ONLY_LABEL } from "../thread/ThreadComposer";
  * comments, `esc` closes.
  */
 
-export const COMMENT_PLACEHOLDER = "Comment — @ route · / skill · [[ link";
+export const COMMENT_PLACEHOLDER = "Comment — @ route · / skill · [[ link · paste or drop files";
 export const COMMENT_SUBMIT_LABEL = `Comment ${COMPOSER_PRIMARY_KEY}`;
+
+/**
+ * The grip's accessible name.
+ *
+ * It deliberately contains neither "comment" nor "Comment". Two existing
+ * queries would otherwise become ambiguous the moment this button appeared: the
+ * send button is found by `/Comment/`, and every e2e spec fills the field with
+ * `getByLabel("Comment")` — which is a **substring** match in Playwright, so a
+ * grip called "Move this comment box" resolved that locator to two elements.
+ * Caught by the real-app drill for UI-112, not by a unit test.
+ */
+export const COMMENT_MOVE_LABEL = "Move this composer";
+export const COMMENT_MOVE_HINT = "Move this composer — drag it, or use the arrow keys";
+
+/**
+ * What a refused send hands back, so the composer that re-opens is the one that
+ * closed rather than an empty one (UI-111).
+ *
+ * The attachments are the very objects that were taken — their previews are
+ * still live, because `take()` does not revoke — so restoring them costs no
+ * re-read of the files and shows the same thumbnails.
+ */
+export interface CommentRestore {
+  readonly text: string;
+  readonly attachments: readonly PendingAttachment[];
+  /**
+   * The lane the refused comment was addressed to, and whether the server
+   * refused **that lane** (SPEC.md §7's `422`, UI-118).
+   *
+   * It comes back for the reason the words and the attachments do, and for one
+   * more: this composer's pick is the only part of a refused send that the
+   * person cannot see was lost. Dropping it would put the retry back on the
+   * computed default — worked out here, from the same cached roster that
+   * produced the pick the server has just said is stale — and route it to
+   * somebody they never addressed, without a word anywhere.
+   */
+  readonly recipient?: ComposerRecipientRestore | undefined;
+}
+
+/**
+ * The recipient half of a {@link CommentRestore}, from what the refused send
+ * stated and how the server refused it.
+ *
+ * A host builds it in its `onError` and knows both halves already. `refused` is
+ * true only for a `422` naming **this** lane: any other failure leaves the pick
+ * intact but unrefused, so the composer comes back holding it without claiming
+ * a verdict the server never gave (UI-118).
+ */
+export function restoredRecipient(
+  stated: { readonly recipient?: string },
+  error: unknown,
+): ComposerRecipientRestore | undefined {
+  const lane = stated.recipient;
+  if (lane === undefined) return undefined;
+  return { chosen: lane, refused: unknownRecipientLane(error) === lane };
+}
 
 export interface CommentPopoverProps {
   /** The markdown the thread will be anchored to, shown for confirmation. */
@@ -50,14 +135,37 @@ export interface CommentPopoverProps {
    */
   readonly weightScope: string;
   /**
-   * The third argument is the stated weight, spread onto the request: `{}` when
-   * nothing was chosen. Passed as an object rather than a `string | undefined`
-   * so absence has one spelling all the way to the wire.
+   * The conversation this comment lands in — the document it is on, or the
+   * thread whose turn it hangs off (SPEC.md §7's scope walk starts there).
+   * The host owns it for `weightScope`'s reason: the host knows what is being
+   * commented on, and this popover is one component in two placements.
+   */
+  readonly recipientScope: string | null;
+  /**
+   * What a previous send left behind when the server refused it, or nothing on
+   * a fresh selection. The host holds it, because the host is what unmounts
+   * this composer on submit.
+   */
+  readonly restore?: CommentRestore | undefined;
+  /**
+   * The third argument is what this composer **states**, spread onto the
+   * request: the weight it was set at and the recipient it was addressed to,
+   * each present only when stated and `{}` when neither was. Passed as an object
+   * rather than as two `string | undefined`s so absence has one spelling all the
+   * way to the wire — which for the recipient is the whole mechanism, since a
+   * default nobody touched is sent by omitting the field (SPEC.md §7). A pick is
+   * present whether or not it matches that default (UI-118).
+   *
+   * The fourth is the attachments, **taken** from the composer as they are
+   * handed over: their previews are not revoked, so the host can put them back
+   * on a refusal, and must free them (`releaseAttachments`) when the post lands.
+   * `body` may be empty when they are not (§6).
    */
   readonly onSubmit: (
     body: string,
     requestsAgent: boolean,
-    weight: { readonly weight?: string },
+    stated: { readonly weight?: string; readonly recipient?: string },
+    attachments: readonly PendingAttachment[],
   ) => void;
   readonly onClose: () => void;
 }
@@ -74,12 +182,17 @@ export function CommentPopover({
   left,
   pending,
   weightScope,
+  recipientScope,
+  restore,
   onSubmit,
   onClose,
 }: CommentPopoverProps): ReactElement {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(restore?.text ?? "");
   const [asking, setAsking] = useState(true);
   const input = useRef<HTMLTextAreaElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const drag = usePopoverDrag({ top, left }, box);
+  const intake = useAttachmentIntake(restore?.attachments);
   /*
    * Read from cache, never fetched here. The level set is one shared query the
    * board warms at app level, so the control is drawn in this popover's **first**
@@ -87,6 +200,7 @@ export function CommentPopover({
    * pointer, which is the bug UI-073 and UI-074 exist about.
    */
   const weight = useComposerWeight(weightScope);
+  const recipient = useComposerRecipient({ start: recipientScope, restore: restore?.recipient });
   const live = composerReachesAgent({ requestsAgent: asking });
 
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Popover, onEscape: onClose });
@@ -95,26 +209,63 @@ export function CommentPopover({
     input.current?.focus();
   }, []);
 
-  const canSend = text.trim() !== "" && !pending;
+  // Either alone is a comment: §6's first turn needs text, a file, or both.
+  const canSend = (text.trim() !== "" || intake.pending.length > 0) && !pending;
 
   const send = (): void => {
     if (!canSend) return;
-    onSubmit(text.trim(), asking, weight.request);
+    // Taken, not read: the popover closes on submit, and the snapshot has to
+    // outlive it for the host to put back if the post is refused.
+    // The pick is handed over with the message and never kept here: this
+    // popover unmounts on submit, so there is nowhere for an override to
+    // persist to — §7's third prohibition, enforced by the surface's own
+    // lifetime. A *refused* send is the one exception, and it is not a
+    // persisting override: nothing was written, so `restore` brings the same
+    // unsent message back whole — words, files and the lane it named alike.
+    onSubmit(text.trim(), asking, { ...weight.request, ...recipient.request }, intake.take());
   };
 
   return createPortal(
     <div
-      className="comment-pop open"
+      ref={box}
+      className={[
+        "comment-pop",
+        "open",
+        intake.dropping ? "dropping" : "",
+        drag.dragging ? "dragging" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-dropzone="comment"
+      onDragEnter={intake.onDragEnter}
+      onDragOver={intake.onDragOver}
+      onDragLeave={intake.onDragLeave}
+      onDrop={intake.onDrop}
       role="dialog"
       aria-label="New comment"
       data-comment-pop
-      style={{ top: `${String(Math.round(top))}px`, left: `${String(Math.round(left))}px` }}
+      style={{
+        top: `${String(Math.round(drag.top))}px`,
+        left: `${String(Math.round(drag.left))}px`,
+      }}
       // Clicking inside must not collapse the selection the anchor comes from.
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) event.preventDefault();
       }}
     >
+      <button
+        type="button"
+        className="cm-drag"
+        data-comment-drag
+        aria-label={COMMENT_MOVE_LABEL}
+        title={COMMENT_MOVE_HINT}
+        onPointerDown={drag.onPointerDown}
+        onKeyDown={drag.onKeyDown}
+      >
+        <span aria-hidden="true">⠿</span>
+      </button>
       <div className="cm-quote">“{quotePreview(quote)}”</div>
+      <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
       <textarea
         ref={input}
         className="cm-input"
@@ -125,6 +276,10 @@ export function CommentPopover({
         onChange={(event) => {
           setText(event.target.value);
         }}
+        // A paste carrying files attaches them; a paste carrying only text
+        // still types (the intake declines it), which is the whole of §6's
+        // second route.
+        onPaste={intake.onPaste}
         onKeyDown={(event) => {
           // The escape chain deliberately ignores keys typed inside a field —
           // otherwise `⌫` would close the reader instead of deleting a
@@ -135,7 +290,9 @@ export function CommentPopover({
         }}
       />
       <WeightPicker weight={weight} live={live} surface="comment" />
+      <RecipientPicker recipient={recipient} live={live} surface="comment" />
       <div className="composer-foot">
+        <AttachButton surface="comment" onFiles={intake.add} />
         <button
           type="button"
           className={asking ? "toggle on" : "toggle"}

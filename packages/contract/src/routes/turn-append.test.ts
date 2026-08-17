@@ -18,6 +18,7 @@ const threadSummary = {
   parent: "doc_a1b2c3",
   anchor: "anc_k4f7",
   agent: "engaged" as const,
+  resident: null,
   created: "2026-07-19T10:05:00Z",
   updated: "2026-07-19T10:07:12Z",
   turnCount: 2,

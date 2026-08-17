@@ -1,5 +1,6 @@
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { reportInProgress } from "./in-progress.js";
+import { CLAIM_ALL_LANE_FLAG, resolveLaneScope } from "./lane.js";
 
 /**
  * The atomic step of the agent loop (SPEC.md §7). Its **stdout** is deliberately
@@ -13,9 +14,21 @@ import { reportInProgress } from "./in-progress.js";
  * itself rides along inside the batch in both modes — it is the contract's own
  * `inProgress` key, passed through untouched — so `--json` keeps the instants
  * and the overflow pair intact for the agent to branch on.
+ *
+ * **The lane changes what is claimed and nothing about the shape of it**
+ * (SPEC.md §7). A `--thread` claim takes that lane's pending events; the
+ * unscoped claim takes the orchestrator's, plus every lane whose listener is not
+ * there — so a scoped empty batch and an unscoped empty batch print the same
+ * `{"events":[],…}` line, and neither is a failure.
  */
 export async function runClaimAll(context: WorkspaceCommandContext): Promise<void> {
-  const batch = await context.client.request((api) => api.POST("/api/queue/claim-all"));
+  const scope = resolveLaneScope(context.flags);
+  const batch = await context.client.request((api) =>
+    // An absent lane is an omitted parameter, not `scope: undefined`: the server
+    // reads the orchestrator's lane from silence, and spelling it out would give
+    // that lane the second name `lane.ts` exists to refuse.
+    api.POST("/api/queue/claim-all", scope === undefined ? {} : { params: { query: { scope } } }),
+  );
   if (context.out.json) {
     context.out.emit(batch);
   } else {
@@ -48,9 +61,16 @@ export const claimAllCommand: WorkspaceCommandSpec = {
     "In human mode that same list is also printed as a readable block **on stderr** — ages as " +
     "`held 3h`, one row per event, with an explicit _and N more held_ line when the cap bit — so " +
     "stdout stays the single JSON line a pipe can parse. Under `--json` the block is suppressed " +
-    "and stderr carries only failures. Either way nothing at all is printed when nothing is held.",
+    "and stderr carries only failures. Either way nothing at all is printed when nothing is held.\n\n" +
+    "**A claim takes a lane** (SPEC.md §7). `--thread` claims that conversation's lane and only " +
+    "it; omitting the flag is the orchestrator's claim, which takes its own lane **plus every " +
+    "lane nobody is listening on** — so two agents claiming at once read disjoint sets rather " +
+    "than racing for one event. Picking up the work of a lane whose listener is absent is the " +
+    "ordinary intended outcome and not a fault to report: that work is then done by the " +
+    "orchestrator, more slowly and without the conversation's warmth, and never silently not " +
+    "done. The output shape is identical either way, empty batch included.",
   args: [],
-  flags: [],
+  flags: [CLAIM_ALL_LANE_FLAG],
   examples: [
     {
       command: "corpus queue claim-all",
@@ -66,6 +86,12 @@ export const claimAllCommand: WorkspaceCommandSpec = {
       description:
         "Inspect only what the server still holds — `total` and `truncated` say whether the list " +
         "you are looking at is the whole of it.",
+    },
+    {
+      command: "corpus queue claim-all --thread th_4b8e2c",
+      description:
+        "A resident's claim: only its own conversation's lane, never the orchestrator's and never " +
+        "another lane's.",
     },
   ],
   handler: (context) => runClaimAll(context),

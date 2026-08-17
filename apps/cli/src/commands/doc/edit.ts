@@ -13,6 +13,8 @@ import {
   resolveBody,
   warningSuffix,
   type InputDependencies,
+  JOB_FLAG,
+  resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import {
@@ -68,42 +70,6 @@ export function instantNow(now: () => number = Date.now): string {
 
 export interface EditDependencies extends InputDependencies {
   readonly now?: () => number;
-}
-
-/**
- * `--add-tag` / `--remove-tag` against a wire field that carries the whole list:
- * the current tags have to be read first. Only these two flags and `--status`
- * cost a read — a plain body or title edit is exactly one request.
- *
- * **This read-then-write is an accepted race, not an oversight** (CLI-008 item
- * 3). Two concurrent `--add-tag` calls can each `GET` the same list and each
- * `PUT` its own merge, and the second write wins with the first one's tag
- * missing. §7's key does not close it and is not meant to: `tags` is
- * deliberately not a keyed field (`KEYED_UPDATE_FIELDS`), because §7 names
- * adding a tag as the canonical write that merges rather than overwrites, and
- * requiring a key for one would refuse the cheap verb the whole distinction
- * exists to keep cheap. What the key guarantees is stated exactly in §7's *what
- * a key does not do*: no writer overwrites something it never read. Two writers
- * that both read are a different problem, and this is a small instance of it.
- *
- * **The caller can opt in**, which is the part worth knowing: presenting `--key`
- * on a tag edit is checked like any other, so an agent that always sends the key
- * it read gets this window closed too — at the cost of a refusal it then has to
- * reconcile. The exposure without it is bounded: one round trip, both writers
- * this single-user workspace's own, and every version in git.
- */
-export function mergeTags(
-  current: readonly string[],
-  added: readonly string[],
-  removed: readonly string[],
-): string[] {
-  const dropped = new Set(removed);
-  const kept = current.filter((tag) => !dropped.has(tag));
-  const next = [...kept];
-  for (const tag of added) {
-    if (!dropped.has(tag) && !next.includes(tag)) next.push(tag);
-  }
-  return next;
 }
 
 /**
@@ -170,11 +136,13 @@ function missingKey(id: string): UsageError {
 /**
  * The document as it stands, read at most once per invocation.
  *
- * Two things need it and neither should pay for the other: `--add-tag` needs the
- * current list to merge against, and `--status` needs to know whether the
- * document is archived (see {@link assertNotArchived}). Naming both flags is one
- * `GET`, naming neither is none — which is what keeps the ordinary body or title
- * edit a single request.
+ * **Exactly one flag needs it**, and only `--status`: to know whether the
+ * document is archived, so the refusal can name a command (see
+ * {@link assertNotArchived}). `--add-tag`/`--remove-tag` used to need it too —
+ * they read the list to merge against — until SERVER-102 moved that merge to the
+ * server, where it belongs. It stays memoized against a second caller appearing,
+ * and naming no such flag costs no request at all, which is what keeps the
+ * ordinary body, title or tag edit a single round trip.
  *
  * **What it never does is supply the key.** This response carries one, and using
  * it would turn every body edit into a read the CLI performed on the caller's
@@ -218,13 +186,14 @@ function currentDocument(context: WorkspaceCommandContext, id: string): () => Pr
  * single old message told every note a story about a folder that does not
  * exist.
  *
- * The read this needs is one `GET`, and it carries the same accepted staleness
- * as {@link mergeTags}: the document could be archived, or unarchived, between
- * the read and the `PUT`. A status flip is a named delta and takes no key (see
- * `mergeTags` for why), so the exposure is the same bounded one — and here it
- * costs nothing either way, because the server re-checks while it holds the
- * document: a document archived inside the window is refused there instead of
- * here.
+ * The read this needs is one `GET`, and it is now the **only** read this verb
+ * makes: the tag flags stopped reading in SERVER-102, and this one stays because
+ * what it buys is a *message*, not a decision. It carries an accepted staleness
+ * — the document could be archived, or unarchived, between the read and the
+ * `PUT` — and that costs nothing either way, because the server re-checks while
+ * it holds the document (SERVER-039): a document archived inside the window is
+ * refused there instead of here, with the same rule and a `400`. Nothing about
+ * correctness rests on this snapshot, which is exactly why it may be one.
  */
 function assertNotArchived(current: Doc, id: string, status: DocStatus): void {
   if (current.frontmatter.status !== "archived" || status === "archived") return;
@@ -281,12 +250,15 @@ export async function runDocEdit(
 
   if (status !== undefined) assertNotArchived(await read(), id, status);
 
+  // **The delta goes on the wire; the merge is the server's** (SERVER-102).
+  // These flags used to read the document, merge in the client and send the
+  // whole set — which is how two concurrent `--add-tag` calls each landed a
+  // `200` and left one tag on disk. `addTags`/`removeTags` state the change, and
+  // the server applies it against the file it is holding, inside the document's
+  // write lane. There is no window to lose a tag in and no read to pay for: a
+  // tag edit is now exactly one request, like every other named delta.
   const added = context.flags.strings("add-tag");
   const removed = context.flags.strings("remove-tag");
-  const tags =
-    added.length === 0 && removed.length === 0
-      ? undefined
-      : mergeTags((await read()).frontmatter.tags, added, removed);
 
   // Deliberately un-annotated: the generated request type uses exact optional
   // properties, so a `Partial`-shaped annotation (`title?: string | undefined`)
@@ -298,7 +270,10 @@ export async function runDocEdit(
     ...(due === undefined ? {} : { due }),
     ...(reviewed ? { reviewed: instantNow(dependencies.now) } : {}),
     ...(evergreen === undefined ? {} : { evergreen }),
-    ...(tags === undefined ? {} : { tags }),
+    // Copied rather than passed through: `flags.strings` answers `readonly
+    // string[]`, and the generated request body is mutable.
+    ...(added.length === 0 ? {} : { addTags: [...added] }),
+    ...(removed.length === 0 ? {} : { removeTags: [...removed] }),
     // Only the keys the caller named: `extra` is a merge patch, so sending the
     // whole object back would race every other writer of a key this invocation
     // never mentioned.
@@ -317,11 +292,15 @@ export async function runDocEdit(
     });
   }
 
+  const job = resolveJob(context.flags, context.env);
+
   const response = await context.client.request((api) =>
     api.PUT("/api/docs/{id}", {
       params: { path: { id } },
       body: {
         ...patch,
+        // SPEC.md §9.2: the work this write serves (CLI-044).
+        ...(job === undefined ? {} : { job }),
         ...(key === undefined ? {} : { key }),
         ...(body === undefined ? {} : { body }),
       },
@@ -366,12 +345,12 @@ export const editCommand: WorkspaceCommandSpec = {
     "given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: " +
     "remapped anchors moved with the text, orphaned ones name the threads that just became " +
     "detached. `--reviewed` records the current instant as a “still current” confirmation, which " +
-    "is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's " +
-    "current tags first and `--status` reads the current document, so those flags cost one extra " +
-    "request; nothing else does — and because a tag edit names its own delta and so needs no " +
-    "key, two tag edits racing on one document can end with only the " +
-    "later one's tag, and the archived check below is read from the same one-round-trip-old " +
-    "snapshot. Passing `--key` closes that window at the cost of a refusal to reconcile. " +
+    "is deliberately not an edit (SPEC.md §5). **`--add-tag`/`--remove-tag` send the change, not " +
+    "the resulting list**, so the server merges them against the document while it holds it: two " +
+    "tag edits racing on one document both land, and neither needs a key or a read first " +
+    "(SPEC.md §7 — a write that names its own delta merges with whatever else happened). Only " +
+    "`--status` costs an extra request, and only to phrase the archived refusal below from a " +
+    "one-round-trip-old snapshot; the server re-checks it regardless. " +
     "**`--status` refuses to move an archived document off `archived`** and names " +
     "`corpus doc unarchive <id>` instead — for a `type: skill` document because the frontmatter " +
     "would say `open` while the folder stayed disabled in `.claude/skills-archived/` and its " +
@@ -505,6 +484,7 @@ export const editCommand: WorkspaceCommandSpec = {
     },
     ...VIEW_KEY_FLAGS,
     ...bodyFlags("The replacement document body"),
+    JOB_FLAG,
   ],
   examples: [
     {

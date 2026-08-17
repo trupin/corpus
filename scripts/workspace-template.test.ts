@@ -42,6 +42,7 @@ const EXPECTED_TREE = [
   "README.md",
   "claude/agents/.gitkeep",
   "claude/skills/comment/SKILL.md",
+  "claude/skills/converse/SKILL.md",
   "claude/skills/orchestrate/SKILL.md",
   "data/docs/inbox/.gitkeep",
   "data/docs/templates/note.md",
@@ -196,7 +197,7 @@ describe("template tree", () => {
 
 describe("seed documents", () => {
   it("gives every markdown file complete SPEC §5 frontmatter", () => {
-    expect(documents.length).toBe(7);
+    expect(documents.length).toBe(8);
     for (const { relPath, frontmatter } of documents) {
       expect(DocumentIdSchema.safeParse(frontmatter.id).success, `${relPath}: id`).toBe(true);
       expect(typeof frontmatter.type, `${relPath}: type`).toBe("string");
@@ -222,11 +223,19 @@ describe("seed documents", () => {
   });
 
   it("uses one fixed authoring timestamp, advanced only where a skill body was rewritten", () => {
-    // The tree shares one `created` stamp. `updated` matches it everywhere
-    // except the two skills, whose AGENT-002/AGENT-003 bodies advanced it — the
+    // The tree shares one `created` stamp — the template's authoring date, which
+    // a file added later still carries, because the tree is authored as one
+    // artifact. `updated` matches it everywhere except the files whose bodies
+    // have since been rewritten: the three skills (AGENT-002/AGENT-003/AGENT-025)
+    // and the README that AGENT-025 taught about residents. That is the
     // template's own "updated tracks content" rule, applied to itself.
     expect(new Set(documents.map(({ frontmatter }) => frontmatter.created)).size).toBe(1);
-    const rewritten = ["claude/skills/orchestrate/SKILL.md", "claude/skills/comment/SKILL.md"];
+    const rewritten = [
+      "claude/skills/orchestrate/SKILL.md",
+      "claude/skills/comment/SKILL.md",
+      "claude/skills/converse/SKILL.md",
+      "README.md",
+    ];
     for (const { relPath, frontmatter } of documents) {
       if (rewritten.includes(relPath)) {
         expect(String(frontmatter.updated) > String(frontmatter.created), relPath).toBe(true);
@@ -296,53 +305,96 @@ describe("templates", () => {
 });
 
 describe("skills", () => {
+  /**
+   * The two skills that carry the loop's doctrine in full, and against which
+   * every rule below about *how a rule is worded* is pinned.
+   *
+   * `converse` is deliberately not in this list (AGENT-025). It is a core skill
+   * — it ships, it is checked by `coreSkills` and by the `installedSkills`
+   * sweep, and it has its own `describe` block — but it states the reply
+   * grammar, the key loop, the patch choice and the fence rules **by reference**
+   * to the comment skill rather than restating them, which is the design the
+   * issue asked for: three copies of one doctrine is three things to keep in
+   * step. Adding it here would demand those copies.
+   */
   const skills = [
     { name: "orchestrate", relPath: "claude/skills/orchestrate/SKILL.md" },
     { name: "comment", relPath: "claude/skills/comment/SKILL.md" },
   ];
 
-  it.each(skills)("$name carries both frontmatter field sets", ({ name, relPath }) => {
+  /** Every skill the template itself ships — the checks that bind any skill, doctrine or not. */
+  const coreSkills = [...skills, { name: "converse", relPath: "claude/skills/converse/SKILL.md" }];
+
+  it.each(coreSkills)("$name carries both frontmatter field sets", ({ name, relPath }) => {
     const { frontmatter } = documentAt(relPath);
     expect(frontmatter.name).toBe(name);
     expect(frontmatter.name).toBe(path.basename(path.dirname(relPath)));
     expect(typeof frontmatter.description).toBe("string");
     expect(frontmatter.description).not.toBe("");
     expect(frontmatter.type).toBe("skill");
-    expect(frontmatter.title).toBe(name === "orchestrate" ? "Orchestrate" : "Comment");
+    expect(frontmatter.title).toBe(name[0]?.toUpperCase() + name.slice(1));
   });
 
-  it.each(skills)("$name states the CLI-only invariant", ({ relPath }) => {
+  it.each(coreSkills)("$name states the CLI-only invariant", ({ relPath }) => {
     const body = documentAt(relPath).body;
     expect(body).toMatch(/`corpus` CLI/);
     expect(body).toMatch(/never (?:hand-)?edit(?:ed)?\b/i);
   });
 
-  it.each(skills)("$name carries its required section headings", ({ name, relPath }) => {
+  it.each(coreSkills)("$name carries its required section headings", ({ name, relPath }) => {
     const headings = documentAt(relPath)
       .body.split("\n")
       .filter((line) => line.startsWith("## "))
       .map((line) => line.slice(3).toLowerCase());
-    const required =
-      name === "orchestrate"
-        ? [
-            "purpose",
-            "invariants",
-            "the loop",
-            "claiming",
-            "routing",
-            "delegation",
-            "user edit",
-            "concurrency",
-            "writing a document",
-            "job logs",
-            "completing",
-            "halt",
-            "stewardship",
-            "skills",
-            "loop breaks",
-            "worked example",
-          ]
-        : ["gather context", "inbox filing", "reply", "forms", "skill genesis", "worked example"];
+    const requiredBySkill: Record<string, readonly string[]> = {
+      orchestrate: [
+        "purpose",
+        "invariants",
+        "the loop",
+        "claiming",
+        "routing",
+        "delegation",
+        "user edit",
+        "concurrency",
+        "writing a document",
+        "job logs",
+        "completing",
+        "halt",
+        "stewardship",
+        "skills",
+        "loop breaks",
+        "worked example",
+      ],
+      comment: [
+        "gather context",
+        "inbox filing",
+        "reply",
+        "forms",
+        "skill genesis",
+        "worked example",
+      ],
+      converse: [
+        "purpose",
+        "invariants",
+        "differently",
+        "starting up",
+        "the loop",
+        "scope",
+        "inline",
+        "delegating",
+        "settling",
+        "provenance",
+        "summoned",
+        "lapse",
+        "context runs heavy",
+        "retirement",
+        "worked example",
+      ],
+    };
+    const required = requiredBySkill[name] ?? [];
+    expect(required.length, `${relPath}: no required-heading list for "${name}"`).toBeGreaterThan(
+      0,
+    );
     for (const keyword of required) {
       expect(
         headings.some((heading) => heading.includes(keyword)),
@@ -1586,6 +1638,61 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/`doc\.edited`: the payload's `docId`/);
     });
 
+    /**
+     * AGENT-028. SERVER-113 moved **both** ends of a range onto *this
+     * document's* history, and the consequence nobody predicted at the time is
+     * that every document's first change now diffs against git's empty tree —
+     * where this text still called it the base "carried by a document the
+     * repository's first commit introduced".
+     *
+     * That is product text rather than repository documentation: it is what a
+     * user's agent reads to decide what a diff means, and an agent told the
+     * empty tree is a rarity may report an ordinary new document as an anomaly.
+     *
+     * The same sentence has now been found stale in four surfaces (SPEC.md
+     * §9.2, the published contract, the CLI help, these skills), each time by
+     * somebody doing something else — so it is pinned in both directions: the
+     * correct framing must be present *with its reason*, and the too-narrow one
+     * must be absent from every installed skill, plugin skills included. The
+     * reason is the half that stops it drifting back: §4's commit windows are
+     * party-scoped, so the parent of a window commit is not this document's
+     * history but whoever else's document was saved in the same window.
+     */
+    it("teaches the empty-tree base as the ordinary shape of a first change", () => {
+      const flat = body.replace(/\s+/g, " ");
+      // Matched to `packages/contract/src/schemas/edit.ts` rather than phrased
+      // a fifth time: any document's first change, not the repository's.
+      expect(flat).toMatch(/empty-tree sha an event carries for a document's \*\*first\*\* change/);
+      expect(flat).toMatch(/ordinary shape of a first change, not an anomaly to report/i);
+      expect(flat).toMatch(/\*\*any\*\* document's first commit/);
+      // The why, without which the narrow framing grows back.
+      expect(flat).toMatch(/belongs to a party rather than to a document/i);
+      expect(flat).toMatch(/somebody else's save to a different file/i);
+      expect(flat).toMatch(/this document did not exist/i);
+    });
+
+    /**
+     * The negative half, across every installed skill. A sentence may still
+     * mention the repository's own first commit — the corrected wording does,
+     * to say the base is *not only* that — so what is forbidden is the
+     * unqualified equation, which is exactly what the stale text was.
+     */
+    it.each(installedSkills)(
+      "$label never ties the empty tree to the repository's own first commit",
+      ({ label, body: skillBody }) => {
+        const sentences = skillBody
+          .replace(/\s+/g, " ")
+          .split(/(?<=\.)\s+/)
+          .filter((sentence) => /empty[- ]tree/i.test(sentence));
+        for (const sentence of sentences) {
+          if (!/repositor|root commit/i.test(sentence)) continue;
+          expect(sentence, `${label}: narrows the empty tree to the repository`).toMatch(
+            /not only|never only|not just|rather than only|whether or not/i,
+          );
+        }
+      },
+    );
+
     it("fetches the diff with the event's range, passed through unchanged", () => {
       expect(body).toMatch(
         /corpus doc diff doc_a1b2c3 --from-rev [0-9a-f]{40} --to-rev [0-9a-f]{40}/,
@@ -1956,12 +2063,14 @@ describe("orchestrate skill body", () => {
       const steps = loop.split("\n").filter((line) => /^\d+\. \*\*/.test(line));
       expect(steps.length).toBeGreaterThanOrEqual(8);
       // Dispatch is a step of the procedure, and it says it is not a command.
-      expect(loop).toMatch(/\*\*Dispatch every claimed event to a subagent\*\*/);
+      // The label carries the listener launches too since AGENT-026, so it is
+      // matched as a prefix rather than as a closed bold span.
+      expect(loop).toMatch(/\*\*Dispatch every claimed event to a subagent/);
       expect(loop).toMatch(/\*\*This\s+step is work, not a command\*\*/);
       // Claim, then dispatch, then park — in that order, as steps.
       const order = [
         "**Claim, then read what it printed.**",
-        "**Dispatch every claimed event to a subagent**",
+        "**Dispatch every claimed event to a subagent",
         "**Park, alone.**",
       ].map((label) => loop.indexOf(label));
       expect(order).not.toContain(-1);
@@ -2000,6 +2109,347 @@ describe("orchestrate skill body", () => {
       const fences = fencedBlocks(example);
       expect(fences.length).toBeGreaterThan(0);
       for (const fence of fences) expect(fence.content).not.toContain("corpus queue idle");
+    });
+  });
+
+  /**
+   * AGENT-026, SPEC.md §7 as amended by SHARED-043. The orchestrator's claim
+   * stopped being the whole queue: it is one lane, widened at claim time to
+   * include every lane whose listener has lapsed.
+   *
+   * Every rule pinned here has a failure that is silent in the running product,
+   * and each was measured against a real server rather than reasoned:
+   *
+   * - **The unscoped call is this lane's only spelling.** `--thread` is not an
+   *   error for the orchestrator, it is *somebody else's conversation*, so an
+   *   example that scoped one would park this loop on a resident's lane and
+   *   leave its own undrained, with nothing reported anywhere.
+   * - **A designation is a launch, not a job.** Completing at launch time is
+   *   what keeps a weeks-long listener out of `in-progress/`; an unrouted
+   *   `resident.designated` fails as an unknown type and no listener ever starts.
+   * - **The claim is not audited.** Measured: an unscoped claim came back empty
+   *   while a live lane held a pending event, and handed that same event over
+   *   once the lane lapsed. An orchestrator that re-derives the walk hands back
+   *   work nobody else can see.
+   * - **A lapse is never announced in the thread.** The person can already see
+   *   the lane; a turn apologising for a missing resident is an operator's
+   *   diagnostic posted into their conversation.
+   * - **The window is the contract's number.** Same guard the converse skill and
+   *   CLI-043's help carry: a restated 16m drifts from the verdict it explains.
+   */
+  describe("sharing the queue", () => {
+    const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
+    const claiming = body.slice(body.indexOf("## Claiming"), body.indexOf("## Routing"));
+
+    it("owns one lane and spells it with the absent flag", () => {
+      expect(body).toMatch(
+        /\*\*The queue is partitioned into lanes, and you own one of them\.\*\*/,
+      );
+      expect(body).toMatch(
+        /\*\*Your lane is the unscoped one, and the absent flag is how it is spelled\.\*\*/,
+      );
+      // The old claim — that this session is the only process that claims
+      // anything — is gone rather than softened: left in, it authorises taking
+      // a live conversation's work back off its resident.
+      expect(body).not.toMatch(/the \*\*only\*\* process that\s+claims/);
+      expect(body).toMatch(/you are the only one that claims \*\*your\*\* lane/);
+      expect(body).toMatch(/now holds per lane/);
+    });
+
+    it("works no queue command that would reach another lane", () => {
+      // The mechanical half of the rule above: `--thread` names a resident's
+      // conversation, and nothing this skill runs may carry one.
+      const worked = fencedBlocks(body)
+        .filter((block) => block.info === "bash")
+        .flatMap((block) =>
+          extractCorpusInvocationUses(["```bash", block.content, "```"].join("\n")),
+        )
+        .filter(({ tokens }) => tokens[0] === "queue");
+      expect(
+        worked.length,
+        "no worked queue command — the guard would pass vacuously",
+      ).toBeGreaterThan(0);
+      for (const use of worked) {
+        expect(
+          use.flags,
+          `\`corpus ${use.tokens.join(" ")}\` scoped to another lane`,
+        ).not.toContain("--thread");
+      }
+    });
+
+    it("routes a designation to a launch that completes at launch time", () => {
+      const rows = routing.split("\n").filter((line) => line.startsWith("| "));
+      const designation = rows.find((row) => row.includes("`resident.designated`")) ?? "";
+      expect(designation, "no routing row for resident.designated").not.toBe("");
+      expect(designation).toMatch(/\*\*converse\*\*/);
+      expect(designation).toContain("threadId");
+      expect(designation).toContain("resident");
+      // The launch, and the three things a subagent cannot inherit.
+      expect(routing).toMatch(/\*\*Launching a listener\.\*\*/);
+      expect(routing).toMatch(/invoked as `\/converse <the payload's threadId>`/);
+      expect(routing).toMatch(/the `agent-def` document id both/);
+      // Settled at launch, because the listener outlives the event by weeks.
+      expect(routing).toMatch(/\*\*complete the event as soon as the launch is\s+made\*\*/);
+      expect(routing).toMatch(/The listener's lifetime is not the job's/);
+      expect(routing).toMatch(/You never wait on it, you never settle for it/);
+      expect(routing).toMatch(/sign-off rather than an outcome to\s+verify/);
+      // The one thing that does fail it.
+      expect(routing).toMatch(/fails the event is a launch that did not happen/);
+    });
+
+    it("launches once per lane per pass, and stops when a launch does not take", () => {
+      // Re-designation of a live lane, which arrives whether or not it is needed.
+      expect(routing).toMatch(/\*\*A lane that already has a listener gets nothing\.\*\*/);
+      expect(routing).toMatch(/re-designating is the only way a person can ask for a listener/);
+      expect(routing).toMatch(/Launch nothing, log why, complete/);
+      // The roster, not the batch, is what triggers a launch — and the restart
+      // case, which no event announces at all.
+      expect(routing).toMatch(/\*\*A lane with nobody on it gets one, once a pass\.\*\*/);
+      expect(routing).toMatch(/\*\*once per pass,\s+per lane, and never per event\*\*/);
+      expect(routing).toMatch(
+        /where every\s+designation is still sitting on its thread and every listener is gone/,
+      );
+      expect(routing).toMatch(
+        /a `resident.designated` for a lane\s+you have already launched into this pass launches nothing further/,
+      );
+      // And the bound on retrying, which is what stops a broken persona
+      // becoming the loop's only activity.
+      expect(routing).toMatch(/stop\s+relaunching that lane/);
+      expect(routing).toMatch(/Relaunching every pass forever/);
+      // AGENT-029: the bound is a bound, not a diagnosis. A listener that
+      // started, claimed and is inside a long turn reads not-live exactly as a
+      // dead one does, so a console line calling that a failed launch sends an
+      // operator hunting a persona that is at that moment answering somebody.
+      expect(routing).toMatch(/\*\*standing down, never as a failed launch\*\*/);
+      // The roster is read before the claim and acted on after it.
+      const loop = body.slice(body.indexOf("## The loop"), body.indexOf("## Claiming"));
+      expect(loop).toMatch(/\*\*Read the roster\.\*\*/);
+      expect(loop).toContain("corpus agents");
+      const order = [
+        "**Read the roster.**",
+        "**Claim, then read what it printed.**",
+        "**Dispatch every claimed event to a subagent, and launch the listeners the roster asked",
+      ].map((label) => loop.indexOf(label));
+      expect(order).not.toContain(-1);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      expect(loop).toMatch(/Launching comes \*\*after\*\* the claim rather\s+than before it/);
+    });
+
+    /**
+     * The one defect the live drill turned up, and it was invisible to reading:
+     * a session driven by the text alone launched a listener for a lapsed lane
+     * from the roster read and then claimed that lane's work in the same pass.
+     * The listener parked, went live, and its **first** scoped claim reported
+     * the orchestrator's in-flight events in `inProgress` — because the held
+     * report uses the same lane predicate the claim does, so a lane going live
+     * moves those rows into the resident's view. The converse skill's
+     * reconciliation then had it read the thread, find no answer yet, and do the
+     * work the orchestrator's subagent was doing; the orchestrator had to stand
+     * its own subagent down mid-flight.
+     *
+     * Nothing in the product reports this — both agents are behaving correctly
+     * against their own skills — so the rule is pinned with the mechanism, not
+     * just the prohibition. A rewrite that keeps "launch a listener for every
+     * unattended lane" and drops the ordering reintroduces it exactly.
+     */
+    it("never launches into a lane in the pass it took that lane's work", () => {
+      expect(routing).toMatch(/\*\*But never in the same pass you took that lane's work\.\*\*/);
+      expect(routing).toMatch(
+        /why launching happens after\s+the claim rather than at the roster read/,
+      );
+      // The mechanism, which is the part a reader cannot rederive.
+      expect(routing).toMatch(/still stamped for that lane/);
+      expect(routing).toMatch(/in the held list its own first claim prints/);
+      expect(routing).toMatch(
+        /reconciliation cannot tell your live dispatch from an event\s+somebody abandoned/,
+      );
+      expect(routing).toMatch(/a reply you did not write/);
+      // The rule, and which way it resolves.
+      expect(routing).toMatch(/\*\*take the work\s+or launch the listener, never both\.\*\*/);
+      expect(routing).toMatch(/Prefer taking the work/);
+      expect(routing).toMatch(/Launch on a later pass, once what you took is settled/);
+    });
+
+    /**
+     * AGENT-029, the orchestrator's half. The launch rule was written as though
+     * a not-live row meant an absent listener; presence is the parked request,
+     * so it also means a listener mid-turn, and a resident's turns are long by
+     * design. The rule does not change — holding back would leave a genuinely
+     * dead listener unreplaced, which has no repair — but the reason does, and
+     * so does what the skill is allowed to do about it: nothing. The one field
+     * that separates the cases is `summary`, which the contract publishes for
+     * display and refuses to promise the content of.
+     */
+    it("knows a not-live row is ambiguous, launches anyway, and invents no separator", () => {
+      expect(routing).toMatch(
+        /\*\*A row that does not read `live` does not mean nobody is there — and you launch anyway\.\*\*/,
+      );
+      expect(routing).toMatch(/\*\*and for one in the middle of a\s+turn\*\*/);
+      expect(routing).toMatch(
+        /any turn\s+longer than the grace window is indistinguishable from an empty lane/,
+      );
+      expect(routing).toMatch(/`live` is the only\s+reading with a definite meaning/);
+      // The forbidden separators, by name — each is a plausible "fix".
+      expect(routing).toMatch(
+        /no probe, no\s+holding back a pass to see what happens, no reading the lane's busyness/,
+      );
+      expect(routing).toMatch(/whose length is promised and whose content is not/);
+      // Where the duplicate is resolved instead. AGENT-032: the mechanism was
+      // restated here and then maintained only in `converse`, so the two
+      // disagreed — this skill now carries the outcome it relies on and a
+      // pointer, and the restatement is deleted rather than synchronised. The
+      // negative matcher runs against the shipped sentence in "one rule, one
+      // skill", which is also where the general form of the rule is pinned.
+      expect(routing).toMatch(/\*\*Launch, and let\s+the lane settle it\.\*\*/);
+      expect(routing).toMatch(
+        /one of the two finds out it is\s+second and goes — nothing posted, nothing worked, and nobody answered twice/,
+      );
+      expect(routing).toMatch(
+        /\*\*How it finds\s+that out is the converse skill's to state, and it is stated there alone\.\*\*/,
+      );
+      expect(routing).toMatch(/on a lane you never claim and never see/);
+      expect(routing).toMatch(/you neither run it nor observe it/);
+      expect(routing).toMatch(/which is how the two came\s+to disagree once already/);
+      expect(routing, "the deleted restatement is back").not.toMatch(
+        /its claim comes back empty\s+on work its own park had just named/,
+      );
+      // And the asymmetry that makes launching the right side to err on.
+      expect(routing).toMatch(
+        /The failure you would\s+buy by holding back has no repair in it at all/,
+      );
+      // The window stays the server's number here too.
+      for (const restatement of ["16m", "16 minutes", "960"]) {
+        expect(routing, `restates the grace window as "${restatement}"`).not.toContain(restatement);
+      }
+    });
+
+    it("takes what the claim gives it without auditing the walk", () => {
+      expect(claiming).toMatch(
+        /\*\*What the claim hands you is yours, and you do not audit it\.\*\*/,
+      );
+      expect(claiming).toMatch(/A live\s+lane's events are never in it/);
+      expect(claiming).toMatch(/do not check whether an event's thread has a resident/);
+      expect(claiming).toMatch(/do not hold work back for an agent that might come\s+back/);
+      // SHARED-044: scope is the walk, never a guarantee of exclusivity. The
+      // agent is told what it may reason from — the lane — and nothing more.
+      expect(claiming).toMatch(/Scope membership is a \*\*walk\*\*/);
+      expect(claiming).toMatch(/following a\s+thread's parents and a document's `origin`/);
+      expect(claiming).toMatch(/you cannot reproduce it and nothing asks you to/);
+      expect(body).not.toMatch(/belongs to at most one scope/);
+      expect(claiming).toMatch(/The event arrived on your claim, so it is yours to work/);
+    });
+
+    it("works a lapsed lane's events without saying so in the thread", () => {
+      expect(claiming).toMatch(/\*\*A lapsed lane's work is ordinary work/);
+      expect(claiming).toMatch(/the same routing\s+row to the same comment-skill subagent/);
+      expect(claiming).toMatch(
+        /\*\*Never apologise for a resident and never announce that one is missing\.\*\*/,
+      );
+      expect(claiming).toMatch(/operator's\s+diagnostic posted into somebody's conversation/);
+      // Where it does go, and the once-per-lane courtesy that follows it.
+      expect(claiming).toMatch(
+        /corpus job log evt_2e4f8b "claimed comment.created on th_4b8e2c under the fallback/,
+      );
+      expect(claiming).toMatch(/launch one for that lane, once/);
+      expect(claiming).toMatch(/eight messages while it was unattended gets eight\s+listeners/);
+    });
+
+    it("keeps settlement on the report when the held row disappears", () => {
+      // Measured: the held report uses the same predicate as the claim, so an
+      // event taken under the fallback leaves the list the moment its lane goes
+      // live again — while the orchestrator is still working it.
+      expect(claiming).toMatch(
+        /\*\*A held row can leave your list while you are still working it\.\*\*/,
+      );
+      expect(claiming).toMatch(/take an event id and no lane/);
+      expect(claiming).toMatch(/\*\*settlement follows the report, never the list\.\*\*/);
+    });
+
+    it("restates the grace window nowhere", () => {
+      expect(body).toMatch(/a grace window the server owns and this skill does not restate/);
+      for (const restatement of ["16m", "16 minutes", "960"]) {
+        expect(body, `restates the grace window as "${restatement}"`).not.toContain(restatement);
+      }
+    });
+
+    it("puts a resident outside the delegate-everything rule rather than beside it", () => {
+      const delegation = body.slice(body.indexOf("## Delegation"), body.indexOf("## Writing a"));
+      expect(delegation).toMatch(
+        /\*\*That rule is about this lane, and a resident is outside its subject rather than an exception\s+to it\.\*\*/,
+      );
+      expect(delegation).toMatch(/you are the queue's general path/);
+      expect(delegation).toMatch(/do not "correct" it into a dispatch/);
+      // The boundary rule is scoped to the events this lane claimed, and a
+      // listener's own queue calls are ownership rather than a violation.
+      expect(delegation).toMatch(
+        /\*\*Queue state never crosses the boundary — the boundary being your lane\.\*\*/,
+      );
+      expect(delegation).toMatch(/\*\*A listener is not one of those subagents/);
+      expect(delegation).toMatch(/It is that lane's owner, not your delegate on this one/);
+      expect(delegation).toMatch(/Nobody settles work they did\s+not claim/);
+      expect(delegation).toMatch(/including the\s+events you took from its lane/);
+    });
+
+    it("counts working subagents against the bound, never parked listeners", () => {
+      const concurrency = body.slice(
+        body.indexOf("## Concurrency"),
+        body.indexOf("## Progress and job logs"),
+      );
+      expect(concurrency).toMatch(
+        /\*\*The bound counts subagents working events, and a resident listener is not one of those\.\*\*/,
+      );
+      expect(concurrency).toMatch(/ten designated conversations could dispatch nothing at all/);
+      expect(concurrency).toMatch(/limits work in flight, never agents in existence/);
+      // Ordering is per lane too: two lanes on one document is the ordinary
+      // two-writers case, which the key already governs.
+      expect(concurrency).toMatch(/neither can nor\s+should order your work against a resident's/);
+      expect(concurrency).toMatch(/the key on the write, not a schedule/);
+    });
+
+    it("says which lane a quoted mention wakes, rather than assuming its own", () => {
+      const reflecting = body.slice(
+        body.indexOf("## Reflecting on a user edit"),
+        body.indexOf("## Concurrency"),
+      );
+      // Measured: an agent turn quoting `@agent` in a designated conversation
+      // wakes that conversation's resident and never reaches this claim. A
+      // skill claiming otherwise would have the orchestrator watching for
+      // something it cannot see.
+      expect(reflecting).toMatch(
+        /\*\*The turn's lane is where it lands, and it is not always yours\.\*\*/,
+      );
+      expect(reflecting).toMatch(/enqueues on the lane of the \*\*thread it was posted in\*\*/);
+      expect(reflecting).toMatch(/never appears on your claim/);
+      expect(reflecting).toMatch(/no marker anywhere saying a machine wrote the\s+mention/);
+      expect(reflecting).toMatch(/\*write no `@agent`\* rather than\s+\*detect one\*/);
+    });
+
+    it("keeps the reaper lane-blind, and states why that is not a trespass", () => {
+      expect(claiming).toMatch(/\*\*`corpus queue reap-stale` takes no lane/);
+      expect(claiming).toMatch(
+        /work stranded by a resident that died is stuck whoever\s+claimed it/,
+      );
+      expect(claiming).toMatch(/on \*\*the lane it was claimed from\*\*/);
+      expect(claiming).toMatch(/the fallback rather than the reaper decides who may\s+then see it/);
+      expect(claiming).toMatch(/a resident never\s+does/);
+    });
+
+    it("tells the operator how a broken converse skill looks, and how to put it back", () => {
+      const recovery = body.slice(body.indexOf("## If the loop breaks"));
+      expect(recovery).toMatch(/use `comment` or `converse` in place of `orchestrate`/);
+      // The symptom, which is nothing like a broken loop: the queue is fine and
+      // one conversation is not.
+      expect(recovery).toMatch(
+        /\*\*A broken `converse` shows up differently, and is worth recognising as its own thing\.\*\*/,
+      );
+      expect(recovery).toMatch(
+        /its lane reads live on `corpus agents` while\s+nothing gets answered in it/,
+      );
+      expect(recovery).toMatch(/the orchestrator quietly does that\s+conversation's work/);
+      expect(recovery).toMatch(/listeners already running keep the text they started with/);
+      // And the same latency stated where the edit is made rather than only here.
+      expect(body).toMatch(/an edit to it reaches the\s+\*\*next listener launched\*\*/);
+      expect(body).toMatch(/never restart somebody's listener to hurry it along/);
     });
   });
 
@@ -2478,6 +2928,1280 @@ describe("comment skill body", () => {
     expect(heredocs.length).toBeGreaterThan(0);
     for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
     expect(body).not.toMatch(/-m "\$\(/);
+  });
+});
+
+/**
+ * AGENT-025 — the **converse** skill, a resident's own loop (SPEC.md §7 as
+ * amended by SHARED-043).
+ *
+ * What is pinned here is only what a plausible-looking rewrite gets wrong, and
+ * every one of the four has a failure that is silent in the running product:
+ *
+ * - **The lane is carried explicitly, or the resident works the wrong queue.**
+ *   An omitted `--thread` is not an error — it means the *orchestrator's* lane —
+ *   so a worked example missing the flag teaches a listener to claim and park on
+ *   somebody else's conversation, and nothing anywhere reports it. That is why
+ *   the flag is checked mechanically on every queue command the skill *works*,
+ *   not merely asserted in prose.
+ * - **Inline work is doctrine, not an oversight.** §7 is careful that a resident
+ *   is *outside* the delegate-everything rule's subject rather than an exception
+ *   to it, so the skill has to carry the reason or a later editor "fixes" it
+ *   back into dispatch and deletes the whole point of a resident.
+ * - **Presence is the parked request and nothing else.** Any keep-alive, any
+ *   registration, any shortened park is a second and lying account of presence.
+ * - **A lapse is not breakage.** A resident that treats the orchestrator's
+ *   fallback as a failure re-does work that was already done, in a conversation
+ *   the person is reading.
+ */
+describe("converse skill body", () => {
+  const body = documentAt("claude/skills/converse/SKILL.md").body;
+
+  it("carries no skeleton remnants and no dev-harness references", () => {
+    for (const marker of ["arrives with agent", "skeleton", "tbd", "<fill", "placeholder"]) {
+      expect(body.toLowerCase(), `contains "${marker}"`).not.toContain(marker);
+    }
+    for (const marker of ["SPEC.md", "CLAUDE.md", "issues/", "/implement", "/decompose"]) {
+      expect(body, `contains "${marker}"`).not.toContain(marker);
+    }
+  });
+
+  it("gives every section a substantive body, not a bare heading", () => {
+    const sections = new Map<string, string[]>();
+    let current: string | null = null;
+    let inFence = false;
+    for (const line of body.split("\n")) {
+      if (line.trimStart().startsWith("```")) inFence = !inFence;
+      if (!inFence && line.startsWith("## ")) {
+        current = line.slice(3);
+        sections.set(current, []);
+      } else if (current !== null) {
+        sections.get(current)?.push(line);
+      }
+    }
+    expect(sections.size).toBe(15);
+    for (const [heading, lines] of sections) {
+      expect(
+        lines.join("\n").trim().length,
+        `"${heading}" is a heading with no substance`,
+      ).toBeGreaterThan(400);
+    }
+  });
+
+  describe("the lane is carried explicitly", () => {
+    /** Every `corpus queue …` the skill actually *works*, as opposed to naming in prose. */
+    const workedQueueUses = fencedBlocks(body)
+      .filter((block) => block.info === "bash")
+      // The extractor reads code, so the fence has to be put back around the
+      // block's content — handed bare lines it finds nothing and every
+      // assertion below would pass over an empty set.
+      .flatMap((block) => extractCorpusInvocationUses(["```bash", block.content, "```"].join("\n")))
+      .filter(({ tokens }) => tokens[0] === "queue");
+
+    it("spells --thread on every scoped queue command it works", () => {
+      const scoped = workedQueueUses.filter(
+        ({ tokens }) => tokens[1] === "idle" || tokens[1] === "claim-all",
+      );
+      // Anti-vacuity in both directions: some example has to claim and some
+      // example has to park, or "every one carries the flag" holds over nothing.
+      expect(scoped.filter(({ tokens }) => tokens[1] === "claim-all").length).toBeGreaterThan(0);
+      expect(scoped.filter(({ tokens }) => tokens[1] === "idle").length).toBeGreaterThan(0);
+      for (const use of scoped) {
+        expect(use.flags, `\`corpus ${use.tokens.join(" ")}\` with no lane`).toContain("--thread");
+      }
+    });
+
+    it("works no queue command that would reach another lane", () => {
+      // `reap-stale` takes no lane, so it reaps every one of them; the skill
+      // rules it out in prose and must not then show it in a copyable block.
+      for (const use of workedQueueUses) {
+        expect(use.tokens[1], "a lane-less queue command in a worked block").not.toBe("reap-stale");
+      }
+      expect(body).toMatch(/`corpus queue reap-stale` is not yours to run/);
+      expect(body).toMatch(/it reaches every lane/);
+    });
+
+    it("invents no environment variable for the lane, and says why", () => {
+      expect(body, "invents a lane variable").not.toMatch(/CORPUS_LANE/);
+      expect(body).toMatch(/There is no environment variable for a lane/);
+      // The asymmetry that makes a variable worse here than elsewhere, in the
+      // form SERVER-118 left it: there are now two kinds of wrong lane, and the
+      // refusal fires on the kind a variable never produces. The flat claim
+      // ("a wrong lane is honoured in silence") is false as stated, because one
+      // wrong lane — a thread designating nobody — is refused at the park.
+      expect(body, "the flat pre-SERVER-118 claim is back").not.toMatch(
+        /but a wrong lane is honoured in\s+silence/,
+      );
+      expect(body).toMatch(
+        /a wrong `CORPUS_JOB` is refused, and so is a `--thread` naming a thread that has no\s+resident/,
+      );
+      expect(body).toMatch(/neither refusal can fire on the mistake a variable makes/);
+      expect(body).toMatch(
+        /\*\*A value you\s+inherited rather than typed names a lane that is entirely real: somebody else's live\s+conversation\.\*\*/,
+      );
+      expect(body).toMatch(/That is honoured in silence/);
+      // An omission is not a typo: it is a different, valid lane.
+      expect(body).toMatch(/worse than a typo, because it is not\s+an error at all/);
+      expect(body).toMatch(/`--thread orchestrator` is refused as a\s+usage error/);
+      expect(body).toMatch(/exactly one spelling, which is the absent flag/);
+    });
+  });
+
+  it("states inline work as outside the delegation rule, never as an exception", () => {
+    expect(body).toMatch(/\*\*1\. You work your conversation inline\.\*\*/);
+    expect(body).toMatch(
+      /\*\*not an\s+exception\*\* to that rule — it is outside the rule's subject/,
+    );
+    // The reason, which is what stops a later editor restoring the dispatch.
+    expect(body).toMatch(
+      /you hold one lane, and every other lane, the\s+orchestrator's included, keeps moving/,
+    );
+    expect(body).toMatch(/Delegation would give that away and buy nothing back/);
+    // And the boundary: two departures, and inventing a third is a mistake.
+    expect(body).toMatch(/\*\*Everything else binds unchanged\.\*\*/);
+    expect(body).toMatch(/treat any third one you find yourself\s+inventing as a mistake/);
+  });
+
+  it("settles first-person, and only what it claimed", () => {
+    expect(body).toMatch(/\*\*2\. You settle your own lane\.\*\*/);
+    expect(body).toMatch(/Nobody settles work they did not claim/);
+    expect(body).toMatch(/The orchestrator does not settle for you and you never settle for it/);
+    for (const verb of ["corpus queue complete", "corpus queue fail", "corpus queue defer"]) {
+      expect(body, `missing "${verb}"`).toContain(verb);
+    }
+    expect(body).toContain("--reason");
+    expect(body).toContain("--blocked-on");
+    // A deferral is lane-preserving and is not a failure.
+    expect(body).toMatch(/\*\*Deferral keeps the lane\.\*\*/);
+    expect(body).toMatch(/under `deferred` and\s+never `failed`/);
+  });
+
+  /**
+   * AGENT-027 — the other half of AGENT-026's collision, and the same failure.
+   *
+   * AGENT-026's live drill measured it: a listener launched for a lapsed lane
+   * parked, the lane went live, and its **first** scoped claim reported the
+   * orchestrator's in-flight event in `inProgress`. This skill's reconciliation
+   * then read the thread, found nothing answering the turn, did the work and
+   * completed the orchestrator's event. Two agents answered one message and
+   * nothing anywhere reported an error — both skills behaved exactly as written.
+   *
+   * AGENT-026 closed the path the orchestrator controls (*per lane, per pass,
+   * take the work or launch the listener, never both*). It cannot close the
+   * other two — a person re-designating a thread, or an operator running
+   * `/converse` by hand, while the orchestrator holds that lane's work under the
+   * fallback. This side has to decline it.
+   *
+   * **The signals do not distinguish the two cases at the row**, and that is
+   * measured rather than assumed: `apps/server/src/queue/held.ts` filters the
+   * held report by lane alone and the row carries `id`, `type`, `heldSince`,
+   * `originId`, `originTitle` and no claimant; `corpus agents` prints the same
+   * `summary` on every row and the contract forbids parsing it. So the skill
+   * cannot classify a row from the server's answer, and it must not try. What it
+   * can do is ask a first-person question — *did I claim this, in this session?*
+   * — and that is exact for the case reconciliation exists for (its own dropped
+   * settling call) while the cross-session case is recovered by `reap-stale`
+   * instead, as a `pending/` row on the same lane. Declining therefore delays a
+   * crashed listener's work; it never strands it.
+   */
+  describe("reconciliation adopts only what this listener claimed", () => {
+    it("asks whose a row is before asking what the corpus says about it", () => {
+      expect(body).toMatch(
+        /\*\*A held row older than your first claim on this lane is not yours\.\*\*/,
+      );
+      expect(body).toMatch(/did I claim this event, in this session\?/);
+      expect(body).toMatch(
+        /On your \*\*first\*\* claim of a\s+session the answer is no for every row, necessarily/,
+      );
+      expect(body).toMatch(/`heldSince` is the same test in mechanical form/);
+      // Order is the whole of it: the corpus-evidence test is what does the
+      // damage, and it only does it when nothing has disqualified the row first.
+      const ownership = body.indexOf("A held row older than your first claim on this lane");
+      const evidence = body.indexOf("For a row you did claim in this session");
+      expect(ownership, "the ownership test is missing").toBeGreaterThan(-1);
+      expect(evidence, "the evidence test is missing").toBeGreaterThan(ownership);
+    });
+
+    it("keeps the evidence test, but only under the qualifier that makes it safe", () => {
+      // The sentence that did the damage is still here — reconciliation needs
+      // it — so what is pinned is the paragraph it now lives in. A rewrite that
+      // lifts it back out to the top of the section restores the defect exactly.
+      const damaging = "If nothing answers it, the work did not happen: do it now";
+      const at = body.indexOf(damaging);
+      expect(at, `"${damaging}" is missing`).toBeGreaterThan(-1);
+      expect(body.indexOf(damaging, at + 1), "stated twice, once unqualified").toBe(-1);
+      const paragraph = body.slice(0, at).split("\n\n").at(-1) ?? "";
+      expect(paragraph, "the evidence test is stated unqualified").toContain(
+        "For a row you did claim in this session",
+      );
+      // And the recognised half of it, which is the ordinary reason to reconcile.
+      expect(body).toMatch(/settle it now with the ordinary verbs, log that it settled late/);
+    });
+
+    it("names the orchestrator's fallback as what it is usually looking at, and why", () => {
+      expect(body).toMatch(
+        /\*\*What you are usually looking at is the orchestrator, mid-dispatch\.\*\*/,
+      );
+      expect(body).toMatch(/a lane stamp is written once and\s+never rewritten/);
+      // SERVER-111's reason for the wider filter. Without it a later editor
+      // reads the row as a leak and "fixes" the server instead of obeying it.
+      expect(body).toMatch(
+        /reported on strict\s+lane equality instead, the list would hide from the orchestrator/,
+      );
+      // The two ways in that the orchestrator cannot prevent, named as ordinary.
+      expect(body).toMatch(/re-designating this thread, or starting a listener by hand/);
+    });
+
+    it("says why the corpus cannot settle the question, which is how the defect arrived", () => {
+      expect(body).toMatch(/\*\*A row that is not yours is left exactly where it is\.\*\*/);
+      expect(body).toMatch(/above all do not do the work/);
+      expect(body).toMatch(/\*\*The corpus cannot answer this question\s+for you\*\*/);
+      expect(body).toMatch(/looks identical to an event nobody ever worked/);
+      expect(body).toMatch(/in both cases no reply is posted yet/);
+      // The consequence, stated as the thing it is: not a crash, a duplicate.
+      expect(body).toMatch(/answered by two agents/);
+      expect(body).toMatch(/with no error raised anywhere/);
+    });
+
+    it("keeps the recovery reconciliation exists for, by naming the path that carries it", () => {
+      expect(body).toMatch(
+        /\*\*Declining a row strands nothing, which is what makes declining safe\.\*\*/,
+      );
+      expect(body).toMatch(/crashed mid-event does get its work back/);
+      expect(body).toMatch(/reconciliation was never that path/);
+      expect(body).toMatch(/returns work nobody can account for to `pending\/`/);
+      expect(body).toMatch(/\*\*the lane it was claimed from\*\*/);
+      expect(body).toMatch(/an ordinary\s+row in `events` — to be worked, not adopted/);
+      // The trade, so the delay reads as chosen rather than as a bug to fix.
+      expect(body).toMatch(/a delayed answer costs the person a wait/);
+      // And the one thing a long-held row actually indicates.
+      expect(body).toMatch(/nothing is running the orchestrator's loop/);
+    });
+
+    it("parks before it claims, so the boundary the rule measures against stops moving", () => {
+      expect(body).toMatch(/\*\*Park before you claim anything\.\*\*/);
+      expect(body).toMatch(/parking is what makes the lane read `live`/);
+      expect(body).toMatch(
+        /Claiming first leaves a window in which the same conversation is being\s+handed to two places/,
+      );
+    });
+
+    it("corrects the loop's own account of the held list", () => {
+      // The sentence a rewrite restores: "It is your lane's held work and
+      // nobody else's" was true about lanes and false about claimants, which is
+      // the exact confusion the defect is made of.
+      expect(body).not.toMatch(/your lane's held work\s+and nobody else's/);
+      expect(body).toMatch(
+        /It is your \*\*lane's\*\* held work, which is not the same thing as\s+your own/,
+      );
+      expect(body).toMatch(/it may be\s+holding work off this one, under the fallback/);
+    });
+
+    it("carries the rule to the two places a listener actually meets it", () => {
+      // Arriving after a lapse — the section a returning resident reads.
+      expect(body).toMatch(/\*\*Do not adopt what the orchestrator is still holding\.\*\*/);
+      expect(body).toMatch(/nothing on the row to say it is\s+in flight/);
+      expect(body).toMatch(/do not race the work it\s+is still doing/);
+      // And the roster branch at startup, at the moment the state is read.
+      expect(body).toMatch(/it may be \*\*holding some of it right now\*\*/);
+      // The worked example must not contradict either: its empty held list is
+      // annotated rather than left as the only case a reader ever sees.
+      expect(body).toMatch(
+        /had something been, this being the\s+session's first claim it would have been somebody else's/,
+      );
+    });
+  });
+
+  /**
+   * AGENT-029 — the seam AGENT-026 and AGENT-027 each closed a hole beside.
+   *
+   * Presence is `observePark` and its one production call site is the idle
+   * path, so a resident holds no park while it works — and this skill tells it
+   * to work long turns unparked (*"You await what you launch; you do not park on
+   * it"*). Measured against a real server: a listener claimed at 14:17:16 and
+   * worked; at 14:33:16 its row read `lapsed` while the work was still running.
+   * The orchestrator's launch rule fires on exactly that reading, neither of its
+   * guards applies, and the second listener's own startup guard reads the same
+   * `live: false` — so it parks, and one conversation has two listeners with no
+   * error anywhere.
+   *
+   * The roster cannot be made to answer this here: the distinguishing signal is
+   * `summary`, whose content the contract explicitly refuses to promise. So the
+   * repair is at the lane rather than at anyone's knowledge, and what is pinned
+   * is the instrument, because it is the part a rewrite cannot rederive — **an
+   * empty `events` on work the park just named, with those ids in `inProgress`**.
+   * Both halves are load-bearing: without the held check, a halt or an abandon
+   * between the two commands retires the only listener on the lane.
+   *
+   * The claim's emptiness is decisive only because a live lane is invisible to
+   * an unscoped claim (`queue/lanes.ts`), which is why the skill has to carry
+   * that reason rather than the bare rule.
+   */
+  describe("a second listener finds out it is second, and goes", () => {
+    it("says the roster can rule a listener in and never out", () => {
+      expect(body).toMatch(/\*\*Neither says nobody is here, either\.\*\*/);
+      expect(body).toMatch(
+        /a listener in\s+the middle of a turn — which is where a resident spends most of its time — holds no park/,
+      );
+      expect(body).toMatch(/`live` is the only reading on this row with a\s+definite meaning/);
+      expect(body).toMatch(
+        /can tell you a listener \*\*is\*\* here and can never tell you one is\s+not/,
+      );
+      // And the forbidden shortcut: the one field that would answer it.
+      expect(body).toMatch(/whose length is promised and whose content is not/);
+    });
+
+    /**
+     * AGENT-031 — the rule AGENT-029 wrote was a conjunction, and its second
+     * conjunct discarded the signal.
+     *
+     * *"an empty `events` array **and** those same ids sitting in its
+     * `inProgress`"* holds only while nothing else arrives. The two claims are
+     * two independent sessions each deciding to run a command — seconds apart —
+     * and a person who has just posted M1 posting M2 is ordinary. The loser's
+     * claim then returns `events: [M2]`, **non-empty**, the rule does not fire,
+     * AGENT-027 tells it the winner's M1 in `inProgress` is "not yours", and it
+     * works M2 and re-parks: two listeners answering alternate messages in one
+     * conversation. Drilled with two live listeners and two messages (the case
+     * AGENT-029's one-message drill could not reach) — measured on the real
+     * server, the loser's claim came back `events:[M2]`, `inProgress:[M1]`.
+     *
+     * So the rule is restated on the peer-claim evidence **alone**, and the
+     * emptiness clause is deleted rather than repaired: it never had a job of
+     * its own. The look-alikes it was thought to guard are already excluded by
+     * the held list — a halted queue leaves the id `pending/` and an abandon
+     * moves it to `abandoned/`, so neither puts it in `inProgress` (both
+     * measured).
+     *
+     * **Soundness, re-derived against the new predicate** rather than inherited.
+     * The interval is unchanged — between this listener's park returning and its
+     * own claim — so AGENT-029's argument still applies per id: `observePark`
+     * stamps `lastSeen` on release as well as arrival (`queue/liveness.ts`), the
+     * lane therefore reads live for a whole grace window after the park returns,
+     * and `visibleTo` hides a live lane's events from an unscoped claim
+     * (`queue/lanes.ts`); orchestrate never passes `--thread`. Two further
+     * producers were checked and neither exists: nothing but a claim moves an
+     * event `pending/` → `in-progress/`, and `inProgress` is the held list **as
+     * it stood when the call arrived**, so a listener's own just-claimed ids can
+     * never appear in it (published in `docs/cli.md`, and measured — a claim
+     * that returned `events:[evt_…]` reported `inProgress: []`).
+     */
+    it("fires on the peer-claim evidence alone, with no emptiness conjunct", () => {
+      // The AGENT-029 form, gone. Both matchers were run against the pre-fix
+      // body first and both fire on it; neither fires on what replaced it.
+      expect(body, "the conjunction is back").not.toMatch(
+        /an empty `events` array \*\*and those same/,
+      );
+      expect(body, "the rule still leads on emptiness").not.toMatch(
+        /An empty claim on work your park just named/,
+      );
+      expect(body).toMatch(
+        /\*\*An id your park named, held by somebody else when you claim, means another listener is on\s+this lane\.\*\*/,
+      );
+      // The two lists, and what makes reading one against the other exact.
+      expect(body).toMatch(/names in its own `events` what is \*\*pending\*\* on your lane/);
+      expect(body).toMatch(/never includes what that same call has just claimed for you/);
+      expect(body).toMatch(
+        /coming back in `inProgress` instead of in your `events`, was\s+claimed by another caller/,
+      );
+      expect(body).toMatch(/\*\*One such id is the whole of the evidence\. Exit\.\*\*/);
+      // Why the orchestrator is not a candidate — the half a reader cannot
+      // rederive, and the half the whole rule rests on.
+      expect(body).toMatch(
+        /your park released moments ago, the lane\s+therefore reads live for the whole grace window that follows, and an unscoped claim never sees\s+a live lane's events/,
+      );
+      // Structural: the firing sentence must not condition on emptiness at all.
+      // A rewrite that re-adds "and the events array is empty" lands in this
+      // paragraph, where the word is what the whole issue is about.
+      const firing = body
+        .split("\n\n")
+        .find((paragraph) => paragraph.includes("held by somebody else when you claim"));
+      expect(firing, "the firing paragraph is missing").toBeDefined();
+      expect(firing ?? "", "the firing rule mentions emptiness again").not.toMatch(/empt/i);
+    });
+
+    it("says a second message does not suppress it, which is how it shipped", () => {
+      expect(body).toMatch(/\*\*Judge it on that id, and never on the claim being empty\.\*\*/);
+      expect(body).toMatch(
+        /a person who has just written one\s+message writing a second is the ordinary case, not a rare one/,
+      );
+      expect(body).toMatch(/so your `events` comes back \*\*non-empty\*\*/);
+      // The exact failure the conjunction produced, named as what it is.
+      expect(body).toMatch(/the peer's held row reads as merely \*not yours\*/);
+      expect(body).toMatch(
+        /Two agents, one\s+conversation, alternate messages, neither able to see what the other said/,
+      );
+      expect(body).toMatch(/present in exactly the same way whether the batch was empty or not/);
+    });
+
+    it("hands back what the losing claim took, rather than claiming nothing was stranded", () => {
+      // AGENT-029 could say "you were not in the middle of anything" because its
+      // rule only fired on an empty batch. This one fires on a batch that may
+      // hold a real message, so the disposal has to be stated.
+      expect(body, "still asserts the loser holds nothing").not.toMatch(
+        /You lost the message, so you were not\s+in the middle of anything and nothing is stranded/,
+      );
+      expect(body).toMatch(/\*\*Go without finishing what that claim handed you\.\*\*/);
+      expect(body).toMatch(/Do not work it, do not settle it, do not\s+reply to it/);
+      expect(body).toMatch(/returns it to `pending\/` \*\*on the lane it was claimed from\*\*/);
+      expect(body).toMatch(/the listener that stays claims it as an ordinary row/);
+      expect(body).toMatch(/A late answer costs the person a wait/);
+      // Post nothing to the thread — but the job log is now reachable, and it is
+      // the only account of why the event sat.
+      expect(body).toMatch(/Post nothing to the thread/);
+      expect(body).toMatch(/`corpus job log` one line on each/);
+      expect(body).toMatch(/Where it handed you none, there is nothing to log to/);
+    });
+
+    /**
+     * Found by the two-listener drill, in the text written for this issue: the
+     * **surviving** listener stood down too, on a row it had not claimed and its
+     * park had never named ("standing down: evt_kirfeh2iis7w on this lane is
+     * held by another caller"), and the conversation was left with no listener
+     * at all. The peer test therefore has to carry its exclusions where it is
+     * stated, or it collapses into "a held row I did not claim" — which is
+     * AGENT-027's ordinary orchestrator-mid-dispatch row.
+     */
+    it("excludes the two held rows that are not a peer, and says what reading them costs", () => {
+      expect(body).toMatch(/\*\*Two other held rows look like it and are neither\*\*/);
+      expect(body).toMatch(
+        /costs\s+the conversation the listener it really had — where both of you do it, it costs the\s+conversation both/,
+      );
+      // Not named by your park: the fallback's row, not a peer's.
+      expect(body).toMatch(/A row \*\*your own park did not name\*\*/);
+      expect(body).toMatch(/most often the orchestrator mid-dispatch/);
+      // Claimed by you: yours however often it comes back.
+      expect(body).toMatch(/And a row \*\*you claimed yourself in this session\*\* is yours/);
+      expect(body).toMatch(/so any later claim reports\s+it to you/);
+      expect(body).toMatch(/did I claim this event, in\s+this session\?/);
+      // And the scope of the test: the claim after the park, no other call.
+      expect(body).toMatch(
+        /this test belongs to the\s+claim that follows your park and to no other call/,
+      );
+      expect(body).toMatch(
+        /a claim made in the middle of a pass is\s+looking at work you are holding yourself/,
+      );
+    });
+
+    it("keeps the two look-alikes that must loop instead of exiting", () => {
+      expect(body).toMatch(/\*\*Two quiet claims look like it and are not\*\*/);
+      expect(body).toMatch(/comes back in \*\*neither\*\* list/);
+      expect(body).toMatch(/the operator\s+halted the queue, or somebody abandoned the event/);
+      expect(body).toMatch(/named no\s+work at all/);
+      // And emptiness is denied a meaning in both directions, so neither the
+      // deleted conjunct nor its inverse can be read back in.
+      expect(body).toMatch(/\*\*An empty `events` is not the signal in either direction\*\*/);
+      expect(body).toMatch(/only the held id tells\s+those apart/);
+    });
+
+    it("tells the reconciliation section what one of its not-yours rows means", () => {
+      // Read from that side, the peer's row is just "older than my first claim,
+      // leave it" — which is right about the row and silent about staying.
+      expect(body).toMatch(/One kind of not-yours row says more than\s+\*leave it\*/);
+      expect(body).toMatch(/where its id is one your own park named as\s+pending/);
+      expect(body).toMatch(/Leaving the row is right either way; staying is not/);
+    });
+
+    /**
+     * AGENT-032. The worked example annotated its empty held list with AGENT-027's
+     * answer alone — *"it would have been somebody else's and left where it was"* —
+     * in the one scenario this whole family is about: a listener's first park and
+     * first claim. Not wrong, and understated in exactly the paragraph shape whose
+     * first draft stood the surviving listener down in AGENT-031's drill. An
+     * example that gives one of two answers is read as giving the answer.
+     */
+    it("gives the worked example's first claim both of its answers", () => {
+      const example = body.slice(body.indexOf("## Worked example"));
+      expect(example).toMatch(
+        /had something been, this being the\s+session's first claim it would have been somebody else's and left where it was/,
+      );
+      expect(example).toMatch(/this example is exactly the case it turns on:\s+a first park/);
+      // The counterfactual is written on the example's own ids, so it is read
+      // against a payload the reader has just seen rather than in the abstract.
+      expect(example).toMatch(
+        /Had the held row been `evt_7c1d9a` itself — the id\s+this park had just named as pending/,
+      );
+      expect(example).toMatch(
+        /the answer would have been to exit\s+here, having posted nothing and worked nothing/,
+      );
+      expect(example).toMatch(/Both\s+answers belong to this same moment, so read them together/);
+    });
+
+    it("says why the check belongs at the claim and forbids every earlier probe", () => {
+      expect(body).toMatch(/\*\*Two parked listeners cost nothing until a message arrives\*\*/);
+      expect(body).toMatch(/before the person has been answered twice or in two\s+voices/);
+      expect(body).toMatch(/there is no probe for this/);
+      expect(body).toMatch(/a shortened park to "check" is the keep-alive this skill forbids/);
+      // The tie-break is deliberately not arbitrated, and the reason it can be.
+      expect(body).toMatch(/Which of you loses the race is not worth arbitrating/);
+    });
+
+    it("names a long turn as the cause, without proposing a way to look present", () => {
+      expect(body).toMatch(
+        /\*\*Your own long turn lapses your own lane, and that is the design rather than a slip\.\*\*/,
+      );
+      expect(body).toMatch(
+        /the orchestrator may then launch a listener\s+into a lane you are sitting in/,
+      );
+      expect(body).toMatch(/It cannot tell the difference and it is right not to guess/);
+      // The three repairs a reader would otherwise invent, refused by name.
+      expect(body).toMatch(
+        /do not shorten the turn, do not break it up to re-park in the\s+middle, and do not park while you are holding work/,
+      );
+    });
+  });
+
+  it("orders the settling call after the writes, with the exit that proves it", () => {
+    // Measured against a running server: `--job` naming a settled event is
+    // exit 5, so settling early does not fail — it makes the rest of this
+    // agent's own work unfileable, which is the silent half.
+    expect(body).toMatch(/\*\*Settle last, after every write the event served\.\*\*/);
+    expect(body).toMatch(/refused at exit `5`/);
+    expect(body).toMatch(/settled work cannot acquire a scope/);
+    expect(body).toMatch(/silently makes the rest of your own work unfileable/);
+    // And the provenance loop the ordering exists for.
+    expect(body).toContain("export CORPUS_JOB=evt_7c1d9a");
+    expect(body).toContain("--job <evt_…>");
+    expect(body).toMatch(/\*\*Omitting it is free\.\*\*/);
+    expect(body).toMatch(/\*\*Misnaming it is not\.\*\*/);
+    expect(body).toMatch(/`corpus doc detach` is user-only/);
+  });
+
+  it("makes presence the parked request and forbids every substitute for it", () => {
+    expect(body).toMatch(
+      /\*\*You are present because you are parked, and for no other reason\.\*\*/,
+    );
+    expect(body).toMatch(/nothing\s+to register, no heartbeat to send/);
+    expect(body).toMatch(/\*\*Never write a\s+keep-alive\*\*/);
+    expect(body).toMatch(/no announcement turn, no periodic ping, no shortened park/);
+    // The startup read is ordered against the park, which is what gives it meaning.
+    expect(body).toMatch(/\*\*The ordering is what makes this check mean anything\.\*\*/);
+    expect(body).toMatch(/after you park, `live` on your row is you/);
+    expect(body).toMatch(/\*\*One consumer per lane, and that includes you\.\*\*/);
+    expect(body).toMatch(/split the conversation's story in half/);
+    // And no arrival turn, which is the keep-alive's polite cousin.
+    expect(body).toMatch(/\*\*Say nothing yet\.\*\*/);
+  });
+
+  it("treats a lapse as the design working, and restates no window", () => {
+    expect(body).toMatch(/\*\*Do not treat a `lapsed` row as breakage\.\*\*/);
+    expect(body).toMatch(/\*\*Do not redo what the orchestrator did while you were gone\.\*\*/);
+    expect(body).toMatch(
+      /slower, and without\s+this conversation's warmth, but never silently not done/,
+    );
+    expect(body).toMatch(/\*\*Do not shorten your park to lapse less\.\*\*/);
+    expect(body).toMatch(/longer than a\s+rearm gap/);
+    // The number is the server's, and naming it here is how the two drift apart.
+    expect(body).toMatch(/that\s+number is the server's and this skill does not restate it/);
+    for (const restatement of ["16m", "16 minutes", "960"]) {
+      expect(body, `restates the grace window as "${restatement}"`).not.toContain(restatement);
+    }
+  });
+
+  it("describes scope as the walk it is, never as a guarantee of exclusivity", () => {
+    // SHARED-044: §7's "an artifact belongs to at most one scope" is not
+    // delivered by its own clauses, and the CLI's help deliberately describes
+    // the walk instead. This text does the same — a resident told it owns its
+    // scope exclusively would act on an inventory the server never promised.
+    expect(body).toMatch(/\*\*Scope membership is\s+a walk, not a label\*\*/);
+    expect(body).toMatch(/follows\s+a thread's parents and a document's `origin`/);
+    expect(body).toMatch(
+      /\*\*Reason from the lane, never from your own idea of what belongs to you\.\*\*/,
+    );
+    expect(body).toMatch(/Do not build a mental\s+inventory/);
+    expect(body).not.toMatch(/belongs to at most one scope/);
+    expect(body).not.toMatch(/exclusively yours/);
+    // The stamp is made once, which is why designating moves nothing.
+    expect(body).toMatch(/\*\*The stamp is made once and never rewritten\.\*\*/);
+    expect(body).toMatch(/\*\*You never see the designation event\.\*\*/);
+  });
+
+  it("answers a summons where it was asked, and annexes nothing", () => {
+    expect(body).toMatch(/\*\*Reply where the event's payload says\.\*\*/);
+    expect(body).toMatch(/no walk, no\s+classification/);
+    expect(body).toMatch(/Routing follows the recipient;\s+filing follows the conversation/);
+    expect(body).toMatch(/\*\*An override never rewires anything\*\*/);
+    expect(body).toMatch(/do not adopt its documents into this conversation/);
+  });
+
+  it("delegates a side task under the orchestrator's rules, and awaits it", () => {
+    expect(body).toMatch(/\*\*You await what you launch; you do not park on it\.\*\*/);
+    // The reason the two skills diverge here, so the choice reads as a decision.
+    expect(body).toMatch(
+      /Nothing of yours is behind this\s+work except the next message in this one conversation/,
+    );
+    expect(body).toMatch(/one piece of work with\s+one status and one reply/);
+    // The boundary a dispatch may never cross, which is what a second claimant is.
+    expect(body).toMatch(/never runs a claim, a park, or a terminal call/);
+    expect(body).toMatch(/A subagent that inherits a lane is a\s+second claimant/);
+  });
+
+  it("binds the reply grammar by reference rather than restating it", () => {
+    // The comment skill is the manual for a turn; three copies of one doctrine
+    // is three things to keep in step, and the issue asked for one.
+    expect(body).toMatch(/The \*\*comment\*\* skill is your working manual for a turn/);
+    expect(body).toMatch(/none of it is repeated here/);
+    // Including the one sentence in it that is written for the other lane.
+    expect(body).toMatch(/the terminal call on the event belongs to the\s+orchestrate skill alone/);
+    expect(body).toMatch(/written for a subagent working on the orchestrator's lane/);
+    // The weight table is declared in exactly one file, and this is not it.
+    expect(body).toMatch(/do not restate the table here/);
+    expect(readWeightLevels(body)).toEqual([]);
+  });
+
+  it("ends the designation on a roster read, because nothing else will", () => {
+    expect(body).toMatch(/\*\*neither of them sends you an event\*\*/);
+    // A sign-off on an open thread, nothing on a resolved one.
+    expect(body).toMatch(/\*\*If it is resolved, post nothing\.\*\*/);
+    expect(body).toMatch(/Reopening a resolved thread later does not bring you back/);
+    // Measured in the live drill: a release landed while the listener was
+    // parked and was read at the top of the next pass, one rearm later. That
+    // latency is stated as correct so it does not get "fixed" with a poll.
+    expect(body).toMatch(/\*\*Finding out one rearm late is correct, not a gap\.\*\*/);
+    expect(body).toMatch(/every message written in between was\s+stamped for the orchestrator/);
+  });
+
+  /**
+   * AGENT-030 — SERVER-118 changed what a scoped park does, and this text was
+   * not swept. It taught that a park on an undesignated lane *"is accepted and
+   * parks; it does not error"*, so a resident whose designation ended between
+   * its roster read and its park had **no instruction at all** for what the
+   * server now answers.
+   *
+   * Measured on a real server (`corpus init` workspace, port 8791, real
+   * release, real CLI):
+   *
+   * ```
+   * $ corpus queue idle --thread th_nd4kdqxa            # lane just released
+   * corpus: 422 unknown_recipient: `th_nd4kdqxa` names no lane to consume: …
+   * EXIT=5
+   * $ corpus queue claim-all --thread th_nd4kdqxa       # same lane, same instant
+   * {"events":[{"id":"evt_lov4jqy6lamp",…}],"inProgress":{"events":[],"total":0}}
+   * EXIT=0
+   * ```
+   *
+   * Three things are therefore pinned, and each has a silent failure behind it:
+   *
+   * - **The refusal is an ending, not a crash.** With no instruction the shell
+   *   exits 5 mid-loop: the event the listener holds stays in `in-progress/`
+   *   (reproduced — `evt_dky2cuikw2cs` sat there) and the sign-off the skill
+   *   requires is never posted.
+   * - **The code, not the exit status, is the signal.** Exit 5 is every server
+   *   error; a park that fails because the server is down is exit 4. Retiring on
+   *   either would abandon a conversation this listener still owns.
+   * - **`claim-all` is deliberately unguarded** (SERVER-118's own decision), so
+   *   the departing listener can drain what was stamped for the lane before the
+   *   release — invisible to the orchestrator's unscoped claim until the lane
+   *   lapses.
+   */
+  describe("a refused park is retirement, not death at the shell", () => {
+    it("states what the server now does, and no longer what it used to", () => {
+      // The three falsified clauses. Each ran against the pre-fix body first:
+      // "accepted and parks; it does not error, because a lane may be designated
+      // a moment later … So a listener that skips the check waits forever on a
+      // conversation that no longer has it" — all three matchers fire on that
+      // sentence and none fires on the text that replaced it.
+      expect(body, "the park is said to be accepted").not.toMatch(/accepted and parks/);
+      expect(body, "the park is said not to error").not.toMatch(/it does not error/);
+      // Both spellings: the rule said "waits forever" and the worked example
+      // said "waiting forever", and a matcher for one leaves the other free to
+      // come back.
+      expect(body, "the old failure mode is back").not.toMatch(/wait(?:s|ing) forever/);
+      // What it does instead, with the code that says which refusal it is.
+      expect(body).toMatch(/\*\*A refused park is the same ending, found one step later\.\*\*/);
+      expect(body).toMatch(/is refused, not accepted, and nothing is parked/);
+      expect(body).toMatch(/`th_4b8e2c` names no lane to consume/);
+    });
+
+    it("sends the listener into retirement rather than out of the shell", () => {
+      expect(body).toMatch(/\*\*Retire on it; do not die on it\.\*\*/);
+      // The consequence of the missing instruction, named as what it is.
+      expect(body).toMatch(/exits at the shell/);
+      expect(body).toMatch(/holding its last event/);
+      expect(body).toMatch(/owing the conversation a goodbye nobody posts/);
+      expect(body).toMatch(/run the steps below from the first/);
+      // And the steps are entered from either discovery, not only the roster.
+      expect(body).toMatch(/When your row is gone from the roster, or your park was refused:/);
+    });
+
+    it("refuses to retire on any other failure, and says which is which", () => {
+      expect(body).toMatch(/\*\*It is that refusal and no other failure\.\*\*/);
+      expect(body).toMatch(/The signal is the code and never the exit\s+status/);
+      expect(body).toMatch(/`unknown_recipient`/);
+      expect(body).toMatch(/carries as `error\.code`/);
+      // The two neighbours it must not be confused with, by exit code.
+      expect(body).toMatch(/the server being unreachable is exit `4`/);
+      expect(body).toMatch(/another server error is exit\s+`5` with a different code/);
+      expect(body).toMatch(/walks out on a conversation you\s+still hold/);
+      expect(body).toMatch(/Park again instead/);
+    });
+
+    it("carries the other verb too, with the reason the two differ", () => {
+      expect(body).toMatch(/\*\*The claim is not refused, and the asymmetry is deliberate\.\*\*/);
+      expect(body).toMatch(
+        /still answers on a lane whose resident was just\s+released, and hands back/,
+      );
+      // Why refusing it too would be worse: nobody could reach those events.
+      expect(body).toMatch(
+        /the orchestrator's unscoped claim cannot see this lane\s+until it has lapsed out of presence/,
+      );
+      expect(body).toMatch(/strand them for a whole grace\s+window/);
+      // So the drain is an instruction, not a fact about the server.
+      expect(body).toMatch(/Draining them is therefore the departing listener's job/);
+      expect(body).toMatch(/make \*\*one\*\* last/);
+      // The live drill claimed twice — drain, work, then "one last drain claim"
+      // to check — so the bound needs its reason attached, not just the word.
+      expect(body).toMatch(/\*\*One claim is provably enough\*\*, so do not claim again to check/);
+      expect(body).toMatch(/a second claim can only ever come back empty/);
+      expect(body).toMatch(/park at no point in any of this/);
+    });
+
+    it("answers the same refusal at startup, where there is nothing to settle", () => {
+      expect(body).toMatch(/\*\*A park refused here is step 2's missing row, one step later\.\*\*/);
+      expect(body).toMatch(/You are\s+holding nothing and you have said nothing/);
+      expect(body).toMatch(/say so and exit, exactly as you would have for a row that was not/);
+    });
+
+    it("leaves no worked example or loop note contradicting the refusal", () => {
+      // AGENT-019's shape: an example beats the rule it contradicts. The old
+      // example closed on "parking on it would be waiting forever", which the
+      // `waits forever` matcher above also covers; this pins the replacement.
+      expect(body).toMatch(/would come straight back\s+`422 unknown_recipient`/);
+      // And the loop's own account of the verb's exit codes, which said 0 always.
+      expect(body, "the loop still promises exit 0 unconditionally").not.toMatch(
+        /`corpus queue idle` exits `0` in every normal case\. /,
+      );
+      expect(body).toMatch(
+        /exits `0` in every normal case but one, and that one is an ending rather\s+than an error/,
+      );
+      // The departing drain is shown as well as stated, on the lane it belongs to.
+      const retirementClaims = fencedBlocks(body)
+        .filter((block) => block.info === "bash")
+        .flatMap((block) =>
+          extractCorpusInvocationUses(["```bash", block.content, "```"].join("\n")),
+        )
+        .filter(({ tokens }) => tokens[0] === "queue" && tokens[1] === "claim-all");
+      expect(retirementClaims.length, "no worked claim to check").toBeGreaterThan(1);
+      for (const use of retirementClaims) expect(use.flags).toContain("--thread");
+    });
+
+    /**
+     * AGENT-032, the fourth producer of the stand-down signal — and the only one
+     * that is not a peer listener. AGENT-030 gave a retiring listener a drain
+     * claim; a person may re-designate the same thread (which this skill already
+     * contemplates in *Settling your own lane*). Interleave the two: release →
+     * A's park refused → the thread is designated again → the orchestrator
+     * launches B → B parks and its park names E as pending → A's **drain** claim
+     * takes E. B then sees E held, its own park named it, and it did not claim
+     * it — all three exclusions pass, B exits, A is leaving, and the
+     * conversation has no listener.
+     *
+     * It cannot be excluded at B: the held row carries no claimant and never
+     * will (`apps/server/src/queue/held.ts`), so B cannot tell a retiring
+     * listener's hold from a peer's. So it is closed at the producer — the drain
+     * is conditional on a roster read taken immediately before it, and a row
+     * that is back is a designation belonging to somebody else. The residual
+     * race (a designation landing between that read and that claim) needs B's
+     * whole launch and startup to fit inside two consecutive commands, and its
+     * cost is a lane with no resident, which the orchestrator's fallback covers.
+     */
+    it("does not drain a lane that has been designated again", () => {
+      expect(body).toMatch(
+        /\*\*Unless the conversation has been designated again — and then the drain is not yours to\s+make\.\*\*/,
+      );
+      // Why the paragraph above it no longer settles the question on its own.
+      expect(body).toMatch(/the argument above\s+turns over on its own premise/);
+      expect(body).toMatch(/they are the\s+successor's ordinary pending work/);
+      // What it costs, in the successor's own terms — this is the part a
+      // rewrite cannot rederive, and the reason the drain is not merely rude.
+      expect(body).toMatch(
+        /the row says nothing about who holds it or that they are leaving, so it\s+cannot read your departure as anything but a peer/,
+      );
+      expect(body).toMatch(/evict the healthy\s+listener that replaced you/);
+      // The instrument, and its ordering — a roster read minutes old is no test.
+      expect(body).toMatch(/\*\*read the roster immediately before you drain\*\*/);
+      expect(body).toMatch(/a designation that is not yours/);
+      expect(body).toMatch(/\*\*A row that is back ends this list here\*\*/);
+      expect(body).toMatch(/post nothing,\s+drain nothing, and exit/);
+      expect(body).toMatch(
+        /`corpus agents` immediately before the claim rather\s+than minutes earlier/,
+      );
+      // And the worked example agrees rather than showing the unguarded drain.
+      expect(body).toMatch(/The row is gone rather than back — nobody was designated in our place/);
+    });
+  });
+
+  /**
+   * Both found by a real Claude Code session driven by this text alone
+   * (AGENT-025's drill), and both are the AGENT-019 failure shape: a worked
+   * example beats the rule that contradicts it.
+   *
+   * The session copied `--model claude-sonnet-4-5` out of the example onto its
+   * first real turn, which is the one field in the whole product that exists to
+   * be checkable — a copied one is false while looking exactly right. And the
+   * example printed a `key` line after `corpus doc create`, which that verb does
+   * not print (measured: `created doc_… — data/docs/…`, no key), leaving the
+   * session unsure how to edit what it had just made.
+   */
+  it("marks the two things in its worked example that are not text to reuse", () => {
+    expect(body).toMatch(
+      /is what ran in this example; on your turn the name is what is running as you/,
+    );
+    expect(body).toMatch(
+      /copying the string out of an example is the one way to make the field say\s+something false/,
+    );
+    expect(body).toMatch(/\*\*a create prints its id and its path, not a\s+key\*\*/);
+    expect(body).toMatch(/`corpus doc show <id>` first and present what it printed/);
+    // And the example itself must not contradict that: no key line after a create.
+    for (const block of fencedBlocks(body).filter((fence) => fence.info === "bash")) {
+      const lines = block.content.split("\n");
+      for (const [index, line] of lines.entries()) {
+        if (!line.trimStart().startsWith("created doc_")) continue;
+        expect(lines[index + 1] ?? "", "a create followed by a key it does not print").not.toMatch(
+          /^key [0-9a-f]{64}$/,
+        );
+      }
+    }
+  });
+
+  it("hands a successor the corpus, never a transcript", () => {
+    expect(body).toMatch(/A degraded listener holding a lane is worse\s+than no listener at all/);
+    expect(body).toMatch(/presence is what keeps the fallback from firing/);
+    expect(body).toMatch(/\*\*Do not park again\.\*\*/);
+    expect(body).toMatch(/There is no transcript handoff and you must not attempt one/);
+    expect(body).toMatch(/The thread and its artifacts are the memory/);
+    // Which is what makes stewardship machinery rather than good manners here.
+    expect(body).toMatch(/\*\*Stewardship is how you remember\.\*\*/);
+  });
+
+  it("runs the loop as discrete steps and never chains the claim to the park", () => {
+    expect(body).toMatch(/\*\*This is a procedure, not a script\.\*\*/);
+    expect(body).toMatch(/\*\*never chained\*\*/);
+    expect(body).toMatch(/answered by\s+nobody, with no error anywhere/);
+    // No fenced block may exist that a reader could paste as the whole loop.
+    for (const block of fencedBlocks(body).filter((fence) => fence.info === "bash")) {
+      const lines = block.content.split("\n").map((line) => line.trim());
+      const claims = lines.some((line) => line.startsWith("corpus queue claim-all"));
+      const parks = lines.some((line) => line.startsWith("corpus queue idle"));
+      expect(claims && parks, "a block a reader could copy as the whole loop").toBe(false);
+    }
+    expect(body.match(/\bsleep\b/gi) ?? []).toHaveLength(1);
+    expect(body).not.toContain("while true");
+    // Work in one lane is one conversation, so it is serial by construction.
+    expect(body).toMatch(/in claim order, one at a time/);
+    expect(body).toMatch(/There is no overlap set to compute here/);
+    // Halted is quiet, not an exit.
+    expect(body).toContain('{"idle":true,"reason":"halted"}');
+    expect(body).toContain('{"idle":true,"reason":"timeout"}');
+  });
+
+  it("hedges nothing and quotes every multi-line argument", () => {
+    for (const hedge of [
+      "use your judgment",
+      "consider whether",
+      "you may want",
+      "if appropriate",
+    ]) {
+      expect(body.toLowerCase(), `hedges with "${hedge}"`).not.toContain(hedge);
+    }
+    const heredocs = body.match(/<<-?\s*\S+/g) ?? [];
+    expect(heredocs.length).toBeGreaterThan(0);
+    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
+  });
+});
+
+/**
+ * AGENT-032 — the class rather than the instance.
+ *
+ * Four review findings in three passes have come from one rule written into two
+ * skills and then maintained in one of them. The last was load-bearing:
+ * `orchestrate` justified *"Launch, and let the lane settle it"* with the
+ * discriminator AGENT-031 had **deleted** from `converse` — *"its claim comes
+ * back empty on work its own park had just named"* — while `converse` said
+ * *"judge it on that id, and never on the claim being empty"*. Nothing in this
+ * file compared the two, so the contradiction shipped green.
+ *
+ * Two pins, because the duplication arrives in two shapes and neither catches
+ * the other:
+ *
+ * - **Copied prose** is caught mechanically, by shared passage. Every passage
+ *   the skills state twice today is recorded below with the reason it is stated
+ *   twice, so a new one fails here rather than at a reviewer.
+ * - **A paraphrase** defeats that — AGENT-029 wrote the same rule into both
+ *   files in different words — so a rule known to be single-owner is registered
+ *   with the mechanism's own vocabulary. The owner must state it; nobody else
+ *   may; and a skill that relies on it carries the outcome and a pointer.
+ *
+ * Neither pin decides where a rule belongs. What they enforce is that the
+ * decision is made once and recorded, which is the part that was missing.
+ */
+describe("one rule, one skill", () => {
+  const SKILLS = ["orchestrate", "converse", "comment"] as const;
+  type SkillName = (typeof SKILLS)[number];
+
+  const skillBody: Record<SkillName, string> = {
+    orchestrate: documentAt("claude/skills/orchestrate/SKILL.md").body,
+    converse: documentAt("claude/skills/converse/SKILL.md").body,
+    comment: documentAt("claude/skills/comment/SKILL.md").body,
+  };
+
+  /** Prose paragraphs of a skill body: fenced blocks dropped, wrapped lines rejoined. */
+  const proseBlocks = (body: string): string[] => {
+    const blocks: string[] = [];
+    let current: string[] = [];
+    let inFence = false;
+    for (const line of body.split("\n")) {
+      if (line.trimStart().startsWith("```")) {
+        inFence = !inFence;
+        continue;
+      }
+      if (inFence) continue;
+      if (line.trim() === "") {
+        if (current.length > 0) blocks.push(current.join(" "));
+        current = [];
+        continue;
+      }
+      current.push(line.trim());
+    }
+    if (current.length > 0) blocks.push(current.join(" "));
+    return blocks;
+  };
+
+  const proseSentences = (body: string): string[] =>
+    proseBlocks(body)
+      .flatMap((block) => block.split(/(?<=[.!?])\s+/))
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence !== "");
+
+  /**
+   * A body as a word stream, with everything a re-wrap or a re-emphasis changes
+   * taken out. Comparing words rather than lines is what makes the pin survive
+   * ordinary editing: reflowing a paragraph moves no word, and copying it into
+   * the other skill moves all of them.
+   */
+  const proseWords = (body: string): string[] =>
+    proseBlocks(body)
+      .join(" ")
+      .toLowerCase()
+      .replaceAll(/[*_`>#|]/g, " ")
+      .replaceAll(/[^a-z0-9%\-/.:'’]+/g, " ")
+      .split(/\s+/)
+      .filter((word) => word !== "");
+
+  /**
+   * Twelve words is about a clause, and it is where the two error rates cross.
+   * Measured on these three bodies: at six words `orchestrate` and `converse`
+   * share 258 runs, nearly all of them ordinary vocabulary, and every one would
+   * have to be recorded below; at twelve they share 13, each a real restatement.
+   * Going higher only lets a copied sentence through — most are shorter than
+   * twenty words.
+   */
+  const PASSAGE_WORDS = 12;
+
+  const shingles = (words: readonly string[]): string[] => {
+    const out: string[] = [];
+    for (let index = 0; index + PASSAGE_WORDS <= words.length; index += 1) {
+      out.push(words.slice(index, index + PASSAGE_WORDS).join(" "));
+    }
+    return out;
+  };
+
+  /** The maximal passages of `left` whose every shingle also occurs in `right`. */
+  const sharedPassages = (left: readonly string[], right: readonly string[]): string[] => {
+    const known = new Set(shingles(right));
+    const passages: string[] = [];
+    let start: number | null = null;
+    for (let index = 0; index + PASSAGE_WORDS <= left.length; index += 1) {
+      const shared = known.has(left.slice(index, index + PASSAGE_WORDS).join(" "));
+      if (shared && start === null) start = index;
+      if (!shared && start !== null) {
+        passages.push(left.slice(start, index - 1 + PASSAGE_WORDS).join(" "));
+        start = null;
+      }
+    }
+    if (start !== null) passages.push(left.slice(start).join(" "));
+    return passages;
+  };
+
+  /**
+   * Every passage two skills state today, with why. An entry is a decision that
+   * a rule is worth saying twice — not a licence for the next one, and not a
+   * claim that the duplication is a good idea. Entries are not asserted to be
+   * still in use: one going stale means a duplication was removed, which is the
+   * direction this pin exists to encourage.
+   */
+  const STATED_TWICE: readonly { readonly why: string; readonly passages: readonly string[] }[] = [
+    {
+      why: "the invariants a resident inherits — `converse` restates them condensed and names `orchestrate` as their authority, and `comment` states the same ones for a subagent that reads neither loop skill",
+      passages: [
+        "and go there when a detail is missing. 1. every mutation goes through the corpus cli. workspace files are never hand-edited not with an editor not with your own file tools not with shell redirection and the http api is never called directly. the server is the sole writer. 2. attribution is explicit.",
+        "not with an editor not with your own file tools not with shell redirection and",
+        "run export corpus from agent once at the start of the session and still pass --from agent on",
+        "and still pass --from agent on mutating commands the way the examples below",
+        "the way the examples below do. 3. you archive you never delete. where a person would delete",
+        "corpus doc archive . deletion belongs to the user alone and the cli refuses it from you. 4.",
+        "belongs to the user alone and the cli refuses it from you.",
+        "a write presents the key its read gave you. replacing a document's body",
+        "what it costs you to find something must not grow with the corpus. reading a body",
+      ],
+    },
+    {
+      why: "the loop's own shape — both skills run a loop, and each states the steps of its own rather than pointing at the other's",
+      passages: [
+        "by nobody with no error anywhere and nothing in the console to show for it. run these steps in order indefinitely: 1.",
+        "is the entire command never appended to the claim above it never combined with",
+        "it parks the full window and prints idle :true reason : halted",
+        "just claimed and inprogress what the server still thinks you are doing.",
+        "is not a correctness failure the server still never hands one event to two",
+      ],
+    },
+    {
+      why: "the settling grammar — both skills settle events, on their own lanes, and the reason a person reads is written the same way in both",
+      passages: [
+        "short sentence naming the object and the obstacle it is what the",
+        "and the person waiting on it gets no reply and no failed row to explain the silence.",
+      ],
+    },
+    {
+      why: "delegation, which a resident does under `orchestrate`'s rules for a side task and `orchestrate` does for every event",
+      passages: [
+        "in the job's log while it runs and in the reply the",
+        "one request stays one piece of work with one status and one reply whatever it took internally.",
+      ],
+    },
+    {
+      why: "*Writing a document* — stated in full in both `orchestrate` and `comment`. This is the same class as AGENT-032 and is recorded rather than fixed: it is not this issue's subject, and freezing it is what stops it growing further",
+      passages: [
+        "read work write with the key you were given keep the key the write returned.",
+        "means passing the --key that corpus doc show printed and the write prints a fresh key for the next edit.",
+        "- a fence closes only on a line that is nothing but",
+        "a change you can quote is a patch a change you cannot quote is a",
+        "if you can point at the text that is wrong a figure a sentence a paragraph that should go",
+        "and puts every other line in your hands where a bad paste",
+        "a patch presents no key and that is a consequence rather than an",
+        "across the gap the tail of what comes before and the head of what comes after as one excerpt",
+        "two refusals exit 10 both nothing written and their recoveries are opposites. the message names the count so branch on it rather than guessing.",
+        "quote more of what surrounds it until it occurs exactly once the line above",
+        "--all replaces every occurrence and is right only when every occurrence is genuinely what you meant never",
+        "reading a document prints its key a write that replaces the body presents that key the write prints a fresh",
+        "a key the document has moved past is exactly the statement i am about to overwrite something i never read",
+        "two refusals on a keyed write and only the first is a mistake.",
+        "the text you read and run the same command again with the fresh key. that retry is the mechanism working not a failure to report and",
+        "putting an older version back is this same loop. there is no revert command and",
+        "a revert is a write whose content came from history so it",
+        "corpus doc diff id prints the document's path and its last committed change and",
+        "read from git never write to it. git log git show and git diff are",
+        "the body. everything down to and including the closing --- is frontmatter the server owns",
+        "so pasting the file in as a body writes that frontmatter into the document",
+        "the version you just read so a revert that would clobber a change made since that read is refused with exit 9",
+        "landing on top of it. the age of the content is never the question what happened after your read is. a patched revert is guarded",
+      ],
+    },
+    {
+      why: "stewardship, which binds whoever does the work — `orchestrate` states the charter and `comment` states the parts a turn carries",
+      passages: [
+        "is how their writing disappears and every thread anchored into an entry you rewrote comes loose",
+        "the arrow a space then a one-line past-tense report of what the work did as in",
+        "when you keep meeting the same mess propose the sweep in a reply instead of quietly starting it.",
+      ],
+    },
+  ];
+
+  const recorded = new Set(
+    STATED_TWICE.flatMap(({ passages }) => passages).flatMap((passage) =>
+      shingles(proseWords(passage)),
+    ),
+  );
+
+  /** Every passage of `left` that `right` also states and nothing above accounts for. */
+  const undeclaredDuplication = (left: SkillName, right: SkillName): string[] =>
+    sharedPassages(proseWords(skillBody[left]), proseWords(skillBody[right])).filter((passage) =>
+      shingles(proseWords(passage)).some((shingle) => !recorded.has(shingle)),
+    );
+
+  const PAIRS: readonly (readonly [SkillName, SkillName])[] = [
+    ["orchestrate", "converse"],
+    ["orchestrate", "comment"],
+    ["converse", "comment"],
+  ];
+
+  it("records nothing that records nothing", () => {
+    // A passage shorter than one shingle contributes no shingle, so it would
+    // sit here declaring a decision it does not actually permit.
+    for (const { passages } of STATED_TWICE) {
+      for (const passage of passages) {
+        expect(
+          proseWords(passage).length,
+          `"${passage}" is shorter than a shared passage and permits nothing`,
+        ).toBeGreaterThanOrEqual(PASSAGE_WORDS);
+      }
+    }
+    expect(recorded.size).toBeGreaterThan(0);
+  });
+
+  it("finds the duplication it is looking for, before it is asked to find none", () => {
+    // Anti-vacuity in both directions. The recorded passages are really shared,
+    // so a normalizer that silently matched nothing would fail here — and a
+    // paragraph moved from one skill into the other is really reported, which
+    // is the case the pin exists for, proven without touching a file.
+    expect(
+      sharedPassages(proseWords(skillBody.orchestrate), proseWords(skillBody.converse)).length,
+    ).toBeGreaterThan(0);
+    const borrowed = proseSentences(skillBody.converse).find((sentence) =>
+      sentence.includes("An id your park named, held by somebody else when you claim"),
+    );
+    expect(borrowed, "the stand-down rule is missing from converse").toBeDefined();
+    const copied = sharedPassages(
+      proseWords(`${skillBody.orchestrate}\n\n${borrowed ?? ""}\n`),
+      proseWords(skillBody.converse),
+    ).filter((passage) => shingles(proseWords(passage)).some((shingle) => !recorded.has(shingle)));
+    expect(copied.length, "a paragraph copied between the skills goes unreported").toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("states no passage in two skills that is not a recorded decision", () => {
+    for (const [left, right] of PAIRS) {
+      expect(
+        undeclaredDuplication(left, right),
+        `${left} and ${right} now state the same passage. Delete one and point at the skill that owns the rule — or, if it genuinely belongs in both, record it in STATED_TWICE with the reason`,
+      ).toEqual([]);
+    }
+  });
+
+  /**
+   * A rule one skill owns and another relies on. `restatements` is a per-rule
+   * detector for the shapes the rule gets written in, so the registry catches
+   * what the passage pin cannot: the same rule written twice in different words,
+   * which is how AGENT-029 shipped it into both files.
+   *
+   * **It is a net, not a proof — and only one of the two rules below is
+   * exhaustive.** The weight table's detector reads the table's own rows, so no
+   * restatement of a level can miss it. The stand-down rule's is a collocation
+   * match over prose, and a paraphrase that avoids the collocation passes: *"the
+   * id it expected to claim comes back held by another caller"* states the whole
+   * rule and matches nothing here. Its vocabulary covers the shapes the rule has
+   * actually been written in — the two historical ones and the near neighbours a
+   * rewrite reaches for first — and deliberately no wider, because a pin that
+   * fires on unrelated prose is a pin somebody baselines away, which costs more
+   * than a narrow one. So: widen the vocabulary the moment a paraphrase gets
+   * past it, and never read a green run as proof that no second skill states the
+   * rule. That judgement is still a reader's.
+   */
+  interface SingleOwnerRule {
+    readonly rule: string;
+    readonly owner: SkillName;
+    readonly restatements: (body: string) => readonly string[];
+    /** Skills that rely on the rule: each carries the outcome and says where the rule lives. */
+    readonly pointers: readonly { readonly skill: SkillName; readonly carries: RegExp }[];
+  }
+
+  // A sentence states the peer-listener discriminator when it says both halves:
+  // that a park designated an id, and that somebody else came back holding it.
+  // The first half is the collocation "park" + a designating verb (or that verb
+  // applied to "pending"): `named` is what both skills have used, the rest are
+  // the words a rewrite reaches for next. Requiring the word `park` — or the
+  // word `pending` — is what keeps it off ordinary prose about claiming; both
+  // halves must land in the same sentence before anything is reported.
+  const PARK_NAMED =
+    /park[^.]{0,24}?\b(?:nam|list|reserv|announc|flagg?|mark)(?:ed|es|e|ing)?\b|\b(?:nam|list|reserv|announc|flagg?|mark)(?:ed|es)?\s+(?:as\s+)?pending/i;
+  const HELD_ELSEWHERE =
+    /`inProgress`|held by|another (?:listener|caller)|second listener|claim comes back/i;
+
+  const SINGLE_OWNER_RULES: readonly SingleOwnerRule[] = [
+    {
+      rule: "how a second listener finds out it is second",
+      owner: "converse",
+      restatements: (body) =>
+        proseSentences(body).filter(
+          (sentence) => PARK_NAMED.test(sentence) && HELD_ELSEWHERE.test(sentence),
+        ),
+      pointers: [
+        {
+          skill: "orchestrate",
+          carries:
+            /\*\*How it finds\s+that out is the converse skill's to state, and it is stated there alone\.\*\*/,
+        },
+      ],
+    },
+    {
+      rule: "the weight levels a request may state",
+      owner: "orchestrate",
+      restatements: (body) => readWeightLevels(body).map(({ name, key }) => `${name} (${key})`),
+      // `comment` never chooses a model, so it carries no pointer — it is held
+      // only to the prohibition, which is what a rule's non-consumers owe it.
+      pointers: [{ skill: "converse", carries: /do not restate the table here/ }],
+    },
+  ];
+
+  it("keeps every registered rule in the one skill that owns it", () => {
+    for (const { rule, owner, restatements, pointers } of SINGLE_OWNER_RULES) {
+      expect(
+        restatements(skillBody[owner]).length,
+        `"${rule}" is registered to ${owner}, which no longer states it`,
+      ).toBeGreaterThan(0);
+      for (const skill of SKILLS.filter((name) => name !== owner)) {
+        expect(
+          restatements(skillBody[skill]),
+          `${skill} restates "${rule}", which ${owner} owns. Say the outcome you rely on and point at ${owner}`,
+        ).toEqual([]);
+      }
+      for (const { skill, carries } of pointers) {
+        expect(
+          skillBody[skill],
+          `${skill} relies on "${rule}" without pointing at ${owner}`,
+        ).toMatch(carries);
+      }
+    }
+  });
+
+  it("reports the restatement that shipped, which is what makes the registry worth having", () => {
+    // The pre-fix orchestrate sentence, verbatim from `phase-4-agent-loop`. It
+    // described the rule in the form AGENT-031 had already deleted from
+    // converse, and every check in this file passed over it.
+    const shipped =
+      "A second listener parks, costs nothing while the conversation is quiet, and the " +
+      "first message it is asked to answer tells it what it is: its claim comes back empty " +
+      "on work its own park had just named, which on a live lane only another listener can " +
+      "cause, and it exits.";
+    const standDown = SINGLE_OWNER_RULES.find(({ rule }) =>
+      rule.startsWith("how a second listener"),
+    );
+    expect(standDown, "the stand-down rule is no longer registered").toBeDefined();
+    expect(
+      standDown?.restatements(shipped) ?? [],
+      "the registry would have passed over the sentence that shipped",
+    ).not.toEqual([]);
+    expect(standDown?.restatements(skillBody.orchestrate) ?? ["unchecked"]).toEqual([]);
+  });
+
+  it("catches the near paraphrases, and says out loud which one it does not", () => {
+    // The docblock above claims a net rather than a proof. These are the claim,
+    // executable: a substituted designating verb is caught, and the paraphrase
+    // that drops the mechanism's vocabulary altogether is not. If somebody
+    // widens the vocabulary far enough to catch the last one, this test fails
+    // and the docblock's admission gets rewritten with it — which is the only
+    // way that admission cannot quietly become false.
+    const standDown = SINGLE_OWNER_RULES.find(({ rule }) =>
+      rule.startsWith("how a second listener"),
+    );
+    const caught = [
+      "the event its park listed as pending comes back held by another caller",
+      "an event this park flagged as pending returns held by another caller",
+      "the row your park marked pending is held by another caller when you claim",
+    ];
+    for (const sentence of caught) {
+      expect(
+        standDown?.restatements(sentence) ?? [],
+        `a designating-verb paraphrase now evades the pin: "${sentence}"`,
+      ).not.toEqual([]);
+    }
+    expect(
+      standDown?.restatements("the id it expected to claim comes back held by another caller") ?? [
+        "unchecked",
+      ],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
   });
 });
 

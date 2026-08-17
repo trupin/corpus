@@ -140,6 +140,66 @@
   display: block;
 }
 
+/* A file dragged over the popover, lit the same way the reply box and the
+   global composer light: the highlight is what tells you the popover is the
+   dropzone rather than the document underneath it (SPEC.md §6, UI-111). */
+.comment-pop.dropping {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+/* The grip: the popover opens on the words it is about, and this is how it gets
+   off them (UI-112). A full-width strip rather than a corner dot, because the
+   thing being said is "this whole box moves"; `touch-action: none` so a drag on
+   a touch screen is a drag and not a scroll of the document underneath. It is a
+   real button — §11 adds no exclusive-pointer capability, so it takes focus and
+   answers arrow keys. */
+.cm-drag {
+  display: block;
+  width: 100%;
+  height: 14px;
+  margin: -4px 0 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 2px;
+  text-align: center;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cm-drag:hover {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.cm-drag:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.comment-pop.dragging .cm-drag {
+  cursor: grabbing;
+  background: var(--surface-2);
+}
+
+/* Nothing inside the box is being selected while it is being carried. */
+.comment-pop.dragging {
+  user-select: none;
+}
+
+/* Chips above the field, as in every other composer. The strip is
+   `display: none` while empty (`.pending-atts:empty`), so a popover with
+   nothing attached is the popover that was there before — a composer
+   affordance must not reflow this surface into a panel (UI-070). */
+.comment-pop .pending-atts {
+  margin-bottom: 8px;
+}
+
 .cm-quote {
   font-family: var(--serif);
   font-style: italic;

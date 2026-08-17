@@ -3,6 +3,7 @@ import { ActorHeaderSchema } from "../schemas/actor.js";
 import { EventIdSchema } from "../schemas/id.js";
 import {
   ClaimBatchSchema,
+  ClaimScopeQuerySchema,
   DeferEventRequestSchema,
   FailEventRequestSchema,
   HaltQueueRequestSchema,
@@ -18,6 +19,7 @@ import {
   jsonContent,
   NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
+  UNKNOWN_SCOPE_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
 
@@ -27,15 +29,28 @@ const EventIdParamSchema = z.object({
 
 /**
  * Read on load by the console strip: SSE only announces invalidation, so the
- * halted dot and the queue depth need a plain fetch (SPEC.md §2.2 rule 3).
+ * halted dot, the queue depth and the agent pill need a plain fetch (SPEC.md
+ * §2.2 rule 3).
+ *
+ * Since CONTRACT-045 it answers the pill's question directly instead of leaving
+ * it to be guessed from the counts. That is why a `["queue"]` frame is owed on
+ * a presence change as well as on a queue transition (`../query-keys.ts`): a
+ * status the strip never refetches is a pill that never notices the agent left.
  */
 export const getQueueStatus = createRoute({
   method: "get",
   path: "/api/queue/status",
   tags: ["queue"],
-  summary: "Halted state and per-status event counts",
+  summary: "Whether an agent is there, halted state, and per-status event counts",
+  description:
+    "What the console strip reads (SPEC.md §11): the counts describe the work, and `agent` " +
+    "describes the worker. **`agent` is the roster's own liveness aggregated** — the same " +
+    "observation `GET /api/agents` reports per lane, so the strip and the recipient picker " +
+    "cannot disagree about whether anybody is listening — and it is here so that `idle` can be " +
+    "a claim with evidence behind it rather than the else-branch of the counts. An empty queue " +
+    "means nobody asked for anything; it has never meant somebody is waiting to be asked.",
   responses: {
-    200: jsonContent(QueueStatusSchema, "Current queue depth and halt state."),
+    200: jsonContent(QueueStatusSchema, "Agent presence, current queue depth and halt state."),
     401: UNAUTHORIZED_RESPONSE,
   },
 });
@@ -60,13 +75,28 @@ export const idleQueue = createRoute({
     "A `200` also carries `inProgress`: what the server still thinks the agent is doing. It is " +
     "reported here and on `claim-all` — the loop's two entry points — and nowhere else; the `204` " +
     "that ends an empty window has no body and therefore no list. See `claim-all` for the " +
-    "reconciliation contract.",
+    "reconciliation contract.\n\n" +
+    "**Parking here is what presence *is*** (SPEC.md §7). A resident is live exactly while it " +
+    "holds a parked scoped `idle` — there is no heartbeat to send and no registration to keep " +
+    "fresh — so `scope` decides both which lane's work this call waits for and which lane " +
+    "`GET /api/agents` reports as live. An agent that stops parking stops being present, and its " +
+    "lane's pending work falls back to the orchestrator's unscoped claim once the grace window " +
+    "has passed.\n\n" +
+    "**Because parking is presence, a `scope` that names no lane is refused** with `422`, before " +
+    "the park is admitted and therefore before it can be observed (SPEC.md §7). A thread id is a " +
+    "thread id on the wire, so this is a refusal only the workspace can make: the value must name " +
+    "a standalone thread that holds a resident. Omitting `scope` is always fine — it means the " +
+    "orchestrator's lane — and a lane whose resident is released *while its listener is parked* " +
+    "keeps that park to its end; what is refused is a value that was never a lane, not one that " +
+    "has stopped being one. `claim-all` deliberately does not refuse it: draining a lapsed lane's " +
+    "already-stamped events is the listener's job, and refusing there would strand them.",
   request: { query: IdleQuerySchema },
   responses: {
     200: jsonContent(IdleResultSchema, "Pending events exist; claim them next."),
     204: { description: "The window expired with nothing pending. Re-invoke to park again." },
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
+    422: UNKNOWN_SCOPE_RESPONSE,
   },
 });
 
@@ -105,8 +135,15 @@ export const claimAll = createRoute({
     "— a session that died with its context — and stays a requeue.\n\n" +
     "**The list is capped, and says so.** Past the cap it reports the true `total` and sets " +
     "`truncated`; the complete set is `GET /api/jobs?status=in-progress`. A short list that looked " +
-    "complete would defeat the whole field.",
-  request: { headers: ActorHeaderSchema },
+    "complete would defeat the whole field.\n\n" +
+    "**A claim takes a lane** (SPEC.md §7). `scope` names it, and omitting it means the " +
+    "orchestrator's — so a caller written before lanes existed keeps its meaning exactly. A " +
+    "scoped claim sees only its own lane's events; the orchestrator's claim never sees a live " +
+    "lane's events, and picks up a lapsed lane's pending work. Two agents claiming at once are " +
+    "therefore reading disjoint sets rather than racing, and **one consumer per lane** still " +
+    "holds: a second concurrent claim on one lane is refused exactly as a second claim on the " +
+    "whole queue always was.",
+  request: { query: ClaimScopeQuerySchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(
       ClaimBatchSchema,

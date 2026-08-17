@@ -112,11 +112,18 @@ test.describe("column width", () => {
   });
 
   /**
-   * UI-023: the widening stops at the reader's content measure. A column
-   * dragged to 900 px used to open a reader 900 px wide around a body capped at
-   * `62ch` — everything past the measure was dead gutter.
+   * UI-113, and the case that reversed UI-023.
+   *
+   * UI-023 stopped the widening at the reader's content measure, on the
+   * reasoning that width past it is dead gutter. True of a column nobody chose;
+   * false of one somebody dragged — and applied as a *cap* it took 340 px off a
+   * column the user had set to 900. Reported with two screenshots: *"I don't
+   * want the size to shrink, ever."*
+   *
+   * The measure survives as a **floor** (the next test); what dies is its use as
+   * a ceiling on a chosen width.
    */
-  test("a column wider than the content measure opens the reader at the measure", async ({
+  test("a column wider than the content measure keeps its width when a reader opens", async ({
     page,
   }) => {
     await stubCorpus(page, [view({ width: 900 }), NOTE]);
@@ -127,11 +134,66 @@ test.describe("column width", () => {
 
     await page.locator('.row[data-row-doc="doc_note"]').click();
     await expect(page.locator(".reader")).toBeVisible();
-    await expect(column).toHaveCSS("width", "560px");
+    await expect(column).toHaveCSS("width", "900px");
 
-    // Closing the reader returns the column to the base it carries.
+    // And closing changes nothing either — there is nothing to return from.
     await page.locator(".col.reading .back").click();
     await expect(column).toHaveCSS("width", "900px");
+  });
+
+  /**
+   * The one automatic change the user kept: *"it can resize up automatically but
+   * not down"*. A column too narrow to show a document grows when one opens —
+   * and, crucially, **stays grown when it closes**, because snapping back would
+   * be the app resizing it downward on its own, which is the complaint.
+   */
+  test("a narrow column grows to the measure, and does not snap back on close", async ({
+    page,
+  }) => {
+    await stubCorpus(page, [view({ width: 336 }), NOTE]);
+    await page.goto("/");
+
+    const column = page.locator(".col[data-col]");
+    await expect(column).toHaveCSS("width", "336px");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await expect(page.locator(".reader")).toBeVisible();
+    await expect(column).toHaveCSS("width", "560px");
+
+    await page.locator(".col.reading .back").click();
+    await expect(column).toHaveCSS("width", "560px");
+  });
+
+  /**
+   * The other half of UI-113, and it needed no code of its own: the resizer was
+   * always live while a reader was open, but the rendered width was computed
+   * from the reading formula rather than from the base the drag was setting — so
+   * the edge moved, the stored width changed, and nothing visible happened. Once
+   * the rendered width is the base, the drag works open or closed, identically.
+   */
+  test("the edge can be dragged while a reader is open, and the width sticks", async ({ page }) => {
+    await stubCorpus(page, [view({ width: 700 }), NOTE]);
+    await page.goto("/");
+
+    const column = page.locator(".col[data-col]");
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await expect(page.locator(".reader")).toBeVisible();
+    await expect(column).toHaveCSS("width", "700px");
+
+    const resizer = page.locator(".col-resizer");
+    const box = await resizer.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move((box?.x ?? 0) + 3, (box?.y ?? 0) + 40);
+    await page.mouse.down();
+    await page.mouse.move((box?.x ?? 0) + 123, (box?.y ?? 0) + 40, { steps: 8 });
+    await page.mouse.up();
+
+    await expect(column).toHaveCSS("width", "820px");
+
+    // And it survives closing the reader — the drag set the column's own width,
+    // not a reading-session override.
+    await page.locator(".col.reading .back").click();
+    await expect(column).toHaveCSS("width", "820px");
   });
 
   test("snap scrolling and the ghost column are unchanged", async ({ page }) => {

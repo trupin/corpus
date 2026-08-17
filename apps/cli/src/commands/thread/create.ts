@@ -7,6 +7,8 @@ import {
   resolveTurnModel,
   warningSuffix,
   type InputDependencies,
+  JOB_FLAG,
+  resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
@@ -66,6 +68,7 @@ export async function runThreadCreate(
   context: WorkspaceCommandContext,
   dependencies: InputDependencies = {},
 ): Promise<void> {
+  const job = resolveJob(context.flags, context.env);
   const parent = textFlag(context, "parent");
   const quote = textFlag(context, "quote");
   const prefix = textFlag(context, "prefix");
@@ -104,6 +107,9 @@ export async function runThreadCreate(
   const response = await context.client.request((api) =>
     api.POST("/api/threads", {
       body: {
+        // SPEC.md §9.2: the work this write serves (CLI-044). A thread created
+        // from a job joins that job's scope (§7).
+        ...(job === undefined ? {} : { job }),
         body,
         // Every optional field is *omitted* rather than sent as undefined:
         // `requestsAgent` is a tri-state where omitted, true and false are three
@@ -240,6 +246,7 @@ export const createCommand: WorkspaceCommandSpec = {
     },
     ...bodyFlags("The first turn's body"),
     MODEL_FLAG,
+    JOB_FLAG,
   ],
   examples: [
     {

@@ -56,6 +56,7 @@ describe("GET /api/threads/{id}", () => {
       parent: parent.id,
       anchor: created.anchorId,
       agent: "none",
+      resident: null,
       turns: [
         { author: "user", ts: stamps[0], body: "is this right?", model: null },
         { author: "agent", ts: stamps[1], body: "checked; 6.4% is closer", model: null },
@@ -135,6 +136,7 @@ describe("GET /api/threads/{id} — hand-written files", () => {
       parent: null,
       anchor: null,
       agent: "none",
+      resident: null,
       turns: [
         { author: "user", ts: "2026-07-19T10:05:00Z", body: "first", model: null },
         { author: "agent", ts: "2026-07-19T10:07:00Z", body: "second", model: null },
@@ -161,6 +163,7 @@ describe("GET /api/threads/{id} — hand-written files", () => {
       parent: null,
       anchor: null,
       agent: "none",
+      resident: null,
       // `archived` is a document status, not a thread state: an archived thread
       // is still an unresolved conversation.
       status: "open",

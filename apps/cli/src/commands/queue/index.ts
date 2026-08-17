@@ -25,7 +25,16 @@ export const queueTopic: TopicSpec = {
     "switch: it stops consumption without stopping production. The loop's two entry points — " +
     "`idle` when it returns work, and `claim-all` — additionally report what the server still " +
     "holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the " +
-    "agent can reconcile the server's view against its own memory (SPEC.md §7).",
+    "agent can reconcile the server's view against its own memory (SPEC.md §7).\n\n" +
+    "**The queue is partitioned into lanes** (SPEC.md §7), and two verbs take one: `idle` and " +
+    "`claim-all` accept `--thread <th_…>` to consume the lane of a conversation with a resident " +
+    "agent. Omitting it is the orchestrator's lane, which is what every caller written before " +
+    "lanes existed already meant. A scoped call sees only its own lane; the orchestrator's sees " +
+    "its own plus every lane nobody is listening on — so two agents working at once read " +
+    "disjoint sets, and a conversation whose agent is absent is still answered, by the " +
+    "orchestrator, rather than left. `corpus agents` lists the lanes and says who is on them; " +
+    "**holding a scoped `idle` is the whole of what makes a resident present** — nothing here " +
+    "registers an agent, because there is nothing to register.",
   commands: [
     idleCommand,
     claimAllCommand,

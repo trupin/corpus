@@ -1,4 +1,11 @@
-import type { IndexStatus, Job, QueueEventStatus, QueueStatus } from "@corpus/contract";
+import type {
+  AgentActivity,
+  IndexStatus,
+  Job,
+  QueueEventStatus,
+  QueueStatus,
+} from "@corpus/contract";
+import { agentActivity } from "@corpus/contract";
 
 /**
  * Everything the console derives rather than fetches, as pure functions.
@@ -120,24 +127,130 @@ export function jobStartedLabel(started: string): string {
   return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
 }
 
-/** The agent-status pill's three states (SPEC.md §11). */
-export type AgentState = "working" | "idle" | "halted";
+/**
+ * What the agent pill can say — SPEC.md §11's four states, plus the one the
+ * server never reports.
+ *
+ * The four are the contract's own {@link AgentActivity} (CONTRACT-045), used
+ * rather than re-derived: `halted`, `disconnected`, `working`, `idle`, in that
+ * precedence. The fifth is not a state of the agent at all. **`unknown` is the
+ * absence of an answer**, which the strip has to render because it is one line
+ * and always draws — and it exists because each of the other four is a claim
+ * about somebody. §11 makes `idle` "a claim that requires evidence"; UI-098's
+ * whole subject is that the console used to make it by elimination. Asserting
+ * `disconnected` from a response that never arrived would be the identical
+ * mistake pointed the other way, so the pill says neither.
+ */
+export type AgentState = AgentActivity | "unknown";
 
 /**
- * Derived from the queue, never from a second endpoint.
+ * The pill's state — **the contract's verdict, never a second derivation of it**.
  *
- * Halted outranks working: while the sentinel is set nothing new is claimed, and
- * an in-flight job finishing does not make the agent "working" again. Both facts
- * come from the one `GET /api/queue/status` the counts already read.
+ * `agentActivity` already encodes §11's four states and the precedence between
+ * them, including the one decision this surface must not re-open:
+ * `disconnected` outranks `working`, because `inProgress > 0` is a fact about
+ * events and not about anybody holding them. Two surfaces read the same
+ * presence — this pill and §8's pending row — and a rule about honesty that each
+ * derives for itself is a rule that holds in one of them. So there is no ladder
+ * here, only the call.
+ *
+ * The window the verdict expires against is the contract's
+ * `AGENT_PRESENCE_WINDOW_SECONDS`, itself derived from the idle timeout — which
+ * is why no duration is written down in this file.
+ *
+ * `now` is a parameter because the verdict *expires*: `isAgentPresent` withdraws
+ * a `live: true` whose evidence has aged past that window, so the pill must be
+ * re-evaluated on a clock and not only when data arrives. {@link AgentPill}
+ * supplies the clock; keeping this function pure is what makes the boundary
+ * testable.
+ *
+ * **`undefined` is not absence, and that distinction is the whole point of this
+ * signature.** A status that has not arrived is not a status reporting that
+ * nobody is there — {@link UNKNOWN_QUEUE_STATUS} carries `live: false` as a
+ * pre-answer placeholder, and feeding that to `agentActivity` would turn a
+ * placeholder into an assertion. The placeholder therefore never reaches the
+ * pill: `ConsoleStrip` hands this the query's own `undefined`, and hands the
+ * counts the placeholder.
  */
-export function agentState(status: QueueStatus): AgentState {
-  if (status.halted) return "halted";
-  return status.inProgress > 0 ? "working" : "idle";
+export function agentState(status: QueueStatus | undefined, now: Date = new Date()): AgentState {
+  if (status === undefined) return "unknown";
+  if (!carriesPresence(status)) return "unknown";
+  return agentActivity(status, now);
 }
 
-/** `agent: working · queue 2` — the pill's text, halted included. */
-export function agentPillText(status: QueueStatus): string {
-  return `agent: ${agentState(status)} · queue ${String(status.pending)}`;
+/**
+ * Did this response actually carry a presence?
+ *
+ * `agent` is **required** on the wire (CONTRACT-045), so by the types this can
+ * only be false — and it is written anyway, for the reason `apiClient`'s token
+ * reader gives: this value comes off the network into a strip that is one line
+ * and always renders, and a `TypeError` here does not degrade the pill, it takes
+ * the whole shell down. A server built before the field existed, a proxy that
+ * trimmed it, or a stub that answered `{}` all arrive here.
+ *
+ * The answer is `unknown` rather than `disconnected` because that is the same
+ * distinction the rest of this file turns on: **a status that did not tell us is
+ * not a status telling us nobody is there.** Reading a missing field as absence
+ * would be the placeholder mistake again, arriving by a different road.
+ */
+function carriesPresence(status: QueueStatus): boolean {
+  const presence: unknown = status.agent;
+  return typeof presence === "object" && presence !== null && "live" in presence;
+}
+
+/**
+ * `agent: working · queue 2` — the pill's text.
+ *
+ * The queue depth stays beside the state in all four reported states, and
+ * matters most in `disconnected`: "nobody is listening and three requests are
+ * waiting" is the sentence a person is trying to read when nothing is happening.
+ *
+ * It is dropped from `unknown` alone, because there is no depth either — the
+ * placeholder's zero is a stand-in for the counts, not a number the server sent,
+ * and `agent: unknown · queue 0` would smuggle a claim back in beside the one
+ * this state exists to withhold. The condition is the **state**, not the
+ * argument: `unknown` is reached both when nothing arrived and when what arrived
+ * did not carry what it promised, and a body missing one required field is not a
+ * body whose other numbers have earned more trust.
+ */
+export function agentPillText(status: QueueStatus | undefined, now: Date = new Date()): string {
+  const state = agentState(status, now);
+  if (status === undefined || state === "unknown") return `agent: ${state}`;
+  return `agent: ${state} · queue ${String(status.pending)}`;
+}
+
+/**
+ * The pill's dot, one table for all five states.
+ *
+ * - **`working` pulses** (`--accent`) and nothing else does, which is why the
+ *   pulse means something.
+ * - **`halted` is `--signal`** — red, because the strip's red means needs-you
+ *   and a halted queue is a thing somebody switched off.
+ * - **`disconnected` takes the neutral dot**, `--ink-3`, borrowed from the
+ *   `abandoned` job dot and the disabled index dot for exactly their reason: §11
+ *   says disconnected "is not an error state and is not styled as a failure",
+ *   the three hues are each already a meaning, and "no agent is running here" is
+ *   not one of them. It does not pulse and it is not `idle`'s green.
+ * - **`unknown` is the hollow dot** — a `--ink-3` ring around nothing. It has to
+ *   be distinguishable from `disconnected`, since the two say different things
+ *   (nobody is there / nobody has said), and a ring is the one treatment in this
+ *   strip that reads as *no reading taken* rather than as a colour with a
+ *   meaning.
+ *
+ * `idle` keeps the base dot, `--good`, unchanged.
+ */
+export type AgentDotClass = "dot" | "dot busy" | "dot halted" | "dot away" | "dot unknown";
+
+const AGENT_DOT_CLASSES: Readonly<Record<AgentState, AgentDotClass>> = {
+  working: "dot busy",
+  halted: "dot halted",
+  disconnected: "dot away",
+  unknown: "dot unknown",
+  idle: "dot",
+};
+
+export function agentDotClass(state: AgentState): AgentDotClass {
+  return AGENT_DOT_CLASSES[state];
 }
 
 /**
@@ -232,11 +345,27 @@ export function consoleCounts(status: QueueStatus): ConsoleCounts {
 }
 
 /**
- * What the strip shows before the server has answered — including when it never
- * will. Zeroes rather than blanks: the strip is one line and always renders, and
- * the reachability verdict is already in the strip beside it.
+ * What the strip's **counts** show before the server has answered — including
+ * when it never will. Zeroes rather than blanks: the strip is one line and
+ * always renders, and the reachability verdict is already in the strip beside
+ * it.
+ *
+ * **It is not a status, and it must never reach the agent pill** (UI-098).
+ * "0 running" is true of a server that is not there, which is what lets the
+ * counts stand in; every value of `agent` is instead a claim about a person's
+ * machine, and there is no value of it that is true of an unanswered read. So
+ * the pill takes `QueueStatus | undefined` and is handed the query's own
+ * `undefined` — see {@link agentState}. Nothing here is a fallback for it.
  */
 export const UNKNOWN_QUEUE_STATUS: QueueStatus = {
+  /*
+   * A required field with nothing to put in it (CONTRACT-045). `live: false` is
+   * the placeholder that cannot be mistaken for evidence *of presence* — but it
+   * is not evidence of absence either, and reading it as one would say "no agent
+   * is connected" about a server that has simply not replied yet. {@link
+   * agentState} refuses this object rather than interpreting it.
+   */
+  agent: { live: false, since: null },
   halted: false,
   pending: 0,
   inProgress: 0,

@@ -39,6 +39,7 @@
  */
 
 export * from "./actor.js";
+export * from "./agents.js";
 export * from "./anchor.js";
 export * from "./attachment.js";
 export * from "./bulk.js";
@@ -58,6 +59,7 @@ export * from "./id.js";
 export * from "./index-maintenance.js";
 export * from "./job.js";
 export * from "./key.js";
+export * from "./lane.js";
 export * from "./pagination.js";
 export * from "./query.js";
 export * from "./queue.js";

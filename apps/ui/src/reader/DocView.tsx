@@ -9,6 +9,7 @@ import {
   useDocs,
   type RowNotice,
 } from "@corpus/kit";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useRef, type ReactElement } from "react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";
@@ -24,6 +25,7 @@ import { readStateOf, type ThreadReadState } from "../thread/threadCollapse";
 import { Backlinks } from "./Backlinks";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { RelatedPanel } from "./RelatedPanel";
+import { ScopeProvenance } from "./ScopeProvenance";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
@@ -141,8 +143,15 @@ export interface DocViewProps {
   readonly selectTitle: boolean;
   /** The thread the 💬 popover just jumped to; flashes for ~1.2s. */
   readonly flashThread: string | null;
-  /** A `[[ref]]`, a backlink or a thread-context link was followed. */
-  readonly onNavigate: (docId: string) => void;
+  /**
+   * A `[[ref]]`, a backlink or a thread-context link was followed.
+   *
+   * The optional `reveal` rides onto the navigation entry the host pushes, so a
+   * follow can name **where inside** the arriving document to land (UI-095).
+   * A `[[ref]]` names a document and omits it; a thread-context link names the
+   * conversation it came from and passes it.
+   */
+  readonly onNavigate: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -411,6 +420,15 @@ export function DocView({
         />
 
         {/*
+         * SPEC.md §7's scope, on the artifact: which conversation this document
+         * came out of, and who is resident in it. Above the plugin slot and the
+         * body because it is context for reading them, and quiet enough that a
+         * document belonging to no conversation — the ordinary case — looks
+         * exactly as it did before (`ScopeProvenance` draws nothing at all).
+         */}
+        <ScopeProvenance docId={doc.frontmatter.id} onOpenDoc={onNavigate} />
+
+        {/*
          * The DocPanel slot — the one core injection slot in v1 (SPEC.md §10):
          * for a doc type a plugin owns, its panel renders in this fixed spot
          * above the document body. Both hosts get it for free, because the
@@ -586,6 +604,12 @@ export function DocView({
           // A comment on a document selection is not yet in a conversation, so
           // the nearest scope §11's rule can mean is the document itself.
           weightScope={docWeightScope(doc.frontmatter.id)}
+          // …and the scope walk starts at the same document: a comment on it is
+          // a thread on it, which is exactly what §7's walk climbs from.
+          recipientScope={doc.frontmatter.id}
+          // Set only on a draft the layer re-opened after a refusal: the words
+          // and the files the refused send was carrying (UI-111).
+          restore={anchors.draft.restore}
           onSubmit={anchors.submitComment}
           onClose={anchors.cancelComment}
         />

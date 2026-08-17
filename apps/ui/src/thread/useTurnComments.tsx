@@ -1,8 +1,10 @@
 import type { ResolvedAnchor } from "@corpus/contract";
 import {
   isPendingTurn,
+  releaseAttachments,
   threadWeightScope,
   useCreateThread,
+  type PendingAttachment,
   type RowNotice,
   type ThreadTurn,
 } from "@corpus/kit";
@@ -15,7 +17,7 @@ import {
   type ReactElement,
   type RefObject,
 } from "react";
-import { CommentPopover } from "../anchors/CommentPopover";
+import { CommentPopover, restoredRecipient, type CommentRestore } from "../anchors/CommentPopover";
 import { escapeSelectorValue } from "../anchors/cssEscape";
 import { domRangeOfRendered, renderedTextOf } from "../anchors/renderedRange";
 import { setAnchorHighlights } from "../anchors/textHighlight";
@@ -48,7 +50,18 @@ import {
  *   ask-agent toggle, the escape layering and the keys are literally the ones a
  *   document comment uses (which is also how the UI-052 key contract reaches
  *   here without being restated);
- * - the **highlight** is the anchor the server resolved, painted over the turn.
+ * - the **highlight** is the anchor the server resolved, painted over the turn —
+ *   and, since UI-112, the selection an open composer is *about*, painted the
+ *   same way before the server has seen it. Those were once two different
+ *   moments: the words lit only once the comment had been posted, which is the
+ *   moment it stops mattering. One painter draws both, which is what makes "the
+ *   same paint" true rather than approximately true.
+ *
+ * A turn is `react-markdown` output and nobody is typing into it, so the
+ * document's question — whether a provisional mark reconciles with edits or
+ * yields to them — does not arise here. The ranges are recomputed from the
+ * rendered DOM on every render of this effect, so a turn that re-renders (a new
+ * turn arriving, a card expanding) keeps its mark on its words.
  *
  * Whole-turn commenting (💬 on the turn head) is untouched and still anchors to
  * the turn — this is the finer grain, not a replacement.
@@ -62,9 +75,19 @@ interface TurnDraft {
   readonly selector: TextQuoteSelector;
   readonly top: number;
   readonly left: number;
+  /**
+   * Only on a draft re-opened because the server refused the comment: what the
+   * composer held when it closed, words and attachments alike (UI-111).
+   */
+  readonly restore?: CommentRestore;
 }
 
-/** The draft the composer is submitting, still painted while it is in flight. */
+/**
+ * The words one comment is about, painted from the moment its composer opens
+ * until the server's anchor replaces them (UI-112). A draft supplies them while
+ * the composer is open; this holds them across the flight, when there is no
+ * draft left to read them from.
+ */
 type PendingHighlight = Pick<TurnDraft, "turnTs" | "partIndex" | "rendered">;
 
 export interface TurnCommentsOptions {
@@ -175,13 +198,21 @@ export function useTurnComments({
   const onContextMenu = useSelectionContextMenu({ editor: null, captureComment, onNotify });
 
   const submit = useCallback(
-    (text: string, requestsAgent: boolean, weight: { readonly weight?: string }): void => {
+    (
+      text: string,
+      requestsAgent: boolean,
+      stated: { readonly weight?: string; readonly recipient?: string },
+      attachments: readonly PendingAttachment[] = [],
+    ): void => {
       if (draft === null) return;
       const held: PendingHighlight = {
         turnTs: draft.turnTs,
         partIndex: draft.partIndex,
         rendered: draft.rendered,
       };
+      // Re-opening on a refusal must not restore the previous refusal's
+      // leftovers on top of this send's.
+      const { restore: _spent, ...source } = draft;
       // Per-call on purpose: a highlight in a card that has closed is not
       // something anyone can see, and clearing it there would be a state update
       // on a dead layer. The notices ride on the hook, which is what makes
@@ -192,8 +223,35 @@ export function useTurnComments({
       setPending(held);
       setDraft(null);
       create.mutate(
-        { parent: threadId, selector: draft.selector, body: text, requestsAgent, ...weight },
-        { onSuccess: forget, onError: forget },
+        {
+          parent: threadId,
+          selector: draft.selector,
+          body: text,
+          requestsAgent,
+          ...stated,
+          // Present only when there are files: the empty list would send a
+          // plain comment as multipart (`useCreateThread`).
+          ...(attachments.length === 0
+            ? {}
+            : { files: attachments.map((attachment) => attachment.file) }),
+        },
+        {
+          onSuccess: () => {
+            forget();
+            releaseAttachments(attachments);
+          },
+          onError: (error) => {
+            forget();
+            // Nothing was written, so the composer comes back holding what it
+            // held — a refused comment must not cost the screenshot that was
+            // the point of making it (UI-111), nor the lane it was addressed
+            // to, which is the part of it nobody can see is missing (UI-118).
+            setDraft({
+              ...source,
+              restore: { text, attachments, recipient: restoredRecipient(stated, error) },
+            });
+          },
+        },
       );
     },
     [create, draft, threadId],
@@ -205,9 +263,15 @@ export function useTurnComments({
    * Driven off the **server's** resolved ranges, never off a local search: the
    * ladder in SPEC.md §6 is what decides where a selector lands, and a second
    * opinion here is how a highlight ends up one occurrence away from the
-   * conversation hanging off it. The draft in flight is painted from the offsets
-   * captured with it, so the words stay marked from the moment the composer
-   * opens until the anchor arrives to replace them.
+   * conversation hanging off it.
+   *
+   * **The comment being written now is the exception, and has to be** (UI-112):
+   * it has no resolved anchor, because the server has not been told about it
+   * yet. It is painted from the rendered offsets captured when the selection was
+   * taken — the same offsets that will become the selector — so the words stay
+   * marked from the moment the composer opens, through the flight, until the
+   * anchor arrives to take over. Not a second opinion about an existing anchor;
+   * the only opinion there is about one that does not exist.
    */
   useEffect(() => {
     const card = cardRef.current;
@@ -230,12 +294,16 @@ export function useTurnComments({
       if (range !== null) ranges.push(range);
     }
 
-    if (pending !== null) {
-      const root = markdownRoots(card, pending.turnTs)[pending.partIndex];
+    // The open composer's words first, the in-flight comment's when the composer
+    // has already closed. Never both: `submit` swaps one for the other in a
+    // single batch, and a refusal swaps it back.
+    const lit: PendingHighlight | null = draft ?? pending;
+    if (lit !== null) {
+      const root = markdownRoots(card, lit.turnTs)[lit.partIndex];
       const range =
         root === undefined
           ? null
-          : domRangeOfRendered(renderedTextOf(root), pending.rendered.start, pending.rendered.end);
+          : domRangeOfRendered(renderedTextOf(root), lit.rendered.start, lit.rendered.end);
       if (range !== null) ranges.push(range);
     }
 
@@ -244,7 +312,7 @@ export function useTurnComments({
     return () => {
       setAnchorHighlights(token, []);
     };
-  }, [anchors, body, cardRef, pending, turns]);
+  }, [anchors, body, cardRef, draft, pending, turns]);
 
   return {
     onContextMenu,
@@ -258,6 +326,8 @@ export function useTurnComments({
           // A comment on a selection **inside** a turn is made in this
           // conversation, so it shares the reply box's standing choice.
           weightScope={threadWeightScope(threadId)}
+          recipientScope={threadId}
+          restore={draft.restore}
           onSubmit={submit}
           onClose={() => {
             setDraft(null);

@@ -21,7 +21,7 @@ import {
   PAYLOAD_TOO_LARGE_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
-  UNKNOWN_JOB_RESPONSE,
+  UNRESOLVED_REFERENCE_RESPONSE,
 } from "./responses.js";
 
 /**
@@ -90,7 +90,7 @@ const createAppendTurnRoute = (required: boolean) =>
       },
     },
     responses: {
-      422: UNKNOWN_JOB_RESPONSE,
+      422: UNRESOLVED_REFERENCE_RESPONSE,
       201: jsonContent(
         AppendTurnResponseSchema,
         "The appended turn and the updated thread summary.",

@@ -16,7 +16,7 @@ import {
   type RebuildResult as WireRebuildResult,
 } from "@corpus/contract";
 import { actorOf } from "../docs/actor.js";
-import { DOCS_KEY, JOBS_KEY, QUEUE_KEY, TREE_KEY } from "../events/index.js";
+import { AGENTS_KEY, DOCS_KEY, JOBS_KEY, QUEUE_KEY, TREE_KEY } from "../events/index.js";
 import type { Logger } from "../logger.js";
 import type { QueueService } from "../queue/index.js";
 import type { IndexMaintenance } from "../semantic/maintenance.js";
@@ -48,8 +48,23 @@ import { rebuild, type RebuildReport } from "./rebuild.js";
  * construction. Over-invalidating a rare, manual, whole-cache operation costs
  * one refetch of a small structure; under-invalidating it costs the point of
  * the command. `projection/routes.test.ts` pins the decision.
+ *
+ * `["agents"]` joined the list for exactly that reason (SERVER-115): §7's
+ * roster is derived from `threads`, `documents`, `events` and `jobs` — every
+ * table a rebuild replaces — so it is as much a client of this reset as the
+ * board is, and it is the *only* key in the coarse half whose route was left
+ * unnamed. It is here unconditionally, on the same ground as `["tree"]`: the
+ * measured scheme that governs mutations (`rosterSignature`) compares a roster
+ * derived from discarded rows against one derived from their replacements, and
+ * the case a rebuild is run for is the one where those match.
  */
-export const REBUILD_QUERY_KEYS: readonly QueryKey[] = [DOCS_KEY, TREE_KEY, QUEUE_KEY, JOBS_KEY];
+export const REBUILD_QUERY_KEYS: readonly QueryKey[] = [
+  DOCS_KEY,
+  TREE_KEY,
+  QUEUE_KEY,
+  JOBS_KEY,
+  AGENTS_KEY,
+];
 
 export interface DbRoutesDeps {
   /** Where the workspace and its `.corpus` directory are; `ServerConfig` satisfies it. */

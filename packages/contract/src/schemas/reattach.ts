@@ -124,9 +124,9 @@ export const ReattachRefusalReasonSchema = z.enum(REATTACH_REFUSAL_REASONS).open
  * The `409` body of `POST /api/threads/{id}/reattach`.
  *
  * A **narrowing** of `ConflictError`, exactly as `LockConflictError` is: it adds
- * a field to `{code, message}` rather than adding an eighth member to
- * `ERROR_CODES`, so it still parses as an `ApiError` and no consumer that
- * switches on `code` has to grow a branch. The status carries "the state
+ * a field to `{code, message}` rather than adding a member to `ERROR_CODES`, so
+ * it still parses as an `ApiError` and no consumer that switches on `code` has
+ * to grow a branch. The status carries "the state
  * refused this"; `reason` carries which state.
  *
  * `409` rather than `400` on all three: the body is well formed and re-sending

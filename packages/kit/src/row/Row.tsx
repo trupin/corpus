@@ -1,6 +1,12 @@
 import type { DocRow } from "@corpus/contract";
 import type { ComponentType, KeyboardEvent, MouseEvent, ReactElement } from "react";
-import { AgeChip, NeedsYouBadge, UnreadBadge, WorkingDot, unreadBadgeProps } from "./badges.js";
+import {
+  AgentActivityDot,
+  AgeChip,
+  NeedsYouBadge,
+  UnreadBadge,
+  unreadBadgeProps,
+} from "./badges.js";
 import { reasonChips } from "./reasons.js";
 import { ageLabel, hasStaleActions, stalenessClass, stalenessLevel } from "./staleness.js";
 import { isThreadRow, rowContext, rowExcerpt } from "./threadRow.js";
@@ -164,7 +170,7 @@ export function Row(props: RowProps): ReactElement {
         <span className="row-badges">
           {unread !== null ? <UnreadBadge {...unread} /> : null}
           {needsYou !== null ? <NeedsYouBadge text={needsYou} /> : null}
-          {activity.active ? <WorkingDot title={activity.title} /> : null}
+          <AgentActivityDot activity={activity} />
           {/* One age element per row. It sits in the badge cluster exactly when
               the quick actions have taken the meta line's place. */}
           {showActions ? <AgeChip label={age} /> : null}

@@ -11,9 +11,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   DocumentIdSchema,
+  LaneSchema,
+  ORCHESTRATOR_LANE,
   QUEUE_EVENT_STATUSES,
   QueueEventSchema,
   ThreadIdSchema,
+  type Lane,
   type QueueEvent,
   type QueueEventStatus,
 } from "@corpus/contract";
@@ -73,23 +76,40 @@ export function listQueueEventFiles(
  * always written, `null` included: an event that leaves `deferred/` has to
  * *clear* the column, and an `ON CONFLICT` clause that only ever set it would
  * leave a processed job still claiming to be waiting on a document.
+ *
+ * `lane` defaults to the orchestrator's for the same reason `queue/lanes.ts`'s
+ * `laneOf` does: an event file written before lanes existed carries no stamp,
+ * and the caller that has one passes it. Unlike `blockedOn` it never *changes*
+ * across a transition — SPEC.md §7 makes the stamp once and never rewrites it —
+ * so the `ON CONFLICT` clause carrying it is about re-projecting the same value,
+ * not about updating it.
  */
 export function projectEvent(
   db: ProjectionDb,
   event: QueueEvent,
   status: QueueEventStatus,
   blockedOn: string | null = null,
+  lane: Lane = ORCHESTRATOR_LANE,
 ): void {
   db.prepare(
-    `INSERT INTO events (id, type, status, created, payload_json, blocked_on)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO events (id, type, status, created, payload_json, blocked_on, lane)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        type = excluded.type,
        status = excluded.status,
        created = excluded.created,
        payload_json = excluded.payload_json,
-       blocked_on = excluded.blocked_on`,
-  ).run(event.id, event.type, status, event.created, JSON.stringify(event.payload), blockedOn);
+       blocked_on = excluded.blocked_on,
+       lane = excluded.lane`,
+  ).run(
+    event.id,
+    event.type,
+    status,
+    event.created,
+    JSON.stringify(event.payload),
+    blockedOn,
+    lane,
+  );
 }
 
 export function removeEvent(db: ProjectionDb, id: string): void {
@@ -108,6 +128,13 @@ export function removeEvent(db: ProjectionDb, id: string): void {
  */
 const ProjectedEventFileSchema = QueueEventSchema.extend({
   blockedOn: DocumentIdSchema.optional().catch(undefined),
+  // Same leniency, for the same reason: a `lane` that is not a lane leaves the
+  // event projected on the orchestrator's, rather than dropping an otherwise
+  // perfectly good event out of the console entirely. The *claim* path is
+  // stricter — `store.ts` quarantines a file whose stamp does not parse — because
+  // a routing decision nobody can read must not be silently reinterpreted; this
+  // path only decides what a console row says.
+  lane: LaneSchema.optional().catch(undefined),
 });
 
 /**
@@ -136,7 +163,7 @@ export function projectEventFile(
     db.logger.info("skipping malformed queue event", { path });
     return false;
   }
-  projectEvent(db, event.data, status, event.data.blockedOn ?? null);
+  projectEvent(db, event.data, status, event.data.blockedOn ?? null, event.data.lane);
   return true;
 }
 

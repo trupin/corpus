@@ -53,6 +53,34 @@ export const JOBS_KEY: QueryKey = ["jobs"];
 export const INDEX_KEY: QueryKey = ["index"];
 
 /**
+ * The roster behind `GET /api/agents` — every lane, its resident and its
+ * liveness (SPEC.md §7, rider SHARED-043).
+ *
+ * **This key is what makes §7's "a read, never a push" implementable.** The
+ * rider is explicit that the roster and each lane's liveness are *"read behind
+ * the ordinary invalidate keys, like any other projection"* — so presence
+ * arrives here, as a key name that says "ask again", and never as agent state
+ * pushed down the stream. Without a key of its own the only way to deliver
+ * liveness would have been to put it in the frame, which is the one thing §2.2
+ * rule 3 forbids.
+ *
+ * One segment, like {@link QUEUE_KEY} and {@link INDEX_KEY}: the resource is
+ * named, not the endpoint, so anything a client caches under an `["agents", …]`
+ * prefix refetches on the frame the server actually emits.
+ *
+ * **A roster row is derived, so this key travels with frames named after other
+ * resources.** A lane's summary is read off the same `events` and `jobs` rows a
+ * queue transition or a job-log append writes, and a row names its conversation
+ * by the root thread's current title — so a write that never mentions an agent
+ * still changes what `GET /api/agents` answers. The rule an emitter follows is
+ * therefore *name every key a route carrying the changed fact is cached under,
+ * not the key of the route the fact is named after*; {@link
+ * QUERY_KEY_VOCABULARY}'s `agents` entry enumerates the cases, and is the
+ * published half of this note.
+ */
+export const AGENTS_KEY: QueryKey = ["agents"];
+
+/**
  * One document, by id. Threads are documents, so a thread id is legal here and
  * both `["docs", threadId]` and `["threads", threadId]` are emitted for a turn.
  */
@@ -78,6 +106,7 @@ export const QUERY_KEY_NAMES = [
   "jobs",
   "job",
   "index",
+  "agents",
 ] as const;
 
 export type QueryKeyName = (typeof QUERY_KEY_NAMES)[number];
@@ -113,7 +142,9 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
       "every document or thread mutation (create, update, move, archive, unarchive, delete, " +
       "thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band " +
       "file change " +
-      "the watcher projects",
+      "the watcher projects — plus every queue transition, since `needs=failed-job` is computed " +
+      "from an event's status and a transition therefore changes what `GET /api/docs?needs=me` " +
+      "answers, and a projection rebuild, which replaces every row the collection is read from",
     refetchedBy:
       "`GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete",
   },
@@ -130,7 +161,9 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     key: () => [...TREE_KEY],
     parameterised: false,
     emittedBy:
-      "anything that changes the folder hierarchy: create, move, delete, archive of a skill",
+      "anything that changes the folder hierarchy: create, move, delete, archive of a skill — " +
+      "plus a projection rebuild, which names this key whether or not the hierarchy moved, since " +
+      "a rebuild is a resynchronisation instruction rather than a report of a change",
     refetchedBy: "`GET /api/tree` — the folder-column picker",
   },
   thread: {
@@ -147,14 +180,23 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     parameterised: false,
     emittedBy:
       "every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, " +
-      "and the end of an edit session that re-enters a deferred event",
-    refetchedBy: "`GET /api/queue/status` — the console strip's depth and halted state",
+      "and the end of an edit session that re-enters a deferred event — plus every change to " +
+      "agent presence, since the status carries it: a listener parking, its hold ending, and the " +
+      "grace window lapsing — and a projection rebuild, which replaces the rows the counts are " +
+      'read from. **A queue transition names `["agents"]` in the same frame**, because a lane row ' +
+      "of the roster is derived from the `events` and `jobs` rows the transition writes: see that " +
+      "key for the rule behind it",
+    refetchedBy: "`GET /api/queue/status` — the console strip's agent pill, depth and halted state",
   },
   jobs: {
     shape: '["jobs"]',
     key: () => [...JOBS_KEY],
     parameterised: false,
-    emittedBy: "every queue transition, plus any job-log append (coalesced)",
+    emittedBy:
+      "every queue transition, plus any job-log append (coalesced) — over HTTP or out of band — " +
+      "and a projection rebuild, which replaces the rows the list is read from. **A transition " +
+      'and an append each name `["agents"]` in the same frame**, because a lane row of the roster ' +
+      "is derived from the same `events` and `jobs` rows: see that key for the rule behind it",
     refetchedBy: "`GET /api/jobs` — the console's job list",
   },
   job: {
@@ -174,6 +216,27 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
       "disabled or model-download reason, throttled progress while a backlog drains, and the " +
       "caught-up transition — plus an index rebuild's start and end",
     refetchedBy: "`GET /api/index/status` — the console strip's index pill",
+  },
+  agents: {
+    shape: '["agents"]',
+    key: () => [...AGENTS_KEY],
+    parameterised: false,
+    emittedBy:
+      "designating or releasing a thread's resident, a thread's resolution releasing one with it, " +
+      "and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a " +
+      "lane lapsing past the grace window — **plus every write that moves a row a lane is " +
+      "derived from**: a queue transition or a job-log append, over HTTP or out of band, since a " +
+      "lane's `summary` is read off the same `events` and `jobs` rows that write touches; a " +
+      "designated root thread being retitled or deleted, since a row carries that conversation's " +
+      "title and its existence; and a projection rebuild, which re-derives all of it. The rule " +
+      "behind that list is worth stating, because no single call site shows it: **a lane row is " +
+      "computed at read time and never stored**, so the roster goes stale on frames named after " +
+      "other resources, and an emitter names this key whenever it writes a row the roster reads — " +
+      "not only when it writes something called an agent. The derivation itself may change " +
+      "without a contract change (`AgentLane.summary` says as much of its own content); the " +
+      "invalidation may not",
+    refetchedBy:
+      "`GET /api/agents` — the composer's recipient picker and every surface showing who is running",
   },
 };
 

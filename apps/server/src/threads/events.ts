@@ -10,7 +10,7 @@
 //
 // Nothing here decides *whether* to enqueue; that is `participation.ts`.
 
-import { requestedWeightPayload } from "@corpus/contract";
+import { requestedWeightPayload, type Lane } from "@corpus/contract";
 import type { ParsedMentions, ResolvedTarget } from "./mentions.js";
 import { COMMENT_CREATED, EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
 
@@ -33,6 +33,19 @@ export interface CommentEventInput {
    * once more.
    */
   readonly weight: string | undefined;
+  /**
+   * The lane the message named (SPEC.md §7), or `undefined` when it named none
+   * — which means the lane is computed from where it was posted, and is the
+   * ordinary case.
+   *
+   * Not optional on this type, for the reason `weight` is not: every producer
+   * has to say what its request carried, so a surface added later cannot ship
+   * silently dropping the field. Capture is the one producer that always passes
+   * `undefined`, and that is a decision the contract makes — a capture creates a
+   * standalone thread that is in no scope by construction, so there is no
+   * conversation yet to route away from.
+   */
+  readonly recipient: Lane | undefined;
   /** Which surface produced it; defaults to the thread endpoints. */
   readonly source?: string | undefined;
 }
@@ -86,6 +99,12 @@ export async function enqueueComment(
     type: COMMENT_CREATED,
     source: input.source ?? EVENT_SOURCE.thread,
     payload: commentPayload(input),
+    // Beside the payload, never inside it (SPEC.md §7): the recipient decides
+    // the lane the event is stamped with, while the payload's `threadId` is what
+    // files whatever the answering agent writes. A summons is exactly where the
+    // two differ, and merging them would make a reply annex the thread it was
+    // asked in.
+    recipient: input.recipient,
   });
   return event.id;
 }

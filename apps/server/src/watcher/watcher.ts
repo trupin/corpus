@@ -20,19 +20,24 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { QUEUE_EVENT_STATUSES, type QueryKey } from "@corpus/contract";
+import {
+  QUEUE_EVENT_STATUSES,
+  QueueEventStatusSchema,
+  type QueryKey,
+  type QueueEventStatus,
+} from "@corpus/contract";
 import chokidar, { type FSWatcher } from "chokidar";
+import { rosterSignature } from "../agents/roster.js";
 import { folderTreeSignature } from "../docs/tree.js";
 import {
+  AGENTS_KEY,
   DOCS_KEY,
-  JOBS_KEY,
-  QUEUE_KEY,
   TREE_KEY,
   docKey,
-  jobKey,
   threadKey,
   type InvalidationBus,
 } from "../events/index.js";
+import { jobLogKeys, queueTransitionKeys } from "../queue/project.js";
 import type { AnchorChange } from "../git/index.js";
 import { silentLogger, type Logger } from "../logger.js";
 import {
@@ -156,7 +161,7 @@ export interface StartWatcherOptions {
  * Everything one `flush()` accumulates, threaded through `collect` so no state
  * survives between batches.
  *
- * `captureTree` is the whole of SERVER-020. `["tree"]` used to be decided by a
+ * `captureDerived` is the whole of SERVER-020. `["tree"]` used to be decided by a
  * `structural` boolean — true for add/unlink, false for change — and that
  * heuristic was wrong in both directions, because `GET /api/tree` counts
  * something narrower than "a document file changed": it lists only
@@ -170,12 +175,30 @@ export interface StartWatcherOptions {
  * is a measurement rather than a prediction, so it cannot disagree with
  * `docs/tree.ts` about what moves a folder badge — and it is taken lazily,
  * because a batch of queue events or job logs can never move one.
+ *
+ * SERVER-115 put §7's roster behind the same capture, unchanged in method: a
+ * lane row is derived at read time too, so an out-of-band retitle of a
+ * designated conversation, a hand-edited `resident:`, a deleted lane and a
+ * renamed agent-def all move `GET /api/agents` while touching only a document
+ * path. Both signatures are taken at the same moment because both answer to the
+ * same trigger — the batch's first *document* — and neither can move for a
+ * queue event, a job log or `seen.json`.
  */
 interface FlushContext {
   /** Keys the batch has accumulated, deduped by the bus on the way out. */
   readonly keys: QueryKey[];
-  /** Snapshots the tree, once per batch, before its first row is touched. */
-  captureTree(): void;
+  /**
+   * Snapshots the tree and §7's roster, once per batch, before its first row is
+   * touched.
+   *
+   * Both are **measured rather than guessed** for the same reason (SERVER-018,
+   * SERVER-020, SERVER-115): each is derived at read time from rows a document
+   * write moves, and no per-path heuristic gets either right — an out-of-band
+   * retitle of a designated conversation changes a roster row, an out-of-band
+   * rename of an agent-def changes its resident's `docId`, and neither is
+   * visible in the path that changed.
+   */
+  captureDerived(): void;
   /**
    * Documents this batch saw change on disk without the server having written
    * them — committed after the flush, authored `user` (SERVER-090). Order is the
@@ -330,9 +353,10 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     kind: WatchEventKind,
     content: Buffer | null,
   ): void => {
-    // Before the first row of the batch moves — the tree is derived from rows,
-    // so this is the last moment it still answers what a client already has.
-    context.captureTree();
+    // Before the first row of the batch moves — the tree and the roster are
+    // both derived from rows, so this is the last moment they still answer what
+    // a client already has.
+    context.captureDerived();
     const keys = context.keys;
 
     if (kind === "unlink" || content === null) {
@@ -408,6 +432,20 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     }
   };
 
+  /**
+   * The status the projection currently records for an event, if it holds one.
+   *
+   * The `events` row is the only record of where a file *was* — see the
+   * queue-event case for why that matters — and an id the projection knows
+   * nothing about reads as `undefined`, the same answer a removal gives.
+   */
+  const statusOfEvent = (id: string): QueueEventStatus | undefined => {
+    const row = db.prepare("SELECT status FROM events WHERE id = ?").get(id) as
+      { status: string } | undefined;
+    const parsed = QueueEventStatusSchema.safeParse(row?.status);
+    return parsed.success ? parsed.data : undefined;
+  };
+
   /** The status directory currently holding an event file, if any. */
   const locateEvent = (id: string): (typeof QUEUE_EVENT_STATUSES)[number] | undefined =>
     QUEUE_EVENT_STATUSES.find((status) =>
@@ -444,6 +482,15 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         // A transition is a rename: the unlink half must not delete a row the
         // file's new home still owns.
         const status = effective === "unlink" ? locateEvent(target.id) : target.status;
+        // Read *before* the row is rewritten, because a move reaches this
+        // function as two independent events and neither of them carries where
+        // the file came from: the unlink half already sees the new home, and the
+        // add half sees only the new home. The projection is the one witness of
+        // the status the event is leaving, and without it an out-of-band
+        // `in-progress/` → `processed/` move is indistinguishable from an
+        // arrival — which is the difference between a lane that stops reporting
+        // work and one that never had any (SERVER-115).
+        const before = statusOfEvent(target.id);
         if (status === undefined) removeEvent(db, target.id);
         else projectEventFile(db, join(corpusDir, QUEUE_DIR, status, `${target.id}.json`), status);
         // `jobs.status` is joined from `events`, so a transition ages the console
@@ -451,16 +498,23 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         // be invented state.
         const job = db.prepare("SELECT 1 AS present FROM jobs WHERE event_id = ?").get(target.id);
         if (job !== undefined) projectJob(db, corpusDir, target.id);
-        // `DOCS_KEY` for the same reason `QUEUE_QUERY_KEYS` carries it: the
-        // `failed-job` needs reason reads `events.status`, so an out-of-band
-        // transition changes what `GET /api/docs?needs=me` answers (SERVER-028).
-        keys.push(QUEUE_KEY, JOBS_KEY, DOCS_KEY);
+        // The queue's own table rather than a second copy of it (SERVER-115):
+        // this list and `QUEUE_QUERY_KEYS` said the same thing in two places,
+        // which is how the roster came to be named by the HTTP path and not by
+        // the out-of-band one. `DOCS_KEY` is in it for the reason it always was
+        // — the `failed-job` needs reason reads `events.status`, so a transition
+        // changes what `GET /api/docs?needs=me` answers (SERVER-028).
+        keys.push(...queueTransitionKeys(before, status));
         return;
       }
       case "job":
         if (effective === "unlink") removeJob(db, target.eventId);
         else projectJob(db, corpusDir, target.eventId);
-        keys.push(JOBS_KEY, jobKey(target.eventId));
+        // A lane's summary quotes `jobs.last_line`, but only for the event it is
+        // **holding**, so an append names the roster exactly while that event is
+        // in progress — which is the overwhelmingly common case, since a log is
+        // written by the run that is happening.
+        keys.push(...jobLogKeys(target.eventId, statusOfEvent(target.eventId) === "in-progress"));
         return;
       case "seen":
         // A whole-file pass: `seen.json` is a flat map with no per-thread event
@@ -488,11 +542,13 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     const keys: QueryKey[] = [];
     const commits: OutOfBandChange[] = [];
     let treeBefore: string | null = null;
+    let rosterBefore: string | null = null;
     const context: FlushContext = {
       keys,
       commits,
-      captureTree() {
+      captureDerived() {
         treeBefore ??= folderTreeSignature(db);
+        rosterBefore ??= rosterSignature(db);
       },
     };
 
@@ -528,9 +584,12 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
       }
     }
 
-    // `treeBefore` stays null unless the batch touched a document path, which
-    // is the only kind of change that can move a folder badge.
+    // Both stay null unless the batch touched a document path, which is the only
+    // kind of change that can move a folder badge or a lane's identity. A queue
+    // or job entry in the same batch names the roster on its own terms, by the
+    // status it moved between — see the `queue-event` and `job` cases.
     if (treeBefore !== null && folderTreeSignature(db) !== treeBefore) keys.push(TREE_KEY);
+    if (rosterBefore !== null && rosterSignature(db) !== rosterBefore) keys.push(AGENTS_KEY);
     if (keys.length > 0) bus.invalidate(keys);
 
     // SPEC.md §4, SERVER-090: an out-of-band edit is committed for itself,

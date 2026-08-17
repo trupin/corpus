@@ -586,7 +586,9 @@ export interface paths {
          *
          *     **Path-scoped**: the diff and the stats cover this document's file alone, so commits in the range that touched other documents contribute nothing — the range may be a commit range, but the answer is about one document.
          *
-         *     **The range.** `from` is exclusive and `to` inclusive (`git diff from..to`). Both are optional: `to` defaults to the newest commit that touched this document and `from` to the parent of `to`, so the bare `corpus doc diff <id>` of §4's own sentence reads as *what changed in this document's last commit*, while the pair carried by a `doc.edited` event reads as *what changed in that session*. The resolved values come back in the response, because a caller that omitted one must be able to say what it read.
+         *     **The range.** `from` is exclusive and `to` inclusive (`git diff from..to`). Both are optional, and **both defaults walk this document's history rather than the branch's**: `to` is the newest commit that touched this document, and `from` the newest commit *before `to`* that touched this document — with git's empty tree (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`) when nothing before `to` ever touched it, so a document's first change diffs as wholly added. The bare `corpus doc diff <id>` of §4's own sentence therefore reads as *what changed in this document's last commit*, while the pair carried by a `doc.edited` event reads as *what changed in that session*. The resolved values come back in the response, because a caller that omitted one must be able to say what it read.
+         *
+         *     **`from` is not `to`'s parent**, and a client that computes it that way will read a different range and be told nothing about the difference — both answers are well-formed diffs. §4's commit windows are party-scoped: one commit gathers everything a party saved while its window was open, so the commit sitting immediately before this document's newest one is routinely the *other* party's save to a *different* file, at which this document may not even have existed. Since every read here is path-scoped the two bases usually agree on the numbers and the bytes — what differs is the claim `from` makes about where this document came from, and that claim is published.
          *
          *     **Only commit shas.** A syntactically invalid revision — `HEAD~1`, a tag, anything leading with `-` — is a `400` naming the parameter, before a handler and therefore before a `git` process exists. A well-formed sha this repository does not contain is *also* a `400` naming the parameter, never a `404`: the `404` on this route means the **document** is unknown, and conflating the two would have a caller believe its document had been deleted when it had merely mistyped a range.
          *
@@ -595,7 +597,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Base of the range, **exclusive** — `git diff from..to`. Omit it to use the parent of `to`, which reads as that single commit's own change; a `to` with no parent falls back to git's empty tree, so a document introduced by the repository's root commit diffs as wholly added. Must be a commit sha: a named revision is a `400` naming this parameter. */
+                    /** @description Base of the range, **exclusive** — `git diff from..to`. Omit it to use the newest commit **before `to` that touched this document**, which reads as that one commit's own change to it; when nothing before `to` ever touched this document the base is git's empty tree, so a document's first change diffs as wholly added. Deliberately **not `to`'s parent**: §4's commit windows are party-scoped and gather a party's saves across documents, so the parent of a window commit is routinely another party's save to a different file rather than this document's previous state. Must be a commit sha: a named revision is a `400` naming this parameter. */
                     from?: string;
                     /** @description Head of the range, **inclusive**. Omit it to use the newest commit that touched this document. Must be a commit sha, like `from`. */
                     to?: string;
@@ -1387,13 +1389,13 @@ export interface paths {
                         "application/json": components["schemas"]["ValidationError"];
                     };
                 };
-                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                /** @description The request names something that does not exist: `unknown_job` — a `job` resolving to no event, or to work already settled — or `unknown_recipient` — a `recipient` naming a thread this workspace does not hold, or one that holds no resident and is therefore not a lane. Nothing was written in either case. Retry without the offending field, or with a value that resolves. */
                 422: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["UnknownJobError"];
+                        "application/json": components["schemas"]["UnknownJobError"] | components["schemas"]["UnknownRecipientError"];
                     };
                 };
             };
@@ -1625,13 +1627,13 @@ export interface paths {
                         "application/json": components["schemas"]["ValidationError"];
                     };
                 };
-                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                /** @description The request names something that does not exist: `unknown_job` — a `job` resolving to no event, or to work already settled — or `unknown_recipient` — a `recipient` naming a thread this workspace does not hold, or one that holds no resident and is therefore not a lane. Nothing was written in either case. Retry without the offending field, or with a value that resolves. */
                 422: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["UnknownJobError"];
+                        "application/json": components["schemas"]["UnknownJobError"] | components["schemas"]["UnknownRecipientError"];
                     };
                 };
             };
@@ -1826,13 +1828,13 @@ export interface paths {
                         "application/json": components["schemas"]["ConflictError"];
                     };
                 };
-                /** @description The `job` names no event. Nothing was written; retry without it, or with the right id. */
+                /** @description The request names something that does not exist: `unknown_job` — a `job` resolving to no event, or to work already settled — or `unknown_recipient` — a `recipient` naming a thread this workspace does not hold, or one that holds no resident and is therefore not a lane. Nothing was written in either case. Retry without the offending field, or with a value that resolves. */
                 422: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["UnknownJobError"];
+                        "application/json": components["schemas"]["UnknownJobError"] | components["schemas"]["UnknownRecipientError"];
                     };
                 };
             };
@@ -1855,6 +1857,8 @@ export interface paths {
         /**
          * Resolve a thread
          * @description Sets `status: resolved`. The thread collapses in the document view and **later turns stop re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything. Resolving rewrites the thread file and auto-commits it, so the response carries §14's warnings — a workspace hook that rejects the commit leaves the status change on disk and uncommitted, and that has to be visible.
+         *
+         *     **Resolving releases the thread's resident with it** (SPEC.md §7): a settled conversation has nobody to keep resident, so the response's `resident` is null whenever there was one. Nothing already queued moves — a lane is stamped once, at enqueue time — and everything enqueued afterwards routes as it did before there was a resident.
          */
         post: {
             parameters: {
@@ -1927,6 +1931,8 @@ export interface paths {
         /**
          * Reopen a resolved thread
          * @description Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8). Like `resolve`, it rewrites and auto-commits the thread file, so the response carries §14's warnings.
+         *
+         *     **Reopening does not restore a resident** (SPEC.md §8): resolving released it, and the conversation resumes on the orchestrator's lane. Designating again is a deliberate act, as the first designation was — the alternative would make releasing conditional on nobody ever replying.
          */
         post: {
             parameters: {
@@ -2171,14 +2177,203 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/queue/status": {
+    "/api/threads/{id}/resident": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Halted state and per-status event counts */
+        get?: never;
+        put?: never;
+        /**
+         * Designate a thread's resident agent (user-only)
+         * @description Gives a **standalone** thread a resident: a long-lived agent that owns that conversation and everything that grows out of it, rather than being dispatched to one message at a time (SPEC.md §7). From then on, work falling in that thread's **scope** — the thread, every thread whose parent chain reaches it, every document whose `origin` reaches it, and every thread on such a document — is enqueued on that scope's lane instead of the orchestrator's.
+         *
+         *     **The body names the agent, not a document.** `name` is the invocable name `@<subagent>` mentions already use (SPEC.md §8), and the response carries the `{name, docId}` it resolved to, so the caller never repeats the lookup. `404` when the thread is unknown, and `404` when the name resolves to no `type: agent-def` document in this workspace.
+         *
+         *     **Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.
+         *
+         *     **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident claims a conversation and every artifact that grows out of it, and an agent that could designate would be choosing who answers a person's messages (SPEC.md §7 — designation is user-only state).
+         *
+         *     **It enqueues `resident.designated`, on the orchestrator's lane whoever is designated** — the resident does not announce itself to itself, one of exactly two carve-outs §7 makes to the lane rule. Nothing already queued moves: a lane is stamped once, at enqueue time, and never rewritten, so designating does not re-route work the orchestrator is already holding.
+         *
+         *     **One action, one commit** (SPEC.md §4), authored by the acting party. It presents no key (SPEC.md §7): it sets one frontmatter field and replaces nothing a reader was holding.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description The agent to make resident. A designation that names nobody is not one. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DesignateResidentRequest"];
+                };
+            };
+            responses: {
+                /** @description The thread, its `resident` now resolved to `{name, docId}`, and any warnings raised while writing it. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThreadMutationResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
+                    };
+                };
+            };
+        };
+        /**
+         * Release a thread's resident agent (user-only)
+         * @description Releases the thread's resident, returning its scope to ordinary routing (SPEC.md §7). Nothing is rewritten: events already stamped keep the lane they were stamped with, and everything enqueued afterwards routes as it did before there was a resident. Dissolving is the **absence** of a resident, never a third state.
+         *
+         *     **Idempotent.** Releasing a thread that has no resident is a `200` that changes nothing, writes nothing and commits nothing — the caller often cannot know, and a release with nothing to release is a no-op rather than an error. It answers with the thread rather than a bare `204` because a release that *does* write can raise §14's warnings, and a rejected auto-commit has to be visible somewhere.
+         *
+         *     **User-only**: `403` for `x-corpus-author: agent`, exactly as designating is — release is the other half of the same user-only state, and an agent able to release could quietly stop being resident in a conversation a person put it in.
+         *
+         *     **Resolving a thread releases its resident too** (SPEC.md §7): a settled conversation has nobody to keep resident, so `POST /api/threads/{id}/resolve` does this as part of resolving. **Reopening does not bring it back** (SPEC.md §8) — the conversation resumes on the orchestrator's lane, and designating again is a deliberate act, as the first designation was.
+         *
+         *     `404` when the thread is unknown. It presents no key (SPEC.md §7): it clears one frontmatter field and replaces nothing a reader was holding.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The thread, its `resident` now null, and any warnings raised while writing it. Unchanged when there was no resident to release. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThreadMutationResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The roster of lanes, their residents and their liveness
+         * @description Every lane of the queue: which conversation it belongs to, who is resident on it, whether a listener is parked on it right now and since when, and a short line about what it is doing (SPEC.md §7). The composer reads this to offer a recipient, and the board reads it to show who is running.
+         *
+         *     **The `orchestrator` row is always present** — it exists before anything has been designated and survives the last release — so an empty list is a bug rather than a workspace with no agents.
+         *
+         *     **Liveness is observed, never registered.** A lane is live exactly while its listener holds a parked scoped `GET /api/queue/idle`: there is no heartbeat to send, no registration to keep fresh and no state to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. A lane that is not live is an ordinary, recoverable state — past the grace window its pending events fall back to the orchestrator's unscoped claim, so the work is done more slowly and never silently not done.
+         *
+         *     **A read, never a push** (SPEC.md §7). The roster and each lane's liveness arrive over HTTP and are refetched when an `invalidate` frame names `["agents"]`; nothing about them travels over SSE, which carries key names and never data. Read-only; no acting party, and no parameters — there is one roster, and a filtered one would hide the lapsed lanes the recipient picker most needs to show.
+         *
+         *     **Every row here is derived, so the frame that stales it is often named after something else.** A lane's `summary` is read off the same `events` and `jobs` rows a queue transition or a job-log append writes, and its `origin.title` is the root thread's current title — so those writes name `["agents"]` too, alongside `["queue"]`, `["jobs"]` or `["docs"]`. A client that refetches this only on designation and presence changes will show a stale roster; `GET /events` lists the full set of emitters.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -2188,7 +2383,55 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Current queue depth and halt state. */
+                /** @description Every lane, the orchestrator's included. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentRoster"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether an agent is there, halted state, and per-status event counts
+         * @description What the console strip reads (SPEC.md §11): the counts describe the work, and `agent` describes the worker. **`agent` is the roster's own liveness aggregated** — the same observation `GET /api/agents` reports per lane, so the strip and the recipient picker cannot disagree about whether anybody is listening — and it is here so that `idle` can be a claim with evidence behind it rather than the else-branch of the counts. An empty queue means nobody asked for anything; it has never meant somebody is waiting to be asked.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agent presence, current queue depth and halt state. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -2228,10 +2471,16 @@ export interface paths {
          * @description Returns `200` the instant pending work exists or arrives, and `204` with no body when the window expires (default and maximum 480 s) so the skill loop re-invokes it. Both outcomes are normal; `204` is not an error. **Idle reports availability and never claims** — follow a `200` with `POST /api/queue/claim-all`. While the queue is halted, idle parks for the full window and never returns events (SPEC.md §7).
          *
          *     A `200` also carries `inProgress`: what the server still thinks the agent is doing. It is reported here and on `claim-all` — the loop's two entry points — and nowhere else; the `204` that ends an empty window has no body and therefore no list. See `claim-all` for the reconciliation contract.
+         *
+         *     **Parking here is what presence *is*** (SPEC.md §7). A resident is live exactly while it holds a parked scoped `idle` — there is no heartbeat to send and no registration to keep fresh — so `scope` decides both which lane's work this call waits for and which lane `GET /api/agents` reports as live. An agent that stops parking stops being present, and its lane's pending work falls back to the orchestrator's unscoped claim once the grace window has passed.
+         *
+         *     **Because parking is presence, a `scope` that names no lane is refused** with `422`, before the park is admitted and therefore before it can be observed (SPEC.md §7). A thread id is a thread id on the wire, so this is a refusal only the workspace can make: the value must name a standalone thread that holds a resident. Omitting `scope` is always fine — it means the orchestrator's lane — and a lane whose resident is released *while its listener is parked* keeps that park to its end; what is refused is a value that was never a lane, not one that has stopped being one. `claim-all` deliberately does not refuse it: draining a lapsed lane's already-stamped events is the listener's job, and refusing there would strand them.
          */
         get: {
             parameters: {
                 query?: {
+                    /** @description Which lane to consume (SPEC.md §7): `orchestrator`, or the id of a designated root thread. **Omitted means `orchestrator`** — the same lane, so a caller written before lanes existed keeps its meaning exactly. A **scoped** call sees only its own lane's events; the orchestrator's call is the unscoped one and **never sees a live lane's events**, so two agents working at once are reading disjoint sets rather than racing for one event. A lane whose listener has been absent longer than the grace window has **lapsed**, and its pending events become visible to the orchestrator's call — the fallback is computed when the call is made and never written into the events, so a resident that comes back finds its lane exactly as it left it. One consumer per lane: a second concurrent claim on one lane is still refused. */
+                    scope?: "orchestrator" | string;
                     /** @description Seconds to hold the request open, 1–480 (480 is also the default; a longer ask is rejected with a 400 validation error, not clamped). Parking costs the agent zero tokens: it is blocked on a response, not looping. */
                     timeout?: number;
                 };
@@ -2275,6 +2524,15 @@ export interface paths {
                         "application/json": components["schemas"]["UnauthorizedError"];
                     };
                 };
+                /** @description `scope` names no lane, so **nothing was parked and no work was claimed**: this workspace holds no such thread, or that thread holds no resident and is therefore not a lane at all (SPEC.md §7). Recover by omitting `scope` to take the orchestrator's lane, designating a resident on that thread first, or picking a lane from `GET /api/agents`. The body is `unknown_recipient` — the one code for “the value you named is not a lane”, whichever parameter named it — and carries the refused value in `recipient`. Refused rather than silently parked because parking is what presence *is*: a park the server admitted on a non-lane would report an agent listening on a lane the roster does not list, for as long as the loop kept re-parking. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnknownRecipientError"];
+                    };
+                };
             };
         };
         put?: never;
@@ -2303,10 +2561,15 @@ export interface paths {
          *     **The loop is expected to reconcile it** (SPEC.md §7). An event whose work this agent has already done is settled on the spot with the ordinary verbs; one it is genuinely still working is left alone; and an event it **cannot account for is never settled** — closing an unfamiliar event to tidy the list would silently kill a concurrent run's work. Reconciliation is the agent's judgement and never an inference the server draws on its behalf: this endpoint reports, and settles nothing by itself. `reap-stale` remains the recovery for the other case — a session that died with its context — and stays a requeue.
          *
          *     **The list is capped, and says so.** Past the cap it reports the true `total` and sets `truncated`; the complete set is `GET /api/jobs?status=in-progress`. A short list that looked complete would defeat the whole field.
+         *
+         *     **A claim takes a lane** (SPEC.md §7). `scope` names it, and omitting it means the orchestrator's — so a caller written before lanes existed keeps its meaning exactly. A scoped claim sees only its own lane's events; the orchestrator's claim never sees a live lane's events, and picks up a lapsed lane's pending work. Two agents claiming at once are therefore reading disjoint sets rather than racing, and **one consumer per lane** still holds: a second concurrent claim on one lane is refused exactly as a second claim on the whole queue always was.
          */
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Which lane to consume (SPEC.md §7): `orchestrator`, or the id of a designated root thread. **Omitted means `orchestrator`** — the same lane, so a caller written before lanes existed keeps its meaning exactly. A **scoped** call sees only its own lane's events; the orchestrator's call is the unscoped one and **never sees a live lane's events**, so two agents working at once are reading disjoint sets rather than racing for one event. A lane whose listener has been absent longer than the grace window has **lapsed**, and its pending events become visible to the orchestrator's call — the fallback is computed when the call is made and never written into the events, so a resident that comes back finds its lane exactly as it left it. One consumer per lane: a second concurrent claim on one lane is still refused. */
+                    scope?: "orchestrator" | string;
+                };
                 header?: {
                     /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
                     "x-corpus-author"?: "user" | "agent";
@@ -3691,16 +3954,19 @@ export interface paths {
          * Server-sent invalidation stream
          * @description Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.
          *
-         *     The key vocabulary is **closed** — these ten shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:
+         *     The key vocabulary is **closed** — these 9 shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift.
          *
-         *     - `["docs"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.
+         *     **An emitter names every key a route carrying the changed fact is cached under, not the key of the route the fact is named after** — so several of these travel in frames named after some other resource, and each entry below says which and why:
+         *
+         *     - `["docs"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects — plus every queue transition, since `needs=failed-job` is computed from an event's status and a transition therefore changes what `GET /api/docs?needs=me` answers, and a projection rebuild, which replaces every row the collection is read from. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.
          *     - `["docs", "<docId|threadId>"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.
-         *     - `["tree"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.
+         *     - `["tree"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill — plus a projection rebuild, which names this key whether or not the hierarchy moved, since a rebuild is a resynchronisation instruction rather than a report of a change. Refetch: `GET /api/tree` — the folder-column picker.
          *     - `["threads", "<threadId>"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.
-         *     - `["queue"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and the end of an edit session that re-enters a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.
-         *     - `["jobs"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.
+         *     - `["queue"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and the end of an edit session that re-enters a deferred event — plus every change to agent presence, since the status carries it: a listener parking, its hold ending, and the grace window lapsing — and a projection rebuild, which replaces the rows the counts are read from. **A queue transition names `["agents"]` in the same frame**, because a lane row of the roster is derived from the `events` and `jobs` rows the transition writes: see that key for the rule behind it. Refetch: `GET /api/queue/status` — the console strip's agent pill, depth and halted state.
+         *     - `["jobs"]` — emitted by every queue transition, plus any job-log append (coalesced) — over HTTP or out of band — and a projection rebuild, which replaces the rows the list is read from. **A transition and an append each name `["agents"]` in the same frame**, because a lane row of the roster is derived from the same `events` and `jobs` rows: see that key for the rule behind it. Refetch: `GET /api/jobs` — the console's job list.
          *     - `["jobs", "<eventId>"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.
          *     - `["index"]` — emitted by the embed worker whenever the index's derived state moves: provider adoption, a new disabled or model-download reason, throttled progress while a backlog drains, and the caught-up transition — plus an index rebuild's start and end. Refetch: `GET /api/index/status` — the console strip's index pill.
+         *     - `["agents"]` — emitted by designating or releasing a thread's resident, a thread's resolution releasing one with it, and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a lane lapsing past the grace window — **plus every write that moves a row a lane is derived from**: a queue transition or a job-log append, over HTTP or out of band, since a lane's `summary` is read off the same `events` and `jobs` rows that write touches; a designated root thread being retitled or deleted, since a row carries that conversation's title and its existence; and a projection rebuild, which re-derives all of it. The rule behind that list is worth stating, because no single call site shows it: **a lane row is computed at read time and never stored**, so the roster goes stale on frames named after other resources, and an emitter names this key whenever it writes a row the roster reads — not only when it writes something called an agent. The derivation itself may change without a contract change (`AgentLane.summary` says as much of its own content); the invalidation may not. Refetch: `GET /api/agents` — the composer's recipient picker and every surface showing who is running.
          */
         get: {
             parameters: {
@@ -3894,7 +4160,7 @@ export interface components {
             } | null;
             /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). */
             column: string | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra: {
                 [key: string]: unknown;
             };
@@ -4074,7 +4340,7 @@ export interface components {
             } | null;
             /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). */
             column: string | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra: {
                 [key: string]: unknown;
             };
@@ -4177,7 +4443,7 @@ export interface components {
             } | null;
             /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). Null is the same as omitting it: no `column` key. */
             column?: string | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra?: {
                 [key: string]: unknown;
             };
@@ -4356,7 +4622,7 @@ export interface components {
             /** @description Workspace-relative path of the document's file, e.g. `data/docs/finance/mortgage.md` — the path the diff was taken at, and what a `--- a/… +++ b/…` header in `diff` names. */
             path: string;
             /**
-             * @description The resolved base of the range, exclusive — the value used, whether supplied or defaulted. `EMPTY_TREE_OBJECT_ID` when `to` has no parent. `null` only in the no-history case below, where `to` is null too.
+             * @description The resolved base of the range, exclusive — the value used, whether supplied or defaulted. A default is the newest commit before `to` that touched **this document**, never `to`'s parent (a party-scoped commit window makes the parent routinely someone else's save to another file); `EMPTY_TREE_OBJECT_ID` when nothing before `to` ever touched this document. `null` only in the no-history case below, where `to` is null too.
              * @example 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
              */
             from: string | null;
@@ -4422,7 +4688,12 @@ export interface components {
             key?: string;
             title?: string;
             body?: string;
+            /** @description Replace the document's tag set with exactly this list. **Prefer `addTags`/`removeTags` when you mean to change one tag**: this field carries the whole set, so it overwrites whatever another writer added between your read and your write. Use it when you genuinely mean *these and no others* — reordering the set, or clearing it with `[]`. */
             tags?: string[];
+            /** @description Tags to add, merged **server-side against the file as it stands** (SPEC.md §7's canonical keyless write — a write that names its own delta merges with whatever else happened). Existing order is preserved and additions are appended, so no read is needed first and no concurrent tag can be lost. Adding a tag the document already carries is a no-op, not a failure. Cannot be combined with `tags`, which states the whole set instead. */
+            addTags?: string[];
+            /** @description Tags to remove, applied server-side against the file as it stands. Removing a tag the document does not carry is a no-op, not a failure. May be sent alongside `addTags`; a tag named in both is removed, exactly as `POST /api/docs/bulk`'s `tag` act resolves it. Cannot be combined with `tags`. */
+            removeTags?: string[];
             /** @enum {string} */
             status?: "open" | "resolved" | "archived";
             /**
@@ -4447,7 +4718,7 @@ export interface components {
             } | null;
             /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). On update, `null` clears the key from the file. */
             column?: string | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra?: {
                 [key: string]: unknown;
             };
@@ -4645,7 +4916,21 @@ export interface components {
             anchor: string | null;
             /** @enum {string} */
             agent: "none" | "requested" | "engaged";
+            /** @description The agent resident in this conversation, or null (SPEC.md §7). **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8). */
+            resident: components["schemas"]["Resident"] | null;
             turns: components["schemas"]["Turn"][];
+        };
+        Resident: {
+            /**
+             * @description The name the agent is invocable by — the same resolution `@<subagent>` mentions use (SPEC.md §8): a `type: agent-def` document's own name, or its title, matched case-insensitively. **Not a document id.** A name that resolves to no agent-def in this workspace is a `404`.
+             * @example researcher
+             */
+            name: string;
+            /**
+             * @description The `type: agent-def` document the name resolved to, resolved at designation time and re-read on every response — so a renamed or moved agent-def shows its current id here rather than a stale one.
+             * @example doc_a1b2c3
+             */
+            docId: string;
         };
         Turn: {
             /**
@@ -4664,12 +4949,22 @@ export interface components {
             /** @description Display name of the model that wrote this turn (SPEC.md §11) — a **display string, not an enum**: §7 keeps model names in the orchestrator skill, so this contract never enumerates them and a workspace that changes its tiers changes nothing here. **One model, never a list.** Where a request ran in stages at different weights (§7), this names the model of the **deciding** stage — the one that drew the conclusion or wrote the words. It does not accumulate the stages, and a reader must not treat it as the whole account of what ran: the per-stage record is the job's log, for as long as that log lasts. **It is not a weight.** A weight is an instruction stated before the work (§7, honoured and not weighed again); this is a fact about what happened. The two are deliberately separate fields of separate things (CONTRACT-039) and merging them would make §7's guarantee unverifiable. At most 200 characters, non-blank, and on one line: it is persisted as a plain YAML scalar in the thread document's frontmatter. **`null` when no model is named** — a turn a person wrote, or a turn appended before the server recorded this. Null is the honest answer and never a default: an unknown that says so is worth more than a plausible attribution nobody can check. Clients render nothing for it, never a placeholder such as "unknown". */
             model: string | null;
         };
+        /** @description The value you named is not a lane: this workspace holds no such thread, or that thread holds no resident and is therefore not a lane at all (SPEC.md §7). **`unknown_recipient` is the one code for that fact whatever named it** — the `recipient` of a post, or the `scope` of a queue park — because the two are one refusal with one remedy: name a lane that exists, or name none. It is spelled for the parameter that first produced it, not for the only one that can; a second code would hand a client two branches for one recovery. Nothing was written or parked, and `recipient` carries the offending value either way. */
+        UnknownRecipientError: {
+            /** @enum {string} */
+            code: "unknown_recipient";
+            message: string;
+            /** @description The value that named no lane — a thread this workspace does not hold, or one that holds no resident and is therefore not a lane at all. **Whichever parameter carried it**: the `recipient` of a post, or the `scope` of a queue park. The field is spelled `recipient` because the code is; which parameter was at fault is the operation you called. */
+            recipient: string;
+        };
         CreateThreadRequest: {
             /**
              * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
              * @example evt_a1b2c3d4
              */
             job?: string;
+            /** @description Which lane this message is addressed to (SPEC.md §7): `orchestrator`, or the id of a designated root thread. **Omit it for the default**, which is computed from where the message is posted — inside a designated scope it addresses that scope's resident, anywhere else the orchestrator — so absence is the ordinary case and never a guess the caller has to check. Stating one **routes this message and nothing else**: it never rewires a scope, never re-designates anything, and does not persist past the message it was set on. The event this request enqueues is stamped with the named recipient's lane, which is what makes it reach them — an event stamped with the host's lane would be claimable by nobody, since a scoped claim sees only its own lane and an unscoped claim never sees a live lane's events. What the summoned agent writes still belongs to the conversation it was asked in: **routing follows the recipient, filing follows the conversation** (§7), and filing is `job`/`origin`'s job, not this field's. A value naming a thread that is not a designated root — or no thread at all — is a `422`: the composer only offers live lanes, but a pick can go stale between the roster read and the post, and silently routing it somewhere else would answer the person from an agent they did not address. */
+            recipient?: "orchestrator" | string;
             /**
              * @description Document being commented on. Omitted or null creates a standalone thread.
              * @example doc_a1b2c3
@@ -4701,6 +4996,8 @@ export interface components {
              * @example evt_a1b2c3d4
              */
             job?: string;
+            /** @description Which lane this message is addressed to (SPEC.md §7): `orchestrator`, or the id of a designated root thread. **Omit it for the default**, which is computed from where the message is posted — inside a designated scope it addresses that scope's resident, anywhere else the orchestrator — so absence is the ordinary case and never a guess the caller has to check. Stating one **routes this message and nothing else**: it never rewires a scope, never re-designates anything, and does not persist past the message it was set on. The event this request enqueues is stamped with the named recipient's lane, which is what makes it reach them — an event stamped with the host's lane would be claimable by nobody, since a scoped claim sees only its own lane and an unscoped claim never sees a live lane's events. What the summoned agent writes still belongs to the conversation it was asked in: **routing follows the recipient, filing follows the conversation** (§7), and filing is `job`/`origin`'s job, not this field's. A value naming a thread that is not a designated root — or no thread at all — is a `422`: the composer only offers live lanes, but a pick can go stale between the roster read and the post, and silently routing it somewhere else would answer the person from an agent they did not address. */
+            recipient?: "orchestrator" | string;
             /**
              * @description Document being commented on. Omitted creates a standalone thread.
              * @example doc_a1b2c3
@@ -4918,6 +5215,8 @@ export interface components {
             anchor: string | null;
             /** @enum {string} */
             agent: "none" | "requested" | "engaged";
+            /** @description The agent resident in this conversation, or null (SPEC.md §7). **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8). */
+            resident: components["schemas"]["Resident"] | null;
             /**
              * Format: date-time
              * @example 2026-07-19T10:05:00Z
@@ -4947,6 +5246,8 @@ export interface components {
              * @example evt_a1b2c3d4
              */
             job?: string;
+            /** @description Which lane this message is addressed to (SPEC.md §7): `orchestrator`, or the id of a designated root thread. **Omit it for the default**, which is computed from where the message is posted — inside a designated scope it addresses that scope's resident, anywhere else the orchestrator — so absence is the ordinary case and never a guess the caller has to check. Stating one **routes this message and nothing else**: it never rewires a scope, never re-designates anything, and does not persist past the message it was set on. The event this request enqueues is stamped with the named recipient's lane, which is what makes it reach them — an event stamped with the host's lane would be claimable by nobody, since a scoped claim sees only its own lane and an unscoped claim never sees a live lane's events. What the summoned agent writes still belongs to the conversation it was asked in: **routing follows the recipient, filing follows the conversation** (§7), and filing is `job`/`origin`'s job, not this field's. A value naming a thread that is not a designated root — or no thread at all — is a `422`: the composer only offers live lanes, but a pick can go stale between the roster read and the post, and silently routing it somewhere else would answer the person from an agent they did not address. */
+            recipient?: "orchestrator" | string;
             body: string;
             /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
             requestsAgent?: boolean;
@@ -4961,6 +5262,8 @@ export interface components {
              * @example evt_a1b2c3d4
              */
             job?: string;
+            /** @description Which lane this message is addressed to (SPEC.md §7): `orchestrator`, or the id of a designated root thread. **Omit it for the default**, which is computed from where the message is posted — inside a designated scope it addresses that scope's resident, anywhere else the orchestrator — so absence is the ordinary case and never a guess the caller has to check. Stating one **routes this message and nothing else**: it never rewires a scope, never re-designates anything, and does not persist past the message it was set on. The event this request enqueues is stamped with the named recipient's lane, which is what makes it reach them — an event stamped with the host's lane would be claimable by nobody, since a scoped claim sees only its own lane and an unscoped claim never sees a live lane's events. What the summoned agent writes still belongs to the conversation it was asked in: **routing follows the recipient, filing follows the conversation** (§7), and filing is `job`/`origin`'s job, not this field's. A value naming a thread that is not a designated root — or no thread at all — is a `422`: the composer only offers live lanes, but a pick can go stale between the roster read and the post, and silently routing it somewhere else would answer the person from an agent they did not address. */
+            recipient?: "orchestrator" | string;
             /** @description Markdown body of the turn. Optional: a turn may be attachment-only. */
             text?: string;
             /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
@@ -5012,6 +5315,8 @@ export interface components {
              * @example evt_a1b2c3d4
              */
             job?: string;
+            /** @description Which lane this message is addressed to (SPEC.md §7): `orchestrator`, or the id of a designated root thread. **Omit it for the default**, which is computed from where the message is posted — inside a designated scope it addresses that scope's resident, anywhere else the orchestrator — so absence is the ordinary case and never a guess the caller has to check. Stating one **routes this message and nothing else**: it never rewires a scope, never re-designates anything, and does not persist past the message it was set on. The event this request enqueues is stamped with the named recipient's lane, which is what makes it reach them — an event stamped with the host's lane would be claimable by nobody, since a scoped claim sees only its own lane and an unscoped claim never sees a live lane's events. What the summoned agent writes still belongs to the conversation it was asked in: **routing follows the recipient, filing follows the conversation** (§7), and filing is `job`/`origin`'s job, not this field's. A value naming a thread that is not a designated root — or no thread at all — is a `422`: the composer only offers live lanes, but a pick can go stale between the roster read and the post, and silently routing it somewhere else would answer the person from an agent they did not address. */
+            recipient?: "orchestrator" | string;
             /** @description One entry per field answered, in any order — entries are matched to fields by question, not by position. A field left blank has no entry, which is a `400` unless that field is optional. Submitting is all-or-nothing: there is no partial save and no per-field submit (SPEC.md §6). */
             answers: components["schemas"]["FormFieldAnswer"][];
             /** @description Free-text note about the ask as a whole, recorded beside the answers (SPEC.md §6). Optional, and never a field's answer. */
@@ -5082,7 +5387,46 @@ export interface components {
             /** @description The bytes the caller believes the range currently holds — a **guard, not the stored selector**. The server compares it against the parent's live body and refuses with `409` (`range-changed`) if they differ, because a document edited between the person seeing the range and choosing it would otherwise re-attach the thread to whatever slid into those offsets. Its length must equal `end - start`, which is checked at validation time. Never written: the selector is read off the document's own bytes (SERVER-071). */
             expectedText: string;
         };
+        DesignateResidentRequest: {
+            /**
+             * @description The name the agent is invocable by — the same resolution `@<subagent>` mentions use (SPEC.md §8): a `type: agent-def` document's own name, or its title, matched case-insensitively. **Not a document id.** A name that resolves to no agent-def in this workspace is a `404`.
+             * @example researcher
+             */
+            name: string;
+        };
+        AgentRoster: {
+            /** @description Every lane of the queue. The `orchestrator` row is always present — it exists before anything has been designated and survives the last release — so a caller that finds an empty list has found a bug rather than a workspace with no agents. */
+            agents: components["schemas"]["AgentLane"][];
+        };
+        AgentLane: {
+            /** @description This lane's name: `orchestrator`, or the id of a designated root thread. It is the value to send as `scope` on a queue verb, and as `recipient` on a message addressed here. */
+            lane: "orchestrator" | string;
+            /** @description The agent resident in this conversation, or null (SPEC.md §7). **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8). */
+            resident: components["schemas"]["Resident"] | null;
+            /** @description **Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster row, on any lane at all where it sits on the queue status. The two are the same observation at two grains and never disagree. Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. **The grace window is already applied**: a listener between parks is still live, since a healthy one un-parks for a moment every time it re-arms. False is therefore an ordinary, recoverable state and not an error — past that window a lane's pending events fall back to the orchestrator at claim time, so the work is done more slowly and never silently not done. */
+            live: boolean;
+            /**
+             * Format: date-time
+             * @description **When a listener was last observed parked**, as an instant — null when none ever has been. It advances every time the listener re-arms, so on a live lane it is never older than the idle timeout, and it stops the moment the listener does: `now − since` is therefore the age of the evidence behind `live`, not the length of a session. An instant rather than an elapsed duration, for the reason `InProgressEvent.heldSince` gives: a duration is stale the moment the response is read and hides which clock produced it, while an instant lets the caller subtract against whichever clock it trusts. Rendering it as `last seen 12m ago` is the caller's job.
+             * @example 2026-07-19T10:05:00Z
+             */
+            since: string | null;
+            /** @description A short line about what this lane is doing, or null when there is nothing to say. **The contract promises its bound and nothing about its content**: it is derived server-side, capped at 200 characters and trimmed there, and how it is derived may change without a contract change. So it is for display only — a client must never parse it, key on it, or decide anything from it, and everything a client needs to decide from is a field of its own on this row. */
+            summary: string | null;
+            /** @description The conversation this lane belongs to — its id and current title — or null for the `orchestrator` lane, which belongs to none. **Not a document's `origin` (SPEC.md §9.2)**: that is the conversation a document was written *from*, while this is the conversation a lane *is*. Where `lane` is a thread id, `origin.id` repeats it — the field is here for the title beside it, so a recipient picker can name the conversation without a second read. */
+            origin: components["schemas"]["LaneOrigin"] | null;
+        };
+        LaneOrigin: {
+            /**
+             * @description The designated root thread this lane belongs to.
+             * @example th_x9y8
+             */
+            id: string;
+            /** @description That thread's title as it now stands, read at response time. */
+            title: string;
+        };
         QueueStatus: {
+            agent: components["schemas"]["AgentPresence"];
             /** @description True while the `.corpus/HALT` sentinel exists; claims return empty. */
             halted: boolean;
             pending: number;
@@ -5092,6 +5436,21 @@ export interface components {
             processed: number;
             failed: number;
             abandoned: number;
+        };
+        /**
+         * @description **Whether an agent is there, and the observation behind the answer** (SPEC.md §7, §11). Presence is the parked scoped `idle` and nothing else — nothing is registered, nothing is reaped, and nothing new is asked of the agent, which is why it can be reported without a heartbeat protocol.
+         *
+         *     Where this sits on `QueueStatus` it is the roster's own liveness **aggregated over every lane**: `live` is true exactly when some lane of `GET /api/agents` is live, and `since` is the most recent of their instants. One notion of presence reported at two grains, so the console strip and the recipient picker can never disagree about whether anybody is listening. **It says whether an agent is present, never how many are**: one parked agent and two are both `live`, and a count belongs to the roster, which has a row per lane to put it on. Read it rather than deriving idleness from the queue counts beside it — an empty queue means nobody asked for anything, not that somebody is waiting to be asked.
+         */
+        AgentPresence: {
+            /** @description **Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster row, on any lane at all where it sits on the queue status. The two are the same observation at two grains and never disagree. Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. **The grace window is already applied**: a listener between parks is still live, since a healthy one un-parks for a moment every time it re-arms. False is therefore an ordinary, recoverable state and not an error — past that window a lane's pending events fall back to the orchestrator at claim time, so the work is done more slowly and never silently not done. */
+            live: boolean;
+            /**
+             * Format: date-time
+             * @description **When a listener was last observed parked**, as an instant — null when none ever has been. It advances every time the listener re-arms, so on a live lane it is never older than the idle timeout, and it stops the moment the listener does: `now − since` is therefore the age of the evidence behind `live`, not the length of a session. An instant rather than an elapsed duration, for the reason `InProgressEvent.heldSince` gives: a duration is stale the moment the response is read and hides which clock produced it, while an instant lets the caller subtract against whichever clock it trusts. Rendering it as `last seen 12m ago` is the caller's job.
+             * @example 2026-07-19T10:05:00Z
+             */
+            since: string | null;
         };
         IdleResult: {
             /** @description Pending events, still in `pending/`. Claim them with `POST /api/queue/claim-all`. */
@@ -5104,7 +5463,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description Event type. Core values: comment.created, form.respond, doc.edited, agent.done. Plugins define their own. */
+            /** @description Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. Plugins define their own. */
             type: string;
             /**
              * Format: date-time
@@ -5137,7 +5496,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: plugins define their own. Core values: comment.created, form.respond, doc.edited, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes. */
+            /** @description The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: plugins define their own. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes. */
             type: string;
             /**
              * Format: date-time
@@ -5190,7 +5549,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string;
-            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
+            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
             type: string;
             /**
              * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and the agent parked it because a person had an edit session open on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that session ends. Nothing refused it: the agent deferred because it saw, not because it was blocked.

@@ -57,9 +57,10 @@ import {
 } from "../core/index.js";
 import { resolveAnchorExact } from "../anchors/index.js";
 import type { EditSessionTracker } from "../edit/index.js";
+import { rosterSignature } from "../agents/roster.js";
 import { HttpError, badRequest } from "../errors.js";
 import type { InvalidationBus } from "../events/index.js";
-import { TREE_KEY, dedupeKeys } from "../events/index.js";
+import { AGENTS_KEY, TREE_KEY, dedupeKeys } from "../events/index.js";
 import type { AnchorChange, AutoCommitter, CommitOutcome } from "../git/index.js";
 import type { Logger } from "../logger.js";
 import { classifyPath, projectDocument, removeDocument } from "../projection/index.js";
@@ -1182,6 +1183,19 @@ export async function finishMutation(
   // fetched before the mutation.
   const treeBefore = plan.mayChangeTree === true ? folderTreeSignature(workspace.projection) : null;
 
+  // §7's roster, measured the same way and at the same moment, and **not** gated
+  // behind a plan flag (SERVER-115). A lane row is computed at read time, so
+  // writes named after other resources move it: a designated conversation's
+  // title is a row's `origin.title`, an agent-def's path decides its resident's
+  // `docId`, a deletion takes a lane away, and a rename of a document a held
+  // event came from rewrites a lane's `summary`. No plan can honestly declare
+  // which of its writes does that without re-deriving the roster — which is the
+  // measurement — and every attempt at declaring it per verb is what this
+  // issue's seven sibling defects were. It is affordable unflagged where
+  // `mayChangeTree` is not because the cost is the number of *designated* lanes
+  // (usually none), not the size of the corpus. See {@link rosterSignature}.
+  const rosterBefore = rosterSignature(workspace.projection);
+
   for (const path of plan.unproject) {
     removeDocument(workspace.projection, abs(workspace, path));
   }
@@ -1190,9 +1204,12 @@ export async function finishMutation(
     projectDocument(workspace.projection, abs(workspace, path));
   }
 
-  const treeChanged =
-    treeBefore !== null && folderTreeSignature(workspace.projection) !== treeBefore;
-  workspace.bus.invalidate(dedupeKeys(treeChanged ? [...plan.keys, TREE_KEY] : plan.keys));
+  const measured: QueryKey[] = [...plan.keys];
+  if (treeBefore !== null && folderTreeSignature(workspace.projection) !== treeBefore) {
+    measured.push(TREE_KEY);
+  }
+  if (rosterSignature(workspace.projection) !== rosterBefore) measured.push(AGENTS_KEY);
+  workspace.bus.invalidate(dedupeKeys(measured));
 
   return commit;
 }

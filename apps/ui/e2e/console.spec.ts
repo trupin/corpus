@@ -3,7 +3,13 @@ import type { Page } from "@playwright/test";
 // `test` comes from the coverage fixture, not from `@playwright/test`: it is the
 // same runner plus the browser-side V8 collection the merged gate needs.
 import { expect, test } from "./coverage";
-import { LIGHT_ACCENT } from "./tokens";
+import { LIGHT_ACCENT, hexToRgb, token } from "./tokens";
+
+/** UI-098's agent-dot palette, read from the declared tokens (light theme). */
+const LIGHT = ':root\\[data-theme="light"\\]';
+const NEUTRAL = hexToRgb(token(LIGHT, "--ink-3"));
+const GOOD = hexToRgb(token(LIGHT, "--good"));
+const SIGNAL = hexToRgb(token(LIGHT, "--signal"));
 
 /**
  * UI-011's console drawer, against the real Vite dev server with **no** workspace
@@ -45,13 +51,71 @@ test.describe("the collapsed strip", () => {
     await expect(strip).toHaveCSS("padding", "7px 18px");
     await expect(strip).toHaveCSS("user-select", "none");
 
-    // The agent pill and the counts, both derived from the same queue status —
-    // unreachable here, so both read their honest zeroes.
-    await expect(page.locator(".agent-pill")).toHaveText("agent: idle · queue 0");
+    /*
+     * The agent pill and the counts, from the same queue status — unreachable
+     * here, so the counts read their honest zeroes ("0 running" is true of a
+     * server that is not there) and the pill reads `unknown`, because no value
+     * of `agent` is true of a read that never answered (UI-098). It used to say
+     * `idle`, which asserted somebody was connected and resting.
+     */
+    await expect(page.locator(".agent-pill")).toHaveText("agent: unknown");
     await expect(page.locator(".c-counts")).toHaveText("0 running · 0 done · 0 failed");
     await expect(page.locator(".halt-btn")).toHaveText("HALT ○");
 
     expect(uncaught).toEqual([]);
+  });
+
+  /**
+   * UI-098's dots, in the one place they can actually be checked.
+   *
+   * The unit suite pins the class names; only a browser can say what those
+   * classes *look* like, and §11's requirement is visual: `disconnected` must be
+   * distinct from `idle` and from the `working` pulse, and must not be styled as
+   * a failure — with no agent running it is the plain truth, not an error. The
+   * assertions therefore compare against the declared tokens rather than against
+   * colours copied into this file, and check `animation-name` because "nothing
+   * else pulses" is the property that makes the pulse mean something.
+   */
+  test("dresses a disconnected agent as neither idle, nor halted, nor working", async ({
+    page,
+  }) => {
+    const queue = (agent: QueueStatus["agent"], pending: number): QueueStatus => ({
+      agent,
+      halted: false,
+      pending,
+      inProgress: 0,
+      deferred: 0,
+      processed: 0,
+      failed: 0,
+      abandoned: 0,
+    });
+    let agent: QueueStatus["agent"] = { live: false, since: null };
+    await page.route("**/api/queue/status", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(queue(agent, 3)),
+      }),
+    );
+    await page.goto("/");
+
+    const pill = page.locator(".agent-pill");
+    const dot = page.locator(".agent-pill .dot");
+    // Nobody parked, three requests waiting — the sentence the queue depth is
+    // beside it for.
+    await expect(pill).toHaveText("agent: disconnected · queue 3");
+    await expect(dot).toHaveCSS("background-color", NEUTRAL);
+    await expect(dot).toHaveCSS("animation-name", "none");
+    // Never red: `--signal` in this strip means needs-you, and this is not that.
+    expect(NEUTRAL).not.toBe(SIGNAL);
+
+    // And it is a claim with evidence on both sides: park an agent, and the same
+    // strip says so on the next read.
+    agent = { live: true, since: new Date().toISOString() };
+    await page.reload();
+    await expect(pill).toHaveText("agent: idle · queue 3");
+    await expect(dot).toHaveCSS("background-color", GOOD);
+    await expect(dot).toHaveCSS("animation-name", "none");
   });
 
   /*
@@ -307,6 +371,7 @@ test.describe("the master-detail body", () => {
       }
       if (url.pathname === "/api/queue/status") {
         return body({
+          agent: { live: true, since: new Date().toISOString() },
           halted: true,
           pending: 0,
           inProgress: 0,

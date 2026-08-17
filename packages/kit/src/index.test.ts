@@ -22,6 +22,7 @@ const RUNTIME_SURFACE = [
   "CorpusRequestError",
   "reattachRefusalReason",
   "staleKeyDoc",
+  "unknownRecipientLane",
   "CorpusProvider",
   "mountedCorpusProviders",
   "createCorpusQueryClient",
@@ -43,6 +44,7 @@ const RUNTIME_SURFACE = [
   "MAX_BUFFERED_LOG_LINES",
   "usePluginQuery",
   "useQueueStatus",
+  "useAgentsRoster",
   "useIndexStatus",
   "useHealth",
   // write path
@@ -64,6 +66,7 @@ const RUNTIME_SURFACE = [
   "useDeleteDoc",
   "useMarkThreadSeen",
   "useSetThreadStatus",
+  "useSetResident",
   "useReattachThread",
   "useHaltQueue",
   "useResumeQueue",
@@ -76,6 +79,7 @@ const RUNTIME_SURFACE = [
   "canonicalFilter",
   "docKey",
   "docsListKey",
+  "AGENTS_KEY",
   "DOCS_KEY",
   "HEALTH_KEY",
   "INDEX_KEY",
@@ -96,6 +100,10 @@ const RUNTIME_SURFACE = [
   "UnreadBadge",
   "unreadBadgeProps",
   "WorkingDot",
+  // …and the same dot for work nobody has taken, plus the one call that picks
+  // between them so no row implementation decides for itself (UI-097).
+  "QueuedDot",
+  "AgentActivityDot",
   "reasonChip",
   "reasonChips",
   "REASON_CHIP_CLASSES",
@@ -159,6 +167,14 @@ const RUNTIME_SURFACE = [
   "COMPOSER_PRIMARY_KEY",
   "COMPOSER_SECONDARY_KEY",
   "handleComposerKeyDown",
+  // the attachment trio every composer obeys §6 with: the three intake routes,
+  // the chip strip that previews them, and the 📎 that opens the picker. Here
+  // for the same reason the key contract is — §11's rider binds "any composer a
+  // plugin contributes", and a plugin may import nothing else (UI-070).
+  "useAttachmentIntake",
+  "releaseAttachments",
+  "PendingAttachments",
+  "AttachButton",
   // the weight a composer may state (SPEC.md §11's rider, signed 2026-08-06).
   // Published here so a plugin's composer offers the same levels a first-party
   // one does, with one import and no copy — the plugin row of §11's enumeration.
@@ -184,6 +200,47 @@ const RUNTIME_SURFACE = [
   "childThreadWeightScope",
   "docWeightScope",
   "GLOBAL_COMPOSE_WEIGHT_SCOPE",
+  // SPEC.md §7's recipient — the roster read, the scope walk, the one-message
+  // override, and the control. Published for `WeightPicker`'s reason: a
+  // composer a plugin contributes must be able to offer the same live roster.
+  // `useAgentsRoster` is beside the other read hooks above.
+  "RecipientPicker",
+  "RECIPIENT_PICKER_LABEL",
+  "RECIPIENT_GROUP_LABEL",
+  "RECIPIENT_LIVE_TITLE",
+  "RECIPIENT_INERT_TITLE",
+  "RECIPIENT_UNKNOWN_STATEMENT",
+  "RECIPIENT_REFUSED_STATEMENT",
+  "DEFAULT_ROW_NOTE",
+  "statementFor",
+  "useComposerRecipient",
+  "useScopeWalk",
+  "walkToLane",
+  "laneOf",
+  // The third answer a `ScopeNodeLookup` may give: *the corpus does not hold
+  // this*, which is a dead branch, as against a read that has not landed, which
+  // withholds (UI-119).
+  "SCOPE_NODE_ABSENT",
+  "MAX_SCOPE_WALK",
+  "laneRow",
+  "laneRows",
+  "laneName",
+  "laneLine",
+  "laneLiveness",
+  "unknownLaneRow",
+  "ORCHESTRATOR_LABEL",
+  "UNNAMED_RESIDENT_LABEL",
+  "LIVE_WITHOUT_SUMMARY",
+  "NEVER_SEEN_LINE",
+  "LAPSED_FALLBACK",
+  "LAPSED_ORCHESTRATOR",
+  // …and the same vocabulary read by a surface that is not a composer (UI-109):
+  // is *this* conversation a lane, which lane answers *here*, and the one dot
+  // both the picker and the board draw it with.
+  "useLaneRow",
+  "useResidentLane",
+  "LaneDot",
+  "humanizeElapsed",
   "useConnectionState",
   "backoffDelay",
   "DEFAULT_BASE_DELAY_MS",

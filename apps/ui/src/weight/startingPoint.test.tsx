@@ -190,6 +190,7 @@ describe("the starting point is per conversation", () => {
             left={10}
             pending={false}
             weightScope="doc:doc_a"
+            recipientScope="doc_a"
             onSubmit={() => undefined}
             onClose={() => undefined}
           />

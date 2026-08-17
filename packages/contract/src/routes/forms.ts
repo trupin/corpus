@@ -10,7 +10,7 @@ import {
   NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
-  UNKNOWN_JOB_RESPONSE,
+  UNRESOLVED_REFERENCE_RESPONSE,
 } from "./responses.js";
 
 /**
@@ -103,7 +103,7 @@ export const respondToForm = createRoute({
     },
   },
   responses: {
-    422: UNKNOWN_JOB_RESPONSE,
+    422: UNRESOLVED_REFERENCE_RESPONSE,
     201: jsonContent(
       FormAnswerResponseSchema,
       "The appended answer turn, the updated thread summary, and the enqueued event.",

@@ -1,5 +1,7 @@
 import { z } from "@hono/zod-openapi";
+import { type AgentPresence, AgentPresenceSchema } from "./agents.js";
 import { DocumentIdSchema, EventIdSchema } from "./id.js";
+import { laneScopeParam } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
 
 /**
@@ -7,23 +9,35 @@ import { IsoDateTimeSchema } from "./time.js";
  * open string because plugins define their own event types; consumers that only
  * handle core types narrow with {@link CoreQueueEventTypeSchema}.
  *
- * Ordered by producer, with the one type nothing produces yet last:
- * `comment.created` (a turn that requests the agent), `form.respond` (a form
- * answer, §6), `doc.edited` (a user edit session that ended, §4's
- * edit-acknowledgment rider — payload and dedupe rule in `./edit.ts`), and
- * `agent.done`, which §7 marks reserved.
+ * The set is exactly §7's "Core event types" sentence, and the order here is
+ * **by producer, with the one type nothing produces last** rather than §7's
+ * listing order:
+ *
+ * - `comment.created` — a turn that requests the agent (§8).
+ * - `form.respond` — a form answer (§6); payload shape in `./form.ts`.
+ * - `doc.edited` — a user edit session that ended (§4's edit-acknowledgment
+ *   rider); payload and dedupe rule in `./edit.ts`.
+ * - `resident.designated` — a standalone thread was given a resident (§7, rider
+ *   SHARED-043). It lands on the **orchestrator's** lane whoever is designated,
+ *   since a resident does not announce itself to itself; that carve-out is one
+ *   of exactly two §7 names, the other being a message that stated a recipient.
+ * - `agent.done` — background subagent wake-back, which §7 marks **reserved**:
+ *   nothing produces it, and an arriving one is settled like a report. It is
+ *   last because of that, not because it is newest.
  *
  * **`doc.edited` is a core type rather than a plugin one** because the core loop
  * owns both ends of it: the server emits it, and the shipped orchestrate skill
- * handles it. §7's own "Core event types" sentence predates the rider and does
- * not yet name it — a SPEC amendment is drafted and held for sign-off
- * (CONTRACT-028); this constant is what the shipped surfaces read, and the
- * generated document publishes the whole set wherever an event type appears.
+ * handles it. `resident.designated` is core for the same reason — designation is
+ * a first-class act of the product, visible in the queue, the job log and the
+ * history exactly as a comment is, and §7 makes it ordinary queue vocabulary
+ * rather than a side channel. The generated document publishes the whole set
+ * wherever an event type appears.
  */
 export const CORE_QUEUE_EVENT_TYPES = [
   "comment.created",
   "form.respond",
   "doc.edited",
+  "resident.designated",
   "agent.done",
 ] as const;
 
@@ -77,7 +91,21 @@ export const QueueEventStatusSchema = z.enum(QUEUE_EVENT_STATUSES).openapi({
     "Nothing refused it: the agent deferred because it saw, not because it was blocked.",
 });
 
-/** One event file in `.corpus/queue/<status>/<id>.json`, written and moved only by the server. */
+/**
+ * One event file in `.corpus/queue/<status>/<id>.json`, written and moved only
+ * by the server.
+ *
+ * **There is no `lane` field, and that is deliberate** (CONTRACT-051; SPEC.md §7
+ * as amended by SHARED-043). Every event *is* stamped with a lane when it is
+ * enqueued, but the stamp is server-side bookkeeping of the same class as the
+ * event's status and its attempt count: it decides who the event is handed to,
+ * and by the time a consumer holds one it has already been handed to them.
+ * Publishing it would put a routing decision in the hands of the party the
+ * routing was *for*, and the honest answer to "which lane is this?" is "the one
+ * you asked for" — the `scope` you claimed with. The lane is reachable where it
+ * is actually a question: `GET /api/agents` lists the lanes, and the scoped
+ * queue verbs consume one.
+ */
 export const QueueEventSchema = z
   .object({
     id: EventIdSchema,
@@ -283,8 +311,76 @@ export const ClaimBatchSchema = z
   })
   .openapi("ClaimBatch");
 
+/**
+ * Long-poll window (CLAUDE.md Architecture Decision 4). The default matches the
+ * agent skill's ~8 minute rearm, and the same value bounds the ask: a longer
+ * timeout is rejected with a 400 validation error rather than silently clamped,
+ * so a client cannot park past the window the loop is built around (SPEC.md §7).
+ */
+export const DEFAULT_IDLE_TIMEOUT_SECONDS = 480;
+export const MAX_IDLE_TIMEOUT_SECONDS = 480;
+
+/**
+ * How long a listener may be un-parked before it stops counting as present —
+ * §7's **grace window**, fixed here because it is one number two processes have
+ * to agree on.
+ *
+ * **Derived, never chosen.** §7 deliberately does not fix the length, but it
+ * guarantees exactly one bound on it: *"the window is longer than a rearm gap"*.
+ * The rearm gap is bounded by {@link MAX_IDLE_TIMEOUT_SECONDS} — a park cannot
+ * outlive it, and the skill re-invokes immediately — so a window shorter than
+ * the timeout would read an ordinary rearm as a departure, which is the failure
+ * SHARED-033's rider names ("comfortably longer than the interval at which a
+ * parked agent re-contacts the server"). Twice the timeout tolerates one wholly
+ * missed rearm and calls two a departure. Writing it as a multiple rather than
+ * as `960` is the point: change the loop's rearm and the window follows it, and
+ * `queue.test.ts` pins the bound so it can never quietly stop following.
+ *
+ * **The multiplicand is the maximum, not the default** (CONTRACT-060). They are
+ * the same number today, which is exactly why getting it wrong was invisible:
+ * this read `DEFAULT_IDLE_TIMEOUT_SECONDS * 2` while the paragraph above — and
+ * the server's docblock, and SERVER-112's own report — argued the max. The
+ * default is only what a client gets when it asks for nothing; the max is what
+ * bounds *every* park, including the longest one the server will admit
+ * (`IdleQuerySchema` rejects more), and the CLI's segmenting loop parks for
+ * `min(remaining, MAX_IDLE_TIMEOUT_SECONDS)` precisely so it never asks for
+ * more. So the longest gap between two contacts from a healthy listener is a
+ * max-length park, and a window built on the default would — the moment the two
+ * diverged, which is the moment somebody raises the cap — call a listener gone
+ * that was doing what the contract permits.
+ *
+ * The server applies it before answering `AgentPresence.live`; a client applies
+ * the same number to the same instant only to *expire* a verdict it has held too
+ * long ({@link isAgentPresent}). One window, one definition, two appliers — and
+ * one derivation: `LANE_GRACE_MS` is this constant times 1000 and re-derives
+ * nothing.
+ */
+export const AGENT_PRESENCE_WINDOW_SECONDS = MAX_IDLE_TIMEOUT_SECONDS * 2;
+
+/**
+ * Queue depth, halt state — and, since CONTRACT-045, **who is or is not there to
+ * work it**.
+ *
+ * The counts describe the work; `agent` describes the worker, and until it
+ * existed the console had to guess the second from the first. It guessed by
+ * elimination — not halted and nothing in progress ⇒ `idle` — so a machine with
+ * no agent at all reported an agent with nothing to do, which is precisely the
+ * claim §11's rider now says requires evidence. The evidence is this field.
+ *
+ * It is **the roster's own verdict aggregated**, not a second notion of
+ * liveness: `agent.live` is true exactly when some `AgentLane.live` is, and
+ * `agent.since` is the most recent of theirs. Published here rather than left to
+ * a second fetch because the strip already reads this resource on load and on
+ * every `["queue"]` invalidation, and because presence and queue depth are read
+ * together — depth matters most in exactly the state where nobody is listening.
+ */
 export const QueueStatusSchema = z
   .object({
+    // Referenced unmodified, deliberately: `.describe()` on a registered schema
+    // makes zod-to-openapi carry the component's name onto the derived one and
+    // rewrite the shared definition (CONTRACT-037). The prose lives on the
+    // component itself, as it does for `inProgress` above.
+    agent: AgentPresenceSchema,
     halted: z
       .boolean()
       .describe("True while the `.corpus/HALT` sentinel exists; claims return empty."),
@@ -305,6 +401,75 @@ export const QueueStatusSchema = z
     abandoned: z.number().int().min(0),
   })
   .openapi("QueueStatus");
+
+/**
+ * Is an agent there, as of `now`?
+ *
+ * **The server's verdict, which a caller may let expire but never overrule.**
+ * `live` already has the grace window applied ({@link AGENT_PRESENCE_WINDOW_SECONDS}),
+ * so this returns it unchanged in every case but one: a `live: true` whose
+ * evidence is older than the window — a response the caller has been holding
+ * since before the agent left, with no invalidation having arrived to correct
+ * it. Applying the same window to the same instant can therefore only ever
+ * *withdraw* a stale presence, never manufacture one the server denied, which is
+ * what keeps this a second application of one rule rather than a second rule.
+ *
+ * It takes a clock so a UI can re-evaluate on a tick without refetching: §11
+ * asks the pill to flip on its own when an agent walks away, and a pill that
+ * only moved when new data arrived would sit on `idle` for as long as nothing
+ * else happened — the original bug with extra steps. Clock skew costs nothing
+ * either way: a fast local clock expires the verdict early and the next fetch
+ * restores it, a slow one holds it a moment longer, and neither can invent
+ * presence.
+ *
+ * Accepts a roster row as readily as `QueueStatus.agent` — an `AgentLane` is
+ * structurally an {@link AgentPresence}, deliberately.
+ */
+export function isAgentPresent(presence: AgentPresence, now: Date = new Date()): boolean {
+  if (!presence.live) return false;
+  // Live with no instant behind it is a server bug, not a shape to interpret:
+  // trust the verdict rather than inventing an absence the server did not report.
+  if (presence.since === null) return true;
+  const seen = Date.parse(presence.since);
+  if (Number.isNaN(seen)) return true;
+  return now.getTime() - seen <= AGENT_PRESENCE_WINDOW_SECONDS * 1000;
+}
+
+/**
+ * The four states SPEC.md §11's agent pill names, in one place because two
+ * consumers already read them — the console strip and any plugin reading queue
+ * status — and a rule about honesty that each derives for itself is a rule that
+ * holds in one of them.
+ *
+ * The precedence is the interesting part, and every step of it is §11's own
+ * "reports what the server can actually observe":
+ *
+ * 1. **`halted`** outranks everything. While the sentinel is set nothing new is
+ *    claimed, and an in-flight job finishing does not make the agent working
+ *    again. (Unchanged: this is what the UI already did.)
+ * 2. **`disconnected` outranks `working`** — the decision this function makes,
+ *    and the one SHARED-033 listed as open. `inProgress > 0` is a fact about
+ *    *events*, not about anybody holding them: an agent that claimed work and
+ *    died leaves the count standing forever, and `working` about a corpse is the
+ *    same unevidenced claim as `idle` about an empty machine, mirrored. §8's
+ *    rider already refuses to call unclaimed work "working"; refusing to call
+ *    abandoned work "working" is the same sentence read in the other direction.
+ *    What recovers those events is `reap-stale`, and what tells a person to run
+ *    it is seeing that nobody is there.
+ * 3. **`working`** when an agent is present and holds work.
+ * 4. **`idle`** last, and now a claim with evidence behind it rather than the
+ *    else-branch it used to be: an agent is connected and has nothing to do.
+ */
+export type AgentActivity = "halted" | "disconnected" | "working" | "idle";
+
+export function agentActivity(
+  status: Pick<QueueStatus, "agent" | "halted" | "inProgress">,
+  now: Date = new Date(),
+): AgentActivity {
+  if (status.halted) return "halted";
+  if (!isAgentPresent(status.agent, now)) return "disconnected";
+  return status.inProgress > 0 ? "working" : "idle";
+}
 
 /**
  * Events available to claim right now, returned by the long-poll idle endpoint.
@@ -333,15 +498,20 @@ export const IdleResultSchema = z
   .openapi("IdleResult");
 
 /**
- * Long-poll window (CLAUDE.md Architecture Decision 4). The default matches the
- * agent skill's ~8 minute rearm, and the same value bounds the ask: a longer
- * timeout is rejected with a 400 validation error rather than silently clamped,
- * so a client cannot park past the window the loop is built around (SPEC.md §7).
+ * The lane a claim consumes (SPEC.md §7), on `POST /api/queue/claim-all`.
+ *
+ * A **query parameter rather than a request body**, and that is the one choice
+ * here worth stating: `claim-all` is a bodiless verb today, and giving it a body
+ * to carry one optional field would make a bare `POST` — which is what every
+ * caller sends and what the CLI will keep sending — a call whose body is omitted
+ * rather than absent. `idle` spells the same thing as a query parameter because
+ * it is a `GET`, and the two verbs are one instruction to the loop; spelling it
+ * two different ways on the two of them is how they would come to disagree.
  */
-export const DEFAULT_IDLE_TIMEOUT_SECONDS = 480;
-export const MAX_IDLE_TIMEOUT_SECONDS = 480;
+export const ClaimScopeQuerySchema = z.object({ scope: laneScopeParam });
 
 export const IdleQuerySchema = z.object({
+  scope: laneScopeParam,
   timeout: z.coerce
     .number()
     .int()
@@ -446,6 +616,7 @@ export const FailEventRequestSchema = z
 export type CoreQueueEventType = z.infer<typeof CoreQueueEventTypeSchema>;
 export type IdleResult = z.infer<typeof IdleResultSchema>;
 export type IdleQuery = z.infer<typeof IdleQuerySchema>;
+export type ClaimScopeQuery = z.infer<typeof ClaimScopeQuerySchema>;
 export type ReapStaleResult = z.infer<typeof ReapStaleResultSchema>;
 export type QueueEventStatus = z.infer<typeof QueueEventStatusSchema>;
 export type QueueEvent = z.infer<typeof QueueEventSchema>;

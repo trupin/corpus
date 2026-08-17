@@ -1,4 +1,5 @@
 import type { RowNotice } from "@corpus/kit";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, type ReactElement } from "react";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import type { NavEntry } from "../board/useBoardLocalState";
@@ -147,8 +148,8 @@ function ColumnReader({
   });
 
   const navigate = useCallback(
-    (next: string) => {
-      stack.push(next, surface.currentScroll());
+    (next: string, reveal?: RevealTarget) => {
+      stack.push(next, surface.currentScroll(), reveal);
     },
     [stack, surface],
   );

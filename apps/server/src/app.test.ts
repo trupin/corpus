@@ -9,8 +9,15 @@ import {
   HealthSchema,
   ValidationErrorSchema,
   buildOpenApiDocument,
+  type QueryKey,
 } from "@corpus/contract";
-import { OPENAPI_PATH, createServer, formatHostForUrl, mapListenError } from "./app.js";
+import {
+  OPENAPI_PATH,
+  createServer,
+  formatHostForUrl,
+  mapListenError,
+  type CorpusServer,
+} from "./app.js";
 import { nonLoopbackBindError, type ServerConfig } from "./config.js";
 import {
   ConfigError,
@@ -410,6 +417,109 @@ describe("createServer — purity", () => {
   it("exposes the config it was handed", () => {
     const config = makeConfig();
     expect(createServer(config).config).toBe(config);
+  });
+});
+
+describe("createServer — agent presence invalidation (SPEC.md §7, SERVER-114)", () => {
+  /**
+   * Records what the server *announces*, in frames, in order. `deps.invalidate`
+   * is the same seam a queue transition publishes through, so a frame here is
+   * everything the server said about this change and not a filtered view of it.
+   */
+  const recordingServer = (): { server: CorpusServer; frames: QueryKey[][] } => {
+    const frames: QueryKey[][] = [];
+    const server = createServer(makeConfig(), {
+      logger: silentLogger,
+      invalidate: (keys) => {
+        frames.push(keys.map((key) => [...key]));
+      },
+    });
+    return { server, frames };
+  };
+
+  /**
+   * The defect this pins: presence is one observation published on **two**
+   * routes — per lane on `GET /api/agents` (`["agents"]`) and aggregated on
+   * `QueueStatus.agent` from `GET /api/queue/status` (`["queue"]`,
+   * CONTRACT-045) — and §7 delivers it as a key name, never as pushed data. So
+   * an emit that names one of the two leaves the other's reader holding a stale
+   * answer with nothing to correct it: the UI caches with `staleTime: Infinity`
+   * and refetches on neither focus nor reconnect. Naming only `["agents"]` is
+   * what left the console's pill reading `disconnected` under a parked agent
+   * (UI-098) — measured at 150 s, corrected only by a reload.
+   *
+   * Asserted as the whole key list, not as "contains `["queue"]`": the point is
+   * *which* keys the frame names.
+   */
+  it("names both routes that carry presence when a listener parks and when it releases", async () => {
+    const { server, frames } = recordingServer();
+
+    try {
+      const response = await server.app.request("/api/queue/idle?scope=orchestrator&timeout=1", {
+        headers: AUTH,
+      });
+      expect(response.status).toBe(204);
+
+      // Two transitions, one frame each: the park, then the release that ends
+      // the window. Nothing else moved — no event was enqueued, claimed or
+      // completed — so these are presence's frames and only presence's.
+      expect(frames).toEqual([
+        [["agents"], ["queue"]],
+        [["agents"], ["queue"]],
+      ]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("names keys and nothing else — presence never travels as data (§7)", async () => {
+    const { server, frames } = recordingServer();
+
+    try {
+      await server.app.request("/api/queue/idle?scope=orchestrator&timeout=1", { headers: AUTH });
+
+      // Every segment of every announced key is a bare resource name. A frame
+      // that had smuggled `live`/`since` into the announcement — the one thing
+      // §7 forbids — would fail here rather than in a browser.
+      for (const frame of frames) {
+        for (const key of frame) {
+          expect(key.every((segment) => typeof segment === "string")).toBe(true);
+        }
+      }
+      expect(new Set(frames.flat().map((key) => JSON.stringify(key)))).toEqual(
+        new Set(['["agents"]', '["queue"]']),
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("the key it names is the one the changed answer is behind", async () => {
+    const { server, frames } = recordingServer();
+    const controller = new AbortController();
+
+    try {
+      // Held open, so the read below happens while the listener is parked —
+      // which is what presence *is* (§7), not a state a heartbeat reported.
+      const parked = server.app.request("/api/queue/idle?scope=orchestrator&timeout=60", {
+        headers: AUTH,
+        signal: controller.signal,
+      });
+      await vi.waitFor(() => {
+        expect(frames.length).toBeGreaterThan(0);
+      });
+
+      // The frame said `["queue"]`; this is what a client that obeyed it reads.
+      const status = await server.app.request("/api/queue/status", { headers: AUTH });
+      const body = (await status.json()) as { agent: { live: boolean; since: string | null } };
+      expect(body.agent.live).toBe(true);
+      expect(frames[0]).toContainEqual(["queue"]);
+
+      controller.abort();
+      await parked;
+    } finally {
+      await server.close();
+    }
   });
 });
 

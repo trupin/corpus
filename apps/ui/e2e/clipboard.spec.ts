@@ -130,6 +130,7 @@ async function stubThreadTurns(page: Page): Promise<void> {
         // `none`, never `null`: `Thread.agent` is the three-state SPEC.md §8
         // vocabulary and has no absent value (UI-102).
         agent: "none",
+        resident: null,
         turns: [
           {
             author: "user",

@@ -1,9 +1,17 @@
-import { COMPOSER_PRIMARY_KEY, handleComposerKeyDown, useCreateThread } from "@corpus/kit";
+import {
+  AttachButton,
+  COMPOSER_PRIMARY_KEY,
+  handleComposerKeyDown,
+  PendingAttachments,
+  useAttachmentIntake,
+  useCreateThread,
+} from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useDismissable } from "./dismiss.js";
 import { clampToViewport } from "./PluginMenu.js";
 import type { ItemSelector } from "./itemAnchor.js";
 import type { TodoItemTarget } from "./TodoItemMenu.js";
+import "@corpus/kit/composer.css";
 import "./todos.css";
 
 /**
@@ -38,6 +46,28 @@ import "./todos.css";
  * plugin cannot join; answering only from the field left a real hole — press
  * the agent toggle, so focus is on a button, then Escape, and the app's own
  * chain closed the reader **underneath** while this popover stayed open.
+ *
+ * **It takes attachments by all three of §6's routes** — the 📎 picker, a paste
+ * and a drop onto the popover, with chip previews before sending (PLUGINS-012).
+ * §11's rider names "any composer a plugin contributes" in the same breath as
+ * the board's own, and the reference plugin is the one that has to demonstrate
+ * it rather than be the surface without it. Every part of that is the kit's:
+ * `useAttachmentIntake` normalises the three routes, `PendingAttachments` draws
+ * the chips, `AttachButton` is the 📎 and its hidden input, and
+ * `@corpus/kit/composer.css` carries their anatomy — nothing here is a copy,
+ * which is the whole point of UI-070 having published them. The only thing this
+ * file owns is the highlight class, because the dropzone is the *surface* and
+ * only this file knows what this surface looks like.
+ *
+ * **A comment may be attachment-only** (§6): the send answers to a file with no
+ * words, and `useCreateThread` switches to multipart on its own.
+ *
+ * **A refusal loses neither the words nor the files.** The kit publishes
+ * `take()`/`restore()` for a composer that clears itself optimistically and has
+ * to put its chips back when the post fails; this one clears nothing until the
+ * thread exists, so the chips stay where the words stay and the same send can
+ * be pressed again. The previews are revoked by the intake's own unmount, which
+ * is the moment `onCreated` closes this popover.
  */
 
 /** The quote, short enough to sit in a popover without becoming the popover. */
@@ -77,6 +107,7 @@ export function TodoItemComposer({
   const surface = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const create = useCreateThread();
+  const intake = useAttachmentIntake();
 
   useDismissable(surface, onClose);
 
@@ -85,7 +116,8 @@ export function TodoItemComposer({
   }, []);
 
   const pending = create.isPending;
-  const canSend = text.trim() !== "" && !pending;
+  // A file with no words is a comment (SPEC.md §6), so either half arms the send.
+  const canSend = (text.trim() !== "" || intake.pending.length > 0) && !pending;
 
   const send = (): void => {
     if (!canSend) return;
@@ -96,6 +128,7 @@ export function TodoItemComposer({
         selector,
         body: text.trim(),
         requestsAgent: asking,
+        files: intake.pending.map((attachment) => attachment.file),
       },
       {
         onSuccess: (result) => {
@@ -120,13 +153,23 @@ export function TodoItemComposer({
   return (
     <div
       ref={surface}
-      className="todo-comment-pop"
+      className={intake.dropping ? "todo-comment-pop dropping" : "todo-comment-pop"}
       role="dialog"
       aria-label="New comment on todo item"
       data-todo-comment
+      // The dropzone is the whole popover, not the field: a person dragging a
+      // screenshot aims at the box they can see. The highlight is this file's
+      // own class for the reason `composer.css` states — a bare `.dropping`
+      // rule in the kit would paint whichever surface happened to match.
+      data-dropzone="todo-item-comment"
+      onDragEnter={intake.onDragEnter}
+      onDragOver={intake.onDragOver}
+      onDragLeave={intake.onDragLeave}
+      onDrop={intake.onDrop}
       style={{ left: `${String(placement.left)}px`, top: `${String(placement.top)}px` }}
     >
       <div className="todo-cm-quote">“{quotePreview(selector.exact)}”</div>
+      <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
       {/* The wrapper is the box; the field inside it is transparent and grows
           with the draft, because `↵` is a newline here now and a two-row field
           that scrolls its first line out of sight is a poor place to write more
@@ -145,6 +188,9 @@ export function TodoItemComposer({
           onChange={(event) => {
             setText(event.target.value);
           }}
+          // A paste carrying files is an attachment, never base64 in the field;
+          // a paste carrying none falls through to ordinary text insertion.
+          onPaste={intake.onPaste}
           onKeyDown={(event) => {
             // No `onEscape`: `useDismissable` takes the key on `window` in the
             // capture phase, so it answers wherever focus is inside this
@@ -155,6 +201,7 @@ export function TodoItemComposer({
         />
       </div>
       <div className="todo-comment-foot">
+        <AttachButton surface="todo-item-comment" onFiles={intake.add} />
         <button
           type="button"
           className={asking ? "todo-toggle on" : "todo-toggle"}

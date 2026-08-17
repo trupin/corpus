@@ -18,19 +18,47 @@ import { useOutstandingJobs } from "../query/useOutstandingJobs.js";
  */
 
 /**
- * Queue states that mean the agent is working on this row *right now*.
+ * The queue state that means the agent is working on this row *right now* — and
+ * it is exactly one (SPEC.md §8's rider, signed 2026-08-12; UI-097).
  *
- * Narrower than the shared query's `OUTSTANDING_JOB_STATUSES` on purpose:
- * `deferred` is work the agent parked because a person was editing the document
- * (SPEC.md §7), and a spinning dot on every row it parked against would say the
- * agent is busy with each of them. The wait is still reported — by
- * `awaitingAgent`, below.
+ * This used to hold `pending` as well, under a docblock claiming both meant the
+ * agent was working. `pending` means the opposite: nobody has taken the event.
+ * A queue of unclaimed work would spin a dot on every row it named, which is
+ * the row-sized version of the "agent is working…" a person saw when no agent
+ * was running at all.
+ *
+ * `deferred` is not here either, and for the reason it never was: it is work the
+ * agent parked because a person was editing the document (SPEC.md §7). It is
+ * claimed, and it is not being worked — so it reads as waiting, like anything
+ * else nobody is holding.
  */
-const ACTIVE_JOB_STATUSES: readonly QueueEventStatus[] = ["pending", "in-progress"];
+const WORKING_JOB_STATUS: QueueEventStatus = "in-progress";
+
+/** The queue state that means the event exists and nobody has taken it. */
+const WAITING_JOB_STATUS: QueueEventStatus = "pending";
+
+/**
+ * What a row may honestly say about the agent (SPEC.md §8).
+ *
+ * - `working` — an event on this row is `in-progress`: somebody claimed it and
+ *   is holding it now.
+ * - `waiting` — something is outstanding and **nobody is holding it**: an
+ *   unclaimed event, a deferral, or a thread whose reply has not arrived where
+ *   the queue's answer no longer names the job.
+ * - `idle` — nothing outstanding, so the row says nothing.
+ *
+ * There is no fourth state for "outstanding, claim unknown": the honest floor is
+ * `waiting`, because claiming the agent is working is the one thing §8's rider
+ * forbids doing without evidence.
+ */
+export type AgentActivityState = "working" | "waiting" | "idle";
 
 export interface AgentActivity {
-  readonly active: boolean;
-  /** What is running, for the dot's accessible label. Never a guess about progress. */
+  readonly state: AgentActivityState;
+  /**
+   * What is happening, for the dot's accessible label. Never a guess about
+   * progress — and, on a `waiting` row, never a claim that anything started.
+   */
   readonly title: string;
 }
 
@@ -65,17 +93,26 @@ export interface AgentActivity {
  * scan. So the dot stays lit on the evidence that survives; what is lost is the
  * job's `lastLine` as the dot's label, and it falls back to naming the wait
  * instead.
+ *
+ * **Working outranks waiting** when this row has several outstanding events, and
+ * only that way round: one of them being held is enough to make "the agent is
+ * working on this" true, while any number of unclaimed ones is not. So the scan
+ * looks for a claimed event first and settles for an unclaimed one after —
+ * which is also why it is two passes over a handful rather than one pass that
+ * would have to reason about order.
  */
 export function useAgentActivity(row: Pick<DocRow, "id" | "awaitingAgent">): AgentActivity {
   const { jobs } = useOutstandingJobs();
-  const job = jobs.find(
-    (candidate) => candidate.originId === row.id && ACTIVE_JOB_STATUSES.includes(candidate.status),
-  );
-  if (job !== undefined) {
-    return { active: true, title: job.lastLine ?? `Agent job ${job.status} on this document` };
+  const mine = jobs.filter((candidate) => candidate.originId === row.id);
+  const working = mine.find((candidate) => candidate.status === WORKING_JOB_STATUS);
+  if (working !== undefined) {
+    return { state: "working", title: working.lastLine ?? "Agent is working on this document" };
+  }
+  if (mine.some((candidate) => candidate.status === WAITING_JOB_STATUS)) {
+    return { state: "waiting", title: "Queued — waiting to be picked up" };
   }
   if (row.awaitingAgent === true) {
-    return { active: true, title: "Agent has not replied in this thread yet" };
+    return { state: "waiting", title: "Agent has not replied in this thread yet" };
   }
-  return { active: false, title: "" };
+  return { state: "idle", title: "" };
 }

@@ -69,6 +69,12 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "turn_count",
     "last_author",
     "last_ts",
+    // Past §9.1's list, retyped from SPEC.md §7's resident rider (SHARED-043,
+    // SERVER-109): a lane is named by a designated root thread, so the enqueue
+    // path asks whether a thread is designated once per event and must not open
+    // a file to find out.
+    "resident_name",
+    "resident_doc_id",
   ],
   anchors: ["doc_id", "anchor_id", "exact_text", "prefix", "suffix", "resolved_offset"],
   // `has_form` and `form_answered` are past §9.1's list, retyped from
@@ -79,7 +85,10 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
   // lives in the thread's frontmatter keyed by turn timestamp (§6), and joining
   // it onto the turn is work the board should not repeat per read.
   turns: ["thread_id", "idx", "author", "ts", "body_md", "has_form", "form_answered", "model"],
-  events: ["id", "type", "status", "created", "payload_json", "blocked_on"],
+  // `lane` is SPEC.md §7's partition (SERVER-111): whose work the event is. A
+  // mirror of the stamp on the event file, so a reader can filter by lane in SQL
+  // instead of reading five status directories.
+  events: ["id", "type", "status", "created", "payload_json", "blocked_on", "lane"],
   seen: ["thread_id", "last_seen_ts"],
   jobs: ["event_id", "status", "started", "updated", "last_line"],
   links: ["from_id", "to_id"],

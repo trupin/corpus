@@ -195,8 +195,8 @@ describe("POST /api/db/rebuild", () => {
 
     await rebuildRequest();
 
-    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"]]]);
-    expect(REBUILD_QUERY_KEYS).toHaveLength(4);
+    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"], ["agents"]]]);
+    expect(REBUILD_QUERY_KEYS).toHaveLength(5);
   });
 
   it("names the tree even when the rebuild leaves it byte-identical, by design", async () => {
@@ -230,7 +230,7 @@ describe("POST /api/db/rebuild", () => {
     const after = await (await request("/api/tree")).text();
     expect(after).toBe(before);
     expect(JSON.parse(after)).toMatchObject({ folders: [{ path: "finance", count: 1 }] });
-    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"]]]);
+    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"], ["agents"]]]);
   });
 
   it("takes the actor header without making it an author", async () => {

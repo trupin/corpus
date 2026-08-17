@@ -248,4 +248,47 @@ describe("pollWindow", () => {
     expect(outcome).toEqual({ kind: "interrupted", requests: 1 });
     expect(Date.now() - started).toBeLessThan(1000);
   });
+
+  it("carries the lane on every segment of a multi-request window", async () => {
+    // The window is one park as far as the caller is concerned, but it may be
+    // several requests. A rearm that dropped `scope` would move the listener —
+    // and with it the resident's presence (SPEC.md §7) — onto the orchestrator's
+    // lane halfway through a park, with nothing printed to say so.
+    let clock = 0;
+    const stub = await startStubServer((request, response) => {
+      clock += Number(request.query.get("timeout")) * 1000;
+      sendNoContent(response);
+    });
+
+    const outcome = await pollWindow({
+      client: stub.client,
+      windowMs: 15_000,
+      signal: new AbortController().signal,
+      scope: "th_4b8e2c",
+      now: () => clock,
+      maxSegmentSeconds: 5,
+    });
+
+    expect(outcome).toEqual({ kind: "expired", requests: 3 });
+    expect(stub.requestsTo("/api/queue/idle").map((request) => request.query.get("scope"))).toEqual(
+      ["th_4b8e2c", "th_4b8e2c", "th_4b8e2c"],
+    );
+  });
+
+  it("sends no scope parameter at all when no lane is named", async () => {
+    const stub = await startStubServer((_request, response) => {
+      sendJson(response, 200, BODY);
+    });
+
+    await pollWindow({
+      client: stub.client,
+      windowMs: 5_000,
+      signal: new AbortController().signal,
+    });
+
+    // Absence is an omitted parameter, never `scope=orchestrator`: the server
+    // reads its own lane from silence, and a second spelling of that lane is one
+    // a caller can reach by accident.
+    expect(stub.requestsTo("/api/queue/idle")[0]?.query.has("scope")).toBe(false);
+  });
 });

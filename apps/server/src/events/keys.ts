@@ -19,6 +19,7 @@
 import type { QueryKey } from "@corpus/contract";
 
 export {
+  AGENTS_KEY,
   DOCS_KEY,
   INDEX_KEY,
   JOBS_KEY,

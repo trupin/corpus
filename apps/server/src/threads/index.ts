@@ -44,13 +44,24 @@ export {
   invocableName,
   parseMentions,
   requestsAgent,
+  resolveMentionTarget,
   scanMentionTokens,
 } from "./mentions.js";
 export type { ParsedMentions, ResolvedTarget } from "./mentions.js";
 export { decideParticipation } from "./participation.js";
 export type { ParticipationDecision, ParticipationInput } from "./participation.js";
-export { loadThread, readThread, toThreadSummary, toWireThread } from "./read.js";
+export { currentResident, loadThread, readThread, toThreadSummary, toWireThread } from "./read.js";
 export type { LoadedThread, ThreadReader } from "./read.js";
+export {
+  AGENT_DESIGNATE_MESSAGE,
+  AGENT_RELEASE_MESSAGE,
+  NOT_STANDALONE_MESSAGE,
+  RESIDENT_DESIGNATED,
+  designateResident,
+  releaseResident,
+  residentDesignatedPayload,
+} from "./resident.js";
+export type { ResidentChange } from "./resident.js";
 export {
   AGENT_REATTACH_MESSAGE,
   NOT_ANCHORED_MESSAGE,

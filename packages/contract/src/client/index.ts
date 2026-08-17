@@ -60,6 +60,7 @@ export { ACTOR_HEADER, DEFAULT_ACTOR, type Actor } from "../actor.js";
  * that wants only the key names never pulls the validator in with them.
  */
 export {
+  AGENTS_KEY,
   DOCS_KEY,
   INDEX_KEY,
   JOBS_KEY,

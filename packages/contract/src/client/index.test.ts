@@ -40,6 +40,7 @@ const threadSummary = {
   parent: frontmatter.id,
   anchor: null,
   agent: "engaged" as const,
+  resident: null,
   created: "2026-07-19T10:05:00Z",
   updated: "2026-07-19T10:09:00Z",
   turnCount: 2,
@@ -271,6 +272,7 @@ function createServer() {
     const { reason } = c.req.valid("json");
     return c.json(
       {
+        agent: { live: false, since: null },
         halted: true,
         pending: reason?.length ?? 0,
         inProgress: 0,
@@ -295,6 +297,7 @@ function createServer() {
           parent: frontmatter.id,
           anchor: null,
           agent: "engaged" as const,
+          resident: null,
           created: "2026-07-19T10:05:00Z",
           updated: "2026-07-19T10:09:00Z",
           turnCount: 2,
@@ -430,6 +433,41 @@ function createServer() {
    * `202` on rebuild is exercised over a real mounted route rather than asserted
    * only in the document.
    */
+  // CONTRACT-051. The roster and the designation pair reach the caller through
+  // the generated `paths`, with no hand-written wrapper — the check that the
+  // new surface is actually usable from the one client both apps consume.
+  app.openapi(contractRoutes.getAgentRoster, (c) =>
+    c.json(
+      {
+        agents: [
+          {
+            lane: "orchestrator" as const,
+            resident: null,
+            live: true,
+            since: "2026-07-19T10:00:00Z",
+            summary: "parked",
+            origin: null,
+          },
+        ],
+      },
+      200,
+    ),
+  );
+  app.openapi(contractRoutes.designateResident, (c) =>
+    c.json(
+      {
+        thread: {
+          ...threadSummary,
+          parent: null,
+          anchor: null,
+          resident: { name: c.req.valid("json").name, docId: "doc_agentdef" },
+        },
+        warnings: [],
+      },
+      200,
+    ),
+  );
+
   app.openapi(contractRoutes.getIndexStatus, (c) =>
     c.json(
       {
@@ -1323,5 +1361,47 @@ describe("attachment bytes are not part of the fetch surface", () => {
     const documented: AttachmentsDocumented = true;
     const notFetchable: AttachmentsNotFetchable = true;
     expect([documented, notFetchable]).toEqual([true, true]);
+  });
+});
+
+describe("the roster and designation through the generated client (CONTRACT-051)", () => {
+  it("reads the roster with no hand-written wrapper", async () => {
+    const { data } = await createTestClient().api.GET("/api/agents");
+    expect(data?.agents.map((row) => row.lane)).toEqual(["orchestrator"]);
+    expect(data?.agents[0]?.resident).toBeNull();
+    expect(data?.agents[0]?.live).toBe(true);
+  });
+
+  it("designates by the invocable name and reads the resolved resident back", async () => {
+    const { data } = await createTestClient().api.POST("/api/threads/{id}/resident", {
+      params: { path: { id: "th_x9y8" } },
+      body: { name: "researcher" },
+    });
+    expect(data?.thread.resident).toEqual({ name: "researcher", docId: "doc_agentdef" });
+  });
+
+  /**
+   * The lane a roster row names is exactly what a message may be addressed to
+   * and what a claim may be scoped by — one vocabulary, so a row read here is
+   * usable in both places without a translation step. Compile-time: these
+   * assignments fail under `tsc --noEmit` if the three ever diverge.
+   */
+  it("uses one vocabulary for a roster lane, a recipient and a scope", () => {
+    type Lane = NonNullable<
+      paths["/api/agents"]["get"]["responses"][200]["content"]["application/json"]["agents"][number]["lane"]
+    >;
+    type Recipient = NonNullable<
+      NonNullable<
+        paths["/api/threads"]["post"]["requestBody"]
+      >["content"]["application/json"]["recipient"]
+    >;
+    type Scope = NonNullable<
+      NonNullable<paths["/api/queue/claim-all"]["post"]["parameters"]["query"]>["scope"]
+    >;
+
+    const lane: Lane = "th_x9y8";
+    const recipient: Recipient = lane;
+    const scope: Scope = lane;
+    expect([recipient, scope]).toEqual(["th_x9y8", "th_x9y8"]);
   });
 });

@@ -175,6 +175,29 @@ describe("packages/kit/README.md", () => {
     expect(readme).toContain("The kit is the only data path");
     expect(readme).toContain("One provider per application");
   });
+
+  /**
+   * UI-070. The attachment trio is published *for a reader outside this repo* —
+   * the plugin author who cannot see `apps/ui`'s composers and has only this
+   * file to learn the shape from. An export the README does not name is an
+   * export nobody consumes, which is how the todos composer went a whole
+   * release without attachments while the code to give it some already existed.
+   */
+  it.each([
+    "useAttachmentIntake",
+    "PendingAttachments",
+    "AttachButton",
+    "releaseAttachments",
+    "@corpus/kit/composer.css",
+  ])("documents `%s`, the attachment surface a plugin composer consumes", (symbol) => {
+    expect(readme).toContain(symbol);
+  });
+
+  /** The restore-on-failure contract, which is the non-obvious half of it. */
+  it("states that a refused send puts the attachments back", () => {
+    expect(readme).toContain("Every composer takes attachments");
+    expect(readme).toMatch(/`take`\s*\/\s*`restore`\s*\/\s*`release`/);
+  });
 });
 
 describe("collection keys", () => {

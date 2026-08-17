@@ -37,6 +37,7 @@
 import type {
   Actor,
   AppendTurnBody,
+  Lane,
   ThreadAgent,
   ThreadStatus,
   ThreadSummary,
@@ -102,6 +103,18 @@ export interface TurnInput {
   readonly weight: string | undefined;
   /** The queue event this turn serves (SPEC.md §9.2); attribution only — a turn creates no document. */
   readonly job: string | undefined;
+  /**
+   * The lane this reply is addressed to (SPEC.md §7); `undefined` for the
+   * ordinary case, where the lane follows from the conversation it was posted
+   * in.
+   *
+   * A stated one is the **summons**: it routes this message to another
+   * conversation's resident and nothing else — what that agent then writes still
+   * files into this thread, because the lane and the origin are read off
+   * different things. Like {@link weight} it rides to the queue event and no
+   * further; nothing about it is written into the turn.
+   */
+  readonly recipient: Lane | undefined;
   readonly files: readonly File[];
 }
 
@@ -155,6 +168,7 @@ export function turnRequestBody(body: AppendTurnBody): TurnInput {
       model: body.model,
       weight: body.weight,
       job: body.job,
+      recipient: body.recipient,
       files: [],
     };
   }
@@ -166,6 +180,7 @@ export function turnRequestBody(body: AppendTurnBody): TurnInput {
     model: body.model,
     weight: body.weight,
     job: body.job,
+    recipient: body.recipient,
     files: body.files,
   };
 }
@@ -418,6 +433,7 @@ export async function appendThreadTurn(
           turnTs: prepared.appended.turn.ts,
           parsed,
           weight: input.weight,
+          recipient: input.recipient,
         })
       : null;
 

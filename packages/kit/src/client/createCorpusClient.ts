@@ -1,4 +1,5 @@
 import type {
+  AgentRoster,
   AppendTurnResponse,
   CaptureResult,
   CreateDocRequest,
@@ -29,7 +30,11 @@ import type {
   UpdateDocRequest,
   UpdateDocResponse,
 } from "@corpus/contract";
-import { ReattachConflictErrorSchema, StaleKeyErrorSchema } from "@corpus/contract";
+import {
+  ReattachConflictErrorSchema,
+  StaleKeyErrorSchema,
+  UnknownRecipientErrorSchema,
+} from "@corpus/contract";
 import {
   createCorpusClient as createContractClient,
   isApiError,
@@ -87,6 +92,17 @@ export interface PluginRequestInit {
 
 export interface AppendTurnInput {
   readonly body: string;
+  /**
+   * The lane this message is addressed to (SPEC.md §7) — `orchestrator`, or the
+   * id of a designated root thread.
+   *
+   * **Omit it for the default**, which the server computes from where the
+   * message is posted: inside a designated scope it addresses that scope's
+   * resident, anywhere else the orchestrator. Absence is the ordinary case and
+   * the only spelling of it, which is what stops a client's own idea of the
+   * default from ever disagreeing with the server's.
+   */
+  readonly recipient?: string;
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
   readonly requestsAgent?: boolean;
   /**
@@ -109,6 +125,8 @@ export interface AppendTurnInput {
  */
 export interface AppendTurnUpload {
   readonly text?: string | undefined;
+  /** As {@link AppendTurnInput.recipient}: omit for the computed default. */
+  readonly recipient?: string | undefined;
   readonly requestsAgent?: boolean | undefined;
   /** As {@link AppendTurnInput.weight}: omit for "the orchestrator decides". */
   readonly weight?: string | undefined;
@@ -127,6 +145,8 @@ export interface AppendTurnUpload {
  */
 export interface CreateThreadUpload {
   readonly parent?: string | undefined;
+  /** As {@link AppendTurnInput.recipient}: omit for the computed default. */
+  readonly recipient?: string | undefined;
   /**
    * The context strings are genuinely absent rather than present-and-undefined:
    * every part of a multipart body is a part that was sent, so an `undefined`
@@ -227,6 +247,18 @@ export interface CorpusClient {
   getJobLog(eventId: string, cursor: number, options?: RequestOptions): Promise<JobLog>;
   /** `GET /api/queue/status` — halted flag plus per-status counts (SPEC.md §7). */
   getQueueStatus(options?: RequestOptions): Promise<QueueStatus>;
+  /**
+   * `GET /api/agents` — every lane, who is resident on it, and whether anybody
+   * is listening (SPEC.md §7's roster).
+   *
+   * Parameterless and read-only, like {@link getQueueStatus}: §7 makes the
+   * roster *"a read, never a push"*, so this answers over HTTP and the SSE
+   * stream only ever names `["agents"]`. There is deliberately no designate or
+   * release method beside it — designation is user-only state (§7), and a
+   * plugin that could re-designate a conversation through the kit would be
+   * rewiring a scope on the strength of an import.
+   */
+  getAgentRoster(options?: RequestOptions): Promise<AgentRoster>;
   /**
    * `GET /api/index/status` — the semantic index's own health report behind the
    * console strip's index pill (SPEC.md §9.1, §11's index-pill rider).
@@ -407,6 +439,42 @@ export interface CorpusClient {
   resolveThread(id: string): Promise<ThreadMutationResponse>;
   /** `POST /api/threads/{id}/reopen` — the inverse; an engaged thread re-triggers the agent again. */
   reopenThread(id: string): Promise<ThreadMutationResponse>;
+  /**
+   * `POST /api/threads/{id}/resident` — **designate** a standalone thread's
+   * resident agent (SPEC.md §7).
+   *
+   * `name` is the invocable name, never a document id: the same resolution
+   * `@<subagent>` mentions use, so a person designates by the word they already
+   * type after a sigil. The response carries the thread with `resident` resolved
+   * to `{name, docId}`.
+   *
+   * **User-only, and single-valued.** The server refuses an agent actor (`403`)
+   * and a thread with a parent (`409`); designating a thread that already has a
+   * resident replaces it rather than conflicting.
+   *
+   * ## Why this exists on the kit's client at all
+   *
+   * It did not until UI-109, and the absence was load-bearing prose:
+   * `useComposerRecipient` cited it as the structural enforcement of §7's first
+   * two prohibitions on an override — *"an override never rewires a scope, never
+   * re-designates anything"*. That argument has moved rather than lapsed. §11
+   * puts designate/release in the conversation's own menu, which is a board
+   * surface and therefore a kit consumer, so the capability has to be reachable;
+   * what enforces the prohibitions now is that the recipient path never calls
+   * these two methods and spreads `{}` or `{recipient}` onto the message body
+   * and nothing else — asserted directly (`useComposerRecipient.test.tsx`)
+   * rather than implied by a missing method.
+   */
+  designateResident(threadId: string, name: string): Promise<ThreadMutationResponse>;
+  /**
+   * `DELETE /api/threads/{id}/resident` — **release** it, returning the scope to
+   * ordinary routing (SPEC.md §7).
+   *
+   * **Idempotent**: releasing a thread that has none is the state the caller
+   * asked for, not an error, and it answers with the thread either way because a
+   * release that does write can raise §14 warnings.
+   */
+  releaseResident(threadId: string): Promise<ThreadMutationResponse>;
   /**
    * `POST /api/threads/{id}/reattach` — points an orphaned comment at the
    * passage **a person chose** (SPEC.md §6; SERVER-059 phase B).
@@ -628,6 +696,28 @@ export function staleKeyDoc(error: unknown): Doc | null {
   return parsed.success ? parsed.data.doc : null;
 }
 
+/**
+ * The lane a **`422 unknown_recipient`** refused, or `null` when the failure was
+ * something else (SPEC.md §7; `UnknownRecipientErrorSchema`).
+ *
+ * Read for the reason the contract states in the schema's own docblock — *"a
+ * client that offered a picker needs to know **which** entry went stale so it
+ * can drop that row rather than reload the world"*. A composer needs it for one
+ * thing more: the refusal is the only evidence it will ever get that its own
+ * roster is behind the server's, and it has to be sure the refusal names the
+ * lane **this** message was addressed to before it acts on it.
+ *
+ * Parsed with the contract's own schema rather than by reading `code` off the
+ * payload, exactly as {@link reattachRefusalReason} and {@link staleKeyDoc} are:
+ * a `422` this build does not recognise reads as `null` instead of handing a
+ * half-shaped object to a surface that would then draw a claim from it.
+ */
+export function unknownRecipientLane(error: unknown): string | null {
+  if (!(error instanceof CorpusRequestError) || error.status !== 422) return null;
+  const parsed = UnknownRecipientErrorSchema.safeParse(error.payload);
+  return parsed.success ? parsed.data.recipient : null;
+}
+
 interface FetchResult<T> {
   readonly data?: T | undefined;
   readonly error?: unknown;
@@ -810,6 +900,10 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       );
     },
 
+    async getAgentRoster(options) {
+      return unwrap("GET /api/agents", await api.GET("/api/agents", { ...signalOf(options) }));
+    },
+
     async getIndexStatus(options) {
       return unwrap(
         "GET /api/index/status",
@@ -833,6 +927,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
             // to nothing here but is a second spelling of absence one refactor
             // away from becoming a `null` the server has to interpret.
             ...(input.weight === undefined ? {} : { weight: input.weight }),
+            ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
           },
         }),
       );
@@ -848,6 +943,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           ...(input.text === undefined ? {} : { text: input.text }),
           ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
           ...(input.weight === undefined ? {} : { weight: input.weight }),
+          ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
           files: input.files,
         }),
       );
@@ -997,6 +1093,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           ...(input.text === undefined ? {} : { text: input.text }),
           ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
           ...(input.weight === undefined ? {} : { weight: input.weight }),
+          ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
           files: input.files,
         }),
       );
@@ -1027,6 +1124,23 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "POST /api/threads/{id}/reopen",
         await api.POST("/api/threads/{id}/reopen", { params: { path: { id } } }),
+      );
+    },
+
+    async designateResident(threadId, name) {
+      return unwrap(
+        "POST /api/threads/{id}/resident",
+        await api.POST("/api/threads/{id}/resident", {
+          params: { path: { id: threadId } },
+          body: { name },
+        }),
+      );
+    },
+
+    async releaseResident(threadId) {
+      return unwrap(
+        "DELETE /api/threads/{id}/resident",
+        await api.DELETE("/api/threads/{id}/resident", { params: { path: { id: threadId } } }),
       );
     },
 

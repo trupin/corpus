@@ -28,6 +28,13 @@ const ALLOWED_PACKAGES = new Set([
   // renders `.ac-menu` / `.ac-item` — the app's one positioned-menu surface — and
   // names the sheet rather than assuming whoever mounted it already did.
   "@corpus/kit/autocomplete.css",
+  // The same, one entry per sheet the plugin actually renders: the item
+  // composer emits `.pending-atts` / `.att-chip` / `.clip` (PLUGINS-012).
+  // Named rather than inherited for the reason above — `main.tsx` happens to
+  // load this sheet globally today, so the chips would look right without it,
+  // and that is precisely the dependency this list exists to refuse. A plugin's
+  // appearance follows its imports, not its host's cascade.
+  "@corpus/kit/composer.css",
   "@corpus/contract",
   "@corpus/contract/plugin",
   "react",

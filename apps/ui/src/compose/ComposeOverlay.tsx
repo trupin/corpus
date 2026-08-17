@@ -1,4 +1,5 @@
 import {
+  AttachButton,
   AutocompleteMenu,
   COMPOSER_NEWLINE_HINT,
   COMPOSER_PRIMARY_KEY,
@@ -6,9 +7,14 @@ import {
   composerReachesAgent,
   GLOBAL_COMPOSE_WEIGHT_SCOPE,
   handleComposerKeyDown,
+  PendingAttachments,
+  RecipientPicker,
+  useAttachmentIntake,
   useAutocomplete,
+  useComposerRecipient,
   useComposerWeight,
   WeightPicker,
+  type PendingAttachment,
   type RowNotice,
 } from "@corpus/kit";
 import {
@@ -22,8 +28,6 @@ import {
   type ReactElement,
 } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
-import { PendingAttachments } from "../thread/PendingAttachments";
-import { useAttachmentIntake, type PendingAttachment } from "../thread/useAttachmentIntake";
 import { useCompose, type ComposeMode } from "./useCompose";
 import "./compose.css";
 
@@ -65,6 +69,18 @@ export const CAPTURE_LABEL = `Capture ${COMPOSER_SECONDARY_KEY}`;
 /** Why Capture can be unavailable while Ask is not: a document needs a body. */
 export const CAPTURE_NEEDS_TEXT = "A capture becomes a document — it needs a line of text.";
 
+/**
+ * Said while a recipient is picked and Capture is still available.
+ *
+ * `POST /api/capture` carries no `recipient` (CONTRACT-051): a capture files a
+ * thought and the filing is the orchestrator's. Saying so is the alternative to
+ * a composer that shows a pick and quietly drops it — the picker sits above both
+ * buttons, and only one of them can honour it.
+ */
+export const CAPTURE_IGNORES_RECIPIENT =
+  "Save to inbox/ — the agent files it. A capture is always the orchestrator's; " +
+  "the recipient applies to Ask.";
+
 export interface ComposeOverlayProps {
   readonly onClose: () => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -75,7 +91,6 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
   const [caret, setCaret] = useState(0);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
   const textarea = useRef<HTMLTextAreaElement>(null);
-  const picker = useRef<HTMLInputElement>(null);
   const intake = useAttachmentIntake();
   const compose = useCompose(onNotify);
   /*
@@ -86,6 +101,13 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
    * true`, so the control is always live on this surface.
    */
   const weight = useComposerWeight(GLOBAL_COMPOSE_WEIGHT_SCOPE);
+  /**
+   * `null`: Ask creates a **standalone** thread, which is in no scope by
+   * construction, so the computed default here is the orchestrator without a
+   * walk. Picking a resident is §7's summons — the one deliberate crossing of a
+   * scope boundary — and it routes this message and nothing else.
+   */
+  const recipient = useComposerRecipient({ start: null });
   const live = composerReachesAgent({ requestsAgent: true });
 
   useEffect(() => {
@@ -132,25 +154,34 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
       setText("");
       setCaret(0);
       void (async () => {
-        const ok = await compose.submit(mode, {
+        const outcome = await compose.submit(mode, {
           text: body,
           files: attachments.map((attachment) => attachment.file),
           weight: weight.request,
+          recipient: recipient.request,
         });
-        if (ok) {
+        if (outcome.ok) {
+          // An override routes the message it was set on and never the next one
+          // (SPEC.md §7), and this message landed.
+          recipient.clear();
           intake.release(attachments);
           onClose();
           return;
         }
-        // Nothing is lost on a failure: the text and the chips come back and the
-        // panel stays open, because the person still means to send this.
+        // Nothing is lost on a failure: the text, the chips **and the lane** come
+        // back and the panel stays open, because the person still means to send
+        // this. The lane is the one that matters most here: a `422` refusing the
+        // pick is the server saying this build's roster is behind, and a retry
+        // that fell back to the computed default would silently address someone
+        // else (UI-118).
+        recipient.refuse(outcome.error);
         setText(body);
         setCaret(body.length);
         intake.restore(attachments);
         textarea.current?.focus();
       })();
     },
-    [canAsk, canCapture, compose, intake, onClose, text, weight.request],
+    [canAsk, canCapture, compose, intake, onClose, recipient, text, weight.request],
   );
 
   /**
@@ -214,37 +245,23 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
 
         <WeightPicker weight={weight} live={live} surface="compose" />
+        <RecipientPicker recipient={recipient} live={live} surface="compose" />
 
         <div className="compose-actions">
-          <button
-            type="button"
-            className="clip"
-            title="Attach files from disk"
-            aria-label="Attach files"
-            onClick={() => {
-              picker.current?.click();
-            }}
-          >
-            📎
-          </button>
-          <input
-            ref={picker}
-            type="file"
-            multiple
-            hidden
-            data-attach-input="compose"
-            onChange={(event) => {
-              intake.add(event.target.files);
-              event.target.value = "";
-            }}
-          />
+          <AttachButton surface="compose" onFiles={intake.add} />
           <span className="hint">{COMPOSE_HINT}</span>
           <span className="spacer" />
           <button
             type="button"
             className="btn-capture"
             disabled={!canCapture}
-            title={canCapture ? "Save to inbox/ — the agent files it" : CAPTURE_NEEDS_TEXT}
+            title={
+              canCapture
+                ? recipient.overridden
+                  ? CAPTURE_IGNORES_RECIPIENT
+                  : "Save to inbox/ — the agent files it"
+                : CAPTURE_NEEDS_TEXT
+            }
             onClick={() => {
               submit("capture");
             }}

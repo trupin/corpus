@@ -1,5 +1,11 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
-import { CorpusRequestError, useCreateThread, type RowNotice } from "@corpus/kit";
+import {
+  CorpusRequestError,
+  releaseAttachments,
+  useCreateThread,
+  type PendingAttachment,
+  type RowNotice,
+} from "@corpus/kit";
 import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { expandClipAround } from "../editor/changelogClip";
@@ -9,12 +15,15 @@ import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from ".
 import type { AnchorReport } from "../editor/useAutosave";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import { readStateOf } from "../thread/threadCollapse";
+import { restoredRecipient, type CommentRestore } from "./CommentPopover";
 import {
   anchorDecorationPlugin,
   anchorPluginKey,
   setAnchorsTransaction,
+  setProvisionalTransaction,
   type AnchorPlacement,
 } from "./anchorDecorations";
+import type { PmRange } from "./offsetMap";
 import {
   detachedThreads,
   isPlaced,
@@ -148,16 +157,34 @@ export interface AnchorLayerOptions {
 interface CommentPost {
   readonly body: string;
   readonly requestsAgent: boolean;
-  /** Spread onto the request; `{}` when the composer stated no weight. */
-  readonly weight: { readonly weight?: string };
+  /**
+   * What the composer stated, spread onto the request; `{}` when it stated
+   * nothing. The weight the work should be done at (SPEC.md §11) and the lane it
+   * was addressed to (§7) — the latter present whenever somebody **picked** one,
+   * including a pick that names the lane the composer had already computed,
+   * because only a default nobody touched travels by being absent (UI-118).
+   */
+  readonly stated: { readonly weight?: string; readonly recipient?: string };
+  /**
+   * The composer's attachments, held with the rest of it — a comment that waits
+   * out an edit session keeps its screenshot the way it keeps its words (§6).
+   * This layer owns their previews from here until the post settles.
+   */
+  readonly files: readonly PendingAttachment[];
 }
 
 export interface CommentDraft {
   readonly selection: AnchorSelection;
-  /** The ProseMirror range the optimistic highlight paints, captured on open. */
-  readonly range: { readonly from: number; readonly to: number };
+  /** The ProseMirror range the provisional highlight was opened on. */
+  readonly range: PmRange;
   readonly top: number;
   readonly left: number;
+  /**
+   * Present only on a draft the layer re-opened because the server refused it:
+   * what the composer held when it closed, so it comes back holding the same
+   * (UI-111). A fresh selection has none.
+   */
+  readonly restore?: CommentRestore;
 }
 
 export interface AnchorLayer {
@@ -220,7 +247,9 @@ export interface AnchorLayer {
   readonly submitComment: (
     body: string,
     requestsAgent: boolean,
-    weight: { readonly weight?: string },
+    stated: { readonly weight?: string; readonly recipient?: string },
+    /** Taken from the composer; this layer frees them once the post settles. */
+    attachments?: readonly PendingAttachment[],
   ) => void;
   readonly cancelComment: () => void;
 }
@@ -231,10 +260,28 @@ interface ReportedAgainst {
   readonly against: readonly ResolvedAnchor[];
 }
 
-interface Optimistic {
+/**
+ * The words a comment is being written about, lit before the server has seen
+ * them (UI-112).
+ *
+ * One highlight covers the whole life of one comment: it goes up when the
+ * composer opens, stays up while the request is in flight, and comes down when
+ * the comment is abandoned or when the server's own anchor arrives to replace
+ * it — "the same paint by a different owner". The **key** is what makes a
+ * response settling late clear only its own: a refusal that re-opens the
+ * composer, followed by a second send, must not have the first response put out
+ * the second one's mark.
+ *
+ * It is held apart from the placements because the placements are the server's
+ * offsets into the *saved* body and are applied only while the editor agrees
+ * with it (`applyAnchors`) — a provisional range is a live ProseMirror range and
+ * has no such condition. That difference is not cosmetic: a comment written
+ * during an editing session is exactly when the words most need marking, and it
+ * is the one case the gate would have kept dark.
+ */
+interface Provisional {
   readonly key: string;
-  readonly quote: string;
-  readonly segments: readonly { readonly from: number; readonly to: number }[];
+  readonly range: PmRange;
 }
 
 export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
@@ -259,8 +306,10 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [marginMode, setMarginMode] = useState(false);
   const [draft, setDraft] = useState<CommentDraft | null>(null);
-  const [optimistic, setOptimistic] = useState<Optimistic | null>(null);
+  const [provisional, setProvisional] = useState<Provisional | null>(null);
   const [report, setReport] = useState<ReportedAgainst | null>(null);
+  /** Distinct per opening, and never two the same within one millisecond. */
+  const drafts = useRef(0);
 
   /**
    * The comment's **outcome**, reported from the hook rather than from the call
@@ -397,20 +446,10 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   const detached = useMemo(() => detachedThreads(threads, effective), [effective, threads]);
 
-  const placements = useMemo<AnchorPlacement[]>(() => {
-    const live = anchored.map((thread) => thread.placement);
-    if (optimistic === null) return live;
-    return [
-      ...live,
-      {
-        anchorId: optimistic.key,
-        threadId: optimistic.key,
-        resolved: false,
-        turnCount: 1,
-        segments: optimistic.segments,
-      },
-    ];
-  }, [anchored, optimistic]);
+  const placements = useMemo<AnchorPlacement[]>(
+    () => anchored.map((thread) => thread.placement),
+    [anchored],
+  );
 
   /* ── Applying server data, but only against the body it describes ──── */
 
@@ -430,6 +469,24 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     wanted.current = source.markdown;
     applyAnchors();
   }, [applyAnchors, placements, source.markdown]);
+
+  /**
+   * The composer's own words, lit — and put out.
+   *
+   * Deliberately *not* routed through `applyAnchors`: that call declines
+   * whenever the editor is showing anything but the saved body, which is the
+   * correct rule for the server's offsets and the wrong one for a range read off
+   * the live document a moment ago.
+   *
+   * It dispatches only when the draft changes, never on an ordinary re-render,
+   * because after the first keystroke the plugin's copy of this range is the
+   * mapped one and this state's copy is stale. Re-sending it would drag the
+   * highlight back onto the offsets the words used to occupy.
+   */
+  useEffect(() => {
+    if (editor === null || editor.isDestroyed) return;
+    editor.view.dispatch(setProvisionalTransaction(editor.state, provisional?.range ?? null));
+  }, [editor, provisional]);
 
   // Chip mode puts a widget between blocks, so the set has to be rebuilt when
   // the mode flips as well as when the anchors change.
@@ -640,6 +697,13 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
         // keep the fallbacks
       }
       setDraft({ selection: anchor, range: { from, to }, top, left });
+      // Lit **on open**, which is the whole of UI-112's second half: the browser's
+      // own selection is gone the moment focus moves into the composer, and
+      // without this the words are unmarked for exactly as long as someone is
+      // writing about them. A new key, so a response to an earlier comment
+      // settling now cannot put this one out.
+      drafts.current += 1;
+      setProvisional({ key: `draft:${String(drafts.current)}`, range: { from, to } });
     },
     [body, editor, onNotify, source],
   );
@@ -701,15 +765,20 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const queued = useRef<CommentPost | null>(null);
 
   const post = useCallback(
-    (input: CommentPost, anchor: AnchorSelection, key: string) => {
-      // The temp highlight goes: on success the server's own anchor arrives with
-      // the refetched document and takes its place, and on a refusal there is
-      // nothing to take its place at all. Per-call on purpose — a highlight in a
-      // reader that has closed is not something anyone can see, and clearing it
-      // there would be a state update on a dead layer (UI-015). The notices ride
-      // on the hook above, which is what makes skipping this one safe.
+    (input: CommentPost, source: CommentDraft, key: string | null) => {
+      const anchor = source.selection;
+      // The provisional highlight goes **only on success**, where the server's
+      // own anchor arrives with the refetched document and takes its place. A
+      // refusal re-opens the composer on the same words, and a composer whose
+      // subject is unlit is the bug UI-112 is about — so on that path the mark
+      // stays exactly where it is.
+      //
+      // Per-call on purpose: a highlight in a reader that has closed is not
+      // something anyone can see, and clearing it there would be a state update
+      // on a dead layer (UI-015). The notices ride on the hook above, which is
+      // what makes skipping this one safe.
       const forget = (): void => {
-        setOptimistic((current) => (current?.key === key ? null : current));
+        setProvisional((current) => (current?.key === key ? null : current));
       };
       createThread.mutate(
         {
@@ -720,47 +789,88 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
           // Absent unless the composer stated one; a comment that waited out an
           // edit session carries the weight it was written with, not the one
           // standing when the buffer finally flushed.
-          ...input.weight,
+          ...input.stated,
+          // Multipart or JSON is `useCreateThread`'s branch; an empty list must
+          // not be sent as one, or a plain comment goes out as a file upload.
+          ...(input.files.length === 0 ? {} : { files: input.files.map((held) => held.file) }),
         },
-        { onSuccess: forget, onError: forget },
+        {
+          onSuccess: () => {
+            forget();
+            releaseAttachments(input.files);
+          },
+          onError: (error) => {
+            // Nothing was written — the server refuses the whole thread when the
+            // upload fails — so the composer comes back holding exactly what it
+            // held, at the selection it was opened on (UI-111). Losing a
+            // screenshot to a refused post is the failure this prevents; losing
+            // the sentence beside it was the same bug, unreported. The lane it
+            // was addressed to comes back for a third reason: a `422` refusing
+            // the pick means this build's roster is behind, and a retry that
+            // fell back to the computed default would silently address somebody
+            // else (UI-118).
+            setDraft({
+              ...source,
+              restore: {
+                text: input.body,
+                attachments: input.files,
+                recipient: restoredRecipient(input.stated, error),
+              },
+            });
+          },
+        },
       );
     },
     [createThread, docId],
   );
 
-  const pendingAnchor = useRef<{ anchor: AnchorSelection; key: string } | null>(null);
+  const pendingDraft = useRef<{ source: CommentDraft; key: string | null } | null>(null);
 
   const submitComment = useCallback(
-    (text: string, requestsAgent: boolean, weight: { readonly weight?: string }) => {
+    (
+      text: string,
+      requestsAgent: boolean,
+      stated: { readonly weight?: string; readonly recipient?: string },
+      attachments: readonly PendingAttachment[] = [],
+    ) => {
       if (draft === null) return;
-      const anchor = draft.selection;
-      const key = `pending:${String(Date.now())}`;
-      // Painted from the range the popover was opened on, not from the live
-      // selection: opening the composer moved focus out of the editor.
-      setOptimistic({ key, quote: anchor.selector.exact, segments: [draft.range] });
+      // The highlight is already up and stays up — sending is not a new mark,
+      // it is the same one changing hands. Its key is what this response will
+      // clear on success, and only if a later opening has not taken it over.
+      const key = provisional?.key ?? null;
+      // Re-opening on a refusal must not re-open holding the failed send's
+      // leftovers as well as its own.
+      const { restore: _spent, ...source } = draft;
       setDraft(null);
+      const job: CommentPost = { body: text, requestsAgent, stated, files: attachments };
       if (editing) {
-        queued.current = { body: text, requestsAgent, weight };
-        pendingAnchor.current = { anchor, key };
+        queued.current = job;
+        pendingDraft.current = { source, key };
         return;
       }
-      post({ body: text, requestsAgent, weight }, anchor, key);
+      post(job, source, key);
     },
-    [draft, editing, post],
+    [draft, editing, post, provisional],
   );
 
   useEffect(() => {
     if (editing) return;
     const job = queued.current;
-    const target = pendingAnchor.current;
+    const target = pendingDraft.current;
     if (job === null || target === null) return;
     queued.current = null;
-    pendingAnchor.current = null;
-    post(job, target.anchor, target.key);
+    pendingDraft.current = null;
+    post(job, target.source, target.key);
   }, [editing, post]);
 
+  /**
+   * Abandoned: the composer goes and the mark goes with it, leaving nothing
+   * behind (UI-112's acceptance criterion). The words were never quoted
+   * anywhere, so there is nothing for the highlight to have been about.
+   */
   const cancelComment = useCallback(() => {
     setDraft(null);
+    setProvisional(null);
   }, []);
 
   return {

@@ -29,6 +29,7 @@ import {
   type CreateThreadBody,
   type CreateThreadRequest,
   type TextQuoteSelector,
+  type Lane,
   type Thread,
 } from "@corpus/contract";
 import { stampedOrigin } from "../docs/create.js";
@@ -108,6 +109,13 @@ export interface ThreadCreateInput {
    * the agent opens while working joins the scope it came from (§7).
    */
   readonly job: string | undefined;
+  /**
+   * The lane this message is addressed to (SPEC.md §7); `undefined` when it
+   * names none, which is the ordinary case and means the lane follows from
+   * where the thread was created. Routes **this message and nothing else**: a
+   * thread created with a recipient is not thereby put in that agent's scope.
+   */
+  readonly recipient: Lane | undefined;
   readonly files: readonly File[];
 }
 
@@ -129,6 +137,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
       model: body.model,
       weight: body.weight,
       job: body.job,
+      recipient: body.recipient,
       files: [],
     };
   }
@@ -141,6 +150,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
     model: body.model,
     weight: body.weight,
     job: body.job,
+    recipient: body.recipient,
     files: body.files,
   };
 }
@@ -420,6 +430,7 @@ export async function createThread(
           turnTs: prepared.turn.ts,
           parsed,
           weight: input.weight,
+          recipient: input.recipient,
         })
       : null;
 
