@@ -28,11 +28,14 @@ lane is anybody else's while you are holding it.
 **Carry the lane explicitly, in every command.** Write `--thread th_4b8e2c` into every
 scoped call, every time, and take the id from your invocation rather than from anything you
 remember. There is no environment variable for a lane and you must not invent a substitute:
-a wrong `CORPUS_JOB` is refused, but a wrong lane is honoured in silence, so a variable
-carrying one would let a stale value claim somebody else's conversation indistinguishably
-from you doing your job. An **omitted** `--thread` is worse than a typo, because it is not
-an error at all — it means the orchestrator's lane, so a dropped flag quietly claims and
-parks on the orchestrator's work. That is also why `--thread orchestrator` is refused as a
+a wrong `CORPUS_JOB` is refused, and so is a `--thread` naming a thread that has no
+resident — but neither refusal can fire on the mistake a variable makes. **A value you
+inherited rather than typed names a lane that is entirely real: somebody else's live
+conversation.** That is honoured in silence, so a stale variable would claim and answer a
+conversation nobody gave you, indistinguishably from you doing your job. An **omitted**
+`--thread` is worse than a typo, because it is not an error at all — it means the
+orchestrator's lane, so a dropped flag quietly claims and parks on the orchestrator's
+work. That is also why `--thread orchestrator` is refused as a
 usage error: the orchestrator's lane has exactly one spelling, which is the absent flag, and
 a second one would be a lane you could address by accident.
 
@@ -192,6 +195,11 @@ failures later.
    handed to two places, and it is a window you opened. If work is already pending the park
    returns at once and costs nothing; if not, you had nothing to claim.
 
+   **A park refused here is step 2's missing row, one step later.** `422 unknown_recipient`
+   at exit `5` means the designation ended between your roster read and your park. You are
+   holding nothing and you have said nothing, so there is nothing to finish and nobody to
+   say goodbye to: say so and exit, exactly as you would have for a row that was not there.
+
 ## The loop
 
 **This is a procedure, not a script.** Its load-bearing step is you doing the work, and no
@@ -225,26 +233,60 @@ order, indefinitely:
 
 Then repeat from step 1.
 
-**An empty claim on work your park just named means another listener is on this lane.** Your
-startup check could tell you a listener was here and could never tell you one was not, so you
-may be the second listener on this conversation and have no way to have known it. Step 1 is
-where that is found out, and it is the first moment it matters. When the park at step 6 returns
-naming events and the claim at step 1 comes back with an empty `events` array **and those same
-ids sitting in its `inProgress`**, some other caller claimed them in between — and on your lane
-that can only be another listener. The orchestrator is not a candidate: your park released
-moments ago, the lane therefore reads live for the whole grace window that follows, and an
-unscoped claim never sees a live lane's events. **Exit.** You lost the message, so you were not
-in the middle of anything and nothing is stranded; the agent that took it is answering the
-person now, and one of you leaving is the whole of the repair. Post nothing — a farewell here
-would be a turn about the agents rather than about the conversation — and log nothing, because
-you are holding no event to log it to.
+**An id your park named, held by somebody else when you claim, means another listener is on
+this lane.** Your startup check could tell you a listener was here and could never tell you one
+was not, so you may be the second listener on this conversation and have no way to have known
+it. Step 1 is where that is found out, and it is the first moment it matters. Your park at step
+6 names in its own `events` what is **pending** on your lane; the claim that immediately follows
+it then either hands you those ids or reports them in `inProgress`, which is what was already
+held when your call arrived and never includes what that same call has just claimed for you. So
+an id your park named as pending, coming back in `inProgress` instead of in your `events`, was
+claimed by another caller in the seconds between the two — and on your lane that can only be
+another listener. The orchestrator is not a candidate: your park released moments ago, the lane
+therefore reads live for the whole grace window that follows, and an unscoped claim never sees
+a live lane's events. **One such id is the whole of the evidence. Exit.**
 
-**Two things look like that and are not**, and both mean loop again rather than exit. An empty
-`events` whose ids are **not** in `inProgress` means the work left `pending/` by another door —
-the operator halted the queue, or somebody abandoned the event — and nobody has taken your
-lane. And an empty `events` after a park that printed `{"idle":true,"reason":"timeout"}` or
-`{"idle":true,"reason":"halted"}` is a park that named no work in the first place, which is the
-ordinary sound of a quiet conversation.
+**Two other held rows look like it and are neither**, and reading one of them as a peer costs
+the conversation the listener it really had — where both of you do it, it costs the
+conversation both. A row **your own park did not name** is the ordinary case *Settling your own
+lane* describes: most often the orchestrator mid-dispatch, holding work the fallback handed it
+while your lane had nobody. And a row **you claimed yourself in this session** is yours however
+often it comes back — it sits in `in-progress/` until you settle it, so any later claim reports
+it to you. Ask the same first-person question reconciliation asks, *did I claim this event, in
+this session?*, before you read any row as a peer's. That is also why this test belongs to the
+claim that follows your park and to no other call: a claim made in the middle of a pass is
+looking at work you are holding yourself.
+
+**Judge it on that id, and never on the claim being empty.** The two claims are two independent
+sessions each deciding to run a command, seconds apart — and a person who has just written one
+message writing a second is the ordinary case, not a rare one. That second message is pending
+by the time you claim, so your `events` comes back **non-empty**: a rule that waits for an empty
+batch does not fire, the peer's held row reads as merely *not yours* (*Settling your own lane*),
+and you answer the second message while the other listener answers the first. Two agents, one
+conversation, alternate messages, neither able to see what the other said, and no error raised
+anywhere. That is the failure this check exists to prevent, and the id in `inProgress` is
+present in exactly the same way whether the batch was empty or not.
+
+**Go without finishing what that claim handed you.** Do not work it, do not settle it, do not
+reply to it. It is not lost: it stays in `in-progress/` on this lane, and the orchestrator's
+`corpus queue reap-stale` returns it to `pending/` **on the lane it was claimed from**, where
+the listener that stays claims it as an ordinary row — *Declining a row strands nothing*
+describes the rest, and this is the same trade it makes. A late answer costs the person a wait;
+two agents answering alternate messages costs them their reading of every answer either of you
+gives. Post nothing to the thread: a farewell here would be a turn about the agents rather than
+about the conversation. Where that claim did hand you events, `corpus job log` one line on each
+saying you stood down and left it — that line is the only account of why the event sat between
+being claimed and being reaped. Where it handed you none, there is nothing to log to and
+nothing to leave.
+
+**Two quiet claims look like it and are not**, and both mean loop again rather than exit. An id
+your park named that comes back in **neither** list left `pending/` by another door — the operator
+halted the queue, or somebody abandoned the event — and nobody has taken your lane. And a park
+that printed `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` named no
+work at all, so there is nothing to look for and an empty claim after it is the ordinary sound
+of a quiet conversation. **An empty `events` is not the signal in either direction**: it is
+what a quiet lane looks like and what a lost race often looks like, and only the held id tells
+those apart.
 
 **Two parked listeners cost nothing until a message arrives**, which is exactly why the check
 belongs at the claim and nowhere earlier. Parking costs no tokens and answers nobody, so a
@@ -256,7 +298,9 @@ describes, because that is the only handoff there has ever been. And do not go l
 peer any other way — there is no probe for this, the roster's summary is display text you must
 never parse, and a shortened park to "check" is the keep-alive this skill forbids.
 
-`corpus queue idle` exits `0` in every normal case. A window that elapses with nothing
+`corpus queue idle` exits `0` in every normal case but one, and that one is an ending rather
+than an error: a park on a lane that no longer exists is **refused**, and *Retirement* below
+is what to do about it. A window that elapses with nothing
 pending prints `{"idle":true,"reason":"timeout"}` — that is the ordinary outcome of a quiet
 conversation and not an error; loop again. While the operator has halted the queue it parks
 the full window and prints `{"idle":true,"reason":"halted"}`, and your scoped claim comes back
@@ -412,7 +456,10 @@ had just handed it. A person re-designating this thread, or starting a listener 
 all it takes to put you here.
 
 **A row that is not yours is left exactly where it is.** Do not settle it, do not read the
-thread against it, and above all do not do the work. **The corpus cannot answer this question
+thread against it, and above all do not do the work. One kind of not-yours row says more than
+*leave it*, and it is the one to recognise here: where its id is one your own park named as
+pending, the caller holding it is another listener on your lane, and *The loop* is where that
+is answered. Leaving the row is right either way; staying is not. **The corpus cannot answer this question
 for you** — that is the trap, and it is worth stating because the shortcut is so reasonable:
 an event a subagent is working on *right now* looks identical to an event nobody ever worked,
 since in both cases no reply is posted yet. Reading "nothing answers that turn" as "the work
@@ -580,16 +627,45 @@ stamped for the orchestrator and is already being answered there. What you are s
 when you find out is only your own last events, which is why the first step below is to finish
 them.
 
-**Never re-park on a dissolved lane.** A scoped park on a lane nobody has designated is
-accepted and parks; it does not error, because a lane may be designated a moment later and
-the server does not second-guess the caller. So a listener that skips the check waits forever
-on a conversation that no longer has it, invisible to everyone, while the orchestrator answers
-the messages it thinks it is holding.
+**A refused park is the same ending, found one step later.** Where the release lands after
+your roster read, the server tells you at step 6 instead: a scoped park on a lane nobody
+designates any more is refused, not accepted, and nothing is parked.
 
-When your row is gone from the roster:
+```bash
+corpus queue idle --thread th_4b8e2c
+corpus: 422 unknown_recipient: `th_4b8e2c` names no lane to consume: …
+```
 
-1. Finish and settle any event you are holding. Work already stamped for your lane is still
-   yours — releasing strands nothing and rewrites nothing.
+**Retire on it; do not die on it.** That refusal is exit `5`, and a listener with no
+instruction for it exits at the shell — holding its last event, which then sits in
+`in-progress/` until somebody reaps it, and owing the conversation a goodbye nobody posts.
+There is nothing here to retry and nothing to report as broken: read the refusal as the
+roster read you were going to make next, and run the steps below from the first.
+
+**It is that refusal and no other failure.** The signal is the code and never the exit
+status: `unknown_recipient`, which the human line carries after the `422` and `--json`
+carries as `error.code`. Every other way a park can fail says nothing whatever about who
+owns this lane — the server being unreachable is exit `4`, and another server error is exit
+`5` with a different code — and retiring on one of those walks out on a conversation you
+still hold. Park again instead.
+
+**The claim is not refused, and the asymmetry is deliberate.**
+`corpus queue claim-all --thread th_4b8e2c` still answers on a lane whose resident was just
+released, and hands back the events stamped for it before the release. Nothing else can reach
+them: you are refused at the park, and the orchestrator's unscoped claim cannot see this lane
+until it has lapsed out of presence, so a guarded claim would strand them for a whole grace
+window in order to tidy a parameter. Draining them is therefore the departing listener's job,
+and it is the first step below.
+
+When your row is gone from the roster, or your park was refused:
+
+1. Finish and settle any event you are holding, then make **one** last
+   `corpus queue claim-all --thread th_4b8e2c` and work what it hands you. Work already
+   stamped for your lane is still yours — releasing strands nothing and rewrites nothing.
+   **One claim is provably enough**, so do not claim again to check: the verb takes the
+   whole pending batch in a single call, and nothing written after the release is stamped
+   for this lane, so a second claim can only ever come back empty. Work what the one claim
+   gave you, settle it, and go on to the sign-off — and park at no point in any of this.
 2. Read the thread: `corpus thread show th_4b8e2c`.
 3. **If it is still open, sign off once**, in one line, and exit:
 
@@ -700,14 +776,18 @@ reads it off the roster:
 ```bash
 corpus agents
 orchestrator · waiting for a listener
+corpus queue claim-all --thread th_4b8e2c
+{"events":[],"inProgress":{"events":[],"total":0,"truncated":false}}
 corpus thread show th_4b8e2c
 corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
 EOF
 ```
 
-The row is gone, the thread is still open, so the sign-off is posted and the session ends.
-Nothing is settled, because everything was settled as it was worked, and nothing is logged,
-because no event is being held to log it to. No further park is attempted: the lane is not
-this agent's any more, and parking on it would be waiting forever for a conversation somebody
-else is now answering.
+The row is gone, so one last claim goes out for anything stamped before the release — here it
+is empty, because everything was worked as it arrived — and then, the thread still being open,
+the sign-off is posted and the session ends. Nothing is settled, because everything was settled
+as it was worked, and nothing is logged, because no event is being held to log it to. No
+further park is attempted, and there would be no point in one: the lane is not this agent's
+any more, so `corpus queue idle --thread th_4b8e2c` would come straight back
+`422 unknown_recipient` — the same ending, reached the other way.
