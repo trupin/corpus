@@ -13,7 +13,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ORCHESTRATOR_LANE } from "@corpus/contract";
 import { HttpError } from "../errors.js";
 import { openProjection, type ProjectionDb } from "../projection/index.js";
-import { assertRecipientResolvable, createLaneScopeLookup, isDesignatedRoot } from "./scope.js";
+import {
+  assertRecipientResolvable,
+  assertScopeIsLane,
+  createLaneScopeLookup,
+  isDesignatedRoot,
+} from "./scope.js";
 
 let dir: string;
 let projection: ProjectionDb;
@@ -353,5 +358,88 @@ describe("assertRecipientResolvable", () => {
     expect(missing.body.message.replace("th_gone", "X")).toBe(
       undesignated.body.message.replace("th_root", "X"),
     );
+  });
+});
+
+// SERVER-118: `scope` is validated the way `recipient` is. It had no validation
+// at all, so any `th_…` reached `observePark` and made `QueueStatus.agent.live`
+// true against a roster listing nothing live.
+describe("assertScopeIsLane", () => {
+  it("passes an omitted scope, which is the orchestrator's lane", () => {
+    expect(() => {
+      assertScopeIsLane(projection, undefined);
+    }).not.toThrow();
+  });
+
+  it("passes the orchestrator, which is a lane whatever is designated", () => {
+    expect(() => {
+      assertScopeIsLane(projection, ORCHESTRATOR_LANE);
+    }).not.toThrow();
+  });
+
+  it("passes a designated root", () => {
+    thread("th_root", { resident: "Ana" });
+    expect(() => {
+      assertScopeIsLane(projection, "th_root");
+    }).not.toThrow();
+  });
+
+  it("refuses a thread that holds no resident with a 422 naming the value", () => {
+    thread("th_root");
+    try {
+      assertScopeIsLane(projection, "th_root");
+      expect.unreachable("expected a refusal");
+    } catch (error) {
+      expect(error).toBeInstanceOf(HttpError);
+      const http = error as HttpError;
+      expect(http.status).toBe(422);
+      expect(http.body).toMatchObject({ code: "unknown_recipient", recipient: "th_root" });
+    }
+  });
+
+  it("refuses a thread with a parent: only a standalone thread can be designated", () => {
+    thread("th_child", { parent: "doc_host", resident: "Ana" });
+    expect(() => {
+      assertScopeIsLane(projection, "th_child");
+    }).toThrow(HttpError);
+  });
+
+  // Same refusal for "no such thread" and "that thread is not a lane", exactly
+  // as `assertRecipientResolvable` gives it: telling them apart would make the
+  // refusal an existence oracle over the corpus.
+  it("refuses an unknown thread the same way, so the refusal is no existence oracle", () => {
+    thread("th_root");
+    const refusal = (scope: string): HttpError => {
+      try {
+        assertScopeIsLane(projection, scope);
+      } catch (error) {
+        return error as HttpError;
+      }
+      return expect.unreachable("expected a refusal");
+    };
+    const missing = refusal("th_gone");
+    const undesignated = refusal("th_root");
+    expect(missing.status).toBe(undesignated.status);
+    expect(missing.body.code).toBe(undesignated.body.code);
+    expect(missing.body.message.replace("th_gone", "X")).toBe(
+      undesignated.body.message.replace("th_root", "X"),
+    );
+  });
+
+  // The message has to carry the fix, because a park that names a thread with no
+  // resident is not a park anything will ever hand work to and the reason is not
+  // guessable from a bare "unknown".
+  it("names the recovery in the refusal", () => {
+    thread("th_root");
+    try {
+      assertScopeIsLane(projection, "th_root");
+      expect.unreachable("expected a refusal");
+    } catch (error) {
+      const message = (error as HttpError).body.message;
+      expect(message).toContain("th_root");
+      expect(message).toContain("omit `scope`");
+      expect(message).toContain("designate a resident");
+      expect(message).toContain("Nothing was parked");
+    }
   });
 });

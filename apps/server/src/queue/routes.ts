@@ -1,8 +1,9 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { contractRoutes } from "@corpus/contract";
+import { contractRoutes, type Lane } from "@corpus/contract";
 import { resolveOriginFromPayload } from "../jobs/project.js";
 import type { ProjectionDb } from "../projection/index.js";
 import { NO_ORIGIN, toInProgressSet, type HeldOriginResolver } from "./held.js";
+import { assertScopeIsLane } from "./scope.js";
 import { toWireEvent } from "./store.js";
 import type { QueueService } from "./service.js";
 
@@ -30,6 +31,25 @@ export function mountQueueRoutes(
       ? NO_ORIGIN
       : (payload) => resolveOriginFromPayload(projection, payload);
 
+  /**
+   * SPEC.md §7's refusal of a `scope` that names no lane (SERVER-118), reached
+   * only where a park is about to be admitted — `scope.ts`'s
+   * {@link assertScopeIsLane} carries why this guards `idle` and not `claim-all`.
+   *
+   * A **projection-less** server checks nothing, for the reason `resolveOrigin`
+   * resolves nothing above and `NO_SCOPE_LOOKUP` routes everything to the
+   * orchestrator: with no database there is no designation to read, and there is
+   * no `GET /api/agents` for a park to contradict either — the falsehood this
+   * refusal exists to stop needs a roster to be false against. That server is
+   * `createServer` without a workspace, which is a unit test's.
+   */
+  const assertParkable: (scope: Lane | undefined) => void =
+    projection === undefined
+      ? () => undefined
+      : (scope) => {
+          assertScopeIsLane(projection, scope);
+        };
+
   app.openapi(contractRoutes.getQueueStatus, async (c) => c.json(await queue.status(), 200));
 
   // `scope` on both verbs, and `undefined` is not a third behaviour: the
@@ -39,6 +59,10 @@ export function mountQueueRoutes(
   // points cannot come to disagree about it.
   app.openapi(contractRoutes.idleQueue, async (c) => {
     const { timeout, scope } = c.req.valid("query");
+    // Before `queue.idle`, because `queue.idle` is what observes the park:
+    // admitting one and refusing afterwards would leave the lane's record —
+    // and the `agent.live` it produces — behind (SERVER-118).
+    assertParkable(scope);
     const available = await queue.idle({
       timeoutMs: timeout * SECONDS,
       signal: c.req.raw.signal,

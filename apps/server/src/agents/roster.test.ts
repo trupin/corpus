@@ -417,3 +417,148 @@ describe("the queue status's aggregate", () => {
     expect(after.since).not.toBeNull();
   });
 });
+
+// SERVER-118. `recipient` has been refused against `isDesignatedRoot` since
+// CONTRACT-051; `scope` on `GET /api/queue/idle` was validated only as
+// `LaneSchema`, so any `th_…` passed and flowed into `observePark`. Parking is
+// what presence *is*, so an admitted non-lane made `QueueStatus.agent.live` true
+// for a grace window — indefinitely if the loop kept re-parking — while
+// `GET /api/agents`, which lists designated roots and only those, listed nothing
+// live. The contract publishes those two as one observation at two grains, and
+// it is a decision use rather than a display: `corpus queue status --json |
+// jq -e '.agent.live'` is documented as a guard before enqueuing work.
+describe("a scope that names no lane", () => {
+  const agent = async (): Promise<{ live: boolean; since: string | null }> => {
+    const response = await ws.request("/api/queue/status", { headers: AUTH });
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { agent: { live: boolean; since: string | null } }).agent;
+  };
+
+  const parkAndRead = async (scope: string): Promise<Response> => {
+    const attempt = park(scope);
+    const response = await attempt.done;
+    attempt.leave();
+    return response;
+  };
+
+  it("refuses a park on a standalone thread that holds no resident", async () => {
+    const { id } = await createThread(ws, { body: "nobody is resident here" });
+
+    const response = await parkAndRead(id);
+
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as { code: string; recipient: string; message: string };
+    expect(body).toMatchObject({ code: "unknown_recipient", recipient: id });
+    expect(body.message).toContain("omit `scope`");
+  });
+
+  it("refuses a park on a thread this workspace does not hold, identically", async () => {
+    const missing = await parkAndRead("th_deadbeef");
+    const { id } = await createThread(ws, { body: "no resident" });
+    const undesignated = await parkAndRead(id);
+
+    expect(missing.status).toBe(422);
+    const a = (await missing.json()) as { code: string; message: string };
+    const b = (await undesignated.json()) as { code: string; message: string };
+    expect(a.code).toBe(b.code);
+    // The two refusals differ only in the value they quote, so the refusal is no
+    // existence oracle over the corpus.
+    expect(a.message.replace("th_deadbeef", "X")).toBe(b.message.replace(id, "X"));
+  });
+
+  // **The one that matters.** A park the server never admitted leaves no record,
+  // so the aggregate has nothing to be true about.
+  it("leaves agent.live false and the roster untouched", async () => {
+    const { id } = await createThread(ws, { body: "a typo'd --thread" });
+    expect(await agent()).toEqual({ live: false, since: null });
+
+    // Presence is read while the attempt is outstanding rather than after it,
+    // so this asserts the property and not the status code: pre-fix the request
+    // was admitted, parked and observed, and these two lines were where the lie
+    // showed — `live: true` beside a roster with nothing live on it.
+    const attempt = park(id);
+    await settle();
+    expect(await agent()).toEqual({ live: false, since: null });
+    expect((await roster()).map((row) => row.lane)).toEqual(["orchestrator"]);
+
+    attempt.leave();
+    expect((await attempt.done).status).toBe(422);
+    // And it stays false: the pre-fix record sat in the tracker for a whole
+    // grace window, so advancing the clock is where "indefinitely" was visible.
+    ws.advance(60_000);
+    expect((await agent()).live).toBe(false);
+  });
+
+  it("still admits the orchestrator's lane, named or omitted", async () => {
+    const named = park("orchestrator");
+    const unscoped = park();
+    await settle();
+
+    expect((await agent()).live).toBe(true);
+    expect((await laneRow("orchestrator")).live).toBe(true);
+
+    named.leave();
+    unscoped.leave();
+    await Promise.all([named.done, unscoped.done]);
+  });
+
+  // **The judgment call, stated as a test.** A resident released while its
+  // listener is parked is a real sequence, and it is CONTRACT-053's window: the
+  // park is *not* disturbed — §7's presence is the held request, and a lane the
+  // server is at this moment holding an `idle` open on has somebody listening on
+  // it whatever the frontmatter now says — so `agent.live` and the roster
+  // legitimately disagree until the listener stops and the lane lapses. What is
+  // refused is the **re-park**. A test that forbade all disagreement would
+  // forbid this one, which is why the assertion above is about a lane that was
+  // never designated rather than about the two answers always matching.
+  it("keeps a park admitted before the release, and refuses only the re-park", async () => {
+    const id = await designatedThread("released out from under its listener");
+    const parked = park(id);
+    await settle();
+
+    expect((await ws.del(`/api/threads/${id}/resident`)).status).toBe(200);
+
+    // The legitimate disagreement: nothing lists the lane, and somebody is
+    // holding an `idle` open on it.
+    expect((await roster()).map((row) => row.lane)).toEqual(["orchestrator"]);
+    expect((await agent()).live).toBe(true);
+
+    // The re-park is where the refusal lands.
+    expect((await parkAndRead(id)).status).toBe(422);
+
+    // And the disagreement resolves itself: the listener stops, the lane lapses,
+    // and §7's fallback hands its already-stamped events to the orchestrator's
+    // unscoped claim rather than stranding them.
+    parked.leave();
+    await parked.done;
+    ws.advance(LANE_GRACE_MS + 1);
+    expect((await agent()).live).toBe(false);
+  });
+
+  // The aggregate's `since` is "the most recent of *their* instants" — the live
+  // lanes'. It used to be the maximum over every record whatever its liveness,
+  // so a lane that parked later and then lapsed supplied the instant behind a
+  // `live` it had nothing to do with.
+  it("reports the instant of the lane that is actually live", async () => {
+    const held = await designatedThread("still listening");
+    const gone = await designatedThread("parked later, then left");
+
+    const parked = park(held);
+    await settle();
+    ws.advance(60_000);
+    const brief = park(gone);
+    await settle();
+    brief.leave();
+    await brief.done;
+    ws.advance(LANE_GRACE_MS + 1);
+
+    const status = await agent();
+    expect(status.live).toBe(true);
+    expect((await laneRow(gone)).live).toBe(false);
+    expect(status.since).toBe((await laneRow(held)).since);
+    expect(status.since).not.toBe((await laneRow(gone)).since);
+
+    parked.leave();
+    await parked.done;
+  });
+});

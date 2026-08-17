@@ -186,6 +186,45 @@ describe("the workspace-wide aggregate", () => {
     tracker.close();
   });
 
+  // SERVER-118, the second half of the published sentence: `since` is "the most
+  // recent of *their* instants" — the live lanes' — and it used to be the
+  // maximum over every record whatever its liveness. A lane that parked later
+  // and then lapsed therefore supplied the instant behind a `live` it had
+  // nothing to do with, and no `AgentLane.since` on the roster carried it.
+  it("carries the most recent instant among the live lanes, not among all of them", () => {
+    const tracker = createLaneTracker({ now });
+    // The lane that is actually live: parked early and still holding.
+    const held = tracker.observePark(LANE);
+    const lanePark = "2023-11-14T22:13:20Z";
+
+    // A second lane parks later, leaves, and lapses. Its instant is the most
+    // recent in the map and the least relevant to the answer.
+    advance(60_000);
+    tracker.observePark(OTHER)();
+    advance(LANE_GRACE_MS + 1);
+
+    expect(tracker.presenceOf(OTHER).live).toBe(false);
+    expect(tracker.presence()).toEqual({ live: true, since: lanePark });
+
+    held();
+    tracker.close();
+  });
+
+  // The state that has no live lanes for "theirs" to range over. `since` is
+  // defined as "when a listener was last observed parked — null when none ever
+  // has been", so a null here would say nobody has ever parked about a
+  // workspace whose agent left: the difference `corpus agents` prints as
+  // `lapsed` versus `waiting`, and `corpus queue status` as "last parked 16m
+  // ago" versus "none has parked since the server started".
+  it("still reports when a listener was last parked once every lane has lapsed", () => {
+    const tracker = createLaneTracker({ now });
+    tracker.observePark(LANE)();
+    advance(LANE_GRACE_MS + 1);
+
+    expect(tracker.presence()).toEqual({ live: false, since: "2023-11-14T22:13:20Z" });
+    tracker.close();
+  });
+
   it("says whether an agent is present, never how many", () => {
     const tracker = createLaneTracker({ now });
     const one = tracker.observePark(LANE);

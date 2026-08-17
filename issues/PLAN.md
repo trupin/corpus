@@ -677,7 +677,7 @@ parent-first is the one where it annexes another scope's conversation.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SERVER-117 | The scope walk abandons the parent edge, so a resident loses conversations on its own artifacts | done | P0 | — |
-| SERVER-118 | `GET /api/queue/idle` accepts any thread id as a scope, and `agent.live` then lies | todo | P0 | — |
+| SERVER-118 | `GET /api/queue/idle` accepts any thread id as a scope, and `agent.live` then lies | done | P0 | — |
 | UI-118 | An explicit recipient equal to the client's computed lane is sent as absence | todo | P0 | — |
 | AGENT-029 | A resident working longer than the grace window reads as absent, and gets a second listener | todo | P0 | — |
 
@@ -705,6 +705,7 @@ parent-first is the one where it annexes another scope's conversation.
 | CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | todo | P2 | — |
 | CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
 | CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | todo | P1 | — |
+| CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | todo | P1 | — |
 
 **Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
 a required field, which breaks every constructor of one: `SERVER-086` (the

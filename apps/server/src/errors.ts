@@ -169,6 +169,38 @@ export function unknownRecipient(recipient: string): HttpError {
   });
 }
 
+/**
+ * A `scope` that names no lane, on a queue verb that would otherwise park on it
+ * (SPEC.md §7, SERVER-118).
+ *
+ * **The same `422` and the same code as {@link unknownRecipient}, deliberately.**
+ * `unknown_recipient` is the contract's name for *"the lane you named does not
+ * exist"* — its own published field description reads "the value that named no
+ * lane", with no mention of which parameter carried it — and the two refusals
+ * have one recovery between them: name a lane that exists, or name none. Minting
+ * a second code for the same fact would hand a client two branches for one
+ * remedy, which is the mistake `unknownJob` and `unknownRecipient` are kept
+ * apart to avoid making in the other direction (they have *different*
+ * remedies).
+ *
+ * The message says what a park is, because that is the fix a caller needs and it
+ * is not guessable from the refusal: a lane exists because somebody designated a
+ * resident on a standalone thread, so parking on a thread that has none is not a
+ * park that will ever be given work — and, before this refusal, it was a park
+ * that made the whole workspace report an agent listening when none was.
+ */
+export function unknownLaneScope(scope: string): HttpError {
+  return new HttpError(422, {
+    code: "unknown_recipient",
+    message:
+      `\`${scope}\` names no lane to consume: either this workspace holds no such thread, or that ` +
+      "thread holds no resident and is therefore not a lane at all (SPEC.md §7). Nothing was " +
+      "parked and no work was claimed — omit `scope` to take the orchestrator's lane, designate a " +
+      "resident on that thread first, or pick a lane from `GET /api/agents`.",
+    recipient: scope,
+  });
+}
+
 export function staleKey(message: string, doc: Doc): HttpError {
   return new HttpError(409, { code: "stale_key", message, doc });
 }

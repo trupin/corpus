@@ -39,7 +39,7 @@
 
 import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
 import { originDocumentOf, resolveOrigin } from "../core/provenance.js";
-import { unknownRecipient } from "../errors.js";
+import { unknownLaneScope, unknownRecipient } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { ScopeRootLookup } from "./lanes.js";
 
@@ -216,4 +216,47 @@ export function isDesignatedRoot(db: ProjectionDb, id: string): boolean {
 export function assertRecipientResolvable(db: ProjectionDb, recipient: Lane | undefined): void {
   if (recipient === undefined || recipient === ORCHESTRATOR_LANE) return;
   if (!isDesignatedRoot(db, recipient)) throw unknownRecipient(recipient);
+}
+
+/**
+ * Refuses a `scope` that names no lane, **before the request is parked**
+ * (SPEC.md §7, SERVER-118).
+ *
+ * {@link assertRecipientResolvable}'s sibling, one predicate and one refusal
+ * apart from it, and it exists because `scope` had none: a thread id is a thread
+ * id on the wire, so `LaneSchema` admits every `th_…` and any one of them
+ * reached `observePark`. **Parking is what presence *is***, so an admitted
+ * non-lane made `QueueStatus.agent.live` true for a grace window while
+ * `GET /api/agents` — which lists designated roots and only those — listed
+ * nothing live. The contract publishes those two as one observation at two
+ * grains (*"`live` is true exactly when some lane of `GET /api/agents` is
+ * live"*), and a typo'd or stale `--thread` falsified it in silence, indefinitely
+ * if the loop kept re-parking. It is a decision use and not a display: the CLI
+ * documents `corpus queue status --json | jq -e '.agent.live'` as a guard before
+ * enqueuing work.
+ *
+ * **Asked at the request, and never re-asked of one already admitted.** A
+ * resident released while its listener is parked keeps that park: §7's presence
+ * is the held request, and a lane the server is at this moment holding an `idle`
+ * open on has somebody listening on it whatever the frontmatter now says. The
+ * park ends when its window does, the **re-park** is refused, and the lane leaves
+ * presence one grace window later — at which point §7's own fallback hands its
+ * already-stamped events to the orchestrator's unscoped claim, so nothing is
+ * stranded by the refusal. Ending the in-flight request instead would abort a
+ * request for a reason that is not the request's, and dropping the lane from the
+ * tracker on release would answer "nobody is listening" about a request the
+ * server is listening on. That window — live with no roster row — is
+ * CONTRACT-053's, and it stays legal: what this refuses is a lane that was
+ * **never** one, not a lane that has stopped being one.
+ *
+ * Scoped to a **park** rather than to every scoped verb: `claim-all` on a lane
+ * that has just lost its resident is how the listener still holding it drains
+ * the events already stamped with it, and those events are invisible to the
+ * orchestrator until the lane lapses. Refusing there would make them claimable
+ * by nobody for a whole grace window — a fix that stranded work in order to
+ * tidy a parameter.
+ */
+export function assertScopeIsLane(db: ProjectionDb, scope: Lane | undefined): void {
+  if (scope === undefined || scope === ORCHESTRATOR_LANE) return;
+  if (!isDesignatedRoot(db, scope)) throw unknownLaneScope(scope);
 }

@@ -126,7 +126,8 @@ export interface LaneTracker {
   /**
    * The roster's own verdict **aggregated over every lane**, which is what
    * `QueueStatus.agent` publishes: live iff some lane is live, `since` the most
-   * recent of their instants (CONTRACT-045).
+   * recent of the **live** lanes' instants (CONTRACT-045; SERVER-118 for which
+   * lanes' instants, and for the one state that has none).
    *
    * One notion of presence at two grains, from one map — so the console strip
    * and the recipient picker cannot come to disagree about whether anybody is
@@ -303,16 +304,47 @@ export function createLaneTracker(options: LaneTrackerOptions = {}): LaneTracker
    * open — and the alternative would answer "nobody is listening" about a
    * request the server is at that moment listening on. It resolves itself: the
    * lane leaves this map's live set one grace window after that listener stops.
+   *
+   * That is the **only** lane this can report that the roster does not carry, and
+   * it is so because a park on a thread that was never a lane is refused at the
+   * route (`queue/scope.ts`'s `assertScopeIsLane`, SERVER-118). Before that
+   * refusal existed, any `th_…` at all could enter this map and make `live` true
+   * against a roster listing nothing live — which is the published sentence
+   * (*"`live` is true exactly when some lane of `GET /api/agents` is live"*)
+   * simply being false.
+   *
+   * **`since` is the most recent instant among the lanes that are live**, and
+   * that is the same sentence's second half (*"`since` is the most recent of
+   * their instants"*). It used to be the maximum over *every* record regardless
+   * of liveness, so a lapsed lane that had parked more recently than the live one
+   * supplied the aggregate's `since` — an instant no `AgentLane.since` carried,
+   * and one that made `now − since` something other than the age of the evidence
+   * behind `live`.
+   *
+   * **With nothing live it falls back to the most recent instant overall**, and
+   * that is deliberate rather than a leftover. `since` is defined by the contract
+   * as *"when a listener was last observed parked — null when none ever has
+   * been"*, so answering `null` for a workspace whose agent left ten minutes ago
+   * would assert something stronger and falser than the thing being fixed: it is
+   * the difference the CLI prints as `no agent — last parked 10m ago` versus `no
+   * agent — none has parked since the server started`, and `corpus agents` tells
+   * the two apart on exactly this field. There are no live lanes for "theirs" to
+   * range over in that state, so the aggregate reports the honest maximum
+   * instead — which, every record now belonging to a lane that was designated
+   * when its park was admitted, is a roster row's own `since` in every case but
+   * the released-mid-park one above.
    */
   const presence = (): AgentPresence => {
     const at = now();
-    let live = false;
-    let since: number | null = null;
+    let liveSince: number | null = null;
+    let anySince: number | null = null;
     for (const record of lanes.values()) {
-      if (liveAt(record, at)) live = true;
-      if (since === null || record.lastSeen > since) since = record.lastSeen;
+      if (anySince === null || record.lastSeen > anySince) anySince = record.lastSeen;
+      if (!liveAt(record, at)) continue;
+      if (liveSince === null || record.lastSeen > liveSince) liveSince = record.lastSeen;
     }
-    return { live, since: since === null ? null : formatInstant(since) };
+    const since = liveSince ?? anySince;
+    return { live: liveSince !== null, since: since === null ? null : formatInstant(since) };
   };
 
   return {
