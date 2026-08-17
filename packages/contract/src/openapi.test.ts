@@ -178,6 +178,29 @@ function requestBodyDefaults(): DefaultedProperty[] {
   return found;
 }
 
+/** Prose keys — the nodes a reader of the published document actually reads. */
+const PROSE_KEYS = new Set(["description", "summary", "title", "example"]);
+
+/**
+ * Every prose node in the whole document, by JSON pointer.
+ *
+ * A sweep, not a lookup: CONTRACT-052's issue named three stale descriptions
+ * and walking the generated artifact found five, because the two it missed sat
+ * where nobody thought to grep. A claim asserted only where it was last written
+ * is a claim that survives being copied somewhere else.
+ */
+function* allDescriptions(node: unknown = document, path = "#"): Generator<[string, string]> {
+  if (Array.isArray(node)) {
+    for (const [index, value] of node.entries()) yield* allDescriptions(value, `${path}/${index}`);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  for (const [key, value] of Object.entries(node)) {
+    if (PROSE_KEYS.has(key) && typeof value === "string") yield [`${path}/${key}`, value];
+    yield* allDescriptions(value, `${path}/${key}`);
+  }
+}
+
 describe("generated OpenAPI document", () => {
   it("is an OpenAPI 3.1 document stamped with the contract version", () => {
     expect(document.openapi).toBe("3.1.0");
@@ -295,6 +318,31 @@ describe("generated OpenAPI document", () => {
       expect(description, `${name}.emittedBy`).toContain(entry.emittedBy);
       expect(description, `${name}.refetchedBy`).toContain(entry.refetchedBy);
     }
+  });
+
+  /**
+   * The document said "these ten shapes and no others" while listing nine — a
+   * count hand-written beside a rendered list, which is the one arrangement
+   * guaranteed to drift (CONTRACT-055's sweep found it). The claim is now
+   * interpolated, so this asserts the two agree rather than asserting a number.
+   *
+   * Written as a walk over every description in the document, not a lookup on
+   * `/events`: a closed-vocabulary claim is exactly the sort of sentence that
+   * gets copied to a second route later.
+   */
+  it("claims a shape count nowhere that disagrees with the shapes it lists", () => {
+    const description = operation("/events", "get").description ?? "";
+    const bullets = description.split("\n").filter((line) => line.startsWith("- `["));
+    expect(bullets).toHaveLength(QUERY_KEY_NAMES.length);
+
+    const claims = [...allDescriptions()].flatMap(([location, prose]) =>
+      [...prose.matchAll(/these (\S+) shapes and no others/g)].map(([, count]) => ({
+        location,
+        count,
+      })),
+    );
+    expect(claims.length).toBeGreaterThan(0);
+    expect(claims.filter((claim) => claim.count !== String(QUERY_KEY_NAMES.length))).toEqual([]);
   });
 
   /**
@@ -2483,6 +2531,66 @@ describe("one notion of presence, at two grains (CONTRACT-045)", () => {
     const description = operation("/events", "get").description ?? "";
     expect(description).toContain("every change to agent presence");
     expect(description).toContain("a listener parking, its hold ending, and the grace window");
+  });
+});
+
+/**
+ * CONTRACT-055 — the converse of the case above.
+ *
+ * For presence the vocabulary was already right and the server was the side out
+ * of step, which is why SERVER-114 needed no contract change. Here the server is
+ * about to become correct (SERVER-115 makes seven emitters name `["agents"]`)
+ * and the published description is what would be lying, so the wording lands
+ * first. These pin it in the **generated** document, where a client author who
+ * never opens the package reads it.
+ */
+describe("the roster is staled by writes named after other resources (CONTRACT-055)", () => {
+  const events = () => operation("/events", "get").description ?? "";
+
+  it("publishes the rule the emitters follow, above the list rather than inside one entry", () => {
+    expect(events()).toContain(
+      "**An emitter names every key a route carrying the changed fact is cached under, not the " +
+        "key of the route the fact is named after**",
+    );
+  });
+
+  it("says a queue transition and a job-log append each name the roster key", () => {
+    expect(events()).toContain('**A queue transition names `["agents"]` in the same frame**');
+    expect(events()).toContain('**A transition and an append each name `["agents"]` in the same');
+  });
+
+  it("says why on the roster entry, since the coupling is invisible at the call site", () => {
+    expect(events()).toContain("a lane row is computed at read time and never stored");
+    expect(events()).toContain("a lane's `summary` is read off the same `events` and `jobs` rows");
+  });
+
+  /**
+   * The roster's own route is where a UI author implementing `useAgents` lands,
+   * and `["agents"]` alone would tell them to refetch on designation and
+   * presence — which is the stale roster this issue exists to prevent.
+   */
+  it("warns on the roster route itself, not only in the stream's vocabulary", () => {
+    const roster = operation("/api/agents", "get").description ?? "";
+    expect(roster).toContain("**Every row here is derived");
+    expect(roster).toContain(
+      "A client that refetches this only on designation and presence changes will show a stale " +
+        "roster",
+    );
+  });
+
+  /**
+   * The sweep as a test. No published description may present the roster's
+   * emitters as designation and presence and stop there — the sentence this
+   * issue replaced. Non-vacuity is checked against the retired wording in
+   * CONTRACT-055's log.
+   */
+  it("leaves no description anywhere claiming the roster moves on presence alone", () => {
+    const offenders = [...allDescriptions()].filter(
+      ([, prose]) =>
+        /lapsing past the grace window\.\s+Refetch/.test(prose) ||
+        /`\["agents"\]`[^.]*only (?:on|when)[^.]*presence/.test(prose),
+    );
+    expect(offenders.map(([location]) => location)).toEqual([]);
   });
 });
 

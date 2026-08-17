@@ -140,3 +140,103 @@ describe("the published query-key vocabulary", () => {
     expect(describeQueryKeyVocabulary()).toBe(describeQueryKeyVocabulary());
   });
 });
+
+/**
+ * CONTRACT-055 — a key is emitted by the writes that stale it, not by the
+ * writes named after it.
+ *
+ * SERVER-114 established the rule (*an emit names every key a route carrying
+ * the changed fact is cached under, not the key of the route the fact is named
+ * after*) and its sweep found seven emitters that change the roster without
+ * naming `["agents"]`. `SERVER-115` fixes them; this is the half that has to be
+ * published first, or the server ships a frame the contract's own description
+ * denies.
+ *
+ * These assertions are about **what the description says**, which is all this
+ * package can see: `packages/contract` does not import `apps/server` and must
+ * not, so the vocabulary cannot be held against the actual emitters from here.
+ * The cross-check that would catch a *server* drifting from this prose has to
+ * live in `apps/server`, over its event bus — recorded in CONTRACT-055's log,
+ * and not silently implied by anything below.
+ */
+describe("keys the roster is invalidated by (CONTRACT-055)", () => {
+  /** Entries that tell a reader a frame of theirs also carries `["agents"]`. */
+  const crossReferencing = QUERY_KEY_NAMES.filter((name) =>
+    QUERY_KEY_VOCABULARY[name].emittedBy.includes('`["agents"]`'),
+  );
+
+  it("names the writes that stale the roster among the roster key's emitters", () => {
+    const { emittedBy } = QUERY_KEY_VOCABULARY.agents;
+    for (const emitter of [
+      "queue transition",
+      "job-log append",
+      "out of band",
+      "designated root thread being retitled or deleted",
+      "projection rebuild",
+    ]) {
+      expect(emittedBy, emitter).toContain(emitter);
+    }
+  });
+
+  /**
+   * The clause the issue exists for. A description that states the coupling
+   * without the derivation behind it leaves the next reader to rediscover it,
+   * and rediscovering it is what cost this release two issues.
+   */
+  it("says why a queue write changes an agents read, not only that it does", () => {
+    const { emittedBy } = QUERY_KEY_VOCABULARY.agents;
+    expect(emittedBy).toContain("a lane row is computed at read time and never stored");
+    expect(emittedBy).toContain("`events` and `jobs` rows");
+    expect(emittedBy).toContain("whenever it writes a row the roster reads");
+  });
+
+  /**
+   * `AgentLane.summary` promises its bound and refuses to promise its content,
+   * so the reason given here must not read as a second, contradicting promise.
+   */
+  it("gives the derivation as a reason without promising it", () => {
+    expect(QUERY_KEY_VOCABULARY.agents.emittedBy).toContain(
+      "The derivation itself may change without a contract change",
+    );
+    expect(QUERY_KEY_VOCABULARY.agents.emittedBy).toContain("the invalidation may not");
+  });
+
+  /**
+   * Stated in both directions, and pinned in both: a reader who arrives at the
+   * queue entry from a queue transition must learn the coupling there, and a
+   * reader of the roster entry must find the same emitters listed back. Half an
+   * update is exactly how CONTRACT-052's stale descriptions survived.
+   */
+  it("cross-references the roster from every entry a roster-staling write also names", () => {
+    expect(crossReferencing).toEqual(["queue", "jobs"]);
+    for (const name of crossReferencing) {
+      expect(QUERY_KEY_VOCABULARY[name].emittedBy, name).toContain("a lane row of the roster");
+      expect(QUERY_KEY_VOCABULARY[name].emittedBy, name).toContain("derived from");
+    }
+    // …and the roster entry names those same two families back.
+    expect(QUERY_KEY_VOCABULARY.agents.emittedBy).toContain(
+      "a queue transition or a job-log append",
+    );
+  });
+
+  /**
+   * The rebuild is the same defect shape found by this issue's own sweep: it is
+   * named after the projection and emits four keys named after other resources,
+   * and until now no entry said so.
+   */
+  it("names the projection rebuild on every key the rebuild emits", () => {
+    for (const name of ["docs", "tree", "queue", "jobs", "agents"] as const) {
+      expect(QUERY_KEY_VOCABULARY[name].emittedBy, name).toContain("projection rebuild");
+    }
+  });
+
+  /**
+   * The other find: a queue transition carries `["docs"]` because `failed-job`
+   * is a `needs=` reason computed from `events.status` (SERVER-028). Shipped
+   * behaviour that the published vocabulary described only under `["queue"]`.
+   */
+  it("names queue transitions among the document collection's emitters", () => {
+    expect(QUERY_KEY_VOCABULARY.docs.emittedBy).toContain("every queue transition");
+    expect(QUERY_KEY_VOCABULARY.docs.emittedBy).toContain("needs=failed-job");
+  });
+});

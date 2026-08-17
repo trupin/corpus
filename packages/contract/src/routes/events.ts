@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { describeQueryKeyVocabulary } from "../query-keys.js";
+import { describeQueryKeyVocabulary, QUERY_KEY_NAMES } from "../query-keys.js";
 import { VALIDATION_RESPONSE } from "./responses.js";
 
 /**
@@ -37,10 +37,14 @@ export const streamEvents = createRoute({
   description:
     "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, " +
     "dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\n" +
-    "The key vocabulary is **closed** — these ten shapes and no others. Constants and helpers that " +
+    `The key vocabulary is **closed** — these ${QUERY_KEY_NAMES.length} shapes and no others. ` +
+    "Constants and helpers that " +
     "build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and " +
     "`@corpus/contract/client`, so the emitter and the client bridge share one source rather than " +
-    "two copies that drift:\n\n" +
+    "two copies that drift.\n\n" +
+    "**An emitter names every key a route carrying the changed fact is cached under, not the key " +
+    "of the route the fact is named after** — so several of these travel in frames named after " +
+    "some other resource, and each entry below says which and why:\n\n" +
     describeQueryKeyVocabulary(),
   security: [],
   request: {

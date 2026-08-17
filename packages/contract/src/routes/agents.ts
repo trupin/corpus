@@ -51,7 +51,13 @@ export const getAgentRoster = createRoute({
     'and are refetched when an `invalidate` frame names `["agents"]`; nothing about them travels ' +
     "over SSE, which carries key names and never data. Read-only; no acting party, and no " +
     "parameters — there is one roster, and a filtered one would hide the lapsed lanes the " +
-    "recipient picker most needs to show.",
+    "recipient picker most needs to show.\n\n" +
+    "**Every row here is derived, so the frame that stales it is often named after something " +
+    "else.** A lane's `summary` is read off the same `events` and `jobs` rows a queue transition " +
+    "or a job-log append writes, and its `origin.title` is the root thread's current title — so " +
+    'those writes name `["agents"]` too, alongside `["queue"]`, `["jobs"]` or `["docs"]`. A ' +
+    "client that refetches this only on designation and presence changes will show a stale " +
+    "roster; `GET /events` lists the full set of emitters.",
   responses: {
     200: jsonContent(AgentRosterSchema, "Every lane, the orchestrator's included."),
     401: UNAUTHORIZED_RESPONSE,
