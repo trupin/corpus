@@ -29,6 +29,16 @@ jobs:
       # so it sits here with the other cheap gates and fails in seconds.
       - name: issue tracker agreement
         run: npm run issues:check
+      # Every `§N` in the tree must name a heading SPEC.md actually has
+      # (INFRA-029). Here rather than in a hook, and the reasoning is not only
+      # cost: the citation half is diff-scopable but the heading half is not, so
+      # a staged-file version would pass the very commit that renumbers a section
+      # and strands the citations elsewhere. The historical citation of a section
+      # 9.4 survived eleven copies and four months and shipped in the client because
+      # nothing looked; a PR-time failure is early enough, since nothing here is
+      # unrecoverable after the fact. Needs no build — runs in under a second.
+      - name: SPEC cross-references
+        run: npm run spec:check
       # Supply-chain gate (INFRA-013): zero `npm audit` findings of ANY severity.
       # Not `--audit-level` — that tolerates the `info` bucket — but a
       # `metadata.vulnerabilities.total === 0` assertion, which has no floor.

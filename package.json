@@ -31,6 +31,7 @@
     "pack:check": "node --import tsx scripts/check-pack.ts",
     "version:check": "node --import tsx scripts/check-versions.ts",
     "issues:check": "node --import tsx scripts/check-issues.ts",
+    "spec:check": "node --import tsx scripts/check-spec-refs.ts",
     "release:prepare": "node --import tsx scripts/release-prepare.ts",
     "publish:dry-run": "cd dist-package && npm publish --dry-run --access public",
     "lint": "eslint .",

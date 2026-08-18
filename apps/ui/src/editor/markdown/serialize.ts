@@ -846,9 +846,9 @@ interface JoinNode {
  * Inside a tight list item every block the printer emits ends on a line that a
  * following list marker has to *interrupt* to start a list of its own, and
  * CommonMark only lets a list interrupt a paragraph in the cases where the
- * marker cannot be mistaken for a continuation of the text above it (§5.3,
- * "Lists"). Two spellings fail that test, and both are two keystrokes away in
- * the editor:
+ * marker cannot be mistaken for a continuation of the text above it
+ * (CommonMark §5.3, "Lists"). Two spellings fail that test, and both are two
+ * keystrokes away in the editor:
  *
  * - **an ordered list whose first number is not 1** (`orderedList` carries
  *   `attrs.start`, so this is not only reachable from a file). Printed flush,

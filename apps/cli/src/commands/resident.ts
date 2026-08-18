@@ -17,19 +17,26 @@ import type { Resident } from "@corpus/contract";
  *   owning its scope; §7 requires the miss be *reported* rather than silently
  *   substituted, and this is that report.
  *
- * **The words are the contract's, not this CLI's.** `schemas/agents.ts` names
- * the first *a general resident* and is explicit that a caller must not
- * substitute a word for a null `name` and print it *as a name* — beside real
- * profile names it would be indistinguishable from one, and could collide with
- * an agent-def titled the same. So the label for a general resident is never in
- * the position a profile name occupies: a profile is always printed as
- * `name (something)`, and a general resident has no parenthesis at all.
+ * **The rule is the contract's; the word is this CLI's, and deliberately.**
+ * `schemas/agents.ts` states the binding part — a caller must never substitute a
+ * word for a null `name` and print it *as a name*, because beside real profile
+ * names it would be indistinguishable from one and could collide with an
+ * agent-def titled the same — and then says outright that *"a caller that wants
+ * a word for a general resident picks its own"*. So what is borrowed here is the
+ * prohibition, not the vocabulary.
  *
- * Borrowing the contract's vocabulary rather than inventing a CLI-local one is
- * also why this file is three lines long. The board renders the same three
- * states from the same schema; two surfaces that invented their own words for a
- * general resident would leave a person reading `corpus agents` and the board
- * unable to tell they were being told the same fact.
+ * This file obeys the prohibition by position: a profile always prints as
+ * `name (something)`, and a general resident has no parenthesis at all, so the
+ * label can never be read as occupying a profile name's slot.
+ *
+ * **`@corpus/kit` says it differently, and that is not drift.** The board's badge
+ * reads *"resident, no profile"* where a row here reads *"a general resident"* —
+ * one is a label under a title, the other a noun phrase in a list, and a single
+ * string would read badly in one of them. What must agree between the two
+ * surfaces is the *fact* and the prohibition, and those are stated once, in the
+ * schema. Restating the schema's rule is right; sharing its wording was never
+ * required, and claiming to share it when we do not is what would mislead the
+ * next reader here.
  */
 
 /**

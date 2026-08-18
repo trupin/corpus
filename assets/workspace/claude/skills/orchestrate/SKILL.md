@@ -291,8 +291,8 @@ switch.
   invoked as `/converse <the payload's threadId>`, and hand it the payload's `resident`
   **exactly as it came** — both fields, whatever they hold — because a subagent inherits
   nothing and what you leave out of a prompt does not reach it. Most designations name no
-  profile and arrive as `{"name":null,"docId":null}`: an ordinary designation, whose listener
-  is this workspace's own agent, and the nulls travel as nulls. **Invent nothing to fill
+  profile and arrive as `{"name":null,"docId":null}`: an ordinary designation, and
+  the nulls travel as nulls. **Invent nothing to fill
   them.** A word made up here arrives as the name of a profile, and sends the listener looking
   for a document nobody wrote. Where `name` is set it is a profile the designation was made
   for, and the id beside it goes with it. **What a listener does with either — a persona to
