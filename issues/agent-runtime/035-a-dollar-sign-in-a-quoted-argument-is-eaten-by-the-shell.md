@@ -239,9 +239,16 @@ Three deliberate choices inside that:
   never ran and no field landed), so the recovery clause already covers it. A shell-version
   matrix in a product skill is noise that gets baselined away; it is recorded here and in the
   agent's Domain Knowledge instead.
+  **Half of this was wrong — see *PR #50 review*, MAJOR 3.** Not naming the version still
+  stands; *"the recovery clause already covers it"* did not. The clause prescribed a resend of
+  the construction that had just failed, so it was non-terminating in precisely this case.
 - **`IFS= read -r var <<'EOF'` as the construction** — immune everywhere including bash 3.2,
   and rejected anyway: it silently truncates a multi-line value to its first line, and this
   issue is about not shipping constructions whose misuse is silent.
+  **Superseded in part — see *PR #50 review*, MAJOR 3.** Rejected as the *construction*, for
+  the reason given, and adopted as the *recovery*, where the truncation is out of scope: the
+  values that reach a flag are single-line by nature, and a multi-line value is a body, which
+  is never captured into a variable in the first place.
 
 ### One adjacent defect found and fixed
 
@@ -399,9 +406,204 @@ with `mdast-util-from-markdown`: `h2` counts unchanged at **16 / 13 / 15 / 7** a
 unclosed fences. Server stopped (`stopped (pid 44244)`); `lsof -nP -iTCP:8792 -sTCP:LISTEN`
 returns nothing.
 
+## PR #50 review
+
+**Model: Fable 5.** Four findings — MAJOR 3, MINOR 6, MINOR 7, NIT 10. Real workspace at
+`/tmp/agent035pr50/ws`, real server on port **8797** (never 8765, never 5173), stopped at the
+end. Every shell claim below measured in `bash 3.2.57(1)-release (arm64-apple-darwin24)` — the
+macOS `/bin/bash` — and `zsh 5.9`, against the real CLI wherever the value reaches a document.
+No newer `bash` exists on this machine, so *"bash ≥ 4 is unaffected"* is carried over from the
+original run and is **not** re-measured here; the skill text deliberately says *some shells*
+and never a version, so nothing shipped depends on it.
+
+### MAJOR 3 — the recovery clause was non-terminating
+
+**Reproduced, first as a script and then through the real CLI.** The reviewer's finding is
+exact: the construction the clause prescribes is one the clause's own trigger can be caused
+by.
+
+```
+$ /bin/bash /tmp/agent035pr50/odd1.sh          # title=$(cat <<'EOF' / O'Brien report / EOF / )
+/tmp/agent035pr50/odd1.sh: line 5: unexpected EOF while looking for matching `''
+/tmp/agent035pr50/odd1.sh: line 6: syntax error: unexpected end of file
+exit=2
+$ /bin/zsh /tmp/agent035pr50/odd1.sh
+title=[O'Brien report]
+exit=0
+```
+
+Through the real CLI, the same value going to `corpus doc create --title "$title"`:
+
+```
+=== bash 3.2, the construction, odd apostrophe, REAL CLI ===
+/tmp/agent035pr50/live_bad.sh: line 4: unexpected EOF while looking for matching `''
+/tmp/agent035pr50/live_bad.sh: line 8: syntax error: unexpected end of file
+exit=2
+```
+
+Nothing was created — the loud half is genuinely loud. The defect is that the shipped clause
+answered it with *"Build the value the way above and send it again"*, which reproduces the
+same parse error forever, having already forbidden the double quote.
+
+**Scope of the failing construction, measured, because it decides the fix's boundary.** The
+bug is in scanning `$( … )`, not in heredocs:
+
+| form | odd apostrophes, bash 3.2 | zsh 5.9 |
+| --- | --- | --- |
+| `v=$(cat <<'EOF' … EOF )`, single-line | syntax error, exit 2, nothing ran | value exact, exit 0 |
+| `v=$(cat <<'EOF' … EOF )`, multi-line | syntax error, exit 2, nothing ran | value exact, exit 0 |
+| the command's **own** heredoc, multi-line | value exact, exit 0 | value exact, exit 0 |
+| `IFS= read -r v <<'EOF'`, single-line | value exact, exit 0 | value exact, exit 0 |
+
+The third row is what makes the fix's boundary free rather than a compromise: a body is fed to
+`corpus doc edit … <<'EOF'` directly and is never captured into a variable, so the only values
+that meet this defect are flag values, and a flag value is one line.
+
+**The fix**, in `orchestrate/SKILL.md`, is a new paragraph after the existing clause — *"Nor is
+it the same lines again"* — naming the cause (the agent must stop reading the refusal as its
+own mistake, or it will keep rebuilding), giving `IFS= read -r` as a copyable block, and
+stating the boundary in the same breath so it cannot be promoted to the rule:
+
+> **That is a repair, not the rule, and its boundary is the reason:** it takes **one line** and
+> drops anything after it without saying so. So it is right for a flag … and never for a value
+> that spans lines. Nothing is lost by that boundary. A value that spans lines is a body, and a
+> body is fed to the command's own heredoc rather than captured into a variable first, so it
+> never meets the defect this paragraph repairs.
+
+**Proof the repair terminates — one step, both shells, real CLI**, and the value carries every
+character the rule exists for (`'`, `$`, a backtick):
+
+```
+=== bash 3.2, the RECOVERY, REAL CLI ===
+created doc_byx5msh7 — data/docs/inbox/o-brien-report-cabinet-quote-18-400-don-t-whoami-it.md
+exit=0
+=== zsh, the RECOVERY, REAL CLI ===
+created doc_6geg7o33 — data/docs/inbox/zsh-o-brien-report-18-400-don-t-whoami-it.md
+exit=0
+=== what actually landed ===
+doc_6geg7o33  note  open  Zsh — O'Brien report, $18,400, don't `whoami` it
+doc_byx5msh7  note  open  O'Brien report — cabinet quote, $18,400, don't `whoami` it
+```
+
+Byte-exact, `$18,400` intact, `` `whoami` `` not executed, both apostrophes present. The
+skill's example was then run **verbatim** as a `doc edit --title` against a live document:
+`edited doc_uyxaoerp` under both shells, and `corpus doc show` reads back
+`O'Brien — cabinet quote, $18,400`.
+
+The truncation that keeps `IFS= read -r` out of the general rule was re-measured and is as
+silent as the original run recorded — three lines in, one line out, exit `0`, both shells:
+
+```
+=== bash 3.2 ===  body=[First line.]  exit=0
+=== zsh ===       body=[First line.]  exit=0
+```
+
+### MINOR 6 — a fence under the step that forbids it
+
+Correct, and the cause is this issue's own fix: lifting the indented terminator to column zero
+turned list content into a section-level block, which then belonged to whichever step it
+followed. In `converse/SKILL.md` the `corpus thread reply` block sat under *"If it is resolved,
+post nothing"*.
+
+Fixed by **ordering, not indentation** — the terminator stays at column zero. The block now
+sits between steps 3 and 4; step 3 says *"the reply is the block directly below"* and step 4
+opens *"post nothing — not the reply above, not a shorter one"*, so each step names the block's
+direction. Parsed with `mdast-util-from-markdown` to confirm the ordered list resumes correctly
+rather than restarting at 1:
+
+```
+list ordered start=1  716-731
+code                  733-737
+list ordered start=4  739-741
+```
+
+### MINOR 7 — the totality claim, decided: state the residual, keep the claim
+
+**Verified, and it is worse than the finding suggests.** A body carrying a line that is exactly
+the terminator, through the real CLI:
+
+```
+=== bash 3.2, a bare EOF line inside a body ===
+created doc_x7nnyouq — data/docs/inbox/eof-residual-body.md
+/tmp/agent035pr50/live_eof.sh: line 7: hello: command not found
+/tmp/agent035pr50/live_eof.sh: line 8: EOF: command not found
+$ corpus doc show doc_x7nnyouq
+…
+They pasted this transcript:
+
+  cat <<'EOF'
+```
+
+The write **succeeded** and committed, with the body cut off at that line; the remainder ran as
+shell commands. Same under zsh (`doc_576ys5ch`). So it is not covered by the recovery clause
+either — the shell never refused the line.
+
+**Decision: state the residual beside the claim rather than weaken the claim.** The claim is
+about *characters* and is true of every one of them; the residual is a **line**, which is a
+different kind of thing and has a one-word repair. Weakening the claim to *"almost no character
+list"* would cost the sentence that makes the construction worth using and would still not tell
+an agent what to do. The skill now reads:
+
+> One thing is left, and it is not a character but a **line**. … It is not caught by anything
+> downstream: measured, the write still succeeded, exit `0`, the document committed with its
+> body cut off at that line, and `command not found` the only sign it went wrong. The
+> terminator is a word you choose, so when the text you are carrying could contain one, choose
+> a word it cannot.
+
+The repair is verified: the same body under a distinctive terminator created `doc_nsjfbl24`
+(bash) and `doc_vfdfygo5` (zsh), exit `0`, no leaked commands, and `doc show` reads the body
+back whole including the `EOF` line. **No alternative terminator is shown as an example**, in
+prose only: `coreSkills` pins every heredoc opener to `<<'EOF'` exactly and counts openers
+against bare closers, so a demonstrated alternative would fail two pins for no reader benefit.
+
+### NIT 10 — the AGENT-036 pin, made reflow-proof
+
+**Confirmed real.** The extraction is now whitespace-flattened and takes the first two string
+literals after the branch condition, rather than matching the ternary as currently laid out.
+Compared old against new across the shapes the source could take (`apps/cli/` read only, never
+written — another agent holds it):
+
+| source shape | old extraction | new extraction |
+| --- | --- | --- |
+| as shipped | `"no documents match."` | both messages |
+| prettier wraps after the `?` | **`undefined` → false red** | both messages |
+| ternary becomes `if`/`else` | **`undefined` → false red** | both messages |
+| first message reworded | follows the rewording | follows the rewording |
+| branch deleted | `undefined` | `undefined` |
+
+The two rows in bold are the false red the finding predicted, and the failure message it would
+have printed — *"doc list no longer branches on an empty first page"* — was untrue in both.
+The pin also gained a real check it did not have: the second literal is the *later-page*
+message, and the skill is now held to not transcribing it, since an empty later page is a state
+a roster read passing no offset can never reach.
+
+### Pins added, and each falsified
+
+Every new pin was falsified by deleting the text it covers and confirming it — and nothing else
+— goes red. 380 tests, `VITEST_MAX_THREADS=4`.
+
+| mutation | tests failing |
+| --- | --- |
+| delete the whole recovery paragraph (restores *"send it again"*) | 1 — `hands over a repair that is not the construction that just failed` |
+| delete only the boundary paragraph | 1 — same |
+| delete only the `IFS= read -r` example block | 1 — same |
+| delete the MINOR 7 residual sentences | 1 — `names the one residual the construction does not cover` |
+| move the sign-off block back below step 4 | 1 — `puts the sign-off block under the step that sends it` |
+| `profile`'s transcript reworded | 1 — `transcribes the empty roster as the CLI actually prints it` |
+| `profile`'s transcript takes the later-page branch | 1 — same |
+
+### Whole-file checks
+
+`npx vitest run scripts/workspace-template.test.ts` — **380 passed**. `npx eslint
+scripts/workspace-template.test.ts` — no issues. `prettier --check` clean on all three touched
+files. All four skills parsed with `mdast-util-from-markdown`: **zero** unclosed fences, and
+`sections.size` still 16 / 13 / 15 / 7 (the raw mdast `h2` count is one higher in each file —
+the frontmatter's closing `---` reads as a setext underline without a frontmatter plugin — so
+the vitest pins, not the parser, are the count of record). Server stopped; port 8797 free.
+
 ## Completion Checklist (domain agent)
 
-- [x] Tests written and passing (375 in `scripts/workspace-template.test.ts`)
+- [x] Tests written and passing (380 in `scripts/workspace-template.test.ts`)
 - [x] `/lint` passes (eslint + prettier)
 - [x] E2E verification log filled in
 - [x] Self-review

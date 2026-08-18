@@ -726,18 +726,19 @@ When your row is gone from the roster, or your park was refused:
    for this lane, so a second claim can only ever come back empty. Work what the one claim
    gave you, settle it, and go on to the sign-off — and park at no point in any of this.
 2. Read the thread: `corpus thread show th_4b8e2c`.
-3. **If it is still open, sign off once**, in one line, and exit — the reply is below. That
-   turn changed nothing, so it carries no trace line, and an agent's turn never reopens
-   anything.
-4. **If it is resolved, post nothing.** The conversation has already been closed by the person
-   who closed it, and a farewell on a settled thread is noise that reopens nothing and helps
-   nobody. Just go.
+3. **If it is still open, sign off once**, in one line, and exit — the reply is the block
+   directly below. That turn changed nothing, so it carries no trace line, and an agent's turn
+   never reopens anything.
 
 ```bash
 corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
 EOF
 ```
+
+4. **If it is resolved, post nothing** — not the reply above, not a shorter one. The
+   conversation has already been closed by the person who closed it, and a farewell on a
+   settled thread is noise that reopens nothing and helps nobody. Just go.
 
 A job's log belongs to an event, so there is normally nothing to log a retirement to: by the
 time you read the roster you have settled everything you held. Where you are still holding

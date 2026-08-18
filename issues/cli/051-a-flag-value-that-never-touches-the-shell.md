@@ -10,7 +10,9 @@ todo
 
 ## Priority
 
-P2
+P1 — **raised from P2 on 2026-08-18.** See "The residual guidance cannot close",
+below. What looked like an ergonomic question turned out to have a case where a
+person's own words execute as shell commands.
 
 ## Model
 
@@ -55,6 +57,37 @@ point here rather than something to redo:
 That is a strong argument against a mechanism as a **substitute** for the rule. It
 is a weaker argument against one as an **addition**, and the difference is what
 this issue exists to settle.
+
+## The residual guidance cannot close
+
+Measured during PR #50's review response, 2026-08-18, against the real CLI.
+
+A heredoc ends at a line holding exactly its terminator. So **a line in a
+person's own words that reads `EOF` terminates the value early, and the shell
+runs everything after it as commands.**
+
+This is not the silent-corruption case. It is worse in kind:
+
+- It **succeeded**. `created doc_x7nnyouq`, exit 0, committed
+- The body was cut off at that line
+- The remainder was executed
+- Nothing refused anything, so the recovery clause — which triggers on the shell
+  refusing a line — never fires
+
+**Guidance cannot close this**, and that is the point of recording it here rather
+than in AGENT-035. AGENT-035's rule is about how the agent *builds* a value, and
+the agent builds this one correctly. The content decides the outcome. The skill
+now names the residual and gives a one-word repair, which is the best prose can
+do, and it depends on an agent noticing a line in text it did not write.
+
+**The provenance framing makes it sharper.** AGENT-035's rule exists precisely
+for values *carried over from somebody*. That is exactly the class where the
+agent cannot vet the content, and exactly the class where a message quoting a
+shell transcript is plausible.
+
+A mechanism that never hands the value to a shell removes the whole class, and
+this is the case that makes the mechanism worth its cost rather than merely
+tidier.
 
 ## What has to be decided
 

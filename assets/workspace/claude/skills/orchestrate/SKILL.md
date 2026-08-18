@@ -793,6 +793,15 @@ corpus doc edit doc_a1b2c3 --title "$title" --from agent
 Nothing inside a heredoc whose terminator is quoted is expanded, and `"$title"` expands the
 variable and nothing within it, so there is no character list to keep in your head: `$`, a
 backtick, a backslash, a `!`, an apostrophe and a quote all reach the server as themselves.
+
+One thing is left, and it is not a character but a **line**. The heredoc ends at the first line
+that is exactly its terminator, so text carrying a line that is exactly `EOF` — a pasted shell
+transcript is how that arrives — ends the value early and hands the remainder to the shell as
+commands. It is not caught by anything downstream: measured, the write still succeeded, exit
+`0`, the document committed with its body cut off at that line, and `command not found` the
+only sign it went wrong. The terminator is a word you choose, so when the text you are carrying
+could contain one, choose a word it cannot.
+
 **The test is where the text came from, not what is in it.** Words you wrote yourself, out of
 ordinary vocabulary, have
 nothing in them for the shell to act on, and `--title "Quarterly insurance review"` is fine as
@@ -805,9 +814,28 @@ words reach the server intact, whether they fill a document or a single flag.
 
 **When the shell refuses the line, the answer is never a double quote.** An unmatched quote or
 an unexpected end of file is the loud half of this same defect, and it is the better half:
-nothing ran, so nothing was written and nothing was lost. Build the value the way above and
-send it again. Reaching for a double quote to make the complaint go away is how a failure you
-can see turns into one you cannot.
+nothing ran, so nothing was written and nothing was lost. Reaching for a double quote to make
+the complaint go away is how a failure you can see turns into one you cannot.
+
+**Nor is it the same lines again.** A complaint about the construction above is usually not
+your mistake and will not clear on a resend: some shells cannot read `$( … )` across a value
+holding an odd number of apostrophes, so one `O'Brien` in somebody's sentence is enough to stop
+the whole command being parsed. Read the value in instead of capturing it — the same quoted
+terminator, with no command substitution around it to trip over:
+
+```bash
+IFS= read -r title <<'EOF'
+O'Brien — cabinet quote, $18,400
+EOF
+corpus doc edit doc_a1b2c3 --title "$title" --from agent
+```
+
+**That is a repair, not the rule, and its boundary is the reason:** it takes **one line** and
+drops anything after it without saying so. So it is right for a flag — a title, a tag, an
+`--extra` value, a description are each a single line — and never for a value that spans lines.
+Nothing is lost by that boundary. A value that spans lines is a body, and a body is fed to the
+command's own heredoc rather than captured into a variable first, so it never meets the defect
+this paragraph repairs.
 
 **The whole-body edit, and the key that protects it.** When there is nothing to quote, the
 write replaces the body, and then: **read → work → write with the key you were given → keep

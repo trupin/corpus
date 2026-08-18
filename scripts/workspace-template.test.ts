@@ -1115,6 +1115,82 @@ describe("skills", () => {
     });
 
     /**
+     * PR #50, MAJOR 3. The clause above forbids the reflex repair, so it has to
+     * hand over a repair that works — and the case it was reached for is
+     * precisely one the capture form can fail on. Measured on this machine,
+     * 2026-08-18, `/bin/bash` 3.2.57:
+     *
+     * ```
+     * $ /bin/bash live_bad.sh      # title=$(cat <<'EOF' / O'Brien report / EOF / )
+     * live_bad.sh: line 4: unexpected EOF while looking for matching `''
+     * live_bad.sh: line 8: syntax error: unexpected end of file
+     * exit=2
+     * ```
+     *
+     * One apostrophe in somebody's sentence — *don't*, *it's*, *O'Brien* — is
+     * the whole trigger, and it is the commonest shape in the class this rule
+     * exists for. Told to build the value the same way and resend, an agent
+     * loops on an identical parse error with the one repair it would otherwise
+     * reach for ruled out. So the clause must name a construction that differs,
+     * and `IFS= read -r` does: the same quoted terminator with no command
+     * substitution around it, verified against the real CLI under both shells —
+     * `created doc_byx5msh7` under bash 3.2 and `created doc_6geg7o33` under zsh
+     * 5.9, both titles landing byte-exact with `$`, a backtick and two
+     * apostrophes in them.
+     *
+     * Its boundary is pinned with it, because `IFS= read -r` takes one line and
+     * drops the rest at exit `0` — the truncation that disqualified it as the
+     * *general* construction. A flag value is one line, so the repair is sound
+     * where it is offered; the skill has to say where that stops, or the next
+     * rewrite promotes it to the rule and starts truncating bodies.
+     */
+    it("hands over a repair that is not the construction that just failed", () => {
+      const flat = orchestrate.replace(/\s+/g, " ");
+      // Not the same lines again: the resend is ruled out as explicitly as the
+      // double quote, since a resend is what the old clause prescribed.
+      expect(flat).toMatch(/\*\*Nor is it the same lines again\.\*\*/);
+      expect(flat).toMatch(/will not clear on a resend/i);
+      // The cause, stated so the agent stops treating the refusal as its error.
+      expect(flat).toMatch(/odd number of apostrophes/i);
+      // The repair itself, as a copyable line rather than a description.
+      expect(orchestrate).toMatch(/^IFS= read -r title <<'EOF'$/m);
+      expect(orchestrate).toMatch(/corpus doc edit doc_a1b2c3 --title "\$title" --from agent/);
+      // And its boundary, both halves: what it silently does, and the reason
+      // the flag case is unaffected by it.
+      expect(flat).toMatch(/\*\*That is a repair, not the rule/i);
+      expect(flat).toMatch(/takes \*\*one line\*\* and drops anything after it without saying so/);
+      expect(flat).toMatch(/never for a value that spans lines/i);
+      expect(flat).toMatch(/a body is fed to the command's own heredoc rather than captured/i);
+    });
+
+    /**
+     * PR #50, MINOR 7. *No character list to keep in your head* is true of every
+     * character — `$`, a backtick, a backslash, a `!`, an apostrophe, a quote —
+     * and there is exactly one residual, which is a **line** rather than a
+     * character. Measured against the real CLI, 2026-08-18: a body carrying a
+     * line that is exactly the terminator created `doc_x7nnyouq` with the body
+     * cut off at that line, the remainder run as commands (`hello: command not
+     * found`), and the document committed. Recorded beside the claim with its
+     * repair rather than by weakening the claim, because the claim is what makes
+     * the construction worth using and the residual has a one-word fix.
+     */
+    it("names the one residual the construction does not cover", () => {
+      const flat = orchestrate.replace(/\s+/g, " ");
+      // The totality claim survives — qualified to characters, which is what it
+      // was always true of.
+      expect(flat).toMatch(/there is no character list to keep in your head/i);
+      expect(flat).toMatch(/it is not a character but a \*\*line\*\*/i);
+      // What goes wrong, and that it is a successful write rather than a refusal
+      // — the reason it cannot be left to the recovery clause above.
+      expect(flat).toMatch(/hands the remainder to the shell as commands/i);
+      expect(flat).toMatch(/the write still succeeded, exit `0`/i);
+      // The repair.
+      expect(flat).toMatch(
+        /the terminator is a word you choose, so when the text you are carrying could contain one, choose a word it cannot/i,
+      );
+    });
+
+    /**
      * The examples are what get copied, so the rule is pinned in them and not
      * only in the prose. Both sites carry somebody else's words: a standalone
      * thread's real title is made out of the conversation, and the reported
@@ -3718,13 +3794,40 @@ describe("converse skill body", () => {
   it("ends the designation on a roster read, because nothing else will", () => {
     expect(body).toMatch(/\*\*neither of them sends you an event\*\*/);
     // A sign-off on an open thread, nothing on a resolved one.
-    expect(body).toMatch(/\*\*If it is resolved, post nothing\.\*\*/);
+    expect(body).toMatch(/\*\*If it is resolved, post nothing\*\*/);
     expect(body).toMatch(/Reopening a resolved thread later does not bring you back/);
     // Measured in the live drill: a release landed while the listener was
     // parked and was read at the top of the next pass, one rearm later. That
     // latency is stated as correct so it does not get "fixed" with a poll.
     expect(body).toMatch(/\*\*Finding out one rearm late is correct, not a gap\.\*\*/);
     expect(body).toMatch(/every message written in between was\s+stamped for the orchestrator/);
+  });
+
+  /**
+   * PR #50, MINOR 6. An example belongs to whatever step it follows. The
+   * sign-off block had drifted below *If it is resolved, post nothing*, so the
+   * one instruction adjacent to a `corpus thread reply` was the instruction not
+   * to post — fallout from AGENT-035 lifting an indented terminator to column
+   * zero, which is a fence-placement change nothing was watching. The fix is
+   * ordering, not indentation: the terminator stays at column zero (an indented
+   * one closes nothing) and the block moves up under the step that sends it.
+   */
+  it("puts the sign-off block under the step that sends it", () => {
+    const signOff = body.indexOf("If it is still open, sign off once");
+    const postNothing = body.indexOf("If it is resolved, post nothing");
+    const replyBlock = body.indexOf("corpus thread reply th_4b8e2c --from agent", signOff);
+    expect(signOff, "the sign-off step is gone").toBeGreaterThan(-1);
+    expect(postNothing, "the post-nothing step is gone").toBeGreaterThan(-1);
+    expect(replyBlock, "the sign-off step shows no reply").toBeGreaterThan(-1);
+    expect(replyBlock, "the sign-off example follows the step that forbids posting").toBeLessThan(
+      postNothing,
+    );
+    // And the step points at it, so the two are read together rather than the
+    // reader inferring the block from proximity alone.
+    expect(body).toMatch(/the reply is the block\s+directly below/);
+    // The negative step says which reply it is withholding, since it now has
+    // one above it rather than below.
+    expect(body).toMatch(/post nothing\*\* — not the reply above/);
   });
 
   /**
@@ -4461,15 +4564,35 @@ describe("profile skill body", () => {
    * Pinned against the **emitting source** rather than as a literal, because the
    * defect is a transcript nobody ran. A change to the CLI's wording now fails
    * here, naming the skill that has to follow it.
+   *
+   * The extraction reads the source with its whitespace collapsed and takes the
+   * first two string literals after the branch condition, rather than matching
+   * the ternary as it is currently laid out (PR #50, NIT 10). Every way that
+   * branch can be re-laid-out — prettier wrapping after the `?`, or the ternary
+   * becoming an `if`/`else` — is whitespace or ordering that this survives, and
+   * a pin that a reflow turns red is a pin somebody deletes. What is left is the
+   * failure worth having: the condition going away, or either message being
+   * reworded, both of which really do invalidate the transcript.
    */
   it("transcribes the empty roster as the CLI actually prints it", () => {
     const listSource = readFileSync(
       path.join(REPO_ROOT, "apps/cli/src/commands/doc/list.ts"),
       "utf8",
     );
-    const emptyLine = /result\.page\.offset === 0 \? "([^"]+)"/.exec(listSource)?.[1];
-    expect(emptyLine, "doc list no longer branches on an empty first page").toBeDefined();
+    const flatSource = listSource.replaceAll(/\s+/g, " ");
+    const branchAt = flatSource.indexOf("page.offset === 0");
+    expect(branchAt, "doc list no longer branches on an empty first page").toBeGreaterThan(-1);
+    // The two messages in source order: the first page's, then a later page's.
+    const [emptyLine, laterPage] = [
+      ...flatSource.slice(branchAt, branchAt + 200).matchAll(/"([^"]*)"/g),
+    ].map((match) => match[1]);
+    expect(emptyLine, "the empty-first-page branch names no message").toBeTruthy();
     expect(body).toContain(`corpus doc list --type agent-def\n${emptyLine ?? ""}`);
+    // The neighbouring branch, which is the wrong line to transcribe for a
+    // roster read that passes no offset: an empty *later* page is a different
+    // state and the skill would be teaching a check that cannot fire.
+    expect(laterPage, "the branch has only one message").toBeTruthy();
+    expect(body, "the roster transcribes the later-page message").not.toContain(laterPage ?? " ");
     // Both forms the file must not go back to: the one that shipped, and the
     // tally `renderTally` would have produced had an empty page reached it.
     expect(body, "the unreachable empty tally is back").not.toMatch(/showing 0 documents/);
