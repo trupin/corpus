@@ -3,7 +3,7 @@ id: doc_seedreadme
 type: note
 title: Workspace README
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-16T00:00:00Z
+updated: 2026-08-17T00:00:00Z
 tags: []
 status: open
 anchors: {}
@@ -51,11 +51,17 @@ conversation, and everything that grows out of it, is answered by an agent that 
 rather than by the general loop:
 
 ```bash
-corpus thread designate th_4b8e2c --agent researcher
+corpus thread designate th_4b8e2c
 ```
 
-The orchestrator starts a listener for it — the `converse` skill, the third of the three in
-`.claude/skills/` — and `corpus agents` shows who is running where. `corpus thread release`
+That names no profile, which is the ordinary case: the resident is this workspace's own
+agent, staying in one conversation instead of answering it one message at a time. Add
+`--agent researcher` when you want a conversation held by an agent that behaves *differently*
+from the default — `/profile` writes those, and `corpus agents` then reads
+`researcher (doc_…)` where a general resident reads `a general resident`.
+
+The orchestrator starts a listener either way — the `converse` skill in `.claude/skills/` —
+and `corpus agents` shows who is running where. `corpus thread release`
 hands the conversation back, and resolving the thread does the same. While nobody is
 listening on a designated conversation its messages are answered by the general loop instead:
 slower, and without the conversation's context, but never not at all.

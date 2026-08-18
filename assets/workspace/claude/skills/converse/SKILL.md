@@ -131,7 +131,7 @@ failures later.
    ```bash
    corpus agents
    orchestrator · waiting for a listener
-   th_4b8e2c "Q3 planning" · researcher · waiting for a listener
+   th_4b8e2c "Q3 planning" · a general resident · waiting for a listener
    ```
 
    **The ordering is what makes this check mean anything.** You have not parked yet, so any
@@ -164,17 +164,54 @@ failures later.
      see this lane's pending work, so it may be **holding some of it right now**. Your first
      claim will report that, and adopts none of it (*Settling your own lane*).
 
-3. **Bind your persona.** The designation names an agent, and the launch that started you
-   carries the `resident` from the announcement's payload — a name and the id of the
-   `agent-def` document that defines it. Read that document and work as it describes:
+3. **Bind a persona, if the designation named one.** Your launch carries the announcement's
+   `resident`: two fields, `name` and `docId`, read together. Most designations name no
+   profile at all, which is why the first of the three readings below is the ordinary one.
 
-   ```bash
-   corpus doc show doc_b7c1d5
-   ```
+   - **`name` is null.** Nobody named a profile and there is no document to read. You are a
+     **general resident**: you answer this conversation the way this workspace's own agent
+     answers everything else, which is exactly what was asked for when the thread was
+     designated. Say nothing about it, here or in any later turn — there was no persona to be
+     missing, so a remark about not having one is an apology for working normally.
+   - **`name` and `docId` are both set.** A profile was named and it is there. Read it and
+     work as it describes:
 
-   If it is gone or archived, **work anyway** and say so in your first reply — the same rule
-   that governs a mention naming something missing. Never refuse work because the persona
-   document is not there; a conversation with no answer is worse than one answered plainly.
+     ```bash
+     corpus doc show doc_b7c1d5
+     ```
+
+     What it says binds you for as long as you hold this lane, and it is the only thing the
+     three readings differ in. **Where that read comes back `404 not_found` at exit `5`, you
+     are in the reading below rather than this one.** A payload names what resolved when the
+     designation was made and nothing re-resolves it afterwards, so a profile removed since
+     then arrives looking present and is not. Do not retry the read, and do not report the
+     launch as broken.
+   - **`name` is set and `docId` is null**, or the read above found nothing. A profile was
+     named and is not there — renamed, removed, or never written. **Work anyway**, as a
+     general resident does, and say so
+     **once**, in your first reply, naming what was named: the same rule that governs a
+     mention pointing at something missing. Never refuse a conversation because its persona is
+     gone; an unanswered thread is worse than one answered plainly.
+
+   **The first and the last are not the same fact and must not be told alike.** Having no
+   profile is the ordinary way a conversation is staffed, and remarking on it would be noise
+   in somebody's conversation. Having one that has gone is a designation whose subject has
+   disappeared — something the person can put right and cannot otherwise see, which is why it
+   costs a line. What separates them is `name` alone: null means nobody asked for a persona,
+   set means somebody did and it is missing.
+
+   **Started by hand there is no payload, and the corpus answers anyway.** The
+   `corpus thread show` of step 4 prints a `resident` line naming which of the three this is,
+   in these same words — `a general resident`, `researcher (doc_b7c1d5)`,
+   `researcher (profile missing)` — resolved as you read it rather than as it stood when the
+   designation was made. That is a field of its own, and not the display text the step above
+   told you never to decide from.
+
+   **Nothing else about being resident turns on which reading you are in.** The lane you hold,
+   what reaches it, the order you work it in, how you settle it, the park that makes you
+   present, the test that stands one of two listeners down, retirement, and a resolved thread
+   ending the designation are identical under all three. A persona changes how you answer; it
+   never changes what is yours to answer.
 
 4. **Hydrate from the conversation, not from a briefing somebody wrote you.**
    `corpus thread context th_4b8e2c` for the bounded pack and `corpus thread show th_4b8e2c`
@@ -711,8 +748,9 @@ orchestrator's lane, and designating again is a deliberate act, as the first one
 
 ## Worked example
 
-The researcher is resident on `th_4b8e2c`, a standalone conversation about a refinance. It was
-launched with `/converse th_4b8e2c` and the payload's resident, `doc_b7c1d5`.
+A general resident is on `th_4b8e2c`, a standalone conversation about a refinance. It was
+launched with `/converse th_4b8e2c` and a payload whose `resident` was
+`{"name":null,"docId":null}` — the designation named no profile, which is how most are made.
 
 Starting up — the roster read happens **before** the first park, which is what makes `live`
 mean somebody else:
@@ -721,16 +759,18 @@ mean somebody else:
 export CORPUS_FROM=agent
 corpus agents
 orchestrator · waiting for a listener
-th_4b8e2c "Q3 planning" · researcher · waiting for a listener
-corpus doc show doc_b7c1d5
+th_4b8e2c "Q3 planning" · a general resident · waiting for a listener
 corpus thread context th_4b8e2c
 corpus thread show th_4b8e2c
 corpus queue idle --thread th_4b8e2c
 ```
 
-The lane is unattended, so it is ours; the persona and the conversation are read; then the
-park, which is the moment the board's roster starts saying `live`. It returns when the person
-asks a question:
+The lane is unattended, so it is ours; there is no persona to read, because none was named;
+the conversation is read; then the park, which is the moment the board's roster starts saying
+`live`. **Had the payload named one** — `{"name":"researcher","docId":"doc_b7c1d5"}` — a single
+`corpus doc show doc_b7c1d5` would sit between the roster read and the park, the roster row
+would read `researcher (doc_b7c1d5)`, and not one other line of this example would differ. It
+returns when the person asks a question:
 
 ```bash
 corpus queue claim-all --thread th_4b8e2c

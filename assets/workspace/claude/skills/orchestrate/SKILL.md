@@ -288,9 +288,16 @@ switch.
 - **Launching a listener.** `resident.designated` is the one row above that is not a job.
   Everything else you dispatch is work that reports back and settles; this one starts an agent
   and gets out of its way. Launch a background subagent applying the **converse** skill,
-  invoked as `/converse <the payload's threadId>`, and give it the payload's `resident` — the
-  name and the `agent-def` document id both, because a subagent inherits nothing and the
-  persona is what the designation was for. Then **complete the event as soon as the launch is
+  invoked as `/converse <the payload's threadId>`, and hand it the payload's `resident`
+  **exactly as it came** — both fields, whatever they hold — because a subagent inherits
+  nothing and what you leave out of a prompt does not reach it. Most designations name no
+  profile and arrive as `{"name":null,"docId":null}`: an ordinary designation, whose listener
+  is this workspace's own agent, and the nulls travel as nulls. **Invent nothing to fill
+  them.** A word made up here arrives as the name of a profile, and sends the listener looking
+  for a document nobody wrote. Where `name` is set it is a profile the designation was made
+  for, and the id beside it goes with it. **What a listener does with either — a persona to
+  read, or none — is the converse skill's to state, and it is stated there alone.** Then
+  **complete the event as soon as the launch is
   made**. The listener's lifetime is not the job's: it runs for as long as the designation
   does, which may be weeks, and an event held open for it would sit in `in-progress/` for
   weeks beside it. You never wait on it, you never settle for it, and its lane's events are
@@ -300,13 +307,17 @@ switch.
 
   ```bash
   corpus queue claim-all
-  {"events":[{"id":"evt_3f8c1a","type":"resident.designated","created":"2026-07-28T09:14:02Z","source":"thread","payload":{"threadId":"th_4b8e2c","resident":{"name":"researcher","docId":"doc_b7c1d5"}}}],"inProgress":{"events":[],"total":0,"truncated":false}}
+  {"events":[{"id":"evt_3f8c1a","type":"resident.designated","created":"2026-07-28T09:14:02Z","source":"thread","payload":{"threadId":"th_4b8e2c","resident":{"name":null,"docId":null}}}],"inProgress":{"events":[],"total":0,"truncated":false}}
   corpus agents
   orchestrator · waiting for a listener
-  th_4b8e2c "Q3 planning" · researcher · waiting for a listener
-  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c as researcher (doc_b7c1d5)"
+  th_4b8e2c "Q3 planning" · a general resident · waiting for a listener
+  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c — a general resident"
   corpus queue complete evt_3f8c1a
   ```
+
+  Had that designation named `researcher`, three things would read differently and nothing
+  else would: the payload's two fields, the roster's `researcher (doc_b7c1d5)`, and the log
+  line saying so. The launch is the same launch, and the row it came down is the same row.
 
 - **A lane that already has a listener gets nothing.** Read the roster before you launch:
   `corpus agents` says whether the payload's thread is `live`. A designation arrives whether
@@ -326,11 +337,18 @@ switch.
   you have already launched into this pass launches nothing further. And if a lane you launched
   into does not read `live` on the following pass, that launch is not working: log it, stop
   relaunching that lane, and leave it to the fallback until a fresh `resident.designated` says
-  to try again. Relaunching every pass forever is how one broken persona becomes the only thing
-  this loop does. Word that log line as **standing down, never as a failed launch** — a
+  to try again. Relaunching every pass forever is how one lane that will not take a listener
+  becomes the only thing this loop does. Word that log line as **standing down, never as a failed launch** — a
   listener that started, parked, claimed this lane's work and is now inside a long turn reads
   not-live exactly as a dead one does (below), and a console line calling that a broken launch
-  sends an operator hunting for a persona that is at that moment answering somebody.
+  sends an operator hunting for a listener that is at that moment answering somebody.
+
+  **A launch made from the roster carries no resident, and must not invent one.** There is no
+  payload behind it, and the row is not a substitute for one: it prints who is resident in
+  words written for a person to read, and handing that rendering on as a name is the invention
+  ruled out above. Give the launch the thread id and nothing else. A listener started without
+  a resident in its prompt reads its own designation out of the corpus — the converse skill
+  states how, and this one does not.
 
 - **A row that does not read `live` does not mean nobody is there — and you launch anyway.**
   Presence is the parked request and nothing else, so a row reads not-live for a listener that
