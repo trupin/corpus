@@ -325,6 +325,120 @@ Server stopped; port 8851 confirmed free.
 `eslint apps/server/src` 0 · `prettier --check apps/server/src` 0 ·
 `tsc --noEmit -p apps/server` 0 · full `apps/server` vitest suite green.
 
+## Correction — the blocking half was a regression (PR #49, review 3)
+
+**Model: Fable 5. Date: 2026-08-17.**
+
+"Route chosen" above says the finding rides `frontmatter-invalid`, *"which is
+blocking"*, and treats that as forced by Adjudication 6. It was not forced, and
+it was wrong.
+
+`frontmatter-invalid` is a member of `LOCAL_CHECK_CODES`, so the requirement
+refused **every server write to every `.claude/agents/*.md`**, including the
+hand-authored files this system never wrote. That is not a hypothetical
+population: §7's own measurement above is that such a file produces no listing
+and no warning, so nothing has ever told its author to add a `description`. A
+workspace upgraded past that release found its personas uneditable
+(`docs/update.ts`), unarchivable (`docs/archive.ts`), unreachable by any bulk act
+(`docs/bulk.ts`) and unsaveable from the board — with the only repair a flag the
+error text does not name and the board editor cannot express.
+
+This issue's own scoping argument was the argument against it. Refusing to extend
+the rule to `.claude/skills/**` because *"it would refuse writes … to
+hand-authored files this system never wrote, for a defect nobody has measured"*
+applies verbatim to `.claude/agents/`, which `docs/workspace-template.md:45`
+documents as the directory a user drops personas into. The asymmetry was never
+argued, and `write.ts`'s own general principle already states the rule: *"blocking
+on it would make a document that already carries [the fault] unwritable."*
+
+### Reproduced first, on a real server
+
+Throwaway workspace, `corpus server start` on port **8856**, `.claude/agents/reviewer.md`
+hand-written out of band with `name: reviewer` and no `description` — the file's
+state in a workspace today. `corpus doc check` reported it (correct). Then:
+`corpus doc edit --add-tag` → `400`; `PUT /api/docs/{id}` with a body and a valid
+key → `400`; `corpus doc archive` → `400`; `POST /api/docs/bulk` archive →
+`refused: [{reason: "invalid"}]`. Four surfaces, one message.
+
+### Fix
+
+**The write path reports this finding and does not refuse it** — joining
+`unterminated-fence`, whose entry in `REPORTED_CHECK_CODES` already carries this
+exact reasoning. `checkSave` routes it to the tolerated half through
+`isClaudeCodeRequirement`, so it still reaches `logger.error`, the level nothing
+gates. `checkCorpus` is untouched: the save stopped *refusing* the finding, not
+*producing* it, so `corpus doc check` reports every combination exactly as
+measured above and §7:399 survives intact.
+
+**Nothing on the create side changed.** `claudeCodeFields` derives `name`,
+defaults `description` and raises its own `400` before the write pipeline, so a
+server-made profile is still complete for reasons that never depended on the
+finding being blocking. `docs/update.ts` gains the mirror guard —
+`assertClaudeCodeFieldsNotWorsened`, same function, same `extra.<field>` issue
+paths — because `extra` is the one route that writes these fields as *caller
+data*. It refuses only a fault the patch **introduces**, so
+`--extra description=…` still repairs a file whose `name` is also wrong.
+
+### Why the other routes lost
+
+- **Require on create, report on edit.** Correct in spirit and is what shipped in
+  substance — but stated as a rule keyed on "does the target exist", it breaks
+  unarchive, which validates at a `.claude/agents/` destination that does not
+  exist yet. Stated as "did the file already carry the fault", it needs the old
+  bytes at `validateBeforeWrite`, whose eleven call sites do not have them and
+  whose archive site validates a path the current file is not at. The create
+  route's own guard already gets the whole benefit with none of that.
+- **Repair on write.** Rejected, and not narrowly. `description` is not
+  derivable: the server's create defaults it to the title, and a hand-authored
+  profile usually carries no Corpus `title:` at all, so the repair would write
+  the filename back as a description that says nothing — and would turn
+  `corpus doc check` green, destroying the report that is this issue's entire
+  point. `name` is worse: writing it is a **rename of the persona's address in
+  Claude Code**, breaking whatever dispatches to it today. And it would land in a
+  commit whose subject says "archived", as a side effect of an act the user did
+  ask for, in a file they wrote by hand and were never asked about.
+- **A new non-blocking wire code.** Not needed, so not escalated.
+  `CHECK_WARNING_CODES` is closed at two and pinned to the contract, but nothing
+  here wants a *warning*: the finding stays an error, `corpus doc check` still
+  fails on it, and the write path's tolerance is expressed where every such
+  tolerance already is (`write.ts`, one place, per-finding). No contract change.
+
+**Adjudication 6 holds in both directions.** Its subject is the two call sites
+agreeing: *"a divergence between the two is itself a bug."* They run one
+validator from one seam factory and produce identical findings for identical
+bytes. What a save then *does* with a finding is `write.ts`'s business, itemised
+in one place — which is how `unterminated-fence` has always been an error
+`corpus doc check` fails and a save lets through.
+
+### Verified E2E after the fix, same workspace
+
+`doc check` still reports both hand-authored files (missing `description`; `name:
+numbers` on `numbers-guy.md`). All four refusals became successes: `doc edit`,
+`PUT` body `200`, `doc archive`/`unarchive`, bulk `changed: [...], refused: []`.
+`corpus doc edit --extra description=…` repairs, and the file then checks clean.
+`doc create --type agent-def --title Archivist` still writes `name: archivist` +
+`description: Archivist`. `--extra name=numbers` on it → `400` at
+`body.extra.name`; `--extra description="  "` → `400` at `body.extra.description`.
+Six `document saved with validation errors` lines in the server log, one per
+tolerated save. `db doctor` clean over 16 documents. Server stopped, port free.
+
+### Residual
+
+1. **§7:399 is true for Claude Code's set under `.claude/agents/` and false for
+   Corpus's set under every `.claude/` root.** Measured: `.claude/agents/bogus.md`
+   carrying `id: 12345`, `type: not-a-real-type`, `title: []`, `tags: seven`,
+   `status: banana` produces **zero** findings, because the §5 waiver is
+   all-or-nothing — it must waive *required-ness* (a hand-written profile has no
+   `id`) but it also waives *well-formedness* of the fields that are present.
+   Closing it means validating Corpus's fields present-only, which would newly
+   fail existing workspaces; it needs its own issue.
+2. **A description-less hand-authored `SKILL.md` is still unreported** (measured:
+   0 findings). The decision is now cheaper than it was — the reason first given
+   for holding the line, that requiring the fields would make such files
+   unwritable, is no longer true of either root. What remains is only whether
+   every such skill in an existing workspace should start failing
+   `corpus doc check`. A product call.
+
 ## Handed back to the orchestrator
 
 1. **`assets/workspace/claude/skills/profile/SKILL.md` (agent-runtime domain,

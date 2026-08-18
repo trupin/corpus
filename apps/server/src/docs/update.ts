@@ -16,6 +16,7 @@ import type { Actor, AnchorReconciliation, Doc, UpdateDocRequest } from "@corpus
 import { EXTRA_MAX_BYTES } from "@corpus/contract";
 import { reconcileAnchors } from "../anchors/index.js";
 import {
+  claudeCodeFrontmatterIssues,
   formatInstant,
   readExtraFrontmatter,
   serializeDocument,
@@ -29,6 +30,7 @@ import { stampedOrigin } from "./create.js";
 import { loadDocument, readAnchorsMap, toWireDoc } from "./read.js";
 import { nextTags } from "./tags.js";
 import {
+  claudeCodeRootFor,
   runMutation,
   validateBeforeWrite,
   type DocsWorkspace,
@@ -287,6 +289,56 @@ function assertExtraWithinBound(
 }
 
 /**
+ * A patch may not **introduce** a fault in Claude Code's two discovery fields
+ * (SERVER-123 regression, PR #49 review 3).
+ *
+ * `extra` is the one way a caller can write `name` or `description` on an
+ * existing document, which makes this the second and last route that accepts
+ * those fields *as caller data* — `docs/create.ts`'s `claudeCodeFields` is the
+ * first, and this is deliberately its mirror: same function
+ * ({@link claudeCodeFrontmatterIssues}, the one `corpus doc check` reports
+ * through), same `extra.<field>` issue paths, same refusal before the write
+ * pipeline. Neither is a second copy of the rule; both ask the rule about the
+ * caller's own values.
+ *
+ * **Only a *new* fault is refused**, and that is the whole distinction the
+ * regression turned on. The save path no longer blocks on this finding at all
+ * (see `write.ts`'s `isClaudeCodeRequirement`), because a hand-authored profile
+ * that has never carried a `description` must stay editable — and the command
+ * that repairs it is a patch through this very function
+ * (`--extra description=…`). Refusing every patch that leaves a fault standing
+ * would refuse the repair itself, so what is refused is only a field this patch
+ * makes worse: setting `name` to something the filename is not, or blanking a
+ * `description` that was there. Everything the write path tolerates on a file it
+ * did not author, it goes on tolerating; what it will not do is author the fault
+ * on request.
+ *
+ * Costs the autosave path nothing: the caller checks `patch.extra !== undefined`
+ * first, and a body save carries no `extra`.
+ */
+function assertClaudeCodeFieldsNotWorsened(
+  path: string,
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): void {
+  const discoveredAs = claudeCodeRootFor(path)?.discoveredAs ?? null;
+  if (discoveredAs === null) return;
+
+  const existing = new Set(
+    claudeCodeFrontmatterIssues(before, discoveredAs).map((issue) => issue.field),
+  );
+  const introduced = claudeCodeFrontmatterIssues(after, discoveredAs).filter(
+    (issue) => !existing.has(issue.field),
+  );
+  if (introduced.length === 0) return;
+
+  throw badRequest(
+    `this patch would break Claude Code's frontmatter: ${introduced[0]?.message ?? "invalid"}`,
+    introduced.map((issue) => ({ path: `body.extra.${issue.field}`, message: issue.message })),
+  );
+}
+
+/**
  * **A `PUT` may not take a document off `archived`** (SERVER-039, wave-3 audit
  * FIX 5).
  *
@@ -417,7 +469,10 @@ export async function updateDocumentLocked(
   });
   // Before anything is written, and only when the patch can move `extra` at
   // all — the autosave path carries no `extra` and must not pay for the walk.
-  if (patch.extra !== undefined) assertExtraWithinBound(parsed.data, nextParsed.data);
+  if (patch.extra !== undefined) {
+    assertExtraWithinBound(parsed.data, nextParsed.data);
+    assertClaudeCodeFieldsNotWorsened(loaded.path, parsed.data, nextParsed.data);
+  }
 
   const text = serializeDocument(nextParsed);
 

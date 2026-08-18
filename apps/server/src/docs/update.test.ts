@@ -590,3 +590,137 @@ describe("PUT /api/docs/{id} — a tag delta merges rather than overwrites", () 
     expect(await tagged(created.id)).toEqual(["a"]);
   });
 });
+
+/**
+ * SERVER-123's regression, found by PR #49's third review.
+ *
+ * The Claude Code frontmatter requirement rode `frontmatter-invalid`, which
+ * blocks a save — so the release made every hand-authored `.claude/agents/*.md`
+ * that had never carried a `description` unwritable by every verb at once. That
+ * is not a hypothetical state: SERVER-123 measured that such a file produces no
+ * listing and no warning, so nothing has ever told its author to add one, and
+ * `docs/workspace-template.md` documents that directory as where a user drops
+ * personas. The only repair was a flag the error text does not name and the
+ * board editor cannot express.
+ *
+ * These are the four surfaces the review named, against the file in the state a
+ * workspace holds it in today.
+ */
+describe("a hand-authored profile keeps working after the requirement lands", () => {
+  const PROFILE = ["---", "name: reviewer", "---", "", "You review changes.", ""].join("\n");
+
+  /** The file as it exists on disk in a workspace upgraded past the release. */
+  function handAuthored(name: string, frontmatter = "name: reviewer"): WriteWorkspace {
+    ws = createWriteWorkspace(name);
+    ws.write(".claude/agents/reviewer.md", PROFILE.replace("name: reviewer", frontmatter));
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed a hand-authored profile");
+    ws.reproject();
+    return ws;
+  }
+
+  const profileId = (): string =>
+    (
+      ws.db
+        .prepare("SELECT id FROM documents WHERE path = ?")
+        .get(".claude/agents/reviewer.md") as {
+        id: string;
+      }
+    ).id;
+
+  it("is still editable through the board editor's save", async () => {
+    handAuthored("profile-editable");
+    const id = profileId();
+
+    const response = await putDoc(ws, id, { body: "You review changes, sharply." });
+
+    expect(response.status).toBe(200);
+    expect(parseDocument(ws.read(".claude/agents/reviewer.md")).body).toBe(
+      "You review changes, sharply.",
+    );
+  });
+
+  it("is still archivable", async () => {
+    handAuthored("profile-archivable");
+
+    const response = await ws.post(`/api/docs/${profileId()}/archive`, {});
+
+    expect(response.status).toBe(200);
+  });
+
+  it("is still reachable by a bulk act", async () => {
+    handAuthored("profile-bulk");
+
+    const response = await ws.post("/api/docs/bulk", {
+      entries: [{ id: profileId(), action: { action: "archive" } }],
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ refused: [] });
+  });
+
+  // §7:399's promise is the point of SERVER-123 and survives the fix untouched:
+  // the save stopped refusing the finding, not producing it.
+  it("is still reported by `corpus doc check`", async () => {
+    handAuthored("profile-still-reported");
+
+    const response = await ws.post("/api/check", { ids: [profileId()] });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      errors: [{ code: "frontmatter-invalid", path: ".claude/agents/reviewer.md" }],
+    });
+  });
+
+  // The repair the error text should have named, through the one route that can
+  // write these fields. It must not be refused by the `name` fault standing
+  // beside it — which is why the guard below judges only what a patch *adds*.
+  it("accepts the repair even while another field is still faulty", async () => {
+    handAuthored("profile-repair", "description: Reviews changes.");
+    const id = profileId();
+
+    const response = await ws.put(`/api/docs/${id}`, {
+      extra: { name: "reviewer" },
+    });
+
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(".claude/agents/reviewer.md"));
+    expect(parsed.data["name"]).toBe("reviewer");
+    const checked = await ws.post("/api/check", { ids: [id] });
+    expect(await checked.json()).toMatchObject({ ok: true, errors: [] });
+  });
+
+  // What the save path no longer refuses, this route still does — because these
+  // are the caller's own values, exactly as on create. One file at two addresses
+  // is the second divergence SERVER-123 closed, and it stays closed.
+  it("refuses a patch that would give a good profile a second address", async () => {
+    ws = createWriteWorkspace("profile-name-divergence");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "agent-def", title: "Archivist" });
+
+    const response = await ws.put(`/api/docs/${created.id}`, {
+      extra: { name: "numbers" },
+    });
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { issues: { path: string; message: string }[] };
+    expect(payload.issues.map((issue) => issue.path)).toEqual(["body.extra.name"]);
+    expect(payload.issues[0]?.message).toContain("@archivist");
+    expect(parseDocument(ws.read(created.path)).data["name"]).toBe("archivist");
+  });
+
+  it("refuses a patch that would blank a description the file had", async () => {
+    ws = createWriteWorkspace("profile-blank-description");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "agent-def", title: "Archivist" });
+
+    const response = await ws.put(`/api/docs/${created.id}`, {
+      extra: { description: "   " },
+    });
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { issues: { path: string }[] };
+    expect(payload.issues.map((issue) => issue.path)).toEqual(["body.extra.description"]);
+  });
+});

@@ -346,37 +346,105 @@ describe("validateBeforeWrite", () => {
   });
 
   /**
-   * SERVER-123. Claude Code's two fields are required in the one root it loads
-   * subagents from, and the finding rides `frontmatter-invalid` — which is
-   * blocking. That is what keeps sprint-013 Adjudication 6 true in the direction
-   * the create route cannot reach: an *edit* that removes a description would
-   * otherwise leave behind a document the system accepted on write and its own
-   * checker fails, at the price of a persona nothing can run.
+   * SERVER-123, corrected by PR #49's third review. Claude Code's two fields are
+   * required in the one root it loads subagents from, and the finding rides
+   * `frontmatter-invalid` — which is blocking, and which is how the requirement
+   * came to refuse *every* server write to a hand-authored `.claude/agents/*.md`
+   * that had never carried them. That is the state every such file in a workspace
+   * upgraded past that release is in, since nothing had ever told its author
+   * otherwise, and it made them uneditable, unarchivable and unreachable by any
+   * bulk act with no migration and no repair the board editor could express.
+   *
+   * So the write path reports it and does not refuse it, exactly as it treats
+   * `unterminated-fence` below and for the same stated reason. `corpus doc check`
+   * is unchanged — `check/routes.test.ts` holds that end — and the create route
+   * keeps its own guard, so a profile the *server* makes is still complete.
    */
   const profile = (frontmatter: string): string => `---\n${frontmatter}---\n\nYou research.\n`;
 
-  it("refuses a save that would leave an agent-def Claude Code cannot load", () => {
+  it("does not block a save to an agent-def Claude Code cannot load", () => {
     validating("validate-agent-def");
     for (const frontmatter of ["", "name: researcher\n", "description: For sources.\n"]) {
-      expect(() =>
+      expect(
         validateBeforeWrite(
           { logger: silentLogger, projection: ws.db },
           ".claude/agents/researcher.md",
           profile(frontmatter),
         ),
-      ).toThrow(/name|description/);
+      ).toEqual([]);
     }
   });
 
-  it("refuses a save whose `name` disagrees with the filename", () => {
+  it("does not block a save whose `name` disagrees with the filename", () => {
     validating("validate-agent-def-name");
-    expect(() =>
+    expect(
       validateBeforeWrite(
         { logger: silentLogger, projection: ws.db },
         ".claude/agents/bareprofile.md",
         profile("name: numbers\ndescription: For sources.\n"),
       ),
-    ).toThrow(/@bareprofile/);
+    ).toEqual([]);
+  });
+
+  /**
+   * Not refused is not the same as not said. The finding reaches the operator on
+   * the write path through the one channel a `frontmatter-invalid` a save let
+   * through can use — `logger.error`, the level nothing gates — carrying the
+   * consequence verbatim, not merely the field name.
+   */
+  it("logs the missing profile fields as errors instead of refusing them", () => {
+    validating("validate-agent-def-log");
+    const logged: { message: string; fields: LogFields | undefined }[] = [];
+    const logger = {
+      ...silentLogger,
+      error: (message: string, fields?: LogFields) => logged.push({ message, fields }),
+    };
+
+    const warnings = validateBeforeWrite(
+      { logger, projection: ws.db },
+      ".claude/agents/reviewer.md",
+      profile(""),
+    );
+
+    expect(warnings).toEqual([]);
+    expect(logged.map((entry) => entry.message)).toEqual(["document saved with validation errors"]);
+    expect(logged[0]?.fields?.["errors"]).toEqual([
+      expect.stringContaining("frontmatter-invalid: name: missing"),
+      expect.stringContaining("frontmatter-invalid: description: missing or empty"),
+    ]);
+  });
+
+  /**
+   * The leniency is scoped by *root*, not by code: `frontmatter-invalid` is still
+   * blocking everywhere §5's canonical block is the rule that produced it. Under
+   * `.claude/agents/` that block is waived, so the two producers never overlap —
+   * which is the whole reason the write path may decide this one on the path.
+   */
+  it("still refuses §5's canonical block outside the Claude Code roots", () => {
+    validating("validate-agent-def-scope");
+    expect(() =>
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        "data/docs/inbox/researcher.md",
+        profile("name: researcher\ndescription: For sources.\n"),
+      ),
+    ).toThrow(/validation/);
+  });
+
+  /**
+   * The structural rules keep blocking inside the root too — the waiver is §5's
+   * canonical block and §7's two fields, and nothing else. An anchors mapping
+   * that is not a mapping is still a refusal here.
+   */
+  it("still refuses a structurally broken agent-def", () => {
+    validating("validate-agent-def-structural");
+    expect(() =>
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        ".claude/agents/researcher.md",
+        profile("name: researcher\ndescription: For sources.\nanchors: nope\n"),
+      ),
+    ).toThrow(/anchors/);
   });
 
   it("accepts one carrying both fields and no Corpus frontmatter at all", () => {
