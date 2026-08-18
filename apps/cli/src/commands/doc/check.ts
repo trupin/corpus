@@ -139,10 +139,14 @@ export const checkCommand: WorkspaceCommandSpec = {
     "already carries uneditable, unarchivable and beyond every bulk act, with no repair the board " +
     "can express. So a pre-commit hook running this verb can newly fail on a hand-authored " +
     "`.claude/agents/*.md` that no save has ever complained about. The finding's `detail` names " +
-    "the field; the repair is `corpus doc edit <id>` — `--status open` for a bad status, " +
-    "`--extra description=…` for a Claude Code field a profile is missing — or, for a document " +
-    "that is only _about_ a persona or a skill, moving it out of those roots. **The reverse never " +
-    "holds**: nothing this verb passes over is refused by a save.\n\n" +
+    "the field, and the repair is `corpus doc edit <id>`: `--status open` for a bad status, " +
+    "`--add-tag` to rewrite a `tags` that is not a list, `--extra description=…` for a Claude " +
+    "Code field a profile is missing. **Repair it where it is — do not move it out.** A document " +
+    "under these roots cannot be moved (`this document's location is fixed`), and moving one by " +
+    "hand re-mints the synthetic id its path derives, which breaks every `[[ref]]`, anchor and " +
+    "thread that points at it. A file that is only _about_ a persona belongs under `data/docs/` " +
+    "from the moment it is written. **The reverse never holds**: nothing this verb passes over " +
+    "is refused by a save.\n\n" +
     "With ids, exactly those documents are read from the workspace and checked. With no ids, the " +
     "whole workspace is enumerated first (archived documents included, so " +
     "`.claude/skills-archived/` is covered) and checked in one request. With `--staged`, the " +

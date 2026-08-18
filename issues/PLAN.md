@@ -1020,3 +1020,4 @@ uncertain.
 | CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | todo | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
 | UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | todo | P2 | — |
+| SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | todo | P2 | — |
