@@ -26,11 +26,14 @@ import { parseViewFlags, VIEW_KEY_FLAGS } from "./frontmatter.js";
  * **Which root a document lands in is the server's answer, not this verb's**
  * (SERVER-122). An omitted `folder` files the document in the root its `type`
  * declares — `data/docs/inbox/` for ordinary types, `.claude/agents/` for
- * `agent-def` — and an explicit `folder` always wins, including over that. Both
- * doors are one rule reading the server's own root declaration, so a root added
- * later is creatable with no edit here. This verb sends `type` and `folder` as
- * typed and renders the path that comes back; it pre-validates neither, and it
- * must never construct one (architecture decision 2).
+ * `agent-def` — and an explicit `folder` wins over that default. Both doors are
+ * one rule reading the server's own root declaration, so a root added later is
+ * creatable with no edit here. **`type: thread` obeys neither**: `allocatePath`
+ * (`apps/server/src/docs/create.ts`) places it flat at `data/threads/<id>.md`
+ * before `folder` is consulted at all, so a folder sent with one is validated
+ * and then has no effect. This verb sends `type` and `folder` as typed and
+ * renders the path that comes back; it pre-validates neither, and it must never
+ * construct one (architecture decision 2).
  */
 
 export async function runDocCreate(
@@ -88,14 +91,21 @@ export const createCommand: WorkspaceCommandSpec = {
     "An omitted `--folder` files the document in the root its `--type` declares: `data/docs/inbox/` " +
     "for every ordinary type (creation is inbox-first), and `.claude/agents/` for `--type " +
     "agent-def`, which SPEC.md §7 gives its own document root — so a persona takes no extra flag. " +
-    "**An explicit `--folder` always wins**, including over that, which is what keeps a document " +
-    "_about_ a persona expressible: `--type agent-def --folder inbox` still files under " +
-    "`data/docs/`. A root of its own may also be named outright, by its exact declared path " +
-    "(`--folder .claude/agents`), and a root named that way must hold the type asked for. " +
-    "`--type skill` is the one type with no folder form at all — a skill is `<name>/SKILL.md`, a " +
-    "directory plus a fixed filename rather than a folder question, so `corpus skill create` owns " +
-    "genesis there and `.claude/skills` is refused as a `--folder`. A folder the server rejects is " +
-    "reported verbatim rather than pre-validated here. " +
+    "**An explicit `--folder` wins over that default**, which is what keeps a document _about_ a " +
+    "persona expressible: `--type agent-def --folder inbox` still files under `data/docs/`. A root " +
+    "of its own may also be named outright, by its exact declared path (`--folder .claude/agents`) " +
+    "and never a folder beneath it; a root named that way must hold the type asked for, so `--type " +
+    "note --folder .claude/agents` is a `400` rather than a note the corpus would index as a " +
+    "persona. **`--type thread` is placed by neither rule**: a thread is flat at " +
+    "`data/threads/<id>.md`, named by its id (SPEC.md §4), so an omitted `--folder` is not the " +
+    "inbox and an explicit one is still checked but never changes where it lands — and a thread is " +
+    "normally created by `corpus thread create`. `--type skill` is the one type whose own root is " +
+    "out of reach here: `.claude/skills` indexes `SKILL.md` files alone, as does the archived root " +
+    "beside it, so naming either as a `--folder` is a `400` and a skill created with no `--folder` " +
+    "lands in the inbox like anything else — `corpus skill create` owns genesis at " +
+    "`<name>/SKILL.md`, while `--type skill --folder finance` files an ordinary document in " +
+    "`data/docs/finance/`. A folder the server rejects is reported verbatim rather than " +
+    "pre-validated here. " +
     "`--pinned`, `--order`, `--query` and `--column` write the SPEC.md §11 **view keys** at " +
     "creation, so `--type view --pinned true` is a board column in one command — the board picks " +
     "it up over SSE with no reload. A column the board's own “＋ New list” would have written " +
@@ -127,7 +137,9 @@ export const createCommand: WorkspaceCommandSpec = {
         "(`data/docs/finance`); a type SPEC.md §7 gives its own document root may instead name " +
         "that root by its exact declared path (`.claude/agents`). Defaults to the root `--type` " +
         "declares — `inbox` for ordinary types, `.claude/agents` for `agent-def` — and an " +
-        "explicit folder always wins over that default.",
+        "explicit folder wins over that default. **`--type thread` is the exception at both " +
+        "ends**: a thread is placed flat at `data/threads/<id>.md` before this flag is consulted " +
+        "(SPEC.md §4), so a folder sent with one is validated and then has no effect.",
     },
     {
       name: "tags",
@@ -164,7 +176,7 @@ export const createCommand: WorkspaceCommandSpec = {
       command:
         "corpus doc create --type agent-def --title \"Analyst\" --from agent <<'EOF'\nYou read the corpus and answer with evidence.\nEOF",
       description:
-        "A persona, in one command: no `--folder`, because `agent-def` has its own root — the document lands at `.claude/agents/analyst.md` and is designatable as `@analyst` immediately, with no separate registry (SPEC.md §11).",
+        "A persona, in one command: no `--folder`, because `agent-def` has its own document root — one copy of the file, read by Claude Code and by Corpus, with no sync (SPEC.md §7). It lands at `.claude/agents/analyst.md`, `@analyst` resolves to it in the very next comment (SPEC.md §8), and Claude Code lists it as a subagent, because the server writes both discovery keys with the document: `name`, derived from the filename, and `description`, defaulted to the title (SERVER-123). That default is thin on purpose — `corpus doc edit <id> --extra description=…` is how it comes to say _when_ to reach for this one.",
     },
     {
       command:

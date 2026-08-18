@@ -328,19 +328,77 @@ describe("corpus doc create", () => {
       ]);
     });
 
+    // A thread is the one type `allocatePath` places *before* `folder` is
+    // consulted (`apps/server/src/docs/create.ts`), so the help's two rules are
+    // both false of it — measured, not reasoned: `--type thread --folder
+    // finance` lands at `data/threads/th_….md`. The CLI's part is unchanged
+    // regardless: it sends what it was given, so the server can still refuse a
+    // folder that names nothing.
+    it("sends a thread's folder unchanged, even though it decides nothing", async () => {
+      const stub = await startStubServer(
+        jsonResponder(201, {
+          doc: {
+            ...DOC,
+            frontmatter: { ...DOC.frontmatter, id: "th_a1b2c3", type: "thread" },
+            path: "data/threads/th_a1b2c3.md",
+          },
+          warnings: [],
+        }),
+      );
+      const harness = stubContext(stub, {
+        flags: { type: "thread", title: "Fin thread", folder: "finance" },
+      });
+
+      await runDocCreate(harness.context, { stdinIsBodySource: false });
+
+      expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
+        type: "thread",
+        title: "Fin thread",
+        folder: "finance",
+      });
+      expect(harness.stdout()).toBe("created th_a1b2c3 — data/threads/th_a1b2c3.md\n");
+    });
+
     it("says in the help which root each type lands in, and who wins", () => {
       const text = `${createCommand.description ?? ""}`;
       // The amended sentence: inbox-first is stated as the ordinary case, not
       // as the rule for every type.
       expect(text).toContain("the root its `--type` declares");
       expect(text).toContain("`.claude/agents/`");
-      expect(text).toContain("**An explicit `--folder` always wins**");
+      expect(text).toContain("**An explicit `--folder` wins over that default**");
+      // The two types the two rules are *not* true of, each said outright
+      // rather than left to be inferred from the general sentence (PR #49
+      // review, third pass): a thread is placed by neither, and a skill's own
+      // root cannot be named.
+      expect(text).toContain("**`--type thread` is placed by neither rule**");
+      expect(text).toContain("`data/threads/<id>.md`");
+      expect(text).toContain("a skill created with no `--folder` lands in the inbox");
       // `--type skill` is stated rather than left ambiguous (SERVER-122
-      // Decision 2): out of scope, owned by `corpus skill create`.
+      // Decision 2): genesis is owned by `corpus skill create`.
       expect(text).toContain("`corpus skill create`");
 
       const folderFlag = createCommand.flags.find((flag) => flag.name === "folder");
       expect(folderFlag?.description).toContain("`.claude/agents`");
+      expect(folderFlag?.description).toContain("`data/threads/<id>.md`");
+    });
+
+    // SERVER-123: the example promises a profile Claude Code actually loads,
+    // and it may promise that only because the *server* writes `name` and
+    // `description` with the document. The claim is pinned so that a future
+    // edit which drops either field leaves this example visibly overclaiming.
+    it("claims of the persona example only what SERVER-123 makes true", () => {
+      const example = createCommand.examples.find((entry) =>
+        entry.command.includes("--type agent-def"),
+      );
+
+      expect(example?.description).toContain("`.claude/agents/analyst.md`");
+      expect(example?.description).toContain("SPEC.md §7");
+      expect(example?.description).toContain("`name`, derived from the filename");
+      expect(example?.description).toContain("`description`, defaulted to the title");
+      // The old wording cited §11 — a section that exists, so `spec:check`
+      // passed it, and that says nothing about the one file both readers share.
+      expect(example?.description).not.toContain("SPEC.md §11");
+      expect(example?.description).not.toContain("no separate registry");
     });
   });
 });
