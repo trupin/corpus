@@ -128,6 +128,18 @@ export const relatedDocs = createRoute({
  * `folder`'s and `title`'s descriptions say what each field accepts and why. So
  * both exceptions appear here in one clause each, with the field named as the
  * place to read them out.
+ *
+ * **Second review, same sentence** (CONTRACT-063 batch): the clause added above
+ * said "except for a type SPEC.md §7 gives a document root of its own" — the
+ * over-broad form the *field* had already been given a qualifier to avoid. §7
+ * gives `type: skill` a root of its own and a skill created with no folder still
+ * lands in the inbox (`rootForType` requires `projectionIndexesFolder`, false
+ * for a `SKILL.md`-only root; pinned by `apps/server/src/docs/write.test.ts`).
+ * The exceptions are therefore **named** here rather than characterised, and
+ * both of them are: `agent-def` and — the one no version of this sentence had
+ * mentioned — `thread`, which `allocatePath` files flat under `data/threads/`
+ * before `folder` is consulted at all. The test for any future edit is to read
+ * the sentence against all five entries of `DOCUMENT_ROOTS`.
  */
 export const createDoc = createRoute({
   method: "post",
@@ -137,9 +149,13 @@ export const createDoc = createRoute({
   description:
     "The body is pre-filled from the type's `template` document when one exists and no body is given " +
     "(SPEC.md §9.2). The server assigns the id; it is immutable thereafter. Creation is inbox-first: " +
-    "an omitted `folder` files the document in `data/docs/inbox/` — **except for a type SPEC.md §7 " +
-    "gives a document root of its own**, which is where an omitted `folder` files it instead, so a " +
-    "`type: agent-def` document lands in `.claude/agents/` and not in the inbox. See `folder` for " +
+    "an omitted `folder` files the document in `data/docs/inbox/` — **except for a type whose own " +
+    "document root takes ordinary markdown documents**, which is where an omitted `folder` files it " +
+    "instead. There are two: a `type: agent-def` document lands in `.claude/agents/` (SPEC.md §7) " +
+    "and not in the inbox, and a `type: thread` document is flat at `data/threads/<id>.md` " +
+    "(SPEC.md §4) whatever `folder` names. `type: skill` is **not** one of them, though §7 gives it " +
+    "a root too: `.claude/skills` indexes `SKILL.md` files alone, so a skill created here with no " +
+    "folder still lands in the inbox. See `folder` for " +
     "that grammar in full, including which roots a request may name outright. A create can also be " +
     "refused on its `title`: in a root where a document's filename is the name it answers to, a " +
     "name already taken is a `400` rather than the deduped filename a title collision gets under " +

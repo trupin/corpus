@@ -42,10 +42,21 @@ export const DocStatusSchema = z.enum(DOC_STATUSES).openapi({
 /**
  * Folder placement under `data/docs/`. Creation is inbox-first (SPEC.md §11
  * "zero-form, inbox-first"), so an omitted folder lands the document in
- * `data/docs/inbox/` rather than at the root — unless the type being created is
- * one SPEC.md §7 gives a document root of its own, which
- * {@link CREATE_FOLDER_DESCRIPTION} spells out. This constant is the `data/docs`
- * default and nothing more; the roots outside it are not folders under it.
+ * `data/docs/inbox/` rather than at the root — unless the type being created has
+ * a root of its own that it can actually land in, which
+ * {@link CREATE_FOLDER_DESCRIPTION} spells out.
+ *
+ * "Has a root of its own" is not the same as "lands there", and the difference
+ * is the whole reason this qualifier keeps having to be re-added (PR #49 review,
+ * three times in one phase). Read against `rootForType` in
+ * `apps/server/src/docs/write.ts`, the exceptions are exactly two: `agent-def`
+ * → `.claude/agents/` (SPEC.md §7) and `thread` → `data/threads/<id>.md`
+ * (SPEC.md §4, and there whatever `folder` says). `skill` is **not** one, though
+ * §7 gives it `.claude/skills`: that root indexes `SKILL.md` files alone, so a
+ * skill created with no folder lands here in the inbox like anything else.
+ *
+ * This constant is the `data/docs` default and nothing more; the roots outside
+ * it are not folders under it.
  */
 export const DEFAULT_DOC_FOLDER = "inbox";
 
@@ -66,6 +77,16 @@ export const DEFAULT_DOC_FOLDER = "inbox";
  * is reachable without a contract change, and the one example named
  * (`.claude/agents`) is named because it is the one the product's own agent
  * depends on.
+ *
+ * **The check every version of this sentence has failed** (PR #49 second
+ * review): take the finished sentence back to `DOCUMENT_ROOTS`
+ * (`apps/server/src/projection/roots.ts`) and ask of each of the five roots
+ * whether it is true of a document filed there. `.claude/skills` and
+ * `.claude/skills-archived` are why the "takes ordinary markdown documents"
+ * qualifier cannot be dropped — a `type: skill` create with no folder lands in
+ * the inbox — and `data/threads` is why the closing clause exists: `thread` is
+ * the one type `allocatePath` places before `folder` is consulted at all, so
+ * neither the inbox default nor "an explicit folder wins" holds for it.
  */
 const CREATE_FOLDER_DESCRIPTION =
   "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
@@ -81,8 +102,12 @@ const CREATE_FOLDER_DESCRIPTION =
   "not take an ordinary `*.md` is out of reach for the same reason it is not a default — " +
   "`.claude/skills` indexes `SKILL.md` files alone, so naming it is a `400` and a `type: skill` " +
   `create with no folder still lands in \`${DEFAULT_DOC_FOLDER}\`; a skill is created with ` +
-  '`POST /api/skills`. An explicit folder always wins, so `folder: "inbox"` still files an ' +
-  "`agent-def` under `data/docs/` as a document *about* a persona.";
+  "`POST /api/skills`. An explicit folder always wins over that default, so " +
+  '`folder: "inbox"` still files an `agent-def` under `data/docs/` as a document *about* a ' +
+  "persona. **One type is placed by neither rule**: a `type: thread` document is flat at " +
+  "`data/threads/<id>.md`, named by its id (SPEC.md §4), so a `folder` sent with one is still " +
+  "checked but never changes where it lands — and a thread is normally created by " +
+  "`POST /api/threads`.";
 
 /**
  * **A title is refused only where the filename is an address** (PR #49 review;
@@ -114,10 +139,33 @@ const CREATE_TITLE_DESCRIPTION =
   "asked for and the create is a `400` naming the name already taken. Edit the existing document " +
   "with `PUT /api/docs/{id}`, or choose a title that names something else.";
 
+/**
+ * **Move's half of the split sentence was wrong for move too** (CONTRACT-063; PR
+ * #49 second review). CONTRACT-062 separated the two constants and deliberately
+ * left this one byte-identical, so that the split could not be accused of
+ * quietly giving move a grammar it never had. What it left behind published a
+ * falsehood: the field is `z.string()` — required, no `.default()` — and the
+ * text said it "Defaults to `inbox`", then explained that default with
+ * *creation* being inbox-first, a rule about a route this field is not on.
+ *
+ * Written from `moveDocument`/`planMove` (`apps/server/src/docs/move.ts`) and
+ * from `resolveFolder(folder)` called with **no type**, which is what makes
+ * move's grammar the plain one: `admitRoot` refuses a named root whose declared
+ * type is not the type being filed, and a move supplies none, so every root in
+ * `DOCUMENT_ROOTS` outside `data/` is a `400` here rather than a destination.
+ * That refusal is stated rather than left out, because it is the question a
+ * caller arrives with after reading create's field.
+ */
 const MOVE_FOLDER_DESCRIPTION =
-  "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
-  `(\`data/docs/finance\`). Defaults to \`${DEFAULT_DOC_FOLDER}\` — creation is inbox-first ` +
-  "(SPEC.md §11), and the agent files inbox arrivals per its skill.";
+  "Destination folder under `data/docs/`, accepted either as a bare name (`finance`) or as the " +
+  "full prefix (`data/docs/finance`). **Required, and it has no default**: a move names where " +
+  "the document is going. Nothing here is inbox-first — that is creation's rule " +
+  "(`POST /api/docs`, SPEC.md §11), and a document being moved already has a folder. Every " +
+  "destination is under `data/docs/`: a move carries no type, and each document root SPEC.md §7 " +
+  "adds alongside `data/` holds exactly one type, so naming one (`.claude/agents`) is a `400` — " +
+  "filing a document into such a root is part of creating it, not of moving it. The filename " +
+  "does not change, so a destination that already holds a file of that name is a `400` and never " +
+  "an overwrite.";
 
 /**
  * **Nullable timestamps (CONTRACT-005 decision, 2026-07-27; extended to

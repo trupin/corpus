@@ -2198,18 +2198,21 @@ describe("the two folder grammars are described separately (CONTRACT-062)", () =
   });
 
   /**
-   * Move did not gain the grammar and this must not quietly give it one: the
-   * move-side sentence is what it has always been, and none of create's
-   * type-aware half may leak into it.
+   * Move did not gain the type-aware grammar and this must not quietly give it
+   * one. The guard used to be an exact-string pin on the sentence CONTRACT-062
+   * carried over unchanged; CONTRACT-063 replaced that sentence, so the guard is
+   * now the *hazard* rather than the bytes — none of create's four type-aware
+   * facts may appear on a route that calls `resolveFolder` with no type.
    */
-  it("leaves move's description as the plain `data/docs/` grammar", () => {
-    expect(move()).toBe(
-      "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full " +
-        "prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first " +
-        "(SPEC.md §11), and the agent files inbox arrivals per its skill.",
-    );
-    for (const absent of ["agent-def", ".claude/", "document root"]) {
-      expect(move(), `move must not mention ${absent}`).not.toContain(absent);
+  it("keeps create's type-aware grammar off move", () => {
+    for (const absent of [
+      "An explicit folder always wins",
+      "named outright",
+      "must hold the type being created",
+      "`type: agent-def`",
+      "POST /api/skills",
+    ]) {
+      expect(move(), `move must not carry create's "${absent}"`).not.toContain(absent);
     }
   });
 
@@ -2289,6 +2292,93 @@ describe("create publishes both of its exceptions at the route level (PR #49)", 
     expect(titleDescription()).toContain("may share a title");
     expect(titleDescription()).toContain("analyst-2.md");
     expect(titleDescription()).toContain("never fails on the title");
+  });
+});
+
+/**
+ * CONTRACT-063 and PR #49's **second** review, which found the same defect one
+ * level up for the third time in the phase: a sentence about where an omitted
+ * `folder` files a document, stated over the whole of `DOCUMENT_ROOTS` when it
+ * is true of two of its five entries.
+ *
+ * The assertions below are the enumeration itself, written against the
+ * generated document. Each of the three published `folder` surfaces — the create
+ * route, `CreateDocRequest.folder`, `MoveDocRequest.folder` — is checked against
+ * every root a document can be filed in:
+ *
+ * | root                     | type        | omitted `folder` files it… |
+ * | ------------------------ | ----------- | -------------------------- |
+ * | `data/docs`              | any other   | `data/docs/inbox/`         |
+ * | `data/threads`           | `thread`    | `data/threads/<id>.md`, whatever `folder` says |
+ * | `.claude/skills`         | `skill`     | `data/docs/inbox/` — the root takes `SKILL.md` alone |
+ * | `.claude/skills-archived`| `skill`     | as above                   |
+ * | `.claude/agents`         | `agent-def` | `.claude/agents/`          |
+ *
+ * Read out of `rootForType` + `projectionIndexesFolder` and `allocatePath`
+ * (`apps/server/src/docs/write.ts`, `create.ts`), and pinned server-side by
+ * `apps/server/src/docs/write.test.ts`.
+ */
+describe("every folder sentence is true of every document root (CONTRACT-063)", () => {
+  const folderDescription = (component: string): string => {
+    const found = componentSchemas?.[component]?.properties?.["folder"]?.description;
+    if (found === undefined) throw new Error(`No ${component}.folder description.`);
+    return found;
+  };
+  const create = (): string => folderDescription("CreateDocRequest");
+  const move = (): string => folderDescription("MoveDocRequest");
+  const createRouteText = (): string => operation("/api/docs", "post").description ?? "";
+
+  /**
+   * The clause the reviewer rejected, verbatim. It characterised the exception
+   * ("a type §7 gives a root of its own") where the rule turns on something
+   * narrower — whether that root indexes an ordinary `*.md` — so it read as a
+   * promise about `type: skill` that the server does not keep.
+   */
+  it("does not characterise the exception over-broadly at the route level", () => {
+    expect(createRouteText()).not.toContain("except for a type SPEC.md §7 gives a document root");
+  });
+
+  it("names the skill root as the counterexample it is, on the route and the field", () => {
+    expect(createRouteText()).toContain("`type: skill`");
+    expect(createRouteText()).toContain("SKILL.md");
+    expect(createRouteText()).toContain("still lands in the inbox");
+    expect(create()).toContain("`type: skill`");
+  });
+
+  /**
+   * `data/threads` is the root every earlier version of these sentences missed:
+   * `allocatePath` returns `data/threads/<id>.md` for a `type: thread` before
+   * `folder` is consulted, so *both* published rules — the inbox default and
+   * "an explicit folder always wins" — are false for it unless it is named.
+   */
+  it("names the thread root, where neither the default nor an explicit folder applies", () => {
+    expect(createRouteText()).toContain("`type: thread`");
+    expect(createRouteText()).toContain("data/threads/<id>.md");
+    expect(create()).toContain("data/threads/<id>.md");
+    expect(create()).toContain("never changes where it lands");
+  });
+
+  /**
+   * MAJOR 2. `MoveDocRequest.folder` is `z.string()` — required, no `.default()`
+   * — and its description claimed an `inbox` default and explained it with
+   * *creation* being inbox-first. Both halves are asserted: what the document
+   * says, and what the document's own schema keywords say, so the prose cannot
+   * drift from the shape again without one of them failing.
+   */
+  it("does not claim a default move's folder does not have", () => {
+    expect(move()).not.toContain("Defaults to");
+    expect(move()).not.toContain("files inbox arrivals");
+    expect(move()).toContain("it has no default");
+    const schema = componentSchemas?.["MoveDocRequest"];
+    expect(schema?.required).toContain("folder");
+    expect(schema?.properties?.["folder"]).not.toHaveProperty("default");
+  });
+
+  /** And says what a move's `folder` *is*, which the discarded half never did. */
+  it("states move's own grammar: a destination under data/docs, roots refused", () => {
+    expect(move()).toContain("data/docs/finance");
+    expect(move()).toContain(".claude/agents");
+    expect(move()).toContain("`400`");
   });
 });
 

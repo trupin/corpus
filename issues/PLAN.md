@@ -928,7 +928,7 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | CLI-049 | `corpus thread designate` without naming an agent | done | P1 | CONTRACT-061, SERVER-121 |
 | CONTRACT-062 | `FOLDER_DESCRIPTION` describes two routes whose grammars have diverged | done | P1 | SERVER-122 |
 | CLI-050 | `corpus doc create --type agent-def` lands in `.claude/agents/` | done | P0 | SERVER-122 |
-| CONTRACT-063 | `MoveDocRequest.folder` is required and still says it defaults to `inbox` | todo | P2 | CONTRACT-062 |
+| CONTRACT-063 | `MoveDocRequest.folder` is required and still says it defaults to `inbox` | done | P2 | CONTRACT-062 |
 | UI-122 | The designate menu offers a general resident first, and never dead-ends | done | P0 | CONTRACT-061, SERVER-121 |
 | AGENT-033 | A resident with no persona to bind | done | P0 | CONTRACT-061, SERVER-121, CLI-049 |
 | AGENT-034 | A skill that creates an agent profile | done | P0 | SERVER-122, CLI-050 |

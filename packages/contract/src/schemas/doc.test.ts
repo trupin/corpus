@@ -391,8 +391,22 @@ describe("MoveDocRequest", () => {
     const move = MoveDocRequestSchema.shape.folder.meta()?.description ?? "";
     const create = CreateDocRequestSchema.shape.folder.meta()?.description ?? "";
     expect(move).not.toBe(create);
-    expect(move).not.toContain("agent-def");
+    expect(move).not.toContain("`type: agent-def`");
     expect(move).toContain("data/docs/finance");
+  });
+
+  /**
+   * CONTRACT-063. The field is required, so the description must not describe a
+   * default — and the assertion is written against the *schema* as well as the
+   * prose, because the defect was precisely the two disagreeing: a required
+   * field whose text explained the default it does not have with a rule
+   * (creation is inbox-first) belonging to another route.
+   */
+  it("claims no default, matching a field that is required", () => {
+    const move = MoveDocRequestSchema.shape.folder.meta()?.description ?? "";
+    expect(MoveDocRequestSchema.shape.folder.safeParse(undefined).success).toBe(false);
+    expect(move).not.toContain("Defaults to");
+    expect(move).toContain("it has no default");
   });
 });
 
