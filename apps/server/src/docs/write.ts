@@ -126,10 +126,29 @@ const LOCAL_CHECK_CODES: ReadonlySet<CheckCode> = new Set([
 const REPORTED_CHECK_CODES: ReadonlySet<CheckCode> = new Set([CHECK_CODES.unterminatedFence]);
 
 /**
- * §7's Claude Code frontmatter requirement, on the write path: **reported, never
- * refused** — {@link REPORTED_CHECK_CODES}'s family, joined by a predicate
- * rather than by a code because it is not a whole code (SERVER-123 regression,
- * PR #49 review 3).
+ * Every `frontmatter-invalid` raised **under one of §7's Claude Code roots**, on
+ * the write path: **reported, never refused** — {@link REPORTED_CHECK_CODES}'s
+ * family, joined by a predicate rather than by a code because it is not a whole
+ * code (SERVER-123 regression, PR #49 review 3).
+ *
+ * Two rules produce that code at such a path and both land here, for the one
+ * reason spelled out below. §7's requirement that a profile carry Claude Code's
+ * `name` and `description` is the first. The second is §5's canonical block,
+ * whose waiver under these roots covers a Corpus field the file never wrote down
+ * and *not* one it wrote down wrongly (SERVER-124, `core/check.ts`'s
+ * `waivedAsAbsent`) — so `status: banana` in a hand-authored
+ * `.claude/agents/*.md` is now a finding, and blocking on it would be
+ * SERVER-123's regression again, in a second shape: a file whose only fault is a
+ * field somebody typed by hand years ago would become uneditable, unarchivable
+ * and unreachable by any bulk act, and the board's editor cannot express a
+ * frontmatter repair either. A save is refused for what a save can *break*; a
+ * fault the bytes already carry is reported and let through, which is
+ * {@link REPORTED_CHECK_CODES}'s stated rule verbatim.
+ *
+ * Widening the predicate from "the profile requirement" to "this root" adds no
+ * tolerance that was not already there: under these roots §5's block was waived
+ * outright, so §7's requirement was the only producer, and every finding the
+ * widening newly admits is one that did not exist before it.
  *
  * The requirement shipped riding `frontmatter-invalid`, which is a member of
  * {@link LOCAL_CHECK_CODES} — so every server write to *any* `.claude/agents/*.md`
@@ -163,6 +182,14 @@ const REPORTED_CHECK_CODES: ReadonlySet<CheckCode> = new Set([CHECK_CODES.unterm
  *   pipeline is reached. `docs/update.ts` guards the one other route that accepts
  *   these fields from a caller, and refuses only a patch that *introduces* a
  *   fault, so the repair above still goes through.
+ * - **The server never authors a malformed Corpus field either**, and needs no
+ *   guard of its own to say so: every route that writes frontmatter builds it
+ *   from values the contract already validated, so the only way a fault of §5's
+ *   half reaches a file under these roots is that a hand — or another tool —
+ *   put it there. That asymmetry is why this half needs no equivalent of
+ *   `assertClaudeCodeFieldsAuthoredGood`: there is no route through which a
+ *   caller can hand the server a `status` the wire would accept and §5 would
+ *   not.
  * - **Sprint-013 Adjudication 6 binds in both directions**, and this is what it
  *   asks for: the two call sites run one validator, from one seam factory, and
  *   produce identical findings for identical bytes. What differs is what the save
@@ -170,18 +197,18 @@ const REPORTED_CHECK_CODES: ReadonlySet<CheckCode> = new Set([CHECK_CODES.unterm
  *   here and nowhere else — precisely as `unterminated-fence` already is, an
  *   error `corpus doc check` fails on and a save deliberately lets through.
  *
- * **Why the predicate can be keyed on the path.** Under a root
- * {@link claudeCodeRootFor} names, §5's canonical block is *waived* — `checkCorpus`
- * emits its `frontmatter-invalid` only in the `claudeCodeRoot === null` branch —
- * so at such a path this is the sole producer of the code and there is nothing to
- * confuse it with. That is what the deleted `isSkillFrontmatterException` could
- * not say: it was a filter over `code` + `path` asked to tell two *live*
- * producers apart under one code. Here the roots partition them.
+ * **Why the predicate can be keyed on the path.** The deleted
+ * `isSkillFrontmatterException` was a filter over `code` + `path` asked to tell
+ * two *live* producers apart under one code, and could not. This one never has
+ * to: the roots partition the question, and inside them both producers get the
+ * same answer. Which rule raised a given `frontmatter-invalid` at such a path is
+ * not a question this predicate needs to answer — it is a question about *which
+ * repair* the operator makes, and `corpus doc check` and the log line below both
+ * carry the `detail` that says so, unchanged.
  */
-function isClaudeCodeRequirement(finding: CheckFinding): boolean {
+function isClaudeRootFrontmatter(finding: CheckFinding): boolean {
   return (
-    finding.code === CHECK_CODES.frontmatterInvalid &&
-    (claudeCodeRootFor(finding.path)?.discoveredAs ?? null) !== null
+    finding.code === CHECK_CODES.frontmatterInvalid && claudeCodeRootFor(finding.path) !== null
   );
 }
 
@@ -253,17 +280,18 @@ export const checkSeams = (projection: ProjectionDb): CheckOptions => ({
  * than it was: the reason first given for holding the line here was that
  * `frontmatter-invalid` blocks a save, so requiring the fields of hand-authored
  * skills would make them unwritable. That is no longer true of either root (see
- * {@link isClaudeCodeRequirement}), so what remains is only whether every
+ * {@link isClaudeRootFrontmatter}), so what remains is only whether every
  * description-less `SKILL.md` in an existing workspace should start failing
- * `corpus doc check` — a product call, not a safety one. **Residual: §7:399 is
- * true for agent-defs and still not for skills.**
+ * `corpus doc check` — a product call, not a safety one. **Residual: §7:399's
+ * Corpus half is now true under every root this function names (SERVER-124);
+ * its Claude Code half is true for agent-defs and still not for skills.**
  *
  * A predicate reached through {@link checkSeams} rather than computed at each
  * call site, for the reason its filtering predecessor was: the save path and
  * `POST /api/check` share one seam factory precisely so they cannot answer
  * differently (sprint-013 Adjudication 6 — *"a divergence between the two is
  * itself a bug"*). What the save path then *does* with a finding is a separate
- * question, answered in one place; see {@link isClaudeCodeRequirement}.
+ * question, answered in one place; see {@link isClaudeRootFrontmatter}.
  */
 export function claudeCodeRootFor(path: string): ClaudeCodeRoot | null {
   const root = classifyPath(path);
@@ -562,17 +590,19 @@ export type SaveCheck = {
 export function checkSave(projection: ProjectionDb, path: string, text: string): SaveCheck {
   const report = checkCorpus([toCheckDocument(path, text)], checkSeams(projection));
   // Every `frontmatter-invalid` reaching this line is one the system means — §5's
-  // block outside `.claude/`, or Claude Code's own two fields inside
-  // `.claude/agents/` (SERVER-123) — because the waiver lives in the rule that
-  // produces the finding (`checkSeams`' `claudeCodeRoot`) rather than in a filter
-  // here. The two are not the same to a *save*, though: §5's block is refused and
-  // §7's is reported, for the reason spelled out on {@link isClaudeCodeRequirement}.
+  // block outside `.claude/`, Claude Code's own two fields inside
+  // `.claude/agents/` (SERVER-123), or a Corpus field a file under one of those
+  // roots wrote down and got wrong (SERVER-124) — because the waiver lives in the
+  // rule that produces the finding (`checkSeams`' `claudeCodeRoot`) rather than in
+  // a filter here. They are not the same to a *save*, though: §5's block outside
+  // those roots is refused, and everything inside them is reported, for the reason
+  // spelled out on {@link isClaudeRootFrontmatter}.
   const blocking = report.errors.filter(
-    (finding) => LOCAL_CHECK_CODES.has(finding.code) && !isClaudeCodeRequirement(finding),
+    (finding) => LOCAL_CHECK_CODES.has(finding.code) && !isClaudeRootFrontmatter(finding),
   );
   // Errors this save lets through and still reports (see REPORTED_CHECK_CODES).
   const tolerated = report.errors.filter(
-    (finding) => REPORTED_CHECK_CODES.has(finding.code) || isClaudeCodeRequirement(finding),
+    (finding) => REPORTED_CHECK_CODES.has(finding.code) || isClaudeRootFrontmatter(finding),
   );
   const warnings: Warning[] = [];
   for (const finding of report.warnings) {

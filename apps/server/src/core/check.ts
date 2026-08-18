@@ -2,7 +2,7 @@ import type { TextQuoteSelector } from "@corpus/contract";
 import { unterminatedFence } from "@corpus/contract";
 import type { ParsedDocument } from "./document.js";
 import { DocumentParseError, bodyStartLine, duplicateKeysAt, parseDocument } from "./document.js";
-import type { FileFrontmatter } from "./frontmatter.js";
+import type { FileFrontmatter, FrontmatterIssue } from "./frontmatter.js";
 import { isThreadFrontmatter, threadFrontmatter, validateFrontmatter } from "./frontmatter.js";
 import { idPrefixForDocType, isAnchorId } from "./ids.js";
 import { extractRefs } from "./refs.js";
@@ -28,12 +28,15 @@ import { duplicateTurnTimestamps } from "./turns.js";
  * **Frontmatter means both vocabularies, not just Corpus's.** §7: "Corpus's
  * frontmatter fields … coexist with Claude Code's (`name`, `description`) in the
  * same YAML block; `corpus doc check` validates both sets." Under `.claude/`
- * those two sets trade places — §5's canonical block is waived and Claude Code's
- * two fields are required — and both halves are decided by the one
+ * those two sets trade places — §5's canonical block is no longer *required* and
+ * Claude Code's two fields are — and both halves are decided by the one
  * `claudeCodeRoot` seam, so a rule and its waiver can never contradict each
  * other. They share `frontmatter-invalid` because they are the same finding
  * about the same YAML block: this document's frontmatter does not carry what a
- * file in its position must (SERVER-123).
+ * file in its position must (SERVER-123). What the waiver never covered, and
+ * used to drop anyway, is a Corpus field the file *did* write down and got
+ * wrong; that is judged under those roots exactly as it is under `data/`
+ * (SERVER-124, {@link waivedAsAbsent}).
  *
  * An anchor entry with no thread is deliberately on the failure side: §14 lists
  * "every anchor belongs to an existing thread" among the rules a mutation must
@@ -145,13 +148,15 @@ export type CheckOptions = {
    * One seam because it answers one question with two halves, and the halves are
    * mirror images of each other (SERVER-123):
    *
-   * - **Non-null waives §5's canonical block.** Those roots legitimately hold
-   *   files carrying Claude Code's frontmatter and not Corpus's — a hand-written
-   *   `SKILL.md` has no `id:`, which is why the projection synthesizes one — so
-   *   the `frontmatter-invalid` findings §5 would produce are not raised at all.
-   *   Suppressed *here*, at the rule, rather than filtered out of the report by
-   *   each consumer: a filter keyed on `code` + `path` cannot tell §5's finding
-   *   from the one below, which carries the same code for the opposite reason.
+   * - **Non-null waives §5's canonical block — its *presence*, not its
+   *   *shape*.** Those roots legitimately hold files carrying Claude Code's
+   *   frontmatter and not Corpus's — a hand-written `SKILL.md` has no `id:`,
+   *   which is why the projection synthesizes one — so a Corpus field the file
+   *   never wrote down raises nothing. A field it *did* write down is judged
+   *   exactly as it is anywhere else; see {@link waivedAsAbsent}. Suppressed
+   *   *here*, at the rule, rather than filtered out of the report by each
+   *   consumer: a filter keyed on `code` + `path` cannot tell §5's finding from
+   *   the one below, which carries the same code for the opposite reason.
    * - **A non-null `discoveredAs` requires Claude Code's block**, by the same
    *   §7 sentence: "`corpus doc check` validates both sets". A file there
    *   missing `name` or `description` is silently not loaded as a subagent, and
@@ -311,6 +316,50 @@ export function claudeCodeFrontmatterIssues(
 
   return issues;
 }
+
+/**
+ * Whether §5's waiver under a `.claude/` root covers this frontmatter issue —
+ * i.e. whether the issue is about a field the file **did not write down**
+ * (SERVER-124).
+ *
+ * The waiver has to drop *required-ness*: a hand-written profile legitimately
+ * has no `id`, no `type`, no `status`, and demanding them would fail files
+ * Claude Code wrote and Corpus only reads. It was never meant to drop
+ * *well-formedness* of the fields that are there. `status: banana` has not
+ * omitted a field, it has got one wrong — and §7:399 promises `corpus doc check`
+ * validates Corpus's set. Before this split it validated none of it under these
+ * roots: the whole block was unfalsifiable the moment somebody wrote one.
+ *
+ * The question is therefore "did the author write this key down?", asked of the
+ * **raw mapping** rather than of the validated value (there is none — validation
+ * failed) and of the *top-level* key, so a fault nested under `anchors` is a
+ * fault in something present.
+ *
+ * **A key present with an explicit `null` counts as absent.** `key:` with
+ * nothing after it is YAML's ordinary spelling of "not filled in" — a template
+ * stub, a half-finished hand edit — and it carries exactly the information the
+ * waiver exists to permit: there is no Corpus block here. It also cannot mislead
+ * a reader the way a wrong value can, because every projection reader falls back
+ * for `null` to precisely what it falls back to for a missing key
+ * (`asString`, `TagsSchema.safeParse`, `DocStatusSchema.safeParse` in
+ * `projection/project-document.ts` all do), so the two are indistinguishable
+ * downstream and reporting one but not the other would be a finding about a
+ * keystroke rather than about the document. The fields where `null` is a
+ * *legal* value — `due`, `reviewed`, and a thread's `parent` and `anchor` —
+ * never produce an issue at all, so this decision only ever touches keys for
+ * which `null` and absent already mean the same thing.
+ *
+ * There is deliberately no case for `type`: `DocTypeSchema` is an open
+ * `z.string().min(1)` because "plugins declare their own types … a closed enum
+ * would make every plugin a contract change", so `type: not-a-real-type` is a
+ * well-formed plugin type and is reported by nothing, here or under `data/`.
+ * `type: []` and `type: ""` are reported, being not a non-empty string.
+ */
+const waivedAsAbsent = (
+  data: Readonly<Record<string, unknown>>,
+  issue: FrontmatterIssue,
+): boolean =>
+  issue.field === null || !Object.hasOwn(data, issue.field) || data[issue.field] === null;
 
 const checkAnchorEntries = (
   parsed: ParsedDocument,
@@ -485,19 +534,22 @@ export const checkCorpus = (
     if (!validated.ok) {
       // §5's canonical block is waived under those same roots — a file there
       // legitimately carries Claude Code's fields and not Corpus's, which is why
-      // the projection synthesizes an id for it. Every *structural* rule above
-      // still ran; only this one is waived, and the document is still not loaded
-      // into the cross-document passes, because its frontmatter did not validate
-      // and there is nothing trustworthy to judge it by.
-      if (claudeCodeRoot === null) {
-        for (const issue of validated.issues) {
-          report.error(
-            CHECK_CODES.frontmatterInvalid,
-            docId,
-            entry.path,
-            `${issue.path}: ${issue.message}`,
-          );
-        }
+      // the projection synthesizes an id for it. The waiver is over *presence*
+      // alone: a field the file actually wrote down is judged here as it is
+      // anywhere else, because omitting a field and getting one wrong are two
+      // different things and only the first is what these roots excuse
+      // (SERVER-124 — see {@link waivedAsAbsent}). Every *structural* rule above
+      // still ran; the document is still not loaded into the cross-document
+      // passes either way, because its frontmatter did not validate and there is
+      // nothing trustworthy to judge it by.
+      for (const issue of validated.issues) {
+        if (claudeCodeRoot !== null && waivedAsAbsent(entry.document.data, issue)) continue;
+        report.error(
+          CHECK_CODES.frontmatterInvalid,
+          docId,
+          entry.path,
+          `${issue.path}: ${issue.message}`,
+        );
       }
       continue;
     }

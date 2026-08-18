@@ -156,17 +156,42 @@ export const FileThreadFrontmatterSchema = FileFrontmatterSchema.extend({
 export type FileFrontmatter = z.infer<typeof FileFrontmatterSchema>;
 export type FileThreadFrontmatter = z.infer<typeof FileThreadFrontmatterSchema>;
 
-export type FrontmatterIssue = { readonly path: string; readonly message: string };
+export type FrontmatterIssue = {
+  /** The dotted path rendered to the operator; `<root>` when the whole mapping is at fault. */
+  readonly path: string;
+  /**
+   * The **top-level frontmatter key** the issue is about, or `null` when it is
+   * about the mapping itself.
+   *
+   * Carried alongside {@link FrontmatterIssue.path} rather than recovered from
+   * it by splitting on `.`, because the two answer different questions and only
+   * this one is decidable: `path` is display text with a sentinel spelling for
+   * the empty case, and a caller re-deriving the key from it would be parsing a
+   * string whose grammar exists for a human. §5's waiver under `.claude/` turns
+   * on exactly this key — "did the author write this field down?" — so it is
+   * read off zod's own structured path, at the one place that has it
+   * (SERVER-124).
+   */
+  readonly field: string | null;
+  readonly message: string;
+};
 
 export type FrontmatterResult =
   | { readonly ok: true; readonly value: FileFrontmatter; readonly thread: boolean }
   | { readonly ok: false; readonly issues: readonly FrontmatterIssue[] };
 
 const toIssues = (error: z.ZodError): FrontmatterIssue[] =>
-  error.issues.map((issue) => ({
-    path: issue.path.length === 0 ? "<root>" : issue.path.join("."),
-    message: issue.message,
-  }));
+  error.issues.map((issue) => {
+    // A zod path element is a string, an array index, or a symbol. Only a string
+    // at position 0 names a frontmatter key; anything else means the fault is
+    // the mapping itself, which no key can be said to be present for.
+    const head = issue.path[0];
+    return {
+      path: issue.path.length === 0 ? "<root>" : issue.path.join("."),
+      field: typeof head === "string" ? head : null,
+      message: issue.message,
+    };
+  });
 
 /** True when this mapping declares itself a thread and must satisfy the §6 fields. */
 export const isThreadFrontmatter = (data: Readonly<Record<string, unknown>>): boolean =>

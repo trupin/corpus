@@ -459,6 +459,78 @@ describe("validateBeforeWrite", () => {
   });
 
   /**
+   * SERVER-124. §5's waiver under these roots covers a Corpus field the file
+   * never wrote down and not one it wrote down wrongly, so `status: banana` in a
+   * hand-authored profile is now a `frontmatter-invalid` — and blocking on it
+   * would be SERVER-123's regression in a second shape, since the fault is in
+   * bytes the server never authored and the board's editor cannot express a
+   * frontmatter repair. The one thing a save must never do is refuse a document
+   * for a defect it already has and the caller cannot reach.
+   */
+  const MALFORMED = "status: banana\ntags: seven\ntitle: []\n";
+
+  it("does not block a save whose Corpus fields are present and malformed", () => {
+    validating("validate-claude-corpus-fields");
+    for (const path of [
+      ".claude/agents/researcher.md",
+      ".claude/skills/demo/SKILL.md",
+      ".claude/skills-archived/demo/SKILL.md",
+    ]) {
+      expect(
+        validateBeforeWrite(
+          { logger: silentLogger, projection: ws.db },
+          path,
+          profile(`name: researcher\ndescription: For sources.\n${MALFORMED}`),
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  it("logs those fields as errors instead of refusing them", () => {
+    validating("validate-claude-corpus-fields-log");
+    const logged: { message: string; fields: LogFields | undefined }[] = [];
+    const logger = {
+      ...silentLogger,
+      error: (message: string, fields?: LogFields) => logged.push({ message, fields }),
+    };
+
+    validateBeforeWrite(
+      { logger, projection: ws.db },
+      ".claude/skills/demo/SKILL.md",
+      profile(`name: demo\n${MALFORMED}`),
+    );
+
+    expect(logged.map((entry) => entry.message)).toEqual(["document saved with validation errors"]);
+    expect(logged[0]?.fields?.["errors"]).toEqual([
+      expect.stringContaining("frontmatter-invalid: title:"),
+      expect.stringContaining("frontmatter-invalid: tags:"),
+      expect.stringContaining("frontmatter-invalid: status:"),
+    ]);
+  });
+
+  it("still accepts one whose Corpus fields are simply absent", () => {
+    validating("validate-claude-corpus-fields-absent");
+    expect(
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        ".claude/skills/demo/SKILL.md",
+        profile("name: demo\ndescription: A skill.\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("still refuses the same malformed fields under data/docs", () => {
+    validating("validate-claude-corpus-fields-scope");
+    expect(() =>
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        "data/docs/inbox/researcher.md",
+        doc("doc_bogus01", "Body.", ["status: banana", "tags: seven", "title: []"]),
+      ),
+    ).toThrow(/validation/);
+  });
+
+  /**
    * SERVER-066. The finding is an *error* — `corpus doc check` fails on it — and
    * it still must not refuse a save, for two reasons that are properties of the
    * write path rather than of the defect: a blocking rule is judged over the

@@ -478,6 +478,188 @@ describe("the anchorClaimants seam", () => {
   });
 });
 
+/**
+ * SERVER-124. §5's waiver under a `.claude/` root has to drop *required-ness* —
+ * a hand-written profile has no `id`, no `type`, no `status` — but it used to
+ * drop *well-formedness* with it, which made Corpus's whole block unfalsifiable
+ * the moment somebody wrote one. Measured against a real server: a hand-authored
+ * `.claude/agents/bogus.md` carrying `id: 12345`, `title: []`, `tags: seven` and
+ * `status: banana` produced zero findings.
+ *
+ * Every case here is stated three ways for one field — present-and-malformed,
+ * present-and-valid, absent — because those are the three answers the split has
+ * to give and only the first one changed.
+ */
+describe("§5's waiver under a `.claude/` root (SERVER-124)", () => {
+  /** Both of Claude Code's fields, so §7's own requirement contributes nothing. */
+  const CLAUDE_FIELDS = (name: string): Fields => ({
+    name,
+    description: "Reach for this when a claim needs its source.",
+  });
+
+  const ROOTS = [
+    { label: ".claude/agents", path: ".claude/agents/bogus.md", discoveredAs: "bogus" },
+    { label: ".claude/skills", path: ".claude/skills/bogus/SKILL.md", discoveredAs: null },
+    {
+      label: ".claude/skills-archived",
+      path: ".claude/skills-archived/bogus/SKILL.md",
+      discoveredAs: null,
+    },
+  ] as const;
+
+  /** The seam `docs/write.ts`'s `claudeCodeRootFor` supplies on a real server. */
+  const rootedAt = (root: (typeof ROOTS)[number]) => ({
+    claudeCodeRoot: (path: string) =>
+      path === root.path ? { discoveredAs: root.discoveredAs } : null,
+  });
+
+  /** Only §5's half; `anchors` faults also raise the structural `anchor-malformed`. */
+  const blockFindings = (
+    root: (typeof ROOTS)[number],
+    fields: Fields,
+  ): { path: string; detail: string }[] =>
+    checkCorpus(
+      [doc(root.path, { ...CLAUDE_FIELDS("bogus"), ...fields })],
+      rootedAt(root),
+    ).errors.filter((finding) => finding.code === CHECK_CODES.frontmatterInvalid);
+
+  /**
+   * One row per Corpus field of §7:399's list that has a shape to get wrong. The
+   * *valid* value is asserted alongside the malformed one so a test that merely
+   * reported everything under these roots could not pass.
+   */
+  const FIELDS: readonly { field: string; malformed: unknown; valid: unknown }[] = [
+    { field: "id", malformed: 12345, valid: "doc_a1b2c3" },
+    { field: "title", malformed: [], valid: "Bogus" },
+    { field: "tags", malformed: "seven", valid: ["research"] },
+    { field: "status", malformed: "banana", valid: "open" },
+    { field: "created", malformed: "the day before yesterday", valid: "2026-07-19T10:00:00Z" },
+    { field: "updated", malformed: 7, valid: "2026-07-19T10:00:00Z" },
+    { field: "evergreen", malformed: "yes", valid: true },
+    { field: "due", malformed: "next tuesday", valid: "2026-07-19" },
+    { field: "anchors", malformed: { anc_k4f7: { exact: "x", prefix: 5 } }, valid: {} },
+  ];
+
+  for (const root of ROOTS) {
+    describe(root.label, () => {
+      for (const { field, malformed, valid } of FIELDS) {
+        it(`reports \`${field}\` when it is present and malformed`, () => {
+          const findings = blockFindings(root, { [field]: malformed });
+          // The top-level key, so `anchors` matches its own nested issue path.
+          expect(findings.map((finding) => finding.detail.split(/[.:]/)[0])).toContain(field);
+          expect(findings[0]?.path).toBe(root.path);
+        });
+
+        it(`reports nothing for \`${field}\` when it is present and valid`, () => {
+          expect(blockFindings(root, { [field]: valid })).toEqual([]);
+        });
+
+        it(`reports nothing for \`${field}\` when it is absent`, () => {
+          expect(blockFindings(root, {})).toEqual([]);
+        });
+      }
+
+      // The file the waiver was written for: Claude Code's block and nothing else.
+      it("stays clean for a file carrying no Corpus block at all", () => {
+        const report = checkCorpus([doc(root.path, CLAUDE_FIELDS("bogus"))], rootedAt(root));
+        expect(report.errors).toEqual([]);
+        expect(report.warnings).toEqual([]);
+      });
+    });
+  }
+
+  /**
+   * The issue's own reproduction, in full. `type` is deliberately absent from
+   * the findings: `DocTypeSchema` is an open `z.string().min(1)` so that "plugins
+   * declare their own types", which makes `not-a-real-type` a well-formed plugin
+   * type here exactly as it is under `data/`.
+   */
+  it("reports every malformed field of the issue's `bogus.md`", () => {
+    const findings = blockFindings(ROOTS[0], {
+      id: 12345,
+      type: "not-a-real-type",
+      title: [],
+      tags: "seven",
+      status: "banana",
+    });
+    expect(findings.map((finding) => finding.detail.split(":")[0]).sort()).toEqual([
+      "id",
+      "status",
+      "tags",
+      "title",
+    ]);
+  });
+
+  it("leaves a legal plugin type alone", () => {
+    expect(blockFindings(ROOTS[0], { type: "todo" })).toEqual([]);
+  });
+
+  it("reports a `type` that is not a non-empty string", () => {
+    for (const malformed of [[], "", 3]) {
+      expect(blockFindings(ROOTS[0], { type: malformed })[0]?.detail).toMatch(/^type:/);
+    }
+  });
+
+  /**
+   * A key written with nothing after it is YAML's ordinary "not filled in", and
+   * it carries exactly what the waiver exists to permit. It also cannot mislead:
+   * every projection reader falls back for `null` to what it falls back to for a
+   * missing key, so reporting one and not the other would be a finding about a
+   * keystroke.
+   */
+  it("treats a key present but null as absent", () => {
+    const nulled = Object.fromEntries(FIELDS.map(({ field }) => [field, null]));
+    expect(blockFindings(ROOTS[0], { ...nulled, type: null })).toEqual([]);
+  });
+
+  /**
+   * `anchors` needs no special case despite its nested shape: presence is asked
+   * of the top-level key the author wrote, so a fault at any depth beneath it is
+   * a fault in something present. Its structural sibling still fires too — as it
+   * always did, and as it does under `data/`.
+   */
+  it("reports a nested `anchors` fault, alongside the structural finding", () => {
+    const report = checkCorpus(
+      [
+        doc(ROOTS[0].path, {
+          ...CLAUDE_FIELDS("bogus"),
+          anchors: { anc_k4f7: { exact: "x", prefix: 5 } },
+        }),
+      ],
+      rootedAt(ROOTS[0]),
+    );
+    expect(codes(report.errors).sort()).toEqual([
+      CHECK_CODES.anchorMalformed,
+      CHECK_CODES.frontmatterInvalid,
+    ]);
+    expect(
+      report.errors.find((finding) => finding.code === CHECK_CODES.frontmatterInvalid)?.detail,
+    ).toMatch(/^anchors\.anc_k4f7\./);
+  });
+
+  /**
+   * The waiver's other direction is untouched: outside these roots a missing
+   * field is still §5's refusal, and the seam is what decides it — not the code
+   * and not the path spelling.
+   */
+  it("still requires the canonical block where no root waives it", () => {
+    const findings = checkCorpus([doc("data/docs/bogus.md", CLAUDE_FIELDS("bogus"))]).errors;
+    expect(codes(findings)).toEqual(Array<string>(5).fill(CHECK_CODES.frontmatterInvalid));
+    expect(findings.map((finding) => finding.detail.split(":")[0]).sort()).toEqual([
+      "created",
+      "id",
+      "title",
+      "type",
+      "updated",
+    ]);
+  });
+
+  it("waives nothing at all when no seam is supplied", () => {
+    const report = checkCorpus([doc(ROOTS[0].path, CLAUDE_FIELDS("bogus"))]);
+    expect(codes(report.errors)).toContain(CHECK_CODES.frontmatterInvalid);
+  });
+});
+
 describe("resolver injection", () => {
   it("composes with a resolver that declares an optional hint parameter", () => {
     const withHint = (

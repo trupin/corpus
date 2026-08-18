@@ -329,7 +329,7 @@ function assertExtraWithinBound(
  * `description` may still leave a wrong `name` standing — which is what keeps
  * `--extra description=…` a working repair for a profile faulty in both fields,
  * the regression review 3 caught. The save path itself no longer blocks on this
- * finding at all (see `write.ts`'s `isClaudeCodeRequirement`), so a
+ * finding at all (see `write.ts`'s `isClaudeRootFrontmatter`), so a
  * hand-authored profile stays editable, archivable and bulk-actionable while
  * `corpus doc check` goes on reporting it.
  *
