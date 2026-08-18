@@ -114,9 +114,15 @@ export const designateCommand: WorkspaceCommandSpec = {
     "its first day. Everything else is identical either way: the lane, the scope, presence, the " +
     "lapse fallback, and release.\n\n" +
     "**`--agent` names the agent, not a document.** It is the same name `@<subagent>` mentions " +
-    "resolve — a `type: agent-def` document's own name or its title, matched case-insensitively " +
-    "— and the printed line reports the `{name, docId}` the server resolved it to, so nothing " +
-    "has to repeat the lookup. A name that resolves to no agent-def here is the server's `404`: a " +
+    "resolve — for a `type: agent-def` document **under `.claude/agents/`**, either its filename " +
+    "stem or its title, matched case-insensitively, and the two routinely differ, since a persona " +
+    "created with a title of `Legacy Analyst` is written to `legacy-analyst.md` — and the printed " +
+    "line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the " +
+    "lookup. **An `agent-def` filed outside that root answers to neither spelling** (the " +
+    "`--type agent-def --folder inbox` form of `corpus doc create`): it is a document _about_ a " +
+    "persona, nothing loads it as a subagent, and naming it here is a `404` that says so and " +
+    "names the path — moving the file into `.claude/agents/` is what makes it designatable. A " +
+    "name that resolves to no agent-def here is likewise the server's `404`: a " +
     "typo is refused rather than quietly downgraded to a general resident. A **blank** name " +
     '(`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is a ' +
     "mistake, while asking for no profile is a decision, and the two must not look alike. Where " +
@@ -140,8 +146,11 @@ export const designateCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "name",
       description:
-        "The **profile** to make resident, by the name `@<subagent>` mentions use — an " +
-        "`agent-def` document's own name or its title, case-insensitively. Not a document id. " +
+        "The **profile** to make resident, by the name `@<subagent>` mentions use — for an " +
+        "`agent-def` document **under `.claude/agents/`**, its filename stem or its title, " +
+        "case-insensitively. Not a document id, and not an `agent-def` filed anywhere else: one " +
+        "under `data/docs/` is a document _about_ a persona, answers to neither spelling, and is " +
+        "a `404` here. " +
         "**Optional**: omit it when the workspace's ordinary agent should own this conversation, " +
         "and name a profile when it wants an agent that behaves differently from the default. A " +
         "blank name is a usage error rather than absence.",

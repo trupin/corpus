@@ -4754,6 +4754,41 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     );
   });
 
+  /**
+   * CONTRACT-064. SERVER-125 made the root the gate on being addressable at all:
+   * a `type: agent-def` filed outside `.claude/agents/` resolves under no
+   * spelling, its title included. Every published description of the designation
+   * name had been left stating the pre-SERVER-125 rule, and **half of that
+   * sentence is still true** — in-root, the stem *and* the title both resolve,
+   * case-insensitively, and since SERVER-122 they routinely differ
+   * (`Legacy Analyst` → `legacy-analyst.md`), so the title clause carries the
+   * common case. A reader cannot tell from an unqualified sentence which half
+   * survived, so each site must carry both the root and the in-root pair.
+   *
+   * Asserted against the **generated** document rather than the schema source:
+   * these strings are what an OpenAPI consumer and the generated client read,
+   * and a hand-copied half-correction is only visible here.
+   */
+  it("gates the designation name on `.claude/agents/`, keeping the in-root stem-or-title pair", () => {
+    const sites = [
+      componentSchemas?.["DesignateResidentRequest"]?.properties?.["name"]?.description ?? "",
+      operation("/api/threads/{id}/resident", "post").description ?? "",
+    ];
+    for (const description of sites) {
+      expect(description).toContain("`.claude/agents/`");
+      // The half that survived: both spellings still resolve, in-root.
+      expect(description).toContain("stem or its title");
+      expect(description).toContain("case-insensitively");
+      // The half that did not: an off-root agent-def answers to neither.
+      expect(description).toContain("neither spelling");
+    }
+    // And the resolved half of a `Resident` says what leaving the root does to
+    // it, since `docId` is re-resolved through the same gate on every response.
+    expect(componentSchemas?.["Resident"]?.properties?.["docId"]?.description).toContain(
+      "moved out of `.claude/agents/`",
+    );
+  });
+
   it("answers a designation and a release with the thread, so §14's warnings surface", () => {
     for (const method of ["post", "delete"] as const) {
       const ok = operation("/api/threads/{id}/resident", method).responses?.["200"];

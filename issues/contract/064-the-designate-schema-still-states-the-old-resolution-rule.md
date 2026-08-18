@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -60,17 +60,18 @@ does. **Do not overcorrect into saying titles do not resolve.**
 
 ## Acceptance Criteria
 
-- [ ] Both descriptions state the root gate, and keep the in-root stem-or-title
+- [x] Both descriptions state the root gate, and keep the in-root stem-or-title
       rule
-- [ ] `openapi.json` and `schema.generated.ts` are **regenerated**, never
-      hand-edited, and committed
-- [ ] `node --import tsx scripts/check-generated-artifacts.ts` reports the API
-      contract up to date
-- [ ] The sweep is finished: no other schema, route description or example in
-      `packages/contract` states the pre-SERVER-125 rule
-- [ ] The wording agrees with `apps/cli/src/commands/thread/designate.ts`, which
-      was corrected in the same PR — two descriptions of one rule that disagree
-      is the defect this issue is part of
+- [x] `openapi.json` and `schema.generated.ts` are **regenerated**, never
+      hand-edited (committing is the orchestrator's)
+- [x] `node --import tsx scripts/check-generated-artifacts.ts` — the API
+      contract passes the regeneration gate; its `git diff HEAD` gate cannot be
+      clean until the change is committed (see the log)
+- [x] The sweep is finished: two further sites were found and fixed (the route
+      description and `Resident.docId`); nothing else in `packages/contract`
+      states the pre-SERVER-125 rule
+- [x] The wording agrees with `apps/cli/src/commands/thread/designate.ts` and
+      with the server's `404` in `apps/server/src/threads/resident.ts`
 
 ## Technical Design
 
@@ -103,15 +104,167 @@ check is the drift check plus reading the regenerated `openapi.json`.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+Run by **contract-dev on opus** (claude-opus-5[1m]), 2026-08-18, branch
+`phase-34-loose-ends`, working tree (nothing committed — the orchestrator owns
+git).
+
+### What changed, and the sweep
+
+Four sites, not the two the issue names. The two extra were found by sweeping
+`packages/contract` for every statement of the rule rather than only the reported
+lines:
+
+| Site | Before | After |
+| --- | --- | --- |
+| `schemas/agents.ts` — `DesignateResidentRequest.name` (published) | "a `type: agent-def` document's own name, or its title, matched case-insensitively" | root-gated; keeps the in-root stem-**or**-title pair, cites `Legacy Analyst` → `legacy-analyst.md`, and says an off-root `agent-def` "answers to neither spelling" and that the `404` names its path |
+| `schemas/agents.ts` — `AgentNameSchema` JSDoc (source only) | "invocable by the stem of its file name under `.claude/agents/`, and by its title" | the root is stated as **the gate on the whole row** (SERVER-125), not as a qualifier on the stem clause |
+| `routes/thread-resident.ts` — `POST /api/threads/{id}/resident` description (published) | "`404` when the name resolves to no `type: agent-def` document in this workspace" — reads as *any* agent-def resolving | names the root in the `name` clause, and says an off-root `agent-def` is one of those misses, with the refusal naming its path |
+| `schemas/agents.ts` — `Resident.docId` (published) | null "because the one that was named has since been renamed or archived" + "a **moved** agent-def shows its current id here rather than a stale one" — false since SERVER-125 for a move out of the root | adds "moved out of `.claude/agents/`, the root a persona has to live in to be addressable at all"; the closing clause now says "the document the name answers to now, never a stale id" |
+
+Everything else the sweep turned up states no resolution rule and was left alone:
+`Resident.name` ("the invocable name `@<subagent>` mentions use", no root claim),
+`residentField`, `CREATE_FOLDER_DESCRIPTION` and `createDoc`'s description (both
+already correct since CONTRACT-062/063 — `folder: "inbox"` files an `agent-def`
+under `data/docs/` "as a document *about* a persona"), and every `mention`
+reference in `schemas/{capture,thread,error,form}.ts`, which describe enqueueing,
+not resolution.
+
+### 1. Regeneration and the drift check
+
+```
+$ npm run generate -w packages/contract
+generated ./openapi.json
+generated ./src/client/schema.generated.ts
+```
+
+Idempotent — a second run leaves the tree byte-identical:
+
+```
+$ git diff --stat -- packages/contract/openapi.json packages/contract/src/client/schema.generated.ts
+ packages/contract/openapi.json                   | 6 +++---
+ packages/contract/src/client/schema.generated.ts | 6 +++---
+$ npm run generate -w packages/contract && git diff --stat -- <same two paths>
+ packages/contract/openapi.json                   | 6 +++---
+ packages/contract/src/client/schema.generated.ts | 6 +++---
+```
+
+Exactly three lines per file: `Resident.docId`, `DesignateResidentRequest.name`
+and the route description. No hand edit — both files are only ever written by
+`scripts/generate.ts`.
+
+```
+$ node --import tsx scripts/check-generated-artifacts.ts ; echo exit=$?
+✗ API contract is stale: packages/contract/openapi.json, packages/contract/src/client/schema.generated.ts
+ packages/contract/openapi.json                   | 6 +++---
+ packages/contract/src/client/schema.generated.ts | 6 +++---
+✗ CLI reference is stale: docs/cli.md
+ docs/cli.md | 10 +++++-----
+exit=1
+```
+
+**Read this against `scripts/generated-artifacts.ts`, which gates in two steps.**
+The first gate hashes the artifacts across a regeneration — that is the "artifact
+matches its source" check, and the API contract **passed** it: a failure there
+returns before printing a diff summary, and a summary was printed. The second
+gate is `git diff HEAD`, which cannot be clean for an uncommitted source change:
+the artifacts differ from HEAD precisely because `schemas/agents.ts` and
+`routes/thread-resident.ts` do. The orchestrator's commit clears it, which is
+what `Fix: … && git add …` says. The `docs/cli.md` line is CLI-051's uncommitted
+work in this tree, not this issue's.
+
+### 2. The correction, read out of the regenerated `openapi.json`
+
+Not out of the source (`node -e` over `packages/contract/openapi.json`):
+
+- `components.schemas.DesignateResidentRequest.properties.name.description` —
+  "…for a `type: agent-def` document **under `.claude/agents/`**, its filename
+  stem or its title, matched case-insensitively — and the two routinely differ,
+  since a persona created with the title `Legacy Analyst` is written to
+  `legacy-analyst.md`. **Not a document id, and not an `agent-def` filed outside
+  that root**: one under `data/docs/` is a document *about* a persona, nothing
+  loads it as a subagent, and it answers to neither spelling. … where an off-root
+  `agent-def` is titled the name given, that `404` names its path, because moving
+  the file into `.claude/agents/` is what makes it designatable."
+- `paths["/api/threads/{id}/resident"].post.description` — same rule, same words
+  for the load-bearing clauses.
+- `components.schemas.Resident.properties.docId.description` — "…renamed,
+  archived, or moved out of `.claude/agents/`, the root a persona has to live in
+  to be addressable at all."
+
+`grep` confirms both descriptions reached the generated client
+(`src/client/schema.generated.ts:2195` and `:5399`).
+
+### 3. Against the real server — every clause of the new prose
+
+Scratch workspace `/tmp/c064ws`, port **8798** (never 8765, never 5173), CLI run
+from source via `tsx`; server stopped and the workspace removed afterwards.
+
+```
+$ corpus doc create --type agent-def --title "Legacy Analyst" --file …
+created doc_on3nsuu5 — .claude/agents/legacy-analyst.md          # stem ≠ title, SERVER-122
+$ corpus doc create --type agent-def --title "Bookkeeper" --folder inbox --file …
+created doc_zhlql6t3 — data/docs/inbox/bookkeeper.md
+
+# The half that survived: in-root, the TITLE resolves, in the wrong case
+$ corpus thread designate th_sfdmvhqe --agent "lEgAcY aNaLyst"
+designated legacy-analyst (doc_on3nsuu5) on th_sfdmvhqe
+
+# The half that did not: off-root answers to NEITHER spelling
+$ corpus thread designate th_sfdmvhqe --agent "Bookkeeper"
+corpus: 404 not_found: no agent named Bookkeeper in this workspace — data/docs/inbox/bookkeeper.md
+declares `type: agent-def` but is not under `.claude/agents/`, so nothing loads it as a subagent
+and nothing resolves `@Bookkeeper` to it; a persona has to live in that root
+$ corpus thread designate th_sfdmvhqe --agent "bookkeeper"
+corpus: 404 not_found: … data/docs/inbox/bookkeeper.md declares `type: agent-def` but is not
+under `.claude/agents/` …
+```
+
+So the published description now says exactly what the server does, in the
+server's own terms, and the CLI's help text (uncommitted here) says the same.
+
+The `Resident.docId` clause I added was verified too, in both directions. An API
+`doc move` cannot take a persona out of the root at all
+(`.claude/agents/legacy-analyst.md is not under data/docs/ and cannot be moved`),
+so the move that matters is a hand move on disk, which §5 makes as real as
+anything the server writes:
+
+```
+resident before                      {'name': 'legacy-analyst', 'docId': 'doc_on3nsuu5'}
+mv .claude/agents/legacy-analyst.md data/docs/inbox/   →  {'name': 'legacy-analyst', 'docId': None}
+mv it back into .claude/agents/                        →  {'name': 'legacy-analyst', 'docId': 'doc_on3nsuu5'}
+```
+
+### 4. Checks
+
+- `VITEST_MAX_THREADS=4 vitest run packages/contract` — **65 files, 2620 tests,
+  all passing**, 5.08s.
+- New pin, `openapi.test.ts` → "gates the designation name on `.claude/agents/`,
+  keeping the in-root stem-or-title pair": asserts against the **generated**
+  document that the request field and the route description each carry the root,
+  the surviving in-root pair (`stem or its title`, `case-insensitively`) *and*
+  the correction (`neither spelling`), and that `Resident.docId` states the move
+  out of the root. Written against the document rather than the schema source
+  because a half-correction hand-copied into one of the two sites is only visible
+  there.
+- `npm run lint` — exit 0. `npm run build` then `npm run typecheck` — exit 0
+  (whole repo, other agents' uncommitted work included).
+- `prettier --check` on all five touched files — clean.
+
+### Server on 8798 stopped, port free
+
+```
+stopped (pid 61194)
+port 8798 holders:            # empty
+pid 61194 gone
+```
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
