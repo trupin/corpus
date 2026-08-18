@@ -4120,12 +4120,27 @@ describe("profile skill body", () => {
     // The redundancy SERVER-123 created, shed rather than left harmless: a
     // `name` that agrees is accepted and one that disagrees is a `400`, so the
     // flag can only ever be noise or an error.
-    expect(body, "the skill still passes a redundant `--extra name=`").not.toMatch(
-      /--extra name=[a-z0-9-]/,
+    //
+    // Tightened from `--extra name=<value>` to the flag *named at all* (PR #49,
+    // review 4). The text used to explain the derivation by saying `--extra
+    // name=…` "is refused at exit **5**", in a paragraph about `corpus doc
+    // create` — which has no `--extra` flag: measured 2026-08-18, it is
+    // `unknown flag "--extra" for "create"` at exit **2**, with no request
+    // sent, and the flag list `corpus doc create --help` prints is `--type
+    // --title --folder --tags --due --evergreen --pinned --order --query
+    // --column --message --file --job`. Exit 5 is the *edit* path's answer, and
+    // whose answer it is has been under repair twice. So the skill states the
+    // durable half — the field is the server's, derived from the filename — and
+    // names no code for a refusal it cannot reach.
+    expect(body, "the skill names `--extra name` on the create path again").not.toMatch(
+      /--extra name/,
+    );
+    expect(body, "an exit code is attached to the name field again").not.toMatch(
+      /name[^\n]*refused at exit/,
     );
     expect(body).toMatch(/\*\*The name is not yours to set\.\*\*/);
     expect(body).toMatch(/from the filename\s+it just allocated/);
-    expect(body).toMatch(/`--extra name=…` is refused at exit \*\*5\*\*/);
+    expect(body).toMatch(/this create takes no flag that names it/);
     // Both resolvers named, since the mismatch is only comprehensible as two of
     // them disagreeing.
     expect(body).toMatch(/Corpus resolves `@<name>` from the file's path/);
@@ -4133,6 +4148,32 @@ describe("profile skill body", () => {
     expect(body).toMatch(/one\s+document two different addresses/);
   });
 
+  /**
+   * PR #49, review 4. The read-back was dropped on the strength of two claims,
+   * and only one of them was ever true of the shipped server.
+   *
+   * - **The create cannot produce an incomplete profile** — still true, and now
+   *   true for a reason the agent can act on: `docs/create.ts`'s
+   *   `claudeCodeFields` derives `name` from the allocated filename and defaults
+   *   `description` to the title, and `corpus doc create` exposes no flag that
+   *   names either field, so the shape cannot be asked for. Measured 2026-08-18:
+   *   `--title "Bookkeeper"` alone writes `name: bookkeeper` and
+   *   `description: Bookkeeper`, and `corpus doc check` finds nothing.
+   * - **"the write path refuses to save one"** — false since `write.ts`'s
+   *   `isClaudeCodeRequirement` ("reported, never refused"), which is the whole
+   *   of the SERVER-123 regression fix: blocking the save made every
+   *   hand-authored profile uneditable, unarchivable and unrepairable. Measured
+   *   on the same workspace, against a hand-written `.claude/agents/` file
+   *   carrying `name` and no `description`: a body edit, an `--add-tag`, an
+   *   archive and an unarchive all exit **0**, and `--json` reports
+   *   `"warnings":[]` — nothing on the wire at all. `corpus doc check` reports
+   *   the same file as an error and exits **6**.
+   *
+   * So the asymmetry is pinned in both directions, because the false half is
+   * exactly the half an agent generalises from when it edits a profile rather
+   * than creating one: the guarantee is the create's, a write to an existing
+   * profile promises nothing, and `doc check` is the surface.
+   */
   it("names doc check as the check, and keeps the pass no check can make", () => {
     // The read-back existed because nothing else looked. Something else looks
     // now, so keeping it would teach ceremony — and teaching the agent to
@@ -4141,8 +4182,17 @@ describe("profile skill body", () => {
       /corpus doc show doc_\w+ --json \| jq/,
     );
     expect(body).toMatch(/\*\*There is nothing to read back\.\*\*/);
-    expect(body).toMatch(/`corpus doc check` reports a profile Claude Code cannot\s+load/);
-    expect(body).toMatch(/the write path refuses to save one/);
+    expect(body).toMatch(/neither is something\s+this create lets you pass/);
+    expect(body).toMatch(/What reports a profile Claude Code cannot load/);
+    expect(body).toMatch(/is `corpus doc check`/);
+    // The refusal that never was. A save reports and proceeds; a skill saying
+    // otherwise teaches the agent to trust exit 0 as a load check.
+    expect(body, "the skill claims a refusal the write path does not make").not.toMatch(
+      /write path refuses/,
+    );
+    expect(body).toMatch(/belongs to the create and stops there/);
+    expect(body).toMatch(/a write\s+to that file succeeds and tells you nothing/);
+    expect(body).toMatch(/never read a write's success as evidence that anything loads/);
     // What the server cannot check is the whole reason this skill exists.
     expect(body).toMatch(/whether the body says anything worth\s+following; that pass is yours/);
   });

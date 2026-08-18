@@ -166,9 +166,9 @@ it just allocated, because that filename *is* the address: `.claude/agents/bookk
 what makes `@bookkeeper` resolve. Corpus resolves `@<name>` from the file's path while Claude
 Code resolves it from this field, so a value that disagreed with its filename would give one
 document two different addresses — `@bookkeeper` in a comment, `money` to a dispatch. That is
-why the field is derived rather than passed, and why `--extra name=…` is refused at exit **5**
-instead of accepted. The title you chose decided the filename; the path the create printed is
-where to read it off.
+why the field is derived rather than passed, and why this create takes no flag that names it:
+there is nothing here for you to set, and nothing to look for a way to set. The title you
+chose decided the filename; the path the create printed is where to read the name off.
 
 **Then write the description, which is the one field worth your judgement.** The server fills
 it in from the title so the profile loads at all, and a title is a label rather than a reason:
@@ -186,11 +186,18 @@ corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
 That is a quality step and not a repair — skip it and what you have is a working profile
 nobody has a reason to pick. `--extra` names its own delta and takes no key.
 
-**There is nothing to read back.** `corpus doc check` reports a profile Claude Code cannot
-load — a description that is missing or empty, a `name` that is not the filename — as an
-error, and the write path refuses to save one, so a create that printed a path produced a
-persona that loads. What no check can tell you is whether the body says anything worth
-following; that pass is yours, and it is the section above.
+**There is nothing to read back.** Both of the fields Claude Code needs are the server's on a
+create — `name` derived above, `description` copied from your title — and neither is something
+this create lets you pass, so it cannot be asked for a profile that is missing one. A create
+that printed a path produced a persona that loads, and confirming that is ceremony.
+
+**That guarantee belongs to the create and stops there.** It says nothing about a profile you
+did not just write: one somebody hand-authored may carry no `description` at all, and a write
+to that file succeeds and tells you nothing — it has to, or a file that never had one could
+never be repaired. What reports a profile Claude Code cannot load — a description missing or
+empty, a `name` that is not the filename — is `corpus doc check`, at any age and as an error.
+So never read a write's success as evidence that anything loads. What no check can tell you is
+whether the body says anything worth following; that pass is yours, and it is the section above.
 
 **Revising a profile that already exists is not this skill.** It is an ordinary document edit,
 under the rules the orchestrate skill states for writing a document, and it needs the person's
