@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -124,18 +124,18 @@ name-collision message with its exit `5` all match.
 
 ## Acceptance Criteria
 
-- [ ] **The "resolves to nobody" sentence is left exactly as it is.** SERVER-125
+- [x] **The "resolves to nobody" sentence is left exactly as it is.** SERVER-125
       made it true. Editing it is the failure mode this issue now guards against
-- [ ] No *other* line in the file contradicts it — the file was written while the
+- [x] No *other* line in the file contradicts it — the file was written while the
       sentence was false, so a neighbouring line may still describe the old
       behaviour
-- [ ] The transcript line matches what `runDocList` actually prints
-- [ ] Every **other** command transcript in the file is checked against its
+- [x] The transcript line matches what `runDocList` actually prints
+- [x] Every **other** command transcript in the file is checked against its
       source in the same pass, rather than fixing the one that was reported
-- [ ] `scripts/workspace-template.test.ts` pins the transcript line and the
+- [x] `scripts/workspace-template.test.ts` pins the transcript line and the
       "resolves to nobody" sentence, in the tightening direction. The second pin
       is what stops a future reader "correcting" a sentence that is now right
-- [ ] No claim about another component's internal refusal is added while fixing
+- [x] No claim about another component's internal refusal is added while fixing
       this
 
 ## Technical Design
@@ -183,16 +183,207 @@ against the function that emits it.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Model: opus** (claude-opus-5, 1M context). Date: 2026-08-18. Branch
+`phase-34-loose-ends`.
+
+### Setup
+
+Throwaway workspace, port **8795** (never 8765, never 5173). CLI and server both
+run from source via `tsx`, so what was measured is the source under review rather
+than a stale `dist/`.
+
+```
+$ ./node_modules/.bin/tsx apps/cli/src/bin/corpus.ts init /tmp/agent036-ws
+Initialized Corpus workspace at /tmp/agent036-ws
+  port 8766, token in .corpus/config.json (mode 600)
+  git: initialized on main, one commit authored as user
+  git: background maintenance is off here — corpus packs the repository at server start
+  installed 10 template files, recorded in .corpus/template-manifest.json
+  installed 2 plugin skill files into .claude/skills/
+  installed 1 plugin seed template into data/docs/templates/
+Next: corpus server start
+
+# .corpus/config.json port rewritten 8766 -> 8795, then:
+$ corpus server start
+corpus 0.11.0 listening on http://127.0.0.1:8795 (pid 24401)
+  logs: corpus server logs -f
+```
+
+### 1. The reported line — `corpus doc list --type agent-def` on an empty roster
+
+The skill transcribed `showing 0 documents`. The CLI prints:
+
+```
+$ corpus doc list --type agent-def
+no documents match.
+EXIT=0
+
+$ corpus doc list --type agent-def | od -c | tail -3
+0000000    n   o       d   o   c   u   m   e   n   t   s       m   a   t
+0000020    c   h   .  \n
+0000024
+```
+
+Byte for byte: `no documents match.\n`. `runDocList`
+(`apps/cli/src/commands/doc/list.ts:113-118`) returns on the empty page before
+`renderTally` is reached, so the tally never renders on this path; had it been
+reachable it would have read `showing 1–0 of 0 documents`. **`showing 0
+documents` is emitted by no path.** Corrected in the skill to the measured line.
+
+Non-empty, for contrast — this is the only shape in which `showing ` appears:
+
+```
+$ corpus doc list --type agent-def
+doc_jrgrqgii  agent-def  open  Bookkeeper  .claude/agents/bookkeeper.md
+showing 1–1 of 1 document
+```
+
+### 2. The sweep — every other transcript, and every claim about another component
+
+The file has six fenced blocks (lines 125-127, 136-141, 146-151, 167-173,
+256-280, 290-301). Four output lines total, all re-derived by running them:
+
+| Skill's transcript / claim | Measured | Verdict |
+| --- | --- | --- |
+| `corpus doc list --type agent-def` (the flag itself) | accepted, exit 0 | correct |
+| `created doc_b7c1d5 — .claude/agents/bookkeeper.md` | `created doc_jrgrqgii — .claude/agents/bookkeeper.md` | correct |
+| `edited doc_b7c1d5` then `key <64 hex>` | `edited doc_jrgrqgii` / `key 6a18d7bcef87a7a623eca0716b642e51cbb047e6ccf20b769302bc33ec5be142` | correct |
+| collision: *the name `bookkeeper` is already taken in .claude/agents*, exit **5** | ``corpus: 400 bad_request: the name `bookkeeper` is already taken in .claude/agents`` … `EXIT=5` | correct |
+| "there is no `--folder` to pass: the document lands in `.claude/agents/`, at a filename slugged from the title" | `--title Bookkeeper`, no `--folder` → `.claude/agents/bookkeeper.md` | correct |
+| "The server writes it into the frontmatter from the filename it just allocated" | created file carries `name: bookkeeper` | correct |
+| "The server fills it in from the title" (`description`) | a create with no description edit wrote `description: Proofreader` under `title: Proofreader` | correct |
+| "`--extra` names its own delta and takes no key" | `doc edit … --extra description="$d"` with no `--key`, exit 0 | correct |
+| `corpus thread designate` is "**user-only**: sent with `--from agent` the server refuses it outright" | `corpus: 403 forbidden: designating a resident is user-only; …`, `EXIT=5` | correct |
+| "`corpus thread designate <th_…>`, with no `--agent`, is that designation" | `designated a general resident on th_x6pkquhh`, exit 0 | correct |
+| "What reports a profile Claude Code cannot load … is `corpus doc check`, at any age and as an error" | hand-written `.claude/agents/handwritten.md` with no `description` → `error frontmatter-invalid … description: missing or empty`, `corpus: 1 error in 16 documents.`, `EXIT=6` | correct |
+
+The illustrative ids (`doc_b7c1d5`, `th_4b8e2c`) are shorter than a minted id
+(`doc_jrgrqgii`) but are valid under `^doc_[A-Za-z0-9]+$` and are the
+template-wide placeholder convention; not touched.
+
+**One wrong line in the file, and it is the reported one.** Nothing else in the
+sweep failed.
+
+### 3. Finding 1 — the sentence is true, and no neighbouring line contradicts it
+
+Not edited. Verified true against the running server, which is what SERVER-125
+changed:
+
+```
+$ corpus doc create --type agent-def --title "$title" --folder inbox --from agent <<'EOF' …
+created doc_cgghngsd — data/docs/inbox/ledgerclerk.md
+
+$ corpus doc list --type agent-def
+doc_cgghngsd  agent-def  open  Ledgerclerk  data/docs/inbox/ledgerclerk.md
+doc_jrgrqgii  agent-def  open  Bookkeeper   .claude/agents/bookkeeper.md
+showing 1–2 of 2 documents
+
+$ corpus thread create --title "Mention probe" --from user <<'EOF'
+Does @ledgerclerk resolve, and does @bookkeeper?
+EOF
+created th_x6pkquhh — standalone (queued evt_k24t3k4l3rpc)
+
+$ corpus queue claim-all --json
+{"events":[{"id":"evt_k24t3k4l3rpc","type":"comment.created","created":"2026-08-18T18:38:04Z",
+"source":"thread","payload":{"threadId":"th_x6pkquhh","parentId":null,
+"turnTs":"2026-08-18T18:38:03Z","mentions":[{"name":"bookkeeper","docId":"doc_jrgrqgii",
+"status":"open"}],"skills":[],"unresolved":["@ledgerclerk"]}}],
+"inProgress":{"events":[],"total":0,"truncated":false}}
+```
+
+The on-root persona resolves; the off-root one lands in `unresolved` and is
+addressable under neither its stem nor its title. **It resolves to nobody.**
+
+Contradiction sweep over the rest of the file: `grep -i
+"alias|targetIndex|invocableName|autocomplete|index"` returns nothing, so no line
+recites the pre-SERVER-125 mechanism. The two neighbouring statements that touch
+the same ground both agree with it — *"there is no `--folder` to pass"* (Writing
+it) and *"Never retry into a different folder"* (Refusals). Note that the
+mechanism moved but the outcome the skill states did not, which is why it
+survived: it names a consequence, not an index.
+
+### 4. Pins, and their falsification
+
+Both added to the `profile skill body` describe block in
+`scripts/workspace-template.test.ts`, after AGENT-035's block, which was read
+first.
+
+Green baseline: `377 passed`.
+
+| Falsification | Result |
+| --- | --- |
+| transcript line put back to `showing 0 documents` | `× profile skill body > transcribes the empty roster as the CLI actually prints it` — **1 failed, 376 passed** |
+| the *"resolves to nobody"* sentence deleted outright | `× profile skill body > keeps a misfiled profile's consequence, and names no mechanism for it` — **1 failed, 376 passed** |
+| the same sentence reworded to the pre-SERVER-125 claim (*"it still resolves under its title alias"*) — the realistic future "correction" | same single failure — **1 failed, 376 passed** |
+| restored | **377 passed** |
+
+Each pin fails alone; neither is carried by another assertion.
+
+The transcript pin reads the **emitting source** rather than a copied literal —
+it extracts the string out of `runDocList`'s empty-page branch and requires the
+skill's transcript to equal it — so a change to the CLI's wording fails here and
+names the skill that has to follow. Derivation confirmed independently:
+`/result\.page\.offset === 0 \? "([^"]+)"/` over `apps/cli/src/commands/doc/list.ts`
+yields `"no documents match."`.
+
+### 5. Checks
+
+```
+$ VITEST_MAX_THREADS=4 npx vitest run scripts/workspace-template.test.ts
+Test Files  1 passed (1)
+     Tests  377 passed (377)
+
+$ npx eslint .              # clean, no output
+$ npx prettier --check scripts/workspace-template.test.ts assets/workspace/claude/skills/profile/SKILL.md
+All matched files use Prettier code style!
+```
+
+### 6. Teardown
+
+```
+$ corpus server stop
+stopped (pid 24401)
+$ lsof -nP -iTCP:8795 -sTCP:LISTEN   # nothing
+PORT 8795 FREE
+```
+
+Port 8765 still held by the user's own server (pid 35736), untouched. Nothing was
+written under `/Users/theophanerupin/cos`; `apps/server/`, `packages/kit/` and
+`apps/ui/` were read but never modified.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
+
+## Orchestrator adjudication — the one judgment call raised
+
+The implementer flagged line ~142 and left it, judging it inside *"scope this fix
+tightly"*:
+
+> `agent-def` has a document root of its own, so there is no `--folder` to pass
+
+**Overruled, and changed to "so pass no `--folder`".** The reasoning it gave for
+leaving it is sound in isolation: the Refusals section says *"Never retry into a
+different folder"*, which presupposes the flag exists, so the file does not
+contradict itself.
+
+It loses on this file's history. `--folder` **is** accepted for `type: agent-def`
+— the implementer used it to build the off-root probe — so *"there is no
+`--folder` to pass"* is a claim about another component's behaviour that is
+false when read literally. That is the exact species this file has now been
+corrected for four times, and the fix costs three words.
+
+The replacement is an instruction rather than a claim, which is what the file's
+own adopted rule asks for: *a skill states what the agent must do, names the
+component that owns a rule, and does not describe that component's internal
+refusals.*
+
+Re-ran `scripts/workspace-template.test.ts` after the edit: 377 passed.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[AGENT-036]` prefix
+- [x] Committed with `[AGENT-036]` prefix

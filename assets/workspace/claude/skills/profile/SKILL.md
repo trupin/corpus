@@ -140,8 +140,8 @@ EOF
 )
 ```
 
-**Create the document.** `agent-def` has a document root of its own, so there is no `--folder`
-to pass: the document lands in `.claude/agents/`, at a filename slugged from the title.
+**Create the document.** `agent-def` has a document root of its own, so pass no `--folder`:
+the document lands in `.claude/agents/`, at a filename slugged from the title.
 
 ```bash
 corpus doc create --type agent-def --title "$title" --from agent <<'EOF'
@@ -255,7 +255,7 @@ and is guessable rather than askable. Guess it, and say that you guessed.
 
 ```bash
 corpus doc list --type agent-def
-showing 0 documents
+no documents match.
 title=$(cat <<'EOF'
 Bookkeeper
 EOF

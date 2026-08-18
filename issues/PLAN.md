@@ -935,7 +935,7 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | SERVER-123 | A created agent-def carries none of Claude Code's frontmatter, and nothing says so (AGENT-034 finding) | done | P1 | SERVER-122 |
 | SERVER-124 | Under a `.claude/` root, Corpus's own frontmatter goes entirely unvalidated (PR #49 review 3) | todo | P1 | SERVER-123 |
 | SERVER-125 | An off-root agent-def is offered, resolvable, and dead (PR #49 review 5) | done | P1 | SERVER-123 |
-| AGENT-036 | A transcript line the CLI cannot print; SERVER-125 made the other finding true | todo | P2 | — |
+| AGENT-036 | A transcript line the CLI cannot print; SERVER-125 made the other finding true | done | P2 | — |
 | AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | done | P1 | — |
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
 | SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |

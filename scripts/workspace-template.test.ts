@@ -4366,6 +4366,37 @@ describe("profile skill body", () => {
     expect(body).toMatch(/never edit a profile you\s+did not just create/);
   });
 
+  /**
+   * AGENT-036, and this pin exists to **stop a fix** rather than to require one.
+   *
+   * The sentence was filed as false and is now true, by a change to the product
+   * rather than to the prose. `targetIndex`
+   * (`apps/server/src/threads/mentions.ts`) skips any row whose `invocableName`
+   * is null — the title alias included — so a `type: agent-def` document filed
+   * outside `.claude/agents/` is addressable under no spelling at all
+   * (SERVER-125). Measured 2026-08-18 against a real server: `corpus doc create
+   * --type agent-def --title Ledgerclerk --folder inbox` wrote
+   * `data/docs/inbox/ledgerclerk.md`, and a turn reading *"Does @ledgerclerk
+   * resolve, and does @bookkeeper?"* queued a `comment.created` whose payload
+   * carried `"mentions":[{"name":"bookkeeper",…}]` and
+   * `"unresolved":["@ledgerclerk"]`.
+   *
+   * It survived a change of mechanism because it states a **consequence**. Every
+   * previous correction to this file replaced a consequence with somebody's
+   * account of another component's internals, and every one of those went stale;
+   * so what is pinned is the consequence *and the absence of a mechanism beside
+   * it* — a sentence reciting the resolver's two aliases would already be wrong.
+   */
+  it("keeps a misfiled profile's consequence, and names no mechanism for it", () => {
+    expect(body).toMatch(/Never retry into a different folder/);
+    expect(body).toMatch(
+      /a document \*about\* an agent rather than an agent, and it resolves\s+to nobody\./,
+    );
+    expect(body, "the skill recites how the resolver indexes a row").not.toMatch(
+      /alias|targetIndex|invocableName|autocomplete/i,
+    );
+  });
+
   it("states what makes a persona worth having, in behavioural terms", () => {
     expect(body).toMatch(/A profile that changes nothing is decoration/);
     expect(body).toMatch(/name two things this\s+agent would do differently/);
@@ -4410,6 +4441,39 @@ describe("profile skill body", () => {
     const description = /^description=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$/m.exec(worked)?.[1];
     expect(description, "the worked example builds no description").toBeDefined();
     expect(description).toMatch(/^Reach for this when /);
+  });
+
+  /**
+   * AGENT-036. The worked example transcribed the roster check as `showing 0
+   * documents`, which `corpus doc list` emits on **no path at all**: `runDocList`
+   * (`apps/cli/src/commands/doc/list.ts`) returns on an empty page before
+   * `renderTally` is reached, so an empty result is `no documents match.`, and
+   * the tally line — `showing 1–0 of 0 documents`, had it been reachable — never
+   * renders. Measured 2026-08-18 on a fresh workspace: the command printed `no
+   * documents match.` and exited 0; after one create it printed the row and
+   * `showing 1–1 of 1 document`.
+   *
+   * Nobody is misled into a wrong action by it, since the agent reads what the
+   * command actually returned. What it costs is the transcript's standing as a
+   * contract: a skill author matching on `showing ` to spot an empty roster
+   * writes a branch that never fires.
+   *
+   * Pinned against the **emitting source** rather than as a literal, because the
+   * defect is a transcript nobody ran. A change to the CLI's wording now fails
+   * here, naming the skill that has to follow it.
+   */
+  it("transcribes the empty roster as the CLI actually prints it", () => {
+    const listSource = readFileSync(
+      path.join(REPO_ROOT, "apps/cli/src/commands/doc/list.ts"),
+      "utf8",
+    );
+    const emptyLine = /result\.page\.offset === 0 \? "([^"]+)"/.exec(listSource)?.[1];
+    expect(emptyLine, "doc list no longer branches on an empty first page").toBeDefined();
+    expect(body).toContain(`corpus doc list --type agent-def\n${emptyLine ?? ""}`);
+    // Both forms the file must not go back to: the one that shipped, and the
+    // tally `renderTally` would have produced had an empty page reached it.
+    expect(body, "the unreachable empty tally is back").not.toMatch(/showing 0 documents/);
+    expect(body, "an empty roster is transcribed as a tally line").not.toMatch(/showing 1–0/);
   });
 
   /**
