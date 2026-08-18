@@ -346,6 +346,51 @@ describe("validateBeforeWrite", () => {
   });
 
   /**
+   * SERVER-123. Claude Code's two fields are required in the one root it loads
+   * subagents from, and the finding rides `frontmatter-invalid` — which is
+   * blocking. That is what keeps sprint-013 Adjudication 6 true in the direction
+   * the create route cannot reach: an *edit* that removes a description would
+   * otherwise leave behind a document the system accepted on write and its own
+   * checker fails, at the price of a persona nothing can run.
+   */
+  const profile = (frontmatter: string): string => `---\n${frontmatter}---\n\nYou research.\n`;
+
+  it("refuses a save that would leave an agent-def Claude Code cannot load", () => {
+    validating("validate-agent-def");
+    for (const frontmatter of ["", "name: researcher\n", "description: For sources.\n"]) {
+      expect(() =>
+        validateBeforeWrite(
+          { logger: silentLogger, projection: ws.db },
+          ".claude/agents/researcher.md",
+          profile(frontmatter),
+        ),
+      ).toThrow(/name|description/);
+    }
+  });
+
+  it("refuses a save whose `name` disagrees with the filename", () => {
+    validating("validate-agent-def-name");
+    expect(() =>
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        ".claude/agents/bareprofile.md",
+        profile("name: numbers\ndescription: For sources.\n"),
+      ),
+    ).toThrow(/@bareprofile/);
+  });
+
+  it("accepts one carrying both fields and no Corpus frontmatter at all", () => {
+    validating("validate-agent-def-ok");
+    expect(
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        ".claude/agents/researcher.md",
+        profile("name: researcher\ndescription: For sources.\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  /**
    * SERVER-066. The finding is an *error* — `corpus doc check` fails on it — and
    * it still must not refuse a save, for two reasons that are properties of the
    * write path rather than of the defect: a blocking rule is judged over the

@@ -11,6 +11,7 @@ import { resolve } from "node:path";
 import type { Actor, CreateDocRequest, Doc } from "@corpus/contract";
 import {
   MAX_SLUG_LENGTH,
+  claudeCodeFrontmatterIssues,
   emptyDocument,
   formatInstant,
   idPrefixForDocType,
@@ -26,6 +27,7 @@ import { isIdTaken, loadDocument, toWireDoc } from "./read.js";
 import { findTemplate } from "./templates.js";
 import {
   CREATE_LANE,
+  claudeCodeRootFor,
   resolveFolder,
   runMutation,
   validateBeforeWrite,
@@ -86,6 +88,68 @@ export function allocatePath(
     }
   }
   return `${folder}/${input.id}.md`;
+}
+
+/**
+ * The Claude Code half of a new document's frontmatter, when the path it is
+ * being created at is one Claude Code loads a subagent from (SERVER-123).
+ *
+ * Two fields, and they are owned by different parties on purpose:
+ *
+ * - **`name` is the server's, derived from the allocated filename.** It is not
+ *   caller data: `.claude/agents/<stem>.md` is what makes `@<stem>` resolve
+ *   (§8), so the only correct value is the stem, and a caller can do nothing
+ *   with the field but get it wrong. Deriving it closes §7's naming divergence
+ *   at the source — one file could otherwise be `numbers` to a dispatch and
+ *   `@bareprofile` to a mention, with no error anywhere. A caller that supplies
+ *   a *matching* `name` is agreeing with the server and passes; a caller that
+ *   supplies a different one is refused rather than silently overwritten,
+ *   because it asked for something the system cannot give it.
+ * - **`description` is the caller's, and the server fills it in when the caller
+ *   sends none.** Without it Claude Code loads nothing at all, so it cannot
+ *   simply be left out; but §11's creation is **zero-form** — "a type and a
+ *   title are the whole requirement, and everything else the server fills in" —
+ *   and demanding one here would make the type's own verb refuse the shape
+ *   every other type accepts. It would also be unsendable: the agent reaches
+ *   this route only through `corpus doc create` (Architecture Decision 2),
+ *   which has no `--extra` flag, so a hard requirement would make
+ *   `--type agent-def` a verb that always fails. The title is what the caller
+ *   said the agent is, so it is what the field says until somebody writes
+ *   something better with `corpus doc edit --extra description=…`. Thin, and
+ *   **loadable** — which is the whole difference this issue is about.
+ *
+ * An *explicitly* empty `description` is refused rather than defaulted: a caller
+ * that named the field asked for something Claude Code cannot use, and silently
+ * substituting the title would answer a question it did not ask.
+ *
+ * The refusal is raised here, before the write pipeline, so it names the field
+ * the caller actually sets (`extra.name`, `extra.description`) instead of
+ * arriving as a generic frontmatter finding. It cannot drift from the check: the
+ * fault list comes from {@link claudeCodeFrontmatterIssues}, the very function
+ * `corpus doc check` reports through, and `validateBeforeWrite` runs it again
+ * over the bytes this returns.
+ */
+function claudeCodeFields(path: string, input: CreateDocRequest): Record<string, unknown> {
+  const discoveredAs = claudeCodeRootFor(path)?.discoveredAs ?? null;
+  if (discoveredAs === null) return {};
+
+  const supplied = input.extra ?? {};
+  // A title that is only whitespace names no agent; the filename does, and it is
+  // the same fallback `allocatePath` makes for the path itself.
+  const fallback = input.title.trim() === "" ? discoveredAs : input.title;
+  const fields = {
+    name: supplied["name"] ?? discoveredAs,
+    description: supplied["description"] ?? fallback,
+  };
+
+  const issues = claudeCodeFrontmatterIssues(fields, discoveredAs);
+  if (issues.length > 0) {
+    validationError(
+      `an agent definition needs Claude Code's frontmatter: ${issues[0]?.message ?? "invalid"}`,
+      issues.map((issue) => ({ path: `extra.${issue.field}`, message: issue.message })),
+    );
+  }
+  return fields;
 }
 
 /**
@@ -186,6 +250,11 @@ export async function createDocument(
     // every frontmatter value below is either the request's or the server
     // default `CreateDocRequestSchema` documents for that field.
     const fields: Record<string, unknown> = {
+      // Claude Code's two discovery keys lead where the path is one it reads —
+      // the key order `skills/create.ts` already writes, and the order the
+      // shipped skills arrive in. Empty everywhere else, so an ordinary note's
+      // frontmatter stays §5's canonical block and nothing else.
+      ...claudeCodeFields(path, input),
       // Canonical key order (SPEC.md §5), which is the order they are written.
       id,
       type: input.type,

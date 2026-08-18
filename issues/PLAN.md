@@ -932,7 +932,7 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | UI-122 | The designate menu offers a general resident first, and never dead-ends | done | P0 | CONTRACT-061, SERVER-121 |
 | AGENT-033 | A resident with no persona to bind | done | P0 | CONTRACT-061, SERVER-121, CLI-049 |
 | AGENT-034 | A skill that creates an agent profile | done | P0 | SERVER-122, CLI-050 |
-| SERVER-123 | A created agent-def carries none of Claude Code's frontmatter, and nothing says so (AGENT-034 finding) | todo | P1 | SERVER-122 |
+| SERVER-123 | A created agent-def carries none of Claude Code's frontmatter, and nothing says so (AGENT-034 finding) | done | P1 | SERVER-122 |
 | AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | todo | P1 | — |
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
 | SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |

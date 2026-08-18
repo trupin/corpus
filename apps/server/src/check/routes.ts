@@ -30,9 +30,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { contractRoutes, type CheckFinding as WireFinding } from "@corpus/contract";
+import { contractRoutes } from "@corpus/contract";
 import { checkCorpus, toCheckDocument, type CheckDocument } from "../core/index.js";
-import { checkSeams, findDocumentRow, isSkillFrontmatterException } from "../docs/index.js";
+import { checkSeams, findDocumentRow } from "../docs/index.js";
 import type { ProjectionDb } from "../projection/index.js";
 
 export interface CheckRoutesDeps {
@@ -99,15 +99,22 @@ export function mountCheckRoutes(app: OpenAPIHono, deps: CheckRoutesDeps): void 
           // the path-derived rules and echoed on every finding.
           request.documents.map((document) => toCheckDocument(document.path, document.content));
 
+    // §7's leniency under `.claude/` is not applied here: it lives in the rule
+    // itself, reached through the same `checkSeams` factory the save path uses
+    // (SERVER-123). A post-filter over `code` + `path` could not survive §7's
+    // other half — Claude Code's `name`/`description`, required in exactly the
+    // roots where Corpus's block is waived and reported under the same code —
+    // and two consumers each holding a copy of the waiver is how "the same
+    // validator" stops being true. `report.errors` is therefore the answer.
     const report = checkCorpus(documents, checkSeams(deps.projection));
-    // §7's skill leniency, applied through the write path's own predicate: a
-    // document the system accepts on write must not fail a check (sprint-013
-    // Adjudication 6). Waived rather than re-graded — every code that reaches
-    // `warnings` is one of §14's two, and this is not one of them.
-    const errors: WireFinding[] = report.errors.filter(
-      (finding) => !isSkillFrontmatterException(finding),
-    );
 
-    return c.json({ ok: errors.length === 0, errors, warnings: [...report.warnings] }, 200);
+    return c.json(
+      {
+        ok: report.errors.length === 0,
+        errors: [...report.errors],
+        warnings: [...report.warnings],
+      },
+      200,
+    );
   });
 }

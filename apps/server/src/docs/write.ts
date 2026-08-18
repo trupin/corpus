@@ -54,7 +54,9 @@ import {
   type CheckCode,
   type CheckFinding,
   type CheckOptions,
+  type ClaudeCodeRoot,
 } from "../core/index.js";
+import { invocableName } from "../threads/mentions.js";
 import { resolveAnchorExact } from "../anchors/index.js";
 import type { EditSessionTracker } from "../edit/index.js";
 import { rosterSignature } from "../agents/roster.js";
@@ -165,29 +167,43 @@ export const checkSeams = (projection: ProjectionDb): CheckOptions => ({
   resolveAnchor: resolveAnchorExact,
   documentExists: (id) => isIdTaken(projection, id),
   anchorClaimants: (docId, anchorId) => anchorClaimantIds(projection, docId, anchorId),
+  claudeCodeRoot: claudeCodeRootFor,
 });
 
 /**
- * True for the one finding this system deliberately does not hold against a
- * document: §5's canonical frontmatter block, demanded of a file under §7's skill
- * or agent-definition roots.
+ * §7's Claude Code roots, as the checker asks about them — the seam that carries
+ * **both** the waiver and the requirement (see `core/check.ts`'s
+ * `CheckOptions.claudeCodeRoot`).
  *
- * Those roots legitimately hold files with no Corpus frontmatter at all — a
- * hand-written `SKILL.md` carries Claude Code's `name`/`description` and nothing
- * else, which is why the projection synthesizes an id for them. Every *structural*
- * rule still applies; only this one is waived.
+ * `synthesizeId` is already the declaration "this root holds files whose
+ * frontmatter may be Claude Code's rather than Corpus's", so it is what decides
+ * the waiver; nothing new is invented here and no second list of roots exists to
+ * drift.
  *
- * It is a predicate over a finding rather than a flag computed at a call site so
- * that the save path and `POST /api/check` cannot disagree: **a document the
- * system accepts on write must not fail a check** (sprint-013 Adjudication 6).
- * Waived, never re-graded — moving it to `warnings` would put a code outside
- * §14's closed two-member warning set on the wire.
+ * **`discoveredAs` is `.claude/agents/` alone, deliberately.** Claude Code
+ * discovers a skill by `name`/`description` too, but nothing in this system can
+ * produce a skill without them — `SkillCreateRequestSchema` requires
+ * `description` for exactly this reason, in exactly these words ("a skill
+ * created without one is a file that looks installed and can never be invoked")
+ * — so on the create side §7's promise is already kept there. Requiring them of
+ * `.claude/skills/**` would only ever fire on files this system never wrote, and
+ * `frontmatter-invalid` is blocking (see {@link LOCAL_CHECK_CODES}): it would
+ * refuse writes to a hand-authored skill — *unarchiving* one among them, which
+ * validates at its `.claude/skills/` destination — for a defect nobody has
+ * measured. The agent-def root is where SERVER-122 made the gap consequential
+ * and where AGENT-034 measured the silent failure, so it is where the rule
+ * starts. Extending it later is this one expression.
+ *
+ * A predicate reached through {@link checkSeams} rather than computed at each
+ * call site, for the reason its filtering predecessor was: **a document the
+ * system accepts on write must not fail a check** (sprint-013 Adjudication 6),
+ * and the save path and `POST /api/check` share one seam factory precisely so
+ * they cannot answer differently.
  */
-export function isSkillFrontmatterException(finding: Pick<CheckFinding, "code" | "path">): boolean {
-  return (
-    finding.code === CHECK_CODES.frontmatterInvalid &&
-    classifyPath(finding.path)?.synthesizeId === true
-  );
+export function claudeCodeRootFor(path: string): ClaudeCodeRoot | null {
+  const root = classifyPath(path);
+  if (root === null || !root.synthesizeId) return null;
+  return { discoveredAs: root.key === "agents" ? invocableName(path) : null };
 }
 
 /** How much hook output a warning carries; the full text is always in the log. */
@@ -480,9 +496,12 @@ export type SaveCheck = {
  */
 export function checkSave(projection: ProjectionDb, path: string, text: string): SaveCheck {
   const report = checkCorpus([toCheckDocument(path, text)], checkSeams(projection));
-  const blocking = report.errors.filter(
-    (finding) => LOCAL_CHECK_CODES.has(finding.code) && !isSkillFrontmatterException(finding),
-  );
+  // No §7 filter here any more: the waiver moved into the rule that produces the
+  // finding (`checkSeams`' `claudeCodeRoot`), so every `frontmatter-invalid` that
+  // reaches this line is one the system means — §5's block outside `.claude/`,
+  // or Claude Code's own two fields inside `.claude/agents/` (SERVER-123). A
+  // filter keyed on code and path could not have told those apart.
+  const blocking = report.errors.filter((finding) => LOCAL_CHECK_CODES.has(finding.code));
   // Errors this save lets through and still reports (see REPORTED_CHECK_CODES).
   const tolerated = report.errors.filter((finding) => REPORTED_CHECK_CODES.has(finding.code));
   const warnings: Warning[] = [];

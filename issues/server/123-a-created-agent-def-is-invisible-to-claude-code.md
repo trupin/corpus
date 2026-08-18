@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -139,17 +139,215 @@ finding and watching the specific combinations go green.
 4. Create one missing each field and confirm `corpus doc check` says so
 5. Stop the server; confirm the port is free
 
+## Route chosen
+
+**Route 3, adapted: the create route supplies both fields, and `check` reports
+them as errors under `frontmatter-invalid`.** Concretely — `name` is *derived*
+from the allocated filename (route 1's insight: it is not caller data, since
+`.claude/agents/<stem>.md` is what makes `@<stem>` resolve), and `description`
+is taken from `extra.description` when the caller sends one and **defaulted to
+the title** when it does not. A caller-supplied `name` that disagrees with the
+filename is a `400`; an explicitly empty `description` is a `400`.
+
+**Why the others lost.**
+
+- **Route 2 (check warns, server writes neither)** fails acceptance criterion 5
+  outright: `corpus doc create --type agent-def` would go on producing a file
+  Claude Code silently does not load — the exact defect SERVER-122 made
+  consequential — and, in the issue's own words, "leaves a caller who ignores
+  warnings exactly where they are today".
+- **Route 1 (derive `name`, warn for `description`)** fails the same criterion
+  for the same reason: the drill confirms a `name`-only profile is **not
+  listed**. Its good half is kept — deriving `name` is exactly what closes the
+  naming divergence at the source.
+- **Both also need a new wire code.** `corpus doc check`'s vocabulary *is* §14's:
+  `apps/server/src/core/check.ts`'s `CHECK_CODES` is pinned member-for-member to
+  the contract's `CHECK_CODES` by `apps/server/src/check/codes.test.ts`, and
+  `CHECK_WARNING_CODES` is closed at two. Reporting these as *warnings* is
+  therefore a contract change. Reporting them as **errors** needs none:
+  `frontmatter-invalid` already means "this document's frontmatter does not carry
+  what a file in its position must", which is precisely what §7:399 asks to be
+  checked, for both sets.
+- **Adjudication 6 then forces the create half.** `frontmatter-invalid` is in
+  `LOCAL_CHECK_CODES`, so it blocks a save. A blocking finding the create route
+  did not satisfy would make `--type agent-def` a verb that always fails, so the
+  create must supply what the check demands — which is what route 3 says.
+- **Why `description` is defaulted rather than required.** §11's creation is
+  zero-form ("a type and a title are the whole requirement, and everything else
+  the server fills in"), and `corpus doc create` has **no `--extra` flag** — so a
+  hard requirement would be unsendable through the agent's only interface
+  (Architecture Decision 2) and would break the `profile` skill outright. The
+  title is what the caller said the agent is; thin, and **loadable**, which is
+  the whole difference this issue is about. `corpus doc edit --extra
+  description=…` (which does exist) is how it is made good.
+
+**The waiver and the finding do not contradict, structurally.** They are now two
+answers from one seam: `CheckOptions.claudeCodeRoot`, supplied by `checkSeams`.
+Non-null waives §5's canonical block; a non-null `discoveredAs` requires Claude
+Code's. `isSkillFrontmatterException` — a post-filter over `code` + `path`
+applied in two consumers — is **deleted**, because it could not have told §5's
+finding from this one: same code, opposite reason.
+
+**Scope: `.claude/agents/` only, deliberately.** Claude Code discovers a skill by
+`name`/`description` too, but nothing in this system can produce a skill without
+them (`SkillCreateRequestSchema` requires `description`, in these very words), so
+§7:399's promise is already kept there on the create side. Since the finding is
+blocking, extending it to `.claude/skills/**` would refuse writes — *unarchiving*
+a skill among them, which validates at its `.claude/skills/` destination — to
+hand-authored files this system never wrote, for a defect nobody has measured.
+Extending it later is one expression (`claudeCodeRootFor`). **Residual, reported:
+a hand-authored `SKILL.md` missing `description` is still not reported, so
+§7:399 is true for agent-defs and not yet for skills.**
+
+**No contract change was needed.**
+
 ## E2E Verification Log
 
-_[Agent fills]_
+**Model: Opus 5 (1M context). Date: 2026-08-17.**
+
+Throwaway workspace `~/.claude/jobs/4dd0ddef/tmp/s123-ws`, real server on port
+**8851** (`corpus server start`, pid 19411, running `apps/server/src/main.ts`
+under tsx — i.e. the code under test), real `claude` **2.1.233**.
+
+### 1. The create writes both fields
+
+```
+$ corpus doc create --type agent-def --title "Archivist" <<'EOF' … EOF
+created doc_7dpwvwqu — .claude/agents/archivist.md
+
+$ cat .claude/agents/archivist.md
+---
+name: archivist
+description: Archivist
+id: doc_7dpwvwqu
+type: agent-def
+…
+```
+
+### 2. The only test that matters — a real `claude` session lists it
+
+Five more profiles were then written **by hand** into `.claude/agents/` covering
+every combination, and one real session was asked to list its subagent types:
+
+```
+$ claude --print --permission-mode plan "List every subagent type available to you…"
+archivist
+claude
+drillboth
+Explore
+general-purpose
+numbers
+Plan
+statusline-setup
+```
+
+| file | frontmatter | listed by Claude Code |
+| --- | --- | --- |
+| `archivist.md` (**server-created**) | both | **yes — `archivist`** |
+| `drillboth.md` | both | **yes — `drillboth`** |
+| `drillneither.md` | neither | no |
+| `drillname.md` | `name` only | no |
+| `drilldesc.md` | `description` only | no |
+| `drillnumbers.md` | `name: numbers` | **yes — as `numbers`** |
+
+The issue's table reproduces exactly, and the last row reproduces the second
+divergence: one file, listed by Claude Code under a word its filename does not
+contain.
+
+### 3. `corpus doc check` now says so — all four combinations plus the divergence
+
+```
+$ corpus doc check
+error frontmatter-invalid .claude/agents/drillneither.md: name: missing — Claude Code loads a
+  subagent only when its frontmatter carries both `name` and `description`, so this profile is
+  listed by nothing, dispatched to by nothing, and warned about by nothing; it must be
+  `drillneither`, the filename Corpus resolves `@drillneither` by
+error frontmatter-invalid .claude/agents/drillneither.md: description: missing or empty — …
+error frontmatter-invalid .claude/agents/drilldesc.md: name: missing — …
+error frontmatter-invalid .claude/agents/drillname.md: description: missing or empty — …
+error frontmatter-invalid .claude/agents/drillnumbers.md: name: `numbers` is not the filename
+  `drillnumbers` — Claude Code dispatches to this subagent as `numbers` while Corpus resolves it
+  as `@drillnumbers`, so one file answers to two addresses and neither reader knows about the other
+corpus: 5 errors in 17 documents.
+$ echo $?
+6
+```
+
+`archivist.md` and `drillboth.md` produce nothing: `corpus doc check doc_7dpwvwqu`
+→ *"checked 1 document — no findings."*, exit **0**. The two skills `corpus init`
+installs, and every seeded document, are also silent — the run's 5 errors are the
+5 hand-broken files and nothing else.
+
+### 4. The two-address divergence, measured
+
+`sqlite3 .corpus/cache.db` shows the projection titled `drillnumbers.md`
+**`numbers`** (a file with no Corpus `title:` falls back to `name`), so Corpus
+answered to *both* words:
+
+```
+$ corpus thread designate th_rsqct3ng --agent numbers
+designated drillnumbers (doc_agentdef413368b9) on th_rsqct3ng
+$ corpus thread designate th_rsqct3ng --agent drillnumbers
+designated drillnumbers (doc_agentdef413368b9) on th_rsqct3ng
+```
+
+That is a second shape of the same defect (the issue measured the other one — a
+profile carrying its own `title:`, where `numbers` resolves to nothing). Both are
+now reported, and neither can be created through the API any more.
+
+### 5. The write path refuses to make one
+
+```
+$ corpus doc edit doc_drillnei --add-tag research
+  "path": "frontmatter-invalid",
+  "message": "description: missing or empty — …"
+
+$ corpus doc edit doc_7dpwvwqu --extra name=numbers
+  "path": "frontmatter-invalid",
+  "message": "name: `numbers` is not the filename `archivist` — …"
+```
+
+### 6. And the repair is one command
+
+```
+$ corpus doc edit doc_agentdef5a136e5d --extra description="Only a name, until now."
+edited doc_agentdef5a136e5d
+$ corpus doc check doc_agentdef5a136e5d
+checked 1 document — no findings.
+```
+
+### 7. Teardown
+
+Server stopped; port 8851 confirmed free.
+
+### Checks
+
+`eslint apps/server/src` 0 · `prettier --check apps/server/src` 0 ·
+`tsc --noEmit -p apps/server` 0 · full `apps/server` vitest suite green.
+
+## Handed back to the orchestrator
+
+1. **`assets/workspace/claude/skills/profile/SKILL.md` (agent-runtime domain,
+   criterion 6) — one paragraph is now false.** It says *"`corpus doc check`
+   passes a profile carrying neither field, so a green check proves nothing
+   here"* and calls the read-back "the only check that exists". Both are now
+   wrong. The `--extra name=<stem>` half of its second command is redundant (the
+   server derives it, and a disagreeing value is refused), and the read-back can
+   go. What should stay: `--extra description=…` as a **quality** step — the
+   server's default is the title, which loads but says nothing about *when to
+   reach for this one*. Nothing in the skill is broken, so this is not a blocker.
+2. **Residual §7:399 gap for skills**, scoped out above with reasons — worth its
+   own issue if you want the sentence true for both roots.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified (criterion 6 handed back — `assets/workspace/`
+      is the agent-runtime domain; nothing there is broken, one paragraph is now
+      stale)
 
 ## Completion Checklist (orchestrator)
 

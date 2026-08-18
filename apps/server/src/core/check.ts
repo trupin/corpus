@@ -25,6 +25,16 @@ import { duplicateTurnTimestamps } from "./turns.js";
  *   exist *yet* (how a corpus grows, §5). Failing on either would punish the
  *   operator for using the system as designed.
  *
+ * **Frontmatter means both vocabularies, not just Corpus's.** §7: "Corpus's
+ * frontmatter fields … coexist with Claude Code's (`name`, `description`) in the
+ * same YAML block; `corpus doc check` validates both sets." Under `.claude/`
+ * those two sets trade places — §5's canonical block is waived and Claude Code's
+ * two fields are required — and both halves are decided by the one
+ * `claudeCodeRoot` seam, so a rule and its waiver can never contradict each
+ * other. They share `frontmatter-invalid` because they are the same finding
+ * about the same YAML block: this document's frontmatter does not carry what a
+ * file in its position must (SERVER-123).
+ *
  * An anchor entry with no thread is deliberately on the failure side: §14 lists
  * "every anchor belongs to an existing thread" among the rules a mutation must
  * satisfy, and §6 states the invariant it protects — deleting or resolving a
@@ -127,6 +137,42 @@ export type CheckOptions = {
    * by a submitted thread never reaches it.
    */
   readonly anchorClaimants?: (docId: string, anchorId: string) => readonly string[];
+  /**
+   * Whether a path sits under one of §7's **Claude Code roots** — `.claude/…` —
+   * and, if Claude Code loads a subagent from it, the name it discovers the file
+   * under (its filename, for `.claude/agents/<name>.md`).
+   *
+   * One seam because it answers one question with two halves, and the halves are
+   * mirror images of each other (SERVER-123):
+   *
+   * - **Non-null waives §5's canonical block.** Those roots legitimately hold
+   *   files carrying Claude Code's frontmatter and not Corpus's — a hand-written
+   *   `SKILL.md` has no `id:`, which is why the projection synthesizes one — so
+   *   the `frontmatter-invalid` findings §5 would produce are not raised at all.
+   *   Suppressed *here*, at the rule, rather than filtered out of the report by
+   *   each consumer: a filter keyed on `code` + `path` cannot tell §5's finding
+   *   from the one below, which carries the same code for the opposite reason.
+   * - **A non-null `discoveredAs` requires Claude Code's block**, by the same
+   *   §7 sentence: "`corpus doc check` validates both sets". A file there
+   *   missing `name` or `description` is silently not loaded as a subagent, and
+   *   a `name` that disagrees with the filename gives one file two addresses
+   *   (Claude Code dispatches by the field, Corpus resolves `@<name>` by the
+   *   path). See {@link claudeCodeFrontmatterIssues}.
+   *
+   * Absent, both halves are simply not applied: `checkCorpus` stays free of the
+   * projection's root table, exactly as it stays free of the anchor engine.
+   */
+  readonly claudeCodeRoot?: (path: string) => ClaudeCodeRoot | null;
+};
+
+/** What a path under one of §7's Claude Code roots means for its frontmatter. */
+export type ClaudeCodeRoot = {
+  /**
+   * The name Claude Code discovers the file under, or `null` when this root's
+   * Claude Code fields are not judged — the file is under `.claude/`, so §5's
+   * block is waived, but nothing is required in its place.
+   */
+  readonly discoveredAs: string | null;
 };
 
 export type CheckReport = {
@@ -182,6 +228,89 @@ const anchorEntryProblem = (entry: unknown): string | null => {
   }
   return null;
 };
+
+/** One thing wrong with the Claude Code half of a file's frontmatter. */
+export type ClaudeCodeFrontmatterIssue = {
+  /** The frontmatter key at fault. */
+  readonly field: "name" | "description";
+  /** What is wrong and what it costs, rendered verbatim by every caller. */
+  readonly message: string;
+};
+
+/**
+ * §7's other half: "Corpus's frontmatter fields … coexist with Claude Code's
+ * (`name`, `description`) in the same YAML block; `corpus doc check` validates
+ * both sets" (SERVER-123).
+ *
+ * Claude Code loads a subagent from `.claude/agents/<name>.md` only when the
+ * frontmatter carries **both** fields; with one, or with neither, it lists
+ * nothing and warns about nothing. Measured against a real session, all four
+ * combinations: only both-present loads. So a profile missing either is not a
+ * document with a cosmetic gap — it is a persona Corpus will happily designate
+ * and Claude Code cannot run.
+ *
+ * The third rule is the naming one, and it is the same silence from the other
+ * side. §8 resolves a mention through the **path** (`invocableName`) — there is
+ * no `name` column, and the path is what Claude Code discovers a file by too —
+ * so `.claude/agents/bareprofile.md` carrying `name: numbers` is `numbers` to a
+ * dispatch and `@bareprofile` to a mention. Measured in the drill: with no
+ * Corpus `title:` the projection falls back to `name`, so Corpus answers to
+ * *both* words and a reader cannot tell which one the file is; with a `title:`
+ * of its own, `numbers` resolves to nothing at all. One file, two addresses,
+ * either way, and nothing anywhere said so.
+ *
+ * Every message names the field **and what it costs**, because "field absent" is
+ * not actionable and the cost is the whole point of the finding.
+ *
+ * Shared with `docs/create.ts` rather than restated there: the create route
+ * refuses a profile this function would fault, so the rule the write enforces
+ * and the rule the check reports are one function, not two that agree today.
+ */
+export function claudeCodeFrontmatterIssues(
+  data: Record<string, unknown>,
+  discoveredAs: string,
+): ClaudeCodeFrontmatterIssue[] {
+  const issues: ClaudeCodeFrontmatterIssue[] = [];
+  const unloadable =
+    "Claude Code loads a subagent only when its frontmatter carries both `name` and " +
+    "`description`, so this profile is listed by nothing, dispatched to by nothing, and warned " +
+    "about by nothing";
+
+  const name = data["name"];
+  if (name === discoveredAs) {
+    // The one passing case: the field agrees with the filename.
+  } else if (name === undefined || name === null || (typeof name === "string" && name === "")) {
+    issues.push({
+      field: "name",
+      message:
+        `missing — ${unloadable}; it must be \`${discoveredAs}\`, the filename Corpus resolves ` +
+        `\`@${discoveredAs}\` by`,
+    });
+  } else {
+    // A non-string `name` is quoted as the JSON it is: the field is reported
+    // verbatim, and `[object Object]` would name nothing the author can find.
+    const spelled = typeof name === "string" ? name : JSON.stringify(name);
+    issues.push({
+      field: "name",
+      message:
+        `\`${spelled}\` is not the filename \`${discoveredAs}\` — Claude Code dispatches to ` +
+        `this subagent as \`${spelled}\` while Corpus resolves it as \`@${discoveredAs}\`, ` +
+        "so one file answers to two addresses and neither reader knows about the other",
+    });
+  }
+
+  const description = data["description"];
+  if (typeof description !== "string" || description.trim() === "") {
+    issues.push({
+      field: "description",
+      message:
+        `missing or empty — ${unloadable}; it is also the only part of the file another agent ` +
+        "reads when choosing whom to dispatch to, so it says *when to reach for this one*",
+    });
+  }
+
+  return issues;
+}
 
 const checkAnchorEntries = (
   parsed: ParsedDocument,
@@ -334,15 +463,41 @@ export const checkCorpus = (
       report,
     );
 
-    const validated = validateFrontmatter(entry.document.data);
-    if (!validated.ok) {
-      for (const issue of validated.issues) {
+    // §7's Claude Code roots, both halves (see `CheckOptions.claudeCodeRoot`).
+    // Asked before the validation gate below, and of the raw mapping, because
+    // the files this judges most often carry *no* Corpus frontmatter at all —
+    // a hand-written profile is `name` + `description` and nothing else, and it
+    // would never reach a rule that ran after validation succeeded.
+    const claudeCodeRoot = options.claudeCodeRoot?.(entry.path) ?? null;
+    const discoveredAs = claudeCodeRoot?.discoveredAs ?? null;
+    if (discoveredAs !== null) {
+      for (const issue of claudeCodeFrontmatterIssues(entry.document.data, discoveredAs)) {
         report.error(
           CHECK_CODES.frontmatterInvalid,
           docId,
           entry.path,
-          `${issue.path}: ${issue.message}`,
+          `${issue.field}: ${issue.message}`,
         );
+      }
+    }
+
+    const validated = validateFrontmatter(entry.document.data);
+    if (!validated.ok) {
+      // §5's canonical block is waived under those same roots — a file there
+      // legitimately carries Claude Code's fields and not Corpus's, which is why
+      // the projection synthesizes an id for it. Every *structural* rule above
+      // still ran; only this one is waived, and the document is still not loaded
+      // into the cross-document passes, because its frontmatter did not validate
+      // and there is nothing trustworthy to judge it by.
+      if (claudeCodeRoot === null) {
+        for (const issue of validated.issues) {
+          report.error(
+            CHECK_CODES.frontmatterInvalid,
+            docId,
+            entry.path,
+            `${issue.path}: ${issue.message}`,
+          );
+        }
       }
       continue;
     }

@@ -67,7 +67,6 @@ export {
   commitWarnings,
   createDocumentMutex,
   finishMutation,
-  isSkillFrontmatterException,
   runInLanes,
   runMutation,
   validateBeforeWrite,

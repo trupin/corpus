@@ -513,6 +513,122 @@ describe("§7's skill-frontmatter leniency (Adjudication 6)", () => {
   });
 });
 
+// SPEC.md §7: "Corpus's frontmatter fields … coexist with Claude Code's
+// (`name`, `description`) in the same YAML block; `corpus doc check` validates
+// both sets." Pre-fix it validated neither of Claude Code's, in none of the
+// four combinations — the state AGENT-034 measured against a real session, where
+// only both-present is loaded (SERVER-123).
+describe("§7's other half: Claude Code's frontmatter", () => {
+  const profile = (frontmatter: string): string => `---\n${frontmatter}---\n\nYou research.\n`;
+  const NAME = "name: researcher\n";
+  const DESCRIPTION = "description: Reach for this when a claim needs its source.\n";
+
+  const checkProfile = async (
+    frontmatter: string,
+    path = ".claude/agents/researcher.md",
+  ): Promise<CheckReport> => {
+    const content = profile(frontmatter);
+    ws.write(path, content);
+    const { report } = await check({ documents: [{ path, content }] });
+    return report;
+  };
+
+  const messages = (report: CheckReport): string => report.errors.map((f) => f.detail).join("\n");
+
+  it("reports an agent-def carrying neither field", async () => {
+    const report = await checkProfile("");
+    expect(codes(report.errors)).toEqual(["frontmatter-invalid"]);
+    expect(report.errors).toHaveLength(2);
+    expect(messages(report)).toContain("name:");
+    expect(messages(report)).toContain("description:");
+    expect(report.ok).toBe(false);
+  });
+
+  it("reports one carrying only `description`", async () => {
+    const report = await checkProfile(DESCRIPTION);
+    expect(report.errors.map((f) => f.detail.split(":")[0])).toEqual(["name"]);
+    expect(report.ok).toBe(false);
+  });
+
+  it("reports one carrying only `name`", async () => {
+    const report = await checkProfile(NAME);
+    expect(report.errors.map((f) => f.detail.split(":")[0])).toEqual(["description"]);
+    expect(report.ok).toBe(false);
+  });
+
+  it("passes one carrying both, with no Corpus frontmatter at all", async () => {
+    const report = await checkProfile(`${NAME}${DESCRIPTION}`);
+    expect(report).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+
+  // Not merely "a field is absent": the finding says what the absence costs.
+  it("names the field and what it costs", async () => {
+    const report = await checkProfile(NAME);
+    expect(report.errors[0]?.detail).toContain("Claude Code loads a subagent only when");
+    expect(report.errors[0]?.path).toBe(".claude/agents/researcher.md");
+  });
+
+  // The second divergence: Claude Code lists it as `numbers`, Corpus resolves
+  // it as `@bareprofile`, and nothing anywhere said so.
+  it("reports a `name` that disagrees with the filename, naming both addresses", async () => {
+    const report = await checkProfile(
+      `name: numbers\n${DESCRIPTION}`,
+      ".claude/agents/bareprofile.md",
+    );
+    expect(codes(report.errors)).toEqual(["frontmatter-invalid"]);
+    expect(report.errors[0]?.detail).toContain("`numbers`");
+    expect(report.errors[0]?.detail).toContain("@bareprofile");
+    expect(report.ok).toBe(false);
+  });
+
+  // The waiver and the requirement are two halves of one statement and must not
+  // contradict: §5's canonical block stays waived under exactly the roots where
+  // Claude Code's block is required.
+  it("still waives §5's canonical block on the same file", async () => {
+    const report = await checkProfile(`${NAME}${DESCRIPTION}`);
+    expect(report.errors).toEqual([]);
+    // …and a full Corpus block beside them is equally fine.
+    const both = await checkProfile(
+      `${NAME}${DESCRIPTION}id: doc_agent01\ntype: agent-def\ntitle: Researcher\n${STAMPS}\n`,
+    );
+    expect(both.errors).toEqual([]);
+  });
+
+  it("asks nothing of a hand-written SKILL.md, which the write path never leaves incomplete", async () => {
+    const path = ".claude/skills/hand-written/SKILL.md";
+    const content = "---\nname: hand-written\n---\n\nDo the thing.\n";
+    ws.write(path, content);
+    const { report } = await check({ documents: [{ path, content }] });
+    expect(report).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+
+  it("asks nothing of a `type: agent-def` document under data/docs", async () => {
+    const path = "data/docs/inbox/about-personas.md";
+    const content = `---\nid: doc_about01\ntype: agent-def\ntitle: About Personas\n${STAMPS}\n---\n\nProse.\n`;
+    ws.write(path, content);
+    const { report } = await check({ documents: [{ path, content }] });
+    expect(report).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+
+  // Sprint-013 Adjudication 6, in both directions: the create route supplies
+  // what the check demands, and the check accepts what the create wrote.
+  it("agrees with the create route, including its zero-form shape", async () => {
+    for (const extra of [
+      undefined,
+      { description: "Reach for this when a claim needs its source." },
+    ]) {
+      const created = await createDoc(ws, {
+        type: "agent-def",
+        title: extra === undefined ? "Researcher" : "Sourcer",
+        ...(extra === undefined ? {} : { extra }),
+      });
+
+      const { report } = await check({ ids: [created.id] });
+      expect(report, created.path).toEqual({ ok: true, errors: [], warnings: [] });
+    }
+  });
+});
+
 describe("a drifted corpus", () => {
   it("is a 200 carrying the findings, never a throw", async () => {
     const shared = `---\nid: doc_dupe01\ntype: note\ntitle: Dupe\n${STAMPS}\n---\n\nBody.\n`;

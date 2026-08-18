@@ -440,6 +440,140 @@ describe("POST /api/docs", () => {
     });
   });
 
+  // SERVER-123. Pre-fix the create wrote Corpus's frontmatter and none of
+  // Claude Code's, so `--type agent-def` produced a persona Corpus would
+  // happily designate and Claude Code silently would not load — measured
+  // against a real session in all four combinations, only both-present loads.
+  describe("SPEC.md §7's Claude Code frontmatter", () => {
+    const PROFILE_DESCRIPTION =
+      "Reach for this when a question is about the shape of an argument rather than its facts.";
+
+    const post = async (
+      body: Record<string, unknown>,
+    ): Promise<{ status: number; issues: { path: string; message: string }[] }> => {
+      const response = await ws.post("/api/docs", body);
+      const payload = (await response.json()) as {
+        issues?: { path: string; message: string }[];
+      };
+      return { status: response.status, issues: payload.issues ?? [] };
+    };
+
+    // §11's creation is zero-form — "a type and a title are the whole
+    // requirement, and everything else the server fills in" — and the CLI has no
+    // `--extra` on create, so a hard requirement would make `--type agent-def` a
+    // verb that always fails. Thin, and loadable, is the point.
+    it("fills in a description from the title when the caller sends none", async () => {
+      start("create-agent-def-default-description");
+
+      const created = await createDoc(ws, { type: "agent-def", title: "Archivist" });
+
+      expect(created.path).toBe(".claude/agents/archivist.md");
+      const parsed = parseDocument(ws.read(created.path), created.path);
+      expect(parsed.data["name"]).toBe("archivist");
+      expect(parsed.data["description"]).toBe("Archivist");
+
+      // The whole point: nothing this route writes can fail the check that
+      // reports an unloadable profile (sprint-013 Adjudication 6).
+      const checked = await ws.post("/api/check", { ids: [created.id] });
+      expect(await checked.json()).toMatchObject({ ok: true, errors: [] });
+    });
+
+    // An *explicitly* empty description is a caller naming the field and asking
+    // for something Claude Code cannot use; substituting the title would answer
+    // a question it did not ask.
+    it("refuses an explicitly empty description rather than defaulting it", async () => {
+      start("create-agent-def-blank-description");
+
+      const refused = await post({
+        type: "agent-def",
+        title: "Archivist",
+        extra: { description: "   " },
+      });
+
+      expect(refused.status).toBe(400);
+      expect(refused.issues.map((issue) => issue.path)).toEqual(["extra.description"]);
+      // Not merely "a field is absent": what it costs is the finding.
+      expect(refused.issues[0]?.message).toContain("Claude Code loads a subagent only when");
+      // Nothing was written, committed, or projected.
+      expect(ws.exists(".claude/agents/archivist.md")).toBe(false);
+      expect(ws.git("status", "--porcelain")).toBe("");
+    });
+
+    // `name` is not caller data: `.claude/agents/<stem>.md` is what makes
+    // `@<stem>` resolve, so the only correct value is the stem.
+    it("derives `name` from the filename the create allocated", async () => {
+      start("create-agent-def-derives-name");
+
+      const created = await createDoc(ws, {
+        type: "agent-def",
+        title: "The Archivist",
+        extra: { description: PROFILE_DESCRIPTION },
+      });
+
+      expect(created.path).toBe(".claude/agents/the-archivist.md");
+      const parsed = parseDocument(ws.read(created.path), created.path);
+      expect(parsed.data["name"]).toBe("the-archivist");
+      expect(parsed.data["description"]).toBe(PROFILE_DESCRIPTION);
+      // Claude Code's two keys lead the block, as the shipped skills do.
+      expect(Object.keys(parsed.data).slice(0, 2)).toEqual(["name", "description"]);
+    });
+
+    // The second divergence: one file at two addresses, with no error anywhere.
+    it("refuses a caller-supplied `name` that disagrees with the filename", async () => {
+      start("create-agent-def-name-divergence");
+
+      const refused = await post({
+        type: "agent-def",
+        title: "Bareprofile",
+        extra: { name: "numbers", description: PROFILE_DESCRIPTION },
+      });
+
+      expect(refused.status).toBe(400);
+      expect(refused.issues.map((issue) => issue.path)).toEqual(["extra.name"]);
+      expect(refused.issues[0]?.message).toContain("@bareprofile");
+      expect(refused.issues[0]?.message).toContain("numbers");
+      expect(ws.exists(".claude/agents/bareprofile.md")).toBe(false);
+    });
+
+    it("accepts a caller-supplied `name` that agrees with it", async () => {
+      start("create-agent-def-name-agrees");
+
+      const created = await createDoc(ws, {
+        type: "agent-def",
+        title: "Bareprofile",
+        extra: { name: "bareprofile", description: PROFILE_DESCRIPTION },
+      });
+
+      expect(created.path).toBe(".claude/agents/bareprofile.md");
+      expect(parseDocument(ws.read(created.path), created.path).data["name"]).toBe("bareprofile");
+    });
+
+    // The rule follows the *root*, not the type: a `type: agent-def` filed
+    // under `data/docs/` is a document about a persona, and Claude Code never
+    // looks there, so nothing is required of it.
+    it("asks nothing of a type: agent-def document filed under data/docs", async () => {
+      start("create-agent-def-docs-root");
+
+      const misfiled = await createDoc(ws, {
+        type: "agent-def",
+        title: "About Personas",
+        folder: "inbox",
+      });
+
+      expect(misfiled.path).toBe("data/docs/inbox/about-personas.md");
+      expect(parseDocument(ws.read(misfiled.path), misfiled.path).data["name"]).toBeUndefined();
+    });
+
+    it("asks nothing of an ordinary note", async () => {
+      start("create-agent-def-note-untouched");
+
+      const note = await createDoc(ws, { type: "note", title: "Ordinary" });
+      const parsed = parseDocument(ws.read(note.path), note.path);
+      expect(parsed.data["name"]).toBeUndefined();
+      expect(parsed.data["description"]).toBeUndefined();
+    });
+  });
+
   it("is readable immediately, with no polling", async () => {
     start("create-read-your-write");
     const created = await createDoc(ws, { type: "note", title: "Immediate" });
