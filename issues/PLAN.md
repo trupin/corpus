@@ -976,6 +976,6 @@ comment skill reads afterwards, because that is the surface where the cost lands
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| INFRA-030 | The orchestrator writes in controlled language (harness; ships nothing) | todo | P1 | — |
+| INFRA-030 | The orchestrator writes in controlled language (harness; ships nothing) | done | P1 | — |
 | SHARED-050 | The product agent's register is controlled language (NEEDS SIGN-OFF) | todo | P1 | — |
 | AGENT-037 | The workspace ships the skill, and the agent writes by it | todo | P1 | INFRA-030, SHARED-050 |

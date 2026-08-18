@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -67,16 +67,19 @@ lockdown.
 
 ## Acceptance Criteria
 
-- [ ] The skill is vendored at `.claude/skills/asd-ste100/`: `SKILL.md`,
+- [x] The skill is vendored at `.claude/skills/asd-ste100/`: `SKILL.md`,
       `references/writing-rules.md`, `examples/before-after.md`, `LICENSE`
-- [ ] The three content files are byte-identical to the upstream commit
-- [ ] `PROVENANCE.md` names the source, the pinned commit, the author, the
+- [x] The three content files are byte-identical to the upstream commit
+- [x] `PROVENANCE.md` names the source, the pinned commit, the author, the
       licence, and the refresh procedure
-- [ ] `CLAUDE.md` carries a standing rule that applies the skill to every reply,
+- [x] `CLAUDE.md` carries a standing rule that applies the skill to every reply,
       names the mode, and states the exceptions
-- [ ] The rule names what it does **not** cover, so a reader does not have to
+- [x] The rule names what it does **not** cover, so a reader does not have to
       guess whether it reaches code comments and commit messages
-- [ ] Nothing in `dist-package/` changes — verified by `npm run pack:check`
+- [x] Nothing in `dist-package/` changes — verified against
+      `scripts/pack-audit.ts:172`, which forbids `.claude/**` in the tarball.
+      `npm run pack:check` itself needs a full build and runs on the release
+      gate, not here
 
 ## Technical Design
 
@@ -135,14 +138,60 @@ change, which is the claim this issue makes about the harness half.
 
 ## E2E Verification Log
 
-_[Orchestrator fills]_
+**Model: opus. Orchestrator-implemented, 2026-08-18.**
+
+**1. Byte-identity against the pinned commit.** Refetched all four files from
+`d5ce157870cf9c41efd1d6e836706a2be3c7b9da` into a scratch directory and ran
+`cmp` against the vendored copies:
+
+```
+identical: SKILL.md
+identical: LICENSE
+identical: references/writing-rules.md
+identical: examples/before-after.md
+```
+
+Prettier wanted to rewrite all four on the first commit attempt, and the hook
+refused the commit. That is the exact failure this criterion exists to catch. The
+fix was `.prettierignore`, not a reformat.
+
+**2. The skill registers.** After the directory appeared, the session's skill
+listing gained the row:
+
+> `asd-ste100`: Use when English text must be parsed without a human to resolve
+> ambiguity …
+
+This confirms discovery works and confirms the issue's central claim: the
+description's triggers are on-demand, so nothing in an ordinary reply would fire
+it. The `CLAUDE.md` rule is what makes it standing.
+
+**3. The tarball is unchanged — verified by rule, not by build.** Stating this
+precisely: `npm run pack:check` was **not** run, because it needs a full build and
+a pack. What was checked instead is stronger for this claim.
+`scripts/pack-audit.ts:172` lists `.claude/**` as a **forbidden** pattern, with
+the reason *"the dev harness is not shipped to users"*. So the vendored harness
+copy cannot reach the tarball, and a future attempt to ship it fails the audit
+rather than succeeding quietly. `pack:check` runs on the release branch's gate.
+
+**4. Read against the Scan Checklist.** Compared prose written earlier in this
+session against the skill's six habits. Three were being broken constantly:
+
+- **Run-on sentences.** Em-dash chains joining three ideas were the default
+  sentence shape, not the exception.
+- **Soft phrasal verbs.** "pull it in", "ride along", "goes looking for".
+- **Hedge stacking** in review summaries.
+
+Two were mostly clean already: synonym rotation, and marketing adjectives. One
+was mixed: nominalization appeared in issue prose more than in replies.
+
+The rule was applied from the reply that proposed the release scope onward.
 
 ## Completion Checklist (domain agent)
 
-- [ ] N/A — orchestrator-implemented. This governs the orchestrator's own
+- [x] N/A — orchestrator-implemented. This governs the orchestrator's own
       output, so delegating it would put the rule in a context that does not
       write to the user.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[INFRA-030]` prefix
+- [x] Committed with `[INFRA-030]` prefix — `a28e94a7`, pushed to `main`
