@@ -1,5 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import type { LaneRow } from "@corpus/kit";
+import { MISSING_PROFILE_MARK, MISSING_PROFILE_NOTE, type LaneRow } from "@corpus/kit";
 import { describe, expect, it, vi } from "vitest";
 import {
   agentDefRows,
@@ -10,6 +10,7 @@ import {
   NO_PROFILES_LABEL,
   NO_PROFILES_META,
   RELEASE_GENERAL_LABEL,
+  RELEASE_META,
   REPLACE_GENERAL_LABEL,
   type ResidentActionsInput,
 } from "./residentActions";
@@ -34,6 +35,19 @@ const GENERAL: LaneRow = {
   kind: "general",
   profile: null,
   profileDoc: null,
+};
+
+/**
+ * §7's designation whose profile has since been renamed or archived. Built with
+ * the kit's own `note` and `mark` rather than a paraphrase, because what these
+ * tests are checking is precisely that the menu says the kit's words.
+ */
+const PROFILE_GONE: LaneRow = {
+  ...RESIDENT,
+  kind: "profile-gone",
+  profileDoc: null,
+  note: MISSING_PROFILE_NOTE,
+  mark: MISSING_PROFILE_MARK,
 };
 
 function input(overrides: Partial<ResidentActionsInput> = {}): ResidentActionsInput {
@@ -270,17 +284,55 @@ describe("residentActions", () => {
    * than the no-op the skip exists to suppress.
    */
   it("names a resident whose profile has gone, and offers the directory to replace it", () => {
-    const gone: LaneRow = {
-      ...RESIDENT,
-      kind: "profile-gone",
-      profileDoc: null,
-      note: "its profile is gone",
-      mark: "profile gone",
-    };
-    const actions = residentActions(input({ resident: gone }));
+    const actions = residentActions(input({ resident: PROFILE_GONE }));
     expect(actions[0]?.label).toBe("Release researcher");
     expect(ids(actions)).toContain("resident-designate-doc_a");
     expect(actions[2]?.label).toBe("Replace with researcher");
+  });
+
+  /**
+   * PR #49's second review. The label alone is byte-identical to a healthy
+   * lane's — that is what naming the standing designation costs — so the report
+   * has to be on the item, and the second line is where it goes. §7's *"the
+   * missing profile is reported rather than silently substituted"* now holds on
+   * the surface where the release is actually chosen, and not only on the badge,
+   * the picker and `corpus agents`.
+   */
+  it("reports the gone profile on the release, in the kit's words", () => {
+    const gone = residentActions(input({ resident: PROFILE_GONE }))[0];
+    const healthy = residentActions(input({ resident: RESIDENT }))[0];
+
+    expect(gone?.label).toBe(healthy?.label);
+    expect(gone?.meta).not.toBe(healthy?.meta);
+    expect(gone?.meta).toBe(`${MISSING_PROFILE_NOTE} — ${RELEASE_META}`);
+  });
+
+  /**
+   * Not a fourth phrasing. The note is the kit's export verbatim and the
+   * consequence is still said — the report is joined ahead of it, in the order
+   * and with the separator the badge's title and the picker's statement line
+   * already use.
+   */
+  it("keeps the kit's sentence intact and still says what releasing does", () => {
+    const gone = residentActions(input({ resident: PROFILE_GONE }))[0];
+    expect(gone?.meta).toContain(MISSING_PROFILE_NOTE);
+    expect(gone?.meta).toContain(RELEASE_META);
+    expect(gone?.meta?.indexOf(MISSING_PROFILE_NOTE)).toBeLessThan(
+      gone?.meta?.indexOf(RELEASE_META) ?? -1,
+    );
+    // The short form belongs to rows that sit side by side; a menu item has a
+    // line to itself, so it says the sentence and not the phrase.
+    expect(gone?.meta).not.toContain(MISSING_PROFILE_MARK);
+  });
+
+  /**
+   * Every other kind has an empty `note`, and an empty clause must not leave a
+   * separator behind — a lane with nothing worth saying reads exactly as it did
+   * before this existed.
+   */
+  it("adds no clause to a lane with nothing worth saying about its resident", () => {
+    expect(residentActions(input({ resident: RESIDENT }))[0]?.meta).toBe(RELEASE_META);
+    expect(residentActions(input({ resident: GENERAL }))[0]?.meta).toBe(RELEASE_META);
   });
 
   it("disables every offer while a designation is in flight", () => {

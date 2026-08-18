@@ -1,3 +1,4 @@
+import { MISSING_PROFILE_NOTE } from "@corpus/kit";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
@@ -206,6 +207,70 @@ test.describe("designating a resident", () => {
     await expect(menu.locator('[data-act="resident-release"]')).toContainText("Release bookkeeper");
     await expect(menu.locator('[data-act="resident-designate-doc_bookkeeper"]')).toHaveCount(0);
     // Every other profile is still a replacement — the skip is one row wide.
+    await expect(menu.locator('[data-act="resident-designate-doc_researcher"]')).toContainText(
+      "Replace with researcher",
+    );
+  });
+
+  /**
+   * **A designation whose profile has gone**, on the surface where the release
+   * is chosen — SPEC.md §7's *"the missing profile is reported rather than
+   * silently substituted"*.
+   *
+   * PR #49's second review found the report holding on the board badge, in the
+   * recipient picker and in `corpus agents`, and **not** on the conversation's
+   * own menu: a `profile-gone` lane offered `Release researcher`, byte-identical
+   * to what a healthy lane offers, on the one surface where a person acts on the
+   * fact.
+   *
+   * The lane is seeded rather than produced, because archiving an agent-def is
+   * something the workspace does between two page loads and not something this
+   * page can cause: `{name: "researcher", docId: null}` is exactly what
+   * `GET /api/agents` answers once the document behind a standing designation
+   * has been renamed or archived (CONTRACT-061).
+   *
+   * The workspace deliberately still holds a `researcher` agent-def — the
+   * recreated-under-a-new-document case — because it is the sharpest reading of
+   * the skip: the guard asks the **document** and `null` matches nothing, so the
+   * whole directory is re-offered. That is correct and wanted. Designating there
+   * is a write with a real effect, not the no-op the skip suppresses.
+   */
+  test("says on the menu that a resident's profile has gone", async ({ page }) => {
+    await stubCorpus(page, [THREADS_VIEW, SOLO, PROFILE], {
+      lanes: [
+        {
+          lane: "th_solo",
+          resident: { name: "researcher", docId: null },
+          live: false,
+          since: null,
+          summary: null,
+          origin: { id: "th_solo", title: "Q3 planning" },
+        },
+      ],
+    });
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="th_solo"]').click();
+    await expect(page.locator(CARD)).toBeVisible();
+
+    // The badge already reported it, and still does — the designation stands, so
+    // the resident is named by the profile it was designated with.
+    await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "profile-gone");
+    await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("researcher");
+    await expect(page.locator(`${BADGE} .t-resident-note`)).toHaveText(MISSING_PROFILE_NOTE);
+
+    await openMenu(page);
+    const menu = page.getByRole("menu");
+    const release = menu.locator('[data-act="resident-release"]');
+    // Named, because the designation is what is being released…
+    await expect(release).toContainText("Release researcher");
+    // …and now qualified, in the same words the badge above uses.
+    await expect(release).toContainText(MISSING_PROFILE_NOTE);
+    // The consequence is still said: the report is joined ahead of it, never in
+    // place of it.
+    await expect(release).toContainText("back to ordinary routing");
+
+    // Re-offered, and that is the point: nothing resolves this designation now.
     await expect(menu.locator('[data-act="resident-designate-doc_researcher"]')).toContainText(
       "Replace with researcher",
     );

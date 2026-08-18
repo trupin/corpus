@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import type { AgentLane, DocRow } from "@corpus/contract";
-import { GENERAL_RESIDENT_LABEL, resetSeenMarks } from "@corpus/kit";
+import { GENERAL_RESIDENT_LABEL, MISSING_PROFILE_NOTE, resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -571,6 +571,48 @@ describe("designating a resident", () => {
     await waitFor(() => {
       expect(panel("th_solo")?.querySelector(".t-resident")).toBeNull();
     });
+  });
+
+  /**
+   * §7's *"the missing profile is reported rather than silently substituted"*,
+   * on the menu — through the real roster read, the real `laneRow`, and the real
+   * context menu. The lane is designated `researcher` and the roster answers
+   * `docId: null`, which is what a renamed or archived agent-def looks like on
+   * the wire (CONTRACT-061).
+   *
+   * Two things are asserted together because the review found them together: the
+   * release still **names** the standing designation, and the item now says why
+   * it is worth a second look. Before this the item was byte-identical to the
+   * healthy lane's a few tests down.
+   */
+  it("says on the menu that a resident's profile has gone", async () => {
+    const transport = standaloneWire([
+      {
+        lane: "th_solo",
+        resident: { name: "researcher", docId: null },
+        live: false,
+        since: null,
+        summary: null,
+        origin: { id: "th_solo", title: "Q3 planning" },
+      },
+    ]);
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident")).not.toBeNull();
+    });
+
+    openMenu();
+    // The whole directory is re-offered, including the row this designation was
+    // made against: nothing resolves it any more, so designating is a write with
+    // a real effect rather than the no-op the skip suppresses. Waited on rather
+    // than read once, because it arrives with the agent-def read.
+    await waitFor(() => {
+      expect(acts()).toContain("resident-designate-doc_agentdef");
+    });
+    const release =
+      document.querySelector<HTMLElement>('[data-act="resident-release"]')?.textContent ?? "";
+    expect(release).toContain("Release researcher");
+    expect(release).toContain(MISSING_PROFILE_NOTE);
   });
 
   it("offers the workspace's agents, and designates the one chosen", async () => {

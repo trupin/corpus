@@ -38,15 +38,20 @@ import type { MenuAction } from "../menu/menuModel";
  *
  * A `Resident` has three shapes since CONTRACT-061, and the board badge and the
  * composer's recipient row render the same three. Everything this file says
- * about them therefore reads `LaneRow.kind`, `LaneRow.profile` and
- * `LaneRow.profileDoc` rather than re-deriving them from a name —
- * `packages/kit/src/recipient/laneRows.ts` is where a lane turns into words, and
- * a menu that decided for itself what a missing profile is called would be the
- * second description drifting from the first.
+ * about them therefore reads `LaneRow.kind`, `LaneRow.profile`,
+ * `LaneRow.profileDoc` and `LaneRow.note` rather than re-deriving them from a
+ * name — `packages/kit/src/recipient/laneRows.ts` is where a lane turns into
+ * words, and a menu that decided for itself what a missing profile is called
+ * would be the second description drifting from the first.
  *
- * The split between those last two is the one to keep straight: `profile` is
+ * The split between the middle two is the one to keep straight: `profile` is
  * what the resident is **called** and is what a label says; `profileDoc` is
  * which document it **is** and is the only one of the two anything compares.
+ * `note` is the last of them, and the reason this list grew: it is what is worth
+ * saying about the resident beyond naming them — §7's missing-profile report,
+ * empty for every other kind — and until PR #49's second review the menu was the
+ * one resident surface that did not read it, so a `profile-gone` lane offered a
+ * release byte-identical to a healthy lane's. See {@link releaseMeta}.
  *
  * ## Only where a designation is legal, and only for a person
  *
@@ -96,6 +101,25 @@ export const GENERAL_META = `no profile — ${DESIGNATE_META}`;
 
 /** …and a release's, which states the consequence rather than the act. */
 export const RELEASE_META = "back to ordinary routing — nothing already queued moves";
+
+/**
+ * The release item's second line: **who** is being released, where there is
+ * something worth saying about them, and then what releasing does.
+ *
+ * `note` is `LaneRow.note` — §7's missing-profile report in the kit's words
+ * (`MISSING_PROFILE_NOTE`), empty for every other kind of resident, so no
+ * ordinary lane gains a clause it did not have. Joined ahead of
+ * {@link RELEASE_META} rather than replacing it, in the same order and with the
+ * same separator the board badge's title and the recipient picker's statement
+ * line use — `name — note — line`, with the item's label carrying the name and
+ * this carrying the other two. Four surfaces, one sentence.
+ *
+ * The note and not the mark: `laneRows.ts` reserves the short form for rows that
+ * sit side by side, and a menu item has a line to itself.
+ */
+export function releaseMeta(note: string): string {
+  return [note, RELEASE_META].filter((part) => part !== "").join(" — ");
+}
 
 /** The act itself, offered whatever the agent-def directory holds. */
 export const DESIGNATE_LABEL = "Designate a resident";
@@ -187,7 +211,17 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
       // not: a general resident has none, and `LaneRow.name` falls through to
       // the conversation's own title, which would read as releasing the thread.
       label: resident.profile === null ? RELEASE_GENERAL_LABEL : `Release ${resident.profile}`,
-      meta: RELEASE_META,
+      /*
+       * §7's *"the missing profile is reported rather than silently
+       * substituted"*, on the surface where the release is actually chosen.
+       * Without it a `profile-gone` lane's release item was byte-identical to a
+       * healthy one's — the report held on the badge, in the picker and in
+       * `corpus agents`, and nowhere on the menu a person acts from (PR #49
+       * review). It qualifies the name in the label above rather than replacing
+       * it: the designation stands, so the resident is still called what it was
+       * designated as (CONTRACT-061).
+       */
+      meta: releaseMeta(resident.note),
       disabled: input.pending,
       run: () => {
         input.onRelease();
