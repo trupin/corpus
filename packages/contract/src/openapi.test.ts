@@ -2359,6 +2359,28 @@ describe("every folder sentence is true of every document root (CONTRACT-063)", 
   });
 
   /**
+   * PR #49's **third** review, same sentence family, fourth time: the route said
+   * a thread lands at `data/threads/<id>.md` "whatever `folder` names", and it
+   * does not. `createDocument` calls `resolveFolder(input.folder, input.type)`
+   * before `allocatePath` (`apps/server/src/docs/create.ts`), so
+   * `{"type":"thread","folder":".claude/agents"}` is a `400` from `admitRoot` —
+   * the root holds `agent-def` — and no thread is filed anywhere.
+   *
+   * The field has said the true thing since CONTRACT-063 ("still checked but
+   * never changes where it lands"); only the route, which is what an OpenAPI
+   * consumer reads first, did not. So both are asserted, and the discarded
+   * phrasing is asserted absent: a sentence that is right at one altitude and
+   * wrong one level up is the exact defect this family keeps reproducing.
+   */
+  it("says a thread's folder is checked and then ignored, not unchecked", () => {
+    expect(createRouteText()).not.toContain("whatever `folder` names");
+    expect(createRouteText()).toContain("still checked");
+    expect(createRouteText()).toContain("`400`");
+    expect(createRouteText()).toContain("never changes where the thread lands");
+    expect(create()).toContain("still checked");
+  });
+
+  /**
    * MAJOR 2. `MoveDocRequest.folder` is `z.string()` — required, no `.default()`
    * — and its description claimed an `inbox` default and explained it with
    * *creation* being inbox-first. Both halves are asserted: what the document

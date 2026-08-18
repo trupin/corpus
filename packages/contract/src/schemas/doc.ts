@@ -48,12 +48,25 @@ export const DocStatusSchema = z.enum(DOC_STATUSES).openapi({
  *
  * "Has a root of its own" is not the same as "lands there", and the difference
  * is the whole reason this qualifier keeps having to be re-added (PR #49 review,
- * three times in one phase). Read against `rootForType` in
- * `apps/server/src/docs/write.ts`, the exceptions are exactly two: `agent-def`
- * → `.claude/agents/` (SPEC.md §7) and `thread` → `data/threads/<id>.md`
- * (SPEC.md §4, and there whatever `folder` says). `skill` is **not** one, though
- * §7 gives it `.claude/skills`: that root indexes `SKILL.md` files alone, so a
- * skill created with no folder lands here in the inbox like anything else.
+ * three times in one phase). Two types do not land here, and they are decided
+ * by two different functions — naming only one of them is how this comment came
+ * to be wrong about the other.
+ *
+ * `rootForType` (`apps/server/src/docs/write.ts`) yields exactly **one**:
+ * `agent-def` → `.claude/agents/` (SPEC.md §7). `thread` is not in it at all —
+ * `NAMEABLE_ROOTS` drops every root whose path starts with `data/`, so
+ * `rootForType("thread")` is `null` and `resolveFolder` answers
+ * `data/docs/inbox` for a thread exactly as for a note. The thread exception is
+ * `allocatePath` (`apps/server/src/docs/create.ts`), which returns
+ * `data/threads/<id>.md` (SPEC.md §4) *after* the folder has been resolved and
+ * without consulting it. So a `folder` sent with a thread is checked exactly as
+ * any other create's is — one that fails is still a `400` — and one that passes
+ * is then ignored.
+ *
+ * `skill` is **not** an exception, though §7 gives it `.claude/skills`: that
+ * root indexes `SKILL.md` files alone, so `projectionIndexesFolder` is false for
+ * it, `rootForType("skill")` is `null`, and a skill created with no folder lands
+ * here in the inbox like anything else.
  *
  * This constant is the `data/docs` default and nothing more; the roots outside
  * it are not folders under it.
