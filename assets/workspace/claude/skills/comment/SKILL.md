@@ -629,8 +629,8 @@ same act, never a resolve with no readable turn attached:
 ```bash
 corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 6.4% it is — applied to the projection in [[doc_a1b2c3]] and to the two figures
-downstream of it. That settles the rate question, so I'm closing this thread;
-reply here if it turns out not to be settled.
+downstream of it. That settles the rate question, so I'm closing this thread.
+Reply here if it turns out not to be settled.
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%; resolved this thread
 CORPUS_EOF
 corpus thread resolve th_4b8e2c --from agent
@@ -912,7 +912,7 @@ key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"
 corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Not any more — 6.4% is the representative 30-year fixed rate today. Updated the
-assumption and the projection note in [[doc_a1b2c3]]; the anchored sentence is
+assumption and the projection note in [[doc_a1b2c3]]. The anchored sentence is
 the one that changed.
 ↳ updated the rate assumption in [[doc_a1b2c3]] from 6.1% to 6.4%
 CORPUS_EOF
@@ -994,7 +994,7 @@ corpus thread reply th_6c0a18 --from agent --model claude-sonnet-4-5 <<'CORPUS_E
 Finance it is — [[doc_2f7b91]] now lives in `finance/` next to the mortgage
 notes, tagged insurance and review. You left the renewal quarter blank, so it
 stays the open question already written into the document. That closes the
-filing I paused on; nothing else is outstanding here.
+filing I paused on. Nothing else is outstanding here.
 ↳ moved [[doc_2f7b91]] into finance/ and tagged it insurance, review
 CORPUS_EOF
 ```

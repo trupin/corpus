@@ -63,6 +63,27 @@ export const REQUIRED_PACK_ENTRIES: readonly RequiredEntry[] = [
     min: 1,
   },
   {
+    reason: "the controlled-language skill `corpus init` installs (AGENT-037)",
+    pattern: "assets/workspace/claude/skills/asd-ste100/SKILL.md",
+    min: 1,
+  },
+  {
+    reason: "that skill's licence — vendored MIT, and it ships with the file it covers",
+    pattern: "assets/workspace/claude/skills/asd-ste100/LICENSE",
+    min: 1,
+  },
+  {
+    reason:
+      "the two files that skill's SKILL.md points at — shipping one without them leaves dead links",
+    pattern: "assets/workspace/claude/skills/asd-ste100/{references,examples}/*.md",
+    min: 2,
+  },
+  {
+    reason: "the workspace CLAUDE.md — without it the skill above is never invoked (AGENT-037)",
+    pattern: "assets/workspace/CLAUDE.md",
+    min: 1,
+  },
+  {
     reason: "the workspace .gitignore (stored dotless, renamed on install)",
     pattern: "assets/workspace/gitignore",
     min: 1,

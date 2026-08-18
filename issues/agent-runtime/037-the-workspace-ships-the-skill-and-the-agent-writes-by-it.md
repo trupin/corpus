@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -75,25 +75,25 @@ and in the commit.
 
 ## Acceptance Criteria
 
-- [ ] `assets/workspace/claude/skills/asd-ste100/` holds `SKILL.md`,
+- [x] `assets/workspace/claude/skills/asd-ste100/` holds `SKILL.md`,
       `references/writing-rules.md`, `examples/before-after.md` and `LICENSE`,
       byte-identical to INFRA-030's copy and to the same pinned upstream commit
-- [ ] A `PROVENANCE.md` states the source, commit, author and licence, exactly as
+- [x] A `PROVENANCE.md` states the source, commit, author and licence, exactly as
       the harness copy does
-- [ ] The standing rule reaches the agent, in one recorded place, and names
+- [x] The standing rule reaches the agent, in one recorded place, and names
       **STE-flavored** mode
-- [ ] The rule states what it does **not** cover: quoted document text, server
+- [x] The rule states what it does **not** cover: quoted document text, server
       error text, command output, and a person's own words all reach the reader
       unchanged
-- [ ] The rule states that a hedge keeps its strength, with the `may have failed`
+- [x] The rule states that a hedge keeps its strength, with the `may have failed`
       example — this is the failure mode the skill calls most common
-- [ ] `scripts/workspace-template.test.ts` knows the new skill, and its installed
+- [x] `scripts/workspace-template.test.ts` knows the new skill, and its installed
       set assertion fails without it
-- [ ] `corpus init` on a throwaway workspace installs it, and the reported file
+- [x] `corpus init` on a throwaway workspace installs it, and the reported file
       count matches the new total
-- [ ] `npm run pack:check` passes — the skill is in the tarball, since
+- [x] `npm run pack:check` passes — the skill is in the tarball, since
       `assets/workspace/` is staged into the published package
-- [ ] The E2E log records **how the comment skill reads afterwards**, in the
+- [x] The E2E log records **how the comment skill reads afterwards**, in the
       author's own words. This is the surface where the accepted cost lands, and
       the user asked to be told
 
@@ -159,16 +159,135 @@ nothing.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Model: opus. Orchestrator-implemented, 2026-08-18** — the subagent budget for
+this session was exhausted (500 of 500), so this was built directly rather than
+delegated.
+
+### The choice, and what was rejected
+
+**Option A.** `assets/workspace/CLAUDE.md` holds the rule and installs at the
+workspace root, where Claude Code reads it every session.
+
+**Option B lost on the argument the issue already made against it**: the same
+paragraph in four skills is four places to forget when a fifth ships, and this
+release corrected ten typed copies of one claim. Writing a fifth and sixth copy
+of a rule *about* consistency, in the release that removed the ability to type
+one, would have been the joke writing itself.
+
+### Two things the plan did not anticipate
+
+**1. The template loader demands frontmatter on every `.md`, and a vendored file
+cannot have it.** `parseFrontmatter` throws on a file with no opening fence, and
+a skill's `references/` and `examples/` carry none — they are third-party files
+this repository must not edit.
+
+Resolved with `VENDORED_PREFIXES`, and the check is **exchanged rather than
+weakened**: those files are held to byte-identity with the harness copy, which
+is stricter than "has frontmatter". Falsified by bumping `version: 0.4.0` to
+`0.4.1` in the product copy — one test red, named for the file.
+
+**2. I gave `CLAUDE.md` frontmatter to satisfy that loader, and that was wrong.**
+It ran, `corpus init` installed it, and the workspace's own instruction file
+opened with eight lines of YAML asserting a document identity nothing consumes —
+`classifyPath` returns null for a file at the workspace root. The agent would
+have read it as part of its instructions every session.
+
+Corrected with `NON_DOCUMENT_FILES`, holding exactly one entry. `README.md` is
+deliberately **not** in it: it is seed content a person opens in the board, and
+the template's convention is that content carries a §5 block. The distinction is
+**who reads the file**, not whether the projection indexes it.
+
+### The pins, each falsified alone
+
+| pin | mutation | result |
+| --- | --- | --- |
+| standing rather than on-demand | delete *"standing rule, not a skill you wait to be asked for"* | 1 red, that test |
+| quotations exempt | delete *"never rewrite a quotation"* | 1 red, that test |
+| hedge keeps its strength | delete the `may have failed` line | 1 red, that test |
+| the cost is stated | delete *"flatter than one written for voice"* | 1 red, that test |
+| vendored byte-identity | `version: 0.4.0` → `0.4.1` | 1 red, naming `SKILL.md` |
+| no semicolon in a modelled reply | restore one | 1 red, naming `comment` |
+
+### Real `corpus init`, and the tarball
+
+```
+Initialized Corpus workspace at …/ws-a037
+  installed 16 template files, recorded in .corpus/template-manifest.json
+  installed 2 plugin skill files into .claude/skills/
+```
+
+`cmp` on all four vendored files inside the **installed workspace** against
+`.claude/skills/asd-ste100/`: identical. `CLAUDE.md` at the workspace root opens
+with `# CLAUDE.md`, no frontmatter.
+
+`npm run pack:check` → `corpus@0.12.0 — 38 files`, with the four new required
+patterns added to `scripts/pack-audit.ts`: the skill, its licence, the two files
+its `SKILL.md` points at (min 2 — shipping one without them leaves dead links),
+and `CLAUDE.md` itself, whose absence would ship a skill nothing invokes.
+
+Full gate: build, typecheck, lint, format all clean; **13,727 tests / 589
+files**; `issues:check` 499 rows; `spec:check` 5,859 citations.
+
+### Reading the `comment` skill afterwards — what the user asked for
+
+**The finding is not what I expected, and it matters more than a style verdict.**
+
+The rule governs what the agent writes *to a person*, not how a skill file is
+written. So the surfaces bound by it are the **worked reply examples** — what an
+agent copies — and not the skill's instructional prose, which is written for the
+agent.
+
+Read that way, the shipped examples **broke the rule the same release installs**.
+Three reply bodies carried a semicolon, which STE Rule 8.1 bans outright rather
+than only as a clause join:
+
+- *"…so I'm closing this thread; reply here if it turns out not to be settled."*
+- *"…the projection note in [[doc_a1b2c3]]; the anchored sentence is the one that
+  changed."*
+- *"That closes the filing I paused on; nothing else is outstanding here."*
+
+**This is AGENT-035's failure one release later**: 34 heredocs saying `EOF` beat
+one paragraph saying `CORPUS_EOF`, and here three examples would have beaten one
+rule. All three are fixed and pinned.
+
+**Now the honest style verdict, which is the part the user asked for.** Split into
+two sentences, those replies read **better**, not worse:
+
+> That settles the rate question, so I'm closing this thread. Reply here if it
+> turns out not to be settled.
+
+The semicolon was joining two ideas that wanted to be separate. That is one
+example and not a proof, but it is evidence against my own expectation — I
+prepared the user for a cost and this instance did not charge one.
+
+**Where the cost is real, and it is not in the reply bodies.** They were already
+short, active and concrete before this change: *"6.4% is more representative than
+6.1% for a 30-year fixed today."* The genre was already close to compliant,
+because a reply on a thread is written to be scanned.
+
+The cost, if it lands anywhere, lands on a reply that needs to be **warm** rather
+than clear — declining something, saying it got a thing wrong, answering somebody
+who is frustrated. There is no such example in the shipped skill, so I cannot
+show it, and I will not claim to have measured it. **That is the thing to watch
+for in use, and the honest state of it is: unmeasured.**
+
+### One thing deliberately not settled
+
+The semicolon pin covers `corpus thread reply` bodies only. **Three document
+bodies the agent authors also carry a semicolon**, and a document a person reads
+is arguably "text you produce for a person" too. A document is a different genre
+from a reply — longer, structured, re-read — and settling that at the end of a
+release, on a rule the spec has not yet signed, would be deciding by fatigue.
+The pin's comment records the exclusion and says it is worth settling.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[AGENT-037]` prefix
+- [x] Committed with `[AGENT-037]` prefix
