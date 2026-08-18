@@ -934,11 +934,12 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | AGENT-034 | A skill that creates an agent profile | done | P0 | SERVER-122, CLI-050 |
 | SERVER-123 | A created agent-def carries none of Claude Code's frontmatter, and nothing says so (AGENT-034 finding) | done | P1 | SERVER-122 |
 | SERVER-124 | Under a `.claude/` root, Corpus's own frontmatter goes entirely unvalidated (PR #49 review 3) | todo | P1 | SERVER-123 |
-| SERVER-125 | An off-root agent-def is offered, resolvable, and dead (PR #49 review 5) | todo | P1 | SERVER-123 |
-| AGENT-036 | Two false statements in the `profile` skill (PR #49 review 5) | todo | P2 | — |
-| AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | todo | P1 | — |
+| SERVER-125 | An off-root agent-def is offered, resolvable, and dead (PR #49 review 5) | done | P1 | SERVER-123 |
+| AGENT-036 | A transcript line the CLI cannot print; SERVER-125 made the other finding true | todo | P2 | — |
+| AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | done | P1 | — |
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
 | SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |
+| UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | todo | P0 | SERVER-125 |
 
 The five open rows above are **v0.12.0**, agreed with the user on 2026-08-18:
 *everything the profile release left half-true*. They are one story, so they ship
@@ -979,3 +980,15 @@ comment skill reads afterwards, because that is the surface where the cost lands
 | INFRA-030 | The orchestrator writes in controlled language (harness; ships nothing) | done | P1 | — |
 | SHARED-050 | The product agent's register is controlled language (NEEDS SIGN-OFF) | todo | P1 | — |
 | AGENT-037 | The workspace ships the skill, and the agent writes by it | todo | P1 | INFRA-030, SHARED-050 |
+
+### Found in flight during Phase 34, deliberately not in v0.12.0 or v0.13.0
+
+Surfaced by AGENT-035's implementer, which named the idea and did **not** file it
+so as not to prejudge it. Filing it here preserves the idea without widening
+either release. Its first acceptance criterion is a measurement that may close it
+unbuilt, which is the right first step for a mechanism whose necessity is
+uncertain.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P2 | — |

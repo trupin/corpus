@@ -1,4 +1,4 @@
-# [AGENT-036] Two false statements in the `profile` skill: a refusal's reason, and a transcript line
+# [AGENT-036] A transcript line the CLI cannot print (and a sentence SERVER-125 made true)
 
 ## Domain
 
@@ -40,7 +40,33 @@ names the component that owns a rule, and does not describe that component's
 internal refusals* — was applied to the paragraphs under review and not swept
 across the whole file. This is the sweep.
 
-## 1. *"it resolves to nobody"* is false — line ~219
+## STOP — finding 1 was inverted by SERVER-125 on 2026-08-18
+
+**Do not fix finding 1. Fixing it would make the sentence false.**
+
+SERVER-125 landed in the same release and chose route 2: `targetIndex` now skips
+any row whose `invocableName` is null, the title alias included. An off-root
+`type: agent-def` document is addressable under **no** spelling.
+
+So the sentence this issue was filed to correct —
+
+> a `type: agent-def` document filed anywhere but `.claude/agents/` is a document
+> *about* an agent rather than an agent, and it resolves to nobody
+
+— **is now true**, and it was made true by changing the product rather than the
+prose. The instruction was right and the reason was right; only the code
+disagreed, and the code was what was wrong.
+
+**This issue is therefore reduced to finding 2**, plus its sweep criterion. The
+analysis below is kept because it is the record of why SERVER-125 chose what it
+chose, and because a later reader who finds the sentence and remembers this issue
+needs to know the sentence won.
+
+**What is still worth doing about finding 1:** nothing to the sentence itself.
+Check only that no *other* line in the file contradicts it, since the file was
+written when the sentence was false.
+
+## 1. *"it resolves to nobody"* was false when filed — line ~209 — and is true now
 
 The Refusals section says:
 
@@ -98,16 +124,19 @@ name-collision message with its exit `5` all match.
 
 ## Acceptance Criteria
 
-- [ ] The refusal states a reason that is true — that an off-root agent-def is
-      resolvable, offered, and unloadable — or states no reason and names where
-      the rule lives, per the file's own adopted rule
+- [ ] **The "resolves to nobody" sentence is left exactly as it is.** SERVER-125
+      made it true. Editing it is the failure mode this issue now guards against
+- [ ] No *other* line in the file contradicts it — the file was written while the
+      sentence was false, so a neighbouring line may still describe the old
+      behaviour
 - [ ] The transcript line matches what `runDocList` actually prints
 - [ ] Every **other** command transcript in the file is checked against its
-      source in the same pass, rather than fixing the two that were reported
-- [ ] `scripts/workspace-template.test.ts` pins both, in the tightening
-      direction
+      source in the same pass, rather than fixing the one that was reported
+- [ ] `scripts/workspace-template.test.ts` pins the transcript line and the
+      "resolves to nobody" sentence, in the tightening direction. The second pin
+      is what stops a future reader "correcting" a sentence that is now right
 - [ ] No claim about another component's internal refusal is added while fixing
-      these two
+      this
 
 ## Technical Design
 
@@ -118,16 +147,23 @@ name-collision message with its exit `5` all match.
 
 ### Key Implementation Details
 
-The product half of finding 1 — whether an off-root agent-def should be reported
-by `corpus doc check`, or kept out of the `@` index entirely — is **SERVER-125**
-and is a product call, not a bug fix. Do not wait for it: the sentence is wrong
-today whichever way that lands, and this issue can state the truth as it stands.
+**Superseded, 2026-08-18.** This section told the implementer not to wait for
+SERVER-125 because *"the sentence is wrong today whichever way that lands"*. That
+reasoning was wrong. SERVER-125 landed in the same release, chose to remove
+off-root agent-defs from the `@` index, and made the sentence right. Had this
+issue been worked first, as this section advised, it would have introduced the
+error it was filed to remove.
+
+The lesson is narrower than "wait for dependencies". It is that **a prose fix
+predicting a product decision is a bet**, and this file has now lost that bet
+after winning it four times.
 
 ### Edge Cases
 
-- The sentence must stay true if SERVER-125 later removes off-root agent-defs
-  from the `@` index — prefer wording that names the consequence the agent cares
-  about over wording that recites the current mechanism
+- The sentence describes a **consequence** ("resolves to nobody") rather than a
+  mechanism, which is why it survived a change of mechanism. Keep it that way.
+  Wording that recited `targetIndex`'s two aliases would now be stale
+- A neighbouring line may still describe the pre-SERVER-125 behaviour
 
 ## Testing Strategy
 
