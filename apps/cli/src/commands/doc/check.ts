@@ -143,8 +143,9 @@ export const checkCommand: WorkspaceCommandSpec = {
     "`--add-tag` to rewrite a `tags` that is not a list, `--extra description=…` for a Claude " +
     "Code field a profile is missing. **Repair it where it is — do not move it out.** A document " +
     "under these roots cannot be moved (`this document's location is fixed`), and moving one by " +
-    "hand re-mints the synthetic id its path derives, which breaks every `[[ref]]`, anchor and " +
-    "thread that points at it. A file that is only _about_ a persona belongs under `data/docs/` " +
+    "hand re-mints the id where the file carries no `id:` of its own — which is the hand-authored " +
+    "case above — breaking every `[[ref]]`, anchor and thread that points at it. A file that is " +
+    "only _about_ a persona belongs under `data/docs/` " +
     "from the moment it is written. **The reverse never holds**: nothing this verb passes over " +
     "is refused by a save.\n\n" +
     "With ids, exactly those documents are read from the workspace and checked. With no ids, the " +
