@@ -288,6 +288,22 @@ describe("CreateDocRequest", () => {
   });
 
   /**
+   * The title-collision refusal `allocatePath` raises is a `400` the schema
+   * cannot express — whether a name is taken is a fact about the workspace, not
+   * about the value — so the description is its whole publication (PR #49
+   * review). What the schema still owns is that a colliding title is **valid**:
+   * the refusal comes from the server with the corpus in front of it, and a
+   * client must not pre-empt it by rejecting the title locally.
+   */
+  it("documents that a title can be refused, and validates a colliding one anyway", () => {
+    const description = CreateDocRequestSchema.shape.title.meta()?.description ?? "";
+    expect(description).toContain("`400`");
+    expect(description).toContain("@analyst");
+    const request = { type: "agent-def", title: "Analyst", folder: ".claude/agents" };
+    expect(CreateDocRequestSchema.parse(request).title).toBe("Analyst");
+  });
+
+  /**
    * The default is `inbox`, not the root: creation is inbox-first (SPEC.md §11)
    * and the server's `documentPathFor` implements it. The schema leaves `folder`
    * absent so the server owns the default — what is asserted here is that the
@@ -302,6 +318,18 @@ describe("CreateDocRequest", () => {
 
   it.each(["finance", "data/docs/finance"])("accepts the folder spelling %s", (folder) => {
     expect(CreateDocRequestSchema.parse({ type: "note", title: "T", folder }).folder).toBe(folder);
+  });
+
+  /**
+   * A declared root is a third accepted spelling on create alone (SERVER-122):
+   * it is not a folder under `data/docs/`, so nothing in the schema could have
+   * told a caller it is legal — the description is the whole publication of it,
+   * and the value passes validation unchanged either way (CONTRACT-062).
+   */
+  it("accepts a declared root as a folder spelling, which only create documents", () => {
+    const request = { type: "agent-def", title: "Reviewer", folder: ".claude/agents" };
+    expect(CreateDocRequestSchema.parse(request).folder).toBe(".claude/agents");
+    expect(CreateDocRequestSchema.shape.folder.meta()?.description).toContain(".claude/agents");
   });
 
   it("creates a pinned view in one call — the new-list picker's shape", () => {
@@ -352,6 +380,33 @@ describe("MoveDocRequest", () => {
 
   it("requires a destination", () => {
     expect(MoveDocRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  /**
+   * A move takes no type, so `resolveFolder` is called without one and the
+   * §7 roots are out of reach here (CONTRACT-062). The two `folder` fields
+   * therefore say different things, and the schemas must not share a constant.
+   */
+  it("describes a plainer folder grammar than create's", () => {
+    const move = MoveDocRequestSchema.shape.folder.meta()?.description ?? "";
+    const create = CreateDocRequestSchema.shape.folder.meta()?.description ?? "";
+    expect(move).not.toBe(create);
+    expect(move).not.toContain("`type: agent-def`");
+    expect(move).toContain("data/docs/finance");
+  });
+
+  /**
+   * CONTRACT-063. The field is required, so the description must not describe a
+   * default — and the assertion is written against the *schema* as well as the
+   * prose, because the defect was precisely the two disagreeing: a required
+   * field whose text explained the default it does not have with a rule
+   * (creation is inbox-first) belonging to another route.
+   */
+  it("claims no default, matching a field that is required", () => {
+    const move = MoveDocRequestSchema.shape.folder.meta()?.description ?? "";
+    expect(MoveDocRequestSchema.shape.folder.safeParse(undefined).success).toBe(false);
+    expect(move).not.toContain("Defaults to");
+    expect(move).toContain("it has no default");
   });
 });
 

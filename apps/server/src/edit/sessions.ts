@@ -165,7 +165,7 @@ export interface EditSessionTracker {
    *
    * Reports the **person** only, and never the agent: an agent's writing is a
    * sequence of one-shot commands with no session to report, and the person sees
-   * those writes land live instead (§9.4). Free by construction —
+   * those writes land live instead (§9.2). Free by construction —
    * `observeCommit` opens a session for no other actor.
    */
   isOpen(docId: string): boolean;

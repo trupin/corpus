@@ -7,13 +7,17 @@
 // exactly two things, and they are the only two this module owns:
 //
 // - **Where it goes.** A skill is `.claude/skills/<name>/SKILL.md` — a different
-//   root, a directory per skill and one fixed filename — while `POST /api/docs`
-//   files under `data/docs/` by construction (`normalizeDocFolder` prefixes the
-//   documents root unconditionally, and that is a guard, not an oversight). The
-//   answer is this enumerated, skills-specific route rather than a `root`
-//   parameter on the general create: **there is no wire form anywhere that
-//   writes a document outside the roots the server names in its own source**,
-//   and a third root, if one is ever wanted, is a third such route.
+//   root, a directory per skill and one fixed filename — and that shape is why
+//   this verb exists at all. `POST /api/docs` can now file into the other
+//   document roots §7 declares (`resolveFolder`, SERVER-122), but it files a
+//   *document*: one `*.md` whose name comes from the title. A skill needs a
+//   directory minted for it and a filename that is not derived from anything the
+//   caller sent, which is not a folder question and cannot be answered by naming
+//   one — the projection refuses `.claude/skills` as a create target for exactly
+//   that reason (its `skill-tree` shape indexes `SKILL.md` alone), so the two
+//   surfaces agree rather than compete. The rule that survives unchanged is the
+//   one that matters: **no wire form writes a document outside the roots the
+//   server names in its own source**, `projection/roots.ts` being that source.
 // - **What its frontmatter carries.** Both vocabularies at once: Claude Code
 //   discovers a skill by `name` + `description`, Corpus indexes a document by
 //   the §5 core keys, and the shipped `orchestrate`/`comment` skills already

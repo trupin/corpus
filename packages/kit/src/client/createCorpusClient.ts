@@ -448,6 +448,13 @@ export interface CorpusClient {
    * type after a sigil. The response carries the thread with `resident` resolved
    * to `{name, docId}`.
    *
+   * **Omitting `name` designates a general resident** — §7's ordinary case,
+   * which names no profile and requires nothing to exist in the workspace first.
+   * It sends `{}` rather than a `null` name, because the route's body is
+   * optional in full and `null` has two other jobs one level away on the
+   * response (`residentField`, `ResidentSchema`). The resolved resident comes
+   * back with both halves null.
+   *
    * **User-only, and single-valued.** The server refuses an agent actor (`403`)
    * and a thread with a parent (`409`); designating a thread that already has a
    * resident replaces it rather than conflicting.
@@ -465,7 +472,7 @@ export interface CorpusClient {
    * and nothing else — asserted directly (`useComposerRecipient.test.tsx`)
    * rather than implied by a missing method.
    */
-  designateResident(threadId: string, name: string): Promise<ThreadMutationResponse>;
+  designateResident(threadId: string, name?: string): Promise<ThreadMutationResponse>;
   /**
    * `DELETE /api/threads/{id}/resident` — **release** it, returning the scope to
    * ordinary routing (SPEC.md §7).
@@ -1132,7 +1139,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         "POST /api/threads/{id}/resident",
         await api.POST("/api/threads/{id}/resident", {
           params: { path: { id: threadId } },
-          body: { name },
+          body: name === undefined ? {} : { name },
         }),
       );
     },

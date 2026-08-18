@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { HttpError } from "../errors.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
 import { silentLogger, type LogFields } from "../logger.js";
-import { classifyPath } from "../projection/index.js";
+import { DOCUMENT_ROOTS, classifyPath } from "../projection/index.js";
 import { createSelfWriteRegistry, type SelfWriteRegistry } from "../watcher/index.js";
 import { createDocument } from "./create.js";
 import { deleteDocument } from "./delete.js";
@@ -346,6 +346,119 @@ describe("validateBeforeWrite", () => {
   });
 
   /**
+   * SERVER-123, corrected by PR #49's third review. Claude Code's two fields are
+   * required in the one root it loads subagents from, and the finding rides
+   * `frontmatter-invalid` — which is blocking, and which is how the requirement
+   * came to refuse *every* server write to a hand-authored `.claude/agents/*.md`
+   * that had never carried them. That is the state every such file in a workspace
+   * upgraded past that release is in, since nothing had ever told its author
+   * otherwise, and it made them uneditable, unarchivable and unreachable by any
+   * bulk act with no migration and no repair the board editor could express.
+   *
+   * So the write path reports it and does not refuse it, exactly as it treats
+   * `unterminated-fence` below and for the same stated reason. `corpus doc check`
+   * is unchanged — `check/routes.test.ts` holds that end — and the create route
+   * keeps its own guard, so a profile the *server* makes is still complete.
+   */
+  const profile = (frontmatter: string): string => `---\n${frontmatter}---\n\nYou research.\n`;
+
+  it("does not block a save to an agent-def Claude Code cannot load", () => {
+    validating("validate-agent-def");
+    for (const frontmatter of ["", "name: researcher\n", "description: For sources.\n"]) {
+      expect(
+        validateBeforeWrite(
+          { logger: silentLogger, projection: ws.db },
+          ".claude/agents/researcher.md",
+          profile(frontmatter),
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  it("does not block a save whose `name` disagrees with the filename", () => {
+    validating("validate-agent-def-name");
+    expect(
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        ".claude/agents/bareprofile.md",
+        profile("name: numbers\ndescription: For sources.\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * Not refused is not the same as not said. The finding reaches the operator on
+   * the write path through the one channel a `frontmatter-invalid` a save let
+   * through can use — `logger.error`, the level nothing gates — carrying the
+   * consequence verbatim, not merely the field name.
+   */
+  it("logs the missing profile fields as errors instead of refusing them", () => {
+    validating("validate-agent-def-log");
+    const logged: { message: string; fields: LogFields | undefined }[] = [];
+    const logger = {
+      ...silentLogger,
+      error: (message: string, fields?: LogFields) => logged.push({ message, fields }),
+    };
+
+    const warnings = validateBeforeWrite(
+      { logger, projection: ws.db },
+      ".claude/agents/reviewer.md",
+      profile(""),
+    );
+
+    expect(warnings).toEqual([]);
+    expect(logged.map((entry) => entry.message)).toEqual(["document saved with validation errors"]);
+    expect(logged[0]?.fields?.["errors"]).toEqual([
+      expect.stringContaining("frontmatter-invalid: name: missing"),
+      expect.stringContaining("frontmatter-invalid: description: missing or empty"),
+    ]);
+  });
+
+  /**
+   * The leniency is scoped by *root*, not by code: `frontmatter-invalid` is still
+   * blocking everywhere §5's canonical block is the rule that produced it. Under
+   * `.claude/agents/` that block is waived, so the two producers never overlap —
+   * which is the whole reason the write path may decide this one on the path.
+   */
+  it("still refuses §5's canonical block outside the Claude Code roots", () => {
+    validating("validate-agent-def-scope");
+    expect(() =>
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        "data/docs/inbox/researcher.md",
+        profile("name: researcher\ndescription: For sources.\n"),
+      ),
+    ).toThrow(/validation/);
+  });
+
+  /**
+   * The structural rules keep blocking inside the root too — the waiver is §5's
+   * canonical block and §7's two fields, and nothing else. An anchors mapping
+   * that is not a mapping is still a refusal here.
+   */
+  it("still refuses a structurally broken agent-def", () => {
+    validating("validate-agent-def-structural");
+    expect(() =>
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        ".claude/agents/researcher.md",
+        profile("name: researcher\ndescription: For sources.\nanchors: nope\n"),
+      ),
+    ).toThrow(/anchors/);
+  });
+
+  it("accepts one carrying both fields and no Corpus frontmatter at all", () => {
+    validating("validate-agent-def-ok");
+    expect(
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        ".claude/agents/researcher.md",
+        profile("name: researcher\ndescription: For sources.\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  /**
    * SERVER-066. The finding is an *error* — `corpus doc check` fails on it — and
    * it still must not refuse a save, for two reasons that are properties of the
    * write path rather than of the defect: a blocking rule is judged over the
@@ -611,6 +724,116 @@ describe("resolveFolder", () => {
       }
       expect(accepted, segment).toBe(indexed);
     }
+  });
+
+  // SERVER-122. `.claude/agents` is the one root SPEC.md §7 names for
+  // agent-defs, and it was the one place the create path could not reach.
+  describe("SPEC.md §7's other document roots", () => {
+    it("accepts the agent-def root named by its declared path", () => {
+      expect(resolveFolder(".claude/agents", "agent-def")).toBe(".claude/agents");
+      expect(resolveFolder(" .claude/agents/ ", "agent-def")).toBe(".claude/agents");
+    });
+
+    it("files a type into its own root when the request names no folder", () => {
+      expect(resolveFolder(undefined, "agent-def")).toBe(".claude/agents");
+      // Every other type is inbox-first exactly as before: `skill` has a root
+      // but one no ordinary `*.md` is indexed from, and `note` has none at all.
+      expect(resolveFolder(undefined, "skill")).toBe("data/docs/inbox");
+      expect(resolveFolder(undefined, "note")).toBe("data/docs/inbox");
+      expect(resolveFolder(undefined, "todo")).toBe("data/docs/inbox");
+    });
+
+    it("keeps an explicit folder winning, so a document *about* an agent-def stays expressible", () => {
+      expect(resolveFolder("inbox", "agent-def")).toBe("data/docs/inbox");
+      expect(resolveFolder("reference/personas", "agent-def")).toBe("data/docs/reference/personas");
+    });
+
+    it("refuses a root whose declared type is not the type being created", () => {
+      for (const type of ["note", "skill", undefined]) {
+        let thrown: unknown;
+        try {
+          resolveFolder(".claude/agents", type);
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown, String(type)).toBeInstanceOf(HttpError);
+        const body = (thrown as HttpError).body;
+        expect(body.code === "bad_request" && body.issues.map((issue) => issue.path)).toContain(
+          "folder",
+        );
+      }
+    });
+
+    // The skills roots stay refused, and by the root's own `skill-tree` shape
+    // rather than by a list: `.claude/skills/document.md` is not a document, so
+    // no ordinary create can land there. `POST /api/skills` is that root's verb.
+    it("refuses the skill roots even when the type matches, because nothing is indexed there", () => {
+      for (const folder of [".claude/skills", ".claude/skills-archived"]) {
+        let thrown: unknown;
+        try {
+          resolveFolder(folder, "skill");
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown, folder).toBeInstanceOf(HttpError);
+        const body = (thrown as HttpError).body;
+        expect(body.code, folder).toBe("bad_request");
+        expect(
+          body.code === "bad_request" && body.issues.map((issue) => issue.path),
+          folder,
+        ).toContain("folder");
+      }
+    });
+
+    // The grammar matches a root's declared path *exactly*, which is what keeps
+    // it clear of traversal: anything carrying `..` matches nothing and is
+    // refused by the same code as before, in the same words.
+    it("leaves every escape refused, in the words it always used", () => {
+      for (const folder of [
+        "../../.claude/agents",
+        ".claude/agents/../../../etc",
+        "/.claude/agents",
+        ".claude/agents/nested",
+        ".claude/agentsx",
+        ".Claude/agents",
+      ]) {
+        let thrown: unknown;
+        try {
+          resolveFolder(folder, "agent-def");
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown, folder).toBeInstanceOf(HttpError);
+        const body = (thrown as HttpError).body;
+        expect(body.code, folder).toBe("bad_request");
+      }
+    });
+
+    // The reachable set is read out of `DOCUMENT_ROOTS`, so this asserts the
+    // equivalence rather than a list of names — a root declared later is
+    // creatable the same day, and one that stops being declared stops being
+    // reachable, with no second list to remember.
+    it("reaches exactly the declared roots outside data/ that index a plain markdown file", () => {
+      for (const root of DOCUMENT_ROOTS.filter((entry) => !entry.path.startsWith("data/"))) {
+        const indexed = classifyPath(`${root.path}/x.md`) !== null;
+        let accepted = true;
+        try {
+          resolveFolder(root.path, root.type ?? "note");
+        } catch {
+          accepted = false;
+        }
+        expect(accepted, root.path).toBe(indexed);
+      }
+    });
+
+    // `move` and the bulk act pass no type, and must not gain a door onto a
+    // root: a move promises a relocation under `data/docs/`, not a change of
+    // what kind of document something is.
+    it("stays under data/docs for a caller that names no type", () => {
+      expect(resolveFolder("finance")).toBe("data/docs/finance");
+      expect(resolveFolder(undefined)).toBe("data/docs/inbox");
+      expect(() => resolveFolder(".claude/agents")).toThrow(HttpError);
+    });
   });
 });
 

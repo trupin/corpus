@@ -333,5 +333,5 @@ export const userEditingField = z
       "**Asymmetric on purpose**, because the two writers are: a person's editing is a session " +
       "the server tracks, while the agent's writing is a sequence of one-shot commands with no " +
       "session to report. So this never reports the agent, and the person instead sees the " +
-      "agent's writes land live (SPEC.md §9.4). Neither is a lock in the other direction.",
+      "agent's writes land live (SPEC.md §9.2). Neither is a lock in the other direction.",
   );

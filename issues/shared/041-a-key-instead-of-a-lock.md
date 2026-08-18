@@ -39,7 +39,7 @@ Everything this rider touches, so the sweep is checkable:
 - §4 line 161 — "**A force unlock** (§7) records its audit entry alone"
 - §4 line 177 — "An event deferred on a lock (§7) ends the agent's window"
 - §9.2 — `423` on every write route, and the lock endpoints themselves
-- §9.4 line 398 — the `locks(...)` projection table
+- §9.2 line 398 — the `locks(...)` projection table
 - §11 line 509 — "If the document is **locked**, it renders read-only with a
   banner naming the holder and a **Force unlock** action"
 - §15 M5 line 577 — "Locks: an agent-held lock renders the doc read-only…"
@@ -147,7 +147,7 @@ This **replaces** §7's "Document locks" section (lines 334–339) in full.
 > editing is a **session**, which the server already tracks; the agent's writing
 > is a sequence of one-shot commands with no session to report. So the agent is
 > told when a person is editing, and the person sees the agent's writes land live
-> as they always have (§9.4). Neither is a lock in the other direction.
+> as they always have (§9.2). Neither is a lock in the other direction.
 >
 > **Nothing to acquire, nothing to release, nothing to break.** There is no lock
 > to be held, so there is none to leak, expire, reap or force. A crashed editor
@@ -193,7 +193,7 @@ the sweep should be able to check each one.
    by a **`409`** naming the current key and carrying the document as it stands.
    The exact shape is CONTRACT's to design; what this rider fixes is that a
    refusal is never bare.
-8. **§9.4 line 398** — the `locks(doc_id, holder, acquired, ttl)` projection table
+8. **§9.2 line 398** — the `locks(doc_id, holder, acquired, ttl)` projection table
    goes. Nothing replaces it: a key is derived from the document, not stored, and
    the editing signal comes from the edit-session tracker, which is in memory.
 9. **§11 line 509** — "If the document is **locked**, it renders read-only with a

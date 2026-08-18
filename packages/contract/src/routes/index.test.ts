@@ -677,24 +677,27 @@ function createStubApp() {
     );
   });
 
-  // Designation and release (CONTRACT-051). The stub resolves the name it was
-  // given and answers with the thread, because that is the promise both halves
-  // make: the caller never repeats the lookup, and a release that wrote
-  // something can still report §14's warnings.
-  app.openapi(contractRoutes.designateResident, (c) =>
-    c.json(
+  // Designation and release (CONTRACT-051, widened by CONTRACT-061). The stub
+  // resolves the name it was given and answers with the thread, because that is
+  // the promise both halves make: the caller never repeats the lookup, and a
+  // release that wrote something can still report §14's warnings. A body with no
+  // `name` — or no body at all — is a *general* resident, and the stub answers
+  // with the two nulls rather than inventing a name for it (SPEC.md §7).
+  app.openapi(contractRoutes.designateResident, (c) => {
+    const name = c.req.valid("json")?.name ?? null;
+    return c.json(
       {
         thread: {
           ...threadSummary,
           parent: null,
           anchor: null,
-          resident: { name: c.req.valid("json").name, docId: "doc_agentdef" },
+          resident: { name, docId: name === null ? null : "doc_agentdef" },
         },
         warnings: [],
       },
       200,
-    ),
-  );
+    );
+  });
   app.openapi(contractRoutes.releaseResident, (c) =>
     c.json(
       { thread: { ...threadSummary, parent: null, anchor: null, resident: null }, warnings: [] },
@@ -1592,9 +1595,10 @@ describe("routes mounted on a Hono app", () => {
   });
 
   /**
-   * CONTRACT-051, through the mounted definitions — which is where the wire
-   * shapes are actually enforced: `@hono/zod-openapi` validates before any
-   * handler runs, so a designation naming nobody is refused by the contract.
+   * CONTRACT-051, widened by CONTRACT-061, through the mounted definitions —
+   * which is where the wire shapes are actually enforced: `@hono/zod-openapi`
+   * validates before any handler runs, so what the contract admits and what it
+   * refuses are both observable here rather than only in the schema.
    */
   describe("designation, release and the roster", () => {
     const designate = async (body: unknown): Promise<Response> =>
@@ -1604,21 +1608,46 @@ describe("routes mounted on a Hono app", () => {
         body: JSON.stringify(body),
       });
 
+    type DesignationBody = {
+      thread: { resident: { name: string | null; docId: string | null } | null };
+      warnings: unknown[];
+    };
+
     it("resolves the invocable name to `{name, docId}` on the thread it answers with", async () => {
       const response = await designate({ name: "researcher" });
       expect(response.status).toBe(200);
-      const body = (await response.json()) as {
-        thread: { resident: { name: string; docId: string } | null };
-        warnings: unknown[];
-      };
+      const body = (await response.json()) as DesignationBody;
       expect(body.thread.resident).toEqual({ name: "researcher", docId: "doc_agentdef" });
       expect(body.warnings).toEqual([]);
     });
 
+    /**
+     * SPEC.md §7, rider SHARED-048: naming no profile is the ordinary case and
+     * *"requires nothing to exist first"*, so it must pass validation on a body
+     * that says nothing — and come back as two nulls rather than a name the
+     * server made up.
+     */
+    it("admits an empty body and answers with a general resident", async () => {
+      const response = await designate({});
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as DesignationBody;
+      expect(body.thread.resident).toEqual({ name: null, docId: null });
+    });
+
+    /** The body is optional in full, so a bare `POST` is the same designation. */
+    it("admits no body at all, which is the same designation", async () => {
+      const response = await createStubApp().request("/api/threads/th_x9y8/resident", {
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as DesignationBody;
+      expect(body.thread.resident).toEqual({ name: null, docId: null });
+    });
+
     it.each([
-      ["a body naming nobody", {}],
-      ["a blank name", { name: "   " }],
+      ["a blank name, which is a mistake rather than a request for no profile", { name: "   " }],
       ["a document id where the invocable name belongs", { name: "a\nb" }],
+      ["an explicit null, since absence is the only spelling of no profile", { name: null }],
       ["an unknown key, since every request body is strict", { name: "r", docId: "doc_x" }],
     ])("refuses %s with a 400", async (_case, body) => {
       expect((await designate(body)).status).toBe(400);

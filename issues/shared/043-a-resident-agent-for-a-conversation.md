@@ -186,7 +186,7 @@ amended two §7 sentences — both wrong, corrected during the read-aloud.)
 > was asked in.
 >
 > **Who is running is a read, never a push.** The roster and each lane's liveness
-> are read behind the ordinary invalidate keys (§9.4), like any other projection —
+> are read behind the ordinary invalidate keys (§9.2), like any other projection —
 > presence is not a new channel and does not travel over SSE as data.
 
 ---

@@ -65,6 +65,22 @@
    the box — and says the refusal in the statement line; this only stops it
    reading as a working choice. Never `display: none`: a row that vanished would
    take the person's own pick off the screen with it. */
+/*
+ * The missing-profile report on a lane in a list (SPEC.md §7), inside the pill
+ * and one space from a real profile name. Italic and set back for the board
+ * badge's reason: it has to read as a description of the lane rather than as
+ * something somebody titled a document. Not `--signal` — the designation stands
+ * and the resident goes on owning its scope, so this is news and not a fault.
+ */
+.recipient-mark {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.recipient-mark::before {
+  content: "· ";
+}
+
 .recipient-opt[data-recipient-refused="true"] {
   color: var(--signal);
   border-color: var(--signal);

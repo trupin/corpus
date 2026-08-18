@@ -13,10 +13,17 @@
 // the order SERVER-117 deleted — green, in a file whose comments said it encoded
 // this one's. What these cases still prove is the half that is the server's and
 // cannot move: that `NODE_SQL`'s left join puts `documents.origin`,
-// `threads.parent_id` and `threads.resident_name` into the node the walk reads,
-// for a document, for a thread, and for a `documents` row with no `threads` row.
-// So the shapes are deliberately the same as the contract's and the subject is
-// not.
+// `threads.parent_id` and `threads.resident_designated` into the node the walk
+// reads, for a document, for a thread, and for a `documents` row with no
+// `threads` row. So the shapes are deliberately the same as the contract's and
+// the subject is not.
+//
+// Since SHARED-048 (SERVER-121) the designation column is `resident_designated`
+// and **not** `resident_name`, because a resident need not have a profile. Every
+// case below that turns on designation is therefore run twice — once profiled,
+// once general — since a walk keyed on the name would pass the whole profiled
+// half of this file while routing every general resident's conversation to the
+// orchestrator.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -59,22 +66,35 @@ const document = (id: string, origin: string | null): void => {
     .run(id, `data/docs/inbox/${id}.md`, origin);
 };
 
-/** A thread: its `documents` row plus its `threads` row. */
+/**
+ * A thread: its `documents` row plus its `threads` row.
+ *
+ * `resident` names a **profile**; `designated: true` with no name is §7's
+ * general resident (SHARED-048), which is a lane with no persona document. The
+ * flag defaults to "designated iff a profile was named" so every case written
+ * before the rider still says what it said, and the three columns move together
+ * exactly as the projector writes them.
+ */
 const thread = (
   id: string,
-  options: { parent?: string | null; origin?: string | null; resident?: string | null } = {},
+  options: {
+    parent?: string | null;
+    origin?: string | null;
+    resident?: string | null;
+    designated?: boolean;
+  } = {},
 ): void => {
   const parent = options.parent ?? null;
   const resident = options.resident ?? null;
+  const designated = options.designated ?? resident !== null;
   document(id, options.origin ?? null);
   projection
     .prepare(
       `INSERT INTO threads (id, parent_id, status, agent, anchor_id, title, created, updated,
-        turn_count, last_author, last_ts, resident_name, resident_doc_id)
-       VALUES (?, ?, 'open', 'none', NULL, 'T', NULL, NULL, 0, NULL, NULL, ?, ?)`,
+        turn_count, last_author, last_ts, resident_designated, resident_name, resident_doc_id)
+       VALUES (?, ?, 'open', 'none', NULL, 'T', NULL, NULL, 0, NULL, NULL, ?, ?, ?)`,
     )
-    // Both halves move together, exactly as the projector writes them.
-    .run(id, parent, resident, resident === null ? null : "doc_agent");
+    .run(id, parent, designated ? 1 : 0, resident, resident === null ? null : "doc_agent");
 };
 
 const laneFor = (payload: Record<string, unknown>): string =>
@@ -122,7 +142,9 @@ describe("the scope walk", () => {
     document("doc_draft", "th_root");
     expect(laneFor({ docId: "doc_draft", sessionId: "s1" })).toBe(ORCHESTRATOR_LANE);
 
-    projection.prepare("UPDATE threads SET resident_name = 'Ana' WHERE id = ?").run("th_root");
+    projection
+      .prepare("UPDATE threads SET resident_designated = 1, resident_name = 'Ana' WHERE id = ?")
+      .run("th_root");
     expect(laneFor({ docId: "doc_draft", sessionId: "s1" })).toBe("th_root");
   });
 
@@ -152,6 +174,48 @@ describe("the scope walk", () => {
     thread("th_inner", { origin: "th_outer", resident: "Bo" });
     document("doc_leaf", "th_inner");
     expect(laneFor({ docId: "doc_leaf", sessionId: "s1" })).toBe("th_inner");
+  });
+
+  // SPEC.md §7's SHARED-048 rider: "everything else about a resident is
+  // identical either way — the lane, the scope, presence, the lapse fallback,
+  // release, and resolution releasing it". The walk is where "the lane" and
+  // "the scope" are decided, so each of its verdicts is restated for a
+  // conversation designated with no profile. Every one of these fails, with the
+  // orchestrator's lane, against a predicate keyed on `resident_name`.
+  describe("a resident with no profile", () => {
+    it("makes its own thread a lane", () => {
+      thread("th_root", { designated: true });
+      expect(laneFor({ threadId: "th_root", parentId: null })).toBe("th_root");
+    });
+
+    it("owns the documents its conversation produced, and the threads on them", () => {
+      thread("th_root", { designated: true });
+      document("doc_draft", "th_root");
+      thread("th_comment", { parent: "doc_draft" });
+      expect(laneFor({ docId: "doc_draft", sessionId: "s1" })).toBe("th_root");
+      expect(laneFor({ threadId: "th_comment", parentId: "doc_draft" })).toBe("th_root");
+    });
+
+    it("stops a profiled resident's scope at itself, and is stopped at by one", () => {
+      thread("th_outer", { resident: "Ana" });
+      thread("th_inner", { origin: "th_outer", designated: true });
+      document("doc_leaf", "th_inner");
+      expect(laneFor({ docId: "doc_leaf", sessionId: "s1" })).toBe("th_inner");
+
+      thread("th_general", { designated: true });
+      thread("th_profiled", { origin: "th_general", resident: "Bo" });
+      document("doc_other", "th_profiled");
+      expect(laneFor({ docId: "doc_other", sessionId: "s1" })).toBe("th_profiled");
+    });
+
+    it("is not conjured by a stored profile name on an undesignated thread", () => {
+      // The pair the projector cannot write, spelled by hand: a name with the
+      // flag clear. The flag decides, so this is not a lane — which is what
+      // stops the two columns from disagreeing about one conversation.
+      thread("th_root", { resident: "Ana", designated: false });
+      expect(laneFor({ threadId: "th_root", parentId: null })).toBe(ORCHESTRATOR_LANE);
+      expect(isDesignatedRoot(projection, "th_root")).toBe(false);
+    });
   });
 
   it("routes an event naming nothing to the orchestrator", () => {
@@ -299,6 +363,20 @@ describe("isDesignatedRoot", () => {
     expect(isDesignatedRoot(projection, "th_root")).toBe(true);
   });
 
+  // The one predicate three things lean on — this, `assertRecipientResolvable`'s
+  // 422 and `assertScopeIsLane`'s refusal of a park — so a general residency
+  // that failed it would be unaddressable and unparkable as well as unroutable,
+  // all silently.
+  it("accepts a standalone thread designated with no profile", () => {
+    thread("th_root", { designated: true });
+    expect(isDesignatedRoot(projection, "th_root")).toBe(true);
+  });
+
+  it("refuses a parented thread designated with no profile", () => {
+    thread("th_child", { parent: "doc_host", designated: true });
+    expect(isDesignatedRoot(projection, "th_child")).toBe(false);
+  });
+
   it("refuses a standalone thread with no resident", () => {
     thread("th_root");
     expect(isDesignatedRoot(projection, "th_root")).toBe(false);
@@ -329,6 +407,15 @@ describe("assertRecipientResolvable", () => {
 
   it("passes a designated root", () => {
     thread("th_root", { resident: "Ana" });
+    expect(() => {
+      assertRecipientResolvable(projection, "th_root");
+    }).not.toThrow();
+  });
+
+  // A general resident is addressable: §7's composer offers every live lane, and
+  // one whose agent has no persona document is a lane like any other.
+  it("passes a root designated with no profile", () => {
+    thread("th_root", { designated: true });
     expect(() => {
       assertRecipientResolvable(projection, "th_root");
     }).not.toThrow();
@@ -391,6 +478,16 @@ describe("assertScopeIsLane", () => {
 
   it("passes a designated root", () => {
     thread("th_root", { resident: "Ana" });
+    expect(() => {
+      assertScopeIsLane(projection, "th_root");
+    }).not.toThrow();
+  });
+
+  // Presence *is* the parked scoped request (§7), so a general resident refused
+  // here could never become live — `GET /api/agents` would list its lane and
+  // nothing could ever park on it.
+  it("passes a root designated with no profile", () => {
+    thread("th_root", { designated: true });
     expect(() => {
       assertScopeIsLane(projection, "th_root");
     }).not.toThrow();

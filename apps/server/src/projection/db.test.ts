@@ -72,7 +72,11 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     // Past §9.1's list, retyped from SPEC.md §7's resident rider (SHARED-043,
     // SERVER-109): a lane is named by a designated root thread, so the enqueue
     // path asks whether a thread is designated once per event and must not open
-    // a file to find out.
+    // a file to find out. Since the SHARED-048 rider (SERVER-121) that is three
+    // columns and two questions: `resident_designated` is *is this a lane*, and
+    // the pair below is *which profile* — null together for a general resident,
+    // who is designated and has none.
+    "resident_designated",
     "resident_name",
     "resident_doc_id",
   ],

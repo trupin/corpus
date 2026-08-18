@@ -24,7 +24,7 @@ opus
 
 - SPEC.md **§7** — "Nothing to acquire, nothing to release, nothing to break"
 - SPEC.md **§4** — "Two acts commit alone" (was three; the force unlock is gone)
-- SPEC.md **§9.4** — the `locks` projection table, struck
+- SPEC.md **§9.2** — the `locks` projection table, struck
 
 ## Summary
 
@@ -38,7 +38,7 @@ mechanisms is how the forgettable one survives.
 - [x] The lock guard is out of every write path. No route returns `423`
 - [x] The `locks` projection table is dropped, with a schema migration — the
       projection has a `SCHEMA_VERSION` and this is a real change to it
-- [x] `.corpus/locks/` is no longer watched (§9.4) and no longer created
+- [x] `.corpus/locks/` is no longer watched (§9.2) and no longer created
 - [x] The **force-break commit and its audit entry are gone**, including the
       `closeWindow("commits-alone")` SERVER-092 added for it. §4 now says two
       acts commit alone, not three — check that paragraph reads correctly

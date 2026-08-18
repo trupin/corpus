@@ -16,6 +16,9 @@ import {
 
 const resident = { name: "researcher", docId: "doc_agentdef" };
 
+/** A designation that named no profile (SPEC.md §7, rider SHARED-048). */
+const generalResident = { name: null, docId: null };
+
 const orchestratorLane = {
   lane: "orchestrator",
   resident: null,
@@ -70,9 +73,50 @@ describe("Resident", () => {
     expect(ResidentSchema.safeParse({ ...resident, docId: "th_x9y8" }).success).toBe(false);
   });
 
-  it("demands both halves: the name a person reads and the document they open", () => {
+  it("demands both halves, present, even when both are null", () => {
     expect(ResidentSchema.safeParse({ name: "researcher" }).success).toBe(false);
     expect(ResidentSchema.safeParse({ docId: "doc_agentdef" }).success).toBe(false);
+    expect(ResidentSchema.safeParse({}).success).toBe(false);
+  });
+
+  /**
+   * CONTRACT-061 / SPEC.md §7 rider SHARED-048. A designation may name no
+   * profile, and the resident it produces is a resident in every other respect.
+   * `{name: null, docId: null}` is the whole spelling of that — no sentinel
+   * name, because a sentinel would reach a recipient list dressed as a profile
+   * and could collide with a real agent-def titled the same.
+   */
+  it("round-trips a general resident as two nulls, and never as a name", () => {
+    expect(ResidentSchema.parse(generalResident)).toEqual({ name: null, docId: null });
+  });
+
+  /**
+   * §7: *"A profile that is renamed or archived after designation does not end
+   * the designation … the missing profile is reported rather than silently
+   * substituted."* This pair is that report, and it must stay tellable apart
+   * from a general resident — one is ordinary, the other is worth mentioning.
+   */
+  it("round-trips a named profile that no longer resolves, distinguishably", () => {
+    const gone = { name: "researcher", docId: null };
+    expect(ResidentSchema.parse(gone)).toEqual(gone);
+    expect(gone.name).not.toBe(generalResident.name);
+  });
+
+  /**
+   * The one combination that is not a state: a document nobody named. The flat
+   * object can represent it, so a refinement rejects it — the union that could
+   * not represent it at all would have cost `Resident` its component name
+   * (CONTRACT-037: a `oneOf` has no `type: "object"`).
+   */
+  it("refuses a docId with no name, which would be a document nobody named", () => {
+    const parsed = ResidentSchema.safeParse({ name: null, docId: "doc_agentdef" });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.path).toEqual(["docId"]);
+  });
+
+  /** A blank name is still a mistake, wherever it appears. */
+  it("still refuses a blank name rather than reading it as no profile", () => {
+    expect(ResidentSchema.safeParse({ name: "   ", docId: null }).success).toBe(false);
   });
 });
 
@@ -89,6 +133,17 @@ describe("the resident field on a thread", () => {
   it("spells no resident as null, not as an absent key", () => {
     expect(residentField.parse(null)).toBeNull();
     expect(residentField.safeParse(undefined).success).toBe(false);
+  });
+
+  /**
+   * The two nulls one level apart, and the reason both descriptions spell the
+   * difference out: this field null is *nobody*, while a resident whose `name`
+   * is null is *somebody with no profile*. A consumer that collapsed them would
+   * show a designated conversation as undesignated.
+   */
+  it("tells nobody apart from somebody with no profile", () => {
+    expect(residentField.parse(generalResident)).toEqual(generalResident);
+    expect(residentField.parse(null)).toBeNull();
   });
 });
 
@@ -145,6 +200,33 @@ describe("AgentLane", () => {
 
   it("refuses a lane name that is neither the orchestrator nor a thread", () => {
     expect(AgentLaneSchema.safeParse({ ...residentLane, lane: "doc_a1b2c3" }).success).toBe(false);
+  });
+
+  /**
+   * CONTRACT-061. A lane with a **general** resident is designated in every
+   * sense — it has a lane name, an origin, and a liveness of its own — and the
+   * roster must not report it as the one row that has no resident. The two rows
+   * differ in exactly one place: whether the resident object carries a profile.
+   */
+  it("carries a general-resident lane as a designated row, not as a residentless one", () => {
+    const general = { ...residentLane, resident: generalResident };
+    const parsed = AgentLaneSchema.parse(general);
+    expect(parsed.resident).toEqual({ name: null, docId: null });
+    expect(parsed.resident).not.toBeNull();
+    // Everything else about the row is identical to a profiled lane's (SPEC.md
+    // §7: "everything else about a resident is identical either way").
+    const { resident: _general, ...generalRest } = parsed;
+    const { resident: _profiled, ...profiledRest } = AgentLaneSchema.parse(residentLane);
+    expect(generalRest).toEqual(profiledRest);
+  });
+
+  /**
+   * The orchestrator's row is the only one whose `resident` is null: every other
+   * lane exists because something was designated. A consumer that read null as
+   * "general resident" would show the orchestrator as a designated conversation.
+   */
+  it("keeps a null resident meaning nobody, which on the roster is the orchestrator", () => {
+    expect(AgentLaneSchema.parse(orchestratorLane).resident).toBeNull();
   });
 });
 
@@ -231,15 +313,47 @@ describe("DesignateResidentRequest", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("demands a name: a designation that names nobody is not one", () => {
-    expect(DesignateResidentRequestSchema.safeParse({}).success).toBe(false);
+  /**
+   * CONTRACT-061 / SPEC.md §7 rider SHARED-048. Naming no profile is the
+   * ordinary case and *"requires nothing to exist first"*, so it is the case
+   * that costs a caller nothing to express: an empty body, which the route also
+   * accepts as no body at all.
+   */
+  it("accepts an empty body, which is how a general resident is asked for", () => {
+    expect(DesignateResidentRequestSchema.parse({})).toEqual({});
+    expect(DesignateResidentRequestSchema.parse({}).name).toBeUndefined();
   });
 
   /**
-   * Releasing is `DELETE` on the same path, so `null` never has to mean
-   * "release" on a field where `null` already means "there is nobody".
+   * The strictness is what keeps absence-as-meaning affordable: a caller that
+   * means `name` and writes another key is told which key it got wrong, rather
+   * than quietly receiving a general resident.
    */
-  it("has no null spelling of release", () => {
+  it("still names the wrong key rather than reading it as an empty body", () => {
+    const parsed = DesignateResidentRequestSchema.safeParse({ agent: "researcher" });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.code).toBe("unrecognized_keys");
+  });
+
+  /**
+   * A blank name is a mistake, not a request for a general resident: dropping a
+   * name by accident and asking for no profile must not be the same request
+   * (CLI-049 depends on exactly this distinction for `--agent ""`).
+   */
+  it.each(["", "   ", "\t"])(
+    "refuses a blank name (%j) rather than reading it as absence",
+    (name) => {
+      expect(DesignateResidentRequestSchema.safeParse({ name }).success).toBe(false);
+    },
+  );
+
+  /**
+   * `null` is the response side's word — "there is nobody" on the thread's
+   * field, "no profile" inside a `Resident`. Release is the `DELETE` on this
+   * same path, so nothing on the request side needs a null, and giving it a
+   * third job here is how a field comes to mean two things.
+   */
+  it("has no null spelling: absence is the only way to ask for no profile", () => {
     expect(DesignateResidentRequestSchema.safeParse({ name: null }).success).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CORE_QUEUE_EVENT_TYPES, type QueryKey } from "@corpus/contract";
 import {
+  AUTH,
   appendTurn,
   createDoc,
   createThread,
@@ -23,6 +24,7 @@ import {
   threadPath,
   type WriteWorkspace,
 } from "./thread-fixture.js";
+import { LANE_GRACE_MS } from "../queue/liveness.js";
 import { RESIDENT_DESIGNATED } from "./resident.js";
 
 let ws: WriteWorkspace;
@@ -58,14 +60,42 @@ afterEach(() => {
 const designate = (id: string, name: string, headers: Record<string, string> = {}) =>
   ws.post(`/api/threads/${id}/resident`, { name }, headers);
 
+/**
+ * The same route with **no body at all** — §7's ordinary designation since the
+ * SHARED-048 rider, which names no profile and requires nothing to exist first.
+ *
+ * Sent bodyless rather than as `{}` because the contract makes the body optional
+ * in full and the two must be the same request; the `{}` spelling is exercised
+ * separately below.
+ */
+const designateGeneral = (id: string, headers: Record<string, string> = {}) =>
+  ws.request(`/api/threads/${id}/resident`, { method: "POST", headers: { ...AUTH, ...headers } });
+
 const release = (id: string, headers: Record<string, string> = {}) =>
   ws.del(`/api/threads/${id}/resident`, headers);
 
 const readThread = async (id: string): Promise<Record<string, unknown>> =>
   (await (await ws.request(`/api/threads/${id}`)).json()) as Record<string, unknown>;
 
+/**
+ * The projection's three resident columns.
+ *
+ * `resident_designated` is the one the lane predicate, the recipient check and
+ * the park guard all ask (SERVER-121); the other two carry the *profile*, and
+ * are null together for a general resident. They are read as one row here
+ * precisely so a case cannot assert the profile and leave the flag unstated.
+ */
 const residentRow = (id: string): unknown =>
-  ws.db.prepare("SELECT resident_name, resident_doc_id FROM threads WHERE id = ?").get(id);
+  ws.db
+    .prepare("SELECT resident_designated, resident_name, resident_doc_id FROM threads WHERE id = ?")
+    .get(id);
+
+/** Just the flag — "is this conversation a lane", the question routing asks. */
+const designatedRow = (id: string): number =>
+  (
+    ws.db.prepare("SELECT resident_designated AS d FROM threads WHERE id = ?").get(id) as
+      { d: number } | undefined
+  )?.d ?? -1;
 
 /** One event file, as the queue wrote it. */
 type StoredEvent = {
@@ -153,6 +183,7 @@ describe("POST /api/threads/{id}/resident", () => {
     });
     // And in the projection, where SERVER-111's enqueue path will ask.
     expect(residentRow(created.id)).toEqual({
+      resident_designated: 1,
       resident_name: "researcher",
       resident_doc_id: "doc_researcher",
     });
@@ -320,6 +351,209 @@ describe("POST /api/threads/{id}/resident", () => {
   });
 });
 
+// SPEC.md §7's SHARED-048 rider: "a designation may name a `type: agent-def`
+// document ... or it may name **none**, in which case the conversation gets a
+// **general resident** ... naming none is the ordinary case and requires nothing
+// to exist first".
+describe("designating with no profile at all", () => {
+  it("succeeds on a bare POST, writing a legible general residency", async () => {
+    const created = await createThread(ws, { body: "let us talk" });
+
+    const response = await designateGeneral(created.id);
+    const payload = (await response.json()) as {
+      thread: { id: string; resident: { name: string | null; docId: string | null } | null };
+      warnings: unknown[];
+    };
+
+    expect(response.status).toBe(200);
+    // Two nulls, not a synthesised name: a word here would sit in the roster and
+    // the composer's recipient list beside real profile names (CONTRACT-061).
+    expect(payload.thread).toMatchObject({
+      id: created.id,
+      resident: { name: null, docId: null },
+    });
+    expect(payload.warnings).toEqual([]);
+    // On disk, in the same `{name, docId}` shape a profiled residency uses, so a
+    // person reading the markdown tells them apart by the values and not by a
+    // second grammar. The key being *present* is the designation; releasing
+    // removes it.
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({ name: null, docId: null });
+    expect((await readThread(created.id))["resident"]).toEqual({ name: null, docId: null });
+    // And in the projection: designated, with no profile.
+    expect(residentRow(created.id)).toEqual({
+      resident_designated: 1,
+      resident_name: null,
+      resident_doc_id: null,
+    });
+  });
+
+  // The body is optional *in full*, so `{}` and no body must be one request.
+  it("treats an empty body and no body as the same designation", async () => {
+    const bodyless = await createThread(ws, { body: "one" });
+    const empty = await createThread(ws, { body: "two" });
+
+    expect((await designateGeneral(bodyless.id)).status).toBe(200);
+    expect((await ws.post(`/api/threads/${empty.id}/resident`, {})).status).toBe(200);
+
+    expect(threadFrontmatterOf(ws, bodyless.id)["resident"]).toEqual(
+      threadFrontmatterOf(ws, empty.id)["resident"],
+    );
+    expect(designatedRow(bodyless.id)).toBe(designatedRow(empty.id));
+  });
+
+  // The frontmatter has to survive a round trip through the file the server
+  // wrote — not just the in-memory value it had before serialising it — because
+  // §5 makes the file the source of truth and the projection rebuilds from it.
+  it("round-trips: a rebuilt projection still calls it a lane", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateGeneral(created.id);
+
+    // Everything re-read from the bytes on disk.
+    ws.reproject();
+
+    expect(designatedRow(created.id)).toBe(1);
+    expect((await readThread(created.id))["resident"]).toEqual({ name: null, docId: null });
+  });
+
+  it("commits once, authored by the acting party, naming the act in words", async () => {
+    const created = await createThread(ws, { body: "start" });
+    ws.advance(61_000);
+    const before = ws.log("%H").length;
+
+    expect((await designateGeneral(created.id)).status).toBe(200);
+
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    // A `git log` subject is prose about what happened; it chooses nothing and
+    // is matched against nothing, so it may say in words what the field says by
+    // being null.
+    expect(ws.log("%s")[0]).toBe(
+      `resident designate: general resident on ${titleOf(created)} (${created.id}) by user`,
+    );
+    expect(ws.log("%an")[0]).toBe("user");
+  });
+
+  it("enqueues resident.designated on the orchestrator's lane, carrying two nulls", async () => {
+    const created = await createThread(ws, { body: "start" });
+
+    await designateGeneral(created.id);
+
+    expect(designations()).toMatchObject([
+      {
+        type: RESIDENT_DESIGNATED,
+        source: "thread",
+        status: "pending",
+        // §7's carve-out holds whoever is designated: the resident does not
+        // announce itself to itself, and a general one is no exception.
+        lane: "orchestrator",
+        payload: { threadId: created.id, resident: { name: null, docId: null } },
+      },
+    ]);
+  });
+
+  it("announces the same keys a profiled designation does", async () => {
+    const created = await createThread(ws, { body: "start" });
+
+    const frames = await framesDuring(() => designateGeneral(created.id));
+
+    expect(frames[0]).toEqual([
+      ["docs"],
+      ["docs", created.id],
+      ["threads", created.id],
+      ["agents"],
+    ]);
+  });
+
+  it("refuses the agent and a parented thread, exactly as a named designation does", async () => {
+    const standalone = await createThread(ws, { body: "start" });
+    const parent = (await createDoc(ws, { type: "note", title: "Model", body: "A body.\n" })).id;
+    const child = await createThread(ws, { parent, body: "about all of it" });
+
+    expect((await designateGeneral(standalone.id, AGENT)).status).toBe(403);
+    expect((await designateGeneral(child.id)).status).toBe(409);
+    expect((await designateGeneral("th_zzzzzzzz")).status).toBe(404);
+    expect(threadFrontmatterOf(ws, standalone.id)["resident"]).toBeUndefined();
+    expect(threadFrontmatterOf(ws, child.id)["resident"]).toBeUndefined();
+  });
+
+  // Single-valued in both directions, and the *name* is what moves: a general
+  // residency is not a lesser state a profile is layered onto.
+  it("replaces in both directions, one write each way", async () => {
+    const created = await createThread(ws, { body: "start" });
+
+    await designateGeneral(created.id);
+    ws.advance(61_000);
+    expect((await designate(created.id, "researcher")).status).toBe(200);
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+    });
+
+    ws.advance(61_000);
+    const before = ws.log("%H").length;
+    expect((await designateGeneral(created.id)).status).toBe(200);
+
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({ name: null, docId: null });
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    expect(designations().map((event) => event.payload["resident"])).toEqual([
+      { name: null, docId: null },
+      { name: "researcher", docId: "doc_researcher" },
+      { name: null, docId: null },
+    ]);
+  });
+
+  it("writes nothing when it is already general — but still announces it", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateGeneral(created.id);
+    ws.advance(61_000);
+    const before = ws.log("%H").length;
+    const text = ws.read(threadPath(created.id));
+
+    expect((await designateGeneral(created.id)).status).toBe(200);
+
+    expect(ws.read(threadPath(created.id))).toBe(text);
+    expect(ws.log("%H")).toHaveLength(before);
+    // Re-issuing is how a person asks for a listener that is no longer running
+    // to be launched again — the same reason a profiled re-designation enqueues.
+    expect(designations()).toHaveLength(2);
+  });
+
+  it("releases like any other resident, and is released by resolving", async () => {
+    const released = await createThread(ws, { body: "one" });
+    const resolved = await createThread(ws, { body: "two" });
+    await designateGeneral(released.id);
+    await designateGeneral(resolved.id);
+    ws.advance(61_000);
+
+    expect((await release(released.id)).status).toBe(200);
+    expect((await ws.post(`/api/threads/${resolved.id}/resolve`, {})).status).toBe(200);
+
+    for (const id of [released.id, resolved.id]) {
+      expect([id, Object.hasOwn(threadFrontmatterOf(ws, id), "resident")]).toEqual([id, false]);
+      expect([id, designatedRow(id)]).toEqual([id, 0]);
+      expect([id, (await readThread(id))["resident"]]).toEqual([id, null]);
+    }
+  });
+
+  // §7's release announces the roster because a lane leaves it. This would pass
+  // vacuously if a general residency had never been a lane in the first place,
+  // which is why the row's disappearance is asserted through the real route
+  // rather than through the key alone.
+  it("leaves the roster when released", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateGeneral(created.id);
+    const lanes = async (): Promise<string[]> =>
+      (
+        (await (await ws.request("/api/agents")).json()) as { agents: { lane: string }[] }
+      ).agents.map((row) => row.lane);
+
+    expect(await lanes()).toContain(created.id);
+    ws.advance(61_000);
+    await release(created.id);
+
+    expect(await lanes()).not.toContain(created.id);
+  });
+});
+
 describe("DELETE /api/threads/{id}/resident", () => {
   it("removes the key — dissolution is the absence of a resident, not a third state", async () => {
     const created = await createThread(ws, { body: "start" });
@@ -338,7 +572,11 @@ describe("DELETE /api/threads/{id}/resident", () => {
     expect(payload.warnings).toEqual([]);
     // The key is gone, not set to null.
     expect(Object.hasOwn(threadFrontmatterOf(ws, created.id), "resident")).toBe(false);
-    expect(residentRow(created.id)).toEqual({ resident_name: null, resident_doc_id: null });
+    expect(residentRow(created.id)).toEqual({
+      resident_designated: 0,
+      resident_name: null,
+      resident_doc_id: null,
+    });
     expect(ws.log("%H")).toHaveLength(before + 1);
     expect(ws.log("%s")[0]).toBe(`resident release: ${titleOf(created)} (${created.id}) by user`);
   });
@@ -399,7 +637,11 @@ describe("resolving a conversation releases its resident (SPEC.md §7)", () => {
     expect(ws.log("%H")).toHaveLength(before + 1);
     expect(ws.log("%s")[0]).toBe(`thread resolve: ${titleOf(created)} (${created.id}) by user`);
     expect(Object.hasOwn(threadFrontmatterOf(ws, created.id), "resident")).toBe(false);
-    expect(residentRow(created.id)).toEqual({ resident_name: null, resident_doc_id: null });
+    expect(residentRow(created.id)).toEqual({
+      resident_designated: 0,
+      resident_name: null,
+      resident_doc_id: null,
+    });
 
     ws.advance(61_000);
     expect((await ws.post(`/api/threads/${created.id}/reopen`, {})).status).toBe(200);
@@ -468,7 +710,14 @@ describe("reading a resident back", () => {
     });
   });
 
-  it("keeps the stored pair when the agent-def is gone: the name is the durable half", async () => {
+  // SPEC.md §7's SHARED-048 rider: "a profile that is renamed or archived after
+  // designation does not end the designation: the resident goes on owning its
+  // scope, and the missing profile is **reported rather than silently
+  // substituted**". The report is `docId: null` — the contract's `docId` is what
+  // the name resolves to *right now* — and repeating the stored id instead would
+  // send a reader to a document the workspace no longer has, which is the exact
+  // failure the re-read exists to prevent.
+  it("reports a gone agent-def as a null docId, keeping the name it was designated with", async () => {
     const created = await createThread(ws, { body: "start" });
     await designate(created.id, "researcher");
 
@@ -477,8 +726,16 @@ describe("reading a resident back", () => {
 
     expect((await readThread(created.id))["resident"]).toEqual({
       name: "researcher",
+      docId: null,
+    });
+    // Nothing was rewritten to say so: the designation stands, and the file
+    // still holds the pair it was written with.
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
+      name: "researcher",
       docId: "doc_researcher",
     });
+    // And it is still a lane — a missing persona ends nothing (§7).
+    expect(designatedRow(created.id)).toBe(1);
   });
 
   it("reads nothing off a parented thread, whatever its frontmatter says", async () => {
@@ -496,7 +753,11 @@ describe("reading a resident back", () => {
     // §7 allows a resident only on a standalone thread, and the contract
     // promises `resident` is always null on an anchored or whole-document one.
     expect((await readThread(child.id))["resident"]).toBeNull();
-    expect(residentRow(child.id)).toEqual({ resident_name: null, resident_doc_id: null });
+    expect(residentRow(child.id)).toEqual({
+      resident_designated: 0,
+      resident_name: null,
+      resident_doc_id: null,
+    });
 
     // The release still clears it, rather than leaving a key no route can reach.
     expect((await release(child.id)).status).toBe(200);
@@ -511,7 +772,11 @@ describe("reading a resident back", () => {
 
     // A corpus that used the key for something of its own stays readable.
     expect((await readThread(created.id))["resident"]).toBeNull();
-    expect(residentRow(created.id)).toEqual({ resident_name: null, resident_doc_id: null });
+    expect(residentRow(created.id)).toEqual({
+      resident_designated: 0,
+      resident_name: null,
+      resident_doc_id: null,
+    });
   });
 });
 
@@ -641,6 +906,166 @@ describe("what a designation routes", () => {
 
       expect(response.status).toBe(422);
       expect(await response.json()).toMatchObject({ code: "unknown_recipient" });
+    });
+  });
+
+  // SPEC.md §7's SHARED-048 rider, in the one place the claim is cheapest to
+  // break and hardest to notice: "everything else about a resident is identical
+  // either way — the lane, the scope, presence, the lapse fallback, release, and
+  // resolution releasing it". Every case here is written to go red against a
+  // server that quietly routed a general resident's work to the orchestrator,
+  // which is what the pre-SERVER-121 predicate did.
+  describe("a general resident routes exactly as a profiled one", () => {
+    /** Everything queued so far, cleared, so a case measures only its own event. */
+    const drainQueue = (): void => {
+      rmSync(join(ws.root, ".corpus", "queue", "pending"), { recursive: true, force: true });
+      ws.server.queue.store.ensureLayoutSync();
+    };
+
+    const claimed = async (scope?: string): Promise<string[]> => {
+      const query = scope === undefined ? "" : `?scope=${scope}`;
+      const response = await ws.post(`/api/queue/claim-all${query}`, {});
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { events: { id: string }[] }).events.map(
+        (event) => event.id,
+      );
+    };
+
+    /** Parks a scoped `idle`, which is the whole of §7's presence. */
+    function park(scope: string): { done: Promise<Response>; leave: () => void } {
+      const controller = new AbortController();
+      const done = ws
+        .request(`/api/queue/idle?timeout=60&scope=${scope}`, {
+          headers: AUTH,
+          signal: controller.signal,
+        })
+        .catch(() => new Response(null, { status: 499 }));
+      return {
+        done,
+        leave: () => {
+          controller.abort();
+        },
+      };
+    }
+
+    /** The park has to reach the handler before anything is asked about it. */
+    const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve, 50));
+
+    it("stamps a reply in its own conversation with that thread's lane", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designateGeneral(created.id);
+      ws.advance(61_000);
+      drainQueue();
+
+      await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
+
+      expect(onlyPending().lane).toBe(created.id);
+    });
+
+    it("owns the artifacts its conversation produced, walked at enqueue time", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designateGeneral(created.id);
+      ws.advance(61_000);
+      // §7's scope is *computed* by walking `origin`, never stored, so what this
+      // needs is a document filed into the conversation. The stamp itself is
+      // `docs/create.ts`'s and SERVER-110's subject; here it is written into the
+      // frontmatter directly, which §5 makes as real as anything the server
+      // wrote, so the case is about the walk and nothing else.
+      const draft = await createDoc(ws, { type: "note", title: "Draft", body: "A body.\n" });
+      const path = (
+        ws.db.prepare("SELECT path FROM documents WHERE id = ?").get(draft.id) as { path: string }
+      ).path;
+      const text = ws.read(path);
+      ws.write(path, text.replace("\n---\n", `\norigin: ${created.id}\n---\n`));
+      ws.reproject();
+
+      ws.advance(61_000);
+      const onDraft = await createThread(ws, { parent: draft.id, body: "a comment" });
+      ws.advance(61_000);
+      drainQueue();
+
+      // §7's point of the whole scope: the conversation that produced a draft,
+      // and a comment left on that draft, reach the same agent.
+      await appendTurn(ws, onDraft.id, { body: "please look", requestsAgent: true });
+
+      expect(onlyPending().lane).toBe(created.id);
+    });
+
+    it("is addressable as a recipient from outside its scope", async () => {
+      const designated = await createThread(ws, { body: "start" });
+      await designateGeneral(designated.id);
+      ws.advance(61_000);
+      const host = await createThread(ws, { body: "unrelated" });
+      ws.advance(61_000);
+      drainQueue();
+
+      await appendTurn(ws, host.id, {
+        body: "a question",
+        requestsAgent: true,
+        recipient: designated.id,
+      });
+
+      // Routing follows the recipient, filing follows the conversation.
+      const event = onlyPending();
+      expect(event.lane).toBe(designated.id);
+      expect(event.payload["threadId"]).toBe(host.id);
+    });
+
+    // The partition, and §7's lapse fallback, on a lane with no profile: while it
+    // is live the orchestrator sees nothing of it, and once it has lapsed the
+    // same claim hands the work over — with nothing about the lapse written into
+    // the event.
+    it("hides its live lane from the unscoped claim and hands it over once lapsed", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designateGeneral(created.id);
+      ws.advance(61_000);
+      // The designation itself is the orchestrator's (§7's carve-out), so it has
+      // to be off the board before this measures anything.
+      expect(await claimed()).toHaveLength(1);
+
+      const parked = park(created.id);
+      await settle();
+      await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
+
+      expect(await claimed()).toEqual([]);
+      expect(await claimed(created.id)).toHaveLength(1);
+
+      parked.leave();
+      await parked.done;
+    });
+
+    it("lapses to the orchestrator when nobody is parked on it", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designateGeneral(created.id);
+      ws.advance(61_000);
+      expect(await claimed()).toHaveLength(1);
+      await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
+      ws.advance(LANE_GRACE_MS * 2);
+
+      // Never live, so long lapsed: §7's cost of a lapse is that the work is
+      // done by the orchestrator, never that it is silently not done.
+      expect(await claimed()).toHaveLength(1);
+    });
+
+    // §7: presence is asked at the request and never re-asked of one already
+    // admitted, so a park survives its lane's residency changing under it —
+    // including a profiled residency going general and back.
+    it("keeps an in-flight park when the residency changes shape", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designate(created.id, "researcher");
+      ws.advance(61_000);
+      const parked = park(created.id);
+      await settle();
+
+      expect((await designateGeneral(created.id)).status).toBe(200);
+
+      const status = (await (await ws.request("/api/queue/status")).json()) as {
+        agent: { live: boolean };
+      };
+      expect(status.agent.live).toBe(true);
+
+      parked.leave();
+      await parked.done;
     });
   });
 });

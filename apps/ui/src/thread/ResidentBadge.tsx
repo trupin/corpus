@@ -1,4 +1,4 @@
-import { LaneDot, useLaneRow } from "@corpus/kit";
+import { GENERAL_RESIDENT_LABEL, LaneDot, useLaneRow } from "@corpus/kit";
 import type { ReactElement } from "react";
 import { useNowTick } from "./useNowTick";
 
@@ -39,6 +39,22 @@ import { useNowTick } from "./useNowTick";
  * badge that repainted only on data would keep a green dot lit after the agent
  * walked away until some unrelated invalidation happened by. The console pill
  * ticks for the same reason and at the same period.
+ *
+ * ## The one place it does not use the composer's word
+ *
+ * A **general resident** — a designation that named no profile (SPEC.md §7) —
+ * is named in a *list* of lanes by the conversation it owns, because two of them
+ * named alike would be two rows nobody can pick between. Here there is one lane
+ * and it is on that very conversation, so its title would say nothing; the badge
+ * prints `GENERAL_RESIDENT_LABEL` instead. That is still the kit's word and not
+ * this component's — it is exported from the same module the name comes from,
+ * for the same reason the rest of them are (UI-122).
+ *
+ * It is a **role and never a name**: "resident, no profile" cannot be mistaken
+ * for an agent-def's title the way `agent` or `general` could, which is the
+ * substitution CONTRACT-061 shaped `Resident` to prevent. It also cannot be read
+ * as *no resident* — there is one, and the dot beside it says whether it is
+ * there.
  */
 
 export interface ResidentBadgeProps {
@@ -51,21 +67,33 @@ export function ResidentBadge({ threadId }: ResidentBadgeProps): ReactElement | 
   const row = useLaneRow(threadId, new Date(now));
   if (row === undefined) return null;
 
+  const general = row.kind === "general";
+  const label = general ? GENERAL_RESIDENT_LABEL : row.name;
+
   return (
     <span
       className="t-resident"
       data-resident-lane={row.lane}
       data-resident-liveness={row.liveness}
+      data-resident-kind={row.kind}
       /*
        * The line is beside the name *and* on the title, rather than only on the
        * title: §11 wants what a lapse means readable without a pointer, and a
        * hover is not available to a keyboard at all. The title repeats it for
        * the truncated case, where the line is elided by width.
        */
-      title={row.line === "" ? row.name : `${row.name} — ${row.line}`}
+      title={[label, row.note, row.line].filter((part) => part !== "").join(" — ")}
     >
       <LaneDot liveness={row.liveness} />
-      <span className="t-resident-name">{row.name}</span>
+      <span className={general ? "t-resident-kind" : "t-resident-name"}>{label}</span>
+      {/*
+       * §7's *"the missing profile is reported rather than silently
+       * substituted"*, and this is where it is reported: on the conversation
+       * whose designation still stands. Beside the liveness line rather than
+       * inside it, because they answer different questions — who is resident,
+       * and whether they are there.
+       */}
+      {row.note === "" ? null : <span className="t-resident-note">{row.note}</span>}
       {row.line === "" ? null : <span className="t-resident-line">{row.line}</span>}
     </span>
   );

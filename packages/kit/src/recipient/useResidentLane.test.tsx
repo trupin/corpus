@@ -124,6 +124,11 @@ describe("useLaneRow", () => {
         name: "claims-review",
         liveness: "live",
         line: "reading the policy",
+        kind: "profiled",
+        profile: "claims-review",
+        profileDoc: "doc_agent",
+        note: "",
+        mark: "",
         conversation: "The claims conversation",
       });
     });

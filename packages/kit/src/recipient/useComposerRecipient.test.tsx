@@ -6,7 +6,7 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { CorpusRequestError } from "../client/createCorpusClient.js";
 import { createCorpusTestHarness } from "../testing/index.js";
-import { ORCHESTRATOR_LABEL } from "./laneRows.js";
+import { MISSING_PROFILE_MARK, MISSING_PROFILE_NOTE, ORCHESTRATOR_LABEL } from "./laneRows.js";
 import { RecipientPicker, RECIPIENT_GROUP_LABEL } from "./RecipientPicker.js";
 import { useComposerRecipient } from "./useComposerRecipient.js";
 
@@ -524,6 +524,50 @@ describe("RecipientPicker", () => {
     expect(resident?.getAttribute("title")).toMatch(
       /last seen .* — the orchestrator will answer until it returns/u,
     );
+  });
+
+  /**
+   * SPEC.md §7: the missing profile is *"reported rather than silently
+   * substituted"*. It was reported on the board badge and in `corpus agents`,
+   * and not here — where the lane is actually **chosen** — so a designation
+   * whose profile had been renamed or archived was drawn identically to a
+   * healthy one (PR #49 review). The name stays: the designation stands, and
+   * naming it is what stops the report becoming a substitution.
+   */
+  it("reports a lane whose profile has gone, rather than drawing it as a healthy one", async () => {
+    const gone: AgentLane = { ...RESIDENT_LANE, resident: { name: "claims-review", docId: null } };
+    pickerFor("th_root", { lanes: [gone], graph: { th_root: {} } });
+    await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
+    const resident = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-recipient-lane="th_root"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    expect(resident.dataset["recipientKind"]).toBe("profile-gone");
+    // At rest, without a pointer and without focus: the row itself says it.
+    expect(resident.textContent).toContain("claims-review");
+    expect(resident.textContent).toContain(MISSING_PROFILE_MARK);
+    // …and in full one hover or focus away, on the title and on the statement.
+    expect(resident.getAttribute("title")).toContain(MISSING_PROFILE_NOTE);
+    expect(
+      screen.getByText(`claims-review will answer — ${MISSING_PROFILE_NOTE} — reviewing the draft`),
+    ).toBeTruthy();
+    // Still a legal recipient: §7 keeps the designation, so nothing is gated.
+    expect(resident.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("leaves every other kind of lane unmarked", async () => {
+    pickerFor("th_root", { lanes: [RESIDENT_LANE], graph: { th_root: {} } });
+    await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
+    await waitFor(() => {
+      expect(lanesShown()).toEqual(["orchestrator", "th_root"]);
+    });
+    // The report is the exception, not a decoration every row gains.
+    expect(document.querySelectorAll(".recipient-mark")).toHaveLength(0);
+    const resident = document.querySelector<HTMLElement>('[data-recipient-lane="th_root"]');
+    expect(resident?.dataset["recipientKind"]).toBe("profiled");
+    expect(resident?.getAttribute("title")).toBe("claims-review — reviewing the draft");
   });
 
   it("is operable from the keyboard — every option is a plain button", async () => {

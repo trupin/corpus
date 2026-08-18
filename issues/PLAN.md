@@ -730,7 +730,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
   two §9.2 bullets), which breaches a standing constraint. The content describes
   SHARED-043's already-signed rider rather than new behaviour, and the issue
   file for that very change says "This package never edits SPEC.md" — so the
-  commit and its issue contradict each other. It also adds a fresh `§9.4`
+  commit and its issue contradict each other. It also adds a fresh `§9.2`
   citation, increasing the count `SHARED-046` was filed to reduce. Awaiting the
   user's decision: ratify, revert, or amend.
 - The reviewer confirmed **no defect in `SERVER-115`** after enumerating all 17
@@ -835,7 +835,6 @@ through.
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | done | P1 | — |
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
 | SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
-| SHARED-046 | SPEC.md cites a §9.4 that does not exist, and the citation has reached the published contract | todo | P1 | — |
 | SHARED-047 | §7 does not say whether parked listeners count against the concurrency bound | todo | P2 | — |
 | UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
 
@@ -899,3 +898,44 @@ where "direct conversation with a subagent" either feels synchronous or doesn't.
 | AGENT-027 | The converse skill can still adopt work the orchestrator is holding (AGENT-026 finding) | done | P0 | AGENT-026 |
 | UI-108 | The composer offers the recipient | done | P0 | CONTRACT-051, SERVER-111, SERVER-112 |
 | UI-109 | The board shows who is resident, and who is live | done | P1 | CONTRACT-051, SERVER-112 |
+
+## Phase 34 — A resident without a profile (2026-08-17; rider SHARED-048 SIGNED)
+v0.10.0 shipped resident agents and the user could not reach them: `corpus init`
+creates `.claude/agents/` holding a `.gitkeep`, so the designate menu says *"no
+agent-def documents in this workspace"* and offers nothing. Two independent
+causes, both found 2026-08-17.
+**A profile was never required.** §7 says a standalone thread *"may designate a
+resident agent"* and stops; the requirement was invented one layer down by
+`DesignateResidentRequestSchema`'s non-blank `name`. SHARED-048 states the rule
+§7 always implied — a designation may name a profile or **none**, and everything
+else about a resident is identical either way.
+**And the agent could not create one.** `orchestrate/SKILL.md:1392` tells the
+agent *"a new `type: agent-def` document is all it takes"*, architecture decision
+2 confines it to the CLI, and `corpus doc create --type agent-def` writes to
+`data/docs/inbox/` — the agent-def root refuses creation two ways. It survived
+because a misfiled agent-def **works**: the roster query filters on frontmatter
+`type`, never on path, so every test passes and the only symptom is personas in
+the inbox with the wrong id shape.
+The user asked for a skill to create profiles and will test it by hand against
+the shipped release, which is why AGENT-034 is in scope rather than deferred.
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-048 | A resident need not have a profile (SIGNED 2026-08-17) | done | P0 | — |
+| SHARED-046 | SPEC.md cited a §9.4 that does not exist; corrected to §9.2 everywhere | done | P1 | — |
+| CONTRACT-061 | A designation may name no profile | done | P0 | SHARED-048 |
+| SERVER-121 | Designate a resident without naming a profile | done | P0 | CONTRACT-061 |
+| SERVER-122 | `.claude/agents/` is a legal create target | done | P0 | — |
+| CLI-049 | `corpus thread designate` without naming an agent | done | P1 | CONTRACT-061, SERVER-121 |
+| CONTRACT-062 | `FOLDER_DESCRIPTION` describes two routes whose grammars have diverged | done | P1 | SERVER-122 |
+| CLI-050 | `corpus doc create --type agent-def` lands in `.claude/agents/` | done | P0 | SERVER-122 |
+| CONTRACT-063 | `MoveDocRequest.folder` is required and still says it defaults to `inbox` | done | P2 | CONTRACT-062 |
+| UI-122 | The designate menu offers a general resident first, and never dead-ends | done | P0 | CONTRACT-061, SERVER-121 |
+| AGENT-033 | A resident with no persona to bind | done | P0 | CONTRACT-061, SERVER-121, CLI-049 |
+| AGENT-034 | A skill that creates an agent profile | done | P0 | SERVER-122, CLI-050 |
+| SERVER-123 | A created agent-def carries none of Claude Code's frontmatter, and nothing says so (AGENT-034 finding) | done | P1 | SERVER-122 |
+| SERVER-124 | Under a `.claude/` root, Corpus's own frontmatter goes entirely unvalidated (PR #49 review 3) | todo | P1 | SERVER-123 |
+| SERVER-125 | An off-root agent-def is offered, resolvable, and dead (PR #49 review 5) | todo | P1 | SERVER-123 |
+| AGENT-036 | Two false statements in the `profile` skill (PR #49 review 5) | todo | P2 | — |
+| AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | todo | P1 | — |
+| INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
+| SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |

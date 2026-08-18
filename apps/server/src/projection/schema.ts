@@ -133,8 +133,24 @@
  * migration — an event written before lanes existed simply has no stamp, and
  * `NOT NULL DEFAULT 'orchestrator'` records the reading `queue/lanes.ts` already
  * gives it.
+ *
+ * 17 → 18 (SERVER-121): `threads.resident_designated` — SPEC.md §7's rider
+ * SHARED-048, *"a resident need not have a profile"*. Designation and profile
+ * became two independent questions, and this column is the first: **is this
+ * conversation designated at all**, which is what makes it a *lane*. The
+ * profile is the other question and stays where it was, in `resident_name` /
+ * `resident_doc_id`, both now legitimately NULL on a designated row.
+ *
+ * A column rather than a reserved value in `resident_name`, deliberately: a
+ * sentinel string there would reach the roster, the composer's recipient list
+ * and the board badge indistinguishable from a real agent-def titled the same,
+ * and `residentOrNull` would have to learn to un-say it in three readers. A v17
+ * database does not have the column, and every value is re-derived from the
+ * thread file's `resident` frontmatter, so the rebuild this bump triggers is the
+ * whole migration — a v17 row was designated exactly when its `resident_name`
+ * was set, which is what the re-projection writes.
  */
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -323,12 +339,23 @@ CREATE TABLE threads (
   turn_count INTEGER NOT NULL,
   last_author TEXT,
   last_ts TEXT,
-  -- SPEC.md §7's resident (SHARED-043, SERVER-109): the agent this conversation
-  -- belongs to, as the file spells it, or NULL for the threads nobody
-  -- designated — which is nearly all of them. Both halves, because they answer
+  -- SPEC.md §7's resident (SHARED-043, SERVER-109), in two independent
+  -- questions since the SHARED-048 rider (SERVER-121).
+  --
+  -- Is this conversation designated -- i.e. is it a lane. 1 for every
+  -- designated standalone thread, whether or not a profile was named; 0 for the
+  -- threads nobody designated, which is nearly all of them, and for a thread
+  -- with a parent whatever its frontmatter says. This is the column
+  -- isDesignatedRoot and the scope walk ask, and it is the only one they ask:
+  -- "is a lane" and "has a profile" are separate facts, and asking the second
+  -- to answer the first is what made a general residency unrepresentable.
+  resident_designated INTEGER NOT NULL DEFAULT 0,
+  -- Which profile it was designated with, as the file spells it -- NULL for a
+  -- general resident, which named none. Both halves, because they answer
   -- different questions: the name is what a person reads and what survives its
-  -- agent-def being deleted, the id is what a reader opens. Never set for a
-  -- thread with a parent: only a standalone thread may designate.
+  -- agent-def being deleted, the id is what a reader opens. Never set while
+  -- resident_designated is 0, and never authoritative about whether a lane
+  -- exists.
   resident_name TEXT,
   resident_doc_id TEXT
 );

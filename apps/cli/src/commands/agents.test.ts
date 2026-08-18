@@ -76,9 +76,32 @@ describe("corpus agents", () => {
     expect(stub.requests[0]?.path).toBe("/api/agents");
     expect(harness.stdout().split("\n").filter(Boolean)).toEqual([
       "orchestrator · live, parked 2m ago — working the Q3 draft",
-      'th_4b8e2c "Q3 planning" · researcher · live, parked 12s ago — reading the mortgage docs',
-      'th_9f1a2b "Rate check" · analyst · lapsed, last parked 41m ago',
-      'th_c0ffee "New idea" · scribe · waiting for a listener',
+      'th_4b8e2c "Q3 planning" · researcher (doc_r1) · live, parked 12s ago — reading the mortgage docs',
+      'th_9f1a2b "Rate check" · analyst (doc_a7) · lapsed, last parked 41m ago',
+      'th_c0ffee "New idea" · scribe (doc_s3) · waiting for a listener',
+    ]);
+  });
+
+  it("prints a mixed roster legibly: the orchestrator, a general lane, a profiled lane", async () => {
+    const general = {
+      lane: "th_11aa22",
+      resident: { name: null, docId: null },
+      live: true,
+      since: ago(30),
+      summary: null,
+      origin: { id: "th_11aa22", title: "Kitchen rebuild" },
+    };
+    const stub = await startStubServer(
+      jsonResponder(200, { agents: [ORCHESTRATOR_ROW, general, LIVE_LANE] }),
+    );
+
+    const harness = stubContext(stub);
+    await runAgents(harness.context, NOW);
+
+    expect(harness.stdout().split("\n").filter(Boolean)).toEqual([
+      "orchestrator · live, parked 2m ago — working the Q3 draft",
+      'th_11aa22 "Kitchen rebuild" · a general resident · live, parked 30s ago',
+      'th_4b8e2c "Q3 planning" · researcher (doc_r1) · live, parked 12s ago — reading the mortgage docs',
     ]);
   });
 
@@ -99,6 +122,27 @@ describe("corpus agents", () => {
     );
   });
 
+  it("tells the three residents a lane can have apart, because they are three facts", () => {
+    // SHARED-048. A reader of this one surface has to be able to say which of
+    // these a conversation has: an agent with no profile, a profile they can
+    // open, or a profile that has gone since it was designated.
+    const general = { ...LIVE_LANE, resident: { name: null, docId: null } };
+    const profiled = LIVE_LANE;
+    const orphaned = { ...LIVE_LANE, resident: { name: "researcher", docId: null } };
+
+    expect(renderLane(general, NOW)).toContain("· a general resident ·");
+    expect(renderLane(profiled, NOW)).toContain("· researcher (doc_r1) ·");
+    expect(renderLane(orphaned, NOW)).toContain("· researcher (profile missing) ·");
+
+    // And no two of them render the same cell — the whole requirement.
+    const cells = [general, profiled, orphaned].map((lane) => renderLane(lane, NOW));
+    expect(new Set(cells).size).toBe(3);
+    // A general resident is never dressed as a profile name: nothing in its cell
+    // occupies the position `doc_r1` does, so a picker cannot confuse the two.
+    expect(renderLane(general, NOW)).not.toContain("(");
+    expect(renderLane(general, NOW)).not.toContain("null");
+  });
+
   it("says a designated lane it cannot name is owned, not unowned", () => {
     const nameless = { ...LIVE_LANE, resident: null };
     expect(renderLane(nameless, NOW)).toContain("· resident unknown ·");
@@ -112,7 +156,7 @@ describe("corpus agents", () => {
   it("prints the bare verdict when `since` is not an instant", () => {
     // A wrong-looking row is debuggable; `parked NaNs ago` is not.
     expect(renderLane({ ...LIVE_LANE, since: "not-a-date" }, NOW)).toBe(
-      'th_4b8e2c "Q3 planning" · researcher · live — reading the mortgage docs',
+      'th_4b8e2c "Q3 planning" · researcher (doc_r1) · live — reading the mortgage docs',
     );
   });
 
@@ -230,6 +274,12 @@ describe("the agents command spec", () => {
     const source = await readFile(join(import.meta.dirname, "agents.ts"), "utf8");
     expect(source).toContain("AGENT_PRESENCE_WINDOW_SECONDS");
     expect(source).not.toMatch(/GRACE_WINDOW = ["'`]/);
+  });
+
+  it("explains the resident cell's three states, in the contract's words", () => {
+    expect(agentsCommand.description).toContain("a general resident");
+    expect(agentsCommand.description).toContain("researcher (doc_r1)");
+    expect(agentsCommand.description).toContain("researcher (profile missing)");
   });
 
   it("tells a reader not to parse the summary", () => {

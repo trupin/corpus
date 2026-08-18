@@ -44,6 +44,7 @@ const EXPECTED_TREE = [
   "claude/skills/comment/SKILL.md",
   "claude/skills/converse/SKILL.md",
   "claude/skills/orchestrate/SKILL.md",
+  "claude/skills/profile/SKILL.md",
   "data/docs/inbox/.gitkeep",
   "data/docs/templates/note.md",
   "data/docs/views/attention.md",
@@ -197,7 +198,7 @@ describe("template tree", () => {
 
 describe("seed documents", () => {
   it("gives every markdown file complete SPEC §5 frontmatter", () => {
-    expect(documents.length).toBe(8);
+    expect(documents.length).toBe(9);
     for (const { relPath, frontmatter } of documents) {
       expect(DocumentIdSchema.safeParse(frontmatter.id).success, `${relPath}: id`).toBe(true);
       expect(typeof frontmatter.type, `${relPath}: type`).toBe("string");
@@ -323,7 +324,11 @@ describe("skills", () => {
   ];
 
   /** Every skill the template itself ships — the checks that bind any skill, doctrine or not. */
-  const coreSkills = [...skills, { name: "converse", relPath: "claude/skills/converse/SKILL.md" }];
+  const coreSkills = [
+    ...skills,
+    { name: "converse", relPath: "claude/skills/converse/SKILL.md" },
+    { name: "profile", relPath: "claude/skills/profile/SKILL.md" },
+  ];
 
   it.each(coreSkills)("$name carries both frontmatter field sets", ({ name, relPath }) => {
     const { frontmatter } = documentAt(relPath);
@@ -388,6 +393,15 @@ describe("skills", () => {
         "lapse",
         "context runs heavy",
         "retirement",
+        "worked example",
+      ],
+      profile: [
+        "when this runs",
+        "before you write",
+        "worth having",
+        "writing it",
+        "refusals",
+        "reporting",
         "worked example",
       ],
     };
@@ -644,7 +658,12 @@ describe("skills", () => {
     });
 
     it.each(installedSkills)("$label quotes every heredoc it hands text to", ({ label, body }) => {
-      for (const heredoc of body.match(/<<-?\s*\S+/g) ?? []) {
+      // The delimiter, and nothing after it. `\S+` used to swallow whatever
+      // touched the token, which made a heredoc *named in prose* — `` `<<'EOF'`
+      // `` — read as the unquoted delimiter `<<'EOF'\``. A quoted delimiter is
+      // its quotes plus what is inside them; an unquoted one runs to the first
+      // space or backtick, so `<<EOF` and `<<"EOF"` still fail below.
+      for (const heredoc of body.match(/<<-?\s*(?:'[^'\n]*'|"[^"\n]*"|[^\s`]+)/g) ?? []) {
         expect(heredoc, `${label}: unquoted heredoc`).toMatch(/^<<'EOF'$/);
       }
       expect(body, `${label}: command substitution in an argument`).not.toMatch(/-m "\$\(/);
@@ -2184,10 +2203,10 @@ describe("orchestrate skill body", () => {
       expect(designation).toMatch(/\*\*converse\*\*/);
       expect(designation).toContain("threadId");
       expect(designation).toContain("resident");
-      // The launch, and the three things a subagent cannot inherit.
+      // The launch, and the two things a subagent cannot inherit.
       expect(routing).toMatch(/\*\*Launching a listener\.\*\*/);
       expect(routing).toMatch(/invoked as `\/converse <the payload's threadId>`/);
-      expect(routing).toMatch(/the `agent-def` document id both/);
+      expect(routing).toMatch(/\*\*exactly as it came\*\* — both fields, whatever they hold/);
       // Settled at launch, because the listener outlives the event by weeks.
       expect(routing).toMatch(/\*\*complete the event as soon as the launch is\s+made\*\*/);
       expect(routing).toMatch(/The listener's lifetime is not the job's/);
@@ -3811,6 +3830,560 @@ describe("converse skill body", () => {
 });
 
 /**
+ * AGENT-033 — SPEC.md §7's SHARED-048 rider, in the two skills that assumed a
+ * designation always named a profile.
+ *
+ * A `Resident` is two nullable fields and therefore **three** states, all three
+ * measured against a real server (throwaway workspace, port 8844, 2026-08-17):
+ *
+ * ```
+ * $ corpus thread designate th_agzzrvir --from user
+ * designated a general resident on th_agzzrvir
+ * $ corpus queue claim-all
+ * … "payload":{"threadId":"th_agzzrvir","resident":{"name":null,"docId":null}} …
+ * $ corpus agents
+ * th_agzzrvir "Q3 planning" · a general resident · waiting for a listener
+ * th_yqbho7rg "Refinance"  · researcher (doc_z4jbjkvk) · waiting for a listener
+ * $ rm .claude/agents/researcher.md && corpus agents      # the profile goes
+ * th_yqbho7rg "Refinance"  · researcher (profile missing) · waiting for a listener
+ * ```
+ *
+ * What is pinned is the shape of the repair, in the three places it decays:
+ *
+ * - **Three readings, not two.** `name: null` (nobody asked for a persona) and
+ *   `name` set with `docId: null` (one was asked for and is gone) are opposite
+ *   facts about the same pair of fields, and only the second is worth a line in
+ *   a reply. Collapsed, a listener either apologises for working normally or
+ *   swallows a designation whose subject has disappeared.
+ * - **The ordinary case reads first**, because a rule written as an exception
+ *   gets executed as one.
+ * - **No placeholder at the launch.** The orchestrator forwards the two fields
+ *   as they came. The contract says the same thing at `ResidentSchema.name` —
+ *   do not substitute a word for null and print it as a name — and here the
+ *   cost is concrete: an invented word reaches the listener as the name of a
+ *   document nobody wrote.
+ */
+describe("a resident with no persona to bind", () => {
+  const converse = documentAt("claude/skills/converse/SKILL.md").body;
+  const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+
+  /** The `## Starting up` step that reads the launch's `resident`, and only it. */
+  const binding = converse.slice(
+    converse.indexOf("**Bind a persona"),
+    converse.indexOf("4. **Hydrate"),
+  );
+
+  /** The launch bullet in `## Routing`, and only it. */
+  const launch = orchestrate.slice(
+    orchestrate.indexOf("- **Launching a listener.**"),
+    orchestrate.indexOf("- **A lane that already has a listener"),
+  );
+
+  it("binds under one condition, with the profile-less reading first", () => {
+    expect(binding, "the binding step is missing").not.toBe("");
+    expect(binding).toMatch(/\*\*Bind a persona, if the designation named one\.\*\*/);
+    // One rule over one pair of fields, never two parallel procedures.
+    expect(binding).toMatch(/two fields, `name` and `docId`, read together/);
+    const readings = [
+      "**`name` is null.**",
+      "**`name` and `docId` are both set.**",
+      "**`name` is set and `docId` is null**",
+    ].map((label) => binding.indexOf(label));
+    expect(readings, "a reading is missing").not.toContain(-1);
+    expect([...readings].sort((left, right) => left - right)).toEqual(readings);
+    // And it is named as the ordinary one where it is read, not defended later.
+    expect(binding).toMatch(/Most designations name no\s+profile at all/);
+    expect(binding).toMatch(/\*\*general resident\*\*/);
+  });
+
+  /**
+   * The drill's third case, and the one a rewrite loses first: a payload names
+   * what resolved **when the designation was made** and nothing re-resolves it,
+   * so a profile removed afterwards arrives with both fields set and 404s on the
+   * read. Measured on the real server — `corpus doc show doc_gaefzfoh` on a
+   * removed agent-def is `404 not_found`, exit `5`, while the roster and
+   * `corpus thread show` already read `auditor (profile missing)`.
+   */
+  it("routes a payload whose document has gone into the missing reading", () => {
+    expect(binding).toMatch(
+      /\*\*Where that read comes back `404 not_found` at exit `5`, you\s+are in the reading below rather than this one\.\*\*/,
+    );
+    expect(binding).toMatch(/nothing re-resolves it afterwards/);
+    expect(binding).toMatch(/arrives looking present and is not/);
+    // Neither of the two wrong answers: a retry, or a report that the launch failed.
+    expect(binding).toMatch(/Do not retry the read, and do not report the\s+launch as broken/);
+    // And the reading it routes into admits both entrances.
+    expect(binding).toMatch(
+      /\*\*`name` is set and `docId` is null\*\*, or the read above found nothing/,
+    );
+  });
+
+  it("keeps 'no profile' and 'a profile that has gone' apart, with their costs", () => {
+    // Silence for the ordinary case…
+    expect(binding).toMatch(/Say nothing about it, here or in any later turn/);
+    expect(binding).toMatch(/an apology for working normally/);
+    // …and exactly one line for the one a person can act on.
+    expect(binding).toMatch(/\*\*Work anyway\*\*/);
+    expect(binding).toMatch(/say so\s+\*\*once\*\*, in your first reply, naming what was named/);
+    expect(binding).toMatch(
+      /\*\*The first and the last are not the same fact and must not be told alike\.\*\*/,
+    );
+    expect(binding).toMatch(/What separates them is `name` alone/);
+    // The pre-AGENT-033 sentence, which read as though a designation always
+    // named a profile and left the ordinary case with no instruction at all.
+    expect(converse, "the unconditional persona read is back").not.toMatch(
+      /The designation names an agent/,
+    );
+  });
+
+  it("resolves a hand-started listener's designation from the corpus", () => {
+    // `/converse th_…` run by an operator carries no payload, which is the one
+    // way to reach this step with nothing in hand.
+    expect(binding).toMatch(
+      /\*\*Started by hand there is no payload, and the corpus answers anyway\.\*\*/,
+    );
+    expect(binding).toMatch(/`corpus thread show`/);
+    for (const label of [
+      "`a general resident`",
+      "`researcher (doc_b7c1d5)`",
+      "`researcher (profile missing)`",
+    ]) {
+      expect(binding, `does not name ${label}`).toContain(label);
+    }
+    // And it is not the roster's trailing summary, which this skill forbids
+    // deciding from one step earlier.
+    expect(binding).toMatch(/a field of its own, and not the display text/);
+  });
+
+  it("says what a persona does not change, naming each thing it does not", () => {
+    expect(binding).toMatch(
+      /\*\*Nothing else about being resident turns on which reading you are in\.\*\*/,
+    );
+    const unchanged = binding.slice(binding.indexOf("Nothing else about being resident"));
+    for (const part of [
+      "lane you hold",
+      "order you work it in",
+      "how you settle it",
+      "park that makes you\n   present",
+      "stands one of two listeners down",
+      "retirement",
+      "resolved thread\n   ending the designation",
+    ]) {
+      expect(unchanged, `does not say ${part} is unchanged`).toContain(part);
+    }
+    expect(binding).toMatch(
+      /A persona changes how you answer; it\s+never changes what is yours to answer/,
+    );
+  });
+
+  it("forwards both fields at the launch and invents nothing for a null", () => {
+    expect(launch, "the launch bullet is missing").not.toBe("");
+    expect(launch).toMatch(/\*\*exactly as it came\*\* — both fields, whatever they hold/);
+    expect(launch).toMatch(/a subagent inherits\s+nothing and what you leave out of a prompt/);
+    // The null is the ordinary arrival, named on the wire as it really comes.
+    expect(launch).toContain('{"name":null,"docId":null}');
+    expect(launch).toMatch(/the nulls travel as nulls/);
+    expect(launch).toMatch(/\*\*Invent nothing to fill\s+them\.\*\*/);
+    // With the cost, which is what stops the placeholder coming back as a
+    // convenience: the listener goes looking for a document nobody wrote.
+    expect(launch).toMatch(/sends the listener looking\s+for a document nobody wrote/);
+    expect(launch).toMatch(/Where `name` is set it is a profile the designation was made/);
+  });
+
+  it("carries no resident on a launch the roster asked for, rather than inventing one", () => {
+    // The second launch trigger has no payload behind it at all, and the row's
+    // rendering is prose for a person — passing it on is the placeholder again.
+    const roster = orchestrate.slice(
+      orchestrate.indexOf("- **A lane with nobody on it gets one"),
+      orchestrate.indexOf("- **A row that does not read `live`"),
+    );
+    expect(roster, "the roster-launch bullet is missing").not.toBe("");
+    expect(roster).toMatch(
+      /\*\*A launch made from the roster carries no resident, and must not invent one\.\*\*/,
+    );
+    expect(roster).toMatch(/words written for a person to read/);
+    expect(roster).toMatch(/Give the launch the thread id and nothing else/);
+    // And what makes that safe rather than lossy: the listener reads its own
+    // designation, which is the step pinned above.
+    expect(roster).toMatch(/reads its own designation out of the corpus/);
+  });
+
+  it("works the ordinary designation in both skills, and says what a profiled one changes", () => {
+    // AGENT-019's shape: the example is what gets copied, so the example is the
+    // general resident and the profiled case is stated against it rather than
+    // the other way round.
+    const example = converse.slice(converse.indexOf("## Worked example"));
+    expect(example).toMatch(/A general resident is on `th_4b8e2c`/);
+    expect(example).toContain(
+      'th_4b8e2c "Q3 planning" · a general resident · waiting for a listener',
+    );
+    expect(example).toMatch(/there is no persona to read, because none was named/);
+    expect(example).toMatch(/\*\*Had the payload named one\*\*/);
+    expect(example).toMatch(/not one other line of this example would differ/);
+    // The launch example agrees: the same payload shape, the same roster words.
+    expect(launch).toContain(
+      'th_4b8e2c "Q3 planning" · a general resident · waiting for a listener',
+    );
+    expect(launch).toMatch(/launched a converse listener on th_4b8e2c — a general resident/);
+    expect(launch).toMatch(/Had that designation named `researcher`, three things would read/);
+    // No example may print a resident cell the CLI does not render. `renderLane`
+    // prints `residentLabel`, which is `a general resident` or `name (docId)` or
+    // `name (profile missing)` — never a bare profile name (`commands/resident.ts`).
+    for (const body of [converse, orchestrate]) {
+      for (const block of fencedBlocks(body).filter((fence) => fence.info === "bash")) {
+        for (const line of block.content.split("\n")) {
+          const row = /^\s*(th_\w+ "[^"]*") · ([^·]+) ·/.exec(line);
+          if (row === null) continue;
+          expect(row[2]?.trim(), `${row[1]}: a resident cell no CLI renders`).toMatch(
+            /^a general resident$|^\S+ \((?:doc_\w+|profile missing)\)$/,
+          );
+        }
+      }
+    }
+  });
+});
+
+/**
+ * AGENT-034. The skill that writes a subagent profile.
+ *
+ * Two things are pinned here and they are pinned for different reasons.
+ *
+ * **The mechanism**, which SERVER-123 moved into the server on 2026-08-17 and
+ * which this file therefore pins in its new position rather than its old one.
+ * Claude Code still loads a profile only when **both** `name` and `description`
+ * are present — measured against a real session: with neither, with `name`
+ * alone, and with `description` alone, the profile is absent from the subagent
+ * list. What changed is who supplies them. `corpus doc create --type agent-def`
+ * now derives `name` from the allocated filename (a caller-supplied one that
+ * disagrees is a `400`) and defaults `description` to the title, and `corpus
+ * doc check` reports either fault as a blocking `frontmatter-invalid` error. So
+ * the skill's second command is no longer the difference between a persona and
+ * a file — the server is — and the text is held to saying so: `--extra name=`
+ * is gone, the read-back is gone, and what remains is the description as a
+ * **quality** step over a title the server can copy but cannot improve on.
+ *
+ * **The worked example against the skill's own prose**, because AGENT-026 is
+ * the defect this repo has already shipped: an example contradicting the rule
+ * above it teaches the example. Each assertion below pairs one stated rule with
+ * the place the example obeys it, so a future edit to either half has to move
+ * both.
+ */
+describe("profile skill body", () => {
+  const body = documentAt("claude/skills/profile/SKILL.md").body;
+
+  /**
+   * The path the worked example's create printed, the title that produced it,
+   * and the address that follows from the two. Read off the path rather than
+   * off an `--extra name=`, because since SERVER-123 the name is the filename
+   * and the skill passes nothing: the title is the only input the example has.
+   *
+   * The title is read out of the **heredoc that builds it**, not off the flag,
+   * because the flag now carries `"$title"` — see *values a shell cannot read*
+   * below for why it has to.
+   */
+  const examplePath = /created doc_\w+ — (\.claude\/agents\/[a-z0-9-]+)\.md/.exec(body)?.[1];
+  const heredocValue = (variable: string): string | undefined =>
+    new RegExp(String.raw`^${variable}=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$`, "m").exec(body)?.[1];
+  const exampleTitle = heredocValue("title");
+  const exampleName = examplePath?.slice(".claude/agents/".length);
+
+  it("carries its sections, each of them substantial", () => {
+    const sections = new Map<string, string[]>();
+    let current: string | null = null;
+    for (const line of body.split("\n")) {
+      if (line.startsWith("## ")) {
+        current = line.slice(3).trim();
+        sections.set(current, []);
+      } else if (current !== null) {
+        sections.get(current)?.push(line);
+      }
+    }
+    expect(sections.size).toBe(7);
+    for (const [heading, lines] of sections) {
+      expect(lines.join("\n").trim().length, `section "${heading}" is thin`).toBeGreaterThan(400);
+    }
+  });
+
+  it("teaches the create as the whole profile and the description as the judgement", () => {
+    expect(body).toMatch(/corpus doc create --type agent-def --title/);
+    expect(body).toMatch(/--extra description="\$description"/);
+    // The reason the second command exists, stated as the consequence rather
+    // than as a step: this is what a reader skips if it reads as bookkeeping.
+    // Since SERVER-123 the consequence is a profile nobody picks, not one that
+    // cannot load, and the text must not go on claiming the older, larger one.
+    expect(body).toMatch(/the one field worth your judgement/);
+    expect(body).toMatch(/a quality step and not a repair/);
+    expect(body).toMatch(/a working profile\s+nobody has a reason to pick/);
+  });
+
+  it("passes no name, and says why the field is the server's", () => {
+    // The redundancy SERVER-123 created, shed rather than left harmless: a
+    // `name` that agrees is accepted and one that disagrees is a `400`, so the
+    // flag can only ever be noise or an error.
+    //
+    // Tightened from `--extra name=<value>` to the flag *named at all* (PR #49,
+    // review 4). The text used to explain the derivation by saying `--extra
+    // name=…` "is refused at exit **5**", in a paragraph about `corpus doc
+    // create` — which has no `--extra` flag: measured 2026-08-18, it is
+    // `unknown flag "--extra" for "create"` at exit **2**, with no request
+    // sent, and the flag list `corpus doc create --help` prints is `--type
+    // --title --folder --tags --due --evergreen --pinned --order --query
+    // --column --message --file --job`. Exit 5 is the *edit* path's answer, and
+    // whose answer it is has been under repair twice. So the skill states the
+    // durable half — the field is the server's, derived from the filename — and
+    // names no code for a refusal it cannot reach.
+    expect(body, "the skill names `--extra name` on the create path again").not.toMatch(
+      /--extra name/,
+    );
+    expect(body, "an exit code is attached to the name field again").not.toMatch(
+      /name[^\n]*refused at exit/,
+    );
+    expect(body).toMatch(/\*\*The name is not yours to set\.\*\*/);
+    expect(body).toMatch(/from the filename\s+it just allocated/);
+    expect(body).toMatch(/this create takes no flag that names it/);
+    // Both resolvers named, since the mismatch is only comprehensible as two of
+    // them disagreeing.
+    expect(body).toMatch(/Corpus resolves `@<name>` from the file's path/);
+    expect(body).toMatch(/Claude\s+Code\s+resolves it from this field/);
+    expect(body).toMatch(/one\s+document two different addresses/);
+  });
+
+  /**
+   * PR #49, review 4. The read-back was dropped on the strength of two claims,
+   * and only one of them was ever true of the shipped server.
+   *
+   * - **The create cannot produce an incomplete profile** — still true, and now
+   *   true for a reason the agent can act on: `docs/create.ts`'s
+   *   `claudeCodeFields` derives `name` from the allocated filename and defaults
+   *   `description` to the title, and `corpus doc create` exposes no flag that
+   *   names either field, so the shape cannot be asked for. Measured 2026-08-18:
+   *   `--title "Bookkeeper"` alone writes `name: bookkeeper` and
+   *   `description: Bookkeeper`, and `corpus doc check` finds nothing.
+   * - **"the write path refuses to save one"** — false since `write.ts`'s
+   *   `isClaudeCodeRequirement` ("reported, never refused"), which is the whole
+   *   of the SERVER-123 regression fix: blocking the save made every
+   *   hand-authored profile uneditable, unarchivable and unrepairable. Measured
+   *   on the same workspace, against a hand-written `.claude/agents/` file
+   *   carrying `name` and no `description`: a body edit, an `--add-tag`, an
+   *   archive and an unarchive all exit **0**, and `--json` reports
+   *   `"warnings":[]` — nothing on the wire at all. `corpus doc check` reports
+   *   the same file as an error and exits **6**.
+   *
+   * So the asymmetry is pinned in both directions, because the false half is
+   * exactly the half an agent generalises from when it edits a profile rather
+   * than creating one: the guarantee is the create's, a write to an existing
+   * profile promises nothing, and `doc check` is the surface.
+   */
+  it("names doc check as the check, and keeps the pass no check can make", () => {
+    // The read-back existed because nothing else looked. Something else looks
+    // now, so keeping it would teach ceremony — and teaching the agent to
+    // verify what the server guarantees is how a skill stops being read.
+    expect(body, "the read-back survived the mechanism that replaced it").not.toMatch(
+      /corpus doc show doc_\w+ --json \| jq/,
+    );
+    expect(body).toMatch(/\*\*There is nothing to read back\.\*\*/);
+    expect(body).toMatch(/neither is something\s+this create lets you pass/);
+    expect(body).toMatch(/What reports a profile Claude Code cannot load/);
+    expect(body).toMatch(/is `corpus doc check`/);
+    // The refusal that never was. A save reports and proceeds; a skill saying
+    // otherwise teaches the agent to trust exit 0 as a load check.
+    expect(body, "the skill claims a refusal the write path does not make").not.toMatch(
+      /write path refuses/,
+    );
+    expect(body).toMatch(/belongs to the create and stops there/);
+    expect(body).toMatch(/a write\s+to that file succeeds and tells you nothing/);
+    expect(body).toMatch(/never read a write's success as evidence that anything loads/);
+    // What the server cannot check is the whole reason this skill exists.
+    expect(body).toMatch(/whether the body says anything worth\s+following; that pass is yours/);
+  });
+
+  it("keeps writing a profile separate from putting it to work", () => {
+    expect(body).toMatch(/\*\*Writing a profile and putting it to work are two acts/);
+    expect(body).toMatch(/user-only/);
+    // The skill hands the designation over; it never runs one itself, which is
+    // checkable: an agent-authored designation is the shape that would be wrong.
+    for (const line of body.match(/[^\n]*corpus thread designate[^\n]*/g) ?? []) {
+      expect(line, "the skill designates instead of handing it over").not.toContain("--from agent");
+    }
+    // A resident needs no profile at all (SPEC.md §7, rider 2026-08-17), which
+    // is the answer when the request is really about staffing a conversation.
+    expect(body).toMatch(/a resident \*\*need not have a profile at all\*\*/);
+  });
+
+  it("refuses a taken name rather than inventing a free one", () => {
+    expect(body).toMatch(/already taken in \.claude\/agents/);
+    expect(body).toMatch(/exit \*\*5\*\*/);
+    expect(body).toMatch(/a second persona at an address the person will never type/);
+    // Revising the existing one is a different request, not a fallback.
+    expect(body).toMatch(/\*\*Revising it is a different request and needs\s+their yes\*\*/);
+    expect(body).toMatch(/never edit a profile you\s+did not just create/);
+  });
+
+  it("states what makes a persona worth having, in behavioural terms", () => {
+    expect(body).toMatch(/A profile that changes nothing is decoration/);
+    expect(body).toMatch(/name two things this\s+agent would do differently/);
+    expect(body).toMatch(/\*\*Write behaviour, not biography\.\*\*/);
+    expect(body).toMatch(/The refusals are half the profile/);
+    expect(body).toMatch(/Say what a finished answer looks like/);
+    expect(body).toMatch(/Short enough to stay true/);
+    expect(body).toMatch(/It inherits; it does not restate/);
+    // The description has a different reader from the body — the rule that
+    // makes a persona findable rather than merely correct.
+    expect(body).toMatch(/only part\s+of the file another agent sees before dispatching/);
+  });
+
+  it("gathers in one turn where it gathers at all, and refuses a blank request", () => {
+    expect(body).toMatch(/ask, and ask \*\*once\*\*/);
+    expect(body).toMatch(/Three questions is the whole budget/);
+    expect(body).toMatch(/Where the request already carries all three, write the profile/);
+    expect(body).toMatch(/is not thin, it is blank/);
+  });
+
+  /**
+   * The AGENT-026 pins: each one reads a rule out of the prose and the matching
+   * decision out of the worked example. They fail on a change to either half.
+   */
+  it("works an example whose title produces the address the rule promises", () => {
+    expect(body).toMatch(/One word where you can, hyphenated\s+where you must, never a phrase/);
+    expect(body).toMatch(/the title you pass decides that filename/);
+    expect(examplePath, "the example's create prints no path").toBeDefined();
+    expect(exampleTitle, "the example's create passes no title").toBeDefined();
+    // The chain the skill now teaches, end to end on the one place a reader
+    // will copy from: title → slugged filename → the `@name` the reply offers.
+    // It replaces the old `--extra name=` pin, which pinned a flag that is now
+    // redundant at best and a `400` at worst.
+    const slugged = (exampleTitle ?? "").toLowerCase().replaceAll(/\s+/g, "-");
+    expect(`.claude/agents/${slugged}`).toBe(examplePath);
+    expect(exampleName, "the worked name is not the one word the rule asks for").not.toContain("-");
+  });
+
+  it("works an example description written as when to reach for the agent", () => {
+    expect(body).toMatch(/write it as \*when to reach for this\s+one\*/);
+    const worked = body.slice(body.indexOf("## Worked example"));
+    const description = /^description=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$/m.exec(worked)?.[1];
+    expect(description, "the worked example builds no description").toBeDefined();
+    expect(description).toMatch(/^Reach for this when /);
+  });
+
+  /**
+   * PR #49, third review. Both of this skill's writes carried person-authored
+   * words in a shell-quoted flag argument, and the two quoting styles fail on
+   * different characters — measured against a real workspace, 2026-08-17:
+   *
+   * - `--title "Kitchen quote $18,400"` created
+   *   `data/docs/inbox/kitchen-quote-400.md` with `title: Kitchen quote ,400`,
+   *   exit 0, committed. `$18` is a positional parameter and it is empty. This
+   *   is AGENT-035, and it is **silent**.
+   * - `--extra note='it's fine'` never runs (`unexpected EOF while looking for
+   *   matching '`); with an even number of apostrophes it runs and the CLI
+   *   refuses the fragments (`unexpected argument "fine,"`). This one is
+   *   **loud** — and that is exactly why it matters, because the obvious repair
+   *   for a broken single quote is a double quote, which is the silent hole
+   *   above. The skill states the pair as a pair for that reason.
+   *
+   * The CLI offers no way out: `-m`, `--file` and stdin feed the **body** alone,
+   * so there is no `--title-file` and no stdin form for `--extra` (checked
+   * against `corpus doc edit --help`, 2026-08-17). The fix is therefore the
+   * shell idiom the body already uses, lifted onto the short arguments: a
+   * `<<'EOF'` heredoc into a variable, and the variable passed in double quotes.
+   * Nothing is expanded on either leg, so the rule needs no list of dangerous
+   * characters.
+   *
+   * Pinned in the tightening direction, because the previous drill proved the
+   * **example** is what gets copied: the raw quoted forms must be gone from the
+   * file, the safe form must be what both writes spell, and the worked
+   * description must actually contain an apostrophe — an example that avoids
+   * the character the rule exists for demonstrates nothing.
+   */
+  it("routes every word a person reads through a heredoc, not a quoted argument", () => {
+    expect(body).toMatch(/\*\*Every word a person will read goes in through a heredoc/);
+    // The two failures named concretely, because a rule whose cost is abstract
+    // is the rule an agent under load re-derives from habit instead.
+    expect(body).toMatch(/\$18,400/);
+    expect(body).toMatch(/positional parameter/);
+    // Stated as a pair: the loud failure's repair is the silent failure. A text
+    // that names only one of them teaches the agent to swap one for the other.
+    expect(body).toMatch(/\*\*Neither quote saves you/);
+    expect(body).toMatch(/the repair for one is the hole\s+in the other/);
+    expect(body).toMatch(/unexpected EOF while looking for matching/);
+    // Why the form is total: the reader carries no character list.
+    expect(body).toMatch(/Nothing inside a `<<'EOF'` heredoc is expanded/);
+    expect(body).toMatch(/no list of characters to keep in your\s+head/);
+
+    // Negative pins, over the **invocations** rather than the whole body: the
+    // prose above names both broken forms on purpose, and a pin that could not
+    // tell an invocation from the sentence explaining it would forbid the
+    // explanation.
+    const commandLines = body.split("\n").filter((line) => line.trimStart().startsWith("corpus "));
+    expect(commandLines.length, "the skill invokes nothing").toBeGreaterThan(0);
+    for (const line of commandLines) {
+      expect(line, "a literal double-quoted --title is back").not.toMatch(/--title "(?!\$)/);
+      expect(line, "an --extra value is single-quoted again").not.toMatch(/--extra [a-z-]+='/);
+    }
+
+    // And the safe form is what both writes spell, in both places they appear.
+    const creates = commandLines.filter((line) =>
+      line.includes("corpus doc create --type agent-def"),
+    );
+    expect(creates.length, "the skill no longer writes a create").toBeGreaterThanOrEqual(2);
+    for (const line of creates) expect(line).toContain('--title "$title"');
+    const descriptionEdits = commandLines.filter((line) => line.includes("--extra description"));
+    expect(
+      descriptionEdits.length,
+      "the skill no longer sets a description",
+    ).toBeGreaterThanOrEqual(2);
+    for (const line of descriptionEdits) {
+      expect(line).toContain('--extra description="$description"');
+    }
+    // Every value the skill passes by name is built by a quoted heredoc first.
+    for (const variable of ["title", "description"]) {
+      expect(heredocValue(variable), `${variable} is passed but never built`).toBeDefined();
+    }
+    // The example carries the character the rule exists for; otherwise the
+    // pattern that gets copied is the one that has never been exercised.
+    const worked = body.slice(body.indexOf("## Worked example"));
+    const description = /^description=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$/m.exec(worked)?.[1];
+    expect(description, "the worked description carries no apostrophe").toMatch(/\w'\w/);
+  });
+
+  it("works an example persona that obeys the body rules above it", () => {
+    // Scoped to the worked example: *Writing it* runs the same agent through a
+    // skeleton whose body is a stand-in, and holding that stand-in to the
+    // persona rules would be checking the wrong text.
+    const worked = body.slice(body.indexOf("## Worked example"));
+    expect(worked, "no worked-example section").not.toBe("");
+    const profileBody =
+      /--type agent-def --title "[^"]+" --from agent <<'EOF'\n([\s\S]*?)\nEOF/.exec(worked)?.[1];
+    expect(profileBody, "no worked persona body").toBeDefined();
+    const written = (profileBody ?? "").split("\n").filter((line) => line.trim() !== "");
+    // "Short enough to stay true", checked rather than asserted in prose.
+    expect(written.length, "the worked persona is longer than the rule allows").toBeLessThanOrEqual(
+      12,
+    );
+    // "The refusals are half the profile."
+    expect(profileBody).toMatch(/\bNever\b|\bdo not\b/);
+    // "Say what a finished answer looks like."
+    expect(profileBody).toMatch(/A good answer from you is/);
+    // "It inherits; it does not restate" — the worked persona repeats none of
+    // the workspace's own doctrine, which is the rule most easily broken by
+    // somebody making the example look thorough.
+    expect(profileBody).not.toMatch(/corpus |archive|--from agent/i);
+  });
+
+  it("reports the four things a person needs, and its example reports them", () => {
+    expect(body).toMatch(/\*\*what you created, where it lives, what it does, and how to reach it/);
+    const reply = /corpus thread reply [^\n]*<<'EOF'\n([\s\S]*?)\nEOF/.exec(body)?.[1] ?? "";
+    expect(reply, "no worked reply").not.toBe("");
+    expect(reply, "the reply names no sigil").toContain(`@${exampleName ?? ""}`);
+    expect(reply, "the reply names no path").toContain(`${examplePath ?? ""}.md`);
+    expect(reply, "the reply hands over no designation").toContain("corpus thread designate");
+    // The skill tells the agent to say what it guessed; the example does.
+    expect(body).toMatch(/every assumption you made instead of asking/i);
+    expect(reply).toMatch(/One guess in there/);
+  });
+});
+
+/**
  * AGENT-032 — the class rather than the instance.
  *
  * Four review findings in three passes have come from one rule written into two
@@ -3836,13 +4409,14 @@ describe("converse skill body", () => {
  * decision is made once and recorded, which is the part that was missing.
  */
 describe("one rule, one skill", () => {
-  const SKILLS = ["orchestrate", "converse", "comment"] as const;
+  const SKILLS = ["orchestrate", "converse", "comment", "profile"] as const;
   type SkillName = (typeof SKILLS)[number];
 
   const skillBody: Record<SkillName, string> = {
     orchestrate: documentAt("claude/skills/orchestrate/SKILL.md").body,
     converse: documentAt("claude/skills/converse/SKILL.md").body,
     comment: documentAt("claude/skills/comment/SKILL.md").body,
+    profile: documentAt("claude/skills/profile/SKILL.md").body,
   };
 
   /** Prose paragraphs of a skill body: fenced blocks dropped, wrapped lines rejoined. */
@@ -4023,6 +4597,9 @@ describe("one rule, one skill", () => {
     ["orchestrate", "converse"],
     ["orchestrate", "comment"],
     ["converse", "comment"],
+    ["orchestrate", "profile"],
+    ["converse", "profile"],
+    ["comment", "profile"],
   ];
 
   it("records nothing that records nothing", () => {
@@ -4132,6 +4709,82 @@ describe("one rule, one skill", () => {
       // only to the prohibition, which is what a rule's non-consumers owe it.
       pointers: [{ skill: "converse", carries: /do not restate the table here/ }],
     },
+    {
+      // AGENT-034. The procedure has exactly two moving parts, and both are
+      // vocabulary rather than phrasing, which is what makes them detectable at
+      // all: the **flag** that creates the document, and the **pair of fields**
+      // Claude Code reads. Both halves are still registered after SERVER-123
+      // moved the second into the server, for two different reasons. The flag
+      // is the procedure. The pair of fields is no longer something a skill has
+      // to *do*, but it is still something a skill can wrongly explain — a
+      // second account of what Claude Code requires would drift from this one
+      // the next time the server changes underneath it, which is exactly what
+      // happened to this skill — so it stays single-owner.
+      //
+      // `--type agent-def` is deliberately the flag and not the frontmatter
+      // `type: agent-def`: the *fact* that a persona is a `type: agent-def`
+      // document is exactly what `orchestrate` is allowed to keep, and pinning
+      // the fact would forbid the sentence the issue asked to preserve. So the
+      // hyphens carry the whole distinction between fact and procedure here.
+      //
+      // Net, not proof, in the same sense as the rule above: a restatement that
+      // names neither the flag nor both fields — *"create the document, then
+      // set the two fields Claude Code reads"* — passes, and the test below
+      // says so out loud rather than letting the omission become invisible.
+      rule: "how a persona profile is written",
+      owner: "profile",
+      restatements: (body) => [
+        ...(body.match(/[^\n]*--type\s+agent-def[^\n]*/g) ?? []),
+        ...proseSentences(body).filter(
+          (sentence) =>
+            /agent-def|persona|profile/i.test(sentence) &&
+            /`name`[^.]{0,140}`description`|`description`[^.]{0,140}`name`/.test(sentence),
+        ),
+      ],
+      pointers: [
+        {
+          skill: "orchestrate",
+          carries:
+            /\*\*What a persona has to carry, and how one is written, is the profile skill's to state, and\s+it is stated there alone\.\*\*/,
+        },
+      ],
+    },
+    {
+      // AGENT-033. A designation may name no profile, and what the listener
+      // does about that — read the document, or work as this workspace's
+      // ordinary agent and say nothing, or work anyway and say the profile is
+      // gone — is one rule, executed by the resident. `orchestrate` needs
+      // exactly one thing out of it: that both fields travel as they came. A
+      // second account of the binding there is the AGENT-029 shape again, and
+      // this one has a live way to go wrong — the two skills disagreeing about
+      // whether a general resident is worth a line in the first reply.
+      //
+      // The detector wants a sentence that names one of the three states **and**
+      // prescribes what to do in it; naming a state alone is a fact any skill
+      // may state, which is why `profile` (*"a designation that names none gets
+      // a general resident"*) is not reported. Net, not proof, in the same sense
+      // as the two rules above: a prescription that avoids the vocabulary
+      // altogether passes, and the test below says which one.
+      rule: "what a listener does with the profile it was designated with",
+      owner: "converse",
+      restatements: (body) =>
+        proseSentences(body).filter(
+          (sentence) =>
+            /general resident|profile missing|named no profile|no profile (?:at all|was named)/i.test(
+              sentence,
+            ) &&
+            /\bwork anyway\b|works? as it describes|says? (?:so|nothing)\b|first reply|reads? (?:it|that document)\b/i.test(
+              sentence,
+            ),
+        ),
+      pointers: [
+        {
+          skill: "orchestrate",
+          carries:
+            /\*\*What a listener does with either — a persona to\s+read, or none — is the converse skill's to state, and it is stated there alone\.\*\*/,
+        },
+      ],
+    },
   ];
 
   it("keeps every registered rule in the one skill that owns it", () => {
@@ -4198,6 +4851,61 @@ describe("one rule, one skill", () => {
     }
     expect(
       standDown?.restatements("the id it expected to claim comes back held by another caller") ?? [
+        "unchecked",
+      ],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("catches both halves of the profile procedure, and says which paraphrase it misses", () => {
+    // The same claim as the docblock, executable. The flag and the field pair
+    // are each enough on their own to report a restatement, because a skill
+    // that teaches only one of them teaches a broken profile — and the prose
+    // form that names neither is admitted as the gap it is.
+    const writing = SINGLE_OWNER_RULES.find(({ rule }) => rule.startsWith("how a persona"));
+    expect(writing, "profile writing is no longer registered").toBeDefined();
+    const caught = [
+      '```bash\ncorpus doc create --type agent-def --title "Archivist" --from agent\n```',
+      "A persona needs both `name` and `description` in its frontmatter, or nothing loads it.",
+      "Without a `description` beside the `name`, the agent-def is invisible to a dispatch.",
+    ];
+    for (const sample of caught) {
+      expect(
+        writing?.restatements(sample) ?? [],
+        `a restatement of the profile procedure now evades the pin: "${sample}"`,
+      ).not.toEqual([]);
+    }
+    expect(
+      writing?.restatements(
+        "Create the persona document, then set the two fields Claude Code reads.",
+      ) ?? ["unchecked"],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("catches a second account of the binding, and says which paraphrase it misses", () => {
+    // AGENT-033. The failure this guards is not a copied paragraph: it is
+    // `orchestrate` acquiring its own opinion about whether a general resident
+    // is worth mentioning, which is what the two skills would drift into.
+    const binding = SINGLE_OWNER_RULES.find(({ rule }) =>
+      rule.startsWith("what a listener does with the profile"),
+    );
+    expect(binding, "the binding rule is no longer registered").toBeDefined();
+    const caught = [
+      "Where the payload names no profile the listener is a general resident and says nothing about it.",
+      "A general resident works as this workspace's ordinary agent does; a listener whose profile is missing says so in its first reply.",
+      "If the profile is missing, work anyway — the general resident is the ordinary case.",
+    ];
+    for (const sentence of caught) {
+      expect(
+        binding?.restatements(sentence) ?? [],
+        `a second account of the binding now evades the pin: "${sentence}"`,
+      ).not.toEqual([]);
+    }
+    // Naming a state without prescribing anything is a fact, not the rule —
+    // `profile` states exactly that shape and must not be reported for it.
+    expect(
+      binding?.restatements("A designation that names none gets a general resident.") ?? [
         "unchecked",
       ],
       "the pin now catches a paraphrase the docblock says it misses — correct the docblock",

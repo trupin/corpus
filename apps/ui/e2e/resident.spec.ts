@@ -1,0 +1,382 @@
+import { MISSING_PROFILE_NOTE } from "@corpus/kit";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./coverage";
+import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
+
+/**
+ * **Designating a resident from the board** — SPEC.md §7's rider (*"Naming none
+ * is the ordinary case and requires nothing to exist first"*) reached through
+ * §11's conversation menu, in a real browser.
+ *
+ * ## The reported defect, spelled as a test
+ *
+ * A person right-clicked a standalone thread in a **fresh workspace**, and the
+ * only resident item the menu carried was a disabled line reading *"no agent-def
+ * documents in this workspace"*. The feature v0.10.0 is named for could not be
+ * reached from the UI at all. The first test here is that workspace, and it ends
+ * with a resident on the board.
+ *
+ * ## Why it is worth a browser
+ *
+ * Two of the acceptance criteria are only true of one: `↵` on a focused menu
+ * item is a native button default that jsdom does not perform (UI-028 found
+ * exactly this, on this menu), and the badge that follows a designation is
+ * repainted by a `["agents"]` invalidation crossing a real query cache.
+ *
+ * ## What is real, and what is not
+ *
+ * Everything above `fetch`. The corpus is `stubCorpus`, which since UI-122 has a
+ * real handler for `POST`/`DELETE /api/threads/{id}/resident` — before that the
+ * route fell through to the `{}` fallback and every designation any spec had
+ * sent was answered by nothing at all (UI-116's trap). It models the three
+ * things the route decides: a body with no `name` designates a **general**
+ * resident, a name resolves against the workspace's `type: agent-def` documents,
+ * and a name that resolves to nothing is a `404`.
+ */
+
+const THREADS_VIEW: StubRow = {
+  id: "doc_view_threads",
+  type: "view",
+  title: "Conversations",
+  path: "data/docs/views/threads.md",
+  pinned: true,
+  order: 1,
+  query: { type: "thread" },
+};
+
+/** A standalone conversation: no parent, so §7 lets it designate. */
+const SOLO: StubRow = {
+  id: "th_solo",
+  type: "thread",
+  title: "Q3 planning",
+  path: "data/docs/threads/th_solo.md",
+  body: "## user · 2026-08-17T10:00:00Z\n\nWhere did the forecast land?\n",
+};
+
+/** The workspace's one profile, for the tests that want the refinement. */
+const PROFILE: StubRow = {
+  id: "doc_researcher",
+  type: "agent-def",
+  title: "researcher",
+  path: "data/docs/agents/researcher.md",
+};
+
+/**
+ * An agent-def as the `profile` skill writes one: a titled document under
+ * `.claude/agents/`, whose **stem** is what a designation of it resolves to
+ * (SERVER-122, CLI-050). `Bookkeeper` and `bookkeeper` name one document here.
+ */
+const CREATED_PROFILE: StubRow = {
+  id: "doc_bookkeeper",
+  type: "agent-def",
+  title: "Bookkeeper",
+  path: ".claude/agents/bookkeeper.md",
+};
+
+const CARD = '.thread-card[data-thread="th_solo"]';
+const BADGE = '[data-thread-panel="th_solo"] .t-resident';
+
+async function board(page: Page, rows: readonly StubRow[]): Promise<StubCorpus> {
+  const corpus = await stubCorpus(page, [THREADS_VIEW, SOLO, ...rows]);
+  await page.goto("/");
+  await page.locator(".board").waitFor();
+  await page.locator('.row[data-row-doc="th_solo"]').click();
+  await expect(page.locator(CARD)).toBeVisible();
+  return corpus;
+}
+
+async function openMenu(page: Page): Promise<void> {
+  await page.locator(CARD).click({ button: "right" });
+  await expect(page.getByRole("menu")).toBeVisible();
+}
+
+const posted = async (corpus: StubCorpus): Promise<readonly unknown[]> =>
+  (await corpus.of("POST", "/api/threads/th_solo/resident")).map((call) => call.body);
+
+test.describe("designating a resident", () => {
+  /**
+   * The user's exact reported case: a fresh workspace with no `agent-def`
+   * documents at all. Nothing here is skipped because the directory is empty —
+   * that is the point.
+   */
+  test("offers a resident in a workspace with no agent-defs, and designates one", async ({
+    page,
+  }) => {
+    const corpus = await board(page, []);
+    await openMenu(page);
+    const menu = page.getByRole("menu");
+
+    const offer = menu.locator('[data-act="resident-designate-general"]');
+    await expect(offer).toBeVisible();
+    await expect(offer).toContainText("Designate a resident");
+    await expect(offer).toBeEnabled();
+
+    // The absence of profiles is stated, and stated as news: a resident does not
+    // need one, so it cannot read as a misconfiguration.
+    const note = menu.locator('[data-act="resident-no-profiles"]');
+    await expect(note).toContainText("No profiles yet");
+    await expect(note).toContainText("a resident does not need one");
+    await expect(note).toBeDisabled();
+
+    await offer.click();
+
+    // Designated with no name at all — never a sentinel one (CONTRACT-061).
+    await expect.poll(async () => posted(corpus)).toEqual([{}]);
+    await expect(page.locator(".toast")).toContainText("has a resident, with no profile");
+
+    // The board follows, because designating invalidates `["agents"]`.
+    await expect(page.locator(BADGE)).toBeVisible();
+    await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "general");
+    await expect(page.locator(`${BADGE} .t-resident-kind`)).toHaveText("resident, no profile");
+    // Not a name, and not the conversation's own title standing in for one.
+    await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveCount(0);
+    await expect(page.locator(BADGE)).not.toContainText("Q3 planning");
+  });
+
+  /**
+   * SPEC.md §11: *"`esc` dismisses, arrows navigate, `↵` activates"*. The new
+   * item claims no key of its own and is reached like every other one — a real
+   * browser, because only a real browser performs a focused button's default.
+   */
+  test("designates a general resident from the keyboard alone", async ({ page }) => {
+    const corpus = await board(page, []);
+    await openMenu(page);
+    const menu = page.getByRole("menu");
+
+    // Collapse, Resolve, then the act itself.
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(menu.locator('[data-act="resident-designate-general"]')).toBeFocused();
+
+    await page.keyboard.press("Enter");
+
+    await expect(menu).toBeHidden();
+    await expect.poll(async () => posted(corpus)).toEqual([{}]);
+    await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "general");
+  });
+
+  test("offers the profiles alongside the general act once the workspace has any", async ({
+    page,
+  }) => {
+    const corpus = await board(page, [PROFILE]);
+    await openMenu(page);
+    const menu = page.getByRole("menu");
+
+    // The act leads; the profile refines it. Nothing says there are none.
+    await expect(menu.locator('[data-act="resident-designate-general"]')).toContainText(
+      "Designate a resident",
+    );
+    await expect(menu.locator('[data-act="resident-designate-doc_researcher"]')).toContainText(
+      "Designate researcher",
+    );
+    await expect(menu.locator('[data-act="resident-no-profiles"]')).toHaveCount(0);
+
+    await menu.locator('[data-act="resident-designate-doc_researcher"]').click();
+
+    await expect.poll(async () => posted(corpus)).toEqual([{ name: "researcher" }]);
+    await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "profiled");
+    await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("researcher");
+  });
+
+  /**
+   * The guard the PR #49 review measured, through the real menu.
+   *
+   * A designation resolves against an agent-def's stem *and* its title, and what
+   * comes back is the name it resolved to — `bookkeeper` for a file the
+   * `profile` skill wrote as `.claude/agents/bookkeeper.md` with the title
+   * `Bookkeeper`. The menu compared that resolved name against the **title**
+   * `GET /api/docs` carries, so the guard missed and the item came back offering
+   * to replace Bookkeeper with Bookkeeper: harmless on the wire — the server
+   * sees the state it already holds and re-announces — but an offer that does
+   * nothing is not an action, which is the rule the skip exists to keep.
+   */
+  test("does not re-offer the resident's own profile when its title and its file differ", async ({
+    page,
+  }) => {
+    await board(page, [CREATED_PROFILE, PROFILE]);
+    await openMenu(page);
+    await page.getByRole("menu").locator('[data-act="resident-designate-doc_bookkeeper"]').click();
+
+    // What came back is the **stem**, which is the whole reason a name
+    // comparison was not enough.
+    await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("bookkeeper");
+
+    await openMenu(page);
+    const menu = page.getByRole("menu");
+    await expect(menu.locator('[data-act="resident-release"]')).toContainText("Release bookkeeper");
+    await expect(menu.locator('[data-act="resident-designate-doc_bookkeeper"]')).toHaveCount(0);
+    // Every other profile is still a replacement — the skip is one row wide.
+    await expect(menu.locator('[data-act="resident-designate-doc_researcher"]')).toContainText(
+      "Replace with researcher",
+    );
+  });
+
+  /**
+   * **A designation whose profile has gone**, on the surface where the release
+   * is chosen — SPEC.md §7's *"the missing profile is reported rather than
+   * silently substituted"*.
+   *
+   * PR #49's second review found the report holding on the board badge, in the
+   * recipient picker and in `corpus agents`, and **not** on the conversation's
+   * own menu: a `profile-gone` lane offered `Release researcher`, byte-identical
+   * to what a healthy lane offers, on the one surface where a person acts on the
+   * fact.
+   *
+   * The lane is seeded rather than produced, because archiving an agent-def is
+   * something the workspace does between two page loads and not something this
+   * page can cause: `{name: "researcher", docId: null}` is exactly what
+   * `GET /api/agents` answers once the document behind a standing designation
+   * has been renamed or archived (CONTRACT-061).
+   *
+   * The workspace deliberately still holds a `researcher` agent-def — the
+   * recreated-under-a-new-document case — because it is the sharpest reading of
+   * the skip: the guard asks the **document** and `null` matches nothing, so the
+   * whole directory is re-offered. That is correct and wanted. Designating there
+   * is a write with a real effect, not the no-op the skip suppresses.
+   */
+  test("says on the menu that a resident's profile has gone", async ({ page }) => {
+    await stubCorpus(page, [THREADS_VIEW, SOLO, PROFILE], {
+      lanes: [
+        {
+          lane: "th_solo",
+          resident: { name: "researcher", docId: null },
+          live: false,
+          since: null,
+          summary: null,
+          origin: { id: "th_solo", title: "Q3 planning" },
+        },
+      ],
+    });
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="th_solo"]').click();
+    await expect(page.locator(CARD)).toBeVisible();
+
+    // The badge already reported it, and still does — the designation stands, so
+    // the resident is named by the profile it was designated with.
+    await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "profile-gone");
+    await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("researcher");
+    await expect(page.locator(`${BADGE} .t-resident-note`)).toHaveText(MISSING_PROFILE_NOTE);
+
+    await openMenu(page);
+    const menu = page.getByRole("menu");
+    const release = menu.locator('[data-act="resident-release"]');
+    // Named, because the designation is what is being released…
+    await expect(release).toContainText("Release researcher");
+    // …and now qualified, in the same words the badge above uses.
+    await expect(release).toContainText(MISSING_PROFILE_NOTE);
+    // The consequence is still said: the report is joined ahead of it, never in
+    // place of it.
+    await expect(release).toContainText("back to ordinary routing");
+
+    // Re-offered, and that is the point: nothing resolves this designation now.
+    await expect(menu.locator('[data-act="resident-designate-doc_researcher"]')).toContainText(
+      "Replace with researcher",
+    );
+  });
+
+  /**
+   * The composer's own reading of the same designation (SPEC.md §7 — *"the
+   * composer offers the live roster"*). A general lane is listed and pickable
+   * like any other; it is named by the conversation it owns, because a list of
+   * lanes has to tell them apart and it has no profile to be named by.
+   */
+  test("lists the general lane in the composer's recipient picker, and routes to it", async ({
+    page,
+  }) => {
+    const corpus = await board(page, []);
+    await openMenu(page);
+    await page.getByRole("menu").locator('[data-act="resident-designate-general"]').click();
+    await expect(page.locator(BADGE)).toBeVisible();
+
+    const picker = '[data-recipient-picker="th_solo"]';
+    // Two lanes now exist, which is when the control draws at all.
+    await expect(page.locator(`${picker} [data-recipient-lane]`)).toHaveCount(2);
+    const lane = page.locator(`${picker} [data-recipient-lane="th_solo"]`);
+    await expect(lane).toContainText("Q3 planning");
+    // Posting here goes to it without anybody saying so — §7's computed default.
+    await expect(lane).toHaveAttribute("data-recipient-default", "true");
+
+    await lane.click();
+    await page.locator('[data-composer="th_solo"]').fill("Pick up the forecast thread, please.");
+    await page.locator('[data-dropzone="th_solo"] .send').click();
+
+    await expect
+      .poll(async () =>
+        (await corpus.of("POST", "/api/threads/th_solo/turns")).map(
+          (call) => (call.body as { recipient?: string } | undefined)?.recipient,
+        ),
+      )
+      .toEqual(["th_solo"]);
+  });
+
+  /**
+   * SPEC.md §7: a resident is released by the person who designated it, and
+   * *"resolving the thread releases its resident with it"*. Neither is named
+   * after a profile it never had.
+   */
+  test("releases a general resident, and resolving takes the lane with it", async ({ page }) => {
+    const corpus = await board(page, []);
+    await openMenu(page);
+    await page.getByRole("menu").locator('[data-act="resident-designate-general"]').click();
+    await expect(page.locator(BADGE)).toBeVisible();
+
+    await openMenu(page);
+    const menu = page.getByRole("menu");
+    const release = menu.locator('[data-act="resident-release"]');
+    await expect(release).toContainText("Release the resident");
+    await expect(release).not.toContainText("Q3 planning");
+    // Already general, so designating one again is not offered: it would write
+    // nothing (SPEC.md §7 — designation is single-valued).
+    await expect(menu.locator('[data-act="resident-designate-general"]')).toHaveCount(0);
+
+    await release.click();
+    await expect
+      .poll(async () => (await corpus.of("DELETE", "/api/threads/th_solo/resident")).length)
+      .toBe(1);
+    await expect(page.locator(BADGE)).toHaveCount(0);
+
+    // Designate again, then resolve: the badge and the lane both go.
+    await openMenu(page);
+    await page.getByRole("menu").locator('[data-act="resident-designate-general"]').click();
+    await expect(page.locator(BADGE)).toBeVisible();
+
+    await page.locator(`${CARD} .t-resolve`).click();
+    await expect(page.locator(BADGE)).toHaveCount(0);
+  });
+
+  /**
+   * SPEC.md §7: *"a thread on a document is about that document, and a resident
+   * owns a conversation rather than a passage"*. A comment's menu offers exactly
+   * what it always offered — the general act is unconditional on the directory,
+   * never on the rule that says who may designate.
+   */
+  test("offers nothing of the kind on a thread that hangs off a document", async ({ page }) => {
+    await stubCorpus(page, [
+      THREADS_VIEW,
+      { id: "doc_note", type: "note", title: "The forecast", path: "data/docs/inbox/note.md" },
+      {
+        id: "th_on_doc",
+        type: "thread",
+        title: "on the forecast",
+        path: "data/docs/threads/th_on_doc.md",
+        parent: "doc_note",
+        body: "## user · 2026-08-17T10:00:00Z\n\nIs this the final figure?\n",
+      },
+    ]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="th_on_doc"]').click();
+
+    const card = '.thread-card[data-thread="th_on_doc"]';
+    await expect(page.locator(card)).toBeVisible();
+    await page.locator(card).click({ button: "right" });
+
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('[data-act="resolve"]')).toBeVisible();
+    await expect(menu.locator('[data-act="resident-designate-general"]')).toHaveCount(0);
+    await expect(menu.locator('[data-act="resident-no-profiles"]')).toHaveCount(0);
+  });
+});

@@ -91,13 +91,81 @@ describe("corpus thread designate", () => {
     expect(stub.requests).toHaveLength(1);
   });
 
-  it("refuses to send a designation that names nobody", async () => {
-    const stub = await startStubServer(jsonResponder(200, { thread: THREAD, warnings: [] }));
+  it("designates a general resident with no --agent, sending no body at all", async () => {
+    // SHARED-048: naming no profile is the ordinary case, and the contract
+    // spells absence as an absent body — so a bare designation must not invent
+    // `{}` , `{name: null}` or any other stand-in for it.
+    const general = { ...THREAD, resident: { name: null, docId: null } };
+    const stub = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
 
     const harness = stubContext(stub, { args: ARGS });
-    await expect(runThreadDesignate(harness.context)).rejects.toBeInstanceOf(UsageError);
+    await runThreadDesignate(harness.context);
 
-    expect(stub.requests).toEqual([]);
+    const [request] = stub.requests;
+    expect(request?.method).toBe("POST");
+    expect(request?.path).toBe("/api/threads/th_4b8e2c/resident");
+    expect(request?.body).toBe("");
+    expect(harness.stdout()).toBe("designated a general resident on th_4b8e2c\n");
+  });
+
+  it("reports a general designation differently from a profiled one", async () => {
+    // The acceptance criterion in one assertion: a reader of the printed line
+    // can tell "this conversation has an agent with no profile" from "this
+    // conversation has profile X".
+    const general = { ...THREAD, resident: { name: null, docId: null } };
+    const bare = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
+    const bareRun = stubContext(bare, { args: ARGS });
+    await runThreadDesignate(bareRun.context);
+
+    const named = await startStubServer(jsonResponder(200, { thread: THREAD, warnings: [] }));
+    const namedRun = stubContext(named, { args: ARGS, flags: { agent: "researcher" } });
+    await runThreadDesignate(namedRun.context);
+
+    expect(bareRun.stdout()).not.toBe(namedRun.stdout());
+    expect(bareRun.stdout()).not.toContain("researcher");
+    expect(namedRun.stdout()).toContain("researcher (doc_r1)");
+  });
+
+  it("reports a designated profile that has since gone, rather than a stale id", async () => {
+    // §7: a profile renamed or archived after designation does not end the
+    // designation, and the miss is reported rather than silently substituted.
+    const orphaned = { ...THREAD, resident: { name: "researcher", docId: null } };
+    const stub = await startStubServer(jsonResponder(200, { thread: orphaned, warnings: [] }));
+
+    const harness = stubContext(stub, { args: ARGS, flags: { agent: "researcher" } });
+    await runThreadDesignate(harness.context);
+
+    expect(harness.stdout()).toBe("designated researcher (profile missing) on th_4b8e2c\n");
+    expect(harness.stdout()).not.toContain("general");
+  });
+
+  it("emits the general resident's shape under --json without restating it", async () => {
+    const response = { thread: { ...THREAD, resident: { name: null, docId: null } }, warnings: [] };
+    const stub = await startStubServer(jsonResponder(200, response));
+
+    const harness = stubContext(stub, { args: ARGS, json: true });
+    await runThreadDesignate(harness.context);
+
+    // The envelope verbatim: the two nulls the contract publishes, not a word
+    // this CLI chose for them.
+    expect(harness.stdout()).toBe(`${JSON.stringify(response)}\n`);
+    expect(JSON.parse(harness.stdout())).toMatchObject({
+      thread: { resident: { name: null, docId: null } },
+    });
+  });
+
+  it("refuses a blank --agent rather than reading it as naming nobody", async () => {
+    // A dropped name is a mistake; asking for no profile is a decision. Reading
+    // the first as the second would designate something nobody asked for and
+    // report success.
+    for (const blank of ["", "   "]) {
+      const stub = await startStubServer(jsonResponder(200, { thread: THREAD, warnings: [] }));
+
+      const harness = stubContext(stub, { args: ARGS, flags: { agent: blank } });
+      await expect(runThreadDesignate(harness.context)).rejects.toBeInstanceOf(UsageError);
+
+      expect(stub.requests).toEqual([]);
+    }
   });
 
   it("renders the server's 403 verbatim instead of pre-refusing the agent", async () => {
@@ -160,6 +228,17 @@ describe("corpus thread designate", () => {
 
     expect(harness.stdout()).toBe("designated researcher on th_4b8e2c\n");
   });
+
+  it("falls back to what was asked for when nothing was named either", async () => {
+    const stub = await startStubServer((_request, response) => {
+      sendJson(response, 200, { thread: { ...THREAD, resident: null }, warnings: [] });
+    });
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadDesignate(harness.context);
+
+    expect(harness.stdout()).toBe("designated a general resident on th_4b8e2c\n");
+  });
 });
 
 describe("the designate command spec", () => {
@@ -169,11 +248,23 @@ describe("the designate command spec", () => {
     );
   });
 
-  it("takes one required thread id and requires --agent", () => {
+  it("takes one required thread id and one optional --agent", () => {
     expect(designateCommand.args).toEqual([
       { name: "id", required: true, description: "The standalone thread's id." },
     ]);
     expect(designateCommand.flags.map((flag) => flag.name)).toEqual(["agent"]);
+  });
+
+  it("says in one line when you would want each, and shows both", () => {
+    expect(designateCommand.flags[0]?.description).toContain("**Optional**");
+    expect(designateCommand.description).toContain(
+      "leave it out when the workspace's ordinary agent should own the conversation",
+    );
+    // Both forms are reachable from the examples, so the bare one is not a
+    // feature a reader has to deduce from the flag being optional.
+    expect(designateCommand.examples.map((example) => example.command)).toContain(
+      "corpus thread designate th_4b8e2c",
+    );
   });
 
   it("describes scope as a walk rather than as a guarantee about artifacts", () => {

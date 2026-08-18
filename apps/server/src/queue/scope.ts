@@ -38,13 +38,20 @@ import type { ScopeRootLookup } from "./lanes.js";
 /**
  * One left join answers for both kinds of node, because a thread *is* a document
  * (§6): `parent_id` is null for a document and for a standalone thread alike,
- * and `resident_name` is only ever set on a standalone thread, since the
+ * and `resident_designated` is only ever 1 on a standalone thread, since the
  * projection applies §7's standalone rule when it writes the column.
+ *
+ * **`resident_designated`, never `resident_name`** (SHARED-048, SERVER-121).
+ * Routing asks whether the conversation is designated; which profile it was
+ * designated with says *how* that agent works and nothing about what it owns, so
+ * a general residency — no profile, `resident_name` NULL — is a lane exactly as
+ * a profiled one is. The left join makes the column NULL for a plain document,
+ * which is why the comparison below is `=== 1` rather than a truthiness test.
  */
 const NODE_SQL = `
   SELECT threads.parent_id AS parentId,
          documents.origin AS origin,
-         threads.resident_name AS residentName
+         threads.resident_designated AS designated
   FROM documents
   LEFT JOIN threads ON threads.id = documents.id
   WHERE documents.id = ?`;
@@ -52,7 +59,7 @@ const NODE_SQL = `
 type NodeRow = {
   readonly parentId: string | null;
   readonly origin: string | null;
-  readonly residentName: string | null;
+  readonly designated: number | null;
 };
 
 /**
@@ -86,7 +93,7 @@ const projectionLookup =
   (id: string) => {
     const row = db.prepare(NODE_SQL).get(id) as NodeRow | undefined;
     if (row === undefined) return SCOPE_NODE_ABSENT;
-    return { parent: row.parentId, origin: row.origin, designated: row.residentName !== null };
+    return { parent: row.parentId, origin: row.origin, designated: row.designated === 1 };
   };
 
 /**
@@ -116,11 +123,18 @@ export function createLaneScopeLookup(db: ProjectionDb): ScopeRootLookup {
  * purpose — a thread that does not exist and a thread with no resident are both
  * "that is not a lane", and telling them apart would make the refusal an
  * existence oracle over the corpus.
+ *
+ * **Three things lean on this one predicate** — this function, the lane walk
+ * above, `assertRecipientResolvable`'s `422` and `assertScopeIsLane`'s refusal
+ * of a park — which is why it asks `resident_designated` and not
+ * `resident_name`: since SHARED-048 a designation may name no profile, and a
+ * predicate keyed on the profile would have made a general resident's lane
+ * unroutable, unaddressable and unparkable at once, silently.
  */
 export function isDesignatedRoot(db: ProjectionDb, id: string): boolean {
   const row = db
     .prepare(
-      "SELECT 1 AS ok FROM threads WHERE id = ? AND parent_id IS NULL AND resident_name IS NOT NULL",
+      "SELECT 1 AS ok FROM threads WHERE id = ? AND parent_id IS NULL AND resident_designated = 1",
     )
     .get(id) as { ok: number } | undefined;
   return row !== undefined;

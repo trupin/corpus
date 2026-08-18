@@ -192,9 +192,9 @@ says "This package never edits SPEC.md". The commit and its issue contradicted
 each other, and the orchestrator did not catch it when committing.
 
 **Surfaced to the user, who ratified the text as written**, including the
-`§9.4` citation in the `GET /api/agents` bullet. The reasoning for keeping it:
+`§9.2` citation in the `GET /api/agents` bullet. The reasoning for keeping it:
 the bullets describe routes SHARED-043's rider already signed, so nothing new is
-promised, and the §9.4 citation is one of twelve that `SHARED-046` will repoint
+promised, and the §9.2 citation is one of twelve that `SHARED-046` will repoint
 in a single signed pass rather than being patched here.
 
 The line above is now false about this issue and is left standing as the record

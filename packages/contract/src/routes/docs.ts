@@ -111,6 +111,55 @@ export const relatedDocs = createRoute({
   },
 });
 
+/**
+ * **The route description carries the short true version; the fields carry the
+ * grammar** (PR #49 review, MAJOR).
+ *
+ * It said flatly that "an omitted `folder` files the document in
+ * `data/docs/inbox/`" — a rule SERVER-122 had already given an exception, and
+ * the one exception in the product is the one a client author is most likely to
+ * hit: `POST /api/docs {"type":"agent-def"}` lands in `.claude/agents/`, where
+ * the file is loaded as a subagent definition, not in the inbox. CONTRACT-062
+ * fixed the *field* and left the sentence one level up — the first thing an
+ * OpenAPI consumer reads — stating the old rule with no exception.
+ *
+ * The fix is not to copy the field's grammar up here. A route description says
+ * what a caller must know before reading further and names where the rest is;
+ * `folder`'s and `title`'s descriptions say what each field accepts and why. So
+ * both exceptions appear here in one clause each, with the field named as the
+ * place to read them out.
+ *
+ * **Second review, same sentence** (CONTRACT-063 batch): the clause added above
+ * said "except for a type SPEC.md §7 gives a document root of its own" — the
+ * over-broad form the *field* had already been given a qualifier to avoid. §7
+ * gives `type: skill` a root of its own and a skill created with no folder still
+ * lands in the inbox (`rootForType` requires `projectionIndexesFolder`, false
+ * for a `SKILL.md`-only root; pinned by `apps/server/src/docs/write.test.ts`).
+ * The exceptions are therefore **named** here rather than characterised, and
+ * both of them are: `agent-def` and — the one no version of this sentence had
+ * mentioned — `thread`, which `allocatePath` files flat under `data/threads/`
+ * before `folder` is consulted at all. The test for any future edit is to read
+ * the sentence against all five entries of `DOCUMENT_ROOTS`.
+ *
+ * **Third review, same sentence** (PR #49): the thread clause read "whatever
+ * `folder` names", which is false for a `folder` that never gets as far as
+ * `allocatePath`. `createDocument` calls `resolveFolder(input.folder, input.type)`
+ * *first* (`apps/server/src/docs/create.ts`), and it refuses on `type` alone —
+ * `{"type":"thread","folder":".claude/agents"}` is a `400` from `admitRoot`,
+ * not a thread filed under `data/threads/`. So the clause now says what the
+ * *field* has said since CONTRACT-063: a thread's `folder` is checked like
+ * anyone else's and only its *effect* is dropped.
+ *
+ * That is the lesson the first two passes both missed. Reading a sentence
+ * against `DOCUMENT_ROOTS` asks only *where a document lands*; every version so
+ * far was true of every root and still false of the inputs that never reach one.
+ * The check is therefore two-pass: for each root, where does a document land —
+ * and for each way `resolveFolder` can throw (an absolute path, a traversal, an
+ * unindexed folder, a root that holds another type, a root that takes no
+ * ordinary `*.md`), does the sentence still hold. Then read this sentence and
+ * `CREATE_FOLDER_DESCRIPTION` side by side: they must make the same claim about
+ * every input, refusals included.
+ */
 export const createDoc = createRoute({
   method: "post",
   path: "/api/docs",
@@ -119,7 +168,19 @@ export const createDoc = createRoute({
   description:
     "The body is pre-filled from the type's `template` document when one exists and no body is given " +
     "(SPEC.md §9.2). The server assigns the id; it is immutable thereafter. Creation is inbox-first: " +
-    "an omitted `folder` files the document in `data/docs/inbox/`.",
+    "an omitted `folder` files the document in `data/docs/inbox/` — **except for a type whose own " +
+    "document root takes ordinary markdown documents**, which is where an omitted `folder` files it " +
+    "instead. There are two: a `type: agent-def` document lands in `.claude/agents/` (SPEC.md §7) " +
+    "and not in the inbox, and a `type: thread` document is flat at `data/threads/<id>.md`, " +
+    "named by its id (SPEC.md §4) — a `folder` sent with a thread is still checked by the same " +
+    "rules as any other create, so one that fails them is still a `400`, and one that passes " +
+    "never changes where the thread lands. `type: skill` is **not** one of them, though §7 gives it " +
+    "a root too: `.claude/skills` indexes `SKILL.md` files alone, so a skill created here with no " +
+    "folder still lands in the inbox. See `folder` for " +
+    "that grammar in full, including which roots a request may name outright. A create can also be " +
+    "refused on its `title`: in a root where a document's filename is the name it answers to, a " +
+    "name already taken is a `400` rather than the deduped filename a title collision gets under " +
+    "`data/docs/`.",
   request: {
     headers: ActorHeaderSchema,
     body: {

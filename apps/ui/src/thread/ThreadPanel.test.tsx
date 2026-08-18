@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import type { AgentLane, DocRow } from "@corpus/contract";
-import { resetSeenMarks } from "@corpus/kit";
+import { GENERAL_RESIDENT_LABEL, MISSING_PROFILE_NOTE, resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createRef, useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarginColumn } from "../anchors/AnchoredThreads.js";
@@ -447,6 +448,172 @@ describe("designating a resident", () => {
     [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((item) =>
       item.getAttribute("data-act"),
     );
+
+  /**
+   * The defect UI-122 fixes, end to end through the real menu: a fresh
+   * workspace, an empty agent-def directory, and one gesture from right-click to
+   * a resident on the board.
+   */
+  it("designates a resident in a workspace that defines no agent-defs", async () => {
+    const transport = readerTransport({
+      lanes: [],
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      // The directory answers, and answers empty — the reported case exactly.
+      rows: { "?limit=50&type=agent-def": [] },
+    });
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    openMenu();
+    // The absence of profiles is said, and said as news rather than as a fault
+    // — waited on, because it may only be said once the directory has answered.
+    await waitFor(() => {
+      expect(
+        document.querySelector<HTMLElement>('[data-act="resident-no-profiles"]')?.textContent,
+      ).toContain("a resident does not need one");
+    });
+    const item = document.querySelector<HTMLButtonElement>(
+      '[data-act="resident-designate-general"]',
+    );
+    expect(item?.textContent).toContain("Designate a resident");
+    expect(item?.disabled).toBe(false);
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-act="resident-no-profiles"]')?.disabled,
+    ).toBe(true);
+
+    fireEvent.click(item as HTMLElement);
+    await waitFor(() => {
+      expect(
+        transport.calls.some(
+          (call) => call.method === "POST" && call.path === "/api/threads/th_solo/resident",
+        ),
+      ).toBe(true);
+    });
+    // No name at all — never a sentinel one (CONTRACT-061).
+    const write = transport.calls.find((call) => call.path === "/api/threads/th_solo/resident");
+    expect(write?.body).toEqual({});
+
+    // …and the board shows the resident it now has, as a role and not a name.
+    await waitFor(() => {
+      expect(
+        panel("th_solo")?.querySelector<HTMLElement>(".t-resident")?.dataset["residentKind"],
+      ).toBe("general");
+    });
+    expect(panel("th_solo")?.querySelector(".t-resident-kind")?.textContent).toBe(
+      GENERAL_RESIDENT_LABEL,
+    );
+  });
+
+  /**
+   * The keyboard has to reach the new item like any other: §11's menu contract
+   * is unchanged, and a designation offered only to a pointer would be the same
+   * unreachability in a different disguise.
+   */
+  it("designates a general resident from the keyboard", async () => {
+    const transport = readerTransport({
+      lanes: [],
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      rows: { "?limit=50&type=agent-def": [] },
+    });
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(acts()).toContain("resident-designate-general");
+    });
+    const item = document.querySelector<HTMLElement>('[data-act="resident-designate-general"]');
+    item?.focus();
+    expect(document.activeElement).toBe(item);
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(
+        transport.calls.some(
+          (call) => call.method === "POST" && call.path === "/api/threads/th_solo/resident",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("releases a general resident without naming a profile it does not have", async () => {
+    const transport = standaloneWire([
+      {
+        lane: "th_solo",
+        resident: { name: null, docId: null },
+        live: false,
+        since: null,
+        summary: null,
+        origin: { id: "th_solo", title: "Q3 planning" },
+      },
+    ]);
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(acts()).toContain("resident-release");
+    });
+    const label =
+      document.querySelector<HTMLElement>('[data-act="resident-release"]')?.textContent ?? "";
+    expect(label).toContain("Release the resident");
+    expect(label).not.toContain("Q3 planning");
+    // Already general, so it is not re-offered — a write that changes nothing.
+    expect(acts()).not.toContain("resident-designate-general");
+
+    fireEvent.click(document.querySelector('[data-act="resident-release"]') as HTMLElement);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident")).toBeNull();
+    });
+  });
+
+  /**
+   * §7's *"the missing profile is reported rather than silently substituted"*,
+   * on the menu — through the real roster read, the real `laneRow`, and the real
+   * context menu. The lane is designated `researcher` and the roster answers
+   * `docId: null`, which is what a renamed or archived agent-def looks like on
+   * the wire (CONTRACT-061).
+   *
+   * Two things are asserted together because the review found them together: the
+   * release still **names** the standing designation, and the item now says why
+   * it is worth a second look. Before this the item was byte-identical to the
+   * healthy lane's a few tests down.
+   */
+  it("says on the menu that a resident's profile has gone", async () => {
+    const transport = standaloneWire([
+      {
+        lane: "th_solo",
+        resident: { name: "researcher", docId: null },
+        live: false,
+        since: null,
+        summary: null,
+        origin: { id: "th_solo", title: "Q3 planning" },
+      },
+    ]);
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident")).not.toBeNull();
+    });
+
+    openMenu();
+    // The whole directory is re-offered, including the row this designation was
+    // made against: nothing resolves it any more, so designating is a write with
+    // a real effect rather than the no-op the skip suppresses. Waited on rather
+    // than read once, because it arrives with the agent-def read.
+    await waitFor(() => {
+      expect(acts()).toContain("resident-designate-doc_agentdef");
+    });
+    const release =
+      document.querySelector<HTMLElement>('[data-act="resident-release"]')?.textContent ?? "";
+    expect(release).toContain("Release researcher");
+    expect(release).toContain(MISSING_PROFILE_NOTE);
+  });
 
   it("offers the workspace's agents, and designates the one chosen", async () => {
     const transport = standaloneWire();

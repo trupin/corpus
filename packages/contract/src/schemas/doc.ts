@@ -42,14 +42,143 @@ export const DocStatusSchema = z.enum(DOC_STATUSES).openapi({
 /**
  * Folder placement under `data/docs/`. Creation is inbox-first (SPEC.md §11
  * "zero-form, inbox-first"), so an omitted folder lands the document in
- * `data/docs/inbox/` rather than at the root.
+ * `data/docs/inbox/` rather than at the root — unless the type being created has
+ * a root of its own that it can actually land in, which
+ * {@link CREATE_FOLDER_DESCRIPTION} spells out.
+ *
+ * "Has a root of its own" is not the same as "lands there", and the difference
+ * is the whole reason this qualifier keeps having to be re-added (PR #49 review,
+ * three times in one phase). Two types do not land here, and they are decided
+ * by two different functions — naming only one of them is how this comment came
+ * to be wrong about the other.
+ *
+ * `rootForType` (`apps/server/src/docs/write.ts`) yields exactly **one**:
+ * `agent-def` → `.claude/agents/` (SPEC.md §7). `thread` is not in it at all —
+ * `NAMEABLE_ROOTS` drops every root whose path starts with `data/`, so
+ * `rootForType("thread")` is `null` and `resolveFolder` answers
+ * `data/docs/inbox` for a thread exactly as for a note. The thread exception is
+ * `allocatePath` (`apps/server/src/docs/create.ts`), which returns
+ * `data/threads/<id>.md` (SPEC.md §4) *after* the folder has been resolved and
+ * without consulting it. So a `folder` sent with a thread is checked exactly as
+ * any other create's is — one that fails is still a `400` — and one that passes
+ * is then ignored.
+ *
+ * `skill` is **not** an exception, though §7 gives it `.claude/skills`: that
+ * root indexes `SKILL.md` files alone, so `projectionIndexesFolder` is false for
+ * it, `rootForType("skill")` is `null`, and a skill created with no folder lands
+ * here in the inbox like anything else.
+ *
+ * This constant is the `data/docs` default and nothing more; the roots outside
+ * it are not folders under it.
  */
 export const DEFAULT_DOC_FOLDER = "inbox";
 
-const FOLDER_DESCRIPTION =
+/**
+ * **Create and move do not share a folder grammar, so they do not share a
+ * description** (CONTRACT-062). They did until SERVER-122 gave *create* the
+ * `type`-aware half below — an omitted `folder` filing into the root the `type`
+ * declares, and a declared root nameable outright — which `move` did not get,
+ * because a move carries no new type to file under. One sentence serving both
+ * was worse than a wrong one: right for move, wrong for create, and with nothing
+ * in it telling a reader which route it was about.
+ *
+ * Both are written against `resolveFolder(folder, forType)`
+ * (`apps/server/src/docs/write.ts`), which is what a caller actually meets —
+ * and both state what a caller may conclude rather than restating how the
+ * server derives it (SERVER-114). In particular the roots are *not* enumerated
+ * here: the server reads them off its own root table, so a root declared later
+ * is reachable without a contract change, and the one example named
+ * (`.claude/agents`) is named because it is the one the product's own agent
+ * depends on.
+ *
+ * **The check every version of this sentence has failed** (PR #49 second
+ * review): take the finished sentence back to `DOCUMENT_ROOTS`
+ * (`apps/server/src/projection/roots.ts`) and ask of each of the five roots
+ * whether it is true of a document filed there. `.claude/skills` and
+ * `.claude/skills-archived` are why the "takes ordinary markdown documents"
+ * qualifier cannot be dropped — a `type: skill` create with no folder lands in
+ * the inbox — and `data/threads` is why the closing clause exists: `thread` is
+ * the one type `allocatePath` places before `folder` is consulted at all, so
+ * neither the inbox default nor "an explicit folder wins" holds for it.
+ */
+const CREATE_FOLDER_DESCRIPTION =
   "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
   `(\`data/docs/finance\`). Defaults to \`${DEFAULT_DOC_FOLDER}\` — creation is inbox-first ` +
-  "(SPEC.md §11), and the agent files inbox arrivals per its skill.";
+  "(SPEC.md §11), and the agent files inbox arrivals per its skill — **except for a type that " +
+  "SPEC.md §7 gives a document root of its own that takes ordinary markdown documents**, which " +
+  "is where an omitted `folder` files it: a " +
+  "`type: agent-def` document lands in `.claude/agents/`, so creating a persona never requires " +
+  "knowing a path. Such a root may also be named outright, by its exact declared path " +
+  "(`.claude/agents`) — that path itself, never a folder beneath it. It must hold the type being " +
+  "created: a root overrides the type of every file under it, so naming one that holds something " +
+  "else is a `400` rather than a document that is not the one you asked for. A root that does " +
+  "not take an ordinary `*.md` is out of reach for the same reason it is not a default — " +
+  "`.claude/skills` indexes `SKILL.md` files alone, so naming it is a `400` and a `type: skill` " +
+  `create with no folder still lands in \`${DEFAULT_DOC_FOLDER}\`; a skill is created with ` +
+  "`POST /api/skills`. An explicit folder always wins over that default, so " +
+  '`folder: "inbox"` still files an `agent-def` under `data/docs/` as a document *about* a ' +
+  "persona. **One type is placed by neither rule**: a `type: thread` document is flat at " +
+  "`data/threads/<id>.md`, named by its id (SPEC.md §4), so a `folder` sent with one is still " +
+  "checked but never changes where it lands — and a thread is normally created by " +
+  "`POST /api/threads`.";
+
+/**
+ * **A title is refused only where the filename is an address** (PR #49 review;
+ * `allocatePath` in `apps/server/src/docs/create.ts`).
+ *
+ * Under `data/docs/` a title collision is not a refusal at all: the id is
+ * identity and the path is presentation (SPEC.md §5), so the server dedupes the
+ * filename — `analyst.md`, then `analyst-2.md` — and two documents may share a
+ * title forever. Under a root where the filename *is* the name the document
+ * answers to, that same dedupe would file a second persona at `@analyst-2`, an
+ * address nobody asked for, while `@analyst` went on meaning the older document
+ * (SPEC.md §8). So the create is refused there instead, and the refusal is
+ * published on `title` because `title` is the field the `400` names and the
+ * field the caller has to change.
+ *
+ * Written against the server rather than against a proposal, and stating what a
+ * caller may conclude rather than how the server derives it (SERVER-114): the
+ * roots are not enumerated, because the condition is a property of the root's
+ * declared shape, and a root declared later inherits the rule without a contract
+ * change.
+ */
+const CREATE_TITLE_DESCRIPTION =
+  "Human-readable title, and the source of the document's filename (`Analyst` → `analyst.md`; a " +
+  "thread is named by its id instead). Under `data/docs/` two documents may share a title — the " +
+  "id is identity and the path is presentation (SPEC.md §5), so the filename dedupes to " +
+  "`analyst-2.md` — and a create there never fails on the title. **In a root where the filename " +
+  "is the name the document answers to it can**: `.claude/agents/analyst.md` is what makes " +
+  "`@analyst` resolve (SPEC.md §8), so deduping would file a second persona at an address nobody " +
+  "asked for and the create is a `400` naming the name already taken. Edit the existing document " +
+  "with `PUT /api/docs/{id}`, or choose a title that names something else.";
+
+/**
+ * **Move's half of the split sentence was wrong for move too** (CONTRACT-063; PR
+ * #49 second review). CONTRACT-062 separated the two constants and deliberately
+ * left this one byte-identical, so that the split could not be accused of
+ * quietly giving move a grammar it never had. What it left behind published a
+ * falsehood: the field is `z.string()` — required, no `.default()` — and the
+ * text said it "Defaults to `inbox`", then explained that default with
+ * *creation* being inbox-first, a rule about a route this field is not on.
+ *
+ * Written from `moveDocument`/`planMove` (`apps/server/src/docs/move.ts`) and
+ * from `resolveFolder(folder)` called with **no type**, which is what makes
+ * move's grammar the plain one: `admitRoot` refuses a named root whose declared
+ * type is not the type being filed, and a move supplies none, so every root in
+ * `DOCUMENT_ROOTS` outside `data/` is a `400` here rather than a destination.
+ * That refusal is stated rather than left out, because it is the question a
+ * caller arrives with after reading create's field.
+ */
+const MOVE_FOLDER_DESCRIPTION =
+  "Destination folder under `data/docs/`, accepted either as a bare name (`finance`) or as the " +
+  "full prefix (`data/docs/finance`). **Required, and it has no default**: a move names where " +
+  "the document is going. Nothing here is inbox-first — that is creation's rule " +
+  "(`POST /api/docs`, SPEC.md §11), and a document being moved already has a folder. Every " +
+  "destination is under `data/docs/`: a move carries no type, and each document root SPEC.md §7 " +
+  "adds alongside `data/` holds exactly one type, so naming one (`.claude/agents`) is a `400` — " +
+  "filing a document into such a root is part of creating it, not of moving it. The filename " +
+  "does not change, so a destination that already holds a file of that name is a `400` and never " +
+  "an overwrite.";
 
 /**
  * **Nullable timestamps (CONTRACT-005 decision, 2026-07-27; extended to
@@ -284,12 +413,12 @@ export const CreateDocRequestSchema = z
   .strictObject({
     job: jobField,
     type: DocTypeSchema,
-    title: z.string().min(1),
+    title: z.string().min(1).describe(CREATE_TITLE_DESCRIPTION),
     body: z
       .string()
       .optional()
       .describe("Omit to pre-fill from the type's `template` document when one exists."),
-    folder: z.string().optional().describe(FOLDER_DESCRIPTION),
+    folder: z.string().optional().describe(CREATE_FOLDER_DESCRIPTION),
     tags: z.array(z.string()).optional().describe("Defaults to no tags."),
     status: z.enum(DOC_STATUSES).optional().describe("Defaults to `open`."),
     due: IsoDateSchema.nullable()
@@ -444,7 +573,7 @@ export const UpdateDocRequestSchema = z
 export const JobOnlyRequestSchema = z.strictObject({ job: jobField }).openapi("JobOnlyRequest");
 
 export const MoveDocRequestSchema = z
-  .strictObject({ job: jobField, folder: z.string().describe(FOLDER_DESCRIPTION) })
+  .strictObject({ job: jobField, folder: z.string().describe(MOVE_FOLDER_DESCRIPTION) })
   .openapi("MoveDocRequest");
 
 /**

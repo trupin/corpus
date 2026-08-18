@@ -161,7 +161,7 @@ describe("the shape of the roster", () => {
     expect((await laneRow(id)).origin).toEqual({ id, title: "renamed while resident" });
   });
 
-  it("still names the resident after its agent-def is deleted", async () => {
+  it("still names the resident after its agent-def is deleted, with no document to open", async () => {
     const id = await designatedThread("archive");
     // §7's designation survives its persona going missing: the name is the
     // durable half, and showing it is how a person sees *who* was designated
@@ -170,7 +170,67 @@ describe("the shape of the roster", () => {
     rmSync(join(ws.root, ".claude/agents/researcher.md"));
     ws.reproject();
 
-    expect((await laneRow(id)).resident).toEqual({ name: "researcher", docId: "doc_researcher" });
+    // The `docId` is what the name resolves to **right now**, so a profile that
+    // has gone reports null rather than an id pointing at nothing (SHARED-048's
+    // "the missing profile is reported rather than silently substituted"). The
+    // case below is the one this must stay distinguishable from.
+    expect((await laneRow(id)).resident).toEqual({ name: "researcher", docId: null });
+  });
+
+  // SPEC.md §7's SHARED-048 rider: naming no profile is the **ordinary** case,
+  // and `GET /api/agents` must list its lane exactly as it lists a profiled one.
+  // A roster keyed on `resident_name` shows nothing here at all.
+  it("lists a lane whose resident has no profile, and says so with two nulls", async () => {
+    const created = await createThread(ws, { body: "no profile needed" });
+    expect(
+      (await ws.request(`/api/threads/${created.id}/resident`, { method: "POST", headers: AUTH }))
+        .status,
+    ).toBe(200);
+
+    const row = await laneRow(created.id);
+    // `resident: null` on a roster row would mean the lane belongs to no
+    // conversation, which is true only of the orchestrator's — so a general
+    // resident is an **object** whose halves are both null.
+    expect(row.resident).toEqual({ name: null, docId: null });
+    expect(row.origin).toEqual({ id: created.id, title: expect.any(String) as string });
+    expect(row.live).toBe(false);
+    expect(row.since).toBeNull();
+  });
+
+  // The two nulls and "a profile that has gone" must not read alike: AGENT-033
+  // answers a person differently about each, and both are on the roster at once
+  // here so a reader can see the difference is in the response and not in the
+  // fixture.
+  it("tells a general resident apart from a resident whose profile went missing", async () => {
+    const general = await createThread(ws, { body: "general" });
+    await ws.request(`/api/threads/${general.id}/resident`, { method: "POST", headers: AUTH });
+    const profiled = await designatedThread("profiled");
+    rmSync(join(ws.root, ".claude/agents/researcher.md"));
+    ws.reproject();
+
+    expect((await laneRow(general.id)).resident).toEqual({ name: null, docId: null });
+    expect((await laneRow(profiled)).resident).toEqual({ name: "researcher", docId: null });
+  });
+
+  // §7's presence is the parked scoped request and nothing else, so `live` must
+  // be computed for a general resident by the identical path — which it is only
+  // if `assertScopeIsLane` admits the park in the first place.
+  it("computes live for a general resident exactly as for a profiled one", async () => {
+    const general = await createThread(ws, { body: "general" });
+    await ws.request(`/api/threads/${general.id}/resident`, { method: "POST", headers: AUTH });
+    const profiled = await designatedThread("profiled");
+
+    const parkedGeneral = park(general.id);
+    const parkedProfiled = park(profiled);
+    await settle();
+
+    expect((await laneRow(general.id)).live).toBe(true);
+    expect((await laneRow(profiled)).live).toBe(true);
+
+    parkedGeneral.leave();
+    parkedProfiled.leave();
+    await parkedGeneral.done;
+    await parkedProfiled.done;
   });
 });
 

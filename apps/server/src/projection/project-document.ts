@@ -312,13 +312,20 @@ function projectThread(
   // wire. Stored verbatim: the id is re-resolved from the name at *read* time
   // (`threads/read.ts`), and a projection that pre-resolved it would answer a
   // different thing from the thread route about one file.
+  //
+  // **The row's designated flag is `resident !== null`, and the name is only the
+  // profile** (SHARED-048, SERVER-121). Since a designation may name none, a
+  // general residency reads back as `{name: null, docId: null}` — an object,
+  // which is what makes this thread a lane — while a thread nobody designated
+  // reads as `null`. The two are one `!== null` apart here and nowhere else, so
+  // the flag and the profile can never disagree about one file.
   const resident = storedResident(data["resident"], parentId);
 
   db.prepare(
     `INSERT INTO threads
        (id, parent_id, status, agent, anchor_id, title, created, updated, turn_count, last_author,
-        last_ts, resident_name, resident_doc_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        last_ts, resident_designated, resident_name, resident_doc_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     parentId,
@@ -331,6 +338,7 @@ function projectThread(
     turns.length,
     last?.author ?? null,
     last?.ts ?? null,
+    resident === null ? 0 : 1,
     resident?.name ?? null,
     resident?.docId ?? null,
   );

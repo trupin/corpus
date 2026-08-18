@@ -83,11 +83,13 @@ function parameter(path: string, method: string, name: string) {
 /** The subset of JSON Schema the walk below needs; `openapi3-ts` types it as `any`. */
 interface SchemaNode {
   readonly $ref?: string;
-  readonly type?: string;
+  /** An array where the schema is nullable: OpenAPI 3.1 spells that `["string", "null"]`. */
+  readonly type?: string | readonly string[];
   readonly enum?: string[];
   readonly pattern?: string;
   readonly default?: unknown;
   readonly minimum?: number;
+  readonly minLength?: number;
   readonly required?: string[];
   /** OpenAPI 3.1 is JSON Schema 2020-12, so a conditional requirement is publishable. */
   readonly dependentRequired?: Record<string, string[]>;
@@ -2136,6 +2138,272 @@ describe("deletion cascades are documented", () => {
   });
 });
 
+/**
+ * CONTRACT-062. `CreateDocRequest.folder` and `MoveDocRequest.folder` were one
+ * constant until SERVER-122 gave create a grammar move did not get, at which
+ * point the shared sentence was right for one route and wrong for the other
+ * with nothing in it saying which. These are written against the **generated**
+ * document rather than the schema constants, for the reason CONTRACT-045
+ * records: a description hand-copied back into one place is only caught by
+ * reading the two published strings.
+ */
+describe("the two folder grammars are described separately (CONTRACT-062)", () => {
+  const folderDescription = (component: string): string => {
+    const found = componentSchemas?.[component]?.properties?.["folder"]?.description;
+    if (found === undefined) throw new Error(`No ${component}.folder description.`);
+    return found;
+  };
+
+  const create = (): string => folderDescription("CreateDocRequest");
+  const move = (): string => folderDescription("MoveDocRequest");
+
+  it("does not publish one sentence for both routes", () => {
+    expect(create()).not.toBe(move());
+  });
+
+  /**
+   * The four facts `resolveFolder(folder, forType)` implements, each asserted by
+   * the thing a caller would look for. Falsify by pointing both properties back
+   * at one constant.
+   */
+  it("states the by-type default on create, with the root it actually reaches", () => {
+    expect(create()).toContain("`type: agent-def`");
+    expect(create()).toContain(".claude/agents");
+  });
+
+  it("states that a declared root may be named outright, and only exactly", () => {
+    expect(create()).toContain("named outright");
+    expect(create()).toContain("never a folder beneath it");
+  });
+
+  it("states that a named root must hold the type being created", () => {
+    expect(create()).toContain("must hold the type being created");
+  });
+
+  it("states that an explicit folder wins over the by-type default", () => {
+    expect(create()).toContain("An explicit folder always wins");
+  });
+
+  /**
+   * The trap the wording SERVER-122 proposed would have fallen into: §7 gives
+   * `type: skill` a root of its own, and a create still files a skill in the
+   * inbox — `.claude/skills` indexes `SKILL.md` alone, so it is neither the
+   * default nor nameable. A description that promised the root would send every
+   * caller to the wrong place.
+   */
+  it("does not promise the skill root, which a create can neither default to nor name", () => {
+    expect(create()).toContain(".claude/skills");
+    expect(create()).toContain("SKILL.md");
+    expect(create()).toContain("POST /api/skills");
+  });
+
+  /**
+   * Move did not gain the type-aware grammar and this must not quietly give it
+   * one. The guard used to be an exact-string pin on the sentence CONTRACT-062
+   * carried over unchanged; CONTRACT-063 replaced that sentence, so the guard is
+   * now the *hazard* rather than the bytes — none of create's four type-aware
+   * facts may appear on a route that calls `resolveFolder` with no type.
+   */
+  it("keeps create's type-aware grammar off move", () => {
+    for (const absent of [
+      "An explicit folder always wins",
+      "named outright",
+      "must hold the type being created",
+      "`type: agent-def`",
+      "POST /api/skills",
+    ]) {
+      expect(move(), `move must not carry create's "${absent}"`).not.toContain(absent);
+    }
+  });
+
+  /**
+   * `POST /api/docs/bulk`'s `move` act carries a third `folder`, inlined rather
+   * than registered (the act union is a `oneOf`, so it has no component name).
+   * It calls `resolveFolder` with no type either, so the type-aware grammar must
+   * appear in the whole published document exactly once — on create.
+   */
+  it("publishes the type-aware grammar on exactly one field in the document", () => {
+    const serialised = JSON.stringify(document);
+    const occurrences = serialised.split("An explicit folder always wins").length - 1;
+    expect(occurrences).toBe(1);
+  });
+});
+
+/**
+ * PR #49 review. CONTRACT-062 fixed `CreateDocRequest.folder` and left the
+ * `POST /api/docs` **route** description asserting the rule the field had just
+ * been given an exception to — and the route description is what an OpenAPI
+ * consumer reads first. Two refusals of the create path were therefore invisible
+ * at the altitude people actually read at: an omitted `folder` that does not
+ * mean the inbox, and a title that can be taken.
+ *
+ * Asserted against the generated document, per CONTRACT-045: a sentence
+ * hand-copied between the route and the field is only caught by reading the two
+ * published strings.
+ */
+describe("create publishes both of its exceptions at the route level (PR #49)", () => {
+  const routeDescription = (): string => operation("/api/docs", "post").description ?? "";
+  const titleDescription = (): string => {
+    const found = componentSchemas?.["CreateDocRequest"]?.properties?.["title"]?.description;
+    if (found === undefined) throw new Error("No CreateDocRequest.title description.");
+    return found;
+  };
+
+  /**
+   * The reviewer's failure scenario, as an assertion: a client author reads the
+   * route description, sends `{"type":"agent-def","title":"Analyst"}` expecting
+   * `data/docs/inbox/`, and gets a file Claude Code loads as a subagent
+   * definition. Falsify by deleting the exception clause — the inbox sentence
+   * alone leaves this green only if the root is never named.
+   */
+  it("states the inbox default and its §7 exception in the same breath", () => {
+    expect(routeDescription()).toContain("inbox-first");
+    expect(routeDescription()).toContain("data/docs/inbox/");
+    expect(routeDescription()).toContain("`type: agent-def`");
+    expect(routeDescription()).toContain(".claude/agents/");
+  });
+
+  /** The route names where the rest is read, rather than restating it. */
+  it("points at the field for the grammar instead of duplicating it", () => {
+    expect(routeDescription()).toContain("See `folder`");
+    expect(routeDescription()).not.toContain("An explicit folder always wins");
+    expect(routeDescription()).not.toContain("POST /api/skills");
+  });
+
+  /**
+   * The title-collision refusal `apps/server/src/docs/create.ts` added: every
+   * other refusal on this path is published, and until now this one lived only
+   * in the workspace skill.
+   */
+  it("says a create can be refused on its title, and where", () => {
+    expect(routeDescription()).toContain("`title`");
+    expect(routeDescription()).toContain("`400`");
+    expect(titleDescription()).toContain("`400`");
+    expect(titleDescription()).toContain(".claude/agents/analyst.md");
+  });
+
+  /**
+   * And says it is *only* sometimes: a caller who reads "a title can be refused"
+   * and concludes titles must be unique would start deduping titles the corpus
+   * has always allowed to collide (SPEC.md §5 — the id is identity, the path is
+   * presentation).
+   */
+  it("says the collision is a dedupe, not a refusal, under data/docs", () => {
+    expect(titleDescription()).toContain("may share a title");
+    expect(titleDescription()).toContain("analyst-2.md");
+    expect(titleDescription()).toContain("never fails on the title");
+  });
+});
+
+/**
+ * CONTRACT-063 and PR #49's **second** review, which found the same defect one
+ * level up for the third time in the phase: a sentence about where an omitted
+ * `folder` files a document, stated over the whole of `DOCUMENT_ROOTS` when it
+ * is true of two of its five entries.
+ *
+ * The assertions below are the enumeration itself, written against the
+ * generated document. Each of the three published `folder` surfaces — the create
+ * route, `CreateDocRequest.folder`, `MoveDocRequest.folder` — is checked against
+ * every root a document can be filed in:
+ *
+ * | root                     | type        | omitted `folder` files it… |
+ * | ------------------------ | ----------- | -------------------------- |
+ * | `data/docs`              | any other   | `data/docs/inbox/`         |
+ * | `data/threads`           | `thread`    | `data/threads/<id>.md`, whatever `folder` says |
+ * | `.claude/skills`         | `skill`     | `data/docs/inbox/` — the root takes `SKILL.md` alone |
+ * | `.claude/skills-archived`| `skill`     | as above                   |
+ * | `.claude/agents`         | `agent-def` | `.claude/agents/`          |
+ *
+ * Read out of `rootForType` + `projectionIndexesFolder` and `allocatePath`
+ * (`apps/server/src/docs/write.ts`, `create.ts`), and pinned server-side by
+ * `apps/server/src/docs/write.test.ts`.
+ */
+describe("every folder sentence is true of every document root (CONTRACT-063)", () => {
+  const folderDescription = (component: string): string => {
+    const found = componentSchemas?.[component]?.properties?.["folder"]?.description;
+    if (found === undefined) throw new Error(`No ${component}.folder description.`);
+    return found;
+  };
+  const create = (): string => folderDescription("CreateDocRequest");
+  const move = (): string => folderDescription("MoveDocRequest");
+  const createRouteText = (): string => operation("/api/docs", "post").description ?? "";
+
+  /**
+   * The clause the reviewer rejected, verbatim. It characterised the exception
+   * ("a type §7 gives a root of its own") where the rule turns on something
+   * narrower — whether that root indexes an ordinary `*.md` — so it read as a
+   * promise about `type: skill` that the server does not keep.
+   */
+  it("does not characterise the exception over-broadly at the route level", () => {
+    expect(createRouteText()).not.toContain("except for a type SPEC.md §7 gives a document root");
+  });
+
+  it("names the skill root as the counterexample it is, on the route and the field", () => {
+    expect(createRouteText()).toContain("`type: skill`");
+    expect(createRouteText()).toContain("SKILL.md");
+    expect(createRouteText()).toContain("still lands in the inbox");
+    expect(create()).toContain("`type: skill`");
+  });
+
+  /**
+   * `data/threads` is the root every earlier version of these sentences missed:
+   * `allocatePath` returns `data/threads/<id>.md` for a `type: thread` before
+   * `folder` is consulted, so *both* published rules — the inbox default and
+   * "an explicit folder always wins" — are false for it unless it is named.
+   */
+  it("names the thread root, where neither the default nor an explicit folder applies", () => {
+    expect(createRouteText()).toContain("`type: thread`");
+    expect(createRouteText()).toContain("data/threads/<id>.md");
+    expect(create()).toContain("data/threads/<id>.md");
+    expect(create()).toContain("never changes where it lands");
+  });
+
+  /**
+   * PR #49's **third** review, same sentence family, fourth time: the route said
+   * a thread lands at `data/threads/<id>.md` "whatever `folder` names", and it
+   * does not. `createDocument` calls `resolveFolder(input.folder, input.type)`
+   * before `allocatePath` (`apps/server/src/docs/create.ts`), so
+   * `{"type":"thread","folder":".claude/agents"}` is a `400` from `admitRoot` —
+   * the root holds `agent-def` — and no thread is filed anywhere.
+   *
+   * The field has said the true thing since CONTRACT-063 ("still checked but
+   * never changes where it lands"); only the route, which is what an OpenAPI
+   * consumer reads first, did not. So both are asserted, and the discarded
+   * phrasing is asserted absent: a sentence that is right at one altitude and
+   * wrong one level up is the exact defect this family keeps reproducing.
+   */
+  it("says a thread's folder is checked and then ignored, not unchecked", () => {
+    expect(createRouteText()).not.toContain("whatever `folder` names");
+    expect(createRouteText()).toContain("still checked");
+    expect(createRouteText()).toContain("`400`");
+    expect(createRouteText()).toContain("never changes where the thread lands");
+    expect(create()).toContain("still checked");
+  });
+
+  /**
+   * MAJOR 2. `MoveDocRequest.folder` is `z.string()` — required, no `.default()`
+   * — and its description claimed an `inbox` default and explained it with
+   * *creation* being inbox-first. Both halves are asserted: what the document
+   * says, and what the document's own schema keywords say, so the prose cannot
+   * drift from the shape again without one of them failing.
+   */
+  it("does not claim a default move's folder does not have", () => {
+    expect(move()).not.toContain("Defaults to");
+    expect(move()).not.toContain("files inbox arrivals");
+    expect(move()).toContain("it has no default");
+    const schema = componentSchemas?.["MoveDocRequest"];
+    expect(schema?.required).toContain("folder");
+    expect(schema?.properties?.["folder"]).not.toHaveProperty("default");
+  });
+
+  /** And says what a move's `folder` *is*, which the discarded half never did. */
+  it("states move's own grammar: a destination under data/docs, roots refused", () => {
+    expect(move()).toContain("data/docs/finance");
+    expect(move()).toContain(".claude/agents");
+    expect(move()).toContain("`400`");
+  });
+});
+
 describe("queue long-poll", () => {
   it("declares both outcomes, with the timeout bounded and defaulted", () => {
     const op = operation("/api/queue/idle", "get");
@@ -4106,7 +4374,10 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/jobs/{id}/log": true,
       "POST /api/threads": true,
       "POST /api/threads/{id}/reattach": true,
-      "POST /api/threads/{id}/resident": true,
+      // CONTRACT-061 moved this out of the mandatory set: since SPEC.md §7's
+      // SHARED-048 rider a designation need not name a profile, so the body is
+      // wholly optional and a bare `POST` designates a general resident.
+      "POST /api/threads/{id}/resident": false,
       "POST /api/queue/{id}/defer": true,
       "POST /api/skills": true,
       "POST /api/queue/halt": false,
@@ -4413,6 +4684,74 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     }
     expect(componentSchemas?.["Resident"]?.type).toBe("object");
     expect(componentSchemas?.["Resident"]?.required).toEqual(["name", "docId"]);
+  });
+
+  /**
+   * CONTRACT-061 / SPEC.md §7 rider SHARED-048. A designation may name no
+   * profile, so both halves of a `Resident` are nullable — and both stay
+   * **required**, because the states a caller must tell apart are read off the
+   * pair (`name` null is a general resident; `name` set with `docId` null is a
+   * profile that has gone), and an absent key would make the pair unreadable.
+   */
+  it("makes both halves of a Resident nullable, and keeps both required", () => {
+    const resident = componentSchemas?.["Resident"];
+    for (const property of ["name", "docId"] as const) {
+      expect(resident?.properties?.[property]?.type, property).toEqual(["string", "null"]);
+    }
+    expect(resident?.required).toEqual(["name", "docId"]);
+    // The refinement rejecting `{name: null, docId: "doc_…"}` is not expressible
+    // in JSON Schema, so it is stated where a reader of the document meets it.
+    expect(resident?.properties?.["docId"]?.description).toContain("Read the two fields together");
+  });
+
+  /**
+   * The trap the shape exists to avoid: a general resident carrying a display
+   * string that reaches a recipient list beside real profile names. The
+   * published document tells a client not to invent one, in the two places a
+   * client would.
+   */
+  it("tells a client not to print a stand-in name for a general resident", () => {
+    expect(componentSchemas?.["Resident"]?.properties?.["name"]?.description).toContain(
+      "Do not substitute a word for null and print it as a name",
+    );
+    expect(operation("/api/agents", "get").description).toContain(
+      "must not print a stand-in name for the null",
+    );
+  });
+
+  /**
+   * The two nulls one level apart. A roster row's `resident` null is the
+   * orchestrator's lane; a `Resident` whose `name` is null is a designated lane
+   * with no profile. Collapsing them shows a designated conversation as
+   * undesignated, so the shared field says which is which.
+   */
+  it("says a null resident is nobody, never a resident with no profile", () => {
+    for (const component of ["Thread", "ThreadSummary", "AgentLane"]) {
+      const description = componentSchemas?.[component]?.properties?.resident?.description ?? "";
+      expect(description, component).toContain(
+        "**Null means nobody, and never a resident with no profile**",
+      );
+    }
+  });
+
+  /**
+   * §7 makes naming no profile *"the ordinary case"* that *"requires nothing to
+   * exist first"*, so the ordinary case is the one that costs a caller nothing:
+   * a bodiless `POST`. Absence, never a null and never a sentinel — the body
+   * stays strict, so a misspelled key is still a named `400`.
+   */
+  it("makes the designation body optional in full, and still strict", () => {
+    const body = operation("/api/threads/{id}/resident", "post").requestBody;
+    expect(body?.required).toBe(false);
+    const schema = componentSchemas?.["DesignateResidentRequest"];
+    expect(schema?.required).toBeUndefined();
+    expect(schema?.additionalProperties).toBe(false);
+    // A name, when given, is still a real name: blank is a 400, not absence.
+    expect(schema?.properties?.["name"]?.minLength).toBe(1);
+    expect(schema?.properties?.["name"]?.description).toContain("to designate a general resident");
+    expect(operation("/api/threads/{id}/resident", "post").description).toContain(
+      "a bare `POST` designates a *general resident*",
+    );
   });
 
   it("answers a designation and a release with the thread, so §14's warnings surface", () => {

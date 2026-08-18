@@ -26,7 +26,7 @@ fable
 
 - SPEC.md **§7** — *"A resident is **live** exactly while it holds a parked
   scoped `idle`… an agent that stops parking stops being present"*
-- SPEC.md **§9.4** — `GET /api/agents`, the roster of lanes
+- SPEC.md **§9.2** — `GET /api/agents`, the roster of lanes
 
 ## Summary
 

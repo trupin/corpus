@@ -48,7 +48,7 @@ And the read-only banner goes. A document the agent is writing stays editable.
       it in a spec
 - [x] `LockBanner.tsx` and the force-unlock action are **deleted**; no document
       renders read-only, and nothing polls or subscribes to lock state
-- [x] The person sees the agent's writes land live, as they always have (§9.4) —
+- [x] The person sees the agent's writes land live, as they always have (§9.2) —
       confirm nothing about that depended on the lock projection
 - [x] Frontmatter controls (tags, status, due) are delta writes and keep working
       with no key at all
@@ -155,12 +155,12 @@ now stood, its fresh key, the retry instruction, and §7's advisory *"someone is
 editing this — a person has an edit session open on doc_h4hcdpvv right now"*.
 Both writers participate, symmetrically (SHARED-041 decision 2).
 
-### 3. The agent's writes still land live (§9.4)
+### 3. The agent's writes still land live (§9.2)
 
 With nobody typing, `corpus doc edit --from agent` from the CLI:
 
 ```
-1. the agent's write landed live on screen with no reload (SPEC.md §9.4) ✓
+1. the agent's write landed live on screen with no reload (SPEC.md §9.2) ✓
    board wrote nothing back: 0 PUTs
 ```
 
@@ -224,7 +224,7 @@ an adopt-then-retry, i.e. when the person's save went on top of a change they
 never read. Copy: *"the agent edited this while you were typing — your save went
 on top of it. its version is in the history."*, with `see what it wrote` (selects
 that job in the console) and a dismiss. Nothing is shown for an agent write that
-lands while nobody is typing: that is §9.4's live landing, and the text changing
+lands while nobody is typing: that is §9.2's live landing, and the text changing
 *is* the event. Nothing anywhere says another writer "has" the document — that is
 the banner in miniature, rejected in PLUGINS-017, and false besides. The mockup
 now simulates the whole path on `doc_cashflow`: type in it, and the agent's

@@ -41,6 +41,13 @@ export const getAgentRoster = createRoute({
     `**The \`${ORCHESTRATOR_LANE}\` row is always present** — it exists before anything has been ` +
     "designated and survives the last release — so an empty list is a bug rather than a workspace " +
     "with no agents.\n\n" +
+    "**A lane's `resident` is null only on that row.** Every other lane exists because a " +
+    "conversation was designated, and since a designation may name no profile (SPEC.md §7) the " +
+    "resident of such a lane is an object whose `name` is null — a *general resident*, designated " +
+    "and lane-owning like any other. A row with a general resident and a row with a profiled one " +
+    "differ in nothing else here: same `lane`, same liveness, same fallback. A client must not " +
+    "print a stand-in name for the null; it is null so that it cannot be confused with, or " +
+    "collide with, a real profile.\n\n" +
     "**Liveness is observed, never registered.** A lane is live exactly while its listener holds " +
     "a parked scoped `GET /api/queue/idle`: there is no heartbeat to send, no registration to " +
     "keep fresh and no state to reap, so an agent that stops parking stops being present whether " +

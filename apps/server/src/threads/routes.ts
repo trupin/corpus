@@ -171,13 +171,12 @@ export function mountThreadRoutes(
   app.openapi(contractRoutes.designateResident, async (c) => {
     const { id } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
-    const { thread, result } = await designateResident(
-      workspace,
-      mutex,
-      actor,
-      id,
-      c.req.valid("json"),
-    );
+    // The body is optional **in full** (CONTRACT-061): a bare `POST` designates
+    // a general resident, so the validated value is `undefined` rather than an
+    // empty object, and `{}` and no body at all have to mean the same thing.
+    const { thread, result } = await designateResident(workspace, mutex, actor, id, {
+      ...c.req.valid("json"),
+    });
     if (result !== null) reportWarnings(workspace, id, result);
     return c.json({ thread, warnings: result === null ? [] : serializeWarnings(result) }, 200);
   });

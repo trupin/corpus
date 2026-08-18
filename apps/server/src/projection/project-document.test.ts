@@ -242,6 +242,7 @@ describe("projectDocument — threads and turns", () => {
       last_ts: "2026-07-05T09:00:00Z",
       // §7's resident (SERVER-109): this thread has a parent, and only a
       // standalone thread may have one.
+      resident_designated: 0,
       resident_name: null,
       resident_doc_id: null,
     });
@@ -283,8 +284,22 @@ describe("projectDocument — threads and turns", () => {
         standalone("resident:\n  name: researcher\n  docId: doc_researcher\n"),
       );
       expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+        resident_designated: 1,
         resident_name: "researcher",
         resident_doc_id: "doc_researcher",
+      });
+    });
+
+    // SPEC.md §7's SHARED-048 rider (SERVER-121): the flag says *is this a
+    // lane*, the name says *which profile*, and a general residency is the one
+    // row where they differ. The whole point of the separate column is that this
+    // row routes, is addressable and is parkable while naming nobody.
+    it("projects a general residency as designated with no profile", () => {
+      project("data/threads/th_res.md", standalone("resident:\n  name: null\n  docId: null\n"));
+      expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+        resident_designated: 1,
+        resident_name: null,
+        resident_doc_id: null,
       });
     });
 
@@ -292,22 +307,31 @@ describe("projectDocument — threads and turns", () => {
       ["no key at all", ""],
       ["a value that is not a designation", "resident: mine\n"],
       ["half a designation", "resident:\n  name: researcher\n"],
+      // A document nobody named is not a state (`ResidentSchema`'s refinement),
+      // so it degrades like any other malformed value rather than becoming a
+      // lane.
+      ["a document with a null name", "resident:\n  name: null\n  docId: doc_researcher\n"],
     ])("projects nothing for %s", (_label, resident) => {
       project("data/threads/th_res.md", standalone(resident));
       expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+        resident_designated: 0,
         resident_name: null,
         resident_doc_id: null,
       });
     });
 
-    it("projects nothing for a thread with a parent, whatever its frontmatter says", () => {
+    it.each([
+      ["a profile", `resident:\n  name: researcher\n  docId: doc_researcher\n`],
+      ["no profile", `resident:\n  name: null\n  docId: null\n`],
+    ])("projects nothing for a thread with a parent, designated with %s", (_label, resident) => {
       project(
         "data/threads/th_res.md",
         `---\nid: th_res\ntype: thread\ntitle: Resident\nparent: doc_a1b2c3\n` +
-          `resident:\n  name: researcher\n  docId: doc_researcher\n---\n\nNo turns yet.\n`,
+          `${resident}---\n\nNo turns yet.\n`,
       );
       expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
         parent_id: "doc_a1b2c3",
+        resident_designated: 0,
         resident_name: null,
         resident_doc_id: null,
       });

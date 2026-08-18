@@ -79,20 +79,32 @@ export interface LoadedThread {
  * response repeating the stored one would send a reader to a document that is no
  * longer there.
  *
- * **The name is the durable half and is never rewritten here.** When it resolves
- * to nothing — the agent-def was deleted, or renamed to something else — the
- * stored pair is returned exactly as it was written: §7's designation survives
- * its persona going missing, and the roster shows the name so a reader can see
- * *who* was designated rather than a blank. Handling a gone persona is the
- * converse skill's job (AGENT-025), not this reader's.
+ * **The name is the durable half and is never rewritten here.** §7's designation
+ * survives its persona going missing, so the name comes back exactly as it was
+ * written and a reader can still see *who* was designated. Handling a gone
+ * persona is the converse skill's job (AGENT-025), not this reader's.
+ *
+ * **A name that resolves to nothing answers `docId: null`, not the stored id.**
+ * The contract's `docId` is *"the document `name` resolves to right now"*, and
+ * §7's rider requires a missing profile be **reported rather than silently
+ * substituted** — repeating the id the designation stored would send a reader to
+ * a document the workspace no longer has, which is the very failure the re-read
+ * above exists to prevent. `{name: "researcher", docId: null}` is that report,
+ * and it is deliberately distinguishable from `{name: null, docId: null}`, which
+ * is a **general** resident that named no profile in the first place.
+ *
+ * **A general resident is returned untouched, without a lookup.** There is no
+ * name to resolve, and `ResidentSchema`'s refinement already guarantees a null
+ * name comes with a null id.
  */
 export function currentResident(
   projection: ProjectionDb,
   stored: Resident | null,
 ): Resident | null {
   if (stored === null) return null;
+  if (stored.name === null) return { name: null, docId: null };
   const target = resolveMentionTarget(projection, MENTION_TYPE, stored.name);
-  return target === null ? stored : { name: stored.name, docId: target.docId };
+  return { name: stored.name, docId: target?.docId ?? null };
 }
 
 const asString = (value: unknown): string | null =>

@@ -23,7 +23,7 @@ fable
 
 ## Spec References
 
-- SPEC.md **§9.4** — invalidate keys
+- SPEC.md **§9.2** — invalidate keys
 - The retrieval sections covering index state and degraded ranking
 
 ## Summary

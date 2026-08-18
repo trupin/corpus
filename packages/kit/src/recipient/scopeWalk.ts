@@ -105,8 +105,10 @@ export { SCOPE_NODE_ABSENT } from "@corpus/contract";
  * is in no scope by construction — is the orchestrator without a walk.
  *
  * **Designation is answered from the roster, ahead of any node read.** That is
- * not a deviation from the server, which asks `resident_name` of the row it has
- * just read: `GET /api/agents` lists designated roots and only those, so an id
+ * not a deviation from the server, which asks `resident_designated` of the row
+ * it has just read (SERVER-121 — the flag replaced `resident_name` there when a
+ * designation stopped implying a profile):
+ * `GET /api/agents` lists designated roots and only those, so an id
  * the roster names *is* a row with a resident, and answering from it lets a
  * composer inside its own designated thread say who answers without waiting on a
  * document fetch. Its edges are never consulted either way — the server returns

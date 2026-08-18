@@ -54,7 +54,9 @@ import {
   type CheckCode,
   type CheckFinding,
   type CheckOptions,
+  type ClaudeCodeRoot,
 } from "../core/index.js";
+import { invocableName } from "../threads/mentions.js";
 import { resolveAnchorExact } from "../anchors/index.js";
 import type { EditSessionTracker } from "../edit/index.js";
 import { rosterSignature } from "../agents/roster.js";
@@ -63,8 +65,13 @@ import type { InvalidationBus } from "../events/index.js";
 import { AGENTS_KEY, TREE_KEY, dedupeKeys } from "../events/index.js";
 import type { AnchorChange, AutoCommitter, CommitOutcome } from "../git/index.js";
 import type { Logger } from "../logger.js";
-import { classifyPath, projectDocument, removeDocument } from "../projection/index.js";
-import type { ProjectionDb } from "../projection/index.js";
+import {
+  DOCUMENT_ROOTS,
+  classifyPath,
+  projectDocument,
+  removeDocument,
+} from "../projection/index.js";
+import type { DocumentRoot, ProjectionDb } from "../projection/index.js";
 import type { SelfWriteRegistry } from "../watcher/index.js";
 import { anchorClaimantIds, isIdTaken } from "./read.js";
 import { folderTreeSignature } from "./tree.js";
@@ -119,6 +126,66 @@ const LOCAL_CHECK_CODES: ReadonlySet<CheckCode> = new Set([
 const REPORTED_CHECK_CODES: ReadonlySet<CheckCode> = new Set([CHECK_CODES.unterminatedFence]);
 
 /**
+ * §7's Claude Code frontmatter requirement, on the write path: **reported, never
+ * refused** — {@link REPORTED_CHECK_CODES}'s family, joined by a predicate
+ * rather than by a code because it is not a whole code (SERVER-123 regression,
+ * PR #49 review 3).
+ *
+ * The requirement shipped riding `frontmatter-invalid`, which is a member of
+ * {@link LOCAL_CHECK_CODES} — so every server write to *any* `.claude/agents/*.md`
+ * became a `400` the moment the file did not carry both of Claude Code's fields,
+ * including the hand-authored files this system never wrote. That is the state
+ * every such file in an existing workspace is in: SERVER-123 measured the
+ * silence, which means nothing has ever told their authors to add a
+ * `description`. Upgrading past that release made them uneditable, unarchivable
+ * and unreachable by any bulk act, with the only repair a flag
+ * (`corpus doc edit <id> --extra description=…`) the error text does not name
+ * and the board editor cannot express at all.
+ *
+ * That is exactly the fault {@link REPORTED_CHECK_CODES} exists for, in the words
+ * it is already written in: *"blocking on it would make a document that already
+ * carries [the fault] unwritable"*. The issue's own rejection of extending this
+ * rule to `.claude/skills/**` — *"it would refuse writes to hand-authored files
+ * this system never wrote, for a defect nobody has measured"* — applies verbatim
+ * to `.claude/agents/`, which the workspace template documents as the directory a
+ * user drops personas into. The asymmetry was never argued, and there is none.
+ *
+ * **What still holds, and how, now that no save refuses this.**
+ *
+ * - `corpus doc check` is untouched. The finding is produced by the same rule
+ *   from the same seam and reported at the same severity, so §7:399's promise —
+ *   the whole point of SERVER-123 — survives the fix. It also reaches the server
+ *   log on every save, through {@link validateBeforeWrite}'s error channel.
+ * - **A profile the server creates is still complete**, and never depended on
+ *   this being blocking: `docs/create.ts`'s `claudeCodeFields` derives `name`
+ *   from the allocated filename, defaults `description` to the title, and raises
+ *   its own `400` — naming `extra.name` / `extra.description` — before the write
+ *   pipeline is reached. `docs/update.ts` guards the one other route that accepts
+ *   these fields from a caller, and refuses only a patch that *introduces* a
+ *   fault, so the repair above still goes through.
+ * - **Sprint-013 Adjudication 6 binds in both directions**, and this is what it
+ *   asks for: the two call sites run one validator, from one seam factory, and
+ *   produce identical findings for identical bytes. What differs is what the save
+ *   path *does* with a finding, which is this file's business and is itemised
+ *   here and nowhere else — precisely as `unterminated-fence` already is, an
+ *   error `corpus doc check` fails on and a save deliberately lets through.
+ *
+ * **Why the predicate can be keyed on the path.** Under a root
+ * {@link claudeCodeRootFor} names, §5's canonical block is *waived* — `checkCorpus`
+ * emits its `frontmatter-invalid` only in the `claudeCodeRoot === null` branch —
+ * so at such a path this is the sole producer of the code and there is nothing to
+ * confuse it with. That is what the deleted `isSkillFrontmatterException` could
+ * not say: it was a filter over `code` + `path` asked to tell two *live*
+ * producers apart under one code. Here the roots partition them.
+ */
+function isClaudeCodeRequirement(finding: CheckFinding): boolean {
+  return (
+    finding.code === CHECK_CODES.frontmatterInvalid &&
+    (claudeCodeRootFor(finding.path)?.discoveredAs ?? null) !== null
+  );
+}
+
+/**
  * Which check findings become §14 response warnings, and under which code.
  *
  * The checker already produces both halves of §14's validation family while
@@ -160,29 +227,48 @@ export const checkSeams = (projection: ProjectionDb): CheckOptions => ({
   resolveAnchor: resolveAnchorExact,
   documentExists: (id) => isIdTaken(projection, id),
   anchorClaimants: (docId, anchorId) => anchorClaimantIds(projection, docId, anchorId),
+  claudeCodeRoot: claudeCodeRootFor,
 });
 
 /**
- * True for the one finding this system deliberately does not hold against a
- * document: §5's canonical frontmatter block, demanded of a file under §7's skill
- * or agent-definition roots.
+ * §7's Claude Code roots, as the checker asks about them — the seam that carries
+ * **both** the waiver and the requirement (see `core/check.ts`'s
+ * `CheckOptions.claudeCodeRoot`).
  *
- * Those roots legitimately hold files with no Corpus frontmatter at all — a
- * hand-written `SKILL.md` carries Claude Code's `name`/`description` and nothing
- * else, which is why the projection synthesizes an id for them. Every *structural*
- * rule still applies; only this one is waived.
+ * `synthesizeId` is already the declaration "this root holds files whose
+ * frontmatter may be Claude Code's rather than Corpus's", so it is what decides
+ * the waiver; nothing new is invented here and no second list of roots exists to
+ * drift.
  *
- * It is a predicate over a finding rather than a flag computed at a call site so
- * that the save path and `POST /api/check` cannot disagree: **a document the
- * system accepts on write must not fail a check** (sprint-013 Adjudication 6).
- * Waived, never re-graded — moving it to `warnings` would put a code outside
- * §14's closed two-member warning set on the wire.
+ * **`discoveredAs` is `.claude/agents/` alone, deliberately.** Claude Code
+ * discovers a skill by `name`/`description` too, but nothing in this system can
+ * produce a skill without them — `SkillCreateRequestSchema` requires
+ * `description` for exactly this reason, in exactly these words ("a skill
+ * created without one is a file that looks installed and can never be invoked")
+ * — so on the create side §7's promise is already kept there, and requiring them
+ * of `.claude/skills/**` would only ever fire on files this system never wrote.
+ * The agent-def root is where SERVER-122 made the gap consequential and where
+ * AGENT-034 measured the silent failure, so it is where the rule starts.
+ * Extending it later is this one expression — and it is now a cheaper decision
+ * than it was: the reason first given for holding the line here was that
+ * `frontmatter-invalid` blocks a save, so requiring the fields of hand-authored
+ * skills would make them unwritable. That is no longer true of either root (see
+ * {@link isClaudeCodeRequirement}), so what remains is only whether every
+ * description-less `SKILL.md` in an existing workspace should start failing
+ * `corpus doc check` — a product call, not a safety one. **Residual: §7:399 is
+ * true for agent-defs and still not for skills.**
+ *
+ * A predicate reached through {@link checkSeams} rather than computed at each
+ * call site, for the reason its filtering predecessor was: the save path and
+ * `POST /api/check` share one seam factory precisely so they cannot answer
+ * differently (sprint-013 Adjudication 6 — *"a divergence between the two is
+ * itself a bug"*). What the save path then *does* with a finding is a separate
+ * question, answered in one place; see {@link isClaudeCodeRequirement}.
  */
-export function isSkillFrontmatterException(finding: Pick<CheckFinding, "code" | "path">): boolean {
-  return (
-    finding.code === CHECK_CODES.frontmatterInvalid &&
-    classifyPath(finding.path)?.synthesizeId === true
-  );
+export function claudeCodeRootFor(path: string): ClaudeCodeRoot | null {
+  const root = classifyPath(path);
+  if (root === null || !root.synthesizeId) return null;
+  return { discoveredAs: root.key === "agents" ? invocableName(path) : null };
 }
 
 /** How much hook output a warning carries; the full text is always in the log. */
@@ -475,11 +561,19 @@ export type SaveCheck = {
  */
 export function checkSave(projection: ProjectionDb, path: string, text: string): SaveCheck {
   const report = checkCorpus([toCheckDocument(path, text)], checkSeams(projection));
+  // Every `frontmatter-invalid` reaching this line is one the system means — §5's
+  // block outside `.claude/`, or Claude Code's own two fields inside
+  // `.claude/agents/` (SERVER-123) — because the waiver lives in the rule that
+  // produces the finding (`checkSeams`' `claudeCodeRoot`) rather than in a filter
+  // here. The two are not the same to a *save*, though: §5's block is refused and
+  // §7's is reported, for the reason spelled out on {@link isClaudeCodeRequirement}.
   const blocking = report.errors.filter(
-    (finding) => LOCAL_CHECK_CODES.has(finding.code) && !isSkillFrontmatterException(finding),
+    (finding) => LOCAL_CHECK_CODES.has(finding.code) && !isClaudeCodeRequirement(finding),
   );
   // Errors this save lets through and still reports (see REPORTED_CHECK_CODES).
-  const tolerated = report.errors.filter((finding) => REPORTED_CHECK_CODES.has(finding.code));
+  const tolerated = report.errors.filter(
+    (finding) => REPORTED_CHECK_CODES.has(finding.code) || isClaudeCodeRequirement(finding),
+  );
   const warnings: Warning[] = [];
   for (const finding of report.warnings) {
     const code = WARNING_CODE_BY_CHECK[finding.code];
@@ -554,8 +648,100 @@ const projectionIndexesFolder = (folder: string): boolean =>
   classifyPath(`${folder}/${FOLDER_PROBE_FILENAME}`) !== null;
 
 /**
- * The folder a `folder` field names, as a workspace-relative path under
- * `data/docs/`, or a 400.
+ * The document roots a create may name **outright**, by their declared path —
+ * every root SPEC.md §7 adds "alongside `data/`" (SERVER-122).
+ *
+ * Read out of {@link DOCUMENT_ROOTS} rather than listed here, so a root declared
+ * later is creatable the same day and no second list can drift from the
+ * projection's. The `data/` roots are excluded because the `folder` grammar is
+ * *already* rooted at `data/docs/` — `normalizeDocFolder` owns every spelling
+ * under it, including the escapes — and a second door onto the same place would
+ * be two rules for one path.
+ *
+ * Membership is not permission: naming a root here only makes it *reachable*.
+ * {@link resolveFolder} still asks the root what it holds (its declared `type`)
+ * and asks {@link projectionIndexesFolder} whether an ordinary `*.md` written
+ * there would be indexed at all — which is what keeps `.claude/skills` refused,
+ * since that root indexes `SKILL.md` files alone and has its own verb
+ * (`POST /api/skills`).
+ */
+const NAMEABLE_ROOTS: readonly DocumentRoot[] = DOCUMENT_ROOTS.filter(
+  (root) => !root.path.startsWith("data/"),
+);
+
+/**
+ * The nameable root `folder` spells out, or `null`.
+ *
+ * The declared path **exactly**, never a folder beneath one. Nothing is lost by
+ * that — every nameable root is flat or `SKILL.md`-shaped, so a subfolder is
+ * something the projection would not index anyway — and it is what keeps this
+ * grammar clear of traversal altogether: a `folder` carrying `..` matches no
+ * root's path, so it falls through to `normalizeDocFolder` and is judged there
+ * by the same code, in the same words, as before this root existed
+ * (SERVER-122). That matters because normalization and prefix-matching disagree
+ * — `.claude/agents/../../etc` *is* `data/docs/etc` — and a matcher that ran
+ * first would answer for a path the caller did not name.
+ */
+const namedRoot = (folder: string): DocumentRoot | null =>
+  NAMEABLE_ROOTS.find((root) => root.path === folder) ?? null;
+
+/**
+ * A root a request named, or the 400 explaining why a document cannot be
+ * created there.
+ *
+ * Both refusals are questions put to the root's own declaration rather than to
+ * a list kept here: what type it holds, which is the type it *overrides* every
+ * file under it to (a `note` filed in `.claude/agents/` would be indexed as an
+ * `agent-def` — the caller would not get the document they asked for), and
+ * whether the projection indexes an ordinary `*.md` written there at all.
+ */
+function admitRoot(root: DocumentRoot, spelled: string, forType: string | undefined): string {
+  if (root.type !== null && root.type !== forType) {
+    validationError("that root holds one kind of document, and this is not it", [
+      {
+        path: "folder",
+        message:
+          `${spelled} indexes every file under it as \`type: ${root.type}\`, so a ` +
+          `\`${forType ?? "note"}\` filed there would not be the document you asked for`,
+      },
+    ]);
+  }
+  if (!projectionIndexesFolder(root.path)) {
+    validationError("folder is not a location documents are indexed from", [
+      {
+        path: "folder",
+        message:
+          `${spelled} is a document root, but it does not index an ordinary \`*.md\` file ` +
+          "written into it, so a document filed there could never be read back",
+      },
+    ]);
+  }
+  return root.path;
+}
+
+/**
+ * The root a document of `type` is created in when the request names no folder
+ * — §7's "additional document roots", each of which declares the one type it
+ * holds, or `null` for the ordinary inbox-first case.
+ *
+ * This is the spelling the product's own agent uses. `orchestrate/SKILL.md`
+ * tells it that "a new `type: agent-def` document is all it takes to make a
+ * persona addressable as `@<name>`", and Architecture Decision 2 confines it to
+ * `corpus doc create` — so `--type agent-def` with no folder has to reach
+ * `.claude/agents/`, or the instruction names something its only interface
+ * cannot do (SERVER-122). An explicit `folder` always wins, which is what keeps
+ * a document *about* an agent-def expressible: `--folder inbox` still files one
+ * under `data/docs/`, exactly as `invocableName` already contemplates for
+ * skills.
+ */
+const rootForType = (type: string | undefined): DocumentRoot | null =>
+  type === undefined
+    ? null
+    : (NAMEABLE_ROOTS.find((root) => root.type === type && projectionIndexesFolder(root.path)) ??
+      null);
+
+/**
+ * The folder a `folder` field names, as a workspace-relative path, or a 400.
  *
  * The contract's grammar is "a bare name (`finance`) or the full prefix
  * (`data/docs/finance`)" — an absolute path is neither, so it is refused rather
@@ -565,9 +751,25 @@ const projectionIndexesFolder = (folder: string): boolean =>
  * — here, at validation time, ahead of the write pipeline, because a document
  * that is written and committed before anyone notices it is unreadable has
  * already damaged the audit trail (SERVER-037).
+ *
+ * `forType` extends that grammar with §7's other document roots, and only a
+ * caller that supplies it can reach them: **a create may name a declared root
+ * by its declared path** (`.claude/agents`), and a create that names no folder
+ * at all lands in the root its `type` declares (see {@link rootForType}). Both
+ * doors go through {@link NAMEABLE_ROOTS}, so neither can admit a place the
+ * projection does not index. Omitting `forType` — which `move` and the bulk
+ * act do, having no new type to file under — leaves the answer under
+ * `data/docs/` exactly as it has always been.
  */
-export function resolveFolder(folder: string | undefined): string {
+export function resolveFolder(folder: string | undefined, forType?: string): string {
   const trimmed = folder?.trim();
+  if (trimmed === undefined || trimmed === "") {
+    const implied = rootForType(forType);
+    if (implied !== null) return implied.path;
+  } else {
+    const named = namedRoot(trimmed.replace(/\/+$/, ""));
+    if (named !== null) return admitRoot(named, trimmed, forType);
+  }
   if (trimmed !== undefined && (trimmed.startsWith("/") || /^[A-Za-z]:/.test(trimmed))) {
     validationError("folder must be a path under data/docs", [
       { path: "folder", message: `${folder ?? ""} is an absolute path, not a folder name` },

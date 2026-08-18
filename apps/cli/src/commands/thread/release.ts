@@ -1,5 +1,6 @@
 import { warningSuffix } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { residentLabel } from "../resident.js";
 
 /**
  * `corpus thread release` — dissolve a conversation's residency (SPEC.md §7).
@@ -38,7 +39,9 @@ export async function runThreadRelease(context: WorkspaceCommandContext): Promis
   context.out.line(
     departing === null || departing === undefined
       ? `${id} had no resident — nothing to release${suffix}`
-      : `released ${departing.name} from ${id}${suffix}`,
+      : // The shared label, so that releasing a resident designated with no
+        // profile says so rather than printing its null `name` (SHARED-048).
+        `released ${residentLabel(departing)} from ${id}${suffix}`,
   );
 }
 

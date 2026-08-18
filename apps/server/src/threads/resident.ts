@@ -18,6 +18,16 @@
 // a third state, which is why the release deletes the key instead of writing
 // `resident: null`.
 //
+// **A resident need not have a profile** (§7's SHARED-048 rider, SERVER-121).
+// Naming none is the ordinary designation and requires nothing to exist in the
+// workspace first; naming a `type: agent-def` is the refinement. The only two
+// things that differ between them in this module are the name lookup — which a
+// general designation skips entirely, so it can never 404 — and the word the
+// commit subject uses. Everything downstream is deliberately identical, because
+// a profile says *how* the agent works and nothing about *what it owns*: the
+// same frontmatter key, the same event on the same lane, the same projection
+// row, the same release, the same resolution releasing it.
+//
 // **User-only, both halves** (`403` for `x-corpus-author: agent`). A resident
 // claims a conversation and every artifact that grows out of it; an agent able
 // to designate would be choosing who answers a person's messages, and an agent
@@ -62,6 +72,7 @@ import {
 } from "../docs/index.js";
 import { AGENTS_KEY, DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { conflict, forbidden, notFound } from "../errors.js";
+import type { ProjectionDb } from "../projection/index.js";
 import { RESIDENT_DESIGNATED } from "../queue/lanes.js";
 import { MENTION_TYPE, resolveMentionTarget } from "./mentions.js";
 import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
@@ -126,7 +137,10 @@ function requireStandalone(thread: LoadedThread): LoadedThread {
  *
  * The resident is carried resolved — `{name, docId}` — for the reason the
  * response carries it resolved: the consumer would otherwise repeat a lookup
- * this server has already made.
+ * this server has already made. **Both halves are null for a general resident**,
+ * which is a designation like any other and not a designation of nobody: the
+ * listener to launch is the workspace's ordinary agent, with no persona document
+ * to read (SPEC.md §7, SHARED-048).
  */
 export const residentDesignatedPayload = (
   threadId: string,
@@ -141,11 +155,48 @@ const fileResident = (thread: LoadedThread): Resident | null =>
   residentOrNull(thread.loaded.parsed.data["resident"]);
 
 /**
- * Designate `name` as `id`'s resident.
+ * How a commit subject names a resident designated with **no** profile.
  *
- * The name is resolved the way a `@mention` of it resolves (§8, through the same
- * index) — so a designation and a mention can never name different documents —
- * and the **resolved** name is what gets stored, never the caller's spelling.
+ * A word here and nowhere else. `Resident.name` stays null on every surface a
+ * person picks from — the roster, the composer's recipient list, the board badge
+ * — because a synthesised name there would sit beside real profile names with
+ * nothing to tell them apart, and could collide with an agent-def titled the
+ * same (CONTRACT-061). A `git log` subject is prose about what happened, chooses
+ * nothing and is matched against nothing, so it may say in words what the field
+ * says by being absent.
+ */
+const GENERAL_RESIDENT_SUBJECT = "general resident";
+
+/**
+ * The `Resident` a request designates: the resolved profile it named, or §7's
+ * general resident when it named none.
+ *
+ * **Absence is the general case and never reaches the lookup**, which is what
+ * makes designating require nothing to exist in the workspace first. A name that
+ * *is* given still resolves the way a `@mention` of it resolves (§8, through the
+ * same index) — so a designation and a mention can never name different
+ * documents — and still 404s when it misses: a typo is refused rather than
+ * degraded to a general resident, because a typo that looked like it worked is
+ * the worse outcome. A blank name never gets here at all; `AgentNameSchema`
+ * makes it a `400`, which is the distinction between dropping a name by accident
+ * and asking for no profile.
+ */
+function residentFor(projection: ProjectionDb, name: string | undefined): Resident {
+  if (name === undefined) return { name: null, docId: null };
+  const target = resolveMentionTarget(projection, MENTION_TYPE, name);
+  if (target === null) {
+    throw notFound(
+      `no agent named ${name} in this workspace — a designation names an agent-def the ` +
+        "way a mention does",
+    );
+  }
+  // The **resolved** name is what gets stored, never the caller's spelling.
+  return { name: target.name, docId: target.docId };
+}
+
+/**
+ * Designate `id`'s resident: the profile `request.name` names, or a general
+ * resident when it names none.
  *
  * An **archived** agent-def designates rather than being refused, which is the
  * mention doctrine applied here: never silently ignore, never silently refuse.
@@ -176,23 +227,20 @@ export async function designateResident(
 
   return mutex.run(id, async (): Promise<ResidentChange> => {
     const thread = requireStandalone(loadThread(workspace, id));
-    const target = resolveMentionTarget(workspace.projection, MENTION_TYPE, request.name);
-    if (target === null) {
-      throw notFound(
-        `no agent named ${request.name} in this workspace — a designation names an agent-def the ` +
-          "way a mention does",
-      );
-    }
-    const resident: Resident = { name: target.name, docId: target.docId };
+    const resident = residentFor(workspace.projection, request.name);
 
+    // Both halves compared, so replacing in either direction is a write:
+    // general → profiled moves `name`, profiled → general moves it back, and
+    // one profile → another moves both.
     const current = fileResident(thread);
     const unchanged =
       current !== null && current.name === resident.name && current.docId === resident.docId;
 
+    const named = resident.name ?? GENERAL_RESIDENT_SUBJECT;
     const result = unchanged
       ? null
       : await writeResident(workspace, thread, actor, resident, {
-          subject: `resident designate: ${resident.name} on ${thread.title} (${id}) by ${actor}`,
+          subject: `resident designate: ${named} on ${thread.title} (${id}) by ${actor}`,
         });
 
     // After the write, inside the lane, exactly as a turn's `comment.created`

@@ -73,7 +73,28 @@ describe("corpus thread release", () => {
       "GET /api/threads/th_4b8e2c",
       "DELETE /api/threads/th_4b8e2c/resident",
     ]);
-    expect(harness.stdout()).toBe("released researcher from th_4b8e2c\n");
+    expect(harness.stdout()).toBe("released researcher (doc_r1) from th_4b8e2c\n");
+  });
+
+  it("names a departing resident that had no profile as one, not as a null", async () => {
+    // The two nulls this verb has to keep apart are one level from each other:
+    // `resident: null` is nobody to release, and `{name: null}` is somebody with
+    // no profile. Printing the second's `name` gave `released null from …`.
+    const stub = await startStubServer(residentStub({ name: null, docId: null }));
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadRelease(harness.context);
+
+    expect(harness.stdout()).toBe("released a general resident from th_4b8e2c\n");
+  });
+
+  it("names a departing resident whose profile has gone without inventing an id", async () => {
+    const stub = await startStubServer(residentStub({ name: "researcher", docId: null }));
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadRelease(harness.context);
+
+    expect(harness.stdout()).toBe("released researcher (profile missing) from th_4b8e2c\n");
   });
 
   it("reports a release with nothing to release as exactly that", async () => {
@@ -111,7 +132,7 @@ describe("corpus thread release", () => {
     const second = stubContext(stub, { args: ARGS });
     await runThreadRelease(second.context);
 
-    expect(first.stdout()).toBe("released researcher from th_4b8e2c\n");
+    expect(first.stdout()).toBe("released researcher (doc_r1) from th_4b8e2c\n");
     expect(second.stdout()).toBe("th_4b8e2c had no resident — nothing to release\n");
   });
 
