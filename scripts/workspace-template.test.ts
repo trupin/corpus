@@ -4043,14 +4043,19 @@ describe("a resident with no persona to bind", () => {
  *
  * Two things are pinned here and they are pinned for different reasons.
  *
- * **The mechanism**, because it is silent when it is wrong. `corpus doc create
- * --type agent-def` writes Corpus's frontmatter and none of Claude Code's, and
- * Claude Code loads a profile only when **both** `name` and `description` are
- * present — measured against a real session on 2026-08-17: with neither, with
- * `name` alone, and with `description` alone, the profile is absent from the
- * subagent list and nothing anywhere reports it, while `corpus doc check`
- * passes it clean. So the skill's second command is the whole difference
- * between a persona and a file, and the text is held to teaching it.
+ * **The mechanism**, which SERVER-123 moved into the server on 2026-08-17 and
+ * which this file therefore pins in its new position rather than its old one.
+ * Claude Code still loads a profile only when **both** `name` and `description`
+ * are present — measured against a real session: with neither, with `name`
+ * alone, and with `description` alone, the profile is absent from the subagent
+ * list. What changed is who supplies them. `corpus doc create --type agent-def`
+ * now derives `name` from the allocated filename (a caller-supplied one that
+ * disagrees is a `400`) and defaults `description` to the title, and `corpus
+ * doc check` reports either fault as a blocking `frontmatter-invalid` error. So
+ * the skill's second command is no longer the difference between a persona and
+ * a file — the server is — and the text is held to saying so: `--extra name=`
+ * is gone, the read-back is gone, and what remains is the description as a
+ * **quality** step over a title the server can copy but cannot improve on.
  *
  * **The worked example against the skill's own prose**, because AGENT-026 is
  * the defect this repo has already shipped: an example contradicting the rule
@@ -4061,9 +4066,15 @@ describe("a resident with no persona to bind", () => {
 describe("profile skill body", () => {
   const body = documentAt("claude/skills/profile/SKILL.md").body;
 
-  /** The `--extra name=` the worked example sets, and the path its create printed. */
-  const exampleName = /--extra name=([a-z0-9-]+)/.exec(body)?.[1];
+  /**
+   * The path the worked example's create printed, the title that produced it,
+   * and the address that follows from the two. Read off the path rather than
+   * off an `--extra name=`, because since SERVER-123 the name is the filename
+   * and the skill passes nothing: the title is the only input the example has.
+   */
   const examplePath = /created doc_\w+ — (\.claude\/agents\/[a-z0-9-]+)\.md/.exec(body)?.[1];
+  const exampleTitle = /--type agent-def --title "([^"]+)"/.exec(body)?.[1];
+  const exampleName = examplePath?.slice(".claude/agents/".length);
 
   it("carries its sections, each of them substantial", () => {
     const sections = new Map<string, string[]>();
@@ -4082,28 +4093,47 @@ describe("profile skill body", () => {
     }
   });
 
-  it("teaches the create and the two fields as one procedure, not one command", () => {
+  it("teaches the create as the whole profile and the description as the judgement", () => {
     expect(body).toMatch(/corpus doc create --type agent-def --title/);
-    expect(body).toMatch(/--extra name=\S+ --extra description=/);
+    expect(body).toMatch(/--extra description='/);
     // The reason the second command exists, stated as the consequence rather
     // than as a step: this is what a reader skips if it reads as bookkeeping.
-    expect(body).toMatch(/needs \*\*both `name` and `description`\*\*/);
-    expect(body).toMatch(/loads nothing, lists nothing, and warns about nothing/);
+    // Since SERVER-123 the consequence is a profile nobody picks, not one that
+    // cannot load, and the text must not go on claiming the older, larger one.
+    expect(body).toMatch(/the one field worth your judgement/);
+    expect(body).toMatch(/a quality step and not a repair/);
+    expect(body).toMatch(/a working profile\s+nobody has a reason to pick/);
   });
 
-  it("ties the frontmatter name to the filename, with the cost of the mismatch", () => {
-    expect(body).toMatch(/exactly the stem of the path the create printed/);
-    expect(body).toMatch(/one document two different addresses and no error at all/);
+  it("passes no name, and says why the field is the server's", () => {
+    // The redundancy SERVER-123 created, shed rather than left harmless: a
+    // `name` that agrees is accepted and one that disagrees is a `400`, so the
+    // flag can only ever be noise or an error.
+    expect(body, "the skill still passes a redundant `--extra name=`").not.toMatch(
+      /--extra name=[a-z0-9-]/,
+    );
+    expect(body).toMatch(/\*\*The name is not yours to set\.\*\*/);
+    expect(body).toMatch(/from the filename\s+it just allocated/);
+    expect(body).toMatch(/`--extra name=…` is refused at exit \*\*5\*\*/);
     // Both resolvers named, since the mismatch is only comprehensible as two of
     // them disagreeing.
-    expect(body).toMatch(/Corpus resolves `@<name>`\s+from the file's path/);
-    expect(body).toMatch(/Claude Code resolves it from this field/);
+    expect(body).toMatch(/Corpus resolves `@<name>` from the file's path/);
+    expect(body).toMatch(/Claude\s+Code\s+resolves it from this field/);
+    expect(body).toMatch(/one\s+document two different addresses/);
   });
 
-  it("says the read-back is the only check, and that doc check is not one", () => {
-    expect(body).toMatch(/corpus doc show doc_\w+ --json \| jq/);
-    expect(body).toMatch(/`corpus doc check` passes a profile\s+carrying neither field/);
-    expect(body).toMatch(/a green check proves nothing here/);
+  it("names doc check as the check, and keeps the pass no check can make", () => {
+    // The read-back existed because nothing else looked. Something else looks
+    // now, so keeping it would teach ceremony — and teaching the agent to
+    // verify what the server guarantees is how a skill stops being read.
+    expect(body, "the read-back survived the mechanism that replaced it").not.toMatch(
+      /corpus doc show doc_\w+ --json \| jq/,
+    );
+    expect(body).toMatch(/\*\*There is nothing to read back\.\*\*/);
+    expect(body).toMatch(/`corpus doc check` reports a profile Claude Code cannot\s+load/);
+    expect(body).toMatch(/the write path refuses to save one/);
+    // What the server cannot check is the whole reason this skill exists.
+    expect(body).toMatch(/whether the body says anything worth\s+following; that pass is yours/);
   });
 
   it("keeps writing a profile separate from putting it to work", () => {
@@ -4152,13 +4182,17 @@ describe("profile skill body", () => {
    * The AGENT-026 pins: each one reads a rule out of the prose and the matching
    * decision out of the worked example. They fail on a change to either half.
    */
-  it("works an example whose name obeys the naming rule it states", () => {
+  it("works an example whose title produces the address the rule promises", () => {
     expect(body).toMatch(/One word where you can, hyphenated\s+where you must, never a phrase/);
-    expect(exampleName, "the example sets no `--extra name=`").toBeDefined();
+    expect(body).toMatch(/the title you pass decides that filename/);
     expect(examplePath, "the example's create prints no path").toBeDefined();
-    // The rule the prose states about `name` and the filename, checked on the
-    // one place a reader will copy from.
-    expect(`.claude/agents/${exampleName ?? ""}`).toBe(examplePath);
+    expect(exampleTitle, "the example's create passes no title").toBeDefined();
+    // The chain the skill now teaches, end to end on the one place a reader
+    // will copy from: title → slugged filename → the `@name` the reply offers.
+    // It replaces the old `--extra name=` pin, which pinned a flag that is now
+    // redundant at best and a `400` at worst.
+    const slugged = (exampleTitle ?? "").toLowerCase().replaceAll(/\s+/g, "-");
+    expect(`.claude/agents/${slugged}`).toBe(examplePath);
     expect(exampleName, "the worked name is not the one word the rule asks for").not.toContain("-");
   });
 
@@ -4534,10 +4568,13 @@ describe("one rule, one skill", () => {
       // AGENT-034. The procedure has exactly two moving parts, and both are
       // vocabulary rather than phrasing, which is what makes them detectable at
       // all: the **flag** that creates the document, and the **pair of fields**
-      // that finishes it. Both halves are needed — a skill that only ran the
-      // create would ship a profile Corpus resolves and Claude Code cannot
-      // load, silently — so a second skill restating either half is restating
-      // the procedure.
+      // Claude Code reads. Both halves are still registered after SERVER-123
+      // moved the second into the server, for two different reasons. The flag
+      // is the procedure. The pair of fields is no longer something a skill has
+      // to *do*, but it is still something a skill can wrongly explain — a
+      // second account of what Claude Code requires would drift from this one
+      // the next time the server changes underneath it, which is exactly what
+      // happened to this skill — so it stays single-owner.
       //
       // `--type agent-def` is deliberately the flag and not the frontmatter
       // `type: agent-def`: the *fact* that a persona is a `type: agent-def`

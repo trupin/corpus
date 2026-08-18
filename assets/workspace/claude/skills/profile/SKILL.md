@@ -20,8 +20,10 @@ A **profile** is a `type: agent-def` document living at `.claude/agents/<name>.m
 two readers, and both matter for what you put in it. Corpus resolves `@<name>` to it, so it
 can be named in a comment and made **resident** on a standalone conversation. Claude Code
 loads it as a subagent, so work can be dispatched to it. Neither reader is optional and they
-read different parts of the file, which is why *Writing it* below is two commands rather than
-one.
+read different parts of the file: Corpus reads the body, once this persona has been chosen;
+Claude Code reads the `description`, which is what somebody chooses it *by*. The create writes
+enough of both to work. What it cannot write is a description worth reading, which is why
+*Writing it* below is two commands rather than one.
 
 You are reached as `/profile` — by a directive in a thread, by whoever is handling an event
 that plainly asks for this, or by a person at a terminal. No queue event is required.
@@ -114,8 +116,8 @@ body is short and it is read on every single invocation, so every sentence in it
 
 ## Writing it
 
-Two commands, and the second one is not optional. Skipping it leaves a profile that Corpus
-can see and Claude Code cannot run, and nothing anywhere reports it.
+Two commands. The first makes a profile that already works; the second makes it one another
+agent has a reason to choose.
 
 **Check the name is free first**, because a refusal after you have written the body wastes the
 writing. The list is small and typed — this is not a corpus sweep:
@@ -134,27 +136,32 @@ EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
 ```
 
-**Then write the two fields Claude Code reads.** The create writes Corpus's frontmatter and
-none of Claude Code's, and Claude Code needs **both `name` and `description`** — with only one
-of them, or with neither, it loads nothing, lists nothing, and warns about nothing:
+**The name is not yours to set.** The server writes it into the frontmatter from the filename
+it just allocated, because that filename *is* the address: `.claude/agents/bookkeeper.md` is
+what makes `@bookkeeper` resolve. Corpus resolves `@<name>` from the file's path while Claude
+Code resolves it from this field, so a value that disagreed with its filename would give one
+document two different addresses — `@bookkeeper` in a comment, `money` to a dispatch. That is
+why the field is derived rather than passed, and why `--extra name=…` is refused at exit **5**
+instead of accepted. The title you chose decided the filename; the path the create printed is
+where to read it off.
+
+**Then write the description, which is the one field worth your judgement.** The server fills
+it in from the title so the profile loads at all, and a title is a label rather than a reason:
+*Bookkeeper* tells whoever is choosing an agent nothing about when to choose this one. Replace
+it:
 
 ```bash
-corpus doc edit doc_b7c1d5 --extra name=bookkeeper --extra description='Reach for this when a question is about money in the corpus — a balance, an invoice, what a figure was and which document it came from.' --from agent
+corpus doc edit doc_b7c1d5 --extra description='Reach for this when a question is about money in the corpus — a balance, an invoice, what a figure was and which document it came from.' --from agent
 ```
 
-`name` must be **exactly the stem of the path the create printed**. Corpus resolves `@<name>`
-from the file's path while Claude Code resolves it from this field, so a `name` that disagrees
-with its filename gives one document two different addresses and no error at all:
-`.claude/agents/bookkeeper.md` carrying `name: money` is `@bookkeeper` in a comment and
-`money` to a dispatch. Neither `--extra` takes a key; both name their own delta.
+That is a quality step and not a repair — skip it and what you have is a working profile
+nobody has a reason to pick. `--extra` names its own delta and takes no key.
 
-**Read it back.** This is the only check that exists. `corpus doc check` passes a profile
-carrying neither field, so a green check proves nothing here:
-
-```bash
-corpus doc show doc_b7c1d5 --json | jq '{path, name: .frontmatter.extra.name, description: .frontmatter.extra.description}'
-{"path":".claude/agents/bookkeeper.md","name":"bookkeeper","description":"Reach for this when a question is about money…"}
-```
+**There is nothing to read back.** `corpus doc check` reports a profile Claude Code cannot
+load — a description that is missing or empty, a `name` that is not the filename — as an
+error, and the write path refuses to save one, so a create that printed a path produced a
+persona that loads. What no check can tell you is whether the body says anything worth
+following; that pass is yours, and it is the section above.
 
 **Revising a profile that already exists is not this skill.** It is an ordinary document edit,
 under the rules the orchestrate skill states for writing a document, and it needs the person's
@@ -209,9 +216,9 @@ and the fastest route to a good one is a draft that says out loud where it is so
 ## Worked example
 
 **This is one profile, not a template.** What is worth copying below is the *checking* — the
-gathering, the two commands, the read-back, and the pass over the body against the rules
-above. The words are this request's and belong to nobody else's; a request that sounds
-similar still gets a persona written from what that person actually said.
+gathering, the two commands, and the pass over the body against the rules above. The words are
+this request's and belong to nobody else's; a request that sounds similar still gets a persona
+written from what that person actually said.
 
 The thread: *"I keep having to remind you where the numbers came from. Can I have an agent
 that just does that properly for the money stuff?"*
@@ -234,11 +241,9 @@ You keep this workspace's money documents in one shape.
 A good answer from you is a short table of figures with their sources and one sentence under it. Where that is not enough room, say what is missing rather than padding it out.
 EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
-corpus doc edit doc_b7c1d5 --extra name=bookkeeper --extra description='Reach for this when a question is about money in the corpus — a balance, an invoice, what a figure was and which document it came from.' --from agent
+corpus doc edit doc_b7c1d5 --extra description='Reach for this when a question is about money in the corpus — a balance, an invoice, what a figure was and which document it came from.' --from agent
 edited doc_b7c1d5
 key 4f2a9c7e1b8d0356a4e9c2f7b1d84a06e35c9f2b7a08d146e2c95b3f7a1d0e84
-corpus doc show doc_b7c1d5 --json | jq '{path, name: .frontmatter.extra.name}'
-{"path":".claude/agents/bookkeeper.md","name":"bookkeeper"}
 ```
 
 Now check that body against the rules above, which is the step worth not skipping. Two things
