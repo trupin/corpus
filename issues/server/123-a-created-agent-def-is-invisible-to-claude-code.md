@@ -441,8 +441,16 @@ tolerated save. `db doctor` clean over 16 documents. Server stopped, port free.
 
 ## Handed back to the orchestrator
 
-1. **`assets/workspace/claude/skills/profile/SKILL.md` (agent-runtime domain,
-   criterion 6) — one paragraph is now false.** It says *"`corpus doc check`
+**Item 1 was actioned and is closed** (AGENT-034, commits `fe5182ec` and
+`ad14cb05`). Neither sentence survives: the skill now says *"What reports a
+profile Claude Code cannot load … is `corpus doc check`, at any age and as an
+error"* and *"There is nothing to read back"*, and `--extra name=` is gone from
+both the procedure and the worked example. Left below as written, because the
+handback is the record of what this issue owed another domain — PR #49's fifth
+review caught that it had never been marked done. Item 2 is now **SERVER-124**.
+
+1. ~~**`assets/workspace/claude/skills/profile/SKILL.md` (agent-runtime domain,
+   criterion 6) — one paragraph is now false.**~~ **CLOSED — see above.** It says *"`corpus doc check`
    passes a profile carrying neither field, so a green check proves nothing
    here"* and calls the read-back "the only check that exists". Both are now
    wrong. The `--extra name=<stem>` half of its second command is redundant (the
@@ -450,8 +458,11 @@ tolerated save. `db doctor` clean over 16 documents. Server stopped, port free.
    go. What should stay: `--extra description=…` as a **quality** step — the
    server's default is the title, which loads but says nothing about *when to
    reach for this one*. Nothing in the skill is broken, so this is not a blocker.
-2. **Residual §7:399 gap for skills**, scoped out above with reasons — worth its
-   own issue if you want the sentence true for both roots.
+2. ~~**Residual §7:399 gap for skills**, scoped out above with reasons — worth
+   its own issue if you want the sentence true for both roots.~~ **FILED as
+   SERVER-124**, which also carries the wider finding PR #49's third review
+   turned up: Corpus's *own* frontmatter set goes unvalidated under every
+   `.claude/` root, not just the skills one.
 
 ## Completion Checklist (domain agent)
 
