@@ -147,8 +147,15 @@ export function parseFrontmatter(relPath: string, source: string): TemplateDocum
 }
 
 /**
- * Template subtrees copied byte for byte from a third party, which therefore do
- * **not** carry Corpus frontmatter and are not template documents (AGENT-037).
+ * Template subtrees holding third-party files copied byte for byte, which
+ * therefore do **not** carry Corpus frontmatter and are not template documents
+ * (AGENT-037).
+ *
+ * The prefix covers one file this repository *did* author: `PROVENANCE.md`, the
+ * note recording where the rest came from. It is excluded for a neighbouring
+ * reason rather than the same one — it documents the vendored files and travels
+ * with them, and giving a provenance note a §5 block would make it seed content,
+ * which it is not. Its own test asserts what it must say.
  *
  * Every other `.md` in this tree is authored here and carries frontmatter, which
  * is why {@link loadTemplateDocuments} can demand it. A vendored file cannot:
