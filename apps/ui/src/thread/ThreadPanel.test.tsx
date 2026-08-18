@@ -430,8 +430,16 @@ describe("designating a resident", () => {
       threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
       rows: {
         // The `@` autocomplete's own directory read — same filter, same key.
+        // Under `.claude/agents/`, because since SERVER-125 that is what makes a
+        // row addressable, and the menu offers nothing it cannot designate
+        // (UI-123).
         "?limit=50&type=agent-def": [
-          { ...threadRowFixture({ id: "doc_agentdef" }), type: "agent-def", title: "researcher" },
+          {
+            ...threadRowFixture({ id: "doc_agentdef" }),
+            type: "agent-def",
+            title: "researcher",
+            path: ".claude/agents/researcher.md",
+          },
         ],
       },
     });

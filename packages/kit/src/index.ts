@@ -270,6 +270,12 @@ export {
 // `handleAutocompleteKeyDown` and `useRefCompletions` are the halves the
 // document editor's `[[` can share without sharing this hook's trigger grammar
 // (UI-053): the keyboard contract, and the list of documents itself.
+//
+// `isAddressableTarget` is published for the same reason and one level down: it
+// is the rule deciding *which* `agent-def` / `skill` rows may be offered at all
+// (SERVER-125), and any surface outside this hook that offers a mention target —
+// the board's designate menu today, a plugin's own picker tomorrow — must ask
+// the same question rather than re-derive it (UI-123).
 export {
   applyCompletion,
   AUTOCOMPLETE_LIMIT,
@@ -279,6 +285,7 @@ export {
   GENERIC_AGENT_TOKEN,
   handleAutocompleteKeyDown,
   invocableName,
+  isAddressableTarget,
   MENTION_DOC_TYPE,
   rowToken,
   SKILL_DOC_TYPE,

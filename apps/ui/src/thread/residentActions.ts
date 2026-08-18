@@ -1,5 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import type { LaneRow } from "@corpus/kit";
+import { isAddressableTarget, type LaneRow } from "@corpus/kit";
 import type { MenuAction } from "../menu/menuModel";
 
 /**
@@ -71,24 +71,39 @@ export interface AgentDefRow {
 /**
  * The name to **designate by**, and the document it belongs to.
  *
- * The name is the title, because that is what `GET /api/docs` carries and what
- * the autocomplete offers; the server resolves a name against both the file stem
- * and the title, case-insensitively, so the title always resolves. A row whose
- * title is blank is dropped rather than offered — an item labelled with nothing
- * is not an offer, and designating by an empty name is a `400`.
+ * The name is the title, because that is what `GET /api/docs` carries; the
+ * server resolves a name against both the file stem and the title,
+ * case-insensitively, so the title of an addressable row always resolves. A row
+ * whose title is blank is dropped rather than offered — an item labelled with
+ * nothing is not an offer, and designating by an empty name is a `400`.
  *
  * **The title is a spelling and not an identity.** What the server *stores* is
- * the name it resolved to — `invocableName(path) ?? title`, which for a file
- * under `.claude/agents/` is the **stem** — so designating `Bookkeeper` makes a
+ * the name it resolved to — the `invocableName`, which for a file under
+ * `.claude/agents/` is the **stem** — so designating `Bookkeeper` makes a
  * resident called `bookkeeper`. That is why the id travels beside the name: it
  * is the only field of a row that can be compared with a lane's resident (see
  * {@link residentActions}).
+ *
+ * **A row with no invocable name is not offered at all** (UI-123). SERVER-125
+ * stopped indexing an off-root `type: agent-def` as a mention target, and it took
+ * the title alias with it: a document *about* a persona, filed under
+ * `data/docs/`, is now addressable under no spelling and a designation naming it
+ * earns a `404` that names the file. So the gate is `isAddressableTarget` — the
+ * kit's, the same one the `@` autocomplete applies, because two copies of this
+ * rule is exactly how both surfaces came to offer what the server refuses.
+ *
+ * The filter is here and not in the query: `GET /api/docs?type=agent-def` still
+ * returns every agent-def, and it must — the board's `type:` filter and the
+ * seeded "Skills & agents" view read it, and the dropped document stays listed,
+ * readable and editable. All it loses is a menu item promising a designation
+ * that cannot land.
  */
 export function agentDefRows(
   rows: readonly DocRow[] | undefined,
 ): readonly AgentDefRow[] | undefined {
   if (rows === undefined) return undefined;
   return rows
+    .filter((row) => isAddressableTarget(row))
     .map((row) => ({ id: row.id, name: row.title.trim() }))
     .filter((row) => row.name !== "");
 }

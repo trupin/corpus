@@ -939,7 +939,7 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | done | P1 | — |
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
 | SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |
-| UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | todo | P0 | SERVER-125 |
+| UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | done | P0 | SERVER-125 |
 
 The five open rows above are **v0.12.0**, agreed with the user on 2026-08-18:
 *everything the profile release left half-true*. They are one story, so they ship

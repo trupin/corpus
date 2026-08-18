@@ -655,8 +655,14 @@ function refIdsIn(body: string): readonly string[] {
   return [...new Set([...body.matchAll(STUB_REF_PATTERN)].map((match) => match[1] ?? ""))];
 }
 
-/** `.claude/agents/<name>.md` — the one agent-def root a designation resolves in. */
-const AGENT_DEF_STEM = /^\.claude\/agents\/(?:.*\/)?([^/]+)\.md$/;
+/**
+ * `.claude/agents/<name>.md` — the one agent-def root a designation resolves in.
+ *
+ * Flat, with no nested segment allowed, because the server's agents root is
+ * `markdown-flat` (`projection/roots.ts`): a file one directory deeper is not an
+ * agent-def at all, and a stub that named it would offer what the server refuses.
+ */
+const AGENT_DEF_STEM = /^\.claude\/agents\/([^/]+)\.md$/;
 
 /**
  * The name a document is **invocable** by, from its path, or `null` for one
@@ -667,6 +673,9 @@ const AGENT_DEF_STEM = /^\.claude\/agents\/(?:.*\/)?([^/]+)\.md$/;
  * whole point of modelling it: the `profile` skill writes title `Bookkeeper`
  * into `.claude/agents/bookkeeper.md`, and since SERVER-122 and CLI-050 that is
  * where a created agent-def lives.
+ *
+ * **And it is the gate on being addressable at all** (SERVER-125): a `null` here
+ * means the document resolves under no spelling, its title included.
  */
 function invocableName(path: string): string | null {
   return AGENT_DEF_STEM.exec(path)?.[1] ?? null;
@@ -1736,13 +1745,18 @@ export async function stubCorpus(
       let resident: Resident = { name: null, docId: null };
       if (name !== undefined) {
         const wanted = name.trim().toLowerCase();
-        const profile = [...store.values()].find(
-          (row) =>
-            row.type === "agent-def" &&
-            [invocableName(row.path), row.title].some(
-              (alias) => alias !== null && alias.toLowerCase() === wanted,
-            ),
-        );
+        const profile = [...store.values()].flatMap((row) => {
+          if (row.type !== "agent-def") return [];
+          // SERVER-125: the invocable name is the **gate**, and it decides the
+          // whole row — a document filed outside `.claude/agents/` answers to
+          // nothing, its title included. Offer surfaces apply the same rule
+          // (`@corpus/kit`'s `isAddressableTarget`, UI-123), so a stub that kept
+          // the title alias here would agree with the bug rather than the server.
+          const invocable = invocableName(row.path);
+          if (invocable === null) return [];
+          const matches = [invocable, row.title].some((alias) => alias.toLowerCase() === wanted);
+          return matches ? [{ id: row.id, invocable }] : [];
+        })[0];
         if (profile === undefined) {
           return json(
             route,
@@ -1752,7 +1766,7 @@ export async function stubCorpus(
         }
         // The **resolved** name, never the caller's spelling — and the resolved
         // name of a file under `.claude/agents/` is its stem, not its title.
-        resident = { name: invocableName(profile.path) ?? profile.title, docId: profile.id };
+        resident = { name: profile.invocable, docId: profile.id };
       }
       setLane(id, resident);
       return json(route, threadMutation(doc));

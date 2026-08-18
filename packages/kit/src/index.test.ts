@@ -155,6 +155,7 @@ const RUNTIME_SURFACE = [
   "AUTOCOMPLETE_LIMIT",
   "GENERIC_AGENT_TOKEN",
   "invocableName",
+  "isAddressableTarget",
   "MENTION_DOC_TYPE",
   "rowToken",
   "SKILL_DOC_TYPE",
