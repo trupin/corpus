@@ -9,6 +9,7 @@ import {
   requestsAgent,
   resolveMentionTarget,
   scanMentionTokens,
+  unaddressableTarget,
 } from "./mentions.js";
 
 // Real files under the real document roots, projected by the real projector:
@@ -38,6 +39,23 @@ beforeAll(() => {
   ws.write(
     ".claude/skills/orchestrate/SKILL.md",
     "---\nname: orchestrate\ndescription: the agent loop\n---\nBody.\n",
+  );
+  // A persona whose Corpus title is not its filename — the common shape since
+  // SERVER-122, because `corpus doc create --title Bookkeeper` slugs the one and
+  // keeps the other. Both aliases have to answer, and two different callers each
+  // use only one of them (see `targetIndex`).
+  ws.write(
+    ".claude/agents/bookkeeper.md",
+    "---\nname: bookkeeper\ndescription: keeps the money straight\nid: doc_bookkeep\n" +
+      "type: agent-def\ntitle: Bookkeeper\n---\nBody.\n",
+  );
+  // A document *about* a persona, filed where SERVER-122 keeps `--folder`
+  // winning so that it stays expressible. It is not a persona: Claude Code never
+  // loads it, and since SERVER-125 nothing addresses it either.
+  ws.write(
+    "data/docs/inbox/legacy.md",
+    "---\nid: doc_legacy1\ntype: agent-def\ntitle: Legacy\n" +
+      "created: 2026-01-01T00:00:00Z\nupdated: 2026-01-01T00:00:00Z\nstatus: open\n---\nBody.\n",
   );
   ws.reproject();
 });
@@ -178,6 +196,120 @@ describe("resolveMentionTarget", () => {
 
   it("answers nothing for a name no document responds to", () => {
     expect(resolveMentionTarget(ws.db, MENTION_TYPE, "nobody")).toBeNull();
+  });
+});
+
+/**
+ * SERVER-125. A `type: agent-def` document outside `.claude/agents/` used to be
+ * indexed under its title, which made it resolvable, offered and designatable
+ * while Claude Code loaded nothing and no dispatch could reach it.
+ */
+describe("a document outside the root its type is discovered from", () => {
+  it("resolves under no spelling, its title included", () => {
+    expect(resolveMentionTarget(ws.db, MENTION_TYPE, "Legacy")).toBeNull();
+    expect(resolveMentionTarget(ws.db, MENTION_TYPE, "legacy")).toBeNull();
+  });
+
+  // Not an error and not a refusal: §8's own treatment of a name that names
+  // nobody, which is reported and deliberately does not wake the agent.
+  it("is an unresolved token that requests nothing", () => {
+    const parsed = parse("@legacy can you look at this?");
+    expect(parsed.mentions).toEqual([]);
+    expect(parsed.unresolved).toEqual(["@legacy"]);
+    expect(requestsAgent(parsed)).toBe(false);
+  });
+
+  it("is still the document it always was, and says why it is not a persona", () => {
+    expect(unaddressableTarget(ws.db, MENTION_TYPE, " legacy ")).toEqual({
+      docId: "doc_legacy1",
+      path: "data/docs/inbox/legacy.md",
+      title: "Legacy",
+    });
+  });
+
+  it("names nothing when the name is simply a typo", () => {
+    expect(unaddressableTarget(ws.db, MENTION_TYPE, "nobody")).toBeNull();
+    // …nor when the name belongs to a persona that resolves perfectly well.
+    expect(unaddressableTarget(ws.db, MENTION_TYPE, "researcher")).toBeNull();
+  });
+});
+
+/**
+ * The other direction, and the reason the gate is the invocable name rather than
+ * the removal of the title alias: an on-root persona is addressed by its stem in
+ * a composer and by its title from the board's designate menu, and both callers
+ * are real (`residentActions.ts`).
+ */
+describe("a persona in its root whose title is not its filename", () => {
+  it("answers to its stem and to its title alike", () => {
+    expect(parse("@bookkeeper look at this").mentions).toEqual([
+      { name: "bookkeeper", docId: "doc_bookkeep", status: "open" },
+    ]);
+    expect(resolveMentionTarget(ws.db, MENTION_TYPE, "Bookkeeper")).toEqual({
+      name: "bookkeeper",
+      docId: "doc_bookkeep",
+      status: "open",
+    });
+  });
+
+  it("is never reported as unaddressable, under either spelling", () => {
+    expect(unaddressableTarget(ws.db, MENTION_TYPE, "Bookkeeper")).toBeNull();
+    expect(unaddressableTarget(ws.db, MENTION_TYPE, "bookkeeper")).toBeNull();
+  });
+});
+
+/**
+ * The bug the gate closes that nothing else would have: `targetIndex` breaks a
+ * name collision by **id order**, and a created document's `doc_*` id is minted
+ * at random — so an inert document titled like a working persona took its name
+ * away from it whenever its id happened to sort first. The ids here are written
+ * rather than minted so the pre-fix answer is the wrong one every run.
+ */
+describe("an unaddressable document that claims a working name", () => {
+  let shadow: WriteWorkspace;
+
+  beforeAll(() => {
+    shadow = createThreadWorkspace("mentions-shadow");
+    shadow.write(
+      ".claude/agents/researcher.md",
+      "---\nname: researcher\ndescription: digs things up\nid: doc_zzzzzz\n" +
+        "type: agent-def\ntitle: Researcher\n---\nBody.\n",
+    );
+    shadow.write(
+      "data/docs/inbox/about-researcher.md",
+      "---\nid: doc_aaaaaa\ntype: agent-def\ntitle: Researcher\n" +
+        "created: 2026-01-01T00:00:00Z\nupdated: 2026-01-01T00:00:00Z\nstatus: open\n---\nNotes.\n",
+    );
+    shadow.write(
+      ".claude/skills/comment/SKILL.md",
+      "---\nname: comment\ndescription: handles comment.created\nid: doc_zzzzzy\n" +
+        "type: skill\ntitle: Comment\n---\nBody.\n",
+    );
+    shadow.write(
+      "data/docs/inbox/about-comment.md",
+      "---\nid: doc_aaaaab\ntype: skill\ntitle: Comment\n" +
+        "created: 2026-01-01T00:00:00Z\nupdated: 2026-01-01T00:00:00Z\nstatus: open\n---\nNotes.\n",
+    );
+    shadow.reproject();
+  });
+
+  afterAll(() => {
+    shadow.close();
+  });
+
+  it("does not take `@researcher` from the profile that answers it", () => {
+    expect(resolveMentionTarget(shadow.db, MENTION_TYPE, "researcher")?.docId).toBe("doc_zzzzzz");
+    expect(parseMentions(shadow.db, "@researcher please").mentions).toEqual([
+      { name: "researcher", docId: "doc_zzzzzz", status: "open" },
+    ]);
+  });
+
+  // The same rule, the other sigil: `invocableName` has always said a
+  // `type: skill` document under `data/docs/` is a document about a skill.
+  it("does not take `/comment` from the skill that answers it", () => {
+    expect(parseMentions(shadow.db, "/comment please").skills).toEqual([
+      { name: "comment", docId: "doc_zzzzzy", status: "open" },
+    ]);
   });
 });
 

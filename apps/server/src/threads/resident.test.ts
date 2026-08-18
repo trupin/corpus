@@ -343,6 +343,36 @@ describe("POST /api/threads/{id}/resident", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toBeUndefined();
   });
 
+  /**
+   * SERVER-125. A `type: agent-def` document under `data/docs/` used to
+   * designate — the whole conversation handed to a persona Claude Code has never
+   * heard of. It is refused now, and the refusal names the file, because this is
+   * the one surface where somebody asks for a persona by name and waits.
+   */
+  it("refuses an agent-def filed outside `.claude/agents/`, and says which file it is", async () => {
+    const created = await createThread(ws, { body: "start" });
+    const misfiled = await createDoc(ws, { type: "agent-def", title: "Legacy", folder: "inbox" });
+    expect(misfiled.path).toBe("data/docs/inbox/legacy.md");
+
+    const response = await designate(created.id, "Legacy");
+
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as { code: string; message: string };
+    expect(body.code).toBe("not_found");
+    expect(body.message).toContain("data/docs/inbox/legacy.md");
+    expect(body.message).toContain(".claude/agents/");
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toBeUndefined();
+  });
+
+  it("keeps the plain refusal for a name that names no document at all", async () => {
+    const created = await createThread(ws, { body: "start" });
+
+    const body = (await (await designate(created.id, "nobody")).json()) as { message: string };
+
+    expect(body.message).toContain("a designation names an agent-def the way a mention does");
+    expect(body.message).not.toContain("data/docs");
+  });
+
   it("refuses a designation that names nobody", async () => {
     const created = await createThread(ws, { body: "start" });
 

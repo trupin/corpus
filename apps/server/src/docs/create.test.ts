@@ -388,8 +388,15 @@ describe("POST /api/docs", () => {
     // The escape hatch: `type: agent-def` under `data/docs/` is a document
     // *about* a persona, which `invocableName` already contemplates for skills
     // — and it is what every document misfiled before this issue is. Nothing
-    // moves them, and they keep resolving exactly as they did.
-    it("keeps an explicitly foldered agent-def under data/docs, working as before", async () => {
+    // moves them, and it stays a document in every way: created, projected under
+    // the type it declares, readable and writable.
+    //
+    // What it is **not** is addressable (SERVER-125). It used to resolve by its
+    // title, which made it a persona on every surface except the one that
+    // matters — Claude Code loads nothing from here, and `claudeCodeFields`
+    // writes it no `name`/`description` to be loaded by. A document about a
+    // thing is not the thing.
+    it("keeps an explicitly foldered agent-def under data/docs, addressable by nothing", async () => {
       start("create-agent-def-misfiled");
 
       const misfiled = await createDoc(ws, {
@@ -401,9 +408,8 @@ describe("POST /api/docs", () => {
 
       const row = ws.db.prepare("SELECT type FROM documents WHERE id = ?").get(misfiled.id);
       expect(row).toEqual({ type: "agent-def" });
-      // Resolvable by title, as it always was: the path gives it no invocable
-      // name, so the title is the only alias it has.
-      expect(resolveMentionTarget(ws.db, MENTION_TYPE, "Legacy")?.docId).toBe(misfiled.id);
+      expect(resolveMentionTarget(ws.db, MENTION_TYPE, "Legacy")).toBeNull();
+      expect(resolveMentionTarget(ws.db, MENTION_TYPE, "legacy")).toBeNull();
     });
 
     // §5's canonical block is *waived* under this root, never absent: the file

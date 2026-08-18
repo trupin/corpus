@@ -74,7 +74,7 @@ import { AGENTS_KEY, DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { conflict, forbidden, notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 import { RESIDENT_DESIGNATED } from "../queue/lanes.js";
-import { MENTION_TYPE, resolveMentionTarget } from "./mentions.js";
+import { MENTION_TYPE, resolveMentionTarget, unaddressableTarget } from "./mentions.js";
 import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
 import { EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
 
@@ -180,14 +180,29 @@ const GENERAL_RESIDENT_SUBJECT = "general resident";
  * the worse outcome. A blank name never gets here at all; `AgentNameSchema`
  * makes it a `400`, which is the distinction between dropping a name by accident
  * and asking for no profile.
+ *
+ * **The miss names the near-miss when there is one** (SERVER-125). A
+ * `type: agent-def` document filed outside `.claude/agents/` is a document
+ * *about* a persona and is addressable by nothing — but it is titled like a
+ * persona, listed like one, and until this issue it designated like one. A
+ * refusal that said only "no agent named Bookkeeper" would leave the one person
+ * who is looking straight at such a document unable to tell a typo from a file
+ * one directory away from working, so the path is named and so is what is wrong
+ * with it. This is the only surface that can say it: a mention that resolves to
+ * nothing carries a bare token and no document.
  */
 function residentFor(projection: ProjectionDb, name: string | undefined): Resident {
   if (name === undefined) return { name: null, docId: null };
   const target = resolveMentionTarget(projection, MENTION_TYPE, name);
   if (target === null) {
+    const inert = unaddressableTarget(projection, MENTION_TYPE, name);
     throw notFound(
-      `no agent named ${name} in this workspace — a designation names an agent-def the ` +
-        "way a mention does",
+      inert === null
+        ? `no agent named ${name} in this workspace — a designation names an agent-def the ` +
+            "way a mention does"
+        : `no agent named ${name} in this workspace — ${inert.path} declares ` +
+            "`type: agent-def` but is not under `.claude/agents/`, so nothing loads it as a " +
+            `subagent and nothing resolves \`@${name}\` to it; a persona has to live in that root`,
     );
   }
   // The **resolved** name is what gets stored, never the caller's spelling.
