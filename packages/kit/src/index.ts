@@ -361,6 +361,7 @@ export {
 export {
   laneLine,
   laneLiveness,
+  laneMark,
   laneName,
   laneNote,
   laneOf,
@@ -381,6 +382,7 @@ export {
   LAPSED_ORCHESTRATOR,
   LIVE_WITHOUT_SUMMARY,
   MAX_SCOPE_WALK,
+  MISSING_PROFILE_MARK,
   MISSING_PROFILE_NOTE,
   NEVER_SEEN_LINE,
   ORCHESTRATOR_LABEL,

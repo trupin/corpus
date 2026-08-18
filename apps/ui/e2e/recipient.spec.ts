@@ -72,9 +72,9 @@ const PICKER = '[data-recipient-picker="th_res"]';
 const LANE = "[data-recipient-lane]";
 const TURNS = "/api/threads/th_res/turns";
 
-async function board(page: Page): Promise<StubCorpus> {
+async function board(page: Page, lane: AgentLane = RESIDENT_LANE): Promise<StubCorpus> {
   const corpus = await stubCorpus(page, [THREADS_VIEW, RESIDENT_THREAD], {
-    lanes: [RESIDENT_LANE],
+    lanes: [lane],
   });
   await page.goto("/");
   await page.locator(".board").waitFor();
@@ -138,6 +138,52 @@ test.describe("the recipient a composer states", () => {
     await reply(page, "And this one however you like.");
     await expect.poll(async () => (await sent(corpus)).length).toBe(2);
     expect("recipient" in ((await sent(corpus))[1] ?? {})).toBe(false);
+  });
+
+  /**
+   * SPEC.md §7: a designation whose profile has been renamed or archived stands,
+   * and *"the missing profile is reported rather than silently substituted"*.
+   * The report held on the board badge and in `corpus agents` and stopped at the
+   * picker, which drew the lane exactly as it draws a healthy one — on the one
+   * surface where the lane is **chosen** (PR #49 review).
+   *
+   * The lane is seeded in the state the server answers with, which is the state
+   * this page cannot produce for itself: `{name, docId: null}` is the server
+   * re-resolving a stored name at read time and finding nothing.
+   */
+  test("reports a lane whose profile has gone, and still lets a person pick it", async ({
+    page,
+  }) => {
+    const corpus = await board(page, {
+      ...RESIDENT_LANE,
+      resident: { name: "claims-review", docId: null },
+    });
+    const lane = laneOption(page, "th_res");
+
+    await expect(lane).toHaveAttribute("data-recipient-kind", "profile-gone");
+    // At rest — no hover, no focus, nothing typed.
+    await expect(lane).toContainText("claims-review");
+    await expect(lane).toContainText("profile gone");
+    // …and the whole sentence where there is room for it.
+    await expect(lane).toHaveAttribute("title", /its profile is gone — renamed or archived since/u);
+    await expect(page.locator('[data-recipient-statement="th_res"]')).toContainText(
+      "claims-review will answer — its profile is gone — renamed or archived since",
+    );
+
+    // §7 keeps the designation, so the lane is a legal recipient and nothing
+    // here gates on it: the report is news, not a refusal.
+    await lane.click();
+    await reply(page, "Carry on with the exposure figure, please.");
+    await expect.poll(async () => (await sent(corpus)).length).toBe(1);
+    expect((await sent(corpus))[0]?.["recipient"]).toBe("th_res");
+  });
+
+  test("marks no lane whose profile is where the designation left it", async ({ page }) => {
+    await board(page);
+    await expect(laneOption(page, "th_res")).toHaveAttribute("data-recipient-kind", "profiled");
+    // The report is the exception; nothing else gains a word (§7's ordinary
+    // lanes must look exactly as they did).
+    await expect(page.locator(`${PICKER} .recipient-mark`)).toHaveCount(0);
   });
 
   /**

@@ -29,6 +29,7 @@ export { LaneDot, type LaneDotProps } from "./LaneDot.js";
 export {
   laneLine,
   laneLiveness,
+  laneMark,
   laneName,
   laneNote,
   laneResidentKind,
@@ -39,6 +40,7 @@ export {
   LAPSED_FALLBACK,
   LAPSED_ORCHESTRATOR,
   LIVE_WITHOUT_SUMMARY,
+  MISSING_PROFILE_MARK,
   MISSING_PROFILE_NOTE,
   NEVER_SEEN_LINE,
   ORCHESTRATOR_LABEL,

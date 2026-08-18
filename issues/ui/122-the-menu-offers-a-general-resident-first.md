@@ -254,6 +254,78 @@ untyped fallback (the UI-116 trap). One was added, modelling all three
 `Resident` shapes plus the `404` for an unresolvable name, and resolve now
 releases the lane as §7 requires.
 
+## PR #49 review fixes (2026-08-17, ui-dev, opus `claude-opus-5[1m]`)
+
+Two MINOR findings, both on this issue's code, fixed on the phase branch.
+
+### 1. The picker reported a gone profile as a healthy lane
+
+`LaneRow.kind`/`note` were consumed by `ResidentBadge` and nothing else, so
+§7's *"reported rather than silently substituted"* held on the board and not on
+the surface where a lane is **chosen**. `LaneRow` now carries `mark`
+(`MISSING_PROFILE_MARK`, "profile gone" — the note's fact at pill width, derived
+from the same kind by `laneMark`), the picker renders it in the row, and the
+row's `title` and the statement line carry the whole sentence, joined exactly as
+the badge joins them.
+
+**The general/profiled name collision was left standing, deliberately**, with the
+reasoning recorded in `laneName`'s doc: the only at-rest fix marks the *ordinary*
+case, which trades a rare collision (a conversation titled exactly like an
+agent-def) for a permanent qualifier beside real profile names — one step from
+CONTRACT-061's trap. Nothing is misrouted by it and both rows are distinguishable
+on focus/hover. The shape to reach for if it ever bites is written down:
+list-local qualification in `laneRows`, which sees the whole list.
+
+### 2. `residentActions` compared a title against an invocable name
+
+`agent.name === resident?.profile` compared `agentDefRows`' **title** against the
+resolved **stem**. Now `agent.id === resident?.profileDoc`, with
+`LaneRow.profileDoc` carrying `Resident.docId` — the identity the server actually
+resolved, so no spelling difference (stem-vs-title, case, or otherwise) can get
+past it. A `profile-gone` resident (`docId: null`) re-offers the directory, which
+is correct: nothing answers that designation any more, so designating is a write
+with an effect rather than the no-op the skip suppresses.
+
+### Real app — server 8849 + Vite 5379 (never 8765, never 5173)
+
+Fresh `corpus init` workspace; `POST /api/docs {type: agent-def, title:
+"Bookkeeper"}` filed to `.claude/agents/bookkeeper.md` (stem ≠ title, the
+SERVER-122/CLI-050 shape), plus a `researcher` agent-def and a standalone thread.
+Driven with headless Chromium.
+
+- **Reproduction (guard reverted to the name comparison):** menu after
+  designating Bookkeeper carried `resident-designate-doc_woe3znha :: Replace with
+  Bookkeeper` — offered on the thread `bookkeeper` already resided on.
+- **Fixed:** designating "Bookkeeper" → badge `bookkeeper` (the stem the server
+  stored); reopened menu: `Release bookkeeper`, `Replace with a general
+  resident`, `Replace with researcher`, and **no** `doc_woe3znha` item.
+- **Profile gone:** renamed the agent-def file and its title; `GET /api/agents`
+  answered `{"name": "retired-bookkeeper", "docId": null}` and the picker, with
+  no click, hover or focus, read `retired-bookkeeper · profile gone`
+  (`data-recipient-kind="profile-gone"`), title `retired-bookkeeper — its profile
+  is gone — renamed or archived since — no listener yet`, statement the same
+  sentence, and exactly **1** `.recipient-mark` in the control (the orchestrator
+  lane unmarked). No page errors throughout.
+- Both processes killed; **5379 and 8849 free**; the user's server on 8765
+  untouched and still listening.
+
+### Suites
+
+- `vitest run apps/ui packages/kit` — **4008 passed** (203 files)
+- `playwright test recipient.spec.ts resident.spec.ts` (`CORPUS_UI_PORT=5379`) —
+  **12 passed**
+- `eslint`, `prettier --check`, `tsc --noEmit` clean in both workspaces
+
+### Falsification
+
+- Guard reverted to `agent.name === resident?.profile`: 3 unit tests red, and the
+  new `resident.spec.ts` case red in the browser.
+- Mark removed from `RecipientPicker`: the new picker test red.
+- `stubCorpus` reverted to storing the **title** as the resident's name: the same
+  browser case red on the badge assertion — the stub now models the server's
+  stem-or-title resolution, so it can no longer agree with the bug (UI-116's
+  trap, second occurrence).
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

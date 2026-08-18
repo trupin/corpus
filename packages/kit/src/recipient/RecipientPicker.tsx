@@ -52,6 +52,11 @@ import type { ComposerRecipient } from "./useComposerRecipient.js";
  * - **No liveness gate on picking.** A lapsed lane is a legal recipient — the
  *   contract routes it and §7's fallback covers it — so the row says what lapsed
  *   means and stays pressable.
+ * - **No lane drawn as sounder than it is.** A resident whose profile has been
+ *   renamed or archived is reported here as it is on the board badge (`LaneRow`'s
+ *   `mark` at row width, its `note` in the statement and the title) — §7 requires
+ *   the miss be *"reported rather than silently substituted"*, and this is the
+ *   surface on which the lane is actually chosen.
  */
 
 export interface RecipientPickerProps {
@@ -104,12 +109,18 @@ export const RECIPIENT_REFUSED_STATEMENT = "is not a lane any more — nothing w
  * where posting here happens to go. The verb changes on the act and not on the
  * difference: a pick that names the default's own lane is still a choice about
  * this one message, and UI-118 is what happens when the two are conflated.
+ *
+ * Three clauses, and each answers a different question: **who** answers,
+ * **what is worth saying about who they are** (`note` — §7's missing-profile
+ * report, empty for every other kind), and **whether they are there** (`line`).
+ * Joined in that order and dropped where empty, exactly as the board badge joins
+ * them, so a lane reads the same on both surfaces.
  */
 export function statementFor(row: LaneRow | undefined, picked: boolean, refused = false): string {
   if (row === undefined) return RECIPIENT_UNKNOWN_STATEMENT;
   if (refused) return `${row.name} ${RECIPIENT_REFUSED_STATEMENT}`;
   const verb = picked ? "will answer this message" : "will answer";
-  return row.line === "" ? `${row.name} ${verb}` : `${row.name} ${verb} — ${row.line}`;
+  return [`${row.name} ${verb}`, row.note, row.line].filter((part) => part !== "").join(" — ");
 }
 
 export function RecipientPicker({
@@ -173,7 +184,8 @@ export function RecipientPicker({
               data-recipient-chosen={picked ? "true" : "false"}
               data-recipient-refused={row.lane === recipient.refused ? "true" : "false"}
               data-recipient-liveness={row.liveness}
-              title={row.line === "" ? row.name : `${row.name} — ${row.line}`}
+              data-recipient-kind={row.kind}
+              title={[row.name, row.note, row.line].filter((part) => part !== "").join(" — ")}
               onFocus={() => {
                 setPreviewed(row.lane);
               }}
@@ -199,6 +211,20 @@ export function RecipientPicker({
             >
               <LaneDot liveness={row.liveness} />
               {row.name}
+              {/*
+               * §7's *"the missing profile is reported rather than silently
+               * substituted"*, on the surface where a lane is **chosen** rather
+               * than merely shown. Without it a lane whose profile has gone is
+               * drawn identically to a healthy one — the report held on the
+               * board badge and in `corpus agents` and nowhere here (PR #49
+               * review), which is the one place the choice is actually made.
+               *
+               * The short form, because these rows sit side by side; the whole
+               * sentence is one focus or hover away, on the statement line
+               * below and on this row's own title. Empty for every other kind,
+               * so no lane gains a word it did not have.
+               */}
+              {row.mark === "" ? null : <span className="recipient-mark">{row.mark}</span>}
             </button>
           );
         })}

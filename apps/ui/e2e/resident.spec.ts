@@ -60,6 +60,18 @@ const PROFILE: StubRow = {
   path: "data/docs/agents/researcher.md",
 };
 
+/**
+ * An agent-def as the `profile` skill writes one: a titled document under
+ * `.claude/agents/`, whose **stem** is what a designation of it resolves to
+ * (SERVER-122, CLI-050). `Bookkeeper` and `bookkeeper` name one document here.
+ */
+const CREATED_PROFILE: StubRow = {
+  id: "doc_bookkeeper",
+  type: "agent-def",
+  title: "Bookkeeper",
+  path: ".claude/agents/bookkeeper.md",
+};
+
 const CARD = '.thread-card[data-thread="th_solo"]';
 const BADGE = '[data-thread-panel="th_solo"] .t-resident';
 
@@ -164,6 +176,39 @@ test.describe("designating a resident", () => {
     await expect.poll(async () => posted(corpus)).toEqual([{ name: "researcher" }]);
     await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "profiled");
     await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("researcher");
+  });
+
+  /**
+   * The guard the PR #49 review measured, through the real menu.
+   *
+   * A designation resolves against an agent-def's stem *and* its title, and what
+   * comes back is the name it resolved to — `bookkeeper` for a file the
+   * `profile` skill wrote as `.claude/agents/bookkeeper.md` with the title
+   * `Bookkeeper`. The menu compared that resolved name against the **title**
+   * `GET /api/docs` carries, so the guard missed and the item came back offering
+   * to replace Bookkeeper with Bookkeeper: harmless on the wire — the server
+   * sees the state it already holds and re-announces — but an offer that does
+   * nothing is not an action, which is the rule the skip exists to keep.
+   */
+  test("does not re-offer the resident's own profile when its title and its file differ", async ({
+    page,
+  }) => {
+    await board(page, [CREATED_PROFILE, PROFILE]);
+    await openMenu(page);
+    await page.getByRole("menu").locator('[data-act="resident-designate-doc_bookkeeper"]').click();
+
+    // What came back is the **stem**, which is the whole reason a name
+    // comparison was not enough.
+    await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("bookkeeper");
+
+    await openMenu(page);
+    const menu = page.getByRole("menu");
+    await expect(menu.locator('[data-act="resident-release"]')).toContainText("Release bookkeeper");
+    await expect(menu.locator('[data-act="resident-designate-doc_bookkeeper"]')).toHaveCount(0);
+    // Every other profile is still a replacement — the skip is one row wide.
+    await expect(menu.locator('[data-act="resident-designate-doc_researcher"]')).toContainText(
+      "Replace with researcher",
+    );
   });
 
   /**

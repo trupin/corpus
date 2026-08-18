@@ -38,11 +38,15 @@ import type { MenuAction } from "../menu/menuModel";
  *
  * A `Resident` has three shapes since CONTRACT-061, and the board badge and the
  * composer's recipient row render the same three. Everything this file says
- * about them therefore reads `LaneRow.kind` and `LaneRow.profile` rather than
- * re-deriving them from a name — `packages/kit/src/recipient/laneRows.ts` is
- * where a lane turns into words, and a menu that decided for itself what a
- * missing profile is called would be the second description drifting from the
- * first.
+ * about them therefore reads `LaneRow.kind`, `LaneRow.profile` and
+ * `LaneRow.profileDoc` rather than re-deriving them from a name —
+ * `packages/kit/src/recipient/laneRows.ts` is where a lane turns into words, and
+ * a menu that decided for itself what a missing profile is called would be the
+ * second description drifting from the first.
+ *
+ * The split between those last two is the one to keep straight: `profile` is
+ * what the resident is **called** and is what a label says; `profileDoc` is
+ * which document it **is** and is the only one of the two anything compares.
  *
  * ## Only where a designation is legal, and only for a person
  *
@@ -60,13 +64,20 @@ export interface AgentDefRow {
 }
 
 /**
- * The invocable name of an `agent-def` document row.
+ * The name to **designate by**, and the document it belongs to.
  *
- * The title, because that is what `GET /api/docs` carries and what the
- * autocomplete offers; the server resolves a name against both the file stem and
- * the title, case-insensitively, so the title always resolves. A row whose title
- * is blank is dropped rather than offered — an item labelled with nothing is not
- * an offer, and designating by an empty name is a `400`.
+ * The name is the title, because that is what `GET /api/docs` carries and what
+ * the autocomplete offers; the server resolves a name against both the file stem
+ * and the title, case-insensitively, so the title always resolves. A row whose
+ * title is blank is dropped rather than offered — an item labelled with nothing
+ * is not an offer, and designating by an empty name is a `400`.
+ *
+ * **The title is a spelling and not an identity.** What the server *stores* is
+ * the name it resolved to — `invocableName(path) ?? title`, which for a file
+ * under `.claude/agents/` is the **stem** — so designating `Bookkeeper` makes a
+ * resident called `bookkeeper`. That is why the id travels beside the name: it
+ * is the only field of a row that can be compared with a lane's resident (see
+ * {@link residentActions}).
  */
 export function agentDefRows(
   rows: readonly DocRow[] | undefined,
@@ -212,12 +223,31 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
     return items;
   }
   for (const agent of agents) {
-    // Whoever is already resident is not re-offered, for the reason above. It is
-    // matched on the **profile** rather than on the row's display name: those
-    // differ for a general resident, whose name is its conversation's, and an
-    // agent-def titled the same as the conversation would otherwise vanish from
-    // the list.
-    if (agent.name === resident?.profile) continue;
+    /*
+     * Whoever is already resident is not re-offered, for the reason above — and
+     * the question is asked of the **document**, never of a name.
+     *
+     * A designation resolves against an agent-def's invocable name *and* its
+     * title alike, and what the server keeps is the name it resolved to: for a
+     * file under `.claude/agents/` that is the stem, while this directory row
+     * carries the title. Since SERVER-122 and CLI-050 file a created agent-def
+     * there, the two differ routinely — the `profile` skill writes title
+     * `Bookkeeper` to `.claude/agents/bookkeeper.md`, so the resident is
+     * `bookkeeper` and this row says `Bookkeeper`. Compared as names, the guard
+     * missed and the menu offered "Replace with Bookkeeper" on the very thread
+     * Bookkeeper already resided on (PR #49 review). Lowercasing would only have
+     * hidden it: the mismatch is title-against-stem, and case is one way of many
+     * that shows.
+     *
+     * `LaneRow.profileDoc` is that resolution, as the server reports it, so this
+     * asks the same question the server answered. It is null for a general
+     * resident — whose display name is its conversation's, the case that first
+     * forced this off `name` — and null for one whose profile has **gone**,
+     * where re-offering is correct: nothing in the workspace answers to that
+     * designation any more, so designating this row is a write with an effect,
+     * not the no-op the skip exists to suppress.
+     */
+    if (agent.id === resident?.profileDoc) continue;
     items.push({
       id: `resident-designate-${agent.id}`,
       label: resident === undefined ? `Designate ${agent.name}` : `Replace with ${agent.name}`,

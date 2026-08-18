@@ -240,7 +240,12 @@ const RUNTIME_SURFACE = [
   // (CONTRACT-061, UI-122).
   "laneResidentKind",
   "laneNote",
+  // …and the same report at the width of a row in a list, for the surface where
+  // a lane is chosen rather than shown: the picker's pills sit side by side and
+  // the note is a sentence (PR #49 review).
+  "laneMark",
   "GENERAL_RESIDENT_LABEL",
+  "MISSING_PROFILE_MARK",
   "MISSING_PROFILE_NOTE",
   // …and the same vocabulary read by a surface that is not a composer (UI-109):
   // is *this* conversation a lane, which lane answers *here*, and the one dot

@@ -21,7 +21,9 @@ const RESIDENT: LaneRow = {
   line: "reading the policy",
   kind: "profiled",
   profile: "researcher",
+  profileDoc: "doc_a",
   note: "",
+  mark: "",
   conversation: "Q3 planning",
 };
 
@@ -31,6 +33,7 @@ const GENERAL: LaneRow = {
   name: "Q3 planning",
   kind: "general",
   profile: null,
+  profileDoc: null,
 };
 
 function input(overrides: Partial<ResidentActionsInput> = {}): ResidentActionsInput {
@@ -203,10 +206,10 @@ describe("residentActions", () => {
   });
 
   /**
-   * The two are matched on the profile rather than on the row's display name,
-   * which for a general resident is its conversation's title — otherwise an
-   * agent-def titled the same as the conversation would silently vanish from the
-   * list.
+   * The two are matched on the resident's **document** rather than on the row's
+   * display name, which for a general resident is its conversation's title —
+   * otherwise an agent-def titled the same as the conversation would silently
+   * vanish from the list.
    */
   it("keeps offering an agent-def that happens to share the conversation's title", () => {
     const actions = residentActions(
@@ -216,15 +219,68 @@ describe("residentActions", () => {
   });
 
   /**
-   * §7 reports a designation whose profile has since been renamed or archived
-   * rather than substituting for it — so the resident is still named, and still
-   * not re-offered.
+   * The guard the PR #49 review measured. The `profile` skill writes title
+   * `Bookkeeper` into `.claude/agents/bookkeeper.md`, and since SERVER-122 and
+   * CLI-050 that is where a created agent-def lives — so the server resolves the
+   * designation to the **stem** and the resident is `bookkeeper`, while this
+   * directory row still says `Bookkeeper`. Compared as names the guard missed,
+   * and the menu offered replacing Bookkeeper with Bookkeeper. It is the
+   * document that is compared, so no spelling difference — stem against title,
+   * case, or anything else — can get past it.
    */
-  it("names a resident whose profile has gone, and still does not re-offer it", () => {
-    const gone: LaneRow = { ...RESIDENT, kind: "profile-gone", note: "its profile is gone" };
+  it("does not re-offer the resident's own agent-def when its title and its stem differ", () => {
+    const bookkeeper: LaneRow = { ...RESIDENT, name: "bookkeeper", profile: "bookkeeper" };
+    const actions = residentActions(
+      input({
+        resident: bookkeeper,
+        agents: [
+          { id: "doc_a", name: "Bookkeeper" },
+          { id: "doc_b", name: "editor" },
+        ],
+      }),
+    );
+    expect(ids(actions)).not.toContain("resident-designate-doc_a");
+    expect(ids(actions)).toContain("resident-designate-doc_b");
+  });
+
+  /**
+   * And the converse: two agent-defs, one of them titled exactly as the resident
+   * is called but a **different document**. Matched on names, the wrong row was
+   * dropped and the one that would actually change anything was the one hidden.
+   */
+  it("drops the resident's own row, not whichever one is spelled like it", () => {
+    const actions = residentActions(
+      input({
+        resident: RESIDENT,
+        agents: [
+          { id: "doc_a", name: "Fieldwork" },
+          { id: "doc_b", name: "researcher" },
+        ],
+      }),
+    );
+    expect(ids(actions)).not.toContain("resident-designate-doc_a");
+    expect(ids(actions)).toContain("resident-designate-doc_b");
+  });
+
+  /**
+   * §7 reports a designation whose profile has since been renamed or archived
+   * rather than substituting for it — so the resident is still named. It **is**
+   * re-offered, and that is not the same skip: with no document resolving the
+   * designation, designating an agent-def is a write with a real effect rather
+   * than the no-op the skip exists to suppress.
+   */
+  it("names a resident whose profile has gone, and offers the directory to replace it", () => {
+    const gone: LaneRow = {
+      ...RESIDENT,
+      kind: "profile-gone",
+      profileDoc: null,
+      note: "its profile is gone",
+      mark: "profile gone",
+    };
     const actions = residentActions(input({ resident: gone }));
     expect(actions[0]?.label).toBe("Release researcher");
-    expect(ids(actions)).not.toContain("resident-designate-doc_a");
+    expect(ids(actions)).toContain("resident-designate-doc_a");
+    expect(actions[2]?.label).toBe("Replace with researcher");
   });
 
   it("disables every offer while a designation is in flight", () => {

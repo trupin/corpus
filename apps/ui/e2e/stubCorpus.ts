@@ -655,6 +655,23 @@ function refIdsIn(body: string): readonly string[] {
   return [...new Set([...body.matchAll(STUB_REF_PATTERN)].map((match) => match[1] ?? ""))];
 }
 
+/** `.claude/agents/<name>.md` — the one agent-def root a designation resolves in. */
+const AGENT_DEF_STEM = /^\.claude\/agents\/(?:.*\/)?([^/]+)\.md$/;
+
+/**
+ * The name a document is **invocable** by, from its path, or `null` for one
+ * filed anywhere else — `apps/server/src/threads/mentions.ts`'s rule for the one
+ * root that matters here.
+ *
+ * It is what makes the stem and the title able to differ at all, which is the
+ * whole point of modelling it: the `profile` skill writes title `Bookkeeper`
+ * into `.claude/agents/bookkeeper.md`, and since SERVER-122 and CLI-050 that is
+ * where a created agent-def lives.
+ */
+function invocableName(path: string): string | null {
+  return AGENT_DEF_STEM.exec(path)?.[1] ?? null;
+}
+
 /**
  * `includeArchived=true` on a related request — the archived exclusion every
  * list applies by default (SPEC.md §11), lifted into the union.
@@ -1695,6 +1712,13 @@ export async function stubCorpus(
      * one, and a name that resolves to nothing is the route's own `404` — never
      * degraded to a general resident, which is exactly the "typo that looked
      * like it worked" the contract refuses.
+     *
+     * **A name resolves against the stem and the title alike, and what is stored
+     * is what it resolved to** ({@link invocableName}), because that is the one
+     * thing about this route a surface can get wrong without noticing: a menu
+     * comparing the title `GET /api/docs` carries against the stem the resident
+     * is called mis-guards on every agent-def the `profile` skill writes, and a
+     * stub that stored the title would agree with the bug (PR #49 review).
      */
     const residentRoute = /^\/api\/threads\/([^/]+)\/resident$/.exec(url.pathname);
     if (residentRoute !== null && (method === "POST" || method === "DELETE")) {
@@ -1711,8 +1735,13 @@ export async function stubCorpus(
       const name = typeof body.name === "string" ? body.name : undefined;
       let resident: Resident = { name: null, docId: null };
       if (name !== undefined) {
+        const wanted = name.trim().toLowerCase();
         const profile = [...store.values()].find(
-          (row) => row.type === "agent-def" && row.title.toLowerCase() === name.toLowerCase(),
+          (row) =>
+            row.type === "agent-def" &&
+            [invocableName(row.path), row.title].some(
+              (alias) => alias !== null && alias.toLowerCase() === wanted,
+            ),
         );
         if (profile === undefined) {
           return json(
@@ -1721,7 +1750,9 @@ export async function stubCorpus(
             404,
           );
         }
-        resident = { name: profile.title, docId: profile.id };
+        // The **resolved** name, never the caller's spelling — and the resolved
+        // name of a file under `.claude/agents/` is its stem, not its title.
+        resident = { name: invocableName(profile.path) ?? profile.title, docId: profile.id };
       }
       setLane(id, resident);
       return json(route, threadMutation(doc));

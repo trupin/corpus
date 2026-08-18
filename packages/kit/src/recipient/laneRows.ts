@@ -73,14 +73,40 @@ export interface LaneRow {
    * designated with none — **never a word standing in for one**. It is what a
    * surface names the resident by when there is a name to give (the menu's
    * "Release researcher"), and `null` is what stops it inventing one.
+   *
+   * It is a **name and not an identity**: ask {@link LaneRow.profileDoc} which
+   * document this resident is.
    */
   readonly profile: string | null;
+  /**
+   * The document {@link LaneRow.profile} resolves to **right now**, or `null` —
+   * for a general resident, which named no profile, and for one whose profile
+   * has gone (`Resident.docId`, CONTRACT-061).
+   *
+   * It is the only half of a resident a surface may **compare**. The server
+   * resolves a designation against a document's invocable name *and* its title
+   * alike, and stores the name it resolved to — which for a file under
+   * `.claude/agents/` is the **stem**, while `GET /api/docs` carries the
+   * **title**. Since SERVER-122 and CLI-050 file a created agent-def there, the
+   * two legitimately differ (`bookkeeper` against `Bookkeeper`), and a surface
+   * asking *is this directory row the one already resident?* asked of the names
+   * gets `false` on a lane that agent is sitting on. Asked of this field it is
+   * the same question the server answered, so case, stem-vs-title and every
+   * other spelling difference cannot come into it.
+   */
+  readonly profileDoc: string | null;
   /**
    * What is worth saying about *who* is resident, as opposed to whether they are
    * there — which is {@link LaneRow.line}. Empty for every kind but
    * `profile-gone`, whose missing profile §7 requires be reported.
    */
   readonly note: string;
+  /**
+   * {@link LaneRow.note}'s fact at the width of a **row in a list** — empty
+   * exactly where the note is, because one kind produces both. A surface with a
+   * line to itself says the note; one whose rows sit side by side says this.
+   */
+  readonly mark: string;
   /** The conversation this lane is, or null for the orchestrator's. */
   readonly conversation: string | null;
 }
@@ -127,6 +153,22 @@ export const GENERAL_RESIDENT_LABEL = "resident, no profile";
  */
 export const MISSING_PROFILE_NOTE = "its profile is gone — renamed or archived since";
 
+/**
+ * The **same report**, at the width of a lane in a list — the recipient picker's
+ * row, where {@link MISSING_PROFILE_NOTE}'s sentence would be longer than every
+ * other lane on the line put together.
+ *
+ * Not a second fact and not a softer one: both come from the kind, through
+ * {@link laneNote} and {@link laneMark}, so no surface can end up saying one and
+ * meaning the other. The sentence is still what a surface says wherever it has
+ * room — the picker's statement line and its titles carry it in full.
+ *
+ * It goes **beside** the name and never in place of it: it qualifies
+ * "researcher", so a lane whose profile has gone is still named by the profile
+ * the designation stands on (CONTRACT-061).
+ */
+export const MISSING_PROFILE_MARK = "profile gone";
+
 /** A live lane the server had nothing else to say about. */
 export const LIVE_WITHOUT_SUMMARY = "listening";
 
@@ -159,6 +201,29 @@ export function laneLiveness(row: AgentLane, now: Date): LaneLiveness {
  * choose between, and a word here sits beside real profile names with nothing to
  * tell them apart (CONTRACT-061). A surface showing one lane *on* its own
  * conversation prints {@link GENERAL_RESIDENT_LABEL} instead.
+ *
+ * ## The residual ambiguity, and why it is left standing
+ *
+ * A conversation **titled** `researcher` and a lane whose **profile** is
+ * `researcher` therefore render the same word in one list. Both strings are real
+ * — nothing is synthesised, so CONTRACT-061 holds — but a person cannot tell
+ * which row is which. It is left as it is, deliberately (PR #49 review):
+ *
+ * - The only fix that works at rest is a mark on the **general** row, and
+ *   general is §7's *ordinary* case. It would put a permanent qualifier on the
+ *   common lane to disambiguate a collision that needs a conversation titled
+ *   exactly like one of the workspace's agent-defs — and a role word repeated
+ *   down a list of lanes beside real names is the shape CONTRACT-061 warns
+ *   about, one step removed.
+ * - Nothing is misrouted by it. Both rows are legal recipients, the pick is per
+ *   message, and the statement line under the list names the lane's own summary
+ *   and liveness as soon as a row is focused or hovered — so the two are
+ *   distinguishable on inspection, only not at a glance.
+ *
+ * If it ever does bite, the shape to reach for is **list-local**: `laneRows`
+ * sees the whole list, so it can qualify a name only where two rows collide, and
+ * leave every other lane exactly as it reads today. Do not solve it by marking
+ * every general lane.
  */
 export function laneName(row: AgentLane): string {
   if (row.lane === ORCHESTRATOR_LANE) return ORCHESTRATOR_LABEL;
@@ -180,6 +245,11 @@ export function laneResidentKind(row: AgentLane): LaneResidentKind {
 /** What is worth saying about who is resident, beyond naming them. */
 export function laneNote(kind: LaneResidentKind): string {
   return kind === "profile-gone" ? MISSING_PROFILE_NOTE : "";
+}
+
+/** …and the same thing where only a phrase fits — see {@link MISSING_PROFILE_MARK}. */
+export function laneMark(kind: LaneResidentKind): string {
+  return kind === "profile-gone" ? MISSING_PROFILE_MARK : "";
 }
 
 function lastSeen(since: string, now: Date): string | null {
@@ -214,7 +284,9 @@ export function laneRow(row: AgentLane, now: Date): LaneRow {
     line: laneLine(row, liveness, now),
     kind,
     profile: row.resident?.name ?? null,
+    profileDoc: row.resident?.docId ?? null,
     note: laneNote(kind),
+    mark: laneMark(kind),
     conversation: row.origin?.title ?? null,
   };
 }
@@ -235,7 +307,9 @@ export function unknownLaneRow(lane: Lane): LaneRow {
     // described says nothing about who is on it, in either direction.
     kind: lane === ORCHESTRATOR_LANE ? "orchestrator" : "unknown",
     profile: null,
+    profileDoc: null,
     note: "",
+    mark: "",
     conversation: null,
   };
 }

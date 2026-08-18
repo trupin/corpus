@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   laneLine,
   laneLiveness,
+  laneMark,
   laneName,
   laneNote,
   laneResidentKind,
@@ -12,6 +13,7 @@ import {
   LAPSED_FALLBACK,
   LAPSED_ORCHESTRATOR,
   LIVE_WITHOUT_SUMMARY,
+  MISSING_PROFILE_MARK,
   MISSING_PROFILE_NOTE,
   NEVER_SEEN_LINE,
   ORCHESTRATOR_LABEL,
@@ -107,6 +109,26 @@ describe("laneNote", () => {
   });
 });
 
+describe("laneMark", () => {
+  /**
+   * The same report at the width of a row in a list. Both come from the kind, so
+   * a surface cannot end up marking a lane the note says nothing about — the way
+   * two independently derived labels for one state eventually do.
+   */
+  it("marks exactly the kind the note reports, and no other", () => {
+    expect(laneMark("profile-gone")).toBe(MISSING_PROFILE_MARK);
+    for (const kind of ["general", "profiled", "orchestrator", "unknown"] as const) {
+      expect(laneMark(kind)).toBe("");
+      expect(laneNote(kind)).toBe("");
+    }
+  });
+
+  it("is short enough to sit inside a lane pill, and still says what is gone", () => {
+    expect(MISSING_PROFILE_MARK.length).toBeLessThan(MISSING_PROFILE_NOTE.length);
+    expect(MISSING_PROFILE_MARK).toContain("profile");
+  });
+});
+
 describe("laneLiveness", () => {
   it("is live while the server says a listener is parked", () => {
     expect(laneLiveness(lane(), NOW)).toBe("live");
@@ -180,7 +202,9 @@ describe("laneLine", () => {
       line: "",
       kind: "unknown",
       profile: null,
+      profileDoc: null,
       note: "",
+      mark: "",
       conversation: null,
     });
   });
@@ -202,7 +226,9 @@ describe("laneRows", () => {
         line: "reviewing the draft",
         kind: "orchestrator",
         profile: null,
+        profileDoc: null,
         note: "",
+        mark: "",
         conversation: null,
       },
       {
@@ -212,7 +238,9 @@ describe("laneRows", () => {
         line: "reviewing the draft",
         kind: "profiled",
         profile: "claims-review",
+        profileDoc: "doc_agent",
         note: "",
+        mark: "",
         conversation: "The claims conversation",
       },
     ]);
@@ -237,7 +265,9 @@ describe("laneRows", () => {
       line: "reviewing the draft",
       kind: "general",
       profile: null,
+      profileDoc: null,
       note: "",
+      mark: "",
       conversation: "The claims conversation",
     });
   });
@@ -247,7 +277,30 @@ describe("laneRows", () => {
     expect(row.kind).toBe("profile-gone");
     expect(row.profile).toBe("claims-review");
     expect(row.note).toBe(MISSING_PROFILE_NOTE);
+    // Carried at both widths, so a surface whose rows sit side by side can still
+    // report it (PR #49 review — the picker drew a gone lane as a healthy one).
+    expect(row.mark).toBe(MISSING_PROFILE_MARK);
     // The report is about the profile; presence is a separate axis and unmoved.
     expect(row.liveness).toBe("live");
+  });
+
+  /**
+   * The identity half of a resident, which is the only half a surface may
+   * compare: the server resolves a designation against a document's stem *and*
+   * its title and stores the name it resolved to, so `profile` may legitimately
+   * be spelled differently from the title `GET /api/docs` carries for the very
+   * same document (`bookkeeper` against `Bookkeeper`, SERVER-122 / CLI-050).
+   */
+  it("carries the document the profile resolves to, beside the name it was designated with", () => {
+    const row = laneRow(lane({ resident: { name: "bookkeeper", docId: "doc_bk" } }), NOW);
+    expect(row.profile).toBe("bookkeeper");
+    expect(row.profileDoc).toBe("doc_bk");
+  });
+
+  it("has no document for a resident whose profile has gone, and none for a general one", () => {
+    expect(
+      laneRow(lane({ resident: { name: "claims-review", docId: null } }), NOW).profileDoc,
+    ).toBe(null);
+    expect(laneRow(lane({ resident: { name: null, docId: null } }), NOW).profileDoc).toBe(null);
   });
 });
