@@ -174,6 +174,28 @@ describe("residentActions", () => {
     expect(note?.meta).toContain("a resident does not need one");
   });
 
+  /**
+   * PR #50 review. Since UI-123 this line has two causes — no `agent-def`
+   * documents, and `agent-def` documents none of which is addressable — and its
+   * advice has to be followable in **both**. It said *"add a `type: agent-def`
+   * document"*, which in the second state describes what the person already did:
+   * `--folder data/docs/…` makes exactly that, the board lists it, and this line
+   * goes on saying there are no profiles. Naming the root is what makes one
+   * sentence true of both, which is why it is asserted and not merely spelled.
+   */
+  it("says where a profile has to live, so its advice cannot reproduce this state", () => {
+    const offRoot = [agentDefRow("doc_l", "Legacy", "data/docs/inbox/legacy.md")];
+    const bothCauses = [agentDefRows([]), agentDefRows(offRoot)];
+
+    for (const agents of bothCauses) {
+      const note = residentActions(input({ agents })).find(
+        (action) => action.id === "resident-no-profiles",
+      );
+      expect(note?.meta).toBe(NO_PROFILES_META);
+      expect(note?.meta).toContain(".claude/agents/");
+    }
+  });
+
   it("offers the general act first, then every profile the workspace defines", () => {
     const actions = residentActions(input());
     expect(ids(actions)).toEqual([

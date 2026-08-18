@@ -40,6 +40,17 @@ beforeAll(() => {
     ".claude/skills/orchestrate/SKILL.md",
     "---\nname: orchestrate\ndescription: the agent loop\n---\nBody.\n",
   );
+  // A `SKILL.md` named by no directory, under each skills root (SERVER-127).
+  // The first carries no `title:`, so the projection falls back to the parent
+  // directory and the row is titled `skills`; the second carries a real one, so
+  // the fallback never fires. Claude Code loads neither — it discovers a skill
+  // by the folder holding it — so neither is addressable under either spelling.
+  ws.write(".claude/skills/SKILL.md", "---\ndescription: loose file\n---\nBody.\n");
+  ws.write(
+    ".claude/skills-archived/SKILL.md",
+    "---\nname: stray\ndescription: loose file\nid: doc_strayarch\n" +
+      "type: skill\ntitle: Stray\n---\nBody.\n",
+  );
   // A persona whose Corpus title is not its filename — the common shape since
   // SERVER-122, because `corpus doc create --title Bookkeeper` slugs the one and
   // keeps the other. Both aliases have to answer, and two different callers each
@@ -313,6 +324,92 @@ describe("an unaddressable document that claims a working name", () => {
   });
 });
 
+/**
+ * SERVER-127, the same principle in the shape SERVER-125 did not reach. A
+ * `SKILL.md` sitting directly in a skills root is named by no directory, so
+ * Claude Code loads it as nothing. `SKILL.md` itself is untypeable — the token
+ * charset excludes `.` — so the harm was entirely in the **title** alias:
+ * `titleFromPath` falls back to the parent directory, which made an untitled
+ * one answer `/skills`.
+ */
+describe("a SKILL.md the skills root holds directly", () => {
+  it("resolves under neither its path's fallback title nor a real one", () => {
+    expect(resolveMentionTarget(ws.db, INVOCATION_TYPE, "skills")).toBeNull();
+    expect(resolveMentionTarget(ws.db, INVOCATION_TYPE, "Stray")).toBeNull();
+    expect(resolveMentionTarget(ws.db, INVOCATION_TYPE, "SKILL.md")).toBeNull();
+  });
+
+  it("is an unresolved token that wakes nobody, under the archived root too", () => {
+    const parsed = parse("run /skills and /Stray on this");
+    expect(parsed.skills).toEqual([]);
+    expect(parsed.unresolved).toEqual(["/skills", "/Stray"]);
+    expect(requestsAgent(parsed)).toBe(false);
+  });
+
+  // The document itself is untouched: SERVER-125's decision was that only
+  // addressability goes, and the row is still listed, readable and editable.
+  it("is still a projected skill document, and says why it answers nothing", () => {
+    const rows = ws.db
+      .prepare("SELECT path, title FROM documents WHERE type = 'skill' ORDER BY path")
+      .all() as { path: string; title: string }[];
+    expect(rows.map((row) => `${row.path} → ${row.title}`)).toEqual([
+      ".claude/skills-archived/SKILL.md → Stray",
+      ".claude/skills/SKILL.md → skills",
+      ".claude/skills/comment/SKILL.md → Comment",
+      ".claude/skills/orchestrate/SKILL.md → orchestrate",
+    ]);
+    expect(unaddressableTarget(ws.db, INVOCATION_TYPE, "Stray")).toEqual({
+      docId: "doc_strayarch",
+      path: ".claude/skills-archived/SKILL.md",
+      title: "Stray",
+    });
+  });
+
+  // And the skill in a directory beside it goes on resolving — the ordinary
+  // case, which the entire skill surface depends on.
+  it("does not take the name of the skill in the directory beside it", () => {
+    expect(parse("/comment please").skills).toEqual([
+      { name: "comment", docId: "doc_skillcomment", status: "open" },
+    ]);
+  });
+});
+
+/**
+ * The name theft the gate closes: `targetIndex` breaks a collision by **id
+ * order**, minted at random, so a stray `SKILL.md` titled like a working skill
+ * took `/comment` away from it whenever its id sorted first. The ids are
+ * written rather than minted so the pre-fix answer is the wrong one every run.
+ */
+describe("a bare SKILL.md titled like a working skill", () => {
+  let stray: WriteWorkspace;
+
+  beforeAll(() => {
+    stray = createThreadWorkspace("mentions-stray");
+    stray.write(
+      ".claude/skills/comment/SKILL.md",
+      "---\nname: comment\ndescription: handles comment.created\nid: doc_zzzzzy\n" +
+        "type: skill\ntitle: Comment\n---\nBody.\n",
+    );
+    stray.write(
+      ".claude/skills/SKILL.md",
+      "---\nname: comment\ndescription: a copy nothing loads\nid: doc_aaaaac\n" +
+        "type: skill\ntitle: Comment\n---\nBody.\n",
+    );
+    stray.reproject();
+  });
+
+  afterAll(() => {
+    stray.close();
+  });
+
+  it("does not take `/comment` from the skill that answers it", () => {
+    expect(resolveMentionTarget(stray.db, INVOCATION_TYPE, "comment")?.docId).toBe("doc_zzzzzy");
+    expect(parseMentions(stray.db, "/comment please").skills).toEqual([
+      { name: "comment", docId: "doc_zzzzzy", status: "open" },
+    ]);
+  });
+});
+
 describe("invocableName", () => {
   it.each([
     [".claude/skills/comment/SKILL.md", "comment"],
@@ -328,6 +425,9 @@ describe("invocableName", () => {
     "data/docs/inbox/skills.md",
     "data/threads/th_a1b2c3d4.md",
     "somewhere/else.md",
+    // A `SKILL.md` no directory names, under either skills root (SERVER-127).
+    ".claude/skills/SKILL.md",
+    ".claude/skills-archived/SKILL.md",
   ])("has no invocable name for %s", (path) => {
     expect(invocableName(path)).toBeNull();
   });

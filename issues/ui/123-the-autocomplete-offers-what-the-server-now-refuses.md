@@ -294,6 +294,183 @@ never touched**. No stray vitest/playwright/chromium/vite processes remain.
   SERVER-125's gate, and its `AGENT_DEF_STEM` no longer matches a nested path
   (the server's agents root is `markdown-flat`).
 
+## PR #50 review
+
+**Model: Opus 5 (1M context).** Date: 2026-08-18. Three findings — MINOR 4,
+MINOR 5, NIT 9 — addressed in `apps/ui/`, `packages/kit/` and
+`scripts/mention-offer-parity.test.ts`. **NIT 9's correct fix is in the server
+and is not made here** (see below).
+
+### MINOR 4 — the gate moved, the sentence explaining the gate did not
+
+**Decision: the text names the root; it does not distinguish the two causes.**
+
+```
+- "a resident does not need one — add a type: agent-def document to offer one here"
++ "a resident does not need one — add a type: agent-def document under .claude/agents/"
+```
+
+Why *stop being wrong* rather than *distinguish* — recorded in full in the
+`NO_PROFILES_META` docblock:
+
+- **One remedy.** Both absences — no agent-defs, and agent-defs none of which is
+  addressable — are answered by the same act. A sentence keyed on the cause would
+  vary the diagnosis while the instruction stayed put.
+- **The ladder does not stop at two.** A blank-titled agent-def is dropped by
+  this same branch for a third reason, an archived one for a fourth. To tell any
+  of them apart the menu would have to carry the rows `agentDefRows` discarded
+  and a reason each — and UI-122's whole lesson is that this item is *news beside
+  an offer that works*, not a diagnostics panel.
+- **The board already says it better**, and §11 is where "what does this
+  workspace hold" belongs: the dropped document is listed, with its folder on the
+  row and its path in the reader, one column away.
+
+What the old wording cost is the part that had to go: it was advice that
+*reproduces the second state* (`--folder data/docs/…` makes exactly such a
+document), which is the finding's literal complaint.
+
+New test — `residentActions.test.ts` › *"says where a profile has to live, so its
+advice cannot reproduce this state"* — drives **both** causes through
+`agentDefRows` into `residentActions` and asserts the one line they share names
+`.claude/agents/`.
+
+### MINOR 5 — the fixture is now derived from `DOCUMENT_ROOTS`
+
+The suggestion works, and it took the docblock's claim with it. The file no
+longer asks about five hand-written rows plus nothing:
+
+- `shapePaths(root, stem)` generates, per root, the canonical path of the root's
+  declared `shape`, that shape's edges, and the near-miss beside it. The `switch`
+  is exhaustive over `RootShape` with a declared return type, so a **new shape**
+  is a type error rather than a gap; a **new root** produces new questions with
+  nobody editing the file.
+- Two comparisons now, not one. The **pure-function** parity (server
+  `invocableName` vs kit `invocableName`) runs over every derived path and needs
+  no projection, so it covers paths no workspace holds — this is where a new root
+  or a `markdown-flat` change bites. The **row-level** parity is unchanged in
+  spirit: the real projector's rows, offered-vs-resolved, both types.
+- The projected corpus is self-checking: *"projects exactly the derived paths the
+  roots admit"* compares the projection against `classifyPath`, never against
+  this file's expectations. The named rows (Researcher, Bookkeeper, comment /
+  Comment, Legacy, Autopilot) stay — derivation is for coverage, the named ones
+  carry the meaning.
+- The docblock now states what is **not** derived, and therefore not claimed: the
+  projector's non-shape exclusions (dot-prefixed segments, `node_modules`), which
+  decide enumeration and never reach a `documents.path`; and the menus' other
+  rules, each tested where it lives.
+
+11 tests → **32**.
+
+### NIT 9 — the divergence is real, and the **server** is the wrong half
+
+`.claude/skills/SKILL.md` — a `SKILL.md` sitting directly in a skills root.
+
+**The kit is right; do not change it.** Claude Code discovers a skill by the
+directory that holds it, so a `SKILL.md` named by no directory is loaded by
+nothing — exactly the condition SERVER-125 made the gate ("a document with no
+invocable name resolves to nothing under any spelling"). The server's own
+`invocableName` docblock states the shape as `.claude/skills/<name>/SKILL.md`;
+`"SKILL.md"` is not a `<name>`.
+
+**And it is not harmless.** `targetIndex` indexes the row *and its title alias*.
+`SKILL.md` is not a typeable token — `[A-Za-z0-9_-]+` excludes the dot — but the
+title is ordinary text, and `titleFromPath` falls back to the parent directory,
+so an untitled one is indexed as `skills`. Pinned in the parity test and asserted
+concretely: `parseMentions(db, "/<its title>")` returns that document as a
+resolved skill, i.e. the server would wake the agent for a directive naming a
+skill nothing loads. It can also *take* a name: ties break on id order and the
+ids here are `sha1`-derived, so such a file's title alias can win a real skill's
+key.
+
+**The fix belongs in `apps/server/src/threads/mentions.ts`** — `invocableName`
+should return `null` when the `skill-tree` remainder has no directory segment —
+and `apps/server/` is not this agent's to edit. Please route it. The document
+itself should stay projected, per SERVER-125's own shape: the document stays,
+only its addressability goes.
+
+Until then it is **pinned, not tolerated**: `BARE_SKILL_PATHS` is derived from
+`DOCUMENT_ROOTS` (so a third skill-tree root is pinned too), the agreement test
+excludes exactly those paths and nothing else — a *second* divergence fails — and
+the two tests that describe this one **fail the day the server is fixed**, which
+is the intended way to find out.
+
+One divergence the derived fixture found *was* the kit's, and is fixed here: the
+skills pattern matched on its **prefix** (`.claude/skills/<seg>/`), so it named
+`comment` for a `notes.md` beside the `SKILL.md` — a path the server calls no
+document at all. It now spells out the whole shape
+(`([^/]+)/(?:[^/]+/)*SKILL\.md$`), which is `skill-tree` transcribed.
+
+### Verification
+
+- `vitest run packages/kit` — **56 files, 887 tests, pass**
+- `vitest run apps/ui` — **148 files, 3144 tests, pass**
+- `vitest run scripts/mention-offer-parity.test.ts` — **32 tests, pass**
+- `npm run lint` (exit 0) · `npm run typecheck` (exit 0, all workspaces +
+  `scripts`) · `prettier --check` clean
+- `playwright test e2e/resident.spec.ts e2e/autocomplete-keys.spec.ts`
+  (`CORPUS_UI_PORT=5274`) — **15 passed**
+- `packages/kit/dist` rebuilt before the `apps/ui` and Playwright runs: those
+  resolve `@corpus/kit` through the `exports` map, so a source-only kit change is
+  invisible to them.
+
+### Falsification
+
+Each mutation reverted, and the reverts diff-verified.
+
+| Mutation | Failures |
+| --- | --- |
+| Kit skills pattern back to prefix-only | **4** — `invocable.test.ts` › *names a skill by its directory…*, parity for both `…/notes.md` paths, and *disagrees about nothing beyond the pinned SKILL.md* |
+| Kit agents pattern loosened to allow nesting (a `markdown-flat` drift) | **2** — parity for `.claude/agents/folder/agents-nested.md`, and the divergence-set test |
+| **Server** `invocableName` made to return `null` for a bare `SKILL.md` (temporary, reverted) | **5** — the divergence-set test and all four pinned-divergence cases. This is the pin doing its job: fixing the server makes this file fail until the pin is removed |
+| `NO_PROFILES_META` reverted to *"to offer one here"* | **1** — *says where a profile has to live…* |
+| One root filtered out of the sample generation | **4** — *asks about every document root…*, plus the questions that root contributed |
+
+### E2E, real app, real server
+
+Throwaway workspace `/tmp/corpus-pr50`, real `corpus` server on **8794** (never
+8765 — the user's live server, left listening and untouched), Vite on **5274**
+(never 5173, an ssh tunnel), real Chromium via Playwright.
+
+The workspace is the second cause of the empty state, the one the old text was
+wrong about: `corpus doc create --type agent-def --title Legacy --folder
+data/docs/inbox`, and `.claude/agents/` empty.
+
+```
+GET /api/docs?type=agent-def → doc_isqlr23z | Legacy | data/docs/inbox/legacy.md
+
+board rows:
+  doc_isqlr23z :: agent-def Legacy inbox/ just now      ← still listed
+  th_vmbdzl4u  :: thread Q3 planning …
+
+designate menu:
+  resident-designate-general :: Designate a resident
+      no profile — owns this conversation and everything that grows out of it
+  resident-no-profiles       :: No profiles yet
+      a resident does not need one — add a type: agent-def document under
+      .claude/agents/                                    [disabled]
+
+`@` menu offers: ["agent — the agent — routing is its own triage"]
+  "@leg" -> menu closed
+```
+
+Screenshot `/tmp/pr50-no-profiles.png` (throwaway, not committed): the meta sits
+on one line in a ~480px menu — no wrap, no overflow, `--ink-3` mono as every
+other item's.
+
+Teardown: server stopped (`stopped (pid 68131)`), Vite killed, workspace removed,
+**5274 and 8794 confirmed free**, no stray vitest/playwright/chromium/vite
+processes. 8765 still held by the user's server — never touched.
+
+### For the orchestrator
+
+- **One server issue to file** (NIT 9): `invocableName` in
+  `apps/server/src/threads/mentions.ts` names a bare `.claude/skills/SKILL.md`
+  `"SKILL.md"` and `targetIndex` indexes it, title alias included. Fixing it
+  turns 5 currently-green tests in `scripts/mention-offer-parity.test.ts` red by
+  design — the fixer removes `BARE_SKILL_PATHS` and its two `describe` blocks.
+- **No kit export changed** in this round: `invocableName` is stricter for paths
+  the projector never emits, and `rowToken` / `isAddressableTarget` are untouched.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

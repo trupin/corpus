@@ -118,12 +118,31 @@ export function scanMentionTokens(body: string): Token[] {
  * not only about spelling — {@link targetIndex} takes it as the gate on being
  * addressable at all, so a document with no invocable name resolves to nothing
  * under any spelling, its title included (SERVER-125).
+ *
+ * **A skill's name is the directory holding it, so a `SKILL.md` sitting
+ * directly in a skills root has none** (SERVER-127). Claude Code discovers a
+ * skill by that folder; a file the folder does not name is loaded by nothing,
+ * which is SERVER-125's own gate condition in a shape that change did not
+ * reach. Slicing the first segment answered `"SKILL.md"` there, and while that
+ * spelling is untypeable — the token charset excludes `.` — indexing the row
+ * indexed its **title** alias too, and `titleFromPath` falls back to the parent
+ * directory, so an untitled bare `SKILL.md` answered `/skills`. Worse, ties
+ * break by `doc_*` id order, which is minted at random: such a file could take
+ * a working skill's key. So the remainder must carry a directory segment before
+ * the filename, exactly as the kit's regex requires one
+ * (`packages/kit/src/components/Autocomplete/invocable.ts`, compared over one
+ * workspace by `scripts/mention-offer-parity.test.ts`). The row stays projected
+ * — listed, readable, editable; only its addressability goes.
  */
 export function invocableName(path: string): string | null {
   const root = classifyPath(path);
   if (root === null) return null;
   const rest = path.slice(root.path.length + 1);
-  if (root.shape === "skill-tree") return rest.split("/")[0] ?? null;
+  if (root.shape === "skill-tree") {
+    const segments = rest.split("/");
+    const directory = segments.length > 1 ? segments[0] : undefined;
+    return directory === undefined || directory === "" ? null : directory;
+  }
   if (root.key !== "agents") return null;
   const filename = rest.split("/").at(-1);
   return filename === undefined ? null : filename.replace(/\.md$/, "");

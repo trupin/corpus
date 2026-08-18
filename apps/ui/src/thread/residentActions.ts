@@ -167,11 +167,41 @@ export const RELEASE_GENERAL_LABEL = "Release the resident";
  * of profiles is not a misconfiguration — §7 makes a profile the refinement and
  * not the requirement — so it says so in the same breath, and it sits on a
  * disabled line under an offer that works.
+ *
+ * ## Why the root is named, and why the line does not say which absence this is
+ *
+ * Since UI-123 the list is gated by {@link agentDefRows}, so this line has two
+ * causes that read alike: a workspace with no `agent-def` documents, and one
+ * whose `agent-def` documents are all filed where nothing loads them. The old
+ * wording — *"add a `type: agent-def` document"* — was **advice that reproduces
+ * the second state**: `corpus doc create --type agent-def --folder data/docs/…`
+ * makes exactly such a document, the board lists it under "Skills & agents", and
+ * this line still says there are no profiles (PR #50 review).
+ *
+ * So the sentence names the root. That makes it true of both causes rather than
+ * only the first, which is the property that matters: advice a person can follow
+ * without landing back where they started.
+ *
+ * It does **not** distinguish them, deliberately.
+ *
+ *   - **One remedy.** Both absences are answered by the same act — put an
+ *     agent-def under `.claude/agents/`. A second sentence keyed on the cause
+ *     would vary the diagnosis while the instruction stayed put.
+ *   - **The ladder does not stop at two.** A blank-titled agent-def is dropped
+ *     by this same branch for a third reason, an archived one for a fourth; to
+ *     tell any of them apart the menu would have to carry the rows it discarded
+ *     and a reason each. UI-122's lesson is that this item is *news beside an
+ *     offer that works*, not a diagnostics panel — it earned its place back by
+ *     being one line.
+ *   - **The board already says it better.** The dropped document is listed, with
+ *     its folder on the row and its path in the reader; §11's own surface for
+ *     "what does this workspace hold" is one column away and can be precise
+ *     where two lines of menu meta cannot.
  */
 export const NO_PROFILES_LABEL = "No profiles yet";
 
 export const NO_PROFILES_META =
-  "a resident does not need one — add a type: agent-def document to offer one here";
+  "a resident does not need one — add a type: agent-def document under .claude/agents/";
 
 export interface ResidentActionsInput {
   /** True for a thread on a document, which §7 forbids a resident. */

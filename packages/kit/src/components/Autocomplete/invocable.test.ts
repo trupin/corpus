@@ -27,6 +27,37 @@ describe("invocableName", () => {
     expect(invocableName("data/docs/notes/about-skills.md")).toBeNull();
     expect(invocableName("data/docs/inbox/legacy.md")).toBeNull();
   });
+
+  /**
+   * The server's skill root is `skill-tree` — *"only files named `SKILL.md`, at
+   * any depth"* (`projection/roots.ts`) — so the name is the directory under the
+   * root however deep the file sits, and a file beside a `SKILL.md` is not a
+   * document at all.
+   */
+  it("names a skill by its directory at any depth, and names nothing beside it", () => {
+    expect(invocableName(".claude/skills/comment/nested/SKILL.md")).toBe("comment");
+    expect(invocableName(".claude/skills/comment/notes.md")).toBeNull();
+    expect(invocableName(".claude/skills-archived/old/notes.md")).toBeNull();
+  });
+
+  /**
+   * `SKILL.md` sitting **in** the skills root, named by no directory. Claude
+   * Code discovers a skill by the folder that holds it, so nothing loads this
+   * one and nothing should address it — the same reasoning SERVER-125 applied to
+   * an off-root `agent-def`.
+   *
+   * The server disagreed when this rule was written: its `invocableName` sliced
+   * the first path segment after the root and answered `"SKILL.md"`, so
+   * `targetIndex` indexed the row and its typeable title alias with it (PR #50
+   * NIT 9). That was the server's defect, not this rule's, and SERVER-127 closed
+   * it there rather than making this side agree with a wrong answer;
+   * `scripts/mention-offer-parity.test.ts` now holds the two together over one
+   * workspace with no exclusions.
+   */
+  it("names nothing for a SKILL.md with no directory to name it", () => {
+    expect(invocableName(".claude/skills/SKILL.md")).toBeNull();
+    expect(invocableName(".claude/skills-archived/SKILL.md")).toBeNull();
+  });
 });
 
 describe("rowToken", () => {

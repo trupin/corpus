@@ -940,7 +940,8 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
 | SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |
 | UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | done | P0 | SERVER-125 |
-| CONTRACT-064 | The designate schema still states the pre-SERVER-125 resolution rule (PR #50 review sweep) | todo | P1 | SERVER-125 |
+| CONTRACT-064 | The designate schema still states the pre-SERVER-125 resolution rule (PR #50 review sweep) | done | P1 | SERVER-125 |
+| SERVER-127 | A bare .claude/skills/SKILL.md is addressable and loaded by nothing (UI-123 derived fixture) | done | P1 | SERVER-125 |
 | SHARED-051 | A persona is addressable by where it lives, and §11 says otherwise (PR #50 review, NEEDS SIGN-OFF) | todo | P0 | SERVER-125 |
 
 The five open rows above are **v0.12.0**, agreed with the user on 2026-08-18:

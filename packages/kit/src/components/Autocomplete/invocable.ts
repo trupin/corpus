@@ -27,9 +27,24 @@ export interface PathRow {
  * `null` for a document outside those roots — a `type: skill` note filed under
  * `data/docs/` is a document *about* a skill, and Claude Code loads neither it
  * nor an `agent-def` filed beside it.
+ *
+ * **Each pattern spells out the whole shape of its root**, not just its prefix:
+ * a skill is a file *named* `SKILL.md` under a named directory (the server's
+ * `skill-tree`), and an agent-def sits directly in the agents root (its
+ * `markdown-flat`). Matching the prefix alone named `.claude/skills/comment/`
+ * for a `notes.md` beside the `SKILL.md` — a path the server calls no document
+ * at all — which is the same class of quiet disagreement UI-123 is (PR #50 NIT
+ * 9). `scripts/mention-offer-parity.test.ts` now asks both sides about paths
+ * derived from `DOCUMENT_ROOTS`, so a shape that drifts here is a failing test
+ * rather than a difference nobody looks for.
+ *
+ * What is **not** modelled is the projector's non-shape exclusions — a
+ * dot-prefixed segment, `node_modules` — because they decide whether a file is
+ * enumerated at all, and no `documents.path` this rule is ever handed carries
+ * one.
  */
 export function invocableName(path: string): string | null {
-  const skill = /^\.claude\/skills(?:-archived)?\/([^/]+)\//.exec(path);
+  const skill = /^\.claude\/skills(?:-archived)?\/([^/]+)\/(?:[^/]+\/)*SKILL\.md$/.exec(path);
   if (skill?.[1] !== undefined) return skill[1];
   const agent = /^\.claude\/agents\/([^/]+)\.md$/.exec(path);
   return agent?.[1] ?? null;
