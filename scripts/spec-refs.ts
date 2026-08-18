@@ -87,26 +87,42 @@ export interface ExcludedPath {
  * `packages/contract/src/schemas/key.ts` did — so reading them would report one
  * defect twice and point the reader at a file it is wrong to edit.
  *
- * **`issues/` is the deliberate one, and it is a real loss.** Issue files
- * legitimately contain citations that are wrong on purpose: `issues/shared/046-*`
- * and `048-*` quote the missing 9.4 in order to *describe* it,
- * `issues/infra/029-*` seeds 9.9 and 9.5 as examples of the defect, and several
- * files use the section sign for something else entirely (957–1002 is a line
- * range in `docs/cli.md`, 0 is the number of a section of an issue's own
- * verification log). The alternative — covering `issues/` with a
- * per-occurrence allowlist — was rejected: it needs a new entry every time
- * somebody writes an issue about a citation defect, and since a closed issue is
- * never edited again the allowlist could only grow, until it was the thing
- * certifying citations rather than SPEC.md. The loss is that a wrong citation is
- * not caught in the issue file it is drafted in. It is caught the moment it is
- * copied into SPEC.md, source, `assets/`, `docs/` or `design/`, which is the
- * moment it becomes something a user can be shown.
+ * **`issues/` is the deliberate one, and it is the largest thing this check does
+ * not do.** Measured 2026-08-17: the tracker holds 5,014 of the repository's
+ * 10,778 citations — 47% — against the 5,764 this check reads. It is not
+ * excluded because issue files are static; `issues/PLAN.md` is rewritten every
+ * phase. It is excluded because the tracker is where citation defects get
+ * *described*: `issues/shared/046-*` and `048-*` quote the missing 9.4 in order
+ * to correct it, `issues/infra/029-*` seeds 9.9 and 9.5 as examples of the
+ * defect, and several files use the section sign for something that is not a
+ * SPEC section at all — 957–1002 is a line range in `docs/cli.md`, 0 names a
+ * section of an issue's own verification log. Covering the tracker means either
+ * rewriting those sentences out of notation, or a per-occurrence allowlist that
+ * takes a new entry every time somebody files an issue about a citation defect
+ * (three so far), until the allowlist rather than SPEC.md is what certifies a
+ * citation.
+ *
+ * **`issues/PLAN.md` was considered on its own and left excluded.** It is the
+ * one genuinely live document under here, so a narrower exclusion could have
+ * kept it covered — that was measured rather than assumed. It holds 58
+ * citations, of which exactly one fails today: the plan's own SHARED-046 row,
+ * reading "SPEC.md cited a 9.4 that does not exist; corrected to 9.2
+ * everywhere". That row is a copy of the issue's title, and the plan accrues one
+ * like it for every issue of that class. Re-including one path inside an
+ * excluded directory would also need an exception to an exclusion — a second,
+ * opposite-signed list — in a mechanism whose entire discipline is that an
+ * exclusion is an anchored prefix a reader can check by eye.
+ *
+ * The loss either way is that a wrong citation is not caught in the issue file
+ * it is drafted in. It is caught the moment it is copied into SPEC.md, source,
+ * `assets/`, `docs/` or `design/`, which is the moment it becomes something a
+ * user can be shown.
  */
 export const EXCLUDED_PATHS: readonly ExcludedPath[] = [
   {
     path: "issues/",
     reason:
-      "the issue tracker quotes wrong citations in order to document them (SHARED-046, INFRA-029) and is never edited again once written",
+      "the issue tracker is where citation defects are described and corrected, so its files quote wrong sections on purpose (SHARED-046, SHARED-048, INFRA-029), and some use the sign for line ranges and log sections rather than SPEC sections",
   },
   {
     path: ".claude/worktrees/",

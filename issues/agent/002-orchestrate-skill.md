@@ -25,7 +25,7 @@ fable — the skill text IS the product agent's judgment; prompt design quality 
 
 - SPEC.md §7 (event queue and agent loop) — queue contract and event types, CLI queue verbs, **orchestrator skill**, document locks, job logs, HALT, agent stewardship, skills-as-documents including loop safety (`corpus skill rollback`)
 - SPEC.md §8 (agent participation semantics) — structured `mentions`/`skills` in the event payload, the honest pending indicator the loop must not leave hanging
-- SPEC.md §10.2 (plugin agent skills) — plugin event types `<plugin>.*` route to plugin skills by convention
+- SPEC.md §10, extension point 2 (agent skills) — plugin event types `<plugin>.*` route to plugin skills by convention
 - SPEC.md §15 M4 — the executable check this skill must satisfy end to end
 - CLAUDE.md — Architecture Decision 2 (server is sole writer; the agent interacts only through the CLI)
 

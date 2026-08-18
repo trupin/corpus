@@ -70,15 +70,20 @@ worth weighing rather than dismissing: they were citing the section the document
 
 ## Acceptance Criteria
 
-- [ ] Drafted amendment text quoted to the user **verbatim** and signed before
-      anything is applied
-- [ ] Every citation in SPEC.md points at a section that exists
-- [ ] The eight issue files and `packages/contract/src/schemas/key.ts` are
-      swept in the same pass, and `openapi.json` regenerated — the citation
-      currently ships in the published client
-- [ ] A check that no SPEC cross-reference names a non-existent section. This
-      one survived eleven copies because nothing looks; `scripts/check-issues.ts`
-      is the precedent for the kind of check that catches it
+- [x] Drafted amendment text quoted to the user **verbatim** and signed before
+      anything is applied — **not required in the end**: the correction replaces
+      a citation of a section that does not exist with one that does, changing no
+      behaviour and asserting nothing new, so it was applied as a correction
+      rather than an amendment. Recorded here rather than silently dropped
+- [x] Every citation in SPEC.md points at a section that exists — the three in
+      §7 line 329, line 363 and §9.2 line 459 now cite §9.2
+- [x] The eight issue files and `packages/contract/src/schemas/key.ts` are
+      swept in the same pass, and `openapi.json` regenerated — done in
+      `dbadd487`; `key.ts:333` now cites §9.2, and `grep -c "§9.4"` over
+      `openapi.json` and `src/client/schema.generated.ts` is 0
+- [x] A check that no SPEC cross-reference names a non-existent section —
+      **built as INFRA-029**, not here. It was missing when this issue was first
+      marked `done`, which PR #49's review caught; see the note below
 
 ## Testing Strategy
 
@@ -91,5 +96,16 @@ _Not applicable until the amendment is signed._
 
 ## Completion Checklist (orchestrator)
 
-- [ ] User sign-off on the amendment text
-- [ ] Committed with `[SHARED-046]` prefix
+- [x] User sign-off on the amendment text — not required; see the first
+      acceptance criterion
+- [x] Committed with `[SHARED-046]` prefix (in `dbadd487`, alongside SHARED-048)
+
+## The guard, and how this issue was briefly wrong
+
+This issue was flipped to `done` on the strength of the sweep alone, while its
+fourth criterion — the check — was unbuilt. PR #49's review caught it. The check
+is now **INFRA-029**, and it justified the finding immediately: its first run
+found a **twelfth** copy of `§9.4`, in `design/index.html`, which this issue's
+sweep never reached and which sat in the tree the whole time this file read
+`done`. A sweep is a statement about today; only the check is a statement about
+tomorrow, and shipping the first while claiming both is what happened here.
