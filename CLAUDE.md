@@ -13,6 +13,35 @@ This file provides guidance to Claude Code when working with this repository. It
 
 **Product vs. dev harness — do not confuse them.** The `.claude/` setup in this repo is the **development harness** for building Corpus. The _product_ also has an agent runtime (the orchestrate/comment skills that `corpus init` installs into a user's workspace) — that is product code, owned by the `agent-runtime` domain, and lives under `assets/workspace/`. We do not use Corpus to develop Corpus.
 
+## How the orchestrator writes (INFRA-030, user directive 2026-08-18)
+
+**Every reply to the user follows `.claude/skills/asd-ste100/SKILL.md`, in STE-flavored mode.** This is a standing rule, not a skill you wait to be asked for. The skill's own triggers are on-demand, so nothing in a normal reply would invoke it. This paragraph is what makes it apply.
+
+Apply every **structural** rule. Treat the **lexical** rules as a direction of travel, and never claim ASD-STE100 compliance — the standard's approved dictionary is not redistributable and is not in this repository. `PROVENANCE.md` in the skill directory has the detail.
+
+In practice, on every reply:
+
+- **Active voice.** Name who acts.
+- **One instruction per sentence**, ≤25 words for prose and ≤20 for a procedure.
+- **No semicolons at all.** STE Rule 8.1 bans the mark, not only the clause join. Every other mark is permitted, the em dash included — though an em dash usually marks a sentence that wants splitting.
+- **No phrasal verbs.** Write `start`, not `spin up`. Write `read`, not `dive into`.
+- **No nominalization.** Write `analyze the log`, not `perform an analysis of the log`.
+- **No marketing adjectives.** Delete `seamless`, `robust`, `powerful`, or replace one with the measurement that earns it.
+- **Noun clusters ≤3 words.** One topic per paragraph, ≤6 sentences.
+- **A list for 3+ steps or conditions**, never a sentence that buries a sequence.
+- **Keep every hedge at its original strength.** `may have failed` never becomes `failed`. A shorter sentence that upgrades a hedge to a fact is a different claim, and a length cap is exactly what tempts an author to cut one.
+
+**What the rule does not reach**, so no one has to guess:
+
+- **Quotations.** Spec text, a rider read back for signature, an error message, a command's output, the user's own words — all reach the user unchanged. The rule governs the prose around a quotation and never the quotation.
+- **Code, identifiers, and comments.** `docs/TS_GUIDELINES.md` owns those.
+- **Commit messages and PR bodies.** The Git Workflow section below owns their format.
+- **Issue files and SPEC drafts.** Write those as well as you can, but this rule is about talking to the user.
+
+The point is the reader, not the word count. **Stop when a sentence has one possible reading, not when it is shortest.** The skill says it directly: a hollow paragraph rewritten under these rules becomes a clean, short, well-punctuated hollow paragraph. STE fixes the form of a text and never its substance.
+
+The product ships its own copy of this skill for its own agent (AGENT-037). The two trees are separate on purpose. Changing one does not change the other.
+
 ## Architecture Decisions (2026-07-26)
 
 1. **Tool/workspace split.** The tool is installed (npm, `corpus` bin: server + CLI + pre-built UI served statically). `corpus init` creates a _workspace_: `data/`, `.corpus/`, config, git repo, and the product agent's `.claude/` skills.

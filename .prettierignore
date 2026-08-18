@@ -17,6 +17,15 @@ assets/workspace/
 # for byte — Prettier rewrapping one would make the assertion test Prettier's
 # markdown style instead of the serializer's.
 apps/ui/src/editor/markdown/fixtures/
+# Vendored, not written here (INFRA-030). These four files are copied byte for
+# byte from danyuchn/asd-ste100-skill, and PROVENANCE.md next to them promises a
+# refresh is a straight refetch. Prettier rewrapping one would make every future
+# refresh a conflict against formatting we introduced. PROVENANCE.md itself is
+# ours and stays formatted, so it is not listed.
+.claude/skills/asd-ste100/SKILL.md
+.claude/skills/asd-ste100/LICENSE
+.claude/skills/asd-ste100/references/
+.claude/skills/asd-ste100/examples/
 # Captured clipboard payloads (UI-042). These are bytes a word processor put on
 # the clipboard, and the paste path is asserted against them: pretty-printing
 # the markup would insert whitespace text nodes between the tags and change what

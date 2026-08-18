@@ -939,3 +939,43 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | todo | P1 | — |
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
 | SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |
+
+The five open rows above are **v0.12.0**, agreed with the user on 2026-08-18:
+*everything the profile release left half-true*. They are one story, so they ship
+under one tag. The controlled-language work below is a second story and gets its
+own.
+
+## Phase 35 — Write to be read once (2026-08-18, user directive)
+
+The user asked for the ASD-STE100 skill to be installed by default and applied
+consistently to all communication with them. ASD-STE100 is a controlled-language
+standard from the aerospace and defence industry. It removes the two largest
+sources of misreading: words with more than one meaning, and sentences with more
+than one possible structure. The vendored skill borrows the discipline for a
+reader who cannot ask a clarifying question.
+
+**Three things were settled with the user before any work started**, and none of
+them is open: it goes into **both** the harness and the product; it applies to
+**everything the product agent writes**, thread replies included; and the mode is
+**STE-flavored**, not Strict.
+
+**A skill file alone is inert.** A skill fires when something invokes it, and
+this one's triggers are on-demand. The behaviour the user asked for is the
+standing rule that sits beside the file — in `CLAUDE.md` for the harness, and in
+the workspace template for the product. Either half alone does nothing.
+
+The two halves are deliberately separate trees. `.claude/` is the development
+harness and reaches no user, so **INFRA-030 ships nothing** and lands straight on
+`main`. `assets/workspace/` is the product, so AGENT-037 is what a user receives
+and is the whole of **v0.13.0**.
+
+**The cost is known and accepted.** The skill warns against applying STE where
+voice is the point, and the user chose everything the agent writes. Replies to a
+person about their own document will read flatter. AGENT-037 reports how the
+comment skill reads afterwards, because that is the surface where the cost lands.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| INFRA-030 | The orchestrator writes in controlled language (harness; ships nothing) | todo | P1 | — |
+| SHARED-050 | The product agent's register is controlled language (NEEDS SIGN-OFF) | todo | P1 | — |
+| AGENT-037 | The workspace ships the skill, and the agent writes by it | todo | P1 | INFRA-030, SHARED-050 |
