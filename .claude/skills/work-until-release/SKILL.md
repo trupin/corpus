@@ -109,7 +109,19 @@ proposal.
 **Name the riskiest item and what happens if it slips.** A release should not
 wait on its least predictable piece; say which one you would drop.
 
-End with a concrete recommendation and a request for confirmation or additions.
+End with a concrete recommendation, and **ask for the go-ahead as a `/goal`**:
+
+> To start, send: `/goal <one-line scope> — work until the release is tagged and
+shipped`
+
+The go-ahead and the goal are the same message, deliberately. `/goal` is a
+built-in CLI command, so **the orchestrator cannot invoke it for itself** — not
+through the Skill tool, which resolves skills only, and not by typing a slash
+command into its own output. Only the user can set it. A go-ahead that is not a
+`/goal` leaves the run without the thing that keeps it alive across context
+compaction, and this skill's whole premise is that the user has walked away.
+Offer the exact line to send rather than describing it; a scope the user has to
+retype is a scope they will shorten.
 
 ## 4. Wait
 
@@ -117,10 +129,15 @@ The user confirms, adds, or removes. **Do not begin implementing during this
 step** — the point of the conversation is that the scope is agreed before work
 starts.
 
-## 5. On "go", set the goal and run
+## 5. On "go", run to the tag
 
-Once the user gives the go-ahead, restate the agreed scope in one line, then work
-to the release without stopping for judgment calls:
+If the go-ahead arrived as plain prose rather than a `/goal`, say so in one
+sentence and give the line again before starting — _"send this as `/goal …` and I
+will run it to the tag"_. Do not stall on it: if the user confirms again without
+one, proceed anyway and note in the report that the run was unpinned.
+
+Restate the agreed scope in one line, then work to the release without stopping
+for judgment calls:
 
 - File any unfiled work as issues first (`issues/<domain>/NNN-*.md` plus a
   `PLAN.md` row) — issue-first, always
@@ -213,6 +230,9 @@ be gone looking for.
 - Never skip the proposal step, even when the scope looks obvious — the user's
   additions are usually the point.
 - Never start the release without the user's go-ahead.
+- **Ask for that go-ahead as a `/goal`, always.** It is the only mechanism that
+  survives a context compaction, it cannot be set from inside the skill, and a
+  run that loses it mid-flight stops silently rather than failing loudly.
 - A green test suite is not evidence a behaviour works. Where a fix could pass
   its own test while being absent, break the fix and watch the test fail.
 - If the scope turns out to be wrong mid-flight — an issue is far larger than it
