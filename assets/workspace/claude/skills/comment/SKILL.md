@@ -206,9 +206,9 @@ A title made out of the conversation carries their words, so build it in a hered
 by name rather than quoting it into the command:
 
 ```bash
-title=$(cat <<'EOF'
+title=$(cat <<'CORPUS_EOF'
 Kitchen rebuild — cabinet quote, $18,400
-EOF
+CORPUS_EOF
 )
 corpus doc edit th_9f21c4 --title "$title" --from agent
 ```
@@ -340,9 +340,9 @@ you read a document before rewriting it. Nothing is acquired and nothing is rele
 ```bash
 corpus doc show doc_a1b2c3
 key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
-corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
+corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'CORPUS_EOF'
 The revised body, in full.
-EOF
+CORPUS_EOF
 edited doc_a1b2c3
 key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
 ```
@@ -404,10 +404,10 @@ Nothing refuses the write and it would land. It is a courtesy, and the response 
 that document alone rather than write beside somebody mid-sentence:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 You're editing [[doc_a1b2c3]] right now, so I've left it alone. The change is
 ready and lands on its own once you're done in there.
-EOF
+CORPUS_EOF
 corpus job log evt_7c1d9a "stood aside on [[doc_a1b2c3]] — a person has an edit session open"
 ```
 
@@ -457,11 +457,11 @@ arrives — a wrong filing is harder to notice than an unfiled one.
 One command, always:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 6.4% is more representative than 6.1% for a 30-year fixed today. Updated the
 assumption and the projection note in [[doc_a1b2c3]].
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%
-EOF
+CORPUS_EOF
 ```
 
 Rules:
@@ -627,12 +627,12 @@ you needed nothing from them — **suggest resolving** and leave the control wit
 same act, never a resolve with no readable turn attached:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 6.4% it is — applied to the projection in [[doc_a1b2c3]] and to the two figures
 downstream of it. That settles the rate question, so I'm closing this thread;
 reply here if it turns out not to be settled.
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%; resolved this thread
-EOF
+CORPUS_EOF
 corpus thread resolve th_4b8e2c --from agent
 ```
 
@@ -824,15 +824,15 @@ a heredoc terminator only closes the heredoc on a line of its own with nothing i
 so an indented copy of this block ends up with the rest of the file inside the description.
 
 ```bash
-description=$(cat <<'EOF'
+description=$(cat <<'CORPUS_EOF'
 Run the weekly review over the corpus — what changed, what drifted, what's owed.
-EOF
+CORPUS_EOF
 )
-corpus skill create weekly-review --description "$description" --from agent <<'EOF'
+corpus skill create weekly-review --description "$description" --from agent <<'CORPUS_EOF'
 # Weekly review
 
 Survey what changed this week, update what drifted, and reply with the findings.
-EOF
+CORPUS_EOF
 ```
 
 The server owns the mechanics; do not pre-check them — know what comes back when one is
@@ -910,12 +910,12 @@ cluster between 6.1% and 6.6%, and every projection in this document uses 6.4%.'
 patched doc_a1b2c3 — 1 occurrence replaced — 1 anchor remapped
 key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Not any more — 6.4% is the representative 30-year fixed rate today. Updated the
 assumption and the projection note in [[doc_a1b2c3]]; the anchored sentence is
 the one that changed.
 ↳ updated the rate assumption in [[doc_a1b2c3]] from 6.1% to 6.4%
-EOF
+CORPUS_EOF
 ```
 
 **2 — Standalone Ask that gets a title and a document.** `parentId` was `null` and the payload
@@ -925,19 +925,19 @@ So the turn names the **deciding** stage and the job log carries both.
 
 ```bash
 corpus thread show th_9f21c4
-corpus doc create --type note --title "Espresso extraction troubleshooting" --folder kitchen --tags coffee --from agent <<'EOF'
+corpus doc create --type note --title "Espresso extraction troubleshooting" --folder kitchen --tags coffee --from agent <<'CORPUS_EOF'
 # Espresso extraction troubleshooting
 
 Sour and fast means under-extraction: grind finer before changing dose.
 Bitter and slow means the opposite.
-EOF
-title=$(cat <<'EOF'
+CORPUS_EOF
+title=$(cat <<'CORPUS_EOF'
 Why does my espresso taste sour?
-EOF
+CORPUS_EOF
 )
 corpus doc edit th_9f21c4 --title "$title" --from agent
 corpus job log evt_5a2b7c "gathered on claude-haiku-4-5; concluded and wrote the reply on claude-opus-4-1"
-corpus thread reply th_9f21c4 --from agent --model claude-opus-4-1 <<'EOF'
+corpus thread reply th_9f21c4 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'
 Sour usually means under-extraction — the shot ran too fast. Grind one step
 finer and keep everything else fixed.
 
@@ -945,7 +945,7 @@ finer and keep everything else fixed.
 full troubleshooting sequence is durable enough to keep, so I wrote it down in
 [[doc_7e3a91]] and titled this thread.
 ↳ created [[doc_7e3a91]] in kitchen/ and titled this thread
-EOF
+CORPUS_EOF
 ```
 
 **3 — Inbox capture, filed end to end.** The payload's `parentId` was the captured document.
@@ -953,7 +953,7 @@ EOF
 ```bash
 corpus doc show doc_5c8b2f
 key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa
-corpus doc edit doc_5c8b2f --key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa --title "Quarterly insurance review" --from agent <<'EOF'
+corpus doc edit doc_5c8b2f --key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa --title "Quarterly insurance review" --from agent <<'CORPUS_EOF'
 # Quarterly insurance review
 
 Check the home and auto policies against current replacement costs each quarter.
@@ -961,7 +961,7 @@ Check the home and auto policies against current replacement costs each quarter.
 ## Open questions
 
 - Which quarter does the current policy renew in?
-EOF
+CORPUS_EOF
 corpus search "home and auto insurance policies" --limit 5
 doc_3f9a01  Home policy renewal › Replacement cost  …the home policy's replacement cost was last checked in March…
 doc_c14be7  Auto policy notes › Premiums            …the auto premium rose 8% at the last renewal…
@@ -969,12 +969,12 @@ corpus doc show doc_3f9a01  # its path is data/docs/finance/home-policy-renewal.
 corpus doc move doc_5c8b2f --folder finance --from agent
 corpus doc edit doc_5c8b2f --add-tag insurance --add-tag review --from agent
 corpus job log evt_2e4f8b "filed [[doc_5c8b2f]] into finance/"
-corpus thread reply th_1a7d33 --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_1a7d33 --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Filed this as [[doc_5c8b2f]] — "Quarterly insurance review", now in `finance/`,
 tagged insurance and review. I added the structure and left one open question in
 it: I don't know which quarter the policy renews in.
 ↳ retitled, expanded and filed [[doc_5c8b2f]] into finance/, tagged insurance and review
-EOF
+CORPUS_EOF
 ```
 
 Only the first write there carried a key, and that is not an oversight: it replaced the
@@ -990,11 +990,11 @@ corpus thread show th_6c0a18
 corpus doc move doc_2f7b91 --folder finance --from agent
 corpus doc edit doc_2f7b91 --add-tag insurance --add-tag review --from agent
 corpus job log evt_9b4c02 "form answered — filed [[doc_2f7b91]] into finance/, tagged insurance and review"
-corpus thread reply th_6c0a18 --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_6c0a18 --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Finance it is — [[doc_2f7b91]] now lives in `finance/` next to the mortgage
 notes, tagged insurance and review. You left the renewal quarter blank, so it
 stays the open question already written into the document. That closes the
 filing I paused on; nothing else is outstanding here.
 ↳ moved [[doc_2f7b91]] into finance/ and tagged it insurance, review
-EOF
+CORPUS_EOF
 ```

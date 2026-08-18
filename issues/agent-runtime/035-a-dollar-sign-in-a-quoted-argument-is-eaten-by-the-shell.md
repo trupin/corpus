@@ -601,6 +601,142 @@ files. All four skills parsed with `mdast-util-from-markdown`: **zero** unclosed
 the frontmatter's closing `---` reads as a setext underline without a frontmatter plugin — so
 the vitest pins, not the parser, are the count of record). Server stopped; port 8797 free.
 
+## PR #50 second review
+
+Three findings, all in this issue's text: **MAJOR 3** (the residual's remedy contradicted the
+rule it sits under, and the default terminator was the worst available), **MINOR 4** (the
+`$( … )` diagnosis was narrower than the defect), **NIT 8** (a pin forbidding two ordinary
+English words across a whole product file).
+
+### MAJOR 3 — the terminator is fixed, not chosen against the text
+
+**Reproduced first, both shells.** A value captured through a quoted heredoc, carrying a pasted
+transcript that contains a line reading exactly `EOF`:
+
+```
+$ /bin/bash before.sh
+before.sh: line 14: EOF: command not found
+title=[Transcript from the vendor:
+$ cat <<'EOF'
+line one]                       # truncated at the carried EOF line
+exit=0
+-rw-r--r--  1 …  /tmp/agent035b/pwned.txt     # touch ran, from carried text
+
+$ /bin/zsh before.sh
+before.sh:7: command not found: EOF
+exit=0                          # same truncation, same file created
+```
+
+**Through the real CLI**, workspace on port 8801, `corpus` 0.9.0, `--from agent`. Old
+terminator, carried text holding a bare `EOF` line:
+
+```
+created doc_4ha5os3u — data/docs/inbox/vendor-transcript-old-terminator.md
+e2e_before.sh: line 10: They: command not found
+e2e_before.sh: line 11: EOF: command not found
+```
+
+`corpus doc show doc_4ha5os3u` ends at *"first line of their body"*. Three lines of the person's
+message never reached the corpus — including *"They asked whether the quote of $18,400 still
+stands."* — and `touch` ran. The create itself reported success.
+
+**After**, same carried text, terminator `CORPUS_EOF`, same script under each shell:
+
+```
+created doc_x46apawn — data/docs/inbox/vendor-transcript-bash.md    exit=0
+created doc_ag2ktmea — data/docs/inbox/vendor-transcript-zsh.md     exit=0
+ls: /tmp/agent035b/pwned3.txt: No such file or directory
+```
+
+Both bodies compared byte for byte against the carried text: **identical**, including the line
+reading `EOF`, the `<<'EOF'` inside it, the `$18,400` and the `touch` line as text. Nothing ran.
+
+**Why `CORPUS_EOF`.** Every fixed terminator is collidable in principle, so the choice is made
+on what carried text actually holds. `EOF` is the terminator of every shell transcript ever
+pasted, and the skill names a pasted transcript as the arrival vector — it is the single worst
+available word. Any non-`EOF` word is equivalent against outside text; what is left is
+self-collision (a corpus transcript pasted back), which no fixed word escapes and a per-message
+nonce would only trade for a judgment call — and a judgment call is the inspection the
+construction exists to remove. `CORPUS_EOF` is also self-labelling: a heredoc in the wild
+carrying it came from these skills.
+
+The remedy is now unconditional and states the mechanism as its reason rather than as an entry
+condition: *"you choose it once, not per message: the terminator is always `CORPUS_EOF`, never
+`EOF`"*, closing with *"Weighing it is the inspection this whole construction exists to
+replace"*. All **34** heredocs in the four core skills moved (orchestrate 8, comment 14,
+converse 5, profile 7), plus the todos plugin skill's one — a rule stated as *always* and
+demonstrated 34 times with the other word teaches the other word.
+
+### MINOR 4 — the diagnosis widened, re-measured
+
+Re-measured here, not copied. Value in a quoted heredoc inside `$( … )`, `bash 3.2.57(1)` and
+`zsh 5.9`:
+
+```
+it's here    → bash: unexpected EOF while looking for matching `''   zsh: GOT=[it's here]
+he said "go  → bash: unexpected EOF while looking for matching `"'   zsh: GOT=[he said "go]
+a ` tick     → bash: unexpected EOF while looking for matching ``'   zsh: GOT=[a ` tick]
+```
+
+`IFS= read -r` returned all three byte-exact under both shells. Against the real CLI the repair
+landed the title `O'Brien — "cabinet" quote, $18,400 ` + backtick-`whoami` byte-exact under
+bash (`doc_del7cnye`) and zsh (`doc_pj5rymkj`); the capture form refused under bash 3.2 and
+landed the same title under zsh (`doc_sug6gdgl`). The prose now reads *"one unbalanced quoting
+character anywhere in the value"*, names all three with their shells, and says outright it is
+*"not about apostrophes and not about counting them"*.
+
+### NIT 8 — scoped to the bullet it guards
+
+The mechanism check ran over the whole `profile` body with `/alias|targetIndex|invocableName|autocomplete/i`.
+It now extracts the bullet it exists for (*The write is refused for any other reason*) and
+checks that, with `targetIndex|invocableName|\balias(?:es)?\b|indexed under|skips any row`. A
+sentence elsewhere in the file about the composer's autocomplete listing an alias now passes
+(measured, below); the same words inside the bullet still fail.
+
+### Pins moved, and each falsified
+
+Every pin below was falsified by mutating the text it covers and confirming the run goes red,
+then restoring and confirming green.
+
+| mutation | result |
+| --- | --- |
+| reintroduce `<<'EOF'` as one skill's opener | red — `… ends every heredoc with CORPUS_EOF` |
+| close one heredoc with a bare `EOF` line | red — same, and `opens a heredoc it can close` |
+| restore the conditional remedy (*choose a word it cannot*) | red — `fixes the terminator once, with no text to weigh it against` |
+| drop only the *"weighing it is the inspection"* sentence | red — same |
+| narrow the diagnosis back to *odd number of apostrophes* | red — `hands over a repair that is not the construction that just failed` |
+| indent a `CORPUS_EOF` terminator | red — `indents no heredoc terminator` |
+| indent an `EOF` terminator (old word) | red — same (pattern covers both) |
+| a line after a trace, before the terminator | red — `puts a trace last in its turn, or none` |
+| remove one heredoc (34 left) | red — `has heredocs in the installed skills for that rule to bind` |
+| unquote a delimiter | red — `quotes every heredoc it hands text to` |
+| `invocableName` inside the guarded bullet | red — `keeps a misfiled profile's consequence` |
+| rename the guarded bullet's lead-in | red — same (no vacuous pass) |
+| *"The composer's autocomplete lists an alias"* as a different bullet | **green** — the narrowing works |
+
+The pins that moved rather than being added: the terminator literal in every heredoc regex
+(openers, closers, the `String.raw` builder in the `profile` block, and the extractor fixture at
+the end of the file), the two `trace not last in its turn` assertions, the indent pattern
+(widened to `^\s+(?:CORPUS_)?EOF\s*$` so a reintroduced old word still fails there), and the
+open/close counter. Anti-vacuity for the new prohibition is aggregate — a plugin fixture skill
+ships no heredoc, so a per-skill *"at least one"* would fail on it — plus the per-core-skill
+count that already existed.
+
+### Whole-file checks
+
+`VITEST_MAX_THREADS=4 npx vitest run scripts/workspace-template.test.ts` — **388 passed**.
+`npm run lint` — clean. `prettier --check scripts/workspace-template.test.ts` — clean
+(`assets/workspace/` is prettier-ignored by design). Test server stopped, port 8801 free; the
+user's 8765 was never touched.
+
+### Escalation — the CLI's own help examples still say `EOF`
+
+Out of this domain and left alone: `apps/cli/src/commands/{doc/create,doc/edit,doc/patch,thread/reply,thread/create,skill/create}.ts`
+and `apps/cli/src/input.ts` show `<<'EOF'` in `--help` examples and in the *body required* hint,
+and those are regenerated into `docs/cli.md`. The agent reads that surface, so it is the same
+defect one file over: a rule stated as *always* with the CLI demonstrating the other word. Needs
+a CLI issue (the doc is generated and drift-checked, so it cannot be hand-edited here).
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing (380 in `scripts/workspace-template.test.ts`)

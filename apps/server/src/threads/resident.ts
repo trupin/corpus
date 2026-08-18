@@ -190,19 +190,32 @@ const GENERAL_RESIDENT_SUBJECT = "general resident";
  * one directory away from working, so the path is named and so is what is wrong
  * with it. This is the only surface that can say it: a mention that resolves to
  * nothing carries a bare token and no document.
+ *
+ * **The refusal quotes the spelling that was looked up, and quotes no mention
+ * token** (PR #50 NIT 9). `AgentNameSchema` accepts any non-blank single line, so
+ * a designation may arrive as `" Legacy Analyst "`; the lookups trim it
+ * (`mentions.ts`) and the message therefore names the trimmed form, or it would
+ * report a miss on a spelling nothing searched for. The message used to build
+ * `` `@${name}` `` out of it, which was worse than untidy: a mention token is
+ * `[A-Za-z0-9_-]+` (`mentions.ts`'s `TOKEN`), so neither the surrounding spaces
+ * nor the inner one in a titled `Legacy Analyst` can appear in one — the refusal
+ * was quoting a string nobody can type, as the thing that fails to resolve. What
+ * it means is said in words instead.
  */
 function residentFor(projection: ProjectionDb, name: string | undefined): Resident {
   if (name === undefined) return { name: null, docId: null };
   const target = resolveMentionTarget(projection, MENTION_TYPE, name);
   if (target === null) {
+    const wanted = name.trim();
     const inert = unaddressableTarget(projection, MENTION_TYPE, name);
     throw notFound(
       inert === null
-        ? `no agent named ${name} in this workspace — a designation names an agent-def the ` +
+        ? `no agent named ${wanted} in this workspace — a designation names an agent-def the ` +
             "way a mention does"
-        : `no agent named ${name} in this workspace — ${inert.path} declares ` +
+        : `no agent named ${wanted} in this workspace — ${inert.path} declares ` +
             "`type: agent-def` but is not under `.claude/agents/`, so nothing loads it as a " +
-            `subagent and nothing resolves \`@${name}\` to it; a persona has to live in that root`,
+            "subagent and neither a mention nor a designation resolves to it; a persona has to " +
+            "live in that root",
     );
   }
   // The **resolved** name is what gets stored, never the caller's spelling.

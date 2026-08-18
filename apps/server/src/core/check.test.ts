@@ -540,6 +540,21 @@ describe("§5's waiver under a `.claude/` root (SERVER-124)", () => {
     { field: "anchors", malformed: { anc_k4f7: { exact: "x", prefix: 5 } }, valid: {} },
   ];
 
+  /**
+   * Every field of {@link FIELDS} but one, at its valid value — the block a
+   * per-field absence case has to be asked against.
+   *
+   * A block with *nothing* in it says nothing about `id`, `status` or any other
+   * single field: it is one document, and the assertion under 27 names would be
+   * one assertion (PR #50 NIT 10). Asked with the rest of the block present, the
+   * question is the per-field one the name makes — "is this field required
+   * here?" — and each row can fail on its own, which is what a matrix means.
+   */
+  const allValidExcept = (omitted: string): Fields =>
+    Object.fromEntries(
+      FIELDS.filter((entry) => entry.field !== omitted).map((entry) => [entry.field, entry.valid]),
+    );
+
   for (const root of ROOTS) {
     describe(root.label, () => {
       for (const { field, malformed, valid } of FIELDS) {
@@ -554,8 +569,15 @@ describe("§5's waiver under a `.claude/` root (SERVER-124)", () => {
           expect(blockFindings(root, { [field]: valid })).toEqual([]);
         });
 
-        it(`reports nothing for \`${field}\` when it is absent`, () => {
-          expect(blockFindings(root, {})).toEqual([]);
+        it(`reports nothing for \`${field}\` when it is absent from an otherwise full block`, () => {
+          const fields = allValidExcept(field);
+          // Non-vacuity: the block really is missing this one key and holds
+          // every other, so §5's optionality is what is being asked about.
+          expect(Object.hasOwn(fields, field)).toBe(false);
+          expect(Object.keys(fields)).toHaveLength(FIELDS.length - 1);
+          // Non-vacuity: the block really is missing this one key and holds
+          // every other, so §5's optionality is what is being asked about.
+          expect(blockFindings(root, fields)).toEqual([]);
         });
       }
 

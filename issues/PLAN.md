@@ -943,6 +943,7 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | CONTRACT-064 | The designate schema still states the pre-SERVER-125 resolution rule (PR #50 review sweep) | done | P1 | SERVER-125 |
 | SERVER-127 | A bare .claude/skills/SKILL.md is addressable and loaded by nothing (UI-123 derived fixture) | done | P1 | SERVER-125 |
 | SHARED-051 | A persona is addressable by where it lives, and §11 says otherwise (PR #50 review, NEEDS SIGN-OFF) | todo | P0 | SERVER-125 |
+| SHARED-052 | A check can report what a save accepts, and §14 says it cannot (PR #50 review 2, NEEDS SIGN-OFF) | todo | P1 | SERVER-124 |
 
 The five open rows above are **v0.12.0**, agreed with the user on 2026-08-18:
 *everything the profile release left half-true*. They are one story, so they ship
@@ -996,3 +997,4 @@ uncertain.
 | --- | --- | --- | --- | --- |
 | CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P1 | — |
 | SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | todo | P2 | SERVER-124 |
+| CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | todo | P2 | — |

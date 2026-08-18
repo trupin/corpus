@@ -783,9 +783,9 @@ literal.** Build it in a heredoc whose terminator is quoted — which expands no
 and pass it by name:
 
 ```bash
-title=$(cat <<'EOF'
+title=$(cat <<'CORPUS_EOF'
 Kitchen rebuild — cabinet quote, $18,400
-EOF
+CORPUS_EOF
 )
 corpus doc edit doc_a1b2c3 --title "$title" --from agent
 ```
@@ -795,12 +795,19 @@ variable and nothing within it, so there is no character list to keep in your he
 backtick, a backslash, a `!`, an apostrophe and a quote all reach the server as themselves.
 
 One thing is left, and it is not a character but a **line**. The heredoc ends at the first line
-that is exactly its terminator, so text carrying a line that is exactly `EOF` — a pasted shell
-transcript is how that arrives — ends the value early and hands the remainder to the shell as
-commands. It is not caught by anything downstream: measured, the write still succeeded, exit
-`0`, the document committed with its body cut off at that line, and `command not found` the
-only sign it went wrong. The terminator is a word you choose, so when the text you are carrying
-could contain one, choose a word it cannot.
+that is exactly its terminator, so a value carrying that line ends early and hands the
+remainder to the shell as commands. It is not caught by anything downstream: measured, the
+write still succeeded, exit `0`, the document committed with its body cut off at that line, and
+`command not found` the only sign it went wrong.
+
+Which line that is, is the one thing you choose, and **you choose it once, not per message: the
+terminator is always `CORPUS_EOF`, never `EOF`.** `EOF` is the word every shell transcript on
+earth already ends its heredocs with, and a pasted transcript is exactly the sort of text this
+rule exists to carry; `CORPUS_EOF` is not a word that turns up in anybody's prose, figures or
+paste. Use it everywhere — bodies, titles, replies, descriptions — so there is never a moment
+where you weigh the terminator against the text. Weighing it is the inspection this whole
+construction exists to replace, and you would be doing it on the text you are least able to
+read.
 
 **The test is where the text came from, not what is in it.** Words you wrote yourself, out of
 ordinary vocabulary, have
@@ -818,15 +825,19 @@ nothing ran, so nothing was written and nothing was lost. Reaching for a double 
 the complaint go away is how a failure you can see turns into one you cannot.
 
 **Nor is it the same lines again.** A complaint about the construction above is usually not
-your mistake and will not clear on a resend: some shells cannot read `$( … )` across a value
-holding an odd number of apostrophes, so one `O'Brien` in somebody's sentence is enough to stop
-the whole command being parsed. Read the value in instead of capturing it — the same quoted
-terminator, with no command substitution around it to trip over:
+your mistake and will not clear on a resend: some shells read the `$( … )` around a heredoc
+before they reach its terminator, so one unbalanced quoting character anywhere in the value
+stops the whole command being parsed. Measured under `bash` 3.2, an apostrophe in `it's`, a
+lone `"` in a half-quoted sentence and a stray backtick each do it on their own, each reported
+as a different unmatched character; `zsh` 5.9 takes all three. So it is not about apostrophes
+and not about counting them: it is ordinary punctuation in the text you had the least choice
+about. Read the value in instead of capturing it — the same quoted terminator, with no command
+substitution around it to trip over:
 
 ```bash
-IFS= read -r title <<'EOF'
+IFS= read -r title <<'CORPUS_EOF'
 O'Brien — cabinet quote, $18,400
-EOF
+CORPUS_EOF
 corpus doc edit doc_a1b2c3 --title "$title" --from agent
 ```
 
@@ -851,9 +862,9 @@ corpus doc show doc_a1b2c3
 Mortgage options
 doc_a1b2c3 · note · open
 key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
-corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
+corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'CORPUS_EOF'
 The revised body, in full.
-EOF
+CORPUS_EOF
 edited doc_a1b2c3
 key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
 ```
@@ -921,9 +932,9 @@ corpus doc patch doc_a1b2c3 --from agent --old 'Rates are refreshed weekly, and'
 patched doc_a1b2c3 — 1 occurrence replaced
 corpus doc show doc_a1b2c3  # or, when the whole shape has to go back: a read for the key
 key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471
-corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'EOF'
+corpus doc edit doc_a1b2c3 --key 1de897f0cf4fbed1d926cbb25754001ac5c6dd1e6e0be82e67b066fdf0c6d471 --from agent <<'CORPUS_EOF'
 The body as it read before the change you are undoing.
-EOF
+CORPUS_EOF
 ```
 
 **Read from git, never write to it.** `git log`, `git show` and `git diff` are reads, and
@@ -971,10 +982,10 @@ their cursor while they are mid-sentence. Prefer to leave the document alone and
 and where the work is a claimed event, coming back has a name: **defer it**, in this order.
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 You're editing [[doc_a1b2c3]] right now, so I've left it alone. The change is
 ready and lands on its own once you're done in there.
-EOF
+CORPUS_EOF
 # nothing changed, so that reply carries no trace line
 corpus queue defer evt_7c1d9a --blocked-on doc_a1b2c3 --reason "a person is editing doc_a1b2c3"
 ```
@@ -1245,7 +1256,7 @@ its key goes straight into the edit. The update carries its own entry, because w
 opened anywhere nothing else would tell a reader of that document why its figure moved:
 
 ```bash
-corpus doc edit doc_7e3a91 --key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa --from agent <<'EOF'
+corpus doc edit doc_7e3a91 --key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa --from agent <<'CORPUS_EOF'
 # Refinance plan
 
 Every projection here assumes 6.4% for the whole term, following the rate
@@ -1256,7 +1267,7 @@ assumption in [[doc_a1b2c3]].
 - **2026-07-28** — carried the working rate assumption from 6.1% to 6.4%, following the
   correction in [[doc_a1b2c3]]. Every projection here reads that one figure, so the change
   is arithmetic and takes no decision.
-EOF
+CORPUS_EOF
 edited doc_7e3a91
 key 401056da72e89508679079c53bb06a0f4db1601033ed1d3139545d83119f7895
 corpus job log evt_7c1d9a "edited [[doc_7e3a91]] — carried the 6.4% rate assumption across"
@@ -1271,7 +1282,7 @@ key rather than a quote, the July 14th entry passed back through untouched.
 ```bash
 corpus doc show doc_a1b2c3
 key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70
-corpus doc edit doc_a1b2c3 --key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70 --from agent <<'EOF'
+corpus doc edit doc_a1b2c3 --key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70 --from agent <<'CORPUS_EOF'
 # Mortgage options
 
 The working rate assumption is 6.4% as of 2026-07-28.
@@ -1283,7 +1294,7 @@ The working rate assumption is 6.4% as of 2026-07-28.
 - **2026-07-28** — the working rate assumption moved from 6.1% to 6.4%. [[doc_7e3a91]]
   projected the whole term at the old figure and I carried the new one across; nothing else
   quotes it, and nothing here needs a decision from you.
-EOF
+CORPUS_EOF
 edited doc_a1b2c3
 key 5c0f2a7d18e6b4930c1d8f27a6b5430e9f8c72d1a04b6e35f9c2807d61a34be8
 corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"
@@ -1593,11 +1604,11 @@ this document uses it.' --new '6.4% as of 2026-07-28 — see [[th_4b8e2c]]. Thir
 offers currently cluster between 6.1% and 6.6%, and every projection in this document uses 6.4%.'
 patched doc_a1b2c3 — 1 occurrence replaced — 1 anchor remapped
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — updated the rate assumption to 6.4%"
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Updated the rate assumption in [[doc_a1b2c3]] to 6.4% and reworded the
 projection note to match. Changed: [[doc_a1b2c3]] (edited).
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%
-EOF
+CORPUS_EOF
 ```
 
 The subagent reports what it did and exits. When `idle` returns — here on its rearm, with

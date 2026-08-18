@@ -258,6 +258,138 @@ port 8798 holders:            # empty
 pid 61194 gone
 ```
 
+## PR #50 second review — MINOR 5, and the fuller sweep
+
+Run by **contract-dev on opus** (claude-opus-5[1m]), 2026-08-18, branch
+`phase-34-loose-ends`, working tree (nothing committed).
+
+### The finding
+
+`CreateDocRequest.folder` was the **seventh** wording of the SERVER-125 rule and
+the one the first sweep missed, because the first sweep looked for statements
+about *resolution* and this one is a statement about *placement* that carries a
+resolution consequence. It said an explicit folder still files an `agent-def`
+under `data/docs/` "as a document _about_ a persona" — what the document **is**,
+never what it **answers to** — while the CLI's parallel site
+(`apps/cli/src/commands/doc/create.ts`, and `docs/cli.md` generated from it) had
+gained the cost clause.
+
+### The correction, read out of the regenerated `openapi.json`
+
+`components.schemas.CreateDocRequest.properties.folder.description`, final
+clause (the rest of the field is unchanged):
+
+> An explicit folder always wins over that default, which is what keeps a
+> document _about_ a persona expressible: `type: agent-def` with
+> `folder: "inbox"` still files under `data/docs/`. **What that costs is
+> addressability, and it costs all of it**: a persona is loaded and resolved
+> from `.claude/agents/` alone, so an `agent-def` written anywhere else answers
+> to neither `@<name>` nor `POST /api/threads/{id}/resident`, under its filename
+> stem or its title alike — it is a note about a persona rather than one.
+
+The CLI's sentence with the flags replaced by routes (`corpus thread designate
+--agent` → `POST /api/threads/{id}/resident`) and nothing else re-worded — the
+brief was to match the parallel site, not to write an eighth wording. The
+`@<name>` half is spelled the same at both surfaces because a mention is a
+mention whichever client writes it.
+
+`grep` confirms it reached the generated client
+(`src/client/schema.generated.ts:4426`).
+
+### The fuller sweep — every published description touching folders, agent-def naming, skill naming or addressability
+
+Enumerated **mechanically** this time, by walking every `description` and
+`summary` in the generated `openapi.json` against
+`/agent-def|\.claude\/agents|\.claude\/skills|SKILL\.md|addressab|@<|folder|persona|subagent/i`
+— 63 hits, of which 43 are shared boilerplate (`warnings`, `type`, `tag`
+descriptions repeated across components). The 20 substantive ones, each read
+against the code rather than against memory:
+
+| Published site | Claim | Checked against | Verdict |
+| --- | --- | --- | --- |
+| `CreateDocRequest.folder` | placement grammar + the "about a persona" clause | `resolveFolder`/`rootForType`/`admitRoot` (`apps/server/src/docs/write.ts`), `allocatePath` (`create.ts`) | **fixed here** — placement half was already right, the addressability half was missing |
+| `POST /api/docs` (route) | inbox-first, the two roots an omitted `folder` reaches, `type: skill` not among them, thread checked-then-ignored, title can be refused | same | correct; deliberately carries **no** resolution clause — it says "See `folder` for that grammar in full", and `openapi.test.ts` asserts it does not repeat "An explicit folder always wins" |
+| `CreateDocRequest.title` | `.claude/agents/analyst.md` is what makes `@analyst` resolve; `400` on a taken name; dedupe under `data/docs/` | `allocatePath` + the `already taken in` validation error (`create.ts:79-84`) | correct, and post-SERVER-125 still correct — the root is stated as the condition |
+| `DesignateResidentRequest.name` | root-gated stem-or-title | `apps/server/src/threads/resident.ts:185-206` | correct (CONTRACT-064) |
+| `POST /api/threads/{id}/resident` (route) | same rule | same | correct (CONTRACT-064) |
+| `Resident.docId` | null when renamed, archived, **or moved out of `.claude/agents/`** | same | correct (CONTRACT-064); test coverage — see below |
+| `Resident.name` | "the invocable name `@<subagent>` mentions use", null = general resident | `ResidentSchema` | no root claim, nothing to correct |
+| `Thread.resident`, `ThreadSummary.resident`, `AgentLane.resident` | one shared `residentField` description; designation semantics only | `residentField` | no resolution claim |
+| `MoveDocRequest.folder` | destination under `data/docs/`; naming a root (`.claude/agents`) is a `400`; no default; no overwrite | `resolveFolder(folder)` with no type; `move.ts` | correct as far as it goes — **see the gap below** |
+| `POST /api/docs/{id}/move` (route) + `BulkStagedEntry.action[move].folder` | path rewrite, id preserved, same spelling as the single route | `move.ts` | correct |
+| `SkillCreateRequest.name` | directory name under `.claude/skills/`, lowercase/digits/single hyphens, ≤ 64 | `SKILL_NAME_PATTERN`, `SKILL_NAME_MAX_LENGTH` | correct, and the numeral is interpolated from the constant |
+| `POST /api/skills` | genesis-only route, both frontmatter vocabularies, name is the traversal guard, `409` on a taken name, `.claude/skills-archived` | `schemas/skill.ts`, routes | correct |
+| `POST /api/docs/{id}/archive` / `unarchive` | a skill's folder moves to/from `.claude/skills-archived/`; location is enablement (§7); carried nested skills warned | `Warning.code`, SERVER-078 | correct |
+| `Warning.code` (`carried_skill`, `carried_reconciliation`) | skill enablement is where the folder lives | same | correct |
+| `GET /api/docs` / `GET /api/search` `folder`, `type` params; `GET /api/tree`; `FolderTree`/`FolderNode`; `tags[3]` | `data/docs/` prefix filtering and counts | projection | correct — all scoped to `data/docs/`, none claims anything about the other roots |
+| `CreateThreadRequest.requestsAgent` / `MultipartCreateThreadRequest.requestsAgent` | `@<subagent>` mention enqueues | enqueue path | describes enqueueing, not resolution — untouched, as in the first sweep |
+
+**One gap the sweep found and did not fix — escalating rather than deciding.**
+`move.ts:53-54` refuses a move whose *source* is outside `data/docs/`
+(``${loaded.path} is not under data/docs/ and cannot be moved``, and the separate
+"threads are flat under data/threads/ and cannot be moved"). Nothing published
+says so: `MoveDocRequest.folder` and the move route both describe only the
+**destination** side. So a caller who reads the new `folder` sentence, files a
+persona in the inbox and then tries `POST /api/docs/{id}/move` to put it back
+gets an undeclared-in-prose `400`. That is a new claim on a route this issue was
+not asked to touch, and verifying it E2E needs a server build while
+`apps/server` is being edited concurrently — so it is reported, not written.
+
+### Checks
+
+- `VITEST_MAX_THREADS=4 vitest run packages/contract` — **65 files, 2621 tests,
+  all passing** (2620 before; one new pin).
+- New pin, `openapi.test.ts` → "states what filing an agent-def outside its root
+  costs, not only what it is", in the CONTRACT-062 folder-grammar block:
+  asserts against the **generated** document that `CreateDocRequest.folder`
+  carries both halves — what the document is (`a document *about* a persona`)
+  and what it answers to (`costs is addressability`, `` `.claude/agents/` alone ``,
+  `` `@<name>` ``, `POST /api/threads/{id}/resident`, `filename stem or its title
+  alike`).
+- **Falsified**, not assumed: reverting the clause to its pre-fix wording,
+  regenerating, and running that test alone gives
+  `AssertionError: expected 'Folder under \`data/docs/\`, accepted e…' to contain
+  'costs is addressability'` — 1 failed. Restored and re-verified green.
+- Regeneration is idempotent: `sha256` of both artifacts is byte-identical
+  across a second `npm run generate` (`a4cbc24c…` / `c24c207a…`), and unchanged
+  again after `prettier --write` re-quoted the source string.
+- `node --import tsx scripts/check-generated-artifacts.ts` — **the API contract
+  passes the regeneration gate**: `scripts/generated-artifacts.ts` returns
+  *before* printing a diff summary when the hash gate fails, and a summary was
+  printed (`openapi.json | 2 +-`, `schema.generated.ts | 2 +-` — exactly the one
+  description). What is left failing is the second gate, `git diff HEAD`, which
+  cannot be clean for an uncommitted source change; the orchestrator's commit
+  clears it. `✓ CLI reference is up to date (docs/cli.md)` this run.
+- `npm run build -w packages/contract` — exit 0. `npm run lint` — exit 0.
+  `npm run typecheck -w packages/contract` — exit 0. `prettier --check` on all
+  four touched files — clean.
+- Repo-wide `npm run typecheck` is **red on one line that is not mine**:
+  `apps/server/src/threads/resident.test.ts(814,12): error TS2571: Object is of
+  type 'unknown'` — another agent's uncommitted work in this tree.
+
+### `Resident.docId`'s move-out-of-root claim: not coverable from the contract side
+
+The reviewer's separate MINOR. The claim is behavioural — the server re-resolves
+`docId` on every response through the root gate — and `packages/contract` has no
+resolution code at all to exercise (`schemas/agents.ts` exports schemas and two
+presence helpers; nothing that maps a name to a document). The contract side can
+only pin the **prose**, which CONTRACT-064 already did
+(`openapi.test.ts` → "gates the designation name on `.claude/agents/`…" asserts
+`Resident.docId` contains "moved out of `.claude/agents/`"). So the answer is
+no.
+
+`apps/server/src/threads/resident.test.ts` already covers the other two arms of
+the sentence — a rename (`re-reads the document id from the name, so a moved
+agent-def is not stale`, an in-root rewrite) and a removal (`reports a gone
+agent-def as a null docId…`, an `rm` + reproject) — and the move-out arm is
+genuinely absent. It is one test in that file's `describe("reading a resident
+back")`: designate `researcher`, move `.claude/agents/researcher.md` to
+`data/docs/inbox/researcher.md` on disk, `ws.reproject()`, expect
+`{ name: "researcher", docId: null }` from `readThread`, and expect the thread's
+frontmatter still holds `docId: doc_researcher` — the same shape the two
+neighbouring tests use. Routing that to server-dev is the orchestrator's call;
+that file is another agent's right now.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

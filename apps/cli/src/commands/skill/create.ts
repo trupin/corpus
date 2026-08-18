@@ -113,7 +113,7 @@ export const createCommand: WorkspaceCommandSpec = {
   examples: [
     {
       command:
-        "corpus skill create weekly-review --description \"Run the weekly review over the corpus.\" --from agent <<'EOF'\n# Weekly review\n\nSurvey `corpus doc list --needs me` and file what has drifted.\nEOF",
+        "corpus skill create weekly-review --description \"Run the weekly review over the corpus.\" --from agent <<'CORPUS_EOF'\n# Weekly review\n\nSurvey `corpus doc list --needs me` and file what has drifted.\nCORPUS_EOF",
       description:
         "The agent's genesis form (SPEC.md §7): instructions from a heredoc, committed with `agent` as the git author.",
     },

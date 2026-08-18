@@ -308,6 +308,218 @@ npm run typecheck             → clean across all six workspaces
 `apps/server` has no `test` script; the workspace suite was run as
 `VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run apps/server`.
 
+## PR #50 second review
+
+Model: **Opus 5 (1M context)**, `server-dev`, 2026-08-18. Four findings — MINOR
+6, NIT 7, NIT 9, NIT 10 — plus one production defect NIT 7's honest assertion
+uncovered. Everything below is in `apps/server/` and
+`scripts/mention-offer-parity.test.ts`; nothing under `assets/workspace/`,
+`packages/contract/` or `apps/ui/` was touched.
+
+### MINOR 6 — the "moved out of `.claude/agents/`" claim, tested
+
+`ResidentSchema.docId` publishes three ways the id goes null — renamed,
+archived, **moved out of the root** — and only the first two had a case.
+`apps/server/src/threads/resident.test.ts` now carries *"reports a profile moved
+out of `.claude/agents/` as null, though the document is still there"*, in the
+`reading a resident back` block beside the other two.
+
+It is deliberately not the deleted case in different words. The document is
+still there, still projected under the id the designation stored, still
+readable — and the read still says null, because `currentResident` re-resolves
+through `resolveMentionTarget`, which is gated on `invocableName`. The
+assertions are: the read is `{name: "researcher", docId: null}`; `GET
+/api/docs/doc_researcher` still answers `200` at `data/docs/researcher.md`; the
+thread file and the projection row both still hold the stored pair verbatim; and
+a fresh designation by that name earns SERVER-125's refusal naming the file.
+
+**Reached by a hand move, because nothing else reaches it.** The case first
+asserts `POST /api/docs/doc_researcher/move` → `400` (`assertMovable`: "is not
+under data/docs/ and cannot be moved"), which is what makes the hand move the
+workspace's only route to this state — and §5 makes that as real as anything the
+server writes.
+
+*Falsified*: with `targetIndex`'s gate removed (`invocableName(row.path) ??
+row.title`), the moved profile resolves again and the case fails on its first
+assertion — `expected { name: 'researcher', …(1) } to deeply equal { name:
+'researcher', docId: null }`. Restored, green.
+
+### NIT 9 — the refusal quoted an untypeable token
+
+`threads/resident.ts`'s `residentFor` interpolated the caller's **untrimmed**
+name, and built `` `@${name}` `` out of it. `AgentNameSchema` accepts any
+non-blank single line, so `" Legacy Analyst "` is a legal designation; both
+lookups trim it before searching, so the message was reporting a miss on a
+spelling nothing searched for, *and* offering as the failing mention token a
+string the scanner cannot produce (`[A-Za-z0-9_-]+` admits neither the padding
+nor the inner space).
+
+Both refusals now quote `name.trim()` — the spelling that was actually looked
+up — and the off-root one says *"neither a mention nor a designation resolves to
+it"* instead of fabricating a token. New case: *"quotes the trimmed name it
+looked up, and no mention token, in either refusal"*, which also asserts neither
+message contains `@` at all.
+
+*Falsified*: with the old interpolation restored, `expected 'no agent named
+Legacy Analyst   in …' to contain 'no agent named Legacy Analyst in this…'`.
+
+### NIT 7 — the equality the production code did not guarantee, and what it hid
+
+The reviewer was right that `expect(designations()).toHaveLength(offered.length)`
+compared a rule the file's docstring disclaimed. Investigating the row shape that
+would expose it produced two answers, one of them a live defect.
+
+**The blank title cannot exist.** Probed against the real projector: a
+`title: ""`, a whitespace-only title, and a blank `name:` are all *absent* to
+`asString` (`projection/project-document.ts:69`), which falls back to `name:` and
+then to `titleFromPath` — non-blank for every path a document root admits, since
+a dot-prefixed segment is never enumerated. Measured titles: `.claude/agents/empty.md`
+(`title: ""`) → `empty`; `spaces.md` (`title: "   "`) → `spaces`;
+`.claude/skills/bare/SKILL.md` (`title: ""`) → `bare`. So `agentDefRows`'
+blank filter (`residentActions.ts:108`) is a guard on an unreachable state, and
+the two surfaces really do offer the same rows.
+
+**The padded title does exist, and broke parity.** `asString` returns the title
+*verbatim* once it is non-blank, so `title: "  Padded Persona  "` reaches
+`documents.title` with its padding on — confirmed on a live server, `GET
+/api/docs?type=agent-def` → `'  Padded Persona  '`. `targetIndex` keyed that
+spelling untrimmed while every lookup trimmed, so the board's designate menu,
+which sends the title **trimmed**, offered `Padded Persona` on a row the server
+answered to only as `"  padded persona  "` — a `404` naming an agent-def the
+person is looking straight at. That is UI-123's class of defect, in the one file
+built to catch it, found the moment the assertion stopped being able to pass by
+fixture choice.
+
+Fixed in `threads/mentions.ts` with one shared key function — `aliasKey = name =>
+name.trim().toLowerCase()` — used by `targetIndex` when it **builds** keys, by
+`resolveMentionTarget` and `parseMentions` when they look one up, and by
+`unaddressableTarget` on both sides of its comparison. A blank key is dropped
+rather than indexed (it would take `""` from every later row), which subsumes the
+old `if (alias === "") continue;`.
+
+The test file changed accordingly:
+
+- The two surfaces are compared as **rows** (`designatedRows().map(id)` against
+  the gated directory's ids), not by length, since they legitimately send
+  different strings for one row.
+- The fixture carries both shapes: `.claude/agents/blank-titled.md` with
+  `title: ""` and `.claude/agents/padded.md` with a quoted padded title (quoted
+  because YAML strips padding off a plain scalar).
+- Two named cases state what they do: *"keeps a would-be blank-titled persona,
+  which the projector titles by its path"* (asserting no row in the directory has
+  a blank title — the state's unreachability, not the fixture's luck) and *"sends
+  a padded title trimmed, which resolves as the row's own name"*.
+- The docstring's "not compared" list no longer says "the blank title", and says
+  why the count comparison was the wrong instrument.
+- `apps/server/src/threads/mentions.test.ts` gains `describe("a persona whose
+  title is padded")` — the fix pinned where it lives, not only in the parity file.
+
+*Falsified, twice.* (a) Reverting `aliasKey`'s trim turns **5** tests red across
+the two files, including the pre-existing *"offers only names a designation
+resolves, and offers every one it can"* — i.e. the parity claim itself, which the
+old fixture could not exercise. (b) Making a blank title reachable (projector
+returning any string title verbatim) turns the row comparison red with a real
+row diff — `expected [ 'doc_agentdef1ceb2796', …(3) ] to deeply equal [
+'doc_agentdef1ceb2796', …(4) ]` — plus the blank-title case naming the cause.
+Under the *old* length assertion (b) would also have failed, which is exactly the
+point: it could only ever fail for a fixture nobody had written.
+
+### NIT 10 — 27 names, now 27 questions
+
+`core/check.test.ts`'s `reports nothing for \`${field}\` when it is absent` asked
+`blockFindings(root, {})` — one document, one assertion, under 27 names. It now
+asks it of `allValidExcept(field)`: **every other field of `FIELDS` present and
+valid, this one absent**. That is the per-field question the name makes — "is
+this field required under a `.claude/` root?" — and each row can fail alone. The
+case also asserts its own non-vacuity (the key really is missing, the other eight
+really are there).
+
+*Falsified*: waiving one field less (`waivedAsAbsent` returning false for
+`title`) turns exactly **3** tests red, one per root, each named for `title`.
+With the old body restored under the same break: **27** red. That difference is
+the finding, measured.
+
+### E2E — throwaway workspace `/tmp/s127-pr2ws`, port **8802**
+
+`corpus init`, port set to 8802 in `.corpus/config.json` (never 8765, never
+5173), two hand-written personas: `padded.md` (quoted padded title) and
+`movable.md`.
+
+```
+GET /api/docs?type=agent-def
+  '  Padded Persona  '  doc_agentdef49ad42c4  .claude/agents/padded.md
+  'Movable'             doc_agentdef8b5f762d  .claude/agents/movable.md
+```
+
+**NIT 7 fix, live** — all three spellings a client might send now land on the
+same document (the first was a `404` before the fix):
+
+```
+designate 'Padded Persona'     -> 200  {'name': 'padded', 'docId': 'doc_agentdef49ad42c4'}
+designate '  Padded Persona  ' -> 200  {'name': 'padded', 'docId': 'doc_agentdef49ad42c4'}
+designate 'padded'             -> 200  {'name': 'padded', 'docId': 'doc_agentdef49ad42c4'}
+```
+
+**NIT 9, live**, both branches, padded in and trimmed out, with no `@` anywhere:
+
+```
+POST .../resident {"name":"  Nobody At All  "}   -> 404
+  no agent named Nobody At All in this workspace — a designation names an agent-def the way a mention does
+POST .../resident {"name":"  Legacy Analyst  "}  -> 404
+  no agent named Legacy Analyst in this workspace — data/docs/inbox/legacy-analyst.md declares
+  `type: agent-def` but is not under `.claude/agents/`, so nothing loads it as a subagent and
+  neither a mention nor a designation resolves to it; a persona has to live in that root
+```
+
+**MINOR 6, live.** `Movable` designated, then `mv .claude/agents/movable.md
+data/docs/movable.md` by hand — after the API refused the same move:
+
+```
+POST /api/docs/doc_agentdef8b5f762d/move {"folder":"inbox"}
+  -> 400  this document's location is fixed
+     [{path: id, message: .claude/agents/movable.md is not under data/docs/ and cannot be moved}]
+
+before   GET /api/threads/th_ztifvvmk → resident {'name': 'movable', 'docId': 'doc_agentdef8b5f762d'}
+after    GET /api/threads/th_ztifvvmk → resident {'name': 'movable', 'docId': None}
+file     data/threads/th_ztifvvmk.md  → resident: {name: movable, docId: doc_agentdef8b5f762d}
+roster   GET /api/agents  → lane th_ztifvvmk, resident {'name': 'movable', 'docId': None}
+doc      GET /api/docs/doc_movable1 → 200  data/docs/movable.md  title 'Movable'
+re-desig POST .../resident {"name":"Movable"} → 404 … data/docs/movable.md declares `type: agent-def` …
+```
+
+The same gate, on the mention path, on a quiet thread — the off-root persona is
+inert and the rooted one wakes the agent:
+
+```
+"ping @movable" → 201  eventId None
+"ping @padded"  → 201  eventId evt_4w5aw7hyobvk
+   comment.created  mentions [{"name":"padded","docId":"doc_agentdef49ad42c4","status":"open"}]  unresolved []
+```
+
+```
+$ corpus db doctor     → projection is clean — 18 documents from 18 files (3ms)
+$ corpus server stop   → stopped (pid 73504)
+$ lsof -nP -iTCP:8802 -sTCP:LISTEN   # no output, exit 1
+```
+
+### Checks
+
+```
+VITEST_MAX_THREADS=4 vitest run apps/server scripts
+  Test Files 208 passed (208)   Tests 5077 passed (5077)
+npm run lint          → clean
+npm run typecheck     → exit 0 across all workspaces
+npm run format:check  → All matched files use Prettier code style!
+```
+
+### One note for the orchestrator
+
+`agentDefRows`' blank-title filter (`apps/ui/src/thread/residentActions.ts:108`)
+guards a state the projector cannot produce, and its docstring states the rule as
+if it separated real rows. Harmless as code, and it stays — but if UI-123's file
+is revisited, that is the sentence to correct. Not edited: `apps/ui/` was not
+mine this pass.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

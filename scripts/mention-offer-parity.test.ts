@@ -64,9 +64,18 @@ import {
  *     `documents.path` either rule is handed ever carries one, so the kit does
  *     not model them and this file does not ask.
  *   - The menus' other rules — the generic `@agent`, the typeable-token charset,
- *     the limit, the blank title. Each is one side's own and is tested where it
- *     lives. What is compared here is the **gate**: which rows become offers,
- *     and under what name.
+ *     the limit. Each is one side's own and is tested where it lives. What is
+ *     compared here is the **gate**: which rows become offers, and under what
+ *     name.
+ *
+ * The **blank title** used to be on that list while the last test compared the
+ * two surfaces by *length*, which is a comparison the disclaimer does not cover:
+ * `agentDefRows` drops a blank-titled row and the `@` menu does not, so the
+ * counts are equal only for a directory holding no such row (PR #50 NIT 7).
+ * Both halves are now stated rather than disclaimed — the surfaces are compared
+ * as **rows**, and the fixture carries the file that tries to be blank-titled,
+ * because the answer turned out to be that no projected row can have a blank
+ * title at all. See {@link designatedRows}.
  */
 
 let ws: Workspace;
@@ -153,8 +162,9 @@ const completions = (type: string): readonly string[] =>
   directory(type).flatMap((row) => rowToken(row) ?? []);
 
 /**
- * The designate menu's offers, by its own rule: the gate, then the **title**,
- * which is what `agentDefRows` sends (`apps/ui/src/thread/residentActions.ts`).
+ * The rows the designate menu keeps, by its own rule — `agentDefRows`
+ * (`apps/ui/src/thread/residentActions.ts`) in full: the gate, then the
+ * **title**, trimmed, and a blank one dropped.
  *
  * Spelled here rather than imported, and this is the one seam in the file. That
  * module imports `@corpus/kit`, whose types are React's, and repo tooling
@@ -163,15 +173,46 @@ const completions = (type: string): readonly string[] =>
  * is the rule: the gate below is `isAddressableTarget`, the kit's own, which is
  * the only thing UI-123 could get wrong twice. That the menu applies it, and
  * sends the title of what survives, is pinned by `residentActions.test.ts`.
+ *
+ * **The last two clauses are the ones the `@` menu does not share**, and until
+ * PR #50 NIT 7 they were disclaimed by the docstring and compared by the last
+ * test anyway. They are kept here, so what the comparison below leaves out is
+ * nothing:
+ *
+ *   - **Trim.** A padded title is a real row — `asString` in
+ *     `projection/project-document.ts` keeps a title verbatim once it is
+ *     non-blank — so this surface sends `Padded Persona` where the `@` menu
+ *     sends the stem. A difference in *spelling*, never in which row; the
+ *     server trims a designation before resolving it, so both land.
+ *   - **Blank.** No projected row can have one. A blank or whitespace-only
+ *     `title:` is *absent* to `asString`, and the projector then falls back to
+ *     `name:` and finally to the path — which is non-blank for every path a
+ *     document root admits. So the clause removes nothing, from any directory,
+ *     and the two surfaces do offer the same rows. {@link BLANK_TITLE_PATH} is
+ *     the file that tries.
  */
-const designations = (): readonly string[] =>
-  directory(MENTION_TYPE)
-    .filter((row) => isAddressableTarget(row))
-    .map((row) => row.title.trim())
-    .filter((name) => name !== "");
+const designatedRows = (): readonly DocRow[] =>
+  directory(MENTION_TYPE).filter((row) => isAddressableTarget(row) && row.title.trim() !== "");
+
+/** The names that menu sends — the trimmed title of each row it keeps. */
+const designations = (): readonly string[] => designatedRows().map((row) => row.title.trim());
 
 const agentDef = (title: string): string =>
   `---\nname: ${title.toLowerCase()}\ndescription: a persona\ntype: agent-def\ntitle: ${title}\n---\nBody.\n`;
+
+/**
+ * An addressable persona whose `title:` is written **blank** — the row shape the
+ * designate menu drops and the `@` menu keeps, and therefore the only shape that
+ * could separate the two surfaces (PR #50 NIT 7).
+ *
+ * It is in the fixture so the file states what happens to it instead of
+ * excluding it: the projector does not carry a blank title, so the row that
+ * arrives is titled by its own path and both surfaces offer it.
+ */
+const BLANK_TITLE_PATH = ".claude/agents/blank-titled.md";
+
+/** …and one whose title is real but **padded**, which the projector does carry. */
+const PADDED_TITLE_PATH = ".claude/agents/padded.md";
 
 beforeAll(() => {
   ws = createWorkspace("mention-offers");
@@ -187,6 +228,18 @@ beforeAll(() => {
   ws.write(
     ".claude/skills/comment/SKILL.md",
     "---\nname: comment\ndescription: handles comment.created\ntype: skill\ntitle: Comment\n---\nBody.\n",
+  );
+  // Two more personas Claude Code loads, carrying the title shapes the designate
+  // menu has a rule about and the `@` menu has none: blank, and padded.
+  ws.write(
+    BLANK_TITLE_PATH,
+    '---\nname: blank-titled\ndescription: a persona\ntype: agent-def\ntitle: ""\n---\nBody.\n',
+  );
+  // Quoted, because YAML strips the padding off a plain scalar and the point of
+  // this row is that the padding reaches `documents.title`.
+  ws.write(
+    PADDED_TITLE_PATH,
+    '---\nname: padded\ndescription: a persona\ntype: agent-def\ntitle: "  Padded Persona  "\n---\nBody.\n',
   );
   // …and the two documents *about* those things, filed where an explicit
   // `--folder` still puts them (SERVER-122). They are documents, not personas.
@@ -400,12 +453,58 @@ describe("the board's designate menu", () => {
 
   /**
    * The two surfaces offer the **same rows**, differing only in the spelling
-   * each sends — one the stem, the other the title. A rule applied by one and
-   * not the other is how this pair drifted the first time.
+   * each sends — one the stem, the other the trimmed title. A rule applied by
+   * one and not the other is how this pair drifted the first time.
+   *
+   * Compared as rows and not as a **count** (PR #50 NIT 7). The count held only
+   * because nothing in the directory was blank-titled, which is the one row
+   * shape `agentDefRows` drops and the `@` menu keeps — so the assertion was
+   * quietly making the comparison the file's own docstring disclaimed, over a
+   * fixture chosen so it could not fail. The fixture now carries that shape, and
+   * the claim is about which documents each surface offers.
    */
-  it("offers the same rows the `@` menu does", () => {
+  it("offers the same rows the `@` menu does, in the spelling each sends", () => {
     const offered = directory(MENTION_TYPE).filter((row) => isAddressableTarget(row));
-    expect(designations()).toHaveLength(offered.length);
+    expect(designatedRows().map((row) => row.id)).toEqual(offered.map((row) => row.id));
     expect(completions(MENTION_TYPE)).toEqual(offered.map((row) => rowToken(row)));
+  });
+
+  /**
+   * …and the blank-title rule that could separate them removes nothing, because
+   * **a projected row has no blank title to be dropped for**.
+   *
+   * `title: ""` is *absent* to the projector's `asString`, which falls through
+   * `name:` to the path — and every path a document root admits has a non-blank
+   * last segment. So this is not "the fixture happens not to hold one": it is
+   * the state being unreachable, asserted over the whole directory and
+   * demonstrated on the file that tried.
+   */
+  it("keeps a would-be blank-titled persona, which the projector titles by its path", () => {
+    const blank = directory(MENTION_TYPE).find((row) => row.path === BLANK_TITLE_PATH);
+    expect(blank?.title).toBe("blank-titled");
+    expect(designations()).toContain("blank-titled");
+    expect(completions(MENTION_TYPE)).toContain("blank-titled");
+    for (const row of directory(MENTION_TYPE)) expect(row.title.trim()).not.toBe("");
+  });
+
+  /**
+   * The other clause: a **padded** title is carried verbatim, so the two
+   * surfaces send genuinely different strings for that row — the stem and the
+   * trimmed title — and the server resolves it under both, padding and all,
+   * because `resolveMentionTarget` trims what it is given.
+   */
+  it("sends a padded title trimmed, which resolves as the row's own name", () => {
+    const padded = directory(MENTION_TYPE).find((row) => row.path === PADDED_TITLE_PATH);
+    expect(padded?.title).toBe("  Padded Persona  ");
+    expect(designations()).toContain("Padded Persona");
+    expect(rowToken(padded as DocRow)).toBe("padded");
+
+    for (const spelling of ["Padded Persona", "  Padded Persona  ", "padded"]) {
+      expect(resolveMentionTarget(ws.db, MENTION_TYPE, spelling)).toEqual({
+        name: "padded",
+        docId: padded?.id,
+        status: "open",
+      });
+    }
   });
 });

@@ -118,7 +118,7 @@ export const replyCommand: WorkspaceCommandSpec = {
   examples: [
     {
       command:
-        "corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'EOF'\nI filed the note under finance/.\nEOF",
+        "corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'\nI filed the note under finance/.\nCORPUS_EOF",
       description:
         "The agent's form: a heredoc reply, authored by the agent, stating the model that wrote " +
         "it (SPEC.md §7, §11).",

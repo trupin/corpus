@@ -440,7 +440,9 @@ describe("skills", () => {
         if (!line.trimStart().startsWith("↳")) continue;
         // Every trace written into an example turn is that turn's last line:
         // the heredoc terminator is what comes next.
-        expect(lines[index + 1]?.trim(), `${relPath}: trace not last in its turn`).toBe("EOF");
+        expect(lines[index + 1]?.trim(), `${relPath}: trace not last in its turn`).toBe(
+          "CORPUS_EOF",
+        );
       }
     });
 
@@ -653,18 +655,20 @@ describe("skills", () => {
       const lines = body.split("\n");
       for (const [index, line] of lines.entries()) {
         if (!line.trimStart().startsWith("↳")) continue;
-        expect(lines[index + 1]?.trim(), `${label}: trace not last in its turn`).toBe("EOF");
+        expect(lines[index + 1]?.trim(), `${label}: trace not last in its turn`).toBe("CORPUS_EOF");
       }
     });
 
     it.each(installedSkills)("$label quotes every heredoc it hands text to", ({ label, body }) => {
       // The delimiter, and nothing after it. `\S+` used to swallow whatever
-      // touched the token, which made a heredoc *named in prose* — `` `<<'EOF'`
-      // `` — read as the unquoted delimiter `<<'EOF'\``. A quoted delimiter is
+      // touched the token, which made a heredoc *named in prose* — `` `<<'CORPUS_EOF'`
+      // `` — read as the unquoted delimiter `<<'CORPUS_EOF'\``. A quoted delimiter is
       // its quotes plus what is inside them; an unquoted one runs to the first
-      // space or backtick, so `<<EOF` and `<<"EOF"` still fail below.
+      // space or backtick, so `<<CORPUS_EOF` and `<<"CORPUS_EOF"` still fail
+      // below — as does `<<'EOF'`, which is a separate rule with its own pins
+      // (PR #50 MAJOR 3): the terminator is a word carried text will not hold.
       for (const heredoc of body.match(/<<-?\s*(?:'[^'\n]*'|"[^"\n]*"|[^\s`]+)/g) ?? []) {
-        expect(heredoc, `${label}: unquoted heredoc`).toMatch(/^<<'EOF'$/);
+        expect(heredoc, `${label}: unquoted heredoc`).toMatch(/^<<'CORPUS_EOF'$/);
       }
       expect(body, `${label}: command substitution in an argument`).not.toMatch(/-m "\$\(/);
     });
@@ -694,7 +698,7 @@ describe("skills", () => {
     const bodyReplacingEdits = (body: string): readonly string[] =>
       [...body.matchAll(/corpus doc edit [^\n`]*/g)]
         .map((match) => match[0])
-        .filter((invocation) => /<<'EOF'$|\s-m |\s--file /.test(invocation));
+        .filter((invocation) => /<<'CORPUS_EOF'$|\s-m |\s--file /.test(invocation));
 
     it.each(installedSkills)("$label names no lock mechanism at all", ({ label, body }) => {
       expect(body, `${label}: names a lock verb`).not.toMatch(/corpus lock\b/);
@@ -1054,7 +1058,7 @@ describe("skills", () => {
    *   and an ordinary surname is enough to trigger it.
    *
    * So the rule cannot be a quote to prefer. It is a construction with no
-   * character list attached — build the value in a `<<'EOF'` heredoc, pass
+   * character list attached — build the value in a `<<'CORPUS_EOF'` heredoc, pass
    * `"$var"` — and a provenance test for when it applies: text you are carrying
    * over from somebody else, whose characters you did not choose. A title you
    * wrote out of your own vocabulary is left as a literal in the examples, which
@@ -1091,7 +1095,7 @@ describe("skills", () => {
     it("gives one construction and the test for when it applies", () => {
       const flat = orchestrate.replace(/\s+/g, " ");
       expect(flat).toMatch(/never goes on a command line as a literal/i);
-      expect(orchestrate).toMatch(/title=\$\(cat <<'EOF'\n/);
+      expect(orchestrate).toMatch(/title=\$\(cat <<'CORPUS_EOF'\n/);
       expect(orchestrate).toMatch(/corpus doc edit doc_a1b2c3 --title "\$title" --from agent/);
       // No character list to remember is the whole reason this construction
       // wins over escaping; the skill has to say so, or an agent applies it
@@ -1121,14 +1125,32 @@ describe("skills", () => {
      * 2026-08-18, `/bin/bash` 3.2.57:
      *
      * ```
-     * $ /bin/bash live_bad.sh      # title=$(cat <<'EOF' / O'Brien report / EOF / )
+     * $ /bin/bash live_bad.sh      # title=$(cat <<'CORPUS_EOF' / O'Brien report / … )
      * live_bad.sh: line 4: unexpected EOF while looking for matching `''
      * live_bad.sh: line 8: syntax error: unexpected end of file
      * exit=2
      * ```
      *
+     * PR #50 second review, MINOR 4: the apostrophe is one instance, not the
+     * defect. Re-measured the same day against `bash` 3.2.57 and `zsh` 5.9,
+     * with the value in a quoted heredoc inside `$( … )` in each case — bash
+     * refuses all three and names a different unmatched character each time,
+     * zsh takes all three:
+     *
+     * ```
+     * it's here    → bash: unexpected EOF while looking for matching `''   zsh: ok
+     * he said "go  → bash: unexpected EOF while looking for matching `"'   zsh: ok
+     * a ` tick     → bash: unexpected EOF while looking for matching ``'   zsh: ok
+     * ```
+     *
+     * `IFS= read -r` returned all three byte-exact under both shells, so the
+     * repair is general even though the old diagnosis was not. The pin below
+     * therefore rejects a cause written as a count of apostrophes: an agent
+     * that reads the explanation as the entry condition skips the repair on the
+     * two-thirds of cases the sentence left out.
+     *
      * One apostrophe in somebody's sentence — *don't*, *it's*, *O'Brien* — is
-     * the whole trigger, and it is the commonest shape in the class this rule
+     * the commonest shape in the class this rule
      * exists for. Told to build the value the same way and resend, an agent
      * loops on an identical parse error with the one repair it would otherwise
      * reach for ruled out. So the clause must name a construction that differs,
@@ -1150,10 +1172,18 @@ describe("skills", () => {
       // double quote, since a resend is what the old clause prescribed.
       expect(flat).toMatch(/\*\*Nor is it the same lines again\.\*\*/);
       expect(flat).toMatch(/will not clear on a resend/i);
-      // The cause, stated so the agent stops treating the refusal as its error.
-      expect(flat).toMatch(/odd number of apostrophes/i);
+      // The cause, stated so the agent stops treating the refusal as its error
+      // — and stated over the whole class, since bash 3.2 refuses a lone `"`
+      // and a stray backtick just as it refuses an apostrophe.
+      expect(flat).toMatch(/one unbalanced quoting character anywhere in the value/i);
+      expect(flat).toMatch(/an apostrophe in `it's`, a lone `"` .{0,40}and a stray backtick/i);
+      expect(flat).toMatch(/`zsh` 5\.9 takes all three/);
+      // A count is not the entry condition, and reading it as one is how an
+      // agent skips the repair on the cases the old sentence left out.
+      expect(flat).toMatch(/not about apostrophes and not about counting them/i);
+      expect(flat, "the cause is narrowed back to a count").not.toMatch(/odd number of/i);
       // The repair itself, as a copyable line rather than a description.
-      expect(orchestrate).toMatch(/^IFS= read -r title <<'EOF'$/m);
+      expect(orchestrate).toMatch(/^IFS= read -r title <<'CORPUS_EOF'$/m);
       expect(orchestrate).toMatch(/corpus doc edit doc_a1b2c3 --title "\$title" --from agent/);
       // And its boundary, both halves: what it silently does, and the reason
       // the flag case is unaffected by it.
@@ -1173,6 +1203,28 @@ describe("skills", () => {
      * found`), and the document committed. Recorded beside the claim with its
      * repair rather than by weakening the claim, because the claim is what makes
      * the construction worth using and the residual has a one-word fix.
+     *
+     * PR #50 second review, MAJOR 3: that one-word fix was written as a
+     * condition — *when the text you are carrying could contain one, choose a
+     * word it cannot* — which hands the case straight back to the inspection
+     * the construction exists to replace, three paragraphs after the skill
+     * sets the test as provenance rather than content. And the word it shipped
+     * as the default was `EOF`, in all 34 heredocs across the four skills,
+     * while naming a pasted shell transcript as the arrival vector: the one
+     * body of text certain to hold a bare `EOF` line. Reproduced under both
+     * shells, 2026-08-18, with a transcript pasted into a captured heredoc:
+     *
+     * ```
+     * $ /bin/bash before.sh   # value carries a line reading exactly EOF
+     * before.sh: line 14: EOF: command not found
+     * title=[… line one]      # truncated at that line
+     * exit=0                  # and /tmp/…/pwned.txt created by carried text
+     * ```
+     *
+     * The fix is unconditional and costs no inspection: one terminator,
+     * `CORPUS_EOF`, everywhere, chosen once rather than per message. So the
+     * pins below are two — the prose states it as always, and every heredoc in
+     * every shipped skill uses it.
      */
     it("names the one residual the construction does not cover", () => {
       const flat = orchestrate.replace(/\s+/g, " ");
@@ -1184,10 +1236,50 @@ describe("skills", () => {
       // — the reason it cannot be left to the recovery clause above.
       expect(flat).toMatch(/hands the remainder to the shell as commands/i);
       expect(flat).toMatch(/the write still succeeded, exit `0`/i);
-      // The repair.
+    });
+
+    it("fixes the terminator once, with no text to weigh it against", () => {
+      const flat = orchestrate.replace(/\s+/g, " ");
+      // Unconditional, and naming both words: the one to use and the one the
+      // rest of the world's transcripts already end with.
       expect(flat).toMatch(
-        /the terminator is a word you choose, so when the text you are carrying could contain one, choose a word it cannot/i,
+        /you choose it once, not per message: the terminator is always `CORPUS_EOF`, never `EOF`/i,
       );
+      expect(flat).toMatch(/every shell transcript on earth already ends its heredocs with/i);
+      // And that choosing per message is the failure, not the fallback — the
+      // clause that used to say the opposite.
+      expect(flat).toMatch(/weighing it is the inspection this whole construction exists to/i);
+      expect(flat, "the terminator is chosen against the text again").not.toMatch(
+        /choose a word it cannot|could contain one/i,
+      );
+    });
+
+    /**
+     * The prose above is worth nothing if the examples teach the other word:
+     * an example is what gets copied, and 34 of them saying `EOF` beat one
+     * paragraph saying `CORPUS_EOF`. Every shipped skill, plugins included —
+     * they install into the same workspace and are read by the same agent.
+     */
+    it.each(installedSkills)("$label ends every heredoc with CORPUS_EOF", ({ label, body }) => {
+      // Not every installed skill has a heredoc — a plugin fixture ships none —
+      // so this pin is a prohibition, and the anti-vacuity for it is the
+      // aggregate below plus the per-core-skill count further down.
+      expect(body, `${label}: opens a heredoc with EOF`).not.toMatch(/<<-?\s*'?"?EOF/);
+      expect(
+        body.split("\n").filter((line) => line.trim() === "EOF"),
+        `${label}: closes a heredoc with a bare EOF line`,
+      ).toEqual([]);
+    });
+
+    it("has heredocs in the installed skills for that rule to bind", () => {
+      const total = installedSkills.reduce(
+        (count, skill) => count + (skill.body.match(/<<'CORPUS_EOF'/g)?.length ?? 0),
+        0,
+      );
+      // 34 across the four core skills at the time of the change, plus the
+      // todos plugin's one. A floor, not the count: the pin is that the rule
+      // above is checking real examples.
+      expect(total).toBeGreaterThanOrEqual(35);
     });
 
     /**
@@ -1206,7 +1298,7 @@ describe("skills", () => {
         expect(argument, "a thread title is quoted straight into the command").toBe('"$title"');
       }
       // And the value really is built the safe way ahead of each of them.
-      expect(comment.match(/title=\$\(cat <<'EOF'\n/g)?.length ?? 0).toBe(retitles.length);
+      expect(comment.match(/title=\$\(cat <<'CORPUS_EOF'\n/g)?.length ?? 0).toBe(retitles.length);
     });
 
     it("shows the cost at the site of the reported defect", () => {
@@ -1217,7 +1309,7 @@ describe("skills", () => {
 
     it("passes a skill's description by name, like any other prose somebody reads", () => {
       const comment = documentAt("claude/skills/comment/SKILL.md").body;
-      expect(comment).toMatch(/description=\$\(cat <<'EOF'\n/);
+      expect(comment).toMatch(/description=\$\(cat <<'CORPUS_EOF'\n/);
       for (const invocation of comment.match(/corpus skill create [^\n]*/g) ?? []) {
         expect(invocation, "a skill description is quoted straight into the command").toMatch(
           /--description "\$description"/,
@@ -1229,27 +1321,30 @@ describe("skills", () => {
      * A heredoc terminator only closes the heredoc on a line of its own with
      * nothing before it, so an indented example is not an example — it is a
      * command that behaves differently from the one on the page. Measured on
-     * the same day: an indented `EOF` is a parse error under zsh and, under
-     * bash, silently swallows the rest of the input into the value. Two
+     * the same day: an indented terminator is a parse error under zsh and,
+     * under bash, silently swallows the rest of the input into the value. Two
      * shipped examples had one (`comment`'s skill genesis, `converse`'s
-     * retirement sign-off); both are now at column zero.
+     * retirement sign-off); both are now at column zero. The pattern still
+     * covers `EOF` as well as `CORPUS_EOF`: an indented one of either closes
+     * nothing, and a rewrite that reintroduces the old word should fail here
+     * too rather than only where the word itself is pinned.
      */
     it.each(coreSkills)("$name indents no heredoc terminator", ({ relPath }) => {
       const offenders = documentAt(relPath)
         .body.split("\n")
-        .filter((line) => /^\s+EOF\s*$/.test(line));
-      expect(offenders, `${relPath}: an indented EOF closes nothing`).toEqual([]);
+        .filter((line) => /^\s+(?:CORPUS_)?EOF\s*$/.test(line));
+      expect(offenders, `${relPath}: an indented terminator closes nothing`).toEqual([]);
     });
 
     it.each(coreSkills)("$name opens a heredoc it can close", ({ relPath }) => {
       // Anti-vacuity for the rule above, and a real check in its own right:
-      // every `<<'EOF'` opened in the text is closed by a bare `EOF` after it.
+      // every `<<'CORPUS_EOF'` opened is closed by a bare `CORPUS_EOF` after it.
       const lines = documentAt(relPath).body.split("\n");
       let opened = 0;
       let closed = 0;
       for (const line of lines) {
-        if (line.includes("<<'EOF'")) opened += 1;
-        else if (line === "EOF") closed += 1;
+        if (line.includes("<<'CORPUS_EOF'")) opened += 1;
+        else if (line === "CORPUS_EOF") closed += 1;
       }
       expect(opened, `${relPath}: no heredoc to check`).toBeGreaterThan(0);
       expect(closed, `${relPath}: ${opened} heredocs opened, ${closed} closed`).toBe(opened);
@@ -2012,14 +2107,16 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/\*\*Worked, end to end\.\*\*/);
       expect(body).toMatch(/corpus job log evt_7c1d9a "claimed doc\.edited on \[\[doc_a1b2c3\]\]/);
       expect(body).toMatch(/^\+The working rate assumption is 6\.4%/m);
-      expect(body).toMatch(/corpus doc edit doc_7e3a91 --key [0-9a-f]{64} --from agent <<'EOF'/);
+      expect(body).toMatch(
+        /corpus doc edit doc_7e3a91 --key [0-9a-f]{64} --from agent <<'CORPUS_EOF'/,
+      );
       // It ends in an entry, not in a thread: the read that makes an append
       // possible, the write that carries it, and a job log saying so. The
       // append is the keyed whole-body write, and the key it presents must be
       // the one that read printed — a worked example that presented any other
       // key would teach the one mistake AGENT-022 exists to prevent.
       const append =
-        /corpus doc show doc_a1b2c3\nkey ([0-9a-f]{64})\ncorpus doc edit doc_a1b2c3 --key ([0-9a-f]{64}) --from agent <<'EOF'\n([\s\S]*?)\nEOF/.exec(
+        /corpus doc show doc_a1b2c3\nkey ([0-9a-f]{64})\ncorpus doc edit doc_a1b2c3 --key ([0-9a-f]{64}) --from agent <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/.exec(
           body,
         );
       expect(append, "no worked append in the reflection example").not.toBeNull();
@@ -2710,7 +2807,7 @@ describe("orchestrate skill body", () => {
   it("passes every multi-line text argument through a quoted heredoc", () => {
     const heredocs = body.match(/<<-?\s*\S+/g) ?? [];
     expect(heredocs.length).toBeGreaterThan(0);
-    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
+    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'CORPUS_EOF'$/);
     expect(body).not.toMatch(/-m "\$\(/);
   });
 });
@@ -2947,7 +3044,7 @@ describe("comment skill body", () => {
   });
 
   it("makes reply mechanics exact", () => {
-    expect(body).toMatch(/corpus thread reply th_\w+ --from agent --model \S+ <<'EOF'/);
+    expect(body).toMatch(/corpus thread reply th_\w+ --from agent --model \S+ <<'CORPUS_EOF'/);
     expect(body).toMatch(/Never post a reply by editing the thread file/i);
     expect(body).toMatch(/Always reply/i);
     expect(body).toMatch(/pending indicator/i);
@@ -3168,7 +3265,7 @@ describe("comment skill body", () => {
     }
     const heredocs = body.match(/<<-?\s*\S+/g) ?? [];
     expect(heredocs.length).toBeGreaterThan(0);
-    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
+    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'CORPUS_EOF'$/);
     expect(body).not.toMatch(/-m "\$\(/);
   });
 });
@@ -4075,7 +4172,7 @@ describe("converse skill body", () => {
     }
     const heredocs = body.match(/<<-?\s*\S+/g) ?? [];
     expect(heredocs.length).toBeGreaterThan(0);
-    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
+    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'CORPUS_EOF'$/);
   });
 });
 
@@ -4333,7 +4430,10 @@ describe("profile skill body", () => {
    */
   const examplePath = /created doc_\w+ — (\.claude\/agents\/[a-z0-9-]+)\.md/.exec(body)?.[1];
   const heredocValue = (variable: string): string | undefined =>
-    new RegExp(String.raw`^${variable}=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$`, "m").exec(body)?.[1];
+    new RegExp(
+      String.raw`^${variable}=\$\(cat <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF\n\)$`,
+      "m",
+    ).exec(body)?.[1];
   const exampleTitle = heredocValue("title");
   const exampleName = examplePath?.slice(".claude/agents/".length);
 
@@ -4489,14 +4589,26 @@ describe("profile skill body", () => {
    * account of another component's internals, and every one of those went stale;
    * so what is pinned is the consequence *and the absence of a mechanism beside
    * it* — a sentence reciting the resolver's two aliases would already be wrong.
+   *
+   * PR #50 second review, NIT 8: the mechanism check ran over the whole file
+   * and forbade `alias` and `autocomplete` case-insensitively, which is two
+   * ordinary English words banned from a product file for good — a future
+   * sentence about the composer's autocomplete would have failed a pin about
+   * the mention resolver. It now runs over the bullet it guards, and the two
+   * server identifiers stay case-sensitive because that is what they are.
    */
   it("keeps a misfiled profile's consequence, and names no mechanism for it", () => {
     expect(body).toMatch(/Never retry into a different folder/);
     expect(body).toMatch(
       /a document \*about\* an agent rather than an agent, and it resolves\s+to nobody\./,
     );
-    expect(body, "the skill recites how the resolver indexes a row").not.toMatch(
-      /alias|targetIndex|invocableName|autocomplete/i,
+    // The bullet, from its bolded lead-in to the blank line or next bullet.
+    const bullet = /- \*\*The write is refused for any other reason\.\*\*[\s\S]*?(?=\n- \*\*)/.exec(
+      body,
+    )?.[0];
+    expect(bullet, "the misfiled-profile bullet moved").toBeDefined();
+    expect(bullet, "the bullet recites how the resolver indexes a row").not.toMatch(
+      /targetIndex|invocableName|\balias(?:es)?\b|indexed under|skips any row/i,
     );
   });
 
@@ -4541,7 +4653,9 @@ describe("profile skill body", () => {
   it("works an example description written as when to reach for the agent", () => {
     expect(body).toMatch(/write it as \*when to reach for this\s+one\*/);
     const worked = body.slice(body.indexOf("## Worked example"));
-    const description = /^description=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$/m.exec(worked)?.[1];
+    const description = /^description=\$\(cat <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF\n\)$/m.exec(
+      worked,
+    )?.[1];
     expect(description, "the worked example builds no description").toBeDefined();
     expect(description).toMatch(/^Reach for this when /);
   });
@@ -4619,7 +4733,7 @@ describe("profile skill body", () => {
    * so there is no `--title-file` and no stdin form for `--extra` (checked
    * against `corpus doc edit --help`, 2026-08-17). The fix is therefore the
    * shell idiom the body already uses, lifted onto the short arguments: a
-   * `<<'EOF'` heredoc into a variable, and the variable passed in double quotes.
+   * `<<'CORPUS_EOF'` heredoc into a variable, and the variable passed in double quotes.
    * Nothing is expanded on either leg, so the rule needs no list of dangerous
    * characters.
    *
@@ -4681,7 +4795,9 @@ describe("profile skill body", () => {
     // The example carries the character the rule exists for; otherwise the
     // pattern that gets copied is the one that has never been exercised.
     const worked = body.slice(body.indexOf("## Worked example"));
-    const description = /^description=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$/m.exec(worked)?.[1];
+    const description = /^description=\$\(cat <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF\n\)$/m.exec(
+      worked,
+    )?.[1];
     expect(description, "the worked description carries no apostrophe").toMatch(/\w'\w/);
   });
 
@@ -4692,7 +4808,9 @@ describe("profile skill body", () => {
     const worked = body.slice(body.indexOf("## Worked example"));
     expect(worked, "no worked-example section").not.toBe("");
     const profileBody =
-      /--type agent-def --title "[^"]+" --from agent <<'EOF'\n([\s\S]*?)\nEOF/.exec(worked)?.[1];
+      /--type agent-def --title "[^"]+" --from agent <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/.exec(
+        worked,
+      )?.[1];
     expect(profileBody, "no worked persona body").toBeDefined();
     const written = (profileBody ?? "").split("\n").filter((line) => line.trim() !== "");
     // "Short enough to stay true", checked rather than asserted in prose.
@@ -4711,7 +4829,8 @@ describe("profile skill body", () => {
 
   it("reports the four things a person needs, and its example reports them", () => {
     expect(body).toMatch(/\*\*what you created, where it lives, what it does, and how to reach it/);
-    const reply = /corpus thread reply [^\n]*<<'EOF'\n([\s\S]*?)\nEOF/.exec(body)?.[1] ?? "";
+    const reply =
+      /corpus thread reply [^\n]*<<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/.exec(body)?.[1] ?? "";
     expect(reply, "no worked reply").not.toBe("");
     expect(reply, "the reply names no sigil").toContain(`@${exampleName ?? ""}`);
     expect(reply, "the reply names no path").toContain(`${examplePath ?? ""}.md`);
@@ -5664,9 +5783,9 @@ describe("corpus invocation extraction", () => {
   it("extracts a fenced multi-line heredoc invocation without its body", () => {
     const markdown = [
       "```bash",
-      "corpus thread reply th_4b8e2c --from agent <<'EOF'",
+      "corpus thread reply th_4b8e2c --from agent <<'CORPUS_EOF'",
       "corpus queue resume restores it — this line is reply content, not a command.",
-      "EOF",
+      "CORPUS_EOF",
       "corpus queue idle",
       "```",
     ].join("\n");

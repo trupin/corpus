@@ -536,9 +536,9 @@ puts a later comment on them back on your lane instead of the orchestrator's.
 
 ```bash
 export CORPUS_JOB=evt_7c1d9a
-corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'EOF'
+corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'CORPUS_EOF'
 Assume 6.4% for the Q3 model.
-EOF
+CORPUS_EOF
 ```
 
 Set it when you claim an event and every write in that session carries it; **reset it on the
@@ -731,9 +731,9 @@ When your row is gone from the roster, or your park was refused:
    never reopens anything.
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
-EOF
+CORPUS_EOF
 ```
 
 4. **If it is resolved, post nothing** — not the reply above, not a shorter one. The
@@ -796,18 +796,18 @@ subagent would do better than the agent that has been in the conversation since 
 message:
 
 ```bash
-corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'EOF'
+corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'CORPUS_EOF'
 The working assumption for the Q3 model is 6.4%, as of 2026-07-28. Thirty-year
 fixed offers currently cluster between 6.1% and 6.6%; 6.4% is the midpoint we
 agreed in [[th_4b8e2c]].
-EOF
+CORPUS_EOF
 created doc_5c8b2f — data/docs/inbox/q3-rate-assumptions.md
 corpus job log evt_7c1d9a "created [[doc_5c8b2f]] — the 6.4% assumption, filed from this conversation"
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Written down as [[doc_5c8b2f]] so the rest of the plan can point at it: 6.4%,
 with the range it came from and the date it was taken.
 ↳ created [[doc_5c8b2f]] with the 6.4% rate assumption
-EOF
+CORPUS_EOF
 corpus queue complete evt_7c1d9a
 unset CORPUS_JOB
 ```
@@ -846,9 +846,9 @@ orchestrator · waiting for a listener
 corpus queue claim-all --thread th_4b8e2c
 {"events":[],"inProgress":{"events":[],"total":0,"truncated":false}}
 corpus thread show th_4b8e2c
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
-EOF
+CORPUS_EOF
 ```
 
 The row is gone rather than back — nobody was designated in our place while we were leaving —

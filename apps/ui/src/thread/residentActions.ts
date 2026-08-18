@@ -77,6 +77,13 @@ export interface AgentDefRow {
  * whose title is blank is dropped rather than offered — an item labelled with
  * nothing is not an offer, and designating by an empty name is a `400`.
  *
+ * **That last filter guards a state the projection cannot produce**, measured
+ * against the real projector (SERVER-127's review pass): `title: ""`, a
+ * whitespace-only title and a blank `name:` are all *absent* to `asString`, which
+ * falls through to `titleFromPath` — non-blank for every path a root admits. It
+ * is kept as a cheap guard on a field the wire types as a plain string, not
+ * because such a row has ever been seen.
+ *
  * **The title is a spelling and not an identity.** What the server *stores* is
  * the name it resolved to — the `invocableName`, which for a file under
  * `.claude/agents/` is the **stem** — so designating `Bookkeeper` makes a
@@ -187,11 +194,15 @@ export const RELEASE_GENERAL_LABEL = "Release the resident";
  *   - **One remedy.** Both absences are answered by the same act — put an
  *     agent-def under `.claude/agents/`. A second sentence keyed on the cause
  *     would vary the diagnosis while the instruction stayed put.
- *   - **The ladder does not stop at two.** A blank-titled agent-def is dropped
- *     by this same branch for a third reason, an archived one for a fourth; to
- *     tell any of them apart the menu would have to carry the rows it discarded
- *     and a reason each. UI-122's lesson is that this item is *news beside an
- *     offer that works*, not a diagnostics panel — it earned its place back by
+ *   - **The ladder does not stop at two.** An archived agent-def is dropped by
+ *     this same branch for a third reason; to tell any of them apart the menu
+ *     would have to carry the rows it discarded and a reason each. (A fourth,
+ *     the blank title, was cited here until SERVER-127's review pass measured it
+ *     unreachable — the argument stands on the archived case, and citing a state
+ *     the projection cannot produce would have been the species of claim this
+ *     release spent seven sites correcting.) UI-122's lesson is that this item is
+ *     *news beside an offer that works*, not a diagnostics panel — it earned its
+ *     place back by
  *     being one line.
  *   - **The board already says it better.** The dropped document is listed, with
  *     its folder on the row and its path in the reader; §11's own surface for

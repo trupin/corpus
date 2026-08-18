@@ -2185,6 +2185,33 @@ describe("the two folder grammars are described separately (CONTRACT-062)", () =
   });
 
   /**
+   * PR #50's **second** review, MINOR 5 — the seventh wording of the
+   * SERVER-125 rule, and the one CONTRACT-064's sweep missed.
+   *
+   * Saying an explicit folder wins is describing a caller filing an `agent-def`
+   * outside `.claude/agents/`, so it has to say what that costs. "A document
+   * *about* a persona" said what the document **is**; it did not say the
+   * document now answers to **nothing**, which is the fact the caller loses.
+   * `apps/cli/src/commands/doc/create.ts` states it on the parallel surface,
+   * and this is the same act, so both must carry the same clause with only the
+   * route/flag spelling differing.
+   *
+   * Falsify by deleting the cost clause: the "about a persona" half alone
+   * leaves every other assertion in this file green.
+   */
+  it("states what filing an agent-def outside its root costs, not only what it is", () => {
+    // What the document is — the half that was already there.
+    expect(create()).toContain("a document *about* a persona");
+    // What it answers to — the half that was not.
+    expect(create()).toContain("costs is addressability");
+    expect(create()).toContain("`.claude/agents/` alone");
+    expect(create()).toContain("`@<name>`");
+    expect(create()).toContain("POST /api/threads/{id}/resident");
+    // Both spellings, so nobody reads the loss as being about the stem only.
+    expect(create()).toContain("filename stem or its title alike");
+  });
+
+  /**
    * The trap the wording SERVER-122 proposed would have fallen into: §7 gives
    * `type: skill` a root of its own, and a create still files a skill in the
    * inbox — `.claude/skills` indexes `SKILL.md` alone, so it is neither the

@@ -410,6 +410,56 @@ describe("a bare SKILL.md titled like a working skill", () => {
   });
 });
 
+/**
+ * PR #50 NIT 7, found by `scripts/mention-offer-parity.test.ts`. A hand-written
+ * `title: "  Padded Persona  "` reaches `documents.title` with its padding on —
+ * the projector's `asString` decides only whether a title is *there* — and
+ * `targetIndex` keyed that spelling verbatim while every lookup trimmed. So the
+ * board's designate menu, which sends the title trimmed, offered a name the
+ * server resolved to nothing: UI-123's class of defect, on the row shape nobody
+ * had asked about.
+ */
+describe("a persona whose title is padded", () => {
+  let padded: WriteWorkspace;
+
+  beforeAll(() => {
+    padded = createThreadWorkspace("mentions-padded");
+    padded.write(
+      ".claude/agents/padded.md",
+      "---\nname: padded\ndescription: a persona\nid: doc_paddedone\n" +
+        'type: agent-def\ntitle: "  Padded Persona  "\n---\nBody.\n',
+    );
+    padded.reproject();
+  });
+
+  afterAll(() => {
+    padded.close();
+  });
+
+  it("keeps the padding in the row, which is what makes this a question at all", () => {
+    const row = padded.db
+      .prepare("SELECT title FROM documents WHERE id = 'doc_paddedone'")
+      .get() as { title: string };
+    expect(row.title).toBe("  Padded Persona  ");
+  });
+
+  it("resolves under the title trimmed, padded, and by its stem alike", () => {
+    for (const spelling of ["Padded Persona", "  padded persona  ", "padded", " PADDED "]) {
+      expect(resolveMentionTarget(padded.db, MENTION_TYPE, spelling)).toEqual({
+        name: "padded",
+        docId: "doc_paddedone",
+        status: "open",
+      });
+    }
+  });
+
+  it("still resolves the mention token, which can carry no whitespace", () => {
+    expect(parseMentions(padded.db, "@padded please").mentions).toEqual([
+      { name: "padded", docId: "doc_paddedone", status: "open" },
+    ]);
+  });
+});
+
 describe("invocableName", () => {
   it.each([
     [".claude/skills/comment/SKILL.md", "comment"],

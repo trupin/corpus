@@ -555,17 +555,17 @@ corpus doc create --type note --title "Mortgage options" --folder finance
 A persona, in one command: no `--folder`, because `agent-def` has its own document root — one copy of the file, read by Claude Code and by Corpus, with no sync (SPEC.md §7). It lands at `.claude/agents/analyst.md`, `@analyst` resolves to it in the very next comment (SPEC.md §8), and Claude Code lists it as a subagent, because the server writes both discovery keys with the document: `name`, derived from the filename, and `description`, defaulted to the title (SERVER-123). That default is thin on purpose — `corpus doc edit <id> --extra description=…` is how it comes to say _when_ to reach for this one.
 
 ```
-corpus doc create --type agent-def --title "Analyst" --from agent <<'EOF'
+corpus doc create --type agent-def --title "Analyst" --from agent <<'CORPUS_EOF'
 You read the corpus and answer with evidence.
-EOF
+CORPUS_EOF
 ```
 
 The agent's form: body from a heredoc, tagged, and committed with `agent` as the git author.
 
 ```
-corpus doc create --type note --title "Mortgage options" --tags finance,housing --from agent <<'EOF'
+corpus doc create --type note --title "Mortgage options" --tags finance,housing --from agent <<'CORPUS_EOF'
 30-year fixed at 6.1%.
-EOF
+CORPUS_EOF
 ```
 
 SPEC.md §11's “pin me a view of unresolved finance threads”, in one command: the view document lands in `data/docs/views/`, the board grows a fourth column live over SSE, and `git log` records the agent as its author.
@@ -751,9 +751,9 @@ The whole loop: read the document — which is both how you see what you are rev
 
 ```
 corpus doc show doc_a1b2c3
-corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'EOF'
+corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'CORPUS_EOF'
 The revised body.
-EOF
+CORPUS_EOF
 ```
 
 A frontmatter-only edit: the title changes, the body is not touched, and no key is needed — a title names its own delta.
@@ -1006,9 +1006,9 @@ corpus doc patch doc_a1b2c3 --from agent --old 'the Rate Sheet' --new 'the rate 
 The whole request as JSON on stdin, for text whose quotes and backticks would fight the shell. It carries `all` itself, so it takes no other patch flag.
 
 ```
-corpus doc patch doc_a1b2c3 --from agent --stdin <<'EOF'
+corpus doc patch doc_a1b2c3 --from agent --stdin <<'CORPUS_EOF'
 {"old": "It's the lender's `rate` figure.\n", "new": "It is the lender's published rate.\n"}
-EOF
+CORPUS_EOF
 ```
 
 Two files, read byte for byte: no shell quoting and no JSON escaping anywhere. Each file's trailing newline is part of its text.
@@ -1873,11 +1873,11 @@ corpus skill create <name> [flags]
 The agent's genesis form (SPEC.md §7): instructions from a heredoc, committed with `agent` as the git author.
 
 ```
-corpus skill create weekly-review --description "Run the weekly review over the corpus." --from agent <<'EOF'
+corpus skill create weekly-review --description "Run the weekly review over the corpus." --from agent <<'CORPUS_EOF'
 # Weekly review
 
 Survey `corpus doc list --needs me` and file what has drifted.
-EOF
+CORPUS_EOF
 ```
 
 No body: the server pre-fills from the workspace's `skill` template when it has one, and leaves the body empty otherwise.
@@ -1978,9 +1978,9 @@ corpus thread create --parent doc_a1b2c3 --quote "assume a 30-year fixed at 6.1%
 A whole-document thread from the agent, body as a heredoc, committed with `agent` as the git author and recording the model that wrote the first turn (SPEC.md §11).
 
 ```
-corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'EOF'
+corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'
 I split this into two notes; the second needs a title.
-EOF
+CORPUS_EOF
 ```
 
 A quote that appears more than once, disambiguated with the text around the occurrence meant. Without the framing this exact create is refused, not warned about. Body from stdin.
@@ -2153,9 +2153,9 @@ corpus thread reply <id> [flags]
 The agent's form: a heredoc reply, authored by the agent, stating the model that wrote it (SPEC.md §7, §11).
 
 ```
-corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'EOF'
+corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'
 I filed the note under finance/.
-EOF
+CORPUS_EOF
 ```
 
 A short reply from the user, inline.

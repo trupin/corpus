@@ -134,9 +134,9 @@ stated there alone.** Here it binds both of them every time, the ones that look 
 — you cannot see afterwards what came out wrong, and the document is what a person reads.
 
 ```bash
-title=$(cat <<'EOF'
+title=$(cat <<'CORPUS_EOF'
 Bookkeeper
-EOF
+CORPUS_EOF
 )
 ```
 
@@ -144,9 +144,9 @@ EOF
 the document lands in `.claude/agents/`, at a filename slugged from the title.
 
 ```bash
-corpus doc create --type agent-def --title "$title" --from agent <<'EOF'
+corpus doc create --type agent-def --title "$title" --from agent <<'CORPUS_EOF'
 The body — the persona, written to the rules above.
-EOF
+CORPUS_EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
 ```
 
@@ -165,9 +165,9 @@ it in from the title so the profile loads at all, and a title is a label rather 
 it:
 
 ```bash
-description=$(cat <<'EOF'
+description=$(cat <<'CORPUS_EOF'
 Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place.
-EOF
+CORPUS_EOF
 )
 corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
 ```
@@ -256,11 +256,11 @@ and is guessable rather than askable. Guess it, and say that you guessed.
 ```bash
 corpus doc list --type agent-def
 no documents match.
-title=$(cat <<'EOF'
+title=$(cat <<'CORPUS_EOF'
 Bookkeeper
-EOF
+CORPUS_EOF
 )
-corpus doc create --type agent-def --title "$title" --from agent <<'EOF'
+corpus doc create --type agent-def --title "$title" --from agent <<'CORPUS_EOF'
 You keep this workspace's money documents in one shape.
 
 - Every figure you write carries its source: the id of the document it came from, and that document's date. A figure you cannot source does not go in the answer — say it is unsourced instead.
@@ -268,11 +268,11 @@ You keep this workspace's money documents in one shape.
 - You do not forecast and you do not advise. Asked what to do, lay out what the documents say and leave the decision where it belongs.
 
 A good answer from you is a short table of figures with their sources and one sentence under it. Where that is not enough room, say what is missing rather than padding it out.
-EOF
+CORPUS_EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
-description=$(cat <<'EOF'
+description=$(cat <<'CORPUS_EOF'
 Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place. It says which document every number came from and doesn't advise.
-EOF
+CORPUS_EOF
 )
 corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
 edited doc_b7c1d5
@@ -288,7 +288,7 @@ actually type. Twelve lines.
 Then the reply, which is where the person finds out any of this happened:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Written — `@bookkeeper`, at `.claude/agents/bookkeeper.md`.
 
 It sources every figure it writes back to the document that figure came from, gives you both sides when two documents disagree instead of picking one, and declines to advise. Answers come back as a short table with a sentence under it.
@@ -297,5 +297,5 @@ Mention `@bookkeeper` in a comment to hand it something. To put it in charge of 
 
 One guess in there: you did not say what you wanted its answers to look like, so I gave it the table-and-a-sentence shape. That is the last line of the document — edit it if it is wrong.
 ↳ created the bookkeeper profile
-EOF
+CORPUS_EOF
 ```

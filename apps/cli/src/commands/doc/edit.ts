@@ -490,8 +490,8 @@ export const editCommand: WorkspaceCommandSpec = {
     {
       command:
         "corpus doc show doc_a1b2c3\n" +
-        "corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'EOF'\n" +
-        "The revised body.\nEOF",
+        "corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'CORPUS_EOF'\n" +
+        "The revised body.\nCORPUS_EOF",
       description:
         "The whole loop: read the document — which is both how you see what you are revising and where its key comes from — then replace the body presenting that key. The anchor report names any thread that came loose, and the write prints the fresh key for the next edit.",
     },

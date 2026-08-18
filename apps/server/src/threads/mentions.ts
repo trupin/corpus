@@ -208,13 +208,40 @@ function targetIndex(projection: ProjectionDb, type: string): Map<string, Resolv
     if (invocable === null) continue;
     const target: ResolvedTarget = { name: invocable, docId: row.id, status: row.status };
     for (const alias of [invocable, row.title]) {
-      if (alias === "") continue;
-      const key = alias.toLowerCase();
+      const key = aliasKey(alias);
+      if (key === "") continue;
       if (!index.has(key)) index.set(key, target);
     }
   }
   return index;
 }
+
+/**
+ * How a name is keyed, and how one is looked up — **the same transformation on
+ * both sides**, which is the whole reason it is a function.
+ *
+ * Lowercased because nobody types a capital after a sigil, and **trimmed**
+ * because `documents.title` carries a hand-written title verbatim: `asString`
+ * (`projection/project-document.ts`) only decides whether a title is *there*,
+ * so `title: "  Padded Persona  "` reaches this index with its padding on. The
+ * lookup already trimmed — a typed name legitimately arrives padded — and
+ * keying the untrimmed spelling made that trim look like the fix for a caller's
+ * whitespace when it was really the thing that broke the match: the board's
+ * designate menu sends the title **trimmed** (`residentActions.ts`), so it
+ * offered `Padded Persona` on a row this index only answered to as
+ * `"  padded persona  "`, and the designation earned a 404 naming an agent-def
+ * the person was looking straight at. Found by
+ * `scripts/mention-offer-parity.test.ts` (PR #50 NIT 7) — the same
+ * offered-but-unresolvable class as UI-123, in the one place both surfaces are
+ * compared.
+ *
+ * A blank key is dropped rather than indexed: it is a name nothing can address,
+ * and one blank-titled row would otherwise take `""` from every later one. The
+ * projector cannot currently produce such a title — it falls back to `name:`
+ * and then to the path — so this is a guard on the index's own invariant and
+ * not a case anybody meets.
+ */
+const aliasKey = (name: string): string => name.trim().toLowerCase();
 
 /** A document that answers to a name it cannot be addressed by; see {@link unaddressableTarget}. */
 export type UnaddressableTarget = {
@@ -247,11 +274,11 @@ export function unaddressableTarget(
   type: string,
   name: string,
 ): UnaddressableTarget | null {
-  const wanted = name.trim().toLowerCase();
+  const wanted = aliasKey(name);
   if (wanted === "") return null;
   for (const row of targetRows(projection, type)) {
     if (invocableName(row.path) !== null) continue;
-    if (row.title.toLowerCase() !== wanted) continue;
+    if (aliasKey(row.title) !== wanted) continue;
     return { docId: row.id, path: row.path, title: row.title };
   }
   return null;
@@ -278,7 +305,7 @@ export function resolveMentionTarget(
   type: string,
   name: string,
 ): ResolvedTarget | null {
-  return targetIndex(projection, type).get(name.trim().toLowerCase()) ?? null;
+  return targetIndex(projection, type).get(aliasKey(name)) ?? null;
 }
 
 /** Parse a turn body's mentions and invocations, resolved against the projection (§8). */
@@ -307,7 +334,10 @@ export function parseMentions(projection: ProjectionDb, body: string): ParsedMen
       index = targetIndex(projection, type);
       indexes.set(type, index);
     }
-    const target = index.get(token.name.toLowerCase());
+    // Through the same key function the index is built with; a scanned token
+    // can carry no whitespace, so the trim is inert here and the shared spelling
+    // is the point.
+    const target = index.get(aliasKey(token.name));
     if (target === undefined) {
       unresolved.push(literal);
       continue;

@@ -100,6 +100,20 @@ export const DEFAULT_DOC_FOLDER = "inbox";
  * the inbox — and `data/threads` is why the closing clause exists: `thread` is
  * the one type `allocatePath` places before `folder` is consulted at all, so
  * neither the inbox default nor "an explicit folder wins" holds for it.
+ *
+ * **And the second check, added by PR #50's second review**: where the sentence
+ * says an explicit folder wins, it is describing a caller filing an `agent-def`
+ * outside `.claude/agents/` — so it must also say what that costs. Since
+ * SERVER-125 the cost is *all* of the document's addressability: an off-root
+ * `agent-def` resolves under neither its filename stem nor its title, so
+ * `@<name>` and `POST /api/threads/{id}/resident` both miss it (see
+ * `DesignateResidentRequestSchema` and `apps/server/src/threads/resident.ts`).
+ * "A document *about* a persona" alone told an API consumer what the document
+ * *is* and not what it *answers to*, which is the asymmetry CONTRACT-064 removed
+ * from the designation surface and left standing here. The wording is the CLI's
+ * (`apps/cli/src/commands/doc/create.ts`), route names substituted for flags —
+ * this is the same act described at two surfaces, so it is one sentence, not
+ * two.
  */
 const CREATE_FOLDER_DESCRIPTION =
   "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
@@ -115,9 +129,13 @@ const CREATE_FOLDER_DESCRIPTION =
   "not take an ordinary `*.md` is out of reach for the same reason it is not a default — " +
   "`.claude/skills` indexes `SKILL.md` files alone, so naming it is a `400` and a `type: skill` " +
   `create with no folder still lands in \`${DEFAULT_DOC_FOLDER}\`; a skill is created with ` +
-  "`POST /api/skills`. An explicit folder always wins over that default, so " +
-  '`folder: "inbox"` still files an `agent-def` under `data/docs/` as a document *about* a ' +
-  "persona. **One type is placed by neither rule**: a `type: thread` document is flat at " +
+  "`POST /api/skills`. An explicit folder always wins over that default, which is what keeps a " +
+  'document *about* a persona expressible: `type: agent-def` with `folder: "inbox"` still ' +
+  "files under `data/docs/`. **What that costs is addressability, and it costs all of it**: a " +
+  "persona is loaded and resolved from `.claude/agents/` alone, so an `agent-def` written " +
+  "anywhere else answers to neither `@<name>` nor `POST /api/threads/{id}/resident`, under its " +
+  "filename stem or its title alike — it is a note about a persona rather than one. " +
+  "**One type is placed by neither rule**: a `type: thread` document is flat at " +
   "`data/threads/<id>.md`, named by its id (SPEC.md §4), so a `folder` sent with one is still " +
   "checked but never changes where it lands — and a thread is normally created by " +
   "`POST /api/threads`.";

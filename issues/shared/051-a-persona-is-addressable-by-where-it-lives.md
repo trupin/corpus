@@ -78,30 +78,48 @@ reading the reference, following it, and getting silence.
 
 ## The drafted text — read this back verbatim before applying
 
+**Revision 2, 2026-08-18. Revision 1 was stale before anyone read it, and PR
+#50's second review caught it.** SERVER-127 landed after the first draft and
+changed what the rule is. Revision 1 said a document *"in its own root"* is
+autocompletable. A hand-authored `.claude/skills/SKILL.md` **is** in its own root
+— §7:399's glob matches it and the projector indexes it — and it is
+autocompletable by nothing. **Signing revision 1 would have put a newly false
+sentence into §11**, closing one gap by opening another.
+
+The gate is not the root. It is **the shape the root names**: a skill is named by
+the directory holding it, a persona by its own filename. Revision 2 says that.
+
 Two edits.
 
 **Edit 1 — §11, line 541.** Replace the sentence:
 
-> Creating a new skill or subagent document **in its own root** (§7) instantly
-> makes it autocompletable — there is no separate registry. A `type: skill` or
-> `type: agent-def` document filed anywhere else is a document **about** one, and
-> is offered by nothing.
+> Creating a new skill or subagent document **in the shape its root names** (§7)
+> instantly makes it autocompletable — there is no separate registry. A skill is
+> named by the directory that holds it (`.claude/skills/<name>/SKILL.md`), and a
+> persona by its own filename (`.claude/agents/<name>.md`). A `type: skill` or
+> `type: agent-def` document written anywhere else — or inside the right root in a
+> shape that root does not name — is a document **about** one, and is offered by
+> nothing.
 
 **Edit 2 — §8.** Insert as a new bullet after line 409:
 
 > - **A persona is addressable by where it lives, not only by what it declares.**
->   `@<subagent-name>` resolves a `type: agent-def` document **under
->   `.claude/agents/`** (§7), by its filename stem or by its title alike; a
->   document declaring `type: agent-def` anywhere else is a document *about* an
->   agent, and resolves to nothing — no composer offers it, no designation names
->   it, and a mention of its title is reported unresolved exactly as any other
->   name that names nobody is. The same holds for `type: skill` and
->   `/<skill-name>`. Filing one elsewhere stays legal and is the point: a document
->   *about* a persona is an ordinary document, listed, readable and editable like
->   any other. **The alternative was shipped and withdrawn**: honouring the title
->   wherever the document sat meant two documents could carry one title, ties
->   broke by internal id order, and an inert note in `data/docs/` could take a
->   working persona's name away from it. _(Rider signed 2026-08-\_\_.)_
+>   `@<subagent-name>` resolves a `type: agent-def` document that
+>   `.claude/agents/` **names** (§7) — that root names a file directly, so
+>   `.claude/agents/bookkeeper.md` is a persona and `.claude/agents/team/x.md` is
+>   not — and it resolves by that filename stem or by the document's title alike.
+>   A document declaring `type: agent-def` that no root names is a document
+>   *about* an agent, and resolves to nothing: no composer offers it, no
+>   designation names it, and a mention of its title is reported unresolved
+>   exactly as any other name that names nobody is. The same holds for
+>   `type: skill` and `/<skill-name>`, where the name is the **directory**, so a
+>   `SKILL.md` no directory names is addressable by nothing either. Writing one
+>   outside a named shape stays legal and is the point: a document *about* a
+>   persona is an ordinary document, listed, readable and editable like any other.
+>   **The alternative was shipped and withdrawn**: honouring the title wherever
+>   the document sat meant two documents could carry one title, ties broke by
+>   internal id order, and an inert note in `data/docs/` could take a working
+>   persona's name away from it. _(Rider signed 2026-08-\_\_.)_
 
 ## What the sign-off decides
 
