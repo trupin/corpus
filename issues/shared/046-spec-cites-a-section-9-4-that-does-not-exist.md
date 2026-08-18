@@ -109,6 +109,33 @@ _Not applicable until the amendment is signed._
       reasoning
 - [x] Committed with `[SHARED-046]` prefix (in `dbadd487`, alongside SHARED-048)
 
+## The target was contestable too, and one of three was wrong
+
+PR #49's fourth review checked not just *whether* the citations were corrected
+but *what they were corrected to*, and found the sweep had taken §9.2 from this
+issue's own summary without re-deriving it. Re-derived:
+
+- **§9.1 Projection** (lines 417-442) is where the mechanism lives — line 433,
+  *"re-projects the affected file(s) and broadcasts `invalidate` with the
+  affected query keys"*.
+- **§9.2 HTTP API** (443-482) carries `GET /events`, the SSE stream itself, at
+  line 479.
+
+So the two citations reading *"behind the ordinary invalidate keys"* mean the
+**mechanism** and now cite **§9.1**. The third — *"the person sees the agent's
+writes land live as they always have"* — means the **stream**, and correctly
+stays at §9.2.
+
+One of the three was not merely imprecise but **vacuous**: the `GET /api/agents`
+bullet sits *inside* §9.2 and cited §9.2, which tells a reader nothing. That one
+was introduced by this issue's own sweep.
+
+The lesson is the same one this phase kept relearning at four other sites: the
+sweep replaced a citation using the *description* of where the content lives
+rather than reading the section boundaries. A wrong citation was traded for a
+weaker one, and in one case for a useless one. These retargets are also unsigned,
+on the same recorded judgement as the original three.
+
 ## The guard, and how this issue was briefly wrong
 
 This issue was flipped to `done` on the strength of the sweep alone, while its
