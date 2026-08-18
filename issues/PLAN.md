@@ -933,17 +933,42 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | AGENT-033 | A resident with no persona to bind | done | P0 | CONTRACT-061, SERVER-121, CLI-049 |
 | AGENT-034 | A skill that creates an agent profile | done | P0 | SERVER-122, CLI-050 |
 | SERVER-123 | A created agent-def carries none of Claude Code's frontmatter, and nothing says so (AGENT-034 finding) | done | P1 | SERVER-122 |
-| SERVER-124 | Under a `.claude/` root, Corpus's own frontmatter goes entirely unvalidated (PR #49 review 3) | todo | P1 | SERVER-123 |
-| SERVER-125 | An off-root agent-def is offered, resolvable, and dead (PR #49 review 5) | todo | P1 | SERVER-123 |
-| AGENT-036 | Two false statements in the `profile` skill (PR #49 review 5) | todo | P2 | — |
-| AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | todo | P1 | — |
+| SERVER-124 | Under a `.claude/` root, Corpus's own frontmatter goes entirely unvalidated (PR #49 review 3) | done | P1 | SERVER-123 |
+| SERVER-125 | An off-root agent-def is offered, resolvable, and dead (PR #49 review 5) | done | P1 | SERVER-123 |
+| AGENT-036 | A transcript line the CLI cannot print; SERVER-125 made the other finding true | done | P2 | — |
+| AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | done | P1 | — |
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
 | SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |
+| UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | done | P0 | SERVER-125 |
+| CONTRACT-064 | The designate schema still states the pre-SERVER-125 resolution rule (PR #50 review sweep) | done | P1 | SERVER-125 |
+| SERVER-127 | A bare .claude/skills/SKILL.md is addressable and loaded by nothing (UI-123 derived fixture) | done | P1 | SERVER-125 |
+| SHARED-051 | A persona is addressable by where it lives, and §11 says otherwise (PR #50 review, NEEDS SIGN-OFF) | todo | P0 | SERVER-125 |
+| SHARED-052 | A check can report what a save accepts, and §14 says it cannot (PR #50 review 2, NEEDS SIGN-OFF) | todo | P1 | SERVER-124 |
+| SHARED-053 | §7 says a renamed or archived profile goes missing; archiving does not (PR #50 review 3, NEEDS SIGN-OFF) | todo | P1 | — |
 
-The five open rows above are **v0.12.0**, agreed with the user on 2026-08-18:
-*everything the profile release left half-true*. They are one story, so they ship
-under one tag. The controlled-language work below is a second story and gets its
-own.
+**v0.12.0** is the `done` rows above: *everything the profile release left
+half-true*. One story, one tag. The controlled-language work below is a second
+story and gets its own.
+
+**Five issues were agreed with the user on 2026-08-18. Nine shipped.** The four
+additions each came from a review finding about work already in the release, not
+from new scope:
+
+| added | why it could not wait |
+| --- | --- |
+| UI-123 | SERVER-125 left both client surfaces offering rows the server had begun refusing — its own acceptance criterion forbids that |
+| CONTRACT-064 | the same resolution rule, stated stale at four contract sites, two of them published to the wire |
+| SERVER-127 | SERVER-125's gate condition, in a shape that change missed — found by UI-123's derived fixture |
+| CONTRACT-065, SERVER-126 | filed **out** of scope, to stop the release growing further |
+
+Three review rounds, and each round found the previous round's fix incomplete
+rather than wrong. That is the record worth keeping: the first review found the
+rule stated stale in the CLI, the second found it in the contract, the third
+found a clause the contract sweep had itself rewritten and left false.
+
+**Four riders are drafted and unsigned** — SHARED-049, -050, -051, -052. SPEC.md
+is unchanged by this phase. The waiver is the orchestrator's, recorded here and
+in the release notes rather than described as unnecessary.
 
 ## Phase 35 — Write to be read once (2026-08-18, user directive)
 
@@ -979,3 +1004,21 @@ comment skill reads afterwards, because that is the surface where the cost lands
 | INFRA-030 | The orchestrator writes in controlled language (harness; ships nothing) | done | P1 | — |
 | SHARED-050 | The product agent's register is controlled language (NEEDS SIGN-OFF) | todo | P1 | — |
 | AGENT-037 | The workspace ships the skill, and the agent writes by it | todo | P1 | INFRA-030, SHARED-050 |
+
+### Found in flight during Phase 34, deliberately not in v0.12.0 or v0.13.0
+
+Surfaced by AGENT-035's implementer, which named the idea and did **not** file it
+so as not to prejudge it. Filing it here preserves the idea without widening
+either release. Its first acceptance criterion is a measurement that may close it
+unbuilt, which is the right first step for a mechanism whose necessity is
+uncertain.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P1 | — |
+| SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | todo | P2 | SERVER-124 |
+| CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | todo | P2 | — |
+| CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
+| UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | todo | P2 | — |
+| SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | todo | P2 | — |
+| CLI-052 | doc move's help omits .claude/ from what cannot be moved (PR #50 review 4 NIT) | todo | P3 | — |

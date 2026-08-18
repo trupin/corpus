@@ -430,8 +430,16 @@ describe("designating a resident", () => {
       threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
       rows: {
         // The `@` autocomplete's own directory read — same filter, same key.
+        // Under `.claude/agents/`, because since SERVER-125 that is what makes a
+        // row addressable, and the menu offers nothing it cannot designate
+        // (UI-123).
         "?limit=50&type=agent-def": [
-          { ...threadRowFixture({ id: "doc_agentdef" }), type: "agent-def", title: "researcher" },
+          {
+            ...threadRowFixture({ id: "doc_agentdef" }),
+            type: "agent-def",
+            title: "researcher",
+            path: ".claude/agents/researcher.md",
+          },
         ],
       },
     });
@@ -577,8 +585,9 @@ describe("designating a resident", () => {
    * §7's *"the missing profile is reported rather than silently substituted"*,
    * on the menu — through the real roster read, the real `laneRow`, and the real
    * context menu. The lane is designated `researcher` and the roster answers
-   * `docId: null`, which is what a renamed or archived agent-def looks like on
-   * the wire (CONTRACT-061).
+   * `docId: null`, which is what an agent-def renamed, deleted, or moved out of
+   * `.claude/agents/` looks like on the wire (CONTRACT-061). An **archived** one
+   * does not: it still resolves, and its lane still carries a `docId`.
    *
    * Two things are asserted together because the review found them together: the
    * release still **names** the standing designation, and the item now says why

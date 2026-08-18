@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { docRowFixture } from "../../testing/docRow.js";
 import { createCorpusTestHarness } from "../../testing/harness.js";
 import { AutocompleteMenu } from "./AutocompleteMenu.js";
-import { invocableName, rowToken, useAutocomplete } from "./useAutocomplete.js";
+import { useAutocomplete } from "./useAutocomplete.js";
 
 afterEach(cleanup);
 
@@ -87,21 +87,6 @@ function Composer({
   );
 }
 
-describe("invocableName", () => {
-  it("derives the name the server indexes, from the path", () => {
-    expect(invocableName(".claude/skills/comment/SKILL.md")).toBe("comment");
-    expect(invocableName(".claude/skills-archived/old/SKILL.md")).toBe("old");
-    expect(invocableName(".claude/agents/researcher.md")).toBe("researcher");
-    expect(invocableName("data/docs/notes/about-skills.md")).toBeNull();
-  });
-
-  it("falls back to the title for a document outside those roots", () => {
-    expect(rowToken(docRowFixture({ path: "data/docs/x.md", title: "Researcher" }))).toBe(
-      "Researcher",
-    );
-  });
-});
-
 describe("useAutocomplete", () => {
   /** SPEC.md §11: "there is no separate registry" — one endpoint, a type filter. */
   it("resolves each trigger through GET /api/docs with a type filter", async () => {
@@ -116,6 +101,70 @@ describe("useAutocomplete", () => {
     });
     expect(wire.calls.some((call) => call.search.includes("type=agent-def"))).toBe(true);
     expect(wire.calls.every((call) => !call.search.includes("registry"))).toBe(true);
+  });
+
+  /**
+   * UI-123. SERVER-125 stopped indexing an off-root `type: agent-def` as a
+   * mention target under **any** spelling, its title included, so offering it
+   * here would insert a name the server resolves to nothing — §8 answers such a
+   * mention by being inert, and this menu would be the only place in the product
+   * claiming that persona exists.
+   *
+   * The row is still in the response, because it is still a document:
+   * `GET /api/docs?type=agent-def` returns every agent-def and the board lists
+   * it. It is dropped where it becomes an *offer*, and nowhere earlier.
+   */
+  it("does not offer an agent-def the server would resolve to nothing", async () => {
+    const wire = transport({
+      "?limit=50&type=agent-def": [
+        docRowFixture({ id: "doc_r", title: "Researcher", path: ".claude/agents/researcher.md" }),
+        docRowFixture({ id: "doc_l", title: "Legacy", path: "data/docs/inbox/legacy.md" }),
+      ],
+    });
+    const { container } = render(<Host wire={wire} initial="@" />);
+    // Two: the generic `@agent`, and the one persona that resolves.
+    await waitFor(() => {
+      expect(container.querySelectorAll(".ac-item")).toHaveLength(2);
+    });
+    expect(screen.getByRole("option", { name: /researcher/i })).toBeDefined();
+    expect(screen.queryByRole("option", { name: /legacy/i })).toBeNull();
+  });
+
+  /** The same gate for `/`, because SERVER-125 gated both types alike. */
+  it("does not offer a document *about* a skill as an invocable one", async () => {
+    const wire = transport({
+      "?limit=50&type=skill": [
+        docRowFixture({ id: "doc_c", title: "Comment", path: ".claude/skills/comment/SKILL.md" }),
+        docRowFixture({
+          id: "doc_a",
+          title: "Autopilot",
+          path: "data/docs/notes/about-skills.md",
+        }),
+      ],
+    });
+    const { container } = render(<Host wire={wire} initial="/" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll(".ac-item")).toHaveLength(1);
+    });
+    expect(container.querySelector(".ac-item .k")?.textContent).toBe("comment");
+    expect(screen.queryByRole("option", { name: /autopilot/i })).toBeNull();
+  });
+
+  /**
+   * The `[[` menu is not the mention menu and must not inherit its gate: a link
+   * addresses a document by **id**, which every document has, so the very row
+   * the two menus above drop is a perfectly good link target.
+   */
+  it("still offers an unaddressable document as a [[ link", async () => {
+    const wire = transport({
+      "?limit=12&q=legacy": [
+        docRowFixture({ id: "doc_l", title: "Legacy", path: "data/docs/inbox/legacy.md" }),
+      ],
+    });
+    render(<Host wire={wire} initial="see [[legacy" />);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /Legacy/ })).toBeDefined();
+    });
   });
 
   it("offers the generic @agent, which no document backs", async () => {

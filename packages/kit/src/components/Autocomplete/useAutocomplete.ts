@@ -2,6 +2,7 @@ import type { DocRow } from "@corpus/contract";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useDocs } from "../../query/useDocs.js";
 import { handleAutocompleteKeyDown } from "./autocompleteKeys.js";
+import { rowToken } from "./invocable.js";
 import {
   applyCompletion,
   detectTrigger,
@@ -39,36 +40,16 @@ export interface AutocompleteItem {
 }
 
 /**
- * The name a `type: skill` / `type: agent-def` document is **invocable** by,
- * derived from its path exactly as the server derives it (`mentions.ts`):
- *
- *   - `.claude/skills/<name>/SKILL.md`          → `<name>`
- *   - `.claude/skills-archived/<name>/SKILL.md` → `<name>`
- *   - `.claude/agents/<name>.md`                → `<name>`
- *
- * `null` for a document outside those roots, which the server also treats as not
- * invocable — a `type: skill` note filed under `data/docs/` is a document *about*
- * a skill. Such a row still appears in the menu under its title, because the
- * server's index answers to the title too.
- */
-export function invocableName(path: string): string | null {
-  const skill = /^\.claude\/skills(?:-archived)?\/([^/]+)\//.exec(path);
-  if (skill?.[1] !== undefined) return skill[1];
-  const agent = /^\.claude\/agents\/([^/]+)\.md$/.exec(path);
-  return agent?.[1] ?? null;
-}
-
-/** The token a mention/invocation row is completed to. */
-export function rowToken(row: DocRow): string {
-  return invocableName(row.path) ?? row.title;
-}
-
-/**
  * The charset the server's token scanner accepts after a sigil
- * (`mentions.ts`'s `TOKEN`). A row whose only name is a multi-word title is
- * **not offered**: the server indexes it under that title, but nobody can type
- * it as one token, and a menu entry that inserts text the server will not parse
- * teaches a grammar that does not exist.
+ * (`mentions.ts`'s `TOKEN`). A row whose name cannot be typed as one token —
+ * `.claude/agents/my persona.md`, whose stem carries a space — is **not
+ * offered**: the server indexes it under that name, but a menu entry that
+ * inserts text the scanner will not read back teaches a grammar that does not
+ * exist.
+ *
+ * The second of two gates and the narrower one. {@link rowToken} decides whether
+ * the row can be addressed at all; this decides whether the name it is addressed
+ * by can be written after a sigil.
  */
 const TYPEABLE_TOKEN = /^[A-Za-z0-9_-]+$/;
 
@@ -94,9 +75,19 @@ function refItem(row: DocRow): AutocompleteItem {
   return { key: row.id, token: row.id, label: row.title, description: row.type };
 }
 
-function toItem(row: DocRow, kind: TriggerKind): AutocompleteItem {
+/**
+ * A row as a menu item, or `null` where it is not one.
+ *
+ * `null` for a mention/invocation row the server would resolve under no spelling
+ * at all ({@link rowToken}, SERVER-125) — a document *about* a persona is a
+ * document, and it stays listed, readable and editable; it is only not an offer.
+ * The `[[` kind never drops a row: a link addresses a document by id, which
+ * every document has.
+ */
+function toItem(row: DocRow, kind: TriggerKind): AutocompleteItem | null {
   if (kind === "ref") return refItem(row);
   const token = rowToken(row);
+  if (token === null) return null;
   return { key: row.id, token, label: token, description: describe(row) };
 }
 
@@ -196,7 +187,7 @@ export function useAutocomplete({
     if (kind === undefined) return [];
     if (kind === "ref") return links.items;
     const rows = (directory.data?.items ?? [])
-      .map((row) => toItem(row, kind))
+      .flatMap((row) => toItem(row, kind) ?? [])
       .filter((item) => TYPEABLE_TOKEN.test(item.token));
     // `@agent` is the generic request (SPEC.md §8) and no document backs it, so
     // it is offered explicitly rather than hoped for in the corpus.

@@ -310,7 +310,16 @@ describe("ComposeOverlay", () => {
   describe("the autocompletes", () => {
     it("opens the kit's menu on `@`, listing agent documents", async () => {
       const wire = composeTransport({
-        rows: [docRowFixture({ id: "doc_a", title: "Researcher", type: "agent-def" })],
+        rows: [
+          docRowFixture({
+            id: "doc_a",
+            title: "Researcher",
+            type: "agent-def",
+            // Under the agent root, because only a document there is addressable
+            // at all and therefore only one there is offered (UI-123).
+            path: ".claude/agents/researcher.md",
+          }),
+        ],
       });
       const { container } = mount(wire);
       fireEvent.change(textareaOf(container), {
@@ -342,7 +351,14 @@ describe("ComposeOverlay", () => {
 
       const withMenu = (): ComposeTransport =>
         composeTransport({
-          rows: [docRowFixture({ id: "doc_r", title: "rate", type: "agent-def" })],
+          rows: [
+            docRowFixture({
+              id: "doc_r",
+              title: "rate",
+              type: "agent-def",
+              path: ".claude/agents/rate.md",
+            }),
+          ],
         });
 
       it("menu closed · ↵ — inserts a newline and submits nothing", async () => {

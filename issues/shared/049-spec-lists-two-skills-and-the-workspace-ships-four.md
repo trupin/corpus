@@ -26,9 +26,24 @@ fable
 
 ## Spec References
 
-- SPEC.md **§7** line 129 — the shipped skill set, given as *"orchestrate,
-  comment (+ plugin skills)"*
+- SPEC.md **§4** line 129 — the shipped skill set, given as *"orchestrate,
+  comment (+ plugin skills)"*, as a comment inside `corpus init`'s directory tree
 - SPEC.md **§7** line 339 — the orchestrator skill, named explicitly
+
+**Correction, 2026-08-18.** This issue was filed citing *§7* line 129. That is
+wrong: §4 runs from line 109 to line 187, so line 129 is in **§4**, the workspace
+layout. §7 begins at line 305. Only the second reference was right.
+
+The mistake matters for the amendment, and not only for tidiness. The stale list
+is **an annotation inside a directory listing**, not a normative sentence. That
+weakens the case for repairing the list and strengthens the case for removing it:
+a tree diagram exists to show where files live, and it is a poor place to carry a
+promise about which files exist.
+
+`npm run spec:check` did not catch this, and could not. It verifies that a cited
+section **exists**, which §7 does. Nothing verifies that a citation points at the
+text it claims to quote (INFRA-029 established the first check; the second is a
+harder problem and is not filed).
 
 ## Summary
 
@@ -72,29 +87,69 @@ names.
 
 ## What the amendment must decide
 
-1. Whether §7 enumerates product skills, or describes the category and points at
-   the workspace
-2. If it enumerates: the four current names, and whose job it is to update the
-   list when a fifth ships — a rule with no owner is how this one aged
+1. Whether the spec enumerates product skills, or describes the category and
+   points at the workspace
+2. If it enumerates: the current names, and whose job it is to update the list
+   when the next one ships — a rule with no owner is how this one aged
 3. Whether `converse` and `profile` need a sentence each beyond their names, as
    `orchestrate` has at line 339
+
+**A fifth skill is already coming.** AGENT-037 installs `asd-ste100` in the same
+week (Phase 35, user directive 2026-08-18). Repairing the list to say four would
+be wrong before the amendment shipped.
+
+## The drafted text — read this back verbatim before applying
+
+Two edits, and they are one decision: **describe, do not enumerate.**
+
+**Edit 1 — §4, line 129.** Replace the comment in the directory tree:
+
+> ```
+>     skills/                 # the agent's skills, installed by `corpus init` (+ plugin skills) — indexed as documents (§7)
+> ```
+
+**Edit 2 — §7.** Insert immediately before the **Orchestrator skill** paragraph
+at line 339:
+
+> **The workspace's skills are whatever `corpus init` installs, and this document
+> does not list them.** A skill declares what it is for in its own frontmatter
+> description, exactly as a plugin's skills do (§10), and `corpus init` reports
+> what it installed. This spec names an individual skill only where a rule
+> depends on **that** skill — the orchestrator skill below is such a rule, and the
+> agent's register (§8) is another. Every list of skills this document has carried
+> has gone stale, and a list that is wrong teaches a reader less than no list at
+> all. _(Rider signed 2026-08-\_\_.)_
+
+### How each question is answered, and what was rejected
+
+| Question | Answer | Rejected, and why it lost |
+| --- | --- | --- |
+| 1. Enumerate or describe? | **Describe** | Enumerating is what created this issue. §11 already describes rather than lists for plugin skills, so describing is the established pattern rather than a new one |
+| 2. Who maintains the list? | **Nobody — there is no list** | "Name an owner" was the obvious repair. It lost because the rule that aged had an implicit owner too. A rule needing a person to remember it is the failure, not the fix |
+| 3. Sentences for `converse` and `profile`? | **No** | They earn no mention, because no rule in the spec depends on either in particular. `orchestrate` and `asd-ste100` do, and both keep theirs |
+
+**What this costs.** A reader of SPEC.md alone no longer learns which skills they
+get. That is a real loss, and it is accepted: the authoritative answer is
+`corpus init`'s own output and the skills' frontmatter, and those cannot go stale
+because they are the thing itself.
 
 ## Acceptance Criteria
 
 - [ ] The user has signed the drafted text
-- [ ] SPEC.md §7 no longer states a skill set that disagrees with what
-      `corpus init` installs
-- [ ] If the enumeration is kept, something checks it — a stale list that nothing
-      verifies will age again, and `scripts/workspace-template.test.ts` already
-      knows the installed set
-- [ ] No other §7 sentence is edited to agree with it
+- [ ] SPEC.md no longer states a skill set that disagrees with what `corpus init`
+      installs
+- [ ] **A check exists either way.** Dropping the list is not enough on its own:
+      nothing stops the next author writing a new one. The pin below holds
+      whichever way the amendment goes
+- [ ] No other §4 or §7 sentence is edited to agree with it
+- [ ] `npm run spec:check` passes
 
 ## Technical Design
 
 ### Files to Create/Modify
 
-- `SPEC.md` — §7
-- `scripts/workspace-template.test.ts` — the check, if the enumeration is kept
+- `SPEC.md` — §4 line 129 and §7 line 339
+- `scripts/workspace-template.test.ts` — the pin
 
 ### Key Implementation Details
 
@@ -102,11 +157,37 @@ Draft the text, read it back to the user verbatim, and apply only what is signed
 Quote rather than paraphrase — paraphrase is how §9.2 and §4 came to disagree
 (SHARED-045).
 
+**The pin has to survive the amendment it is testing.** A pin asserting "SPEC
+lists exactly these four skills" would have to be deleted by this issue and gives
+nothing afterwards. Assert the invariant instead:
+
+> Every skill directory name that appears in SPEC.md exists in
+> `assets/workspace/claude/skills/`.
+
+The pin fires on one condition only: a skill name in SPEC.md that is **not**
+installed. No such name exists today, so the pin passes against both the old text
+and the new one. It is not a test of this amendment.
+
+Its value is forward-looking, and it holds under either decision:
+
+- If the list is dropped, the pin stops a future author reintroducing a name that
+  does not exist.
+- If a list is ever kept, the pin makes it self-checking.
+- When a skill is renamed or removed, the pin goes red in SPEC.md, which is
+  exactly where a reader would otherwise never find out.
+
+It does **not** catch the reverse case — an installed skill SPEC does not
+mention — and that is deliberate, because after this amendment that is the normal
+state of every skill.
+
 ## Testing Strategy
 
-If the enumeration is kept: a pin asserting §7's list equals the skill
-directories under `assets/workspace/claude/skills/`. That is the whole value of
-keeping it.
+The pin above, in `scripts/workspace-template.test.ts`, which already reads the
+installed set.
+
+Falsify it by adding a fictional skill name to a copy of the SPEC text under test
+and confirming the pin alone goes red. A pin that passes against a SPEC naming a
+skill that does not exist is testing nothing.
 
 ## E2E Verification Plan
 

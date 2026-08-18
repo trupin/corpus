@@ -12,10 +12,13 @@ import type { Resident } from "@corpus/contract";
  *   exist in the workspace first.
  * - `{name, docId}` — a **profiled resident**: an `agent-def` document a reader
  *   can open to see what the agent is.
- * - `{name, docId: null}` — a profiled resident whose **profile is missing**,
- *   renamed or archived since. The designation stands and the resident goes on
- *   owning its scope; §7 requires the miss be *reported* rather than silently
- *   substituted, and this is that report.
+ * - `{name, docId: null}` — a profiled resident whose **profile is missing**:
+ *   renamed, deleted, or moved out of `.claude/agents/` since. The designation
+ *   stands and the resident goes on owning its scope; §7 requires the miss be
+ *   *reported* rather than silently substituted, and this is that report.
+ *   **Archiving is not one of the ways in** — an archived `agent-def` still under
+ *   that root resolves exactly as before, and is still designatable, so it prints
+ *   as the second state, with its id.
  *
  * **The rule is the contract's; the word is this CLI's, and deliberately.**
  * `schemas/agents.ts` states the binding part — a caller must never substitute a

@@ -3,8 +3,8 @@ import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Two constraints that are enforced rather than asserted, because both fail
- * silently in production and neither is visible to the type system.
+ * Three constraints that are enforced rather than asserted, because each fails
+ * silently in production and none is visible to the type system.
  *
  * **The server is the sole writer** (CLAUDE.md Architecture Decision 2). A CLI
  * verb that touched a document file, or ran a state-changing git command, would
@@ -35,8 +35,26 @@ import { describe, expect, it } from "vitest";
  * That rule is absolute and has no per-file exemptions: an exemption list is how
  * the next module talks its way onto the exception.
  *
- * Both scans read the modules as source, with comments and string literals
- * stripped, so prose about "rename" or about stdin is not a violation.
+ * **Every heredoc this CLI demonstrates terminates with `CORPUS_EOF`.** The
+ * bodies the agent sends are text it is carrying on someone else's behalf — a
+ * pasted shell transcript above all — and a carried line reading `EOF` ends an
+ * `<<'EOF'` heredoc early, so the shell runs the remainder of the message as
+ * commands and the document silently loses the rest. Measured, not theorised: a
+ * planted `touch /tmp/pwned.txt` executed, exit 0, three lines dropped. The
+ * defence is a terminator chosen once rather than weighed per message, because
+ * weighing it per message is inspection, and inspection is the check this
+ * construction exists to replace. The CLI's own help is where an agent looks
+ * when it is stuck, so it may not demonstrate the word the workspace skills
+ * forbid (`assets/workspace/`, PR #50). What is forbidden is the
+ * **demonstration** — an opener with any other delimiter, or a closing line
+ * that is the bare word — not the mention: the hint `requireBody` raises names
+ * `EOF` in order to rule it out, and a check that could not tell the two apart
+ * would forbid stating the rule.
+ *
+ * The first two scans read the modules as source, with comments and string
+ * literals stripped, so prose about "rename" or about stdin is not a violation;
+ * the third reads the source whole, because a heredoc only ever appears inside
+ * a string literal or a doc comment.
  */
 
 /** Topics whose verbs are pure API clients: they may not touch the filesystem at all. */
@@ -143,6 +161,63 @@ function processViolations(modules: readonly Module[]): readonly string[] {
 /** Modules naming git in code rather than in prose — none may, whatever the subcommand. */
 function gitViolations(modules: readonly Module[]): readonly string[] {
   return modules.filter((module) => /\bgit\b/.test(module.code)).map((module) => module.path);
+}
+
+const SAFE_TERMINATOR = "CORPUS_EOF";
+
+/**
+ * A shell heredoc opener and its delimiter: `<<X`, `<<'X'`, `<<"X"`, `<<-X`, in
+ * **any** case.
+ *
+ * The bare alternative used to be `[A-Z_][A-Z0-9_]*`, so that a left shift by a
+ * lowercase identifier could not be read as an opener — and the same sentence
+ * then observed that this CLI shifts no bits at all, which is the argument for
+ * not needing the restriction rather than for keeping it. It cost a real case
+ * (PR #50 review 3, NIT 7): `<<eof … eof` is a heredoc the shell honours exactly
+ * as it honours `<<EOF … EOF`, carried text containing a line reading `eof`
+ * truncates it exactly the same way, and both halves of this rule were blind to
+ * it. {@link TERMINATOR_LINE} is matched case-insensitively for the same reason.
+ *
+ * Only the exact `CORPUS_EOF` is safe, so a lowercase `corpus_eof` is a
+ * violation too — a shell delimiter is case-sensitive, and half of why the safe
+ * word is safe is that it is spelled the one way everything else in this CLI
+ * spells it.
+ */
+const HEREDOC_OPENER = /<<-?\s*(?:'([A-Za-z_]\w*)'|"([A-Za-z_]\w*)"|([A-Za-z_]\w*))/g;
+
+/**
+ * A line that is nothing but the closing terminator, once the TypeScript around
+ * it is stripped: `EOF`, `"EOF"`, `"EOF",`, `EOF" +`, `eof`. This is the half
+ * that catches a demonstration opened safely and closed with the forgeable word.
+ */
+const TERMINATOR_LINE = /^[\s"'`+,;)\]}]*EOF[\s"'`+,;)\]}]*$/i;
+
+/**
+ * `<path>:<line> <what>` for every heredoc demonstrated with a terminator other
+ * than `CORPUS_EOF`.
+ *
+ * The source is read with the literal two-character `\n` escape turned into a
+ * real newline first, because an example's terminator sits mid-string-literal —
+ * `"… <<'CORPUS_EOF'\nbody\nCORPUS_EOF"` is one source line holding three.
+ *
+ * Naming the word in prose is deliberately **not** a violation: the hint
+ * `requireBody` raises says "never `EOF`", and a rule that could not tell a
+ * demonstration from a warning about one would forbid stating the rule.
+ */
+function heredocViolations(modules: readonly Module[]): readonly string[] {
+  return modules.flatMap((module) =>
+    module.source
+      .replaceAll("\\n", "\n")
+      .split("\n")
+      .flatMap((line, index) => {
+        const where = `${module.path}:${index + 1}`;
+        const openers = [...line.matchAll(HEREDOC_OPENER)]
+          .map(([, quoted, doubleQuoted, bare]) => quoted ?? doubleQuoted ?? bare)
+          .filter((delimiter) => delimiter !== SAFE_TERMINATOR)
+          .map((delimiter) => `${where} opens a heredoc with ${delimiter}`);
+        return TERMINATOR_LINE.test(line) ? [...openers, `${where} closes one with EOF`] : openers;
+      }),
+  );
 }
 
 function stdinViolations(modules: readonly Module[]): readonly string[] {
@@ -371,5 +446,70 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "/** Never reads process.stdin. */\nexport const note = 'process.stdin is off limits';\n",
     );
     expect(stdinViolations([documented])).toEqual([]);
+  });
+});
+
+describe("every heredoc the CLI demonstrates terminates with CORPUS_EOF", () => {
+  it("finds none anywhere in the CLI's source", async () => {
+    // Whole-source, not commands-only: the hint `requireBody` raises on an
+    // empty body lives in `src/input.ts`, and that is the one an agent reads at
+    // the moment it is stuck with no body to send.
+    expect(heredocViolations(await modulesUnder(sourceRoot))).toEqual([]);
+  });
+
+  it("catches a help example, both halves of it, and names the line", () => {
+    const example = fabricate(
+      "doc/rogue.ts",
+      "export const examples = [\n" +
+        "  { command: \"corpus doc create --from agent <<'EOF'\\nbody\\nEOF\" },\n" +
+        "];\n",
+    );
+    expect(heredocViolations([example])).toEqual([
+      "doc/rogue.ts:2 opens a heredoc with EOF",
+      "doc/rogue.ts:4 closes one with EOF",
+    ]);
+  });
+
+  it("catches an unquoted opener, a terminator split across a concatenation, and an invention", () => {
+    const unquoted = fabricate("thread/rogue.ts", "/** Pipe it in: `… <<EOF … EOF`. */\n");
+    expect(heredocViolations([unquoted])).toEqual(["thread/rogue.ts:1 opens a heredoc with EOF"]);
+
+    // How the last site of this fix hid: the opener was rewritten, the closing
+    // terminator sat on its own source line as a separate string literal.
+    const split = fabricate(
+      "doc/split.ts",
+      "const command =\n  \"corpus doc patch <id> --stdin <<'CORPUS_EOF'\\n\" +\n  '{}\\n' +\n  \"EOF\";\n",
+    );
+    expect(heredocViolations([split])).toEqual(["doc/split.ts:6 closes one with EOF"]);
+
+    const invented = fabricate("doc/invented.ts", "const c = \"corpus doc create <<'BODY'\";\n");
+    expect(heredocViolations([invented])).toEqual(["doc/invented.ts:1 opens a heredoc with BODY"]);
+  });
+
+  // The case the rule used to walk straight past: the shell does not care, so
+  // neither half of this may (PR #50 review 3, NIT 7).
+  it("catches a lowercase delimiter, in both halves", () => {
+    const lower = fabricate("doc/lower.ts", 'const c = "corpus doc create <<eof\\nbody\\neof";\n');
+    expect(heredocViolations([lower])).toEqual([
+      "doc/lower.ts:1 opens a heredoc with eof",
+      "doc/lower.ts:3 closes one with EOF",
+    ]);
+
+    const mixed = fabricate("doc/mixed.ts", "const c = \"corpus doc create <<'Eof'\";\n");
+    expect(heredocViolations([mixed])).toEqual(["doc/mixed.ts:1 opens a heredoc with Eof"]);
+  });
+
+  it("does not mistake the safe terminator, or a warning about the unsafe one, for a demonstration", () => {
+    const safe = fabricate(
+      "doc/safe.ts",
+      "export const example = \"corpus doc create --from agent <<'CORPUS_EOF'\\nbody\\nCORPUS_EOF\";\n",
+    );
+    expect(heredocViolations([safe])).toEqual([]);
+
+    const warning = fabricate(
+      "doc/warning.ts",
+      'const hint = "Always `CORPUS_EOF`, never `EOF`: carried text can contain a line reading `EOF`.";\n',
+    );
+    expect(heredocViolations([warning])).toEqual([]);
   });
 });

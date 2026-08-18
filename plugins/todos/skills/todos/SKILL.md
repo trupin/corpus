@@ -93,10 +93,10 @@ Reply in the thread that woke you, naming the list by `[[id]]` and saying what
 changed:
 
 ```
-corpus thread reply <threadId> --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply <threadId> --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Added “Renew passport” to [[doc_a1b2c3]] — 3 open, 1 done.
 ↳ added one item to the Week of Jul 20 list
-EOF
+CORPUS_EOF
 ```
 
 `--model` names what actually ran — the model you are running as, as your own

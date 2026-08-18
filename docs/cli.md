@@ -117,7 +117,7 @@ Who is running: every lane, its resident, and whether anybody is listening.
 
 Reads `GET /api/agents` and prints one row per **lane** of the queue (SPEC.md §7): the orchestrator's, plus one for every standalone thread that has been given a resident. Each row names the lane and the conversation it is, who is resident on it, whether a listener is parked on it right now and since when, and the server's one-line account of what it is doing. The `orchestrator` row is always there — it exists before anything is designated and survives the last release.
 
-**The resident cell tells three states apart**, because they are three different facts about a conversation: `a general resident` is an agent with no profile document — the ordinary designation, which needs nothing to exist in the workspace first; `researcher (doc_r1)` is a profile a reader can open; and `researcher (profile missing)` is a designation whose profile has been renamed or archived since, which changes nothing about who owns the lane and is reported rather than silently substituted.
+**The resident cell tells three states apart**, because they are three different facts about a conversation: `a general resident` is an agent with no profile document — the ordinary designation, which needs nothing to exist in the workspace first; `researcher (doc_r1)` is a profile a reader can open; and `researcher (profile missing)` is a designation whose profile has since been renamed, deleted, or moved out of `.claude/agents/`, which changes nothing about who owns the lane and is reported rather than silently substituted. **Archiving is not one of those**: an archived `agent-def` still under that root resolves exactly as before, and is still designatable, so the cell keeps printing its id.
 
 **Presence is the parked request and nothing else.** A lane is live exactly while somebody holds a parked `corpus queue idle --thread <id>`: there is no heartbeat to send, no registration to keep fresh and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. That is why this verb only **reads** — nothing anywhere in this CLI announces an agent, and starting a listener is how one becomes visible here.
 
@@ -470,6 +470,8 @@ Validate documents against the SPEC.md §14 rules; exit 6 on errors.
 
 Runs the corpus validator through `POST /api/check` — the **same** implementation every server mutation runs before writing, which is what §14 requires — and turns its verdict into an exit code: **6** when anything failed, **0** when nothing did. Warnings are printed and never fail: an orphaned anchor and a `[[ref]]` whose target does not exist yet are normal states of a living corpus (§14), and a hook that blocked on them would be switched off. Findings print one per line as `severity code path: detail`, and `--json` emits the server's report — `{ok, errors, warnings}` — unchanged, with the exit code unaffected.
 
+**Exit 6 is possible on a file the server will still happily save, and the two are not in disagreement.** One validator produces the findings; what the _save_ path then does with one is a separate decision, and it lets two families through — logging them instead of refusing the write. The first is `unterminated-fence`. The second is any `frontmatter-invalid` on a file under `.claude/agents/`, `.claude/skills/` or `.claude/skills-archived/`, the roots where a hand writes frontmatter this system never authored: a `status: banana` or a `tags: seven` typed into a profile or a `SKILL.md` is an **error** here and a `200` from `corpus doc edit`, because refusing it would leave a file whose only fault is bytes it already carries uneditable, unarchivable and beyond every bulk act, with no repair the board can express. So a pre-commit hook running this verb can newly fail on a hand-authored `.claude/agents/*.md` that no save has ever complained about. The finding's `detail` names the field, and the repair is `corpus doc edit <id>`: `--status open` for a bad status, `--add-tag` to rewrite a `tags` that is not a list, `--extra description=…` for a Claude Code field a profile is missing. **Repair it where it is — do not move it out.** A document under these roots cannot be moved (`this document's location is fixed`), and moving one by hand re-mints the id where the file carries no `id:` of its own — which is the hand-authored case above — breaking every `[[ref]]`, anchor and thread that points at it. A file that is only _about_ a persona belongs under `data/docs/` from the moment it is written. **The reverse never holds**: nothing this verb passes over is refused by a save.
+
 With ids, exactly those documents are read from the workspace and checked. With no ids, the whole workspace is enumerated first (archived documents included, so `.claude/skills-archived/` is covered) and checked in one request. With `--staged`, the content comes from git's **index** rather than from disk — the pre-commit form — and only staged paths under the document roots are sent; nothing in git is changed and nothing is written anywhere. Combining `--staged` with ids is a usage error (exit 2): they answer different questions and silently dropping one would leave the caller guessing.
 
 One rule this verb cannot report by id: `duplicate-id` needs two files claiming one id, and an id resolves to a single document, so neither the id form nor the whole-workspace form can surface it. `corpus db doctor` is that surface.
@@ -520,7 +522,7 @@ corpus doc check --json
 
 Create a document.
 
-A type and a title are the whole requirement (SPEC.md §11's zero-form creation); everything else the server fills in, including the id, which is immutable thereafter. The body comes from `-m`, from `--file`, or from stdin — the heredoc form the agent's skills use — and omitting all three is legal: the server pre-fills from the type's `template` document when one exists. Bytes are passed through untouched; there is no markdown processing in the CLI. An omitted `--folder` files the document in the root its `--type` declares: `data/docs/inbox/` for every ordinary type (creation is inbox-first), and `.claude/agents/` for `--type agent-def`, which SPEC.md §7 gives its own document root — so a persona takes no extra flag. **An explicit `--folder` wins over that default**, which is what keeps a document _about_ a persona expressible: `--type agent-def --folder inbox` still files under `data/docs/`. A root of its own may also be named outright, by its exact declared path (`--folder .claude/agents`) and never a folder beneath it; a root named that way must hold the type asked for, so `--type note --folder .claude/agents` is a `400` rather than a note the corpus would index as a persona. **`--type thread` is placed by neither rule**: a thread is flat at `data/threads/<id>.md`, named by its id (SPEC.md §4), so an omitted `--folder` is not the inbox and an explicit one is still checked but never changes where it lands — and a thread is normally created by `corpus thread create`. `--type skill` is the one type whose own root is out of reach here: `.claude/skills` indexes `SKILL.md` files alone, as does the archived root beside it, so naming either as a `--folder` is a `400` and a skill created with no `--folder` lands in the inbox like anything else — `corpus skill create` owns genesis at `<name>/SKILL.md`, while `--type skill --folder finance` files an ordinary document in `data/docs/finance/`. A folder the server rejects is reported verbatim rather than pre-validated here. `--pinned`, `--order`, `--query` and `--column` write the SPEC.md §11 **view keys** at creation, so `--type view --pinned true` is a board column in one command — the board picks it up over SSE with no reload. A column the board's own “＋ New list” would have written also carries `--folder views --evergreen true`, which is what the seed columns look like and what keeps a column out of the staleness ramp (SPEC.md §5); the flags are explicit rather than implied by `--type view`, because this verb defaults nothing per type. Prints the new id and path; `--json` emits the server's `{doc, warnings}` response unchanged.
+A type and a title are the whole requirement (SPEC.md §11's zero-form creation); everything else the server fills in, including the id, which is immutable thereafter. The body comes from `-m`, from `--file`, or from stdin — the heredoc form the agent's skills use — and omitting all three is legal: the server pre-fills from the type's `template` document when one exists. Bytes are passed through untouched; there is no markdown processing in the CLI. An omitted `--folder` files the document in the root its `--type` declares: `data/docs/inbox/` for every ordinary type (creation is inbox-first), and `.claude/agents/` for `--type agent-def`, which SPEC.md §7 gives its own document root — so a persona takes no extra flag. **An explicit `--folder` wins over that default**, which is what keeps a document _about_ a persona expressible: `--type agent-def --folder inbox` still files under `data/docs/`. **What that costs is addressability, and it costs all of it**: a persona is loaded and resolved from `.claude/agents/` alone, so an `agent-def` written anywhere else answers to neither `@<name>` nor `corpus thread designate --agent`, under its filename stem or its title alike — it is a note about a persona rather than one. A root of its own may also be named outright, by its exact declared path (`--folder .claude/agents`) and never a folder beneath it; a root named that way must hold the type asked for, so `--type note --folder .claude/agents` is a `400` rather than a note the corpus would index as a persona. **`--type thread` is placed by neither rule**: a thread is flat at `data/threads/<id>.md`, named by its id (SPEC.md §4), so an omitted `--folder` is not the inbox and an explicit one is still checked but never changes where it lands — and a thread is normally created by `corpus thread create`. `--type skill` is the one type whose own root is out of reach here: `.claude/skills` indexes `SKILL.md` files alone, as does the archived root beside it, so naming either as a `--folder` is a `400` and a skill created with no `--folder` lands in the inbox like anything else — `corpus skill create` owns genesis at `<name>/SKILL.md`, while `--type skill --folder finance` files an ordinary document in `data/docs/finance/`. A folder the server rejects is reported verbatim rather than pre-validated here. `--pinned`, `--order`, `--query` and `--column` write the SPEC.md §11 **view keys** at creation, so `--type view --pinned true` is a board column in one command — the board picks it up over SSE with no reload. A column the board's own “＋ New list” would have written also carries `--folder views --evergreen true`, which is what the seed columns look like and what keeps a column out of the staleness ramp (SPEC.md §5); the flags are explicit rather than implied by `--type view`, because this verb defaults nothing per type. Prints the new id and path; `--json` emits the server's `{doc, warnings}` response unchanged.
 
 ```
 corpus doc create [flags]
@@ -555,17 +557,17 @@ corpus doc create --type note --title "Mortgage options" --folder finance
 A persona, in one command: no `--folder`, because `agent-def` has its own document root — one copy of the file, read by Claude Code and by Corpus, with no sync (SPEC.md §7). It lands at `.claude/agents/analyst.md`, `@analyst` resolves to it in the very next comment (SPEC.md §8), and Claude Code lists it as a subagent, because the server writes both discovery keys with the document: `name`, derived from the filename, and `description`, defaulted to the title (SERVER-123). That default is thin on purpose — `corpus doc edit <id> --extra description=…` is how it comes to say _when_ to reach for this one.
 
 ```
-corpus doc create --type agent-def --title "Analyst" --from agent <<'EOF'
+corpus doc create --type agent-def --title "Analyst" --from agent <<'CORPUS_EOF'
 You read the corpus and answer with evidence.
-EOF
+CORPUS_EOF
 ```
 
 The agent's form: body from a heredoc, tagged, and committed with `agent` as the git author.
 
 ```
-corpus doc create --type note --title "Mortgage options" --tags finance,housing --from agent <<'EOF'
+corpus doc create --type note --title "Mortgage options" --tags finance,housing --from agent <<'CORPUS_EOF'
 30-year fixed at 6.1%.
-EOF
+CORPUS_EOF
 ```
 
 SPEC.md §11's “pin me a view of unresolved finance threads”, in one command: the view document lands in `data/docs/views/`, the board grows a fourth column live over SSE, and `git log` records the agent as its author.
@@ -751,9 +753,9 @@ The whole loop: read the document — which is both how you see what you are rev
 
 ```
 corpus doc show doc_a1b2c3
-corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'EOF'
+corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'CORPUS_EOF'
 The revised body.
-EOF
+CORPUS_EOF
 ```
 
 A frontmatter-only edit: the title changes, the body is not touched, and no key is needed — a title names its own delta.
@@ -1006,9 +1008,9 @@ corpus doc patch doc_a1b2c3 --from agent --old 'the Rate Sheet' --new 'the rate 
 The whole request as JSON on stdin, for text whose quotes and backticks would fight the shell. It carries `all` itself, so it takes no other patch flag.
 
 ```
-corpus doc patch doc_a1b2c3 --from agent --stdin <<'EOF'
+corpus doc patch doc_a1b2c3 --from agent --stdin <<'CORPUS_EOF'
 {"old": "It's the lender's `rate` figure.\n", "new": "It is the lender's published rate.\n"}
-EOF
+CORPUS_EOF
 ```
 
 Two files, read byte for byte: no shell quoting and no JSON escaping anywhere. Each file's trailing newline is part of its text.
@@ -1873,11 +1875,11 @@ corpus skill create <name> [flags]
 The agent's genesis form (SPEC.md §7): instructions from a heredoc, committed with `agent` as the git author.
 
 ```
-corpus skill create weekly-review --description "Run the weekly review over the corpus." --from agent <<'EOF'
+corpus skill create weekly-review --description "Run the weekly review over the corpus." --from agent <<'CORPUS_EOF'
 # Weekly review
 
 Survey `corpus doc list --needs me` and file what has drifted.
-EOF
+CORPUS_EOF
 ```
 
 No body: the server pre-fills from the workspace's `skill` template when it has one, and leaves the body empty otherwise.
@@ -1978,9 +1980,9 @@ corpus thread create --parent doc_a1b2c3 --quote "assume a 30-year fixed at 6.1%
 A whole-document thread from the agent, body as a heredoc, committed with `agent` as the git author and recording the model that wrote the first turn (SPEC.md §11).
 
 ```
-corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'EOF'
+corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'
 I split this into two notes; the second needs a title.
-EOF
+CORPUS_EOF
 ```
 
 A quote that appears more than once, disambiguated with the text around the occurrence meant. Without the framing this exact create is refused, not warned about. Body from stdin.
@@ -2009,7 +2011,7 @@ Gives a **standalone** thread a resident: a long-lived agent that owns that conv
 
 **`--agent` is optional, and which you want is a one-line question**: leave it out when the workspace's ordinary agent should own the conversation, and name a profile when it should be owned by an agent that behaves differently from the default. Designating without it gives the thread a _general resident_ — an agent with no profile document — which needs nothing to exist in the workspace first, so a workspace with no `agent-def` documents can designate on its first day. Everything else is identical either way: the lane, the scope, presence, the lapse fallback, and release.
 
-**`--agent` names the agent, not a document.** It is the same name `@<subagent>` mentions resolve — a `type: agent-def` document's own name or its title, matched case-insensitively — and the printed line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the lookup. A name that resolves to no agent-def here is the server's `404`: a typo is refused rather than quietly downgraded to a general resident. A **blank** name (`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is a mistake, while asking for no profile is a decision, and the two must not look alike. Where a profile is renamed or archived after designation the residency stands, and the printed line reports `name (profile missing)` rather than substituting anything for it.
+**`--agent` names the agent, not a document.** It is the same name `@<subagent>` mentions resolve — for a `type: agent-def` document **under `.claude/agents/`**, either its filename stem or its title, matched case-insensitively, and the two routinely differ, since a persona created with a title of `Legacy Analyst` is written to `legacy-analyst.md` — and the printed line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the lookup. **An `agent-def` filed outside that root answers to neither spelling** (the `--type agent-def --folder inbox` form of `corpus doc create`): it is a document _about_ a persona, nothing loads it as a subagent, and naming it here is a `404`. Where an off-root `agent-def` is titled the name given, that `404` names its path, because moving the file into `.claude/agents/` is what makes it designatable; off root there is no filename stem to answer to, so `--agent legacy-analyst` for a document titled `Legacy Analyst` in the inbox is the bare refusal — try its title to be told where it is. A name that resolves to no agent-def here is likewise the server's `404`: a typo is refused rather than quietly downgraded to a general resident. A **blank** name (`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is a mistake, while asking for no profile is a decision, and the two must not look alike. Where a profile has since been renamed, deleted, or moved out of `.claude/agents/`, the residency stands, and the printed line reports `name (profile missing)` rather than substituting anything for it. **Archiving is not one of those**: an archived `agent-def` still under that root resolves exactly as before, and is still designatable, so the line keeps printing its id.
 
 **Single-valued, so designating again replaces**, and **a repeat is not a no-op**: even when the thread already has this exact resident and no file is written, the designation is announced again — which is how a person asks for a listener that is no longer running to be launched. The announcement goes to the **orchestrator's** lane whoever is designated, since a resident does not announce itself to itself.
 
@@ -2027,9 +2029,9 @@ corpus thread designate <id> [flags]
 
 **Flags**
 
-| Flag             | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                                        |
-| ---------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--agent <name>` | string | —       | The **profile** to make resident, by the name `@<subagent>` mentions use — an `agent-def` document's own name or its title, case-insensitively. Not a document id. **Optional**: omit it when the workspace's ordinary agent should own this conversation, and name a profile when it wants an agent that behaves differently from the default. A blank name is a usage error rather than absence. |
+| Flag             | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--agent <name>` | string | —       | The **profile** to make resident, by the name `@<subagent>` mentions use — for an `agent-def` document **under `.claude/agents/`**, its filename stem or its title, case-insensitively. Not a document id, and not an `agent-def` filed anywhere else: one under `data/docs/` is a document _about_ a persona, answers to neither spelling, and is a `404` here — one that names the file's path when the name given is that document's **title**, and a bare refusal when it is the filename stem, which off root is nobody's alias. **Optional**: omit it when the workspace's ordinary agent should own this conversation, and name a profile when it wants an agent that behaves differently from the default. A blank name is a usage error rather than absence. |
 
 **Examples**
 
@@ -2045,7 +2047,7 @@ The same, owned by the researcher's profile — prints the `agent-def` document 
 corpus thread designate th_4b8e2c --agent researcher
 ```
 
-One JSON value — `{"thread":{…,"resident":{"name":null,"docId":null}},"warnings":[]}` — the thread as it now stands. Both fields null is a general resident; `name` set with `docId` null is a profile that has been renamed or archived since; the whole `resident` null is a thread that has none.
+One JSON value — `{"thread":{…,"resident":{"name":null,"docId":null}},"warnings":[]}` — the thread as it now stands. Both fields null is a general resident; `name` set with `docId` null is a profile that has since been renamed, deleted, or moved out of `.claude/agents/` — never one merely archived, which still resolves to its id; the whole `resident` null is a thread that has none.
 
 ```
 corpus thread designate th_4b8e2c --json
@@ -2153,9 +2155,9 @@ corpus thread reply <id> [flags]
 The agent's form: a heredoc reply, authored by the agent, stating the model that wrote it (SPEC.md §7, §11).
 
 ```
-corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'EOF'
+corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'
 I filed the note under finance/.
-EOF
+CORPUS_EOF
 ```
 
 A short reply from the user, inline.
@@ -2208,7 +2210,7 @@ corpus thread resolve th_a1b2c3 --from agent --json
 
 Read a conversation: its status, its anchoring, and every turn.
 
-Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. A designated thread also prints a `resident` line naming the agent that owns the conversation, with the `agent-def` document that defines it where it has one — a resident designated with no profile prints as `a general resident`, and one whose profile has been renamed or archived since prints `name (profile missing)`. An undesignated thread prints no such line, because having nobody resident is the ordinary state rather than a value. That line reports the **designation** and says nothing about whether the agent is currently running — presence is one lane's row in `corpus agents`, and the two are separate reads that may honestly disagree for a moment. **No read-state is reported**: the endpoint carries none, and the only endpoint that does is a mutation — reading a thread must not clear its unread badge. A thread id that names nothing is the server's `404`, which is exit 5.
+Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. A designated thread also prints a `resident` line naming the agent that owns the conversation, with the `agent-def` document that defines it where it has one — a resident designated with no profile prints as `a general resident`, and one whose profile has since been renamed, deleted, or moved out of `.claude/agents/` prints `name (profile missing)`. **Archiving is not one of those**: an archived `agent-def` still under that root resolves exactly as before, and is still designatable, so the line keeps printing its id. An undesignated thread prints no such line, because having nobody resident is the ordinary state rather than a value. That line reports the **designation** and says nothing about whether the agent is currently running — presence is one lane's row in `corpus agents`, and the two are separate reads that may honestly disagree for a moment. **No read-state is reported**: the endpoint carries none, and the only endpoint that does is a mutation — reading a thread must not clear its unread badge. A thread id that names nothing is the server's `404`, which is exit 5.
 
 ```
 corpus thread show <id> [flags]

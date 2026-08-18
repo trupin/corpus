@@ -270,8 +270,8 @@ async function readStdinRequest(
   if (!(dependencies.stdinIsBodySource ?? stdinCarriesABody())) {
     throw new UsageError("--stdin was given but nothing is piped in.", {
       hint:
-        "Send the request as a heredoc: `corpus doc patch <id> --stdin <<'EOF'`, then the JSON, " +
-        "then `EOF`. Nothing was sent to the server.",
+        "Send the request as a heredoc: `corpus doc patch <id> --stdin <<'CORPUS_EOF'`, then the JSON, " +
+        "then `CORPUS_EOF`. Nothing was sent to the server.",
     });
   }
 
@@ -524,9 +524,9 @@ export const patchCommand: WorkspaceCommandSpec = {
     },
     {
       command:
-        "corpus doc patch doc_a1b2c3 --from agent --stdin <<'EOF'\n" +
+        "corpus doc patch doc_a1b2c3 --from agent --stdin <<'CORPUS_EOF'\n" +
         '{"old": "It\'s the lender\'s `rate` figure.\\n", "new": "It is the lender\'s published rate.\\n"}\n' +
-        "EOF",
+        "CORPUS_EOF",
       description:
         "The whole request as JSON on stdin, for text whose quotes and backticks would fight the shell. It carries `all` itself, so it takes no other patch flag.",
     },

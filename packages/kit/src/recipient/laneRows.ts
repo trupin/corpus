@@ -48,11 +48,13 @@ export type LaneLiveness = "live" | "lapsed" | "waiting" | "unknown";
  *   an agent working the conversation as the workspace's ordinary agent does.
  * - `profiled` — designated with a profile that still resolves to an `agent-def`
  *   document.
- * - `profile-gone` — designated with a profile that has since been renamed or
- *   archived. §7 keeps the designation and requires the miss be *reported*
- *   rather than silently substituted, which is what {@link MISSING_PROFILE_NOTE}
- *   is for. Not the same state as `general`: one is ordinary and one is worth
- *   mentioning.
+ * - `profile-gone` — designated with a profile that has since been renamed,
+ *   deleted, or moved out of `.claude/agents/`. §7 keeps the designation and
+ *   requires the miss be *reported* rather than silently substituted, which is
+ *   what {@link MISSING_PROFILE_NOTE} is for. Not the same state as `general`:
+ *   one is ordinary and one is worth mentioning. **Archiving the profile does
+ *   not produce this kind** — an archived agent-def still resolves, so its lane
+ *   is `profiled` — see {@link MISSING_PROFILE_CAUSES}.
  * - `unknown` — the roster has no row to read, or carries a designated lane with
  *   no resident on it at all. Says nothing either way, UI-098's rule at this
  *   grain.
@@ -144,14 +146,60 @@ export const UNNAMED_RESIDENT_LABEL = "this conversation";
 export const GENERAL_RESIDENT_LABEL = "resident, no profile";
 
 /**
+ * **Every act that can empty `Resident.docId` on a lane that named a profile**,
+ * in the words a person reads — and the *only* source of those words, because
+ * {@link MISSING_PROFILE_NOTE} is composed from this list rather than written
+ * beside it.
+ *
+ * The three are `AgentNameSchema`/`ResidentSchema`'s (`@corpus/contract`), whose
+ * `docId` description is where this rule is canonical. `docId` re-resolves the
+ * stored name on every read (`currentResident`, `apps/server/src/threads/read.ts`)
+ * through `resolveMentionTarget`, so it empties exactly when the name stops
+ * resolving: the file is gone, its stem changed, or it left `.claude/agents/` —
+ * the root a persona has to be under to be addressable at all (SERVER-125).
+ *
+ * **Archiving is not one of them, and that is stated here rather than left out.**
+ * An archived `agent-def` is still under the root and still resolves: `targetRows`
+ * selects on `type` with no status filter, `targetIndex` skips a row on the
+ * off-root gate alone, and archiving cannot move an agent-def — `folderMove`
+ * (`apps/server/src/docs/archive.ts`) only relocates paths already under the two
+ * skill roots, so for every other type archiving writes frontmatter and leaves
+ * the path, which is the gate's sole input. Its resident keeps its `docId` and
+ * stays designatable, so telling a person their working archived profile is gone
+ * is a false statement about a lane that is fine. The claim survived one sweep
+ * by omission, which is why it is now a sentence somebody has to delete rather
+ * than a silence somebody has to notice (PR #50, third review).
+ *
+ * `scripts/missing-profile-parity.test.ts` measures all four acts against the
+ * real projector and the real `currentResident`, and fails unless this list is
+ * *exactly* the acts that empty the field — so a cause added here without one,
+ * or an act that starts emptying it without a cause, is a failing test rather
+ * than a sentence nobody re-measures.
+ */
+export const MISSING_PROFILE_CAUSES = [
+  "renamed",
+  "deleted",
+  "moved out of .claude/agents/",
+] as const;
+
+/** One of {@link MISSING_PROFILE_CAUSES} — the type a parity fixture pairs with an act. */
+export type MissingProfileCause = (typeof MISSING_PROFILE_CAUSES)[number];
+
+/**
  * What a lane whose profile has gone says about it — SPEC.md §7's *"the missing
  * profile is reported rather than silently substituted"*, as the report.
  *
  * Stated as what happened rather than as a fault: the designation stands and the
  * resident goes on owning its scope, so this is news about the profile and never
  * an error about the conversation.
+ *
+ * **Composed from {@link MISSING_PROFILE_CAUSES}, never written out.** The list
+ * of causes was wrong here for a release — it named archiving, which cannot
+ * produce this state — and it was wrong at seven other sites in the same
+ * wording, because each was typed. Deriving the sentence means there is one
+ * place to correct and one place a parity test has to check.
  */
-export const MISSING_PROFILE_NOTE = "its profile is gone — renamed or archived since";
+export const MISSING_PROFILE_NOTE = `its profile is gone — ${MISSING_PROFILE_CAUSES[0]}, ${MISSING_PROFILE_CAUSES[1]}, or ${MISSING_PROFILE_CAUSES[2]} since`;
 
 /**
  * The **same report**, at the width of a lane in a list — the recipient picker's

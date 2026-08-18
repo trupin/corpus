@@ -92,7 +92,11 @@ export const createCommand: WorkspaceCommandSpec = {
     "for every ordinary type (creation is inbox-first), and `.claude/agents/` for `--type " +
     "agent-def`, which SPEC.md §7 gives its own document root — so a persona takes no extra flag. " +
     "**An explicit `--folder` wins over that default**, which is what keeps a document _about_ a " +
-    "persona expressible: `--type agent-def --folder inbox` still files under `data/docs/`. A root " +
+    "persona expressible: `--type agent-def --folder inbox` still files under `data/docs/`. " +
+    "**What that costs is addressability, and it costs all of it**: a persona is loaded and " +
+    "resolved from `.claude/agents/` alone, so an `agent-def` written anywhere else answers to " +
+    "neither `@<name>` nor `corpus thread designate --agent`, under its filename stem or its " +
+    "title alike — it is a note about a persona rather than one. A root " +
     "of its own may also be named outright, by its exact declared path (`--folder .claude/agents`) " +
     "and never a folder beneath it; a root named that way must hold the type asked for, so `--type " +
     "note --folder .claude/agents` is a `400` rather than a note the corpus would index as a " +
@@ -174,13 +178,13 @@ export const createCommand: WorkspaceCommandSpec = {
     },
     {
       command:
-        "corpus doc create --type agent-def --title \"Analyst\" --from agent <<'EOF'\nYou read the corpus and answer with evidence.\nEOF",
+        "corpus doc create --type agent-def --title \"Analyst\" --from agent <<'CORPUS_EOF'\nYou read the corpus and answer with evidence.\nCORPUS_EOF",
       description:
         "A persona, in one command: no `--folder`, because `agent-def` has its own document root — one copy of the file, read by Claude Code and by Corpus, with no sync (SPEC.md §7). It lands at `.claude/agents/analyst.md`, `@analyst` resolves to it in the very next comment (SPEC.md §8), and Claude Code lists it as a subagent, because the server writes both discovery keys with the document: `name`, derived from the filename, and `description`, defaulted to the title (SERVER-123). That default is thin on purpose — `corpus doc edit <id> --extra description=…` is how it comes to say _when_ to reach for this one.",
     },
     {
       command:
-        "corpus doc create --type note --title \"Mortgage options\" --tags finance,housing --from agent <<'EOF'\n30-year fixed at 6.1%.\nEOF",
+        "corpus doc create --type note --title \"Mortgage options\" --tags finance,housing --from agent <<'CORPUS_EOF'\n30-year fixed at 6.1%.\nCORPUS_EOF",
       description:
         "The agent's form: body from a heredoc, tagged, and committed with `agent` as the git author.",
     },

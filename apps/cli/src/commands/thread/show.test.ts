@@ -165,8 +165,10 @@ describe("corpus thread show", () => {
   });
 
   it("reports a profile that has gone, rather than a stale id or a general resident", async () => {
-    // §7: a profile renamed or archived after designation does not end the
-    // designation — the miss is reported. The two nulls a reader could confuse
+    // §7: a profile renamed, deleted, or moved out of `.claude/agents/` after
+    // designation does not end the designation — the miss is reported, and
+    // archiving is not one of the ways in, since an archived agent-def still
+    // under that root resolves. The two nulls a reader could confuse
     // are one level apart, so this must not read like the case above.
     const stub = await startStubServer(
       jsonResponder(200, { ...ANCHORED, resident: { name: "researcher", docId: null } }),

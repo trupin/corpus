@@ -114,13 +114,35 @@ export function scanMentionTokens(body: string): Token[] {
  * discoverable by Claude Code either.
  *
  * `null` for anything outside those roots: a `type: skill` document filed under
- * `data/docs/` is a document about a skill, not an invocable one.
+ * `data/docs/` is a document about a skill, not an invocable one. That answer is
+ * not only about spelling — {@link targetIndex} takes it as the gate on being
+ * addressable at all, so a document with no invocable name resolves to nothing
+ * under any spelling, its title included (SERVER-125).
+ *
+ * **A skill's name is the directory holding it, so a `SKILL.md` sitting
+ * directly in a skills root has none** (SERVER-127). Claude Code discovers a
+ * skill by that folder; a file the folder does not name is loaded by nothing,
+ * which is SERVER-125's own gate condition in a shape that change did not
+ * reach. Slicing the first segment answered `"SKILL.md"` there, and while that
+ * spelling is untypeable — the token charset excludes `.` — indexing the row
+ * indexed its **title** alias too, and `titleFromPath` falls back to the parent
+ * directory, so an untitled bare `SKILL.md` answered `/skills`. Worse, ties
+ * break by `doc_*` id order, which is minted at random: such a file could take
+ * a working skill's key. So the remainder must carry a directory segment before
+ * the filename, exactly as the kit's regex requires one
+ * (`packages/kit/src/components/Autocomplete/invocable.ts`, compared over one
+ * workspace by `scripts/mention-offer-parity.test.ts`). The row stays projected
+ * — listed, readable, editable; only its addressability goes.
  */
 export function invocableName(path: string): string | null {
   const root = classifyPath(path);
   if (root === null) return null;
   const rest = path.slice(root.path.length + 1);
-  if (root.shape === "skill-tree") return rest.split("/")[0] ?? null;
+  if (root.shape === "skill-tree") {
+    const segments = rest.split("/");
+    const directory = segments.length > 1 ? segments[0] : undefined;
+    return directory === undefined || directory === "" ? null : directory;
+  }
   if (root.key !== "agents") return null;
   const filename = rest.split("/").at(-1);
   return filename === undefined ? null : filename.replace(/\.md$/, "");
@@ -128,32 +150,138 @@ export function invocableName(path: string): string | null {
 
 type TargetRow = { id: string; path: string; title: string; status: string };
 
-/**
- * Every document of `type`, indexed by the names it answers to — its invocable
- * name and its title, both lowercased, because nobody types a capital letter
- * after a slash. First row wins a collision, in id order, so the answer is at
- * least deterministic; two skills claiming one name is a `doc check` finding
- * (§14), not something to resolve arbitrarily at post time.
- */
-function targetIndex(projection: ProjectionDb, type: string): Map<string, ResolvedTarget> {
-  const rows = projection
+const targetRows = (projection: ProjectionDb, type: string): TargetRow[] =>
+  projection
     .prepare("SELECT id, path, title, status FROM documents WHERE type = ? ORDER BY id")
     .all(type) as TargetRow[];
+
+/**
+ * Every **addressable** document of `type`, indexed by the names it answers to.
+ *
+ * **Two aliases per document, and both are load-bearing.** A row is indexed
+ * under its {@link invocableName} *and* its `title`, lowercased, because nobody
+ * types a capital letter after a sigil and because the two spellings are
+ * routinely different documents' worth of apart: the `profile` skill writes
+ * title `Bookkeeper` to `.claude/agents/bookkeeper.md`, so a person in a
+ * composer types the **stem** (`@bookkeeper`) while the board's designate menu
+ * sends the **title** it read off the document row (`residentActions.ts` —
+ * "a designation resolves against an agent-def's invocable name *and* its title
+ * alike"). Drop either alias and one of those two callers stops working. The
+ * resolved target carries the invocable name whichever spelling found it, which
+ * is why a designation stores `bookkeeper` however it was addressed.
+ *
+ * **The invocable name is also the gate, and it decides the whole row**
+ * (SERVER-125). `invocableName` is `null` for a document filed outside the root
+ * its type is discovered from, and says in as many words what that means: "a
+ * `type: skill` document filed under `data/docs/` is a document about a skill,
+ * not an invocable one". SERVER-122 kept an explicit `--folder` winning over the
+ * by-type default for exactly that case. But the title alias was applied to
+ * those rows too, which made the document about a persona *into* a persona on
+ * every surface except the one that matters: `type: agent-def` under
+ * `data/docs/` resolved `@bookkeeper`, was offered by the `@` autocomplete and
+ * was designatable as a resident, while carrying none of Claude Code's
+ * frontmatter (`claudeCodeFields` returns `{}` off-root), being loaded by
+ * nothing, and answering no dispatch. §8 routes a `@<subagent>` mention to a
+ * Claude Code subagent; there was none, so the directive named a persona that
+ * could not be reached and nothing anywhere said so.
+ *
+ * It was also a way to take a working persona's name away from it. Ties are
+ * broken by id order and a created document's `doc_*` id is minted at random, so
+ * an inert note titled `Researcher` under `data/docs/` won the `researcher` key
+ * from `.claude/agents/researcher.md` whenever its id happened to sort first.
+ *
+ * So an unaddressable row is skipped whole rather than indexed under its title
+ * alone: a name that names nobody is a state this module already has, reports as
+ * `unresolved`, and deliberately does not wake the agent for — see the module
+ * header. What it is *not* is a second, invisible address for a document that
+ * answers nothing. {@link unaddressableTarget} is how a caller that has already
+ * failed to resolve can say which document was skipped and why.
+ *
+ * First row wins a collision, in id order, so the answer is at least
+ * deterministic; two skills claiming one name is a `doc check` finding (§14),
+ * not something to resolve arbitrarily at post time.
+ */
+function targetIndex(projection: ProjectionDb, type: string): Map<string, ResolvedTarget> {
   const index = new Map<string, ResolvedTarget>();
-  for (const row of rows) {
+  for (const row of targetRows(projection, type)) {
     const invocable = invocableName(row.path);
-    const target: ResolvedTarget = {
-      name: invocable ?? row.title,
-      docId: row.id,
-      status: row.status,
-    };
+    if (invocable === null) continue;
+    const target: ResolvedTarget = { name: invocable, docId: row.id, status: row.status };
     for (const alias of [invocable, row.title]) {
-      if (alias === null || alias === "") continue;
-      const key = alias.toLowerCase();
+      const key = aliasKey(alias);
+      if (key === "") continue;
       if (!index.has(key)) index.set(key, target);
     }
   }
   return index;
+}
+
+/**
+ * How a name is keyed, and how one is looked up — **the same transformation on
+ * both sides**, which is the whole reason it is a function.
+ *
+ * Lowercased because nobody types a capital after a sigil, and **trimmed**
+ * because `documents.title` carries a hand-written title verbatim: `asString`
+ * (`projection/project-document.ts`) only decides whether a title is *there*,
+ * so `title: "  Padded Persona  "` reaches this index with its padding on. The
+ * lookup already trimmed — a typed name legitimately arrives padded — and
+ * keying the untrimmed spelling made that trim look like the fix for a caller's
+ * whitespace when it was really the thing that broke the match: the board's
+ * designate menu sends the title **trimmed** (`residentActions.ts`), so it
+ * offered `Padded Persona` on a row this index only answered to as
+ * `"  padded persona  "`, and the designation earned a 404 naming an agent-def
+ * the person was looking straight at. Found by
+ * `scripts/mention-offer-parity.test.ts` (PR #50 NIT 7) — the same
+ * offered-but-unresolvable class as UI-123, in the one place both surfaces are
+ * compared.
+ *
+ * A blank key is dropped rather than indexed: it is a name nothing can address,
+ * and one blank-titled row would otherwise take `""` from every later one. The
+ * projector cannot currently produce such a title — it falls back to `name:`
+ * and then to the path — so this is a guard on the index's own invariant and
+ * not a case anybody meets.
+ */
+const aliasKey = (name: string): string => name.trim().toLowerCase();
+
+/** A document that answers to a name it cannot be addressed by; see {@link unaddressableTarget}. */
+export type UnaddressableTarget = {
+  readonly docId: string;
+  /** Workspace-relative path — the whole reason it is not addressable. */
+  readonly path: string;
+  readonly title: string;
+};
+
+/**
+ * The document of `type` whose **title** is `name` but whose path gives it no
+ * invocable name — the row {@link targetIndex} deliberately skipped (SERVER-125).
+ *
+ * Asked only after a resolution has already failed, and only so the refusal can
+ * say *why*. "No agent named Bookkeeper in this workspace" is true and useless
+ * when a document titled exactly that is sitting in the inbox, and the person
+ * reading it has no way to tell a typo from a persona filed one directory away.
+ *
+ * The mention path has no channel for this — an unresolved token is a bare
+ * string in the event payload — so the caller is the one surface where somebody
+ * asks the server for a persona by name and waits for the answer: a designation
+ * (§7). Everywhere else the state is reported by being inert, which is what §8
+ * already does with a target that names nobody.
+ *
+ * Matched on the title alone, because that is the only alias such a row ever
+ * had; id order breaks a tie the same way {@link targetIndex} does.
+ */
+export function unaddressableTarget(
+  projection: ProjectionDb,
+  type: string,
+  name: string,
+): UnaddressableTarget | null {
+  const wanted = aliasKey(name);
+  if (wanted === "") return null;
+  for (const row of targetRows(projection, type)) {
+    if (invocableName(row.path) !== null) continue;
+    if (aliasKey(row.title) !== wanted) continue;
+    return { docId: row.id, path: row.path, title: row.title };
+  }
+  return null;
 }
 
 /**
@@ -177,7 +305,7 @@ export function resolveMentionTarget(
   type: string,
   name: string,
 ): ResolvedTarget | null {
-  return targetIndex(projection, type).get(name.trim().toLowerCase()) ?? null;
+  return targetIndex(projection, type).get(aliasKey(name)) ?? null;
 }
 
 /** Parse a turn body's mentions and invocations, resolved against the projection (§8). */
@@ -206,7 +334,10 @@ export function parseMentions(projection: ProjectionDb, body: string): ParsedMen
       index = targetIndex(projection, type);
       indexes.set(type, index);
     }
-    const target = index.get(token.name.toLowerCase());
+    // Through the same key function the index is built with; a scanned token
+    // can carry no whitespace, so the trim is inert here and the shared spelling
+    // is the point.
+    const target = index.get(aliasKey(token.name));
     if (target === undefined) {
       unresolved.push(literal);
       continue;

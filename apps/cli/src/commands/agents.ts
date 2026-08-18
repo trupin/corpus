@@ -202,8 +202,10 @@ export const agentsCommand: WorkspaceCommandSpec = {
     "a conversation: `a general resident` is an agent with no profile document — the ordinary " +
     "designation, which needs nothing to exist in the workspace first; `researcher (doc_r1)` is a " +
     "profile a reader can open; and `researcher (profile missing)` is a designation whose profile " +
-    "has been renamed or archived since, which changes nothing about who owns the lane and is " +
-    "reported rather than silently substituted.\n\n" +
+    "has since been renamed, deleted, or moved out of `.claude/agents/`, which changes nothing " +
+    "about who owns the lane and is reported rather than silently substituted. **Archiving is not " +
+    "one of those**: an archived `agent-def` still under that root resolves exactly as before, and " +
+    "is still designatable, so the cell keeps printing its id.\n\n" +
     "**Presence is the parked request and nothing else.** A lane is live exactly while somebody " +
     "holds a parked `corpus queue idle --thread <id>`: there is no heartbeat to send, no " +
     "registration to keep fresh and nothing to reap, so an agent that stops parking stops being " +

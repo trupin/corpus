@@ -257,7 +257,7 @@ export const createCommand: WorkspaceCommandSpec = {
     },
     {
       command:
-        "corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'EOF'\nI split this into two notes; the second needs a title.\nEOF",
+        "corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'\nI split this into two notes; the second needs a title.\nCORPUS_EOF",
       description:
         "A whole-document thread from the agent, body as a heredoc, committed with `agent` as the " +
         "git author and recording the model that wrote the first turn (SPEC.md §11).",

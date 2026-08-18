@@ -2185,6 +2185,33 @@ describe("the two folder grammars are described separately (CONTRACT-062)", () =
   });
 
   /**
+   * PR #50's **second** review, MINOR 5 — the seventh wording of the
+   * SERVER-125 rule, and the one CONTRACT-064's sweep missed.
+   *
+   * Saying an explicit folder wins is describing a caller filing an `agent-def`
+   * outside `.claude/agents/`, so it has to say what that costs. "A document
+   * *about* a persona" said what the document **is**; it did not say the
+   * document now answers to **nothing**, which is the fact the caller loses.
+   * `apps/cli/src/commands/doc/create.ts` states it on the parallel surface,
+   * and this is the same act, so both must carry the same clause with only the
+   * route/flag spelling differing.
+   *
+   * Falsify by deleting the cost clause: the "about a persona" half alone
+   * leaves every other assertion in this file green.
+   */
+  it("states what filing an agent-def outside its root costs, not only what it is", () => {
+    // What the document is — the half that was already there.
+    expect(create()).toContain("a document *about* a persona");
+    // What it answers to — the half that was not.
+    expect(create()).toContain("costs is addressability");
+    expect(create()).toContain("`.claude/agents/` alone");
+    expect(create()).toContain("`@<name>`");
+    expect(create()).toContain("POST /api/threads/{id}/resident");
+    // Both spellings, so nobody reads the loss as being about the stem only.
+    expect(create()).toContain("filename stem or its title alike");
+  });
+
+  /**
    * The trap the wording SERVER-122 proposed would have fallen into: §7 gives
    * `type: skill` a root of its own, and a create still files a skill in the
    * inbox — `.claude/skills` indexes `SKILL.md` alone, so it is neither the
@@ -4752,6 +4779,107 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     expect(operation("/api/threads/{id}/resident", "post").description).toContain(
       "a bare `POST` designates a *general resident*",
     );
+  });
+
+  /**
+   * CONTRACT-064. SERVER-125 made the root the gate on being addressable at all:
+   * a `type: agent-def` filed outside `.claude/agents/` resolves under no
+   * spelling, its title included. Every published description of the designation
+   * name had been left stating the pre-SERVER-125 rule, and **half of that
+   * sentence is still true** — in-root, the stem *and* the title both resolve,
+   * case-insensitively, and since SERVER-122 they routinely differ
+   * (`Legacy Analyst` → `legacy-analyst.md`), so the title clause carries the
+   * common case. A reader cannot tell from an unqualified sentence which half
+   * survived, so each site must carry both the root and the in-root pair.
+   *
+   * Asserted against the **generated** document rather than the schema source:
+   * these strings are what an OpenAPI consumer and the generated client read,
+   * and a hand-copied half-correction is only visible here.
+   */
+  it("gates the designation name on `.claude/agents/`, keeping the in-root stem-or-title pair", () => {
+    const sites = [
+      componentSchemas?.["DesignateResidentRequest"]?.properties?.["name"]?.description ?? "",
+      operation("/api/threads/{id}/resident", "post").description ?? "",
+    ];
+    for (const description of sites) {
+      expect(description).toContain("`.claude/agents/`");
+      // The half that survived: both spellings still resolve, in-root.
+      expect(description).toContain("stem or its title");
+      expect(description).toContain("case-insensitively");
+      // The half that did not: an off-root agent-def answers to neither.
+      expect(description).toContain("neither spelling");
+    }
+    // And the resolved half of a `Resident` says what leaving the root does to
+    // it, since `docId` is re-resolved through the same gate on every response.
+    expect(componentSchemas?.["Resident"]?.properties?.["docId"]?.description).toContain(
+      "moved out of `.claude/agents/`",
+    );
+  });
+
+  /**
+   * PR #50 third review, MINOR 5 (route half). The rule that only a **title**
+   * reaches the path-naming `404` is stated at both published sites in one
+   * spelling, and the assertion is that they are literally the same string.
+   *
+   * The route promised the path-naming refusal unconditionally while
+   * `unaddressableTarget` (`apps/server/src/threads/mentions.ts`) matches on the
+   * title alone — so `--agent legacy-analyst` for an inbox document titled
+   * `Legacy Analyst` got the bare `404`, from a paragraph that had just told the
+   * reader a persona answers to its stem *or* its title.
+   * `DesignateResidentRequestSchema` already carried the qualifier; this pins
+   * the two together so a future edit to one is a failing test rather than a
+   * seventh phrasing of a rule that is now stated at seven sites.
+   */
+  it("qualifies the path-naming 404 identically wherever it is promised", () => {
+    const qualifier =
+      "where an off-root `agent-def` is titled the name given, that `404` names its path, " +
+      "because moving the file into `.claude/agents/` is what makes it designatable";
+    expect(
+      componentSchemas?.["DesignateResidentRequest"]?.properties?.["name"]?.description,
+    ).toContain(qualifier);
+    expect(operation("/api/threads/{id}/resident", "post").description).toContain(qualifier);
+    // And the route says what the qualifier costs the other spelling, since it
+    // is the site that offers both.
+    expect(operation("/api/threads/{id}/resident", "post").description).toContain(
+      "**Only the title reaches that refusal**",
+    );
+  });
+
+  /**
+   * PR #50 third review, MINOR 3. `Resident.docId` listed **archived** among the
+   * ways a profile stops resolving. It is false, and it was false before
+   * CONTRACT-064 rewrote this sentence as a correctness sweep of it.
+   *
+   * Established against a running server (workspace on port 8805): designate
+   * `scratch-persona`, archive `.claude/agents/scratch-persona.md`, re-read the
+   * thread — `{"name":"scratch-persona","docId":"doc_5g4njtsp"}`, unchanged. And
+   * the code says why: `targetRows` selects every row of the type with no status
+   * filter, `targetIndex` skips only rows whose `invocableName` is null
+   * (off-root), and archiving an `agent-def` writes `status: archived` without
+   * moving the file — only a `type: skill` changes folder. Renaming, deleting
+   * and moving out of the root each *do* null it; all three were run on the same
+   * workspace.
+   *
+   * Pinned as a **positive** claim plus a sentence-level sweep, not as the
+   * absence of one spelling: the false clause has to be unable to come back in
+   * any wording, and it rides in four other surfaces' prose besides this one.
+   */
+  it("does not list archiving among the ways a profile stops resolving", () => {
+    const description = componentSchemas?.["Resident"]?.properties?.["docId"]?.description ?? "";
+    expect(description).toContain("renamed, deleted, or moved out of `.claude/agents/`");
+    expect(description).toContain("**Archiving a profile does not empty this field**");
+    // Every sentence that mentions archiving must be one of the sentences
+    // saying it changes nothing — a re-added "renamed, archived, …" lands in a
+    // sentence that also carries "null", and fails here.
+    const offenders = description
+      .split(/(?<=\.)\s+/)
+      .filter(
+        (sentence) =>
+          /archiv/i.test(sentence) &&
+          /null|no longer|gone|missing/i.test(sentence) &&
+          !/does not empty this field/.test(sentence),
+      );
+    expect(offenders).toEqual([]);
   });
 
   it("answers a designation and a release with the thread, so §14's warnings surface", () => {

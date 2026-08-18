@@ -80,11 +80,18 @@ export const designateResident = createRoute({
     "§7 calls that the ordinary case, and it requires nothing to exist in the workspace first, so " +
     "a fresh workspace with no `agent-def` documents can designate on its first day.\n\n" +
     "**Naming a profile is the refinement.** `name`, when given, is the invocable name " +
-    "`@<subagent>` mentions already use (SPEC.md §8) — not a document id — and is how a " +
-    "conversation gets an agent that behaves differently from the default. `404` when the thread " +
-    "is unknown, and `404` when the name resolves to no `type: agent-def` document in this " +
-    "workspace: a name that misses is refused rather than degraded to a general resident, because " +
-    'a typo that looked like it worked is the worse outcome. A **blank** name (`""`, `"   "`) ' +
+    "`@<subagent>` mentions already use (SPEC.md §8) — for a `type: agent-def` document **under " +
+    "`.claude/agents/`**, its filename stem or its title, case-insensitively, never a document " +
+    "id — and is how a conversation gets an agent that behaves differently from the default. " +
+    "`404` when the thread is unknown, and `404` when the name resolves to no such document: a " +
+    "name that misses is refused rather than degraded to a general resident, because a typo that " +
+    "looked like it worked is the worse outcome. An `agent-def` filed outside that root is one of " +
+    "those misses — it is a document *about* a persona, nothing loads it as a subagent, and it " +
+    "answers to neither spelling — and where an off-root `agent-def` is titled the name given, " +
+    "that `404` names its path, because moving the file into `.claude/agents/` is what makes it " +
+    "designatable. **Only the title reaches that refusal**: off root there is no filename stem to " +
+    "answer to, so `legacy-analyst` for a document titled `Legacy Analyst` in the inbox is the " +
+    'bare `404` — its title is the spelling that says where it is. A **blank** name (`""`, `"   "`) ' +
     "is a `400` and not absence, for the same reason.\n\n" +
     "**Everything else about a resident is identical either way** (SPEC.md §7) — the lane, the " +
     "scope, presence, the lapse fallback, release, and resolution releasing it — because a " +

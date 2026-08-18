@@ -1,6 +1,9 @@
 import { ResidentSchema } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
+import { agentsCommand } from "./agents.js";
 import { GENERAL_RESIDENT, PROFILE_MISSING, residentLabel } from "./resident.js";
+import { designateCommand } from "./thread/designate.js";
+import { showCommand } from "./thread/show.js";
 
 /**
  * One label for four surfaces (`thread designate`, `thread release`,
@@ -53,5 +56,54 @@ describe("residentLabel", () => {
   it("exports the two words rather than spelling them at each use site", () => {
     expect(residentLabel(GENERAL)).toBe(GENERAL_RESIDENT);
     expect(residentLabel(ORPHANED)).toContain(PROFILE_MISSING);
+  });
+});
+
+/**
+ * **What makes a profile go missing — one list, pinned to the contract's.**
+ *
+ * Three CLI surfaces tell a reader when `name (profile missing)` is what they
+ * will see, and every one of them used to say *archived*, which is false:
+ * `targetRows` filters on no status, and archiving an `agent-def` does not move
+ * its file, so an archived persona under `.claude/agents/` resolves exactly as
+ * it did and is still designatable. The claim survived a sweep because each
+ * surface spelled it differently, so what is pinned here is the **literal** —
+ * the same substring at all three, and the same one the contract's `docId`
+ * carries — rather than three restatements a future edit can drift apart one at
+ * a time.
+ *
+ * The archive clause is stated **positively** for the same reason: a reader who
+ * archives a profile and then wonders comes looking for the word, and prose that
+ * merely omits it answers nobody.
+ */
+const WAYS_A_PROFILE_GOES_MISSING = "renamed, deleted, or moved out of `.claude/agents/`";
+const ARCHIVING_IS_NOT_ONE =
+  "an archived `agent-def` still under that root resolves exactly as before, and is still " +
+  "designatable";
+
+describe("what the CLI says makes a profile go missing", () => {
+  // `description` is optional on a command spec, so a surface that lost its
+  // prose entirely arrives here as `undefined` and fails the pin rather than
+  // passing it vacuously.
+  const surfaces: ReadonlyArray<readonly [string, string | undefined]> = [
+    ["thread designate", designateCommand.description],
+    ["thread show", showCommand.description],
+    ["agents", agentsCommand.description],
+  ];
+
+  it("is the contract's own list, at the surface that reports the miss", () => {
+    expect(ResidentSchema.shape.docId.description).toContain(WAYS_A_PROFILE_GOES_MISSING);
+    for (const [surface, prose] of surfaces) {
+      expect(prose, surface).toContain(WAYS_A_PROFILE_GOES_MISSING);
+    }
+  });
+
+  it("says archiving is not one of them, rather than leaving it out", () => {
+    expect(ResidentSchema.shape.docId.description).toContain(ARCHIVING_IS_NOT_ONE);
+    for (const [surface, prose] of surfaces) {
+      expect(prose, surface).toContain(ARCHIVING_IS_NOT_ONE);
+      // The false claim, in the spelling every one of these three had it in.
+      expect(prose, surface).not.toContain("renamed or archived");
+    }
   });
 });

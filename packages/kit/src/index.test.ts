@@ -155,6 +155,7 @@ const RUNTIME_SURFACE = [
   "AUTOCOMPLETE_LIMIT",
   "GENERIC_AGENT_TOKEN",
   "invocableName",
+  "isAddressableTarget",
   "MENTION_DOC_TYPE",
   "rowToken",
   "SKILL_DOC_TYPE",
@@ -247,6 +248,10 @@ const RUNTIME_SURFACE = [
   "GENERAL_RESIDENT_LABEL",
   "MISSING_PROFILE_MARK",
   "MISSING_PROFILE_NOTE",
+  // …and the acts that sentence is composed from, exported because the parity
+  // test that measures them against the real server pairs each with a workspace
+  // act by identity rather than by matching words (PR #50, third review).
+  "MISSING_PROFILE_CAUSES",
   // …and the same vocabulary read by a surface that is not a composer (UI-109):
   // is *this* conversation a lane, which lane answers *here*, and the one dot
   // both the picker and the board draw it with.

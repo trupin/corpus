@@ -13,12 +13,11 @@ export {
   type TriggerKind,
   type TriggerMatch,
 } from "./triggers.js";
+export { invocableName, isAddressableTarget, rowToken, type PathRow } from "./invocable.js";
 export {
   AUTOCOMPLETE_LIMIT,
   GENERIC_AGENT_TOKEN,
-  invocableName,
   MENTION_DOC_TYPE,
-  rowToken,
   SKILL_DOC_TYPE,
   useAutocomplete,
   useRefCompletions,

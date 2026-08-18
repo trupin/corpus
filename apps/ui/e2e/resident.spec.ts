@@ -53,12 +53,35 @@ const SOLO: StubRow = {
   body: "## user · 2026-08-17T10:00:00Z\n\nWhere did the forecast land?\n",
 };
 
-/** The workspace's one profile, for the tests that want the refinement. */
+/**
+ * The workspace's one profile, for the tests that want the refinement.
+ *
+ * Under `.claude/agents/`, because since SERVER-125 that is what makes an
+ * agent-def addressable at all: a `type: agent-def` document filed anywhere else
+ * resolves under no spelling, and this fixture used to sit at
+ * `data/docs/agents/researcher.md` — a path the server now refuses (UI-123).
+ */
 const PROFILE: StubRow = {
   id: "doc_researcher",
   type: "agent-def",
   title: "researcher",
-  path: "data/docs/agents/researcher.md",
+  path: ".claude/agents/researcher.md",
+};
+
+/**
+ * A document *about* a persona: `type: agent-def`, filed under `data/docs/`
+ * where an explicit `--folder` still puts it (SERVER-122). Claude Code loads
+ * nothing from here and no dispatch reaches it, so since SERVER-125 the server
+ * resolves it under no name — its title included — and a designation of it is a
+ * `404`.
+ *
+ * It is still a document, and the board still lists it.
+ */
+const ABOUT_A_PERSONA: StubRow = {
+  id: "doc_legacy",
+  type: "agent-def",
+  title: "Legacy",
+  path: "data/docs/inbox/legacy.md",
 };
 
 /**
@@ -71,6 +94,29 @@ const CREATED_PROFILE: StubRow = {
   type: "agent-def",
   title: "Bookkeeper",
   path: ".claude/agents/bookkeeper.md",
+};
+
+/**
+ * The same shape with a **padded** title, which is a row the projection really
+ * produces: `asString` (`projection/project-document.ts`) only decides whether a
+ * title is *there*, so `title: "  Padded Persona  "` reaches `documents.title`
+ * with its padding on.
+ *
+ * The two ends of the designation disagree about that padding on purpose — the
+ * menu offers and sends the title **trimmed** (`residentActions.ts`), and the
+ * server keys both the index and the lookup through one `aliasKey`
+ * (`threads/mentions.ts`), so the trimmed name lands. It is here because that
+ * agreement was broken twice in one release, once on each side, and neither
+ * break was visible in a browser: PR #50 NIT 7 fixed the server, and MINOR 4
+ * then found the e2e stub still comparing the caller's trimmed name against
+ * `row.title` untrimmed — so this designation `404`'d here and `200`'d against
+ * the real server, and no spec held a title this shape to notice.
+ */
+const PADDED_PROFILE: StubRow = {
+  id: "doc_padded",
+  type: "agent-def",
+  title: "  Padded Persona  ",
+  path: ".claude/agents/padded.md",
 };
 
 const CARD = '.thread-card[data-thread="th_solo"]';
@@ -213,6 +259,100 @@ test.describe("designating a resident", () => {
   });
 
   /**
+   * A padded title, designated through the real menu — PR #50 MINOR 4's case.
+   *
+   * The label is trimmed and so is the name on the wire, because a person picks
+   * a row and not a string; what comes back is the row's **stem**, the same
+   * answer `Bookkeeper` gets, because the resolved name is what a designation
+   * stores whichever spelling found it.
+   *
+   * The badge turning `profiled` is the whole assertion: a copy of the rule that
+   * keys `row.title` untrimmed answers this `404`, and the lane never appears.
+   */
+  test("designates a persona whose title is padded, sending it trimmed", async ({ page }) => {
+    const corpus = await board(page, [PADDED_PROFILE]);
+    await openMenu(page);
+    const item = page.getByRole("menu").locator('[data-act="resident-designate-doc_padded"]');
+    await expect(item).toContainText("Designate Padded Persona");
+    await item.click();
+
+    await expect.poll(async () => posted(corpus)).toEqual([{ name: "Padded Persona" }]);
+    await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "profiled");
+    await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("padded");
+  });
+
+  /**
+   * **UI-123, in a browser: the two menus offer what the server will resolve,
+   * and the document they drop is still a document.**
+   *
+   * SERVER-125 stopped indexing an off-root `type: agent-def` as a mention
+   * target under any spelling, the title alias included. Both client surfaces
+   * went on offering those rows — the `@` autocomplete under the title, the
+   * designate menu by sending it — so picking one inserted a mention that
+   * resolved to nobody, and designating one earned a `404`.
+   *
+   * All three halves are asserted in one flow because they are one claim: the
+   * row is **listed and readable**, and **not offered** by either menu. A fix
+   * that filtered `GET /api/docs?type=agent-def` would pass the last two and
+   * take the board's `type:` filter and the seeded "Skills & agents" view with
+   * it.
+   */
+  test("lists a document about a persona, and offers it in neither menu", async ({ page }) => {
+    await stubCorpus(page, [
+      THREADS_VIEW,
+      {
+        id: "doc_view_personas",
+        type: "view",
+        title: "Skills & agents",
+        path: "data/docs/views/personas.md",
+        pinned: true,
+        order: 2,
+        query: { type: "agent-def" },
+      },
+      SOLO,
+      PROFILE,
+      ABOUT_A_PERSONA,
+    ]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+
+    // Listed, both of them: nothing about the document changed.
+    const listed = page.locator('.row[data-row-doc="doc_legacy"]');
+    await expect(listed).toBeVisible();
+    await expect(page.locator('.row[data-row-doc="doc_researcher"]')).toBeVisible();
+
+    // …and readable. It opens like any other document.
+    await listed.click();
+    await expect(page.locator(".reader").first()).toBeVisible();
+    await expect(page.locator(".reader").first()).toContainText("Legacy");
+
+    await page.locator('.row[data-row-doc="th_solo"]').click();
+    await expect(page.locator(CARD)).toBeVisible();
+
+    // The `@` menu: the addressable persona, the generic `@agent`, and nothing
+    // else. `Legacy` is a name the server would resolve to nobody.
+    await page.locator('[data-composer="th_solo"]').click();
+    await page.keyboard.type("@");
+    const menu = page.getByRole("listbox", { name: "Reply completions" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("option")).toHaveCount(2);
+    await expect(menu.getByRole("option", { name: /researcher/i })).toBeVisible();
+    await expect(menu.getByRole("option", { name: /legacy/i })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // The designate menu: the same set, by the same rule.
+    await openMenu(page);
+    const context = page.getByRole("menu");
+    await expect(context.locator('[data-act="resident-designate-doc_researcher"]')).toContainText(
+      "Designate researcher",
+    );
+    await expect(context.locator('[data-act="resident-designate-doc_legacy"]')).toHaveCount(0);
+    // And not the empty-directory line either: the workspace does define a
+    // profile, and one of its two agent-defs is offered.
+    await expect(context.locator('[data-act="resident-no-profiles"]')).toHaveCount(0);
+  });
+
+  /**
    * **A designation whose profile has gone**, on the surface where the release
    * is chosen — SPEC.md §7's *"the missing profile is reported rather than
    * silently substituted"*.
@@ -223,11 +363,13 @@ test.describe("designating a resident", () => {
    * to what a healthy lane offers, on the one surface where a person acts on the
    * fact.
    *
-   * The lane is seeded rather than produced, because archiving an agent-def is
+   * The lane is seeded rather than produced, because losing a profile is
    * something the workspace does between two page loads and not something this
    * page can cause: `{name: "researcher", docId: null}` is exactly what
-   * `GET /api/agents` answers once the document behind a standing designation
-   * has been renamed or archived (CONTRACT-061).
+   * `GET /api/agents` answers once the document behind a standing designation has
+   * been renamed, deleted, or moved out of `.claude/agents/` (CONTRACT-061).
+   * Archiving it is **not** one of those — an archived agent-def still resolves,
+   * so its lane keeps its `docId` (`MISSING_PROFILE_CAUSES`).
    *
    * The workspace deliberately still holds a `researcher` agent-def — the
    * recreated-under-a-new-document case — because it is the sharpest reading of

@@ -391,7 +391,11 @@ gather context from the pack before escalating to a document, when a change is a
 when it is a whole-body edit under a key, the reply's shape, `--model` naming what actually
 ran, the trace line on a turn that wrote, a labeled fence for anything the person will lift
 and reuse and the backtick count that keeps it in one piece, and a form when the turn's
-purpose is to get something from them.
+purpose is to get something from them. One rule in that turn belongs to neither skill: a value
+you carry out of this conversation into a flag — a title, a tag, an `--extra` value — is built
+in a heredoc and passed by name, never quoted into the command. **What the shell does to a
+value you quote into a flag is the orchestrate skill's to state, and it is stated there
+alone.**
 
 What being resident adds is context you already have and must actually use. You have read
 every turn of this conversation and you wrote half of them. Do not re-derive from scratch
@@ -532,9 +536,9 @@ puts a later comment on them back on your lane instead of the orchestrator's.
 
 ```bash
 export CORPUS_JOB=evt_7c1d9a
-corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'EOF'
+corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'CORPUS_EOF'
 Assume 6.4% for the Q3 model.
-EOF
+CORPUS_EOF
 ```
 
 Set it when you claim an event and every write in that session carries it; **reset it on the
@@ -722,20 +726,19 @@ When your row is gone from the roster, or your park was refused:
    for this lane, so a second claim can only ever come back empty. Work what the one claim
    gave you, settle it, and go on to the sign-off — and park at no point in any of this.
 2. Read the thread: `corpus thread show th_4b8e2c`.
-3. **If it is still open, sign off once**, in one line, and exit:
+3. **If it is still open, sign off once**, in one line, and exit — the reply is the block
+   directly below. That turn changed nothing, so it carries no trace line, and an agent's turn
+   never reopens anything.
 
-   ```bash
-   corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
-   Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
-   EOF
-   ```
+```bash
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
+CORPUS_EOF
+```
 
-   That turn changed nothing, so it carries no trace line, and an agent's turn never reopens
-   anything.
-
-4. **If it is resolved, post nothing.** The conversation has already been closed by the person
-   who closed it, and a farewell on a settled thread is noise that reopens nothing and helps
-   nobody. Just go.
+4. **If it is resolved, post nothing** — not the reply above, not a shorter one. The
+   conversation has already been closed by the person who closed it, and a farewell on a
+   settled thread is noise that reopens nothing and helps nobody. Just go.
 
 A job's log belongs to an event, so there is normally nothing to log a retirement to: by the
 time you read the roster you have settled everything you held. Where you are still holding
@@ -793,18 +796,18 @@ subagent would do better than the agent that has been in the conversation since 
 message:
 
 ```bash
-corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'EOF'
+corpus doc create --title "Q3 rate assumptions" --type note --from agent <<'CORPUS_EOF'
 The working assumption for the Q3 model is 6.4%, as of 2026-07-28. Thirty-year
 fixed offers currently cluster between 6.1% and 6.6%; 6.4% is the midpoint we
 agreed in [[th_4b8e2c]].
-EOF
+CORPUS_EOF
 created doc_5c8b2f — data/docs/inbox/q3-rate-assumptions.md
 corpus job log evt_7c1d9a "created [[doc_5c8b2f]] — the 6.4% assumption, filed from this conversation"
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Written down as [[doc_5c8b2f]] so the rest of the plan can point at it: 6.4%,
 with the range it came from and the date it was taken.
 ↳ created [[doc_5c8b2f]] with the 6.4% rate assumption
-EOF
+CORPUS_EOF
 corpus queue complete evt_7c1d9a
 unset CORPUS_JOB
 ```
@@ -843,9 +846,9 @@ orchestrator · waiting for a listener
 corpus queue claim-all --thread th_4b8e2c
 {"events":[],"inProgress":{"events":[],"total":0,"truncated":false}}
 corpus thread show th_4b8e2c
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
-EOF
+CORPUS_EOF
 ```
 
 The row is gone rather than back — nobody was designated in our place while we were leaving —

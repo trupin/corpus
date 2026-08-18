@@ -38,9 +38,11 @@ const GENERAL: LaneRow = {
 };
 
 /**
- * §7's designation whose profile has since been renamed or archived. Built with
- * the kit's own `note` and `mark` rather than a paraphrase, because what these
- * tests are checking is precisely that the menu says the kit's words.
+ * §7's designation whose profile has since gone — renamed, deleted, or moved out
+ * of `.claude/agents/` (`MISSING_PROFILE_CAUSES`; archiving is not one of them,
+ * since an archived agent-def still resolves). Built with the kit's own `note`
+ * and `mark` rather than a paraphrase, because what these tests are checking is
+ * precisely that the menu says the kit's words.
  */
 const PROFILE_GONE: LaneRow = {
   ...RESIDENT,
@@ -70,15 +72,60 @@ function input(overrides: Partial<ResidentActionsInput> = {}): ResidentActionsIn
 const ids = (actions: readonly { readonly id: string }[]): readonly string[] =>
   actions.map((action) => action.id);
 
+/**
+ * An `agent-def` row as `GET /api/docs?type=agent-def` reports it. The **path**
+ * is load-bearing since UI-123 — it is what decides whether the row may be
+ * offered at all — so no fixture here may omit it.
+ */
+const agentDefRow = (id: string, title: string, path: string): DocRow =>
+  ({ id, title, path }) as unknown as DocRow;
+
 describe("agentDefRows", () => {
   it("offers a row by the name a mention would have written", () => {
-    const rows = [{ id: "doc_a", title: "researcher" }] as unknown as DocRow[];
+    const rows = [agentDefRow("doc_a", "researcher", ".claude/agents/researcher.md")];
     expect(agentDefRows(rows)).toEqual([{ id: "doc_a", name: "researcher" }]);
   });
 
+  /**
+   * The common shape since SERVER-122: the title is a *spelling* and the server
+   * resolves it against the stem too, so the menu keeps sending what it reads
+   * off the row.
+   */
+  it("designates by the title, which the server still resolves for an addressable row", () => {
+    const rows = [agentDefRow("doc_b", "Bookkeeper", ".claude/agents/bookkeeper.md")];
+    expect(agentDefRows(rows)).toEqual([{ id: "doc_b", name: "Bookkeeper" }]);
+  });
+
   it("drops a row with nothing to call it, rather than offering a blank item", () => {
-    const rows = [{ id: "doc_a", title: "  " }] as unknown as DocRow[];
+    const rows = [agentDefRow("doc_a", "  ", ".claude/agents/blank.md")];
     expect(agentDefRows(rows)).toEqual([]);
+  });
+
+  /**
+   * UI-123. SERVER-125 stopped indexing an off-root `type: agent-def` as a
+   * mention target under any spelling — the title alias went with it — so
+   * designating this row now earns a `404` naming the file. The menu asks the
+   * kit's `isAddressableTarget`, the same gate the `@` autocomplete applies,
+   * because two copies of this rule is how both surfaces came to offer what the
+   * server refuses.
+   */
+  it("does not offer a document *about* a persona that the server cannot resolve", () => {
+    const rows = [
+      agentDefRow("doc_a", "Researcher", ".claude/agents/researcher.md"),
+      agentDefRow("doc_l", "Legacy", "data/docs/inbox/legacy.md"),
+    ];
+    expect(agentDefRows(rows)).toEqual([{ id: "doc_a", name: "Researcher" }]);
+  });
+
+  /**
+   * And the dropped row is dropped *here*, at the point it would become an
+   * offer, not upstream: the query still asks for every agent-def, and the board
+   * and the seeded "Skills & agents" view still list this document.
+   */
+  it("drops the row without touching the list it came from", () => {
+    const rows = [agentDefRow("doc_l", "Legacy", "data/docs/inbox/legacy.md")];
+    expect(agentDefRows(rows)).toEqual([]);
+    expect(rows).toHaveLength(1);
   });
 
   /**
@@ -127,6 +174,28 @@ describe("residentActions", () => {
     expect(note?.label).toBe(NO_PROFILES_LABEL);
     expect(note?.meta).toBe(NO_PROFILES_META);
     expect(note?.meta).toContain("a resident does not need one");
+  });
+
+  /**
+   * PR #50 review. Since UI-123 this line has two causes — no `agent-def`
+   * documents, and `agent-def` documents none of which is addressable — and its
+   * advice has to be followable in **both**. It said *"add a `type: agent-def`
+   * document"*, which in the second state describes what the person already did:
+   * `--folder data/docs/…` makes exactly that, the board lists it, and this line
+   * goes on saying there are no profiles. Naming the root is what makes one
+   * sentence true of both, which is why it is asserted and not merely spelled.
+   */
+  it("says where a profile has to live, so its advice cannot reproduce this state", () => {
+    const offRoot = [agentDefRow("doc_l", "Legacy", "data/docs/inbox/legacy.md")];
+    const bothCauses = [agentDefRows([]), agentDefRows(offRoot)];
+
+    for (const agents of bothCauses) {
+      const note = residentActions(input({ agents })).find(
+        (action) => action.id === "resident-no-profiles",
+      );
+      expect(note?.meta).toBe(NO_PROFILES_META);
+      expect(note?.meta).toContain(".claude/agents/");
+    }
   });
 
   it("offers the general act first, then every profile the workspace defines", () => {
@@ -277,8 +346,8 @@ describe("residentActions", () => {
   });
 
   /**
-   * §7 reports a designation whose profile has since been renamed or archived
-   * rather than substituting for it — so the resident is still named. It **is**
+   * §7 reports a designation whose profile has since gone rather than
+   * substituting for it — so the resident is still named. It **is**
    * re-offered, and that is not the same skip: with no document resolving the
    * designation, designating an agent-def is a write with a real effect rather
    * than the no-op the skip exists to suppress.

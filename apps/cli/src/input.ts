@@ -273,7 +273,7 @@ export function stdinIsTTY(): boolean {
  * Whether stdin is a thing a body could arrive on — and the reason this is a
  * `fstat` rather than the obvious `!process.stdin.isTTY`.
  *
- * A heredoc (`<<'EOF'`) is a **regular file**; `cmd | corpus` is a **FIFO**.
+ * A heredoc (`<<'CORPUS_EOF'`) is a **regular file**; `cmd | corpus` is a **FIFO**.
  * Both are read. A terminal is not read, because a body-optional verb must not
  * sit waiting for a human nobody asked.
  *
@@ -342,7 +342,7 @@ export async function requireBody(
   const body = await resolveBody(context, dependencies);
   if (body === undefined || body === "") {
     throw new UsageError(`no ${what} to send.`, {
-      hint: `Pass it with -m "…", with --file <path>, or pipe it in: \`… <<'EOF' … EOF\`.`,
+      hint: `Pass it with -m "…", with --file <path>, or pipe it in: \`… <<'CORPUS_EOF' … CORPUS_EOF\`. Always \`CORPUS_EOF\`, never \`EOF\`: text you are carrying can contain a line reading \`EOF\`, which ends the heredoc early and runs the rest as commands.`,
     });
   }
   return body;

@@ -4,9 +4,9 @@
  * `scripts/stub-server-parity.test.ts` where it does not.
  *
  * `stubCorpus.ts` answers `/api` from inside the page, so every rule the real
- * server applies *to data it hands back* has to exist there too. Two of them are
- * not cosmetic, because a spec that asserts against a wrong copy is asserting
- * the copy:
+ * server applies *to data it hands back* has to exist there too. Three of them
+ * are not cosmetic, because a spec that asserts against a wrong copy is
+ * asserting the copy:
  *
  * - **Anchor resolution** (SPEC.md §6). The stub used to implement rung 2 alone
  *   — a unique `exact` — so a framed selector for a *duplicated* phrase, the
@@ -29,13 +29,24 @@
  *   is the slicing and the blank-line trimming that turn a heading list into
  *   turns, which is still the server's and is still what `TURN_PARITY_BODIES`
  *   pins (UI-091).
+ * - **How a persona's name resolves** (SPEC.md §7, §8). A designation names an
+ *   `agent-def`, and the server answers `404` when nothing addressable carries
+ *   that name — so the stub decides the same question, and a stub that decided
+ *   it differently would let a Playwright spec certify a designation the real
+ *   server refuses. It lived inline in `stubCorpus.ts`'s resident handler until
+ *   PR #50's third review found it keying `row.title` **untrimmed** against a
+ *   trimmed needle: a third independent copy of the rule, disagreeing with the
+ *   server on the very thing the review before it had just fixed there. It is
+ *   here because here is where {@link resolveAgentDefName} can be pinned against
+ *   the original.
  *
  * **What the pin is for.** It is not a comment asking to be believed:
- * `scripts/stub-server-parity.test.ts` runs {@link ANCHOR_PARITY_CASES} and
- * {@link TURN_PARITY_BODIES} through **both** implementations and fails if
- * either side moves. Every rule it covers that becomes shared code shrinks what
- * it has to guard; a rule that is imported needs no fixture at all, which is why
- * neither the fence scanner nor the heading grammar has one.
+ * `scripts/stub-server-parity.test.ts` runs {@link ANCHOR_PARITY_CASES},
+ * {@link TURN_PARITY_BODIES} and a seeded workspace of personas through **both**
+ * implementations and fails if either side moves. Every rule it covers that
+ * becomes shared code shrinks what it has to guard; a rule that is imported
+ * needs no fixture at all, which is why neither the fence scanner nor the
+ * heading grammar has one.
  *
  * **Exact-only, on purpose.** Reads resolve with rungs 1–2 and orphan otherwise;
  * the fuzzy third rung belongs to reconciliation alone, and SERVER-055's attempt
@@ -169,6 +180,115 @@ export function renderTurn(turn: StubTurn): string {
  */
 export function canonicalInstant(iso: string): string {
   return `${new Date(iso).toISOString().slice(0, 19)}Z`;
+}
+
+/**
+ * `.claude/agents/<name>.md` — the one agent-def root a designation resolves in.
+ *
+ * Flat, with no nested segment allowed, because the server's agents root is
+ * `markdown-flat` (`projection/roots.ts`): a file one directory deeper is not an
+ * agent-def at all, and a stub that named it would offer what the server refuses.
+ */
+const AGENT_DEF_STEM = /^\.claude\/agents\/([^/]+)\.md$/;
+
+/**
+ * The name an `agent-def` document is **invocable** by, from its path, or `null`
+ * for one filed anywhere else — `apps/server/src/threads/mentions.ts`'s
+ * `invocableName`, for the one root that can produce such a row.
+ *
+ * It is what makes the stem and the title able to differ at all, which is the
+ * whole point of modelling it: the `profile` skill writes title `Bookkeeper`
+ * into `.claude/agents/bookkeeper.md`, and since SERVER-122 and CLI-050 that is
+ * where a created agent-def lives.
+ *
+ * **And it is the gate on being addressable at all** (SERVER-125): a `null` here
+ * means the document resolves under no spelling, its title included.
+ *
+ * **Narrower than the server's on purpose, and the narrowing is derived rather
+ * than asserted.** The server classifies against all five `DOCUMENT_ROOTS` and
+ * also names skills; only two roots can carry a `type: agent-def` row, because
+ * every other root overrides the frontmatter's type (`roots.ts` — `threads` to
+ * `thread`, both skills roots to `skill`). Those two are `.claude/agents`, whose
+ * shape this regex spells out, and `data/docs`, which the regex answers `null`
+ * for and the server does too. `scripts/stub-server-parity.test.ts` seeds an
+ * `agent-def` at every shape every root admits and compares the two answers, so
+ * a root that starts admitting agent-defs in a new shape fails there rather than
+ * quietly making this the narrower rule.
+ */
+export function invocableAgentName(path: string): string | null {
+  return AGENT_DEF_STEM.exec(path)?.[1] ?? null;
+}
+
+/**
+ * How a name is keyed, and how one is looked up — the server's `aliasKey`
+ * (`threads/mentions.ts`), which is **one** function on both sides for the
+ * reason it is one function there: the transformation has to be the same, or a
+ * spelling that keys one way is looked up another.
+ *
+ * The trim is the half that is easy to drop, and dropping it is a bug with a
+ * name. `documents.title` carries a hand-written title verbatim, so
+ * `title: "  Padded Persona  "` reaches this rule with its padding on, while the
+ * board's designate menu sends that title **trimmed** (`residentActions.ts`).
+ * Key the untrimmed spelling and the row answers only to `"  padded persona  "`
+ * — the menu offers a name the route then 404s (PR #50 NIT 7, fixed on the
+ * server; this copy disagreed with the fix for one more review, PR #50 MINOR 4).
+ */
+export const aliasKey = (name: string): string => name.trim().toLowerCase();
+
+/** A stored document, in the three columns the resolution rule reads. */
+export interface StubTargetRow {
+  readonly id: string;
+  /** Workspace-relative path, as `documents.path` carries it. */
+  readonly path: string;
+  readonly title: string;
+}
+
+/** What a name resolved to: the document, and the name the server would store. */
+export interface StubTarget {
+  readonly docId: string;
+  /** The row's **invocable** name, never the spelling that found it. */
+  readonly name: string;
+}
+
+/**
+ * One name, resolved the way `POST /api/threads/{id}/resident` resolves it
+ * (SPEC.md §7) — the stub's copy of `resolveMentionTarget` over
+ * `type: agent-def`.
+ *
+ * Three rules, all the server's and all load-bearing:
+ *
+ *   - **The invocable name is the gate**, and it decides the whole row: a
+ *     document filed outside `.claude/agents/` answers to nothing, its title
+ *     included (SERVER-125). The offer surfaces apply the same gate
+ *     (`@corpus/kit`'s `isAddressableTarget`, UI-123), so a stub that kept the
+ *     title alias here would agree with the bug rather than with the server.
+ *   - **Two aliases for a row that passes the gate** — its stem and its title —
+ *     because the `@` composer types the stem and the designate menu sends the
+ *     title, and both must land. Both keyed through {@link aliasKey}, as is the
+ *     name being looked up.
+ *   - **First row wins, in id order.** `targetIndex` builds its map from
+ *     `ORDER BY id` and keeps the first claimant of a key; the stub's store is a
+ *     `Map` in seed order, so the sort is what makes a two-row collision resolve
+ *     to the same document on both sides instead of to whichever the spec
+ *     happened to list first.
+ *
+ * A blank name resolves to nothing: the server drops a blank key rather than
+ * indexing it, so there is nothing for `""` to find there either.
+ */
+export function resolveAgentDefName(
+  rows: Iterable<StubTargetRow>,
+  name: string,
+): StubTarget | null {
+  const wanted = aliasKey(name);
+  if (wanted === "") return null;
+  const ordered = [...rows].sort((left, right) => (left.id < right.id ? -1 : 1));
+  for (const row of ordered) {
+    const invocable = invocableAgentName(row.path);
+    if (invocable === null) continue;
+    if (![invocable, row.title].some((alias) => aliasKey(alias) === wanted)) continue;
+    return { docId: row.id, name: invocable };
+  }
+  return null;
 }
 
 /** One fixture: a body, a selector, and the range the **server** resolves it to. */

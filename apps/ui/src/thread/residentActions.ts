@@ -1,5 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import type { LaneRow } from "@corpus/kit";
+import { isAddressableTarget, type LaneRow } from "@corpus/kit";
 import type { MenuAction } from "../menu/menuModel";
 
 /**
@@ -71,24 +71,46 @@ export interface AgentDefRow {
 /**
  * The name to **designate by**, and the document it belongs to.
  *
- * The name is the title, because that is what `GET /api/docs` carries and what
- * the autocomplete offers; the server resolves a name against both the file stem
- * and the title, case-insensitively, so the title always resolves. A row whose
- * title is blank is dropped rather than offered — an item labelled with nothing
- * is not an offer, and designating by an empty name is a `400`.
+ * The name is the title, because that is what `GET /api/docs` carries; the
+ * server resolves a name against both the file stem and the title,
+ * case-insensitively, so the title of an addressable row always resolves. A row
+ * whose title is blank is dropped rather than offered — an item labelled with
+ * nothing is not an offer, and designating by an empty name is a `400`.
+ *
+ * **That last filter guards a state the projection cannot produce**, measured
+ * against the real projector (SERVER-127's review pass): `title: ""`, a
+ * whitespace-only title and a blank `name:` are all *absent* to `asString`, which
+ * falls through to `titleFromPath` — non-blank for every path a root admits. It
+ * is kept as a cheap guard on a field the wire types as a plain string, not
+ * because such a row has ever been seen.
  *
  * **The title is a spelling and not an identity.** What the server *stores* is
- * the name it resolved to — `invocableName(path) ?? title`, which for a file
- * under `.claude/agents/` is the **stem** — so designating `Bookkeeper` makes a
+ * the name it resolved to — the `invocableName`, which for a file under
+ * `.claude/agents/` is the **stem** — so designating `Bookkeeper` makes a
  * resident called `bookkeeper`. That is why the id travels beside the name: it
  * is the only field of a row that can be compared with a lane's resident (see
  * {@link residentActions}).
+ *
+ * **A row with no invocable name is not offered at all** (UI-123). SERVER-125
+ * stopped indexing an off-root `type: agent-def` as a mention target, and it took
+ * the title alias with it: a document *about* a persona, filed under
+ * `data/docs/`, is now addressable under no spelling and a designation naming it
+ * earns a `404` that names the file. So the gate is `isAddressableTarget` — the
+ * kit's, the same one the `@` autocomplete applies, because two copies of this
+ * rule is exactly how both surfaces came to offer what the server refuses.
+ *
+ * The filter is here and not in the query: `GET /api/docs?type=agent-def` still
+ * returns every agent-def, and it must — the board's `type:` filter and the
+ * seeded "Skills & agents" view read it, and the dropped document stays listed,
+ * readable and editable. All it loses is a menu item promising a designation
+ * that cannot land.
  */
 export function agentDefRows(
   rows: readonly DocRow[] | undefined,
 ): readonly AgentDefRow[] | undefined {
   if (rows === undefined) return undefined;
   return rows
+    .filter((row) => isAddressableTarget(row))
     .map((row) => ({ id: row.id, name: row.title.trim() }))
     .filter((row) => row.name !== "");
 }
@@ -152,11 +174,45 @@ export const RELEASE_GENERAL_LABEL = "Release the resident";
  * of profiles is not a misconfiguration — §7 makes a profile the refinement and
  * not the requirement — so it says so in the same breath, and it sits on a
  * disabled line under an offer that works.
+ *
+ * ## Why the root is named, and why the line does not say which absence this is
+ *
+ * Since UI-123 the list is gated by {@link agentDefRows}, so this line has two
+ * causes that read alike: a workspace with no `agent-def` documents, and one
+ * whose `agent-def` documents are all filed where nothing loads them. The old
+ * wording — *"add a `type: agent-def` document"* — was **advice that reproduces
+ * the second state**: `corpus doc create --type agent-def --folder data/docs/…`
+ * makes exactly such a document, the board lists it under "Skills & agents", and
+ * this line still says there are no profiles (PR #50 review).
+ *
+ * So the sentence names the root. That makes it true of both causes rather than
+ * only the first, which is the property that matters: advice a person can follow
+ * without landing back where they started.
+ *
+ * It does **not** distinguish them, deliberately.
+ *
+ *   - **One remedy.** Both absences are answered by the same act — put an
+ *     agent-def under `.claude/agents/`. A second sentence keyed on the cause
+ *     would vary the diagnosis while the instruction stayed put.
+ *   - **The ladder does not stop at two.** An archived agent-def is dropped by
+ *     this same branch for a third reason; to tell any of them apart the menu
+ *     would have to carry the rows it discarded and a reason each. (A fourth,
+ *     the blank title, was cited here until SERVER-127's review pass measured it
+ *     unreachable — the argument stands on the archived case, and citing a state
+ *     the projection cannot produce would have been the species of claim this
+ *     release spent seven sites correcting.) UI-122's lesson is that this item is
+ *     *news beside an offer that works*, not a diagnostics panel — it earned its
+ *     place back by
+ *     being one line.
+ *   - **The board already says it better.** The dropped document is listed, with
+ *     its folder on the row and its path in the reader; §11's own surface for
+ *     "what does this workspace hold" is one column away and can be precise
+ *     where two lines of menu meta cannot.
  */
 export const NO_PROFILES_LABEL = "No profiles yet";
 
 export const NO_PROFILES_META =
-  "a resident does not need one — add a type: agent-def document to offer one here";
+  "a resident does not need one — add a type: agent-def document under .claude/agents/";
 
 export interface ResidentActionsInput {
   /** True for a thread on a document, which §7 forbids a resident. */

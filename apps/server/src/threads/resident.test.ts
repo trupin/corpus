@@ -343,6 +343,67 @@ describe("POST /api/threads/{id}/resident", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toBeUndefined();
   });
 
+  /**
+   * SERVER-125. A `type: agent-def` document under `data/docs/` used to
+   * designate — the whole conversation handed to a persona Claude Code has never
+   * heard of. It is refused now, and the refusal names the file, because this is
+   * the one surface where somebody asks for a persona by name and waits.
+   */
+  it("refuses an agent-def filed outside `.claude/agents/`, and says which file it is", async () => {
+    const created = await createThread(ws, { body: "start" });
+    const misfiled = await createDoc(ws, { type: "agent-def", title: "Legacy", folder: "inbox" });
+    expect(misfiled.path).toBe("data/docs/inbox/legacy.md");
+
+    const response = await designate(created.id, "Legacy");
+
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as { code: string; message: string };
+    expect(body.code).toBe("not_found");
+    expect(body.message).toContain("data/docs/inbox/legacy.md");
+    expect(body.message).toContain(".claude/agents/");
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toBeUndefined();
+  });
+
+  it("keeps the plain refusal for a name that names no document at all", async () => {
+    const created = await createThread(ws, { body: "start" });
+
+    const body = (await (await designate(created.id, "nobody")).json()) as { message: string };
+
+    expect(body.message).toContain("a designation names an agent-def the way a mention does");
+    expect(body.message).not.toContain("data/docs");
+  });
+
+  /**
+   * PR #50 NIT 9. `AgentNameSchema` accepts any non-blank single line, so a
+   * padded name is a legal request; both lookups trim it before searching. The
+   * refusals interpolated the caller's untrimmed bytes, and the off-root one
+   * built `` `@<name>` `` out of them — quoting, as *the token that fails to
+   * resolve*, a string the mention scanner can never produce: its charset is
+   * `[A-Za-z0-9_-]+`, which admits neither the padding nor the space in a title
+   * like `Legacy Analyst`.
+   */
+  it("quotes the trimmed name it looked up, and no mention token, in either refusal", async () => {
+    const created = await createThread(ws, { body: "start" });
+    const misfiled = await createDoc(ws, {
+      type: "agent-def",
+      title: "Legacy Analyst",
+      folder: "inbox",
+    });
+
+    const offRoot = (await (await designate(created.id, "  Legacy Analyst  ")).json()) as {
+      message: string;
+    };
+    const missing = (await (await designate(created.id, "  nobody  ")).json()) as {
+      message: string;
+    };
+
+    expect(offRoot.message).toContain("no agent named Legacy Analyst in this workspace");
+    expect(offRoot.message).toContain(misfiled.path);
+    expect(missing.message).toContain("no agent named nobody in this workspace");
+    // Nothing in either sentence is offered as something to type after a sigil.
+    for (const message of [offRoot.message, missing.message]) expect(message).not.toContain("@");
+  });
+
   it("refuses a designation that names nobody", async () => {
     const created = await createThread(ws, { body: "start" });
 
@@ -736,6 +797,70 @@ describe("reading a resident back", () => {
     });
     // And it is still a lane — a missing persona ends nothing (§7).
     expect(designatedRow(created.id)).toBe(1);
+  });
+
+  /**
+   * The third way `Resident.docId` goes null, and the one SERVER-125 created:
+   * the profile was **moved out of `.claude/agents/`** (`ResidentSchema.docId`
+   * — "renamed, archived, or moved out of `.claude/agents/`, the root a persona
+   * has to live in to be addressable at all"). It is not the deleted case in
+   * different words: the document is still there, still projected under the very
+   * id the designation stored, still listed and readable — and the read still
+   * says null, because `currentResident` re-resolves through
+   * `resolveMentionTarget`, which is gated on `invocableName` and answers
+   * nothing for a persona filed off-root.
+   *
+   * **Reached by hand, because nothing else can reach it.** `POST
+   * /api/docs/{id}/move` refuses a document that is not under `data/docs/`
+   * outright (`assertMovable`), so the state exists only in a workspace somebody
+   * moved a file in — which §5 makes as real as anything the server writes, and
+   * which is exactly the workspace this claim was published for.
+   */
+  it("reports a profile moved out of `.claude/agents/` as null, though the document is still there", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designate(created.id, "researcher");
+
+    // The API cannot produce this state; the refusal is what makes the hand
+    // move below the workspace's only route to it.
+    const refused = await ws.post("/api/docs/doc_researcher/move", { folder: "inbox" });
+    expect(refused.status).toBe(400);
+
+    const profile = ws.read(".claude/agents/researcher.md");
+    rmSync(join(ws.root, ".claude", "agents", "researcher.md"));
+    // Filed where an explicit `--folder` still puts it (SERVER-122): the same
+    // bytes, plus the `type:` the `.claude/agents/` root used to supply, so it
+    // is still a `type: agent-def` document — a document *about* a persona.
+    ws.write("data/docs/researcher.md", profile.replace("---\n", "---\ntype: agent-def\n"));
+    ws.reproject();
+
+    expect((await readThread(created.id))["resident"]).toEqual({
+      name: "researcher",
+      docId: null,
+    });
+    // The document it used to resolve to is still a document, under the same id
+    // — so the null is about the root and not about existence. This is the whole
+    // difference from the deleted case above.
+    const still = await ws.request("/api/docs/doc_researcher");
+    expect(still.status).toBe(200);
+    expect(((await still.json()) as { path: string }).path).toBe("data/docs/researcher.md");
+    // Nothing was rewritten, on disk or in the row: the projection stores the
+    // pair verbatim and only the read re-resolves.
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+    });
+    expect(residentRow(created.id)).toEqual({
+      resident_designated: 1,
+      resident_name: "researcher",
+      resident_doc_id: "doc_researcher",
+    });
+    // And the same gate now refuses a fresh designation by that name, naming the
+    // file it will not use (SERVER-125).
+    const response = await designate(created.id, "researcher");
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as { message: string }).message).toContain(
+      "data/docs/researcher.md",
+    );
   });
 
   it("reads nothing off a parented thread, whatever its frontmatter says", async () => {

@@ -60,6 +60,7 @@ import {
   canonicalInstant,
   parseThreadTurns,
   renderTurn,
+  resolveAgentDefName,
   resolveAnchorExact,
   type StubTurn,
 } from "./serverParity";
@@ -653,23 +654,6 @@ const STUB_REF_PATTERN = /\[\[([A-Za-z][A-Za-z0-9]*_[A-Za-z0-9]+)(?:\|[^\]\n]*)?
 /** Every document id this body references, deduplicated. */
 function refIdsIn(body: string): readonly string[] {
   return [...new Set([...body.matchAll(STUB_REF_PATTERN)].map((match) => match[1] ?? ""))];
-}
-
-/** `.claude/agents/<name>.md` — the one agent-def root a designation resolves in. */
-const AGENT_DEF_STEM = /^\.claude\/agents\/(?:.*\/)?([^/]+)\.md$/;
-
-/**
- * The name a document is **invocable** by, from its path, or `null` for one
- * filed anywhere else — `apps/server/src/threads/mentions.ts`'s rule for the one
- * root that matters here.
- *
- * It is what makes the stem and the title able to differ at all, which is the
- * whole point of modelling it: the `profile` skill writes title `Bookkeeper`
- * into `.claude/agents/bookkeeper.md`, and since SERVER-122 and CLI-050 that is
- * where a created agent-def lives.
- */
-function invocableName(path: string): string | null {
-  return AGENT_DEF_STEM.exec(path)?.[1] ?? null;
 }
 
 /**
@@ -1714,11 +1698,22 @@ export async function stubCorpus(
      * like it worked" the contract refuses.
      *
      * **A name resolves against the stem and the title alike, and what is stored
-     * is what it resolved to** ({@link invocableName}), because that is the one
-     * thing about this route a surface can get wrong without noticing: a menu
-     * comparing the title `GET /api/docs` carries against the stem the resident
-     * is called mis-guards on every agent-def the `profile` skill writes, and a
-     * stub that stored the title would agree with the bug (PR #49 review).
+     * is what it resolved to** ({@link resolveAgentDefName}), because that is
+     * the one thing about this route a surface can get wrong without noticing: a
+     * menu comparing the title `GET /api/docs` carries against the stem the
+     * resident is called mis-guards on every agent-def the `profile` skill
+     * writes, and a stub that stored the title would agree with the bug (PR #49
+     * review).
+     *
+     * The rule itself is **not written here**. It was, and it drifted: it keyed
+     * the caller's name trimmed against `row.title` untrimmed, so a persona
+     * titled `"  Padded Persona  "` — a title the projector carries verbatim —
+     * 404'd in the browser and resolved against the real server, which keys both
+     * sides through one `aliasKey` (PR #50 MINOR 4, one review after NIT 7 fixed
+     * exactly that on the server). It now lives in `serverParity.ts`, where
+     * `scripts/stub-server-parity.test.ts` runs it and
+     * `threads/mentions.ts`'s `resolveMentionTarget` over one seeded workspace
+     * and fails when they answer differently.
      */
     const residentRoute = /^\/api\/threads\/([^/]+)\/resident$/.exec(url.pathname);
     if (residentRoute !== null && (method === "POST" || method === "DELETE")) {
@@ -1735,15 +1730,9 @@ export async function stubCorpus(
       const name = typeof body.name === "string" ? body.name : undefined;
       let resident: Resident = { name: null, docId: null };
       if (name !== undefined) {
-        const wanted = name.trim().toLowerCase();
-        const profile = [...store.values()].find(
-          (row) =>
-            row.type === "agent-def" &&
-            [invocableName(row.path), row.title].some(
-              (alias) => alias !== null && alias.toLowerCase() === wanted,
-            ),
-        );
-        if (profile === undefined) {
+        const agentDefs = [...store.values()].filter((row) => row.type === "agent-def");
+        const profile = resolveAgentDefName(agentDefs, name);
+        if (profile === null) {
           return json(
             route,
             { code: "not_found", message: `no agent-def named ${name}` } satisfies NotFoundError,
@@ -1752,7 +1741,7 @@ export async function stubCorpus(
         }
         // The **resolved** name, never the caller's spelling — and the resolved
         // name of a file under `.claude/agents/` is its stem, not its title.
-        resident = { name: invocableName(profile.path) ?? profile.title, docId: profile.id };
+        resident = { name: profile.name, docId: profile.docId };
       }
       setLane(id, resident);
       return json(route, threadMutation(doc));

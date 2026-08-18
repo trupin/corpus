@@ -64,11 +64,23 @@ export const AGENT_NAME_MAX_LENGTH = 100;
  * document id**.
  *
  * It is the same resolution surface `@<subagent>` mentions use (SPEC.md §8): a
- * `type: agent-def` document is invocable by the stem of its file name under
- * `.claude/agents/`, and by its title, matched case-insensitively. Designating
- * by the name a person already types after a sigil is the point — a designation
- * that took a `doc_…` would be a different vocabulary for the same act, and the
- * two would answer differently the first time an agent-def was renamed.
+ * `type: agent-def` document **under `.claude/agents/`** is invocable by the stem
+ * of its file name *and* by its title, matched case-insensitively. Both spellings
+ * carry weight and they routinely differ — since SERVER-122 a persona created
+ * with the title `Legacy Analyst` is written to `legacy-analyst.md`, so a person
+ * types the stem and the board's designate menu sends the title.
+ *
+ * **The root is the gate, not a detail of the stem clause** (SERVER-125).
+ * `invocableName` is null for a `type: agent-def` filed anywhere else, and
+ * `targetIndex` takes that as the gate on being addressable at all — so such a
+ * document resolves under *no* spelling, its title included. It is a document
+ * *about* a persona: nothing loads it as a subagent, and moving it into
+ * `.claude/agents/` is what makes it designatable.
+ *
+ * Designating by the name a person already types after a sigil is the point — a
+ * designation that took a `doc_…` would be a different vocabulary for the same
+ * act, and the two would answer differently the first time an agent-def was
+ * renamed.
  *
  * **This schema is the shape of a name, not the requirement that there be one.**
  * A designation may name no profile at all (SPEC.md §7, rider SHARED-048); that
@@ -103,10 +115,12 @@ export const AgentNameSchema = z
  * - `{name: "researcher", docId: "doc_…"}` — a **profiled resident**: open that
  *   document to see what the agent is.
  * - `{name: "researcher", docId: null}` — a profiled resident whose **profile is
- *   gone**, renamed or archived since. The designation stands and the resident
- *   goes on owning its scope; §7 requires the miss be *reported* rather than
- *   silently substituted, and this is the report. Not the same state as the
- *   first: one is ordinary and one is worth mentioning to a person.
+ *   gone**: renamed, deleted, or moved out of `.claude/agents/` since. The
+ *   designation stands and the resident goes on owning its scope; §7 requires
+ *   the miss be *reported* rather than silently substituted, and this is the
+ *   report. Not the same state as the first: one is ordinary and one is worth
+ *   mentioning to a person. **Archiving is not one of the ways in** — see
+ *   {@link ResidentSchema}'s `docId`.
  *
  * The fourth combination is not a state — a `docId` with no `name` would be a
  * document nobody named — and the refinement below rejects it.
@@ -148,12 +162,18 @@ export const ResidentSchema = z
     docId: DocIdSchema.nullable().describe(
       "The `type: agent-def` document `name` resolves to **right now**, or null when there is " +
         "none to resolve — either because no profile was named, or because the one that was named " +
-        "has since been renamed or archived. Read the two fields together: `name` null is a " +
+        "has since been renamed, deleted, or moved out of `.claude/agents/`, the root a persona " +
+        "has to live in to be addressable at all. **Archiving a profile does not empty this " +
+        "field**: an archived `agent-def` still under that root resolves exactly as before, and is " +
+        "still designatable, so what stands here is its id and `name (profile missing)` is the " +
+        "wrong thing to show for it. Archived-ness is not carried on a `Resident` at all — it is " +
+        "the document's own `status`, on the document this id names, for the caller that cares. " +
+        "Read the two fields together: `name` null is a " +
         "general resident, `name` set with this null is a resident whose profile has gone (SPEC.md " +
         "§7 — the designation stands, and the missing profile is reported rather than silently " +
         "substituted), and both set is a profile a reader can open. It is re-resolved on every " +
-        "response rather than stored, so a moved agent-def shows its current id here rather than " +
-        "a stale one.",
+        "response rather than stored, so what stands here is the document the name answers to " +
+        "now, never a stale id.",
     ),
   })
   .refine((resident) => resident.name !== null || resident.docId === null, {
@@ -413,10 +433,16 @@ export const DesignateResidentRequestSchema = z
   .strictObject({
     name: AgentNameSchema.describe(
       "The **profile** to designate, by the invocable name `@<subagent>` mentions already use " +
-        "(SPEC.md §8): a `type: agent-def` document's own name, or its title, matched " +
-        "case-insensitively. **Not a document id.** A name that resolves to no agent-def in this " +
-        "workspace is a `404` — a typo is refused rather than degraded to a general resident, " +
-        "because a typo that looked like it worked is the worse outcome.\n\n" +
+        "(SPEC.md §8): for a `type: agent-def` document **under `.claude/agents/`**, its filename " +
+        "stem or its title, matched case-insensitively — and the two routinely differ, since a " +
+        "persona created with the title `Legacy Analyst` is written to `legacy-analyst.md`. " +
+        "**Not a document id, and not an `agent-def` filed outside that root**: one under " +
+        "`data/docs/` is a document *about* a persona, nothing loads it as a subagent, and it " +
+        "answers to neither spelling. A name that resolves to no agent-def in this workspace is a " +
+        "`404` — a typo is refused rather than degraded to a general resident, because a typo " +
+        "that looked like it worked is the worse outcome — and where an off-root `agent-def` is " +
+        "titled the name given, that `404` names its path, because moving the file into " +
+        "`.claude/agents/` is what makes it designatable.\n\n" +
         "**Omit it — or send no body at all — to designate a general resident**: an agent with no " +
         "persona document, working the conversation as the workspace's ordinary agent does. That " +
         "is the ordinary designation and needs nothing to exist in the workspace first (SPEC.md " +

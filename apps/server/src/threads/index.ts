@@ -46,8 +46,9 @@ export {
   requestsAgent,
   resolveMentionTarget,
   scanMentionTokens,
+  unaddressableTarget,
 } from "./mentions.js";
-export type { ParsedMentions, ResolvedTarget } from "./mentions.js";
+export type { ParsedMentions, ResolvedTarget, UnaddressableTarget } from "./mentions.js";
 export { decideParticipation } from "./participation.js";
 export type { ParticipationDecision, ParticipationInput } from "./participation.js";
 export { currentResident, loadThread, readThread, toThreadSummary, toWireThread } from "./read.js";

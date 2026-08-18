@@ -126,38 +126,27 @@ writing. The list is small and typed — this is not a corpus sweep:
 corpus doc list --type agent-def
 ```
 
-**Every word a person will read goes in through a heredoc, the short ones included.** A body
-already does, which is why bodies come out intact; a flag argument does not, and the shell
-reads it on the way past. **Neither quote saves you, because they fail on different characters
-and the repair for one is the hole in the other.** Single quotes break on an apostrophe: in
-`--extra description='…'` the apostrophe in *don't*, *it's* or *the team's* ends the quoting
-early, and the command dies where you can see it — `unexpected EOF while looking for matching
-'` from the shell, or `unexpected argument "fine,"` from the CLI. The obvious repair is to
-reach for double quotes, and that is the trap: `--title "…"` is already double-quoted, and a
-name carrying `$18,400` arrives as `,400`, because `$18` is a positional parameter and it is
-empty. Nothing errors, nothing warns, and the wrong figure is committed and shown to a person
-as though you meant it. Build the value the way you build a body, and pass it by name:
+**Both values below are somebody else's, so both go in through a heredoc, passed by name.**
+The name they asked for and the description of what they asked it to do are their words, not
+yours, and words you did not choose are not put on a command line as a literal. **What the
+shell would otherwise do to those two values is the orchestrate skill's to state, and it is
+stated there alone.** Here it binds both of them every time, the ones that look safe included
+— you cannot see afterwards what came out wrong, and the document is what a person reads.
 
 ```bash
-title=$(cat <<'EOF'
+title=$(cat <<'CORPUS_EOF'
 Bookkeeper
-EOF
+CORPUS_EOF
 )
 ```
 
-Nothing inside a `<<'EOF'` heredoc is expanded, because the terminator is quoted, and `"$title"`
-expands the variable and nothing within it. So there is no list of characters to keep in your
-head: `$`, a backtick, a backslash, a `!`, an apostrophe and a quote all reach the server as
-themselves. Use it for **both** values below every time, the ones that look safe included —
-you cannot see what you mangled afterwards, and the document is what a person reads.
-
-**Create the document.** `agent-def` has a document root of its own, so there is no `--folder`
-to pass: the document lands in `.claude/agents/`, at a filename slugged from the title.
+**Create the document.** `agent-def` has a document root of its own, so pass no `--folder`:
+the document lands in `.claude/agents/`, at a filename slugged from the title.
 
 ```bash
-corpus doc create --type agent-def --title "$title" --from agent <<'EOF'
+corpus doc create --type agent-def --title "$title" --from agent <<'CORPUS_EOF'
 The body — the persona, written to the rules above.
-EOF
+CORPUS_EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
 ```
 
@@ -176,9 +165,9 @@ it in from the title so the profile loads at all, and a title is a label rather 
 it:
 
 ```bash
-description=$(cat <<'EOF'
+description=$(cat <<'CORPUS_EOF'
 Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place.
-EOF
+CORPUS_EOF
 )
 corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
 ```
@@ -266,12 +255,12 @@ and is guessable rather than askable. Guess it, and say that you guessed.
 
 ```bash
 corpus doc list --type agent-def
-showing 0 documents
-title=$(cat <<'EOF'
+no documents match.
+title=$(cat <<'CORPUS_EOF'
 Bookkeeper
-EOF
+CORPUS_EOF
 )
-corpus doc create --type agent-def --title "$title" --from agent <<'EOF'
+corpus doc create --type agent-def --title "$title" --from agent <<'CORPUS_EOF'
 You keep this workspace's money documents in one shape.
 
 - Every figure you write carries its source: the id of the document it came from, and that document's date. A figure you cannot source does not go in the answer — say it is unsourced instead.
@@ -279,11 +268,11 @@ You keep this workspace's money documents in one shape.
 - You do not forecast and you do not advise. Asked what to do, lay out what the documents say and leave the decision where it belongs.
 
 A good answer from you is a short table of figures with their sources and one sentence under it. Where that is not enough room, say what is missing rather than padding it out.
-EOF
+CORPUS_EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
-description=$(cat <<'EOF'
+description=$(cat <<'CORPUS_EOF'
 Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place. It says which document every number came from and doesn't advise.
-EOF
+CORPUS_EOF
 )
 corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
 edited doc_b7c1d5
@@ -299,7 +288,7 @@ actually type. Twelve lines.
 Then the reply, which is where the person finds out any of this happened:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
 Written — `@bookkeeper`, at `.claude/agents/bookkeeper.md`.
 
 It sources every figure it writes back to the document that figure came from, gives you both sides when two documents disagree instead of picking one, and declines to advise. Answers come back as a short table with a sentence under it.
@@ -308,5 +297,5 @@ Mention `@bookkeeper` in a comment to hand it something. To put it in charge of 
 
 One guess in there: you did not say what you wanted its answers to look like, so I gave it the table-and-a-sentence shape. That is the last line of the document — edit it if it is wrong.
 ↳ created the bookkeeper profile
-EOF
+CORPUS_EOF
 ```

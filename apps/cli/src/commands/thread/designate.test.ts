@@ -1,3 +1,4 @@
+import { DesignateResidentRequestSchema, designateResident } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { ServerResponseError, UsageError } from "../../errors.js";
 import { collectRegistryProblems } from "../../registry/validate.js";
@@ -127,8 +128,10 @@ describe("corpus thread designate", () => {
   });
 
   it("reports a designated profile that has since gone, rather than a stale id", async () => {
-    // §7: a profile renamed or archived after designation does not end the
-    // designation, and the miss is reported rather than silently substituted.
+    // §7: a profile renamed, deleted, or moved out of `.claude/agents/` after
+    // designation does not end the designation, and the miss is reported rather
+    // than silently substituted. Archiving is not one of those — an archived
+    // agent-def still under that root resolves, so it arrives with its id.
     const orphaned = { ...THREAD, resident: { name: "researcher", docId: null } };
     const stub = await startStubServer(jsonResponder(200, { thread: orphaned, warnings: [] }));
 
@@ -281,5 +284,18 @@ describe("the designate command spec", () => {
 
   it("is reachable as `corpus thread designate`", () => {
     expect(threadTopic.commands.map((command) => command.name)).toContain("designate");
+  });
+
+  it("says why an off-root agent-def misses in the contract's exact words", () => {
+    // Three surfaces tell a caller the same thing about an `agent-def` filed
+    // outside `.claude/agents/`, and the sentence was already identical bar one
+    // pair of asterisks. Holding it as one literal is what stops the next edit
+    // to any of them from becoming a fourth phrasing of the same rule.
+    const clause =
+      "off-root `agent-def` is titled the name given, that `404` names its path, because moving " +
+      "the file into `.claude/agents/` is what makes it designatable";
+    expect(designateCommand.description).toContain(clause);
+    expect(designateResident.description).toContain(clause);
+    expect(DesignateResidentRequestSchema.shape.name.unwrap().description).toContain(clause);
   });
 });

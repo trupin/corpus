@@ -53,10 +53,12 @@ import type { ComposerRecipient } from "./useComposerRecipient.js";
  *   contract routes it and §7's fallback covers it — so the row says what lapsed
  *   means and stays pressable.
  * - **No lane drawn as sounder than it is.** A resident whose profile has been
- *   renamed or archived is reported here as it is on the board badge (`LaneRow`'s
- *   `mark` at row width, its `note` in the statement and the title) — §7 requires
- *   the miss be *"reported rather than silently substituted"*, and this is the
- *   surface on which the lane is actually chosen.
+ *   renamed, deleted, or moved out of `.claude/agents/` is reported here as it is
+ *   on the board badge (`LaneRow`'s `mark` at row width, its `note` in the
+ *   statement and the title) — §7 requires the miss be *"reported rather than
+ *   silently substituted"*, and this is the surface on which the lane is actually
+ *   chosen. An **archived** profile is not one of those: it still resolves, so
+ *   its lane is drawn as the healthy one it is (`MISSING_PROFILE_CAUSES`).
  */
 
 export interface RecipientPickerProps {

@@ -496,7 +496,62 @@ describe("§7's skill-frontmatter leniency (Adjudication 6)", () => {
         },
       ],
     });
-    expect(codes(report.errors)).toEqual(["anchor-malformed"]);
+    // `anchors` is a key this file wrote down, so §5 judges its shape too now
+    // (SERVER-124) — exactly as it always has for the same bytes under `data/`.
+    // The structural rule is the one that still blocks a save; both are reported.
+    expect(codes(report.errors)).toEqual(["anchor-malformed", "frontmatter-invalid"]);
+    expect(report.errors.map((f) => f.detail)).toEqual([
+      expect.stringContaining("not-an-anchor-id"),
+      expect.stringContaining("anchors"),
+    ]);
+  });
+
+  /**
+   * SERVER-124: the leniency is over a field's *presence*, not its shape.
+   * `corpus doc check` said nothing at all about the Corpus half of a file under
+   * these roots — measured on a real server — so a `status: banana` somebody
+   * typed by hand reached the projection, the board and every query that filters
+   * on status with nothing anywhere reporting it.
+   */
+  it("reports the Corpus fields a lenient file wrote down and got wrong", async () => {
+    const path = ".claude/skills/handmade/SKILL.md";
+    const content =
+      "---\nname: handmade\ndescription: A skill.\nstatus: banana\ntags: seven\n---\n\nDo it.\n";
+    const { report } = await check({ documents: [{ path, content }] });
+    expect(codes(report.errors)).toEqual(["frontmatter-invalid"]);
+    expect(report.errors.map((f) => f.detail.split(":")[0])).toEqual(["tags", "status"]);
+    expect(report.errors.every((f) => f.path === path)).toBe(true);
+    expect(report.ok).toBe(false);
+  });
+
+  it("keeps saying nothing about the fields it never wrote down", async () => {
+    const path = ".claude/skills/handmade/SKILL.md";
+    const content = "---\nname: handmade\ndescription: A skill.\nstatus: open\n---\n\nDo it.\n";
+    const { report } = await check({ documents: [{ path, content }] });
+    expect(report).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+
+  /**
+   * The write path's half of the same split, through the real route: a file with
+   * a malformed Corpus field is still editable, because the fault is in bytes
+   * the server never authored and no repair the board can express would clear
+   * it (SERVER-123's regression, in its second shape).
+   */
+  it("agrees with the write path the other way: what a check reports, a save still accepts", async () => {
+    ws.write(
+      ".claude/skills/handmade/SKILL.md",
+      "---\nname: handmade\ndescription: A skill.\nstatus: banana\n---\n\nDo it.\n",
+    );
+    ws.reproject();
+    const row = ws.db
+      .prepare("SELECT id FROM documents WHERE path = ?")
+      .get(".claude/skills/handmade/SKILL.md") as { id: string };
+
+    const saved = await putDoc(ws, row.id, { body: "Do it twice.\n" });
+    expect(saved.status).toBe(200);
+
+    const { report } = await check({ ids: [row.id] });
+    expect(codes(report.errors)).toEqual(["frontmatter-invalid"]);
   });
 
   it("does not extend the leniency to documents under `data/`", async () => {
