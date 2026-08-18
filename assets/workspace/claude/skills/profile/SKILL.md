@@ -126,17 +126,12 @@ writing. The list is small and typed — this is not a corpus sweep:
 corpus doc list --type agent-def
 ```
 
-**Every word a person will read goes in through a heredoc, the short ones included.** A body
-already does, which is why bodies come out intact; a flag argument does not, and the shell
-reads it on the way past. **Neither quote saves you, because they fail on different characters
-and the repair for one is the hole in the other.** Single quotes break on an apostrophe: in
-`--extra description='…'` the apostrophe in *don't*, *it's* or *the team's* ends the quoting
-early, and the command dies where you can see it — `unexpected EOF while looking for matching
-'` from the shell, or `unexpected argument "fine,"` from the CLI. The obvious repair is to
-reach for double quotes, and that is the trap: `--title "…"` is already double-quoted, and a
-name carrying `$18,400` arrives as `,400`, because `$18` is a positional parameter and it is
-empty. Nothing errors, nothing warns, and the wrong figure is committed and shown to a person
-as though you meant it. Build the value the way you build a body, and pass it by name:
+**Both values below are somebody else's, so both go in through a heredoc, passed by name.**
+The name they asked for and the description of what they asked it to do are their words, not
+yours, and words you did not choose are not put on a command line as a literal. **What the
+shell would otherwise do to those two values is the orchestrate skill's to state, and it is
+stated there alone.** Here it binds both of them every time, the ones that look safe included
+— you cannot see afterwards what came out wrong, and the document is what a person reads.
 
 ```bash
 title=$(cat <<'EOF'
@@ -144,12 +139,6 @@ Bookkeeper
 EOF
 )
 ```
-
-Nothing inside a `<<'EOF'` heredoc is expanded, because the terminator is quoted, and `"$title"`
-expands the variable and nothing within it. So there is no list of characters to keep in your
-head: `$`, a backtick, a backslash, a `!`, an apostrophe and a quote all reach the server as
-themselves. Use it for **both** values below every time, the ones that look safe included —
-you cannot see what you mangled afterwards, and the document is what a person reads.
 
 **Create the document.** `agent-def` has a document root of its own, so there is no `--folder`
 to pass: the document lands in `.claude/agents/`, at a filename slugged from the title.

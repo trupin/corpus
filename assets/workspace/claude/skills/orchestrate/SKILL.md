@@ -766,6 +766,49 @@ patch flag. A file and a heredoc both end in a newline, and a newline is text li
 an excerpt that should obviously match and reports 0 matches is usually one trailing newline
 long.
 
+**The shell reads every argument before the CLI sees it, and what it does to somebody's words
+is mostly silent.** A figure is where it bites first. `--title "… quote, $18,400"` does not
+arrive carrying `$18,400`: `$18` is a positional parameter, so the title lands as
+`quote, ,400` under zsh and `quote, 8,400` under bash — and the second is the worse of the
+two, because `8,400` is a figure a person reads straight past. A backtick is not corrupted but
+**obeyed**: a title mentioning `` `whoami` `` reaches the document as the username. And single
+quotes are not the repair, because they fail on the other character in the same silent way —
+`--title 'O'Brien's report'` is three quoted pieces that the shell joins back into one
+argument, so the title lands as `OBriens report`, exit `0`, committed, both apostrophes gone.
+Each of those is a write that succeeded and a document that is wrong, and nothing afterwards
+tells you: not the confirmation, not the exit code, not the commit.
+
+**So text you are carrying over from somebody else never goes on a command line as a
+literal.** Build it in a heredoc whose terminator is quoted — which expands nothing at all —
+and pass it by name:
+
+```bash
+title=$(cat <<'EOF'
+Kitchen rebuild — cabinet quote, $18,400
+EOF
+)
+corpus doc edit doc_a1b2c3 --title "$title" --from agent
+```
+
+Nothing inside a heredoc whose terminator is quoted is expanded, and `"$title"` expands the
+variable and nothing within it, so there is no character list to keep in your head: `$`, a
+backtick, a backslash, a `!`, an apostrophe and a quote all reach the server as themselves.
+**The test is where the text came from, not what is in it.** Words you wrote yourself, out of
+ordinary vocabulary, have
+nothing in them for the shell to act on, and `--title "Quarterly insurance review"` is fine as
+it stands. Words you are carrying over are the other case — their question as a thread's
+title, a figure from their message, a name, a phrase you are handing back — because you did
+not choose those characters and so cannot know what is among them. Those go through the
+heredoc every time: a title, a tag, an `--extra` value, a description. It is the construction
+a body already uses, and that makes this one rule rather than two — a heredoc is how anybody's
+words reach the server intact, whether they fill a document or a single flag.
+
+**When the shell refuses the line, the answer is never a double quote.** An unmatched quote or
+an unexpected end of file is the loud half of this same defect, and it is the better half:
+nothing ran, so nothing was written and nothing was lost. Build the value the way above and
+send it again. Reaching for a double quote to make the complaint go away is how a failure you
+can see turns into one you cannot.
+
 **The whole-body edit, and the key that protects it.** When there is nothing to quote, the
 write replaces the body, and then: **read → work → write with the key you were given → keep
 the key the write returned.** That is the whole discipline, and every step of it is something

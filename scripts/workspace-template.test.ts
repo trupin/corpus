@@ -1034,6 +1034,151 @@ describe("skills", () => {
       /corpus queue (?:complete|fail)/,
     );
   });
+
+  /**
+   * AGENT-035 — a `$` in a quoted flag argument is eaten before the CLI runs.
+   *
+   * Measured against a real workspace on 2026-08-18, and every number below is
+   * an observed one rather than an argument:
+   *
+   * - `--title "… quote, $18,400"` landed as `quote, ,400` under zsh 5.9 and
+   *   `quote, 8,400` under bash 3.2 — same command, two different wrong
+   *   figures, exit `0` and a commit in both. The bash one is the worse: the
+   *   shell splits `$1` from the `8`, and `8,400` is a number nobody queries.
+   * - `--title "Ask \`whoami\` first"` landed as the username. A backtick is not
+   *   corrupted, it is obeyed.
+   * - `--title 'O'Brien's report'` landed as `OBriens report` — **one**
+   *   argument, exit `0`, committed, both apostrophes gone. This is the
+   *   measurement that decides the guidance: single quotes are not the safe
+   *   alternative, they are the same silent defect on a different character,
+   *   and an ordinary surname is enough to trigger it.
+   *
+   * So the rule cannot be a quote to prefer. It is a construction with no
+   * character list attached — build the value in a `<<'EOF'` heredoc, pass
+   * `"$var"` — and a provenance test for when it applies: text you are carrying
+   * over from somebody else, whose characters you did not choose. A title you
+   * wrote out of your own vocabulary is left as a literal in the examples, which
+   * is the rule being applied rather than an inconsistency.
+   *
+   * The recovery clause is the load-bearing half. Both quotes also have a loud
+   * failure — an unmatched quote, an unexpected end of file — and the reflex
+   * repair for a broken single quote is a double quote, which is the silent
+   * hole. A skill that only said "mind your quoting" would route an agent from
+   * the failure it can see into the one it cannot.
+   */
+  describe("a person's words never reach the shell as a literal", () => {
+    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+
+    it("states what the shell does, in outcomes an agent can recognise", () => {
+      const flat = orchestrate.replace(/\s+/g, " ");
+      expect(flat).toMatch(/the shell reads every argument before the CLI sees it/i);
+      // Both shells, because a rule stated for one leaves the other's — the
+      // plausible-looking `8,400` — reading as a correct write.
+      expect(flat).toMatch(/positional parameter/i);
+      expect(flat).toMatch(/`quote, ,400` under zsh/);
+      expect(flat).toMatch(/`quote, 8,400` under bash/);
+      // A backtick is executed, not mangled: a different consequence.
+      expect(flat).toMatch(/`` `whoami` `` reaches the document as the username/);
+      // The measurement that rules out "just use single quotes".
+      expect(flat).toMatch(/`--title 'O'Brien's report'`/);
+      expect(flat).toMatch(/lands as `OBriens report`/);
+      expect(flat).toMatch(/both apostrophes gone/i);
+      // And that all of it is invisible afterwards, which is why it is a rule
+      // rather than something to watch out for.
+      expect(flat).toMatch(/not the confirmation, not the exit code, not the commit/i);
+    });
+
+    it("gives one construction and the test for when it applies", () => {
+      const flat = orchestrate.replace(/\s+/g, " ");
+      expect(flat).toMatch(/never goes on a command line as a literal/i);
+      expect(orchestrate).toMatch(/title=\$\(cat <<'EOF'\n/);
+      expect(orchestrate).toMatch(/corpus doc edit doc_a1b2c3 --title "\$title" --from agent/);
+      // No character list to remember is the whole reason this construction
+      // wins over escaping; the skill has to say so, or an agent applies it
+      // only to the characters it happens to notice.
+      expect(flat).toMatch(/there is no character list to keep in your head/i);
+      // Provenance, not inspection: an agent cannot reliably spot a `$`.
+      expect(flat).toMatch(/\*\*The test is where the text came from, not what is in it\.\*\*/);
+      expect(flat).toMatch(/`--title "Quarterly insurance review"` is fine as it stands/);
+      // One rule with the body case as its already-known instance, which is
+      // what the issue asked for instead of a second rule that agrees.
+      expect(flat).toMatch(/one rule rather than two/i);
+    });
+
+    it("says what to do when the shell complains, which is not a double quote", () => {
+      const flat = orchestrate.replace(/\s+/g, " ");
+      expect(flat).toMatch(
+        /\*\*When the shell refuses the line, the answer is never a double quote\.\*\*/,
+      );
+      expect(flat).toMatch(/nothing ran, so nothing was written and nothing was lost/i);
+      expect(flat).toMatch(/a failure you can see turns into one you cannot/i);
+    });
+
+    /**
+     * The examples are what get copied, so the rule is pinned in them and not
+     * only in the prose. Both sites carry somebody else's words: a standalone
+     * thread's real title is made out of the conversation, and the reported
+     * defect was exactly a thread title.
+     */
+    it("builds a thread's title in a heredoc, at both sites that set one", () => {
+      const comment = documentAt("claude/skills/comment/SKILL.md").body;
+      const retitles = [...comment.matchAll(/corpus doc edit th_\w+ --title (\S+)/g)].map(
+        (match) => match[1],
+      );
+      expect(retitles.length, "the comment skill retitles no thread").toBeGreaterThan(1);
+      for (const argument of retitles) {
+        expect(argument, "a thread title is quoted straight into the command").toBe('"$title"');
+      }
+      // And the value really is built the safe way ahead of each of them.
+      expect(comment.match(/title=\$\(cat <<'EOF'\n/g)?.length ?? 0).toBe(retitles.length);
+    });
+
+    it("shows the cost at the site of the reported defect", () => {
+      const flat = documentAt("claude/skills/comment/SKILL.md").body.replace(/\s+/g, " ");
+      expect(flat).toMatch(/reaches the corpus as `cabinet quote, ,400`/);
+      expect(flat).toMatch(/the wrong figure shown to the person who gave you the right one/i);
+    });
+
+    it("passes a skill's description by name, like any other prose somebody reads", () => {
+      const comment = documentAt("claude/skills/comment/SKILL.md").body;
+      expect(comment).toMatch(/description=\$\(cat <<'EOF'\n/);
+      for (const invocation of comment.match(/corpus skill create [^\n]*/g) ?? []) {
+        expect(invocation, "a skill description is quoted straight into the command").toMatch(
+          /--description "\$description"/,
+        );
+      }
+    });
+
+    /**
+     * A heredoc terminator only closes the heredoc on a line of its own with
+     * nothing before it, so an indented example is not an example — it is a
+     * command that behaves differently from the one on the page. Measured on
+     * the same day: an indented `EOF` is a parse error under zsh and, under
+     * bash, silently swallows the rest of the input into the value. Two
+     * shipped examples had one (`comment`'s skill genesis, `converse`'s
+     * retirement sign-off); both are now at column zero.
+     */
+    it.each(coreSkills)("$name indents no heredoc terminator", ({ relPath }) => {
+      const offenders = documentAt(relPath)
+        .body.split("\n")
+        .filter((line) => /^\s+EOF\s*$/.test(line));
+      expect(offenders, `${relPath}: an indented EOF closes nothing`).toEqual([]);
+    });
+
+    it.each(coreSkills)("$name opens a heredoc it can close", ({ relPath }) => {
+      // Anti-vacuity for the rule above, and a real check in its own right:
+      // every `<<'EOF'` opened in the text is closed by a bare `EOF` after it.
+      const lines = documentAt(relPath).body.split("\n");
+      let opened = 0;
+      let closed = 0;
+      for (const line of lines) {
+        if (line.includes("<<'EOF'")) opened += 1;
+        else if (line === "EOF") closed += 1;
+      }
+      expect(opened, `${relPath}: no heredoc to check`).toBeGreaterThan(0);
+      expect(closed, `${relPath}: ${opened} heredocs opened, ${closed} closed`).toBe(opened);
+    });
+  });
 });
 
 describe("orchestrate skill body", () => {
@@ -2840,7 +2985,9 @@ describe("comment skill body", () => {
     expect(body).toMatch(/Create a genuinely new skill when nothing installed fits/i);
     // AGENT-006: the creation branch names the shipped verb (CLI-011), and the
     // propose-a-note path is gone — one documented way, not two.
-    expect(body).toContain('corpus skill create <name> --description "<one line>" --from agent');
+    // AGENT-035 moved the placeholder from `"<one line>"` to `"$description"`:
+    // the description is somebody's words, so it arrives through a heredoc.
+    expect(body).toContain('corpus skill create <name> --description "$description" --from agent');
     expect(body).not.toMatch(/Propose a genuinely new skill/i);
     expect(body).not.toMatch(/cannot write into `\.claude\/`/i);
     expect(body).toMatch(/an \*\*edit to that\s+skill\*\*, never a second skill/i);
@@ -4294,21 +4441,26 @@ describe("profile skill body", () => {
    * file, the safe form must be what both writes spell, and the worked
    * description must actually contain an apostrophe — an example that avoids
    * the character the rule exists for demonstrates nothing.
+   *
+   * **AGENT-035 took the explanation out of this file and left the practice.**
+   * The account above was the only one anywhere, and it turned out to bind
+   * every skill rather than this one — a thread title is where it was reported
+   * from. So `orchestrate` states the mechanism now, under the single-owner
+   * registry, and what stays pinned here is what this skill *does*: two writes,
+   * both values built by a quoted heredoc, no raw quoted form anywhere in an
+   * invocation, and a pointer instead of a second account.
    */
   it("routes every word a person reads through a heredoc, not a quoted argument", () => {
-    expect(body).toMatch(/\*\*Every word a person will read goes in through a heredoc/);
-    // The two failures named concretely, because a rule whose cost is abstract
-    // is the rule an agent under load re-derives from habit instead.
-    expect(body).toMatch(/\$18,400/);
-    expect(body).toMatch(/positional parameter/);
-    // Stated as a pair: the loud failure's repair is the silent failure. A text
-    // that names only one of them teaches the agent to swap one for the other.
-    expect(body).toMatch(/\*\*Neither quote saves you/);
-    expect(body).toMatch(/the repair for one is the hole\s+in the other/);
-    expect(body).toMatch(/unexpected EOF while looking for matching/);
-    // Why the form is total: the reader carries no character list.
-    expect(body).toMatch(/Nothing inside a `<<'EOF'` heredoc is expanded/);
-    expect(body).toMatch(/no list of characters to keep in your\s+head/);
+    expect(body).toMatch(
+      /\*\*Both values below are somebody else's, so both go in through a heredoc, passed by name\.\*\*/,
+    );
+    // A pointer, not a restatement: the mechanism lives in one file, and this
+    // skill says which. `one rule, one skill` holds the other half — that no
+    // account of the expansion survives here.
+    expect(body).toMatch(/is the orchestrate skill's to state, and it is\s+stated there alone\./);
+    // The one thing this skill adds to the rule it defers to: here it is
+    // unconditional, because both of its values are always somebody else's.
+    expect(body).toMatch(/binds both of them every time, the ones that look safe included/);
 
     // Negative pins, over the **invocations** rather than the whole body: the
     // prose above names both broken forms on purpose, and a pin that could not
@@ -4572,6 +4724,10 @@ describe("one rule, one skill", () => {
       ],
     },
     {
+      why: "the pointer formula itself. AGENT-035 is the first single-owner rule whose consumers are the other three skills rather than `orchestrate`, so the closing clause of a pointer now occurs in four files. It is identical on purpose: it is what marks a sentence as a pointer rather than a second account, and the registry below matches it. Only the clause is shared — each pointer names a different thing about the rule it defers",
+      passages: ["is the orchestrate skill's to state, and it is stated there alone."],
+    },
+    {
       why: "stewardship, which binds whoever does the work — `orchestrate` states the charter and `comment` states the parts a turn carries",
       passages: [
         "is how their writing disappears and every thread anchored into an entry you rewrote comes loose",
@@ -4685,6 +4841,28 @@ describe("one rule, one skill", () => {
   const HELD_ELSEWHERE =
     /`inProgress`|held by|another (?:listener|caller)|second listener|claim comes back/i;
 
+  /** A sentence matched across whatever line wrapping the file happens to have. */
+  const wrapped = (sentence: string): RegExp =>
+    new RegExp(sentence.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&").replaceAll(/\s+/g, "\\s+"));
+
+  // AGENT-035. A sentence explains what the shell does to an argument when it
+  // names a character the shell acts on **and** what becomes of that argument.
+  // The construction is deliberately not the vocabulary: every skill has to say
+  // *build the value in a heredoc and pass `"$var"`*, because every skill
+  // performs it, and `comment` may even say a title reaches the corpus as
+  // `, ,400` — the outcome at the site of the defect is what a pointer carries.
+  // What it may not do is explain that `$18` is a positional parameter or that
+  // an apostrophe ends the quoting, because a second account of the mechanism
+  // is what drifts the next time somebody rewrites one of the two.
+  //
+  // `backtick` is deliberately absent from the character list. Both loop skills
+  // carry the fence rules, which are several paragraphs about backtick runs, and
+  // a pin that fires on those is a pin somebody baselines away.
+  const SHELL_CHARACTER =
+    /positional parameter|\$18\b|dollar sign|\bapostrophes?\b|single quotes?|double quotes?/i;
+  const SHELL_CONSUMES =
+    /\bexpands?\b|\bexpanded\b|\beaten\b|\beats\b|ends the quoting|command substitution|\bjoins?\b|unmatched|is obeyed|\blands? as\b|arrives? (?:as|carrying)|reaches? the (?:document|server) as/i;
+
   const SINGLE_OWNER_RULES: readonly SingleOwnerRule[] = [
     {
       rule: "how a second listener finds out it is second",
@@ -4785,6 +4963,46 @@ describe("one rule, one skill", () => {
         },
       ],
     },
+    {
+      // AGENT-035. The other three skills all perform this — every one of them
+      // sets a title, a description or an `--extra` value out of somebody's
+      // words — so this is the first rule whose consumers outnumber its owner,
+      // and the first with three pointers. `orchestrate` owns it because it is
+      // the skill the other three already inherit their invariants from, and
+      // because the rule is about talking to the CLI at all rather than about
+      // any one verb.
+      //
+      // Net, not proof, in the same sense as the rules above: a sentence that
+      // describes the loss without naming a character — *"the shell gets to
+      // your text first and quietly changes it"* — states the whole rule and
+      // matches nothing here, and the test below says so out loud.
+      rule: "what the shell does to a value quoted into a flag argument",
+      owner: "orchestrate",
+      restatements: (body) =>
+        proseSentences(body).filter(
+          (sentence) => SHELL_CHARACTER.test(sentence) && SHELL_CONSUMES.test(sentence),
+        ),
+      pointers: [
+        {
+          skill: "comment",
+          carries: wrapped(
+            "**What the shell does to a flag argument, and why the heredoc is the answer, is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+        {
+          skill: "converse",
+          carries: wrapped(
+            "**What the shell does to a value you quote into a flag is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+        {
+          skill: "profile",
+          carries: wrapped(
+            "**What the shell would otherwise do to those two values is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+      ],
+    },
   ];
 
   it("keeps every registered rule in the one skill that owns it", () => {
@@ -4879,6 +5097,40 @@ describe("one rule, one skill", () => {
       writing?.restatements(
         "Create the persona document, then set the two fields Claude Code reads.",
       ) ?? ["unchecked"],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("catches a second account of the expansion, and says which paraphrase it misses", () => {
+    // AGENT-035. The failure this guards is a second skill acquiring its own
+    // explanation of what the shell eats — which is how the guidance would come
+    // to disagree with itself about whether single quotes are the repair. The
+    // three below are the shapes that account has actually been written in.
+    const shell = SINGLE_OWNER_RULES.find(({ rule }) => rule.startsWith("what the shell does"));
+    expect(shell, "the expansion rule is no longer registered").toBeDefined();
+    const caught = [
+      "`$18` is a positional parameter, so a title carrying $18,400 arrives as `,400`.",
+      "An apostrophe inside a single-quoted argument ends the quoting early and is deleted.",
+      "Inside double quotes the shell expands anything shaped like a variable.",
+    ];
+    for (const sentence of caught) {
+      expect(
+        shell?.restatements(sentence) ?? [],
+        `a second account of the expansion now evades the pin: "${sentence}"`,
+      ).not.toEqual([]);
+    }
+    // Stating the outcome without the mechanism is what a pointer does, and
+    // `comment` states exactly that shape at the site of the reported defect.
+    expect(
+      shell?.restatements(
+        "Quoted straight into the command, that title reaches the corpus as `cabinet quote, ,400`.",
+      ) ?? ["unchecked"],
+      "the pin now catches the outcome a pointer is allowed to carry",
+    ).toEqual([]);
+    expect(
+      shell?.restatements("The shell gets to your text first and quietly changes it.") ?? [
+        "unchecked",
+      ],
       "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
     ).toEqual([]);
   });

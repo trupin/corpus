@@ -201,14 +201,25 @@ excerpts. The conversation outlived the document it was about: work from the thr
 happened in the reply, and never recreate what was deleted.
 
 A standalone thread arrives with a provisional title derived from its first turn. **After the
-first exchange, give it a real one** — a thread is a document, so the title is a document edit:
+first exchange, give it a real one** — a thread is a document, so the title is a document edit.
+A title made out of the conversation carries their words, so build it in a heredoc and pass it
+by name rather than quoting it into the command:
 
 ```bash
-corpus doc edit th_9f21c4 --title "Rate assumptions for the 2026 refinance" --from agent
+title=$(cat <<'EOF'
+Kitchen rebuild — cabinet quote, $18,400
+EOF
+)
+corpus doc edit th_9f21c4 --title "$title" --from agent
 ```
 
 That is an obligation, not an option: an untitled conversation is unfindable on the board a
-week later, and you are the only party who knows what it turned out to be about.
+week later, and you are the only party who knows what it turned out to be about. And the
+heredoc is not ceremony — quoted straight into the command, that title reaches the corpus as
+`cabinet quote, ,400`, with no error anywhere and the wrong figure shown to the person who
+gave you the right one. **What the shell does to a flag argument, and why the heredoc is the
+answer, is the orchestrate skill's to state, and it is stated there alone.** It binds every
+value you carry over from somebody: a title, a tag, an `--extra` value, a description.
 
 ## Routing directives
 
@@ -257,7 +268,8 @@ Pick the smallest shape that actually answers the request.
   threads follow their text automatically — so **never hand-maintain the `anchors` map** and
   never mention anchor ids in an edit. Read the command's anchor report: it names any thread
   that came loose.
-- **Create a document** with `corpus doc create --type note --title "…" --from agent` when the
+- **Create a document** with `corpus doc create --type note --title "$title" --from agent` —
+  the title built in a heredoc first wherever it carries their words — when the
   answer is durable — a decision, a preference, a fact that a future thread would need. Give
   it a folder, tag it, and reference it from the reply.
 - **Spawn a subagent** when the work is long enough that a person should not sit on a pending
@@ -802,31 +814,41 @@ about behavior.
   heredoc body, keeping **both** frontmatter field sets intact — `name` and `description` for
   Claude Code, `id`/`type`/`title`/`tags`/`status` for Corpus — so both readers keep seeing
   it.
-- **Create a genuinely new skill when nothing installed fits** —
-  `corpus skill create <name> --description "<one line>" --from agent` with a heredoc body:
+- **Create a genuinely new skill when nothing installed fits**, with
+  `corpus skill create <name> --description "$description" --from agent` and a heredoc body.
 
-  ```bash
-  corpus skill create weekly-review --description "Run the weekly review over the corpus." --from agent <<'EOF'
-  # Weekly review
+**Creating one, in full.** The description is prose a person and another agent both read, and
+it comes out of what somebody kept telling you, so it is built the way a body is — in a
+heredoc, passed by name — and never quoted straight into the flag. Note where the fences sit:
+a heredoc terminator only closes the heredoc on a line of its own with nothing in front of it,
+so an indented copy of this block ends up with the rest of the file inside the description.
 
-  Survey what changed this week, update what drifted, and reply with the findings.
-  EOF
-  ```
+```bash
+description=$(cat <<'EOF'
+Run the weekly review over the corpus — what changed, what drifted, what's owed.
+EOF
+)
+corpus skill create weekly-review --description "$description" --from agent <<'EOF'
+# Weekly review
 
-  The server owns the mechanics; do not pre-check them — know what comes back when one is
-  violated. The name is lowercase letters, digits and single hyphens, at most 64 characters
-  (anything else is a `400`). A name already installed **or archived** is a `409`; for an
-  archived skill that `409` means unarchive it with `corpus doc unarchive <id>` — never
-  create the same skill again under a different name. `--description` is required, not
-  decoration: Claude Code discovers a skill
-  by its `name` and `description`, so a skill without one is installed but never invoked.
-  The file lands at `.claude/skills/<name>/SKILL.md` with **both** frontmatter vocabularies
-  written by the server — `name`/`description` for Claude Code, `id`/`type`/`title`/`tags`/
-  `status` for Corpus — live immediately, findable on the board, and editable like any
-  document as long as a later `corpus doc edit` keeps both field sets intact. The ways back
-  are cheap and are the ordinary ones: `corpus doc archive` disables a skill that misbehaves
-  or that stopped earning its place, and a wording you regret is reverted like any other
-  document — read the history, write the old text back with the key (*Doing the work*).
+Survey what changed this week, update what drifted, and reply with the findings.
+EOF
+```
+
+The server owns the mechanics; do not pre-check them — know what comes back when one is
+violated. The name is lowercase letters, digits and single hyphens, at most 64 characters
+(anything else is a `400`). A name already installed **or archived** is a `409`; for an
+archived skill that `409` means unarchive it with `corpus doc unarchive <id>` — never
+create the same skill again under a different name. `--description` is required, not
+decoration: Claude Code discovers a skill
+by its `name` and `description`, so a skill without one is installed but never invoked.
+The file lands at `.claude/skills/<name>/SKILL.md` with **both** frontmatter vocabularies
+written by the server — `name`/`description` for Claude Code, `id`/`type`/`title`/`tags`/
+`status` for Corpus — live immediately, findable on the board, and editable like any
+document as long as a later `corpus doc edit` keeps both field sets intact. The ways back
+are cheap and are the ordinary ones: `corpus doc archive` disables a skill that misbehaves
+or that stopped earning its place, and a wording you regret is reverted like any other
+document — read the history, write the old text back with the key (*Doing the work*).
 
 **The conflict rule.** A correction that contradicts an existing skill is an **edit to that
 skill**, never a second skill saying the opposite. Two rules in disagreement is worse than the
@@ -909,7 +931,11 @@ corpus doc create --type note --title "Espresso extraction troubleshooting" --fo
 Sour and fast means under-extraction: grind finer before changing dose.
 Bitter and slow means the opposite.
 EOF
-corpus doc edit th_9f21c4 --title "Why does my espresso taste sour?" --from agent
+title=$(cat <<'EOF'
+Why does my espresso taste sour?
+EOF
+)
+corpus doc edit th_9f21c4 --title "$title" --from agent
 corpus job log evt_5a2b7c "gathered on claude-haiku-4-5; concluded and wrote the reply on claude-opus-4-1"
 corpus thread reply th_9f21c4 --from agent --model claude-opus-4-1 <<'EOF'
 Sour usually means under-extraction — the shot ran too fast. Grind one step
