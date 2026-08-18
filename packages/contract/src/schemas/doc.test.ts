@@ -288,6 +288,22 @@ describe("CreateDocRequest", () => {
   });
 
   /**
+   * The title-collision refusal `allocatePath` raises is a `400` the schema
+   * cannot express — whether a name is taken is a fact about the workspace, not
+   * about the value — so the description is its whole publication (PR #49
+   * review). What the schema still owns is that a colliding title is **valid**:
+   * the refusal comes from the server with the corpus in front of it, and a
+   * client must not pre-empt it by rejecting the title locally.
+   */
+  it("documents that a title can be refused, and validates a colliding one anyway", () => {
+    const description = CreateDocRequestSchema.shape.title.meta()?.description ?? "";
+    expect(description).toContain("`400`");
+    expect(description).toContain("@analyst");
+    const request = { type: "agent-def", title: "Analyst", folder: ".claude/agents" };
+    expect(CreateDocRequestSchema.parse(request).title).toBe("Analyst");
+  });
+
+  /**
    * The default is `inbox`, not the root: creation is inbox-first (SPEC.md §11)
    * and the server's `documentPathFor` implements it. The schema leaves `folder`
    * absent so the server owns the default — what is asserted here is that the

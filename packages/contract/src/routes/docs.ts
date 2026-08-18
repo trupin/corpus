@@ -111,6 +111,24 @@ export const relatedDocs = createRoute({
   },
 });
 
+/**
+ * **The route description carries the short true version; the fields carry the
+ * grammar** (PR #49 review, MAJOR).
+ *
+ * It said flatly that "an omitted `folder` files the document in
+ * `data/docs/inbox/`" — a rule SERVER-122 had already given an exception, and
+ * the one exception in the product is the one a client author is most likely to
+ * hit: `POST /api/docs {"type":"agent-def"}` lands in `.claude/agents/`, where
+ * the file is loaded as a subagent definition, not in the inbox. CONTRACT-062
+ * fixed the *field* and left the sentence one level up — the first thing an
+ * OpenAPI consumer reads — stating the old rule with no exception.
+ *
+ * The fix is not to copy the field's grammar up here. A route description says
+ * what a caller must know before reading further and names where the rest is;
+ * `folder`'s and `title`'s descriptions say what each field accepts and why. So
+ * both exceptions appear here in one clause each, with the field named as the
+ * place to read them out.
+ */
 export const createDoc = createRoute({
   method: "post",
   path: "/api/docs",
@@ -119,7 +137,13 @@ export const createDoc = createRoute({
   description:
     "The body is pre-filled from the type's `template` document when one exists and no body is given " +
     "(SPEC.md §9.2). The server assigns the id; it is immutable thereafter. Creation is inbox-first: " +
-    "an omitted `folder` files the document in `data/docs/inbox/`.",
+    "an omitted `folder` files the document in `data/docs/inbox/` — **except for a type SPEC.md §7 " +
+    "gives a document root of its own**, which is where an omitted `folder` files it instead, so a " +
+    "`type: agent-def` document lands in `.claude/agents/` and not in the inbox. See `folder` for " +
+    "that grammar in full, including which roots a request may name outright. A create can also be " +
+    "refused on its `title`: in a root where a document's filename is the name it answers to, a " +
+    "name already taken is a `400` rather than the deduped filename a title collision gets under " +
+    "`data/docs/`.",
   request: {
     headers: ActorHeaderSchema,
     body: {

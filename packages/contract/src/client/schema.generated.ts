@@ -135,7 +135,7 @@ export interface paths {
         put?: never;
         /**
          * Create a document
-         * @description The body is pre-filled from the type's `template` document when one exists and no body is given (SPEC.md §9.2). The server assigns the id; it is immutable thereafter. Creation is inbox-first: an omitted `folder` files the document in `data/docs/inbox/`.
+         * @description The body is pre-filled from the type's `template` document when one exists and no body is given (SPEC.md §9.2). The server assigns the id; it is immutable thereafter. Creation is inbox-first: an omitted `folder` files the document in `data/docs/inbox/` — **except for a type SPEC.md §7 gives a document root of its own**, which is where an omitted `folder` files it instead, so a `type: agent-def` document lands in `.claude/agents/` and not in the inbox. See `folder` for that grammar in full, including which roots a request may name outright. A create can also be refused on its `title`: in a root where a document's filename is the name it answers to, a name already taken is a `400` rather than the deduped filename a title collision gets under `data/docs/`.
          */
         post: {
             parameters: {
@@ -4419,6 +4419,7 @@ export interface components {
              * @example note
              */
             type: string;
+            /** @description Human-readable title, and the source of the document's filename (`Analyst` → `analyst.md`; a thread is named by its id instead). Under `data/docs/` two documents may share a title — the id is identity and the path is presentation (SPEC.md §5), so the filename dedupes to `analyst-2.md` — and a create there never fails on the title. **In a root where the filename is the name the document answers to it can**: `.claude/agents/analyst.md` is what makes `@analyst` resolve (SPEC.md §8), so deduping would file a second persona at an address nobody asked for and the create is a `400` naming the name already taken. Edit the existing document with `PUT /api/docs/{id}`, or choose a title that names something else. */
             title: string;
             /** @description Omit to pre-fill from the type's `template` document when one exists. */
             body?: string;

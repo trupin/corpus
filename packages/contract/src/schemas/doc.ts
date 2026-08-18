@@ -84,6 +84,36 @@ const CREATE_FOLDER_DESCRIPTION =
   '`POST /api/skills`. An explicit folder always wins, so `folder: "inbox"` still files an ' +
   "`agent-def` under `data/docs/` as a document *about* a persona.";
 
+/**
+ * **A title is refused only where the filename is an address** (PR #49 review;
+ * `allocatePath` in `apps/server/src/docs/create.ts`).
+ *
+ * Under `data/docs/` a title collision is not a refusal at all: the id is
+ * identity and the path is presentation (SPEC.md §5), so the server dedupes the
+ * filename — `analyst.md`, then `analyst-2.md` — and two documents may share a
+ * title forever. Under a root where the filename *is* the name the document
+ * answers to, that same dedupe would file a second persona at `@analyst-2`, an
+ * address nobody asked for, while `@analyst` went on meaning the older document
+ * (SPEC.md §8). So the create is refused there instead, and the refusal is
+ * published on `title` because `title` is the field the `400` names and the
+ * field the caller has to change.
+ *
+ * Written against the server rather than against a proposal, and stating what a
+ * caller may conclude rather than how the server derives it (SERVER-114): the
+ * roots are not enumerated, because the condition is a property of the root's
+ * declared shape, and a root declared later inherits the rule without a contract
+ * change.
+ */
+const CREATE_TITLE_DESCRIPTION =
+  "Human-readable title, and the source of the document's filename (`Analyst` → `analyst.md`; a " +
+  "thread is named by its id instead). Under `data/docs/` two documents may share a title — the " +
+  "id is identity and the path is presentation (SPEC.md §5), so the filename dedupes to " +
+  "`analyst-2.md` — and a create there never fails on the title. **In a root where the filename " +
+  "is the name the document answers to it can**: `.claude/agents/analyst.md` is what makes " +
+  "`@analyst` resolve (SPEC.md §8), so deduping would file a second persona at an address nobody " +
+  "asked for and the create is a `400` naming the name already taken. Edit the existing document " +
+  "with `PUT /api/docs/{id}`, or choose a title that names something else.";
+
 const MOVE_FOLDER_DESCRIPTION =
   "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
   `(\`data/docs/finance\`). Defaults to \`${DEFAULT_DOC_FOLDER}\` — creation is inbox-first ` +
@@ -322,7 +352,7 @@ export const CreateDocRequestSchema = z
   .strictObject({
     job: jobField,
     type: DocTypeSchema,
-    title: z.string().min(1),
+    title: z.string().min(1).describe(CREATE_TITLE_DESCRIPTION),
     body: z
       .string()
       .optional()

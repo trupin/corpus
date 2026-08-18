@@ -2226,6 +2226,72 @@ describe("the two folder grammars are described separately (CONTRACT-062)", () =
   });
 });
 
+/**
+ * PR #49 review. CONTRACT-062 fixed `CreateDocRequest.folder` and left the
+ * `POST /api/docs` **route** description asserting the rule the field had just
+ * been given an exception to — and the route description is what an OpenAPI
+ * consumer reads first. Two refusals of the create path were therefore invisible
+ * at the altitude people actually read at: an omitted `folder` that does not
+ * mean the inbox, and a title that can be taken.
+ *
+ * Asserted against the generated document, per CONTRACT-045: a sentence
+ * hand-copied between the route and the field is only caught by reading the two
+ * published strings.
+ */
+describe("create publishes both of its exceptions at the route level (PR #49)", () => {
+  const routeDescription = (): string => operation("/api/docs", "post").description ?? "";
+  const titleDescription = (): string => {
+    const found = componentSchemas?.["CreateDocRequest"]?.properties?.["title"]?.description;
+    if (found === undefined) throw new Error("No CreateDocRequest.title description.");
+    return found;
+  };
+
+  /**
+   * The reviewer's failure scenario, as an assertion: a client author reads the
+   * route description, sends `{"type":"agent-def","title":"Analyst"}` expecting
+   * `data/docs/inbox/`, and gets a file Claude Code loads as a subagent
+   * definition. Falsify by deleting the exception clause — the inbox sentence
+   * alone leaves this green only if the root is never named.
+   */
+  it("states the inbox default and its §7 exception in the same breath", () => {
+    expect(routeDescription()).toContain("inbox-first");
+    expect(routeDescription()).toContain("data/docs/inbox/");
+    expect(routeDescription()).toContain("`type: agent-def`");
+    expect(routeDescription()).toContain(".claude/agents/");
+  });
+
+  /** The route names where the rest is read, rather than restating it. */
+  it("points at the field for the grammar instead of duplicating it", () => {
+    expect(routeDescription()).toContain("See `folder`");
+    expect(routeDescription()).not.toContain("An explicit folder always wins");
+    expect(routeDescription()).not.toContain("POST /api/skills");
+  });
+
+  /**
+   * The title-collision refusal `apps/server/src/docs/create.ts` added: every
+   * other refusal on this path is published, and until now this one lived only
+   * in the workspace skill.
+   */
+  it("says a create can be refused on its title, and where", () => {
+    expect(routeDescription()).toContain("`title`");
+    expect(routeDescription()).toContain("`400`");
+    expect(titleDescription()).toContain("`400`");
+    expect(titleDescription()).toContain(".claude/agents/analyst.md");
+  });
+
+  /**
+   * And says it is *only* sometimes: a caller who reads "a title can be refused"
+   * and concludes titles must be unique would start deduping titles the corpus
+   * has always allowed to collide (SPEC.md §5 — the id is identity, the path is
+   * presentation).
+   */
+  it("says the collision is a dedupe, not a refusal, under data/docs", () => {
+    expect(titleDescription()).toContain("may share a title");
+    expect(titleDescription()).toContain("analyst-2.md");
+    expect(titleDescription()).toContain("never fails on the title");
+  });
+});
+
 describe("queue long-poll", () => {
   it("declares both outcomes, with the timeout bounded and defaulted", () => {
     const op = operation("/api/queue/idle", "get");
