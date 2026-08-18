@@ -90,8 +90,11 @@ export const showCommand: WorkspaceCommandSpec = {
     "SPEC.md §7's comment skill reads before it replies. A designated thread also prints a " +
     "`resident` line naming the agent that owns the conversation, with the `agent-def` document " +
     "that defines it where it has one — a resident designated with no profile prints as `a " +
-    "general resident`, and one whose profile has been renamed or archived since prints " +
-    "`name (profile missing)`. An undesignated thread prints no such line, because having nobody " +
+    "general resident`, and one whose profile has since been renamed, deleted, or moved out of " +
+    "`.claude/agents/` prints `name (profile missing)`. **Archiving is not one of those**: an " +
+    "archived `agent-def` still under that root resolves exactly as before, and is still " +
+    "designatable, so the line keeps printing its id. " +
+    "An undesignated thread prints no such line, because having nobody " +
     "resident is the ordinary state rather than a value. That line reports the **designation** " +
     "and says nothing " +
     "about whether the agent is currently running — presence is one lane's row in " +

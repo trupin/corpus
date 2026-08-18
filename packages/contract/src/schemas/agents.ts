@@ -115,10 +115,12 @@ export const AgentNameSchema = z
  * - `{name: "researcher", docId: "doc_…"}` — a **profiled resident**: open that
  *   document to see what the agent is.
  * - `{name: "researcher", docId: null}` — a profiled resident whose **profile is
- *   gone**, renamed or archived since. The designation stands and the resident
- *   goes on owning its scope; §7 requires the miss be *reported* rather than
- *   silently substituted, and this is the report. Not the same state as the
- *   first: one is ordinary and one is worth mentioning to a person.
+ *   gone**: renamed, deleted, or moved out of `.claude/agents/` since. The
+ *   designation stands and the resident goes on owning its scope; §7 requires
+ *   the miss be *reported* rather than silently substituted, and this is the
+ *   report. Not the same state as the first: one is ordinary and one is worth
+ *   mentioning to a person. **Archiving is not one of the ways in** — see
+ *   {@link ResidentSchema}'s `docId`.
  *
  * The fourth combination is not a state — a `docId` with no `name` would be a
  * document nobody named — and the refinement below rejects it.
@@ -160,8 +162,13 @@ export const ResidentSchema = z
     docId: DocIdSchema.nullable().describe(
       "The `type: agent-def` document `name` resolves to **right now**, or null when there is " +
         "none to resolve — either because no profile was named, or because the one that was named " +
-        "has since been renamed, archived, or moved out of `.claude/agents/`, the root a persona " +
-        "has to live in to be addressable at all. Read the two fields together: `name` null is a " +
+        "has since been renamed, deleted, or moved out of `.claude/agents/`, the root a persona " +
+        "has to live in to be addressable at all. **Archiving a profile does not empty this " +
+        "field**: an archived `agent-def` still under that root resolves exactly as before, and is " +
+        "still designatable, so what stands here is its id and `name (profile missing)` is the " +
+        "wrong thing to show for it. Archived-ness is not carried on a `Resident` at all — it is " +
+        "the document's own `status`, on the document this id names, for the caller that cares. " +
+        "Read the two fields together: `name` null is a " +
         "general resident, `name` set with this null is a resident whose profile has gone (SPEC.md " +
         "§7 — the designation stands, and the missing profile is reported rather than silently " +
         "substituted), and both set is a profile a reader can open. It is re-resolved on every " +

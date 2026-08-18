@@ -38,9 +38,11 @@ const GENERAL: LaneRow = {
 };
 
 /**
- * §7's designation whose profile has since been renamed or archived. Built with
- * the kit's own `note` and `mark` rather than a paraphrase, because what these
- * tests are checking is precisely that the menu says the kit's words.
+ * §7's designation whose profile has since gone — renamed, deleted, or moved out
+ * of `.claude/agents/` (`MISSING_PROFILE_CAUSES`; archiving is not one of them,
+ * since an archived agent-def still resolves). Built with the kit's own `note`
+ * and `mark` rather than a paraphrase, because what these tests are checking is
+ * precisely that the menu says the kit's words.
  */
 const PROFILE_GONE: LaneRow = {
   ...RESIDENT,
@@ -344,8 +346,8 @@ describe("residentActions", () => {
   });
 
   /**
-   * §7 reports a designation whose profile has since been renamed or archived
-   * rather than substituting for it — so the resident is still named. It **is**
+   * §7 reports a designation whose profile has since gone rather than
+   * substituting for it — so the resident is still named. It **is**
    * re-offered, and that is not the same skip: with no document resolving the
    * designation, designating an agent-def is a write with a real effect rather
    * than the no-op the skip exists to suppress.

@@ -1,4 +1,5 @@
 import type { AgentLane } from "@corpus/contract";
+import { MISSING_PROFILE_NOTE } from "@corpus/kit";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
@@ -141,8 +142,11 @@ test.describe("the recipient a composer states", () => {
   });
 
   /**
-   * SPEC.md §7: a designation whose profile has been renamed or archived stands,
-   * and *"the missing profile is reported rather than silently substituted"*.
+   * SPEC.md §7: a designation whose profile has gone stands, and *"the missing
+   * profile is reported rather than silently substituted"*. The ways in are
+   * renamed, deleted, or moved out of `.claude/agents/`
+   * (`MISSING_PROFILE_CAUSES`); **archiving is not one**, so an archived profile
+   * never reaches this surface as a report.
    * The report held on the board badge and in `corpus agents` and stopped at the
    * picker, which drew the lane exactly as it draws a healthy one — on the one
    * surface where the lane is **chosen** (PR #49 review).
@@ -164,10 +168,13 @@ test.describe("the recipient a composer states", () => {
     // At rest — no hover, no focus, nothing typed.
     await expect(lane).toContainText("claims-review");
     await expect(lane).toContainText("profile gone");
-    // …and the whole sentence where there is room for it.
-    await expect(lane).toHaveAttribute("title", /its profile is gone — renamed or archived since/u);
+    // …and the whole sentence where there is room for it. Through the kit's own
+    // constant, which is composed from `MISSING_PROFILE_CAUSES`: a literal here
+    // was one of the eight typed copies of this claim, and typed copies are how
+    // it stayed wrong for a release.
+    await expect.poll(async () => lane.getAttribute("title")).toContain(MISSING_PROFILE_NOTE);
     await expect(page.locator('[data-recipient-statement="th_res"]')).toContainText(
-      "claims-review will answer — its profile is gone — renamed or archived since",
+      `claims-review will answer — ${MISSING_PROFILE_NOTE}`,
     );
 
     // §7 keeps the designation, so the lane is a legal recipient and nothing

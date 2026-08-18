@@ -944,11 +944,31 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | SERVER-127 | A bare .claude/skills/SKILL.md is addressable and loaded by nothing (UI-123 derived fixture) | done | P1 | SERVER-125 |
 | SHARED-051 | A persona is addressable by where it lives, and §11 says otherwise (PR #50 review, NEEDS SIGN-OFF) | todo | P0 | SERVER-125 |
 | SHARED-052 | A check can report what a save accepts, and §14 says it cannot (PR #50 review 2, NEEDS SIGN-OFF) | todo | P1 | SERVER-124 |
+| SHARED-053 | §7 says a renamed or archived profile goes missing; archiving does not (PR #50 review 3, NEEDS SIGN-OFF) | todo | P1 | — |
 
-The five open rows above are **v0.12.0**, agreed with the user on 2026-08-18:
-*everything the profile release left half-true*. They are one story, so they ship
-under one tag. The controlled-language work below is a second story and gets its
-own.
+**v0.12.0** is the `done` rows above: *everything the profile release left
+half-true*. One story, one tag. The controlled-language work below is a second
+story and gets its own.
+
+**Five issues were agreed with the user on 2026-08-18. Nine shipped.** The four
+additions each came from a review finding about work already in the release, not
+from new scope:
+
+| added | why it could not wait |
+| --- | --- |
+| UI-123 | SERVER-125 left both client surfaces offering rows the server had begun refusing — its own acceptance criterion forbids that |
+| CONTRACT-064 | the same resolution rule, stated stale at four contract sites, two of them published to the wire |
+| SERVER-127 | SERVER-125's gate condition, in a shape that change missed — found by UI-123's derived fixture |
+| CONTRACT-065, SERVER-126 | filed **out** of scope, to stop the release growing further |
+
+Three review rounds, and each round found the previous round's fix incomplete
+rather than wrong. That is the record worth keeping: the first review found the
+rule stated stale in the CLI, the second found it in the contract, the third
+found a clause the contract sweep had itself rewritten and left false.
+
+**Four riders are drafted and unsigned** — SHARED-049, -050, -051, -052. SPEC.md
+is unchanged by this phase. The waiver is the orchestrator's, recorded here and
+in the release notes rather than described as unnecessary.
 
 ## Phase 35 — Write to be read once (2026-08-18, user directive)
 
@@ -998,3 +1018,5 @@ uncertain.
 | CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P1 | — |
 | SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | todo | P2 | SERVER-124 |
 | CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | todo | P2 | — |
+| CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
+| UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | todo | P2 | — |

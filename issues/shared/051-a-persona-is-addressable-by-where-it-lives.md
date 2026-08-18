@@ -78,48 +78,55 @@ reading the reference, following it, and getting silence.
 
 ## The drafted text — read this back verbatim before applying
 
-**Revision 2, 2026-08-18. Revision 1 was stale before anyone read it, and PR
-#50's second review caught it.** SERVER-127 landed after the first draft and
-changed what the rule is. Revision 1 said a document *"in its own root"* is
-autocompletable. A hand-authored `.claude/skills/SKILL.md` **is** in its own root
-— §7:399's glob matches it and the projector indexes it — and it is
-autocompletable by nothing. **Signing revision 1 would have put a newly false
-sentence into §11**, closing one gap by opening another.
+**Revision 3, 2026-08-18. Two earlier revisions were wrong, each caught by a
+review, and the pattern in both is the same: the text was drafted from the
+finding rather than from the code.** Revision 3 was written after reading
+`invocableName` (`apps/server/src/threads/mentions.ts:137-149`) line by line.
 
-The gate is not the root. It is **the shape the root names**: a skill is named by
-the directory holding it, a persona by its own filename. Revision 2 says that.
+- **Revision 1** said a document *"in its own root"* is autocompletable. A
+  hand-authored `.claude/skills/SKILL.md` **is** in its own root, and is
+  autocompletable by nothing. SERVER-127 had landed after the draft and nobody
+  revisited it.
+- **Revision 2** said a skill is named by *"the directory that holds it"*. The
+  code returns `segments[0]` — **the first directory under the root, at any
+  depth**. So `.claude/skills/foo/bar/SKILL.md` answers to `foo`, not `bar`, and
+  this PR's own fixture asserts exactly that shape.
+
+Both would have put a newly false sentence into SPEC while claiming to remove
+one.
 
 Two edits.
 
 **Edit 1 — §11, line 541.** Replace the sentence:
 
-> Creating a new skill or subagent document **in the shape its root names** (§7)
+> Creating a new skill or subagent document **in a shape its root names** (§7)
 > instantly makes it autocompletable — there is no separate registry. A skill is
-> named by the directory that holds it (`.claude/skills/<name>/SKILL.md`), and a
-> persona by its own filename (`.claude/agents/<name>.md`). A `type: skill` or
-> `type: agent-def` document written anywhere else — or inside the right root in a
-> shape that root does not name — is a document **about** one, and is offered by
+> named by the **first directory under `.claude/skills/`**, whatever depth its
+> `SKILL.md` sits at; a persona by its own filename, written directly under
+> `.claude/agents/`. A `type: skill` or `type: agent-def` document written
+> outside those shapes — a `SKILL.md` no directory names, or a document filed
+> elsewhere in the corpus — is a document **about** one, and is offered by
 > nothing.
 
 **Edit 2 — §8.** Insert as a new bullet after line 409:
 
 > - **A persona is addressable by where it lives, not only by what it declares.**
->   `@<subagent-name>` resolves a `type: agent-def` document that
->   `.claude/agents/` **names** (§7) — that root names a file directly, so
->   `.claude/agents/bookkeeper.md` is a persona and `.claude/agents/team/x.md` is
->   not — and it resolves by that filename stem or by the document's title alike.
->   A document declaring `type: agent-def` that no root names is a document
->   *about* an agent, and resolves to nothing: no composer offers it, no
+>   `@<subagent-name>` resolves a `type: agent-def` document written **directly
+>   under `.claude/agents/`** (§7), by that filename's stem or by the document's
+>   title alike. A document declaring `type: agent-def` anywhere else is a
+>   document *about* an agent, and resolves to nothing: no composer offers it, no
 >   designation names it, and a mention of its title is reported unresolved
 >   exactly as any other name that names nobody is. The same holds for
->   `type: skill` and `/<skill-name>`, where the name is the **directory**, so a
->   `SKILL.md` no directory names is addressable by nothing either. Writing one
->   outside a named shape stays legal and is the point: a document *about* a
->   persona is an ordinary document, listed, readable and editable like any other.
->   **The alternative was shipped and withdrawn**: honouring the title wherever
->   the document sat meant two documents could carry one title, ties broke by
->   internal id order, and an inert note in `data/docs/` could take a working
->   persona's name away from it. _(Rider signed 2026-08-\_\_.)_
+>   `type: skill` and `/<skill-name>`, where the name is the **first directory
+>   under `.claude/skills/`** — a `SKILL.md` at any depth beneath that directory
+>   answers to it, so a directory holding more than one gives them a single name
+>   between them, and a `SKILL.md` no directory names answers to nothing. Writing
+>   a document *about* a persona or a skill elsewhere stays legal and is the
+>   point: it is an ordinary document, listed, readable and editable like any
+>   other. **The alternative was shipped and withdrawn**: honouring the title
+>   wherever the document sat meant two documents could carry one title, ties
+>   broke by internal id order, and an inert note in `data/docs/` could take a
+>   working persona's name away from it. _(Rider signed 2026-08-\_\_.)_
 
 ## What the sign-off decides
 

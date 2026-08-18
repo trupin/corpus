@@ -40,6 +40,7 @@ export {
   LAPSED_FALLBACK,
   LAPSED_ORCHESTRATOR,
   LIVE_WITHOUT_SUMMARY,
+  MISSING_PROFILE_CAUSES,
   MISSING_PROFILE_MARK,
   MISSING_PROFILE_NOTE,
   NEVER_SEEN_LINE,
@@ -47,6 +48,7 @@ export {
   UNNAMED_RESIDENT_LABEL,
   type LaneLiveness,
   type LaneResidentKind,
+  type MissingProfileCause,
   type LaneRow,
 } from "./laneRows.js";
 export {

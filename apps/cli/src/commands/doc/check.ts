@@ -30,6 +30,17 @@ import { collectStagedDocuments } from "../../staged.js";
  * otherwise. Warnings — an orphaned anchor, a `[[ref]]` whose target does not
  * exist yet — are printed and do not fail, because §14 makes both normal states
  * of a living corpus and a hook that punished them would be turned off.
+ *
+ * **An error here does not imply a save would be refused, and the help says so.**
+ * The rules are one implementation, but the save path decides for itself what to
+ * do with a finding: `apps/server/src/docs/write.ts` reports-and-writes
+ * `unterminated-fence` (`REPORTED_CHECK_CODES`) and every `frontmatter-invalid`
+ * under §7's Claude Code roots (`isClaudeRootFrontmatter`, SERVER-123/124). A
+ * caller that meets exit 6 on a file `PUT /api/docs/:id` just accepted is in
+ * that seam and needs to be told which repair to make, not left to conclude the
+ * two disagree. The asymmetry is one-way — `routes.test.ts`'s "what a check
+ * reports, a save still accepts" — and the description states it in that
+ * direction only.
  */
 
 /** Whole-workspace enumeration walks at the server's page ceiling. */
@@ -117,6 +128,21 @@ export const checkCommand: WorkspaceCommandSpec = {
     "normal states of a living corpus (§14), and a hook that blocked on them would be switched " +
     "off. Findings print one per line as `severity code path: detail`, and `--json` emits the " +
     "server's report — `{ok, errors, warnings}` — unchanged, with the exit code unaffected.\n\n" +
+    "**Exit 6 is possible on a file the server will still happily save, and the two are not in " +
+    "disagreement.** One validator produces the findings; what the _save_ path then does with one " +
+    "is a separate decision, and it lets two families through — logging them instead of refusing " +
+    "the write. The first is `unterminated-fence`. The second is any `frontmatter-invalid` on a " +
+    "file under `.claude/agents/`, `.claude/skills/` or `.claude/skills-archived/`, the roots " +
+    "where a hand writes frontmatter this system never authored: a `status: banana` or a " +
+    "`tags: seven` typed into a profile or a `SKILL.md` is an **error** here and a `200` from " +
+    "`corpus doc edit`, because refusing it would leave a file whose only fault is bytes it " +
+    "already carries uneditable, unarchivable and beyond every bulk act, with no repair the board " +
+    "can express. So a pre-commit hook running this verb can newly fail on a hand-authored " +
+    "`.claude/agents/*.md` that no save has ever complained about. The finding's `detail` names " +
+    "the field; the repair is `corpus doc edit <id>` — `--status open` for a bad status, " +
+    "`--extra description=…` for a Claude Code field a profile is missing — or, for a document " +
+    "that is only _about_ a persona or a skill, moving it out of those roots. **The reverse never " +
+    "holds**: nothing this verb passes over is refused by a save.\n\n" +
     "With ids, exactly those documents are read from the workspace and checked. With no ids, the " +
     "whole workspace is enumerated first (archived documents included, so " +
     "`.claude/skills-archived/` is covered) and checked in one request. With `--staged`, the " +

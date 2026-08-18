@@ -471,6 +471,234 @@ processes. 8765 still held by the user's server — never touched.
 - **No kit export changed** in this round: `invocableName` is stricter for paths
   the projector never emits, and `rowToken` / `isAddressableTarget` are untouched.
 
+## PR #50 third review
+
+Model: **opus**. Two findings in `apps/ui` / `packages/kit`: MINOR 4 (fixed) and
+NIT 8 (assessed, recommended out of this release). Nothing was touched in
+`apps/cli` or `packages/contract` — two other agents held those.
+
+### MINOR 4 — the stub was a third copy, disagreeing on the thing NIT 7 fixed
+
+**The defect.** `stubCorpus.ts`'s resident handler computed
+`name.trim().toLowerCase()` and compared it against `row.title.toLowerCase()`,
+untrimmed, while the server keys **both sides** through one `aliasKey`
+(`apps/server/src/threads/mentions.ts:244`). The projector carries a title
+verbatim once it is non-blank (`asString`), so a row titled `"  Padded Persona  "`
+answered only to `"  padded persona  "` in the browser — and the designate menu
+sends the title **trimmed** (`residentActions.ts`). That designation `404`'d
+against the stub and `200`'d against the real server.
+
+**The fix, and where it went.** The rule is no longer written in the transport.
+`apps/ui/e2e/serverParity.ts` — the module whose entire job is "the server's own
+rules, for the browser stub, pinned by `scripts/stub-server-parity.test.ts`" —
+now owns it as `aliasKey`, `invocableAgentName` and `resolveAgentDefName`, and
+`stubCorpus.ts` calls it. Moving it was the point: the rule was unpinnable while
+it sat inside a `page.route` closure, which is why it drifted twice with nothing
+failing.
+
+Three of the server's decisions are modelled, and each one is separately
+falsifiable below: the invocable name is the **gate** and decides the whole row
+(SERVER-125), a row that passes the gate answers to its **stem and its title**,
+and a collision goes to the **first row in id order** (`targetIndex` builds from
+`ORDER BY id`; the stub's store is a `Map` in seed order, so the resolver sorts).
+
+**Where the class is caught now.** `scripts/stub-server-parity.test.ts`, extended
+— it is the right home and no new file was needed: it is already the one place in
+the repo that may look at `apps/ui` and `apps/server` at once, and it already
+exists to stop exactly this. The new suite seeds a **real workspace**, projected
+by the **real projector**, and puts every spelling of every row to
+`resolveMentionTarget` *and* to `resolveAgentDefName`, asserting the two answers
+are **equal** — not merely both non-null, since resolving to the wrong document
+is what a collision produces.
+
+The paths are **derived from `DOCUMENT_ROOTS`**, one per root per shape, for
+`mention-offer-parity.test.ts`'s reason: a hand-written list only tests the
+shapes whoever wrote it imagined. That derivation is also what lets the stub's
+deliberate narrowing (it knows one root; the server knows five) be *demonstrated*
+rather than asserted — an `agent-def` is seeded at every shape every root admits,
+and the roots that override the frontmatter's type produce no agent-def row for
+the two sides to disagree about.
+
+Two directions are pinned, because one is not enough:
+
+- **over the projected rows**, the two namings must be equal — that is the whole
+  domain, since a path with no row is a path the rule is never handed;
+- **over every derived path**, the stub may name *nothing the server does not
+  name* — a regex widened to `.claude/agents/**` names a nested file that has no
+  row, so the first test could never see it.
+
+Non-vacuity is asserted first: the directory must hold rows on both sides of the
+gate, and the question set must produce both resolutions and refusals.
+
+**One browser-level case added** (`apps/ui/e2e/resident.spec.ts`): a persona
+titled `"  Padded Persona  "`, designated through the real menu. No spec had ever
+held a title of that shape, which is why the defect was invisible end to end.
+
+### Falsification (MINOR 4)
+
+Every mutation reverted afterwards; `serverParity.ts` restored from a
+byte-for-byte backup and re-verified green.
+
+| Mutation | Result |
+| --- | --- |
+| `aliasKey(alias)` → `alias.toLowerCase()` on the title alias — **the defect itself** | **2 red** in `stub-server-parity.test.ts`: *resolves every spelling…*, *resolves a padded title under the trimmed name…* |
+| the same mutation, against Playwright | **1 red** — `resident.spec.ts` › *designates a persona whose title is padded, sending it trimmed* (badge never turns `profiled`) |
+| gate removed (`invocableAgentName(path) ?? aliasKey(row.title)`, i.e. pre-SERVER-125) | **2 red**: *resolves every spelling…*, *refuses the document about a persona…* |
+| id-order sort dropped from the resolver | **2 red**: *resolves every spelling…*, *breaks a collision by id order…* |
+| `AGENT_DEF_STEM` widened to allow nesting (`(?:[^/]+\/)*`) | **1 red**: *names nothing the server does not name, over every derived path* — the test written for precisely this blind spot |
+
+### Verification
+
+- `vitest run scripts/stub-server-parity.test.ts` — **39 tests, pass** (was 24)
+- `vitest run scripts/mention-offer-parity.test.ts` — **32 tests, pass**
+- `vitest run apps/ui` — **148 files, 3144 tests, pass**
+- `vitest run packages/kit` — **56 files, 887 tests, pass**
+- `npm run lint` (exit 0) · `npm run typecheck` (exit 0, all workspaces +
+  `scripts`) · `prettier --check` clean on the touched files
+- `playwright test e2e/resident.spec.ts` (`CORPUS_UI_PORT=5473`) — **10 passed**
+  (9 before; the padded case is the tenth)
+- `packages/kit/dist` not rebuilt because **no kit source changed** this round —
+  the trap only bites a cross-package mutation, and every file touched here
+  (`apps/ui/e2e/*`, `scripts/*`) is compiled directly by its consumer.
+- Ports: **5473** for Vite, freed afterwards. **5173** was never bound (an ssh
+  tunnel holds it) and **8765** — the user's live server — was never touched.
+  No stray vitest/playwright/chromium/vite processes; `test-results/` removed.
+
+### NIT 8 — assessed: **does not belong in this release**
+
+**The finding is real.** `useAutocomplete.ts` and `ThreadMenuItems.tsx` both read
+`GET /api/docs?type=agent-def&limit=50` and apply the addressability gate to the
+page they got back. `DEFAULT_DOC_SORT` is `-updated`, so the page is the 50
+most-recently-touched rows; a workspace holding more than 50 `type: agent-def`
+documents whose recent 50 are *all* off-root shows an empty `@` menu and
+"No profiles yet" while real personas sit beyond the page.
+
+**Why it is out of scope here, in order of weight:**
+
+1. **UI-123 does not make this workspace worse — it makes it better.** Before
+   the gate, that same workspace offered those off-root rows: every pick
+   inserted a mention resolving to nobody, and every designation earned a `404`.
+   After it, the menu under-offers. A menu that omits a reachable name is a
+   discoverability gap the user can route around (typing `@bookkeeper` by hand
+   still resolves — `parseMentions` never consults the menu); a menu that offers
+   an unreachable one teaches a name that summons nobody and is the only place in
+   the product claiming that persona exists. The widening the reviewer notes
+   converts the worse failure into the milder one.
+2. **The reachable-workspace bound is narrow.** It needs >50 `type: agent-def`
+   documents, deliberately filed outside `.claude/agents/` (SERVER-122 keeps an
+   explicit `--folder` winning, so this is never the default), *and* touched more
+   recently than every real persona. §7's general designation is unaffected in
+   any case — UI-122 made it independent of the directory precisely so the
+   feature is reachable with no `agent-def` at all.
+3. **Every honest fix is cross-domain and needs a decision this issue cannot
+   make.** Filtering at the query was already rejected: it takes the board's
+   `type:` filter and the seeded "Skills & agents" view with it. What is left is
+   a new query concept — `addressable=true`, or a `folder=` filter on
+   `GET /api/docs` — which is contract-dev's to shape, server-dev's to implement,
+   and only then two client call sites. Whether "addressable" should exist as an
+   API filter at all is an API-shape question SPEC.md does not answer, and
+   guessing it in a loose-ends PR is how the *next* third copy of a rule gets
+   written.
+4. **The cheap hedge is not a fix.** Raising `DIRECTORY_LIMIT` /
+   `AGENT_DIRECTORY_LIMIT` from 50 to the schema's max of 200 is one line and
+   moves the cliff without removing it — a bigger magic number, and a claim in
+   the code that 200 is enough when nothing knows that. Not recommended.
+
+**Recommendation:** file it as a follow-up (contract → server → ui/kit), noting
+that the same bound already governs the pre-existing typeable-token filter, so
+one issue closes both. Not started here.
+
+### The archived-profile false statement (same review round)
+
+A third item, handed over mid-task: `MISSING_PROFILE_NOTE` told a person their
+**working** archived profile was gone.
+
+**Reproduced, against the code that produces the field.** `currentResident`
+(`apps/server/src/threads/read.ts`) fills `Resident.docId` by re-resolving the
+stored name through `resolveMentionTarget` on every read, so the four acts were
+applied to a real workspace and re-projected by the real projector:
+
+| act on the profile | `currentResident(...).docId` |
+| --- | --- |
+| **archived** (`status: archived`, path untouched) | `doc_scratch1` — **unchanged**, row really is `archived`, still resolvable under stem *and* title |
+| renamed | `null` |
+| deleted | `null` |
+| moved out of `.claude/agents/` | `null` |
+
+Matching what contract-dev measured live. Archiving cannot reach the state the
+sentence blamed it for: `targetRows` selects on `type` with no status filter,
+`targetIndex`'s only skip is the off-root gate, and `planSetArchived` computes a
+folder move for `type: skill` alone — for every other type it patches
+frontmatter and leaves the path, which is the gate's sole input.
+
+**The fix: the sentence is no longer typed.**
+`packages/kit/src/recipient/laneRows.ts` now exports
+`MISSING_PROFILE_CAUSES = ["renamed", "deleted", "moved out of .claude/agents/"]`
+and composes `MISSING_PROFILE_NOTE` from it. `deleted` was never listed anywhere
+and is a real cause. The substance is `packages/contract/src/schemas/agents.ts`'s,
+read and matched rather than re-invented — including stating the archived fact
+**positively** (a sentence somebody has to delete) rather than by omission,
+which is how it survived the previous sweep. `packages/contract` and `apps/cli`
+were not touched.
+
+**Swept in the same pass** — every comment repeating the false half, including
+two the hand-off did not list: `RecipientPicker.tsx:56`,
+`useComposerRecipient.test.tsx:533`, `ResidentBadge.test.tsx:208`,
+`ThreadPanel.test.tsx:588`, `residentActions.test.ts:41` and `:347`,
+`laneRows.ts`'s `LaneResidentKind` doc, **plus** `e2e/resident.spec.ts:366` and
+`e2e/recipient.spec.ts:144`. `e2e/recipient.spec.ts` also carried the sentence as
+two **string literals** (`:168`, `:170`) — the ninth and tenth typed copies; both
+now read the kit's constant.
+
+**The pin: `scripts/missing-profile-parity.test.ts`** (new, 9 tests). It pairs
+each cause with a **workspace act** by identity — `Act.cause` is a
+`MissingProfileCause | null`, checked by the type system, never by matching words
+— applies the act to a real workspace, and asks `currentResident` what happened.
+Then it asserts the causes the report names are *exactly* the acts that empty the
+field. It lives in `scripts/` for `stub-server-parity.test.ts`'s reason:
+`apps/server` and `packages/kit` are not on a dependency path, and this is the one
+place that may look at both. The archived arm is stated positively and in three
+parts (the row really is `archived`, the id survives, the name still resolves
+under stem and title — the same lookup `POST .../resident` makes), so a fixture
+that quietly archived nothing cannot pass by doing nothing.
+
+### Falsification (archived claim)
+
+| Mutation | Result |
+| --- | --- |
+| `"archived"` appended to `MISSING_PROFILE_CAUSES` | **3 red** — set equality (no act produces it), composition, and the spelling belt |
+| note hand-written, derivation dropped, claim reworded (*"it was retired, or it is no longer where personas live"*) | **2 red** — composition, and the belt via `retired` |
+| same, worded to dodge **every** word in the belt's vocabulary (*"…, or shelved since"*) | **1 red** — composition alone, which is the point: the pin holds without knowing the wrong words |
+| the archive act declared as `cause: "deleted"` — i.e. claiming archiving empties the field | **3 red** — the per-act measurement first, so the four arms are measuring the code and not restating the fixture |
+
+### Verification (archived claim)
+
+- `vitest run scripts/` — **860 tests, pass** (includes the new file)
+- `vitest run packages/kit` — **887 pass** · `vitest run apps/ui` — **3144 pass**
+- `npm run lint` (exit 0) · `npm run typecheck` (exit 0, all workspaces) ·
+  `prettier --check` clean
+- `playwright test resident.spec.ts recipient.spec.ts` (`CORPUS_UI_PORT=5473`) —
+  **15 passed**
+- **`packages/kit/dist` rebuilt** before every run that resolves the kit through
+  its exports map — `apps/ui`, Playwright, and each falsification round.
+
+**Looked at in a browser, because the sentence is 30 characters longer.** A
+throwaway spec rendered the `profile-gone` badge and menu and measured them, then
+was deleted. The composer's statement — the surface the note is written for —
+carries the whole corrected sentence and wraps cleanly to two lines. The board
+badge's one-line note **truncates**, and measurement shows that is
+**pre-existing**, not introduced: at a 1400px viewport the old string was already
+`scrollWidth 310` against `clientWidth 227`, and the resident's name already
+wrapped mid-word (`researche/r`). New string: `499` against `263`, same wrap. The
+full sentence is on the badge's `title`, and `MISSING_PROFILE_MARK`
+(*"profile gone"*) is what row-width surfaces show. **For the orchestrator:** the
+badge's note truncating at this width predates this release and is worth its own
+issue; not touched here.
+
+**Root cause acknowledged:** SPEC §7's rider joins renamed and archived with one
+verb (SHARED-053, unsigned). Not waited on — the string was false whatever the
+spec says — but the fix will need re-reading against the signed rider.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

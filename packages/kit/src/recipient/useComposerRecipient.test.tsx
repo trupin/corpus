@@ -530,9 +530,14 @@ describe("RecipientPicker", () => {
    * SPEC.md §7: the missing profile is *"reported rather than silently
    * substituted"*. It was reported on the board badge and in `corpus agents`,
    * and not here — where the lane is actually **chosen** — so a designation
-   * whose profile had been renamed or archived was drawn identically to a
-   * healthy one (PR #49 review). The name stays: the designation stands, and
-   * naming it is what stops the report becoming a substitution.
+   * whose profile had gone was drawn identically to a healthy one (PR #49
+   * review). The name stays: the designation stands, and naming it is what stops
+   * the report becoming a substitution.
+   *
+   * The lane is built from `docId: null` directly, which is the state itself
+   * rather than any of the acts that reach it (`MISSING_PROFILE_CAUSES` —
+   * renamed, deleted, or moved out of the root; **archiving is not one**, and an
+   * archived profile's lane arrives here with its `docId` intact).
    */
   it("reports a lane whose profile has gone, rather than drawing it as a healthy one", async () => {
     const gone: AgentLane = { ...RESIDENT_LANE, resident: { name: "claims-review", docId: null } };

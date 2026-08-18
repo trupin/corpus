@@ -205,9 +205,14 @@ describe("the three shapes a resident has", () => {
   });
 
   /**
-   * SPEC.md §7: a profile renamed or archived after designation does not end the
+   * SPEC.md §7: a profile that goes after designation does not end the
    * designation — "the missing profile is reported rather than silently
    * substituted". The report is here, and it is not the general state.
+   *
+   * The ways in are renamed, deleted, or moved out of `.claude/agents/`
+   * (`MISSING_PROFILE_CAUSES`). **Archiving is not one of them** — an archived
+   * agent-def still resolves — so a badge reading this for an archived profile
+   * would be reporting a miss that did not happen.
    */
   it("reports a profile that has gone, still naming the resident", async () => {
     const { container } = renderBadge("th_root", [

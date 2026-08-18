@@ -87,8 +87,11 @@ export const designateResident = createRoute({
     "name that misses is refused rather than degraded to a general resident, because a typo that " +
     "looked like it worked is the worse outcome. An `agent-def` filed outside that root is one of " +
     "those misses — it is a document *about* a persona, nothing loads it as a subagent, and it " +
-    "answers to neither spelling — so the refusal names its path, moving the file into " +
-    'the root being what makes it designatable. A **blank** name (`""`, `"   "`) ' +
+    "answers to neither spelling — and where an off-root `agent-def` is titled the name given, " +
+    "that `404` names its path, because moving the file into `.claude/agents/` is what makes it " +
+    "designatable. **Only the title reaches that refusal**: off root there is no filename stem to " +
+    "answer to, so `legacy-analyst` for a document titled `Legacy Analyst` in the inbox is the " +
+    'bare `404` — its title is the spelling that says where it is. A **blank** name (`""`, `"   "`) ' +
     "is a `400` and not absence, for the same reason.\n\n" +
     "**Everything else about a resident is identical either way** (SPEC.md §7) — the lane, the " +
     "scope, presence, the lapse fallback, release, and resolution releasing it — because a " +

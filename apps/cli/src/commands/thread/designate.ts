@@ -57,9 +57,12 @@ export async function runThreadDesignate(context: WorkspaceCommandContext): Prom
   // with both halves, so the printed line is the resolution rather than an echo
   // of what was typed — `--agent RESEARCHER` designating `researcher` should say
   // which document it landed on, and a name whose document has since been
-  // renamed or archived should say *that* rather than a stale id. A `200` always
-  // carries a resident; the fallback exists so a server that somehow did not is
-  // reported as what was asked for rather than crashing on it.
+  // renamed, deleted, or moved out of `.claude/agents/` should say *that* rather
+  // than a stale id. **Archiving is not one of those**: an archived `agent-def`
+  // still under that root resolves exactly as before, and is still designatable,
+  // so the line keeps printing its id. A `200` always carries a resident; the
+  // fallback exists so a server that somehow did not is reported as what was
+  // asked for rather than crashing on it.
   const resident = response.thread.resident;
   const who =
     resident === null || resident === undefined
@@ -120,14 +123,20 @@ export const designateCommand: WorkspaceCommandSpec = {
     "line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the " +
     "lookup. **An `agent-def` filed outside that root answers to neither spelling** (the " +
     "`--type agent-def --folder inbox` form of `corpus doc create`): it is a document _about_ a " +
-    "persona, nothing loads it as a subagent, and naming it here is a `404` that says so and " +
-    "names the path — moving the file into `.claude/agents/` is what makes it designatable. A " +
+    "persona, nothing loads it as a subagent, and naming it here is a `404`. Where an off-root " +
+    "`agent-def` is titled the name given, that `404` names its path, because moving the file " +
+    "into `.claude/agents/` is what makes it designatable; off root there is no filename stem to " +
+    "answer to, so `--agent legacy-analyst` for a document titled `Legacy Analyst` in the inbox " +
+    "is the bare refusal — try its title to be told where it is. A " +
     "name that resolves to no agent-def here is likewise the server's `404`: a " +
     "typo is refused rather than quietly downgraded to a general resident. A **blank** name " +
     '(`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is a ' +
     "mistake, while asking for no profile is a decision, and the two must not look alike. Where " +
-    "a profile is renamed or archived after designation the residency stands, and the printed " +
-    "line reports `name (profile missing)` rather than substituting anything for it.\n\n" +
+    "a profile has since been renamed, deleted, or moved out of `.claude/agents/`, the residency " +
+    "stands, and the printed line reports `name (profile missing)` rather than substituting " +
+    "anything for it. **Archiving is not one of those**: an archived `agent-def` still under that " +
+    "root resolves exactly as before, and is still designatable, so the line keeps printing its " +
+    "id.\n\n" +
     "**Single-valued, so designating again replaces**, and **a repeat is not a no-op**: even when " +
     "the thread already has this exact resident and no file is written, the designation is " +
     "announced again — which is how a person asks for a listener that is no longer running to be " +
@@ -150,7 +159,9 @@ export const designateCommand: WorkspaceCommandSpec = {
         "`agent-def` document **under `.claude/agents/`**, its filename stem or its title, " +
         "case-insensitively. Not a document id, and not an `agent-def` filed anywhere else: one " +
         "under `data/docs/` is a document _about_ a persona, answers to neither spelling, and is " +
-        "a `404` here. " +
+        "a `404` here — one that names the file's path when the name given is that document's " +
+        "**title**, and a bare refusal when it is the filename stem, which off root is nobody's " +
+        "alias. " +
         "**Optional**: omit it when the workspace's ordinary agent should own this conversation, " +
         "and name a profile when it wants an agent that behaves differently from the default. A " +
         "blank name is a usage error rather than absence.",
@@ -174,8 +185,9 @@ export const designateCommand: WorkspaceCommandSpec = {
       description:
         'One JSON value — `{"thread":{…,"resident":{"name":null,"docId":null}},"warnings":[]}` — ' +
         "the thread as it now stands. Both fields null is a general resident; `name` set with " +
-        "`docId` null is a profile that has been renamed or archived since; the whole `resident` " +
-        "null is a thread that has none.",
+        "`docId` null is a profile that has since been renamed, deleted, or moved out of " +
+        "`.claude/agents/` — never one merely archived, which still resolves to its id; the whole " +
+        "`resident` null is a thread that has none.",
     },
   ],
   handler: (context) => runThreadDesignate(context),

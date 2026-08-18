@@ -166,18 +166,31 @@ function gitViolations(modules: readonly Module[]): readonly string[] {
 const SAFE_TERMINATOR = "CORPUS_EOF";
 
 /**
- * A shell heredoc opener and its delimiter: `<<X`, `<<'X'`, `<<"X"`, `<<-X`.
- * The delimiter must be quoted or all-caps, so a left shift by a lowercase
- * identifier is not mistaken for one. This CLI shifts no bits at all.
+ * A shell heredoc opener and its delimiter: `<<X`, `<<'X'`, `<<"X"`, `<<-X`, in
+ * **any** case.
+ *
+ * The bare alternative used to be `[A-Z_][A-Z0-9_]*`, so that a left shift by a
+ * lowercase identifier could not be read as an opener — and the same sentence
+ * then observed that this CLI shifts no bits at all, which is the argument for
+ * not needing the restriction rather than for keeping it. It cost a real case
+ * (PR #50 review 3, NIT 7): `<<eof … eof` is a heredoc the shell honours exactly
+ * as it honours `<<EOF … EOF`, carried text containing a line reading `eof`
+ * truncates it exactly the same way, and both halves of this rule were blind to
+ * it. {@link TERMINATOR_LINE} is matched case-insensitively for the same reason.
+ *
+ * Only the exact `CORPUS_EOF` is safe, so a lowercase `corpus_eof` is a
+ * violation too — a shell delimiter is case-sensitive, and half of why the safe
+ * word is safe is that it is spelled the one way everything else in this CLI
+ * spells it.
  */
-const HEREDOC_OPENER = /<<-?\s*(?:'([A-Za-z_][\w]*)'|"([A-Za-z_][\w]*)"|([A-Z_][A-Z0-9_]*))/g;
+const HEREDOC_OPENER = /<<-?\s*(?:'([A-Za-z_]\w*)'|"([A-Za-z_]\w*)"|([A-Za-z_]\w*))/g;
 
 /**
  * A line that is nothing but the closing terminator, once the TypeScript around
- * it is stripped: `EOF`, `"EOF"`, `"EOF",`, `EOF" +`. This is the half that
- * catches a demonstration opened safely and closed with the forgeable word.
+ * it is stripped: `EOF`, `"EOF"`, `"EOF",`, `EOF" +`, `eof`. This is the half
+ * that catches a demonstration opened safely and closed with the forgeable word.
  */
-const TERMINATOR_LINE = /^[\s"'`+,;)\]}]*EOF[\s"'`+,;)\]}]*$/;
+const TERMINATOR_LINE = /^[\s"'`+,;)\]}]*EOF[\s"'`+,;)\]}]*$/i;
 
 /**
  * `<path>:<line> <what>` for every heredoc demonstrated with a terminator other
@@ -471,6 +484,19 @@ describe("every heredoc the CLI demonstrates terminates with CORPUS_EOF", () => 
 
     const invented = fabricate("doc/invented.ts", "const c = \"corpus doc create <<'BODY'\";\n");
     expect(heredocViolations([invented])).toEqual(["doc/invented.ts:1 opens a heredoc with BODY"]);
+  });
+
+  // The case the rule used to walk straight past: the shell does not care, so
+  // neither half of this may (PR #50 review 3, NIT 7).
+  it("catches a lowercase delimiter, in both halves", () => {
+    const lower = fabricate("doc/lower.ts", 'const c = "corpus doc create <<eof\\nbody\\neof";\n');
+    expect(heredocViolations([lower])).toEqual([
+      "doc/lower.ts:1 opens a heredoc with eof",
+      "doc/lower.ts:3 closes one with EOF",
+    ]);
+
+    const mixed = fabricate("doc/mixed.ts", "const c = \"corpus doc create <<'Eof'\";\n");
+    expect(heredocViolations([mixed])).toEqual(["doc/mixed.ts:1 opens a heredoc with Eof"]);
   });
 
   it("does not mistake the safe terminator, or a warning about the unsafe one, for a demonstration", () => {

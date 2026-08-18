@@ -76,6 +76,29 @@ double quotes are the habit.
 
 ## Acceptance Criteria
 
+**Added 2026-08-18 after PR #50's third review (NIT 10).** The review noted that
+the `CORPUS_EOF` sweep into the CLI shipped under this issue's commit with no
+criterion owning it — nine sites across six command files, `input.ts`,
+`docs/cli.md` and a new hygiene rule, checked against nothing. The change was
+right; the record did not say who asked for it. It does now:
+
+- [x] **Every surface an agent copies a heredoc from teaches one terminator.**
+      The shipped skills, the plugin skills, the CLI's `--help` examples, its
+      error hints, and the generated `docs/cli.md`. A skill saying *"never
+      `EOF`"* beside a `corpus --help` demonstrating `EOF` teaches the old word
+      from the more authoritative surface *(nine CLI sites; three of them —
+      a doc comment, an error hint, and a terminator split across a string
+      concatenation — were invisible to a grep for the opener)*
+- [x] **A rule forbids the demonstration while permitting the mention**, since
+      the error hint has to name `EOF` in order to rule it out
+      *(`apps/cli/src/commands/hygiene.test.ts`; verified against the real thing
+      by restoring the pre-fix files and watching it list all nine)*
+- [x] **The two rules agree on the predicate.** Both the workspace and the CLI
+      rule reject any delimiter that is not `CORPUS_EOF`, not merely `EOF` — a
+      rule banning one word leaves the next author choosing between the rest,
+      which is the weighing the fix exists to remove *(PR #50 third review,
+      MINOR 6; falsified with `<<'BODY'`)*
+
 - [x] An agent writing `$18,400` into a title, tag, or form answer through the
       CLI produces `$18,400` in the document — verified in a **real drill**, not
       by reading the rule *(E2E §4: title, tag, `--extra`, skill description and

@@ -1264,7 +1264,28 @@ describe("skills", () => {
       // Not every installed skill has a heredoc — a plugin fixture ships none —
       // so this pin is a prohibition, and the anti-vacuity for it is the
       // aggregate below plus the per-core-skill count further down.
-      expect(body, `${label}: opens a heredoc with EOF`).not.toMatch(/<<-?\s*'?"?EOF/);
+      //
+      // It forbids **every** delimiter but `CORPUS_EOF`, not merely `EOF`, and
+      // that is the whole point of the rule it guards (PR #50 third review,
+      // MINOR 6). The argument for the change was that the terminator is chosen
+      // once and never weighed against the text; a rule that only bans `EOF`
+      // lets the next author pick `BODY`, which is weighing it again with one
+      // option removed. `apps/cli/src/commands/hygiene.test.ts` already states
+      // the stronger predicate for the CLI's own examples, and two rules for one
+      // decision is how this release's other six drifts started.
+      const openers = [...body.matchAll(/<<-?\s*(?:'([\w]+)'|"([\w]+)"|([A-Za-z_][\w]*))/g)]
+        .map(([, quoted, doubleQuoted, bare]) => quoted ?? doubleQuoted ?? bare)
+        .filter((delimiter) => delimiter !== "CORPUS_EOF");
+      expect(openers, `${label}: opens a heredoc with a delimiter that is not CORPUS_EOF`).toEqual(
+        [],
+      );
+      // The closing half stays keyed on `EOF` alone, deliberately. Once every
+      // opener is `CORPUS_EOF`, a closer spelled anything else leaves the
+      // heredoc unclosed, which the open/close counter below already fails on.
+      // What that counter cannot see is a demonstration opened safely and closed
+      // with the forgeable word — a mismatched pair that reads as correct. That
+      // is the one shape worth naming, and naming more would mean inventing a
+      // list of words this file may not contain in prose.
       expect(
         body.split("\n").filter((line) => line.trim() === "EOF"),
         `${label}: closes a heredoc with a bare EOF line`,

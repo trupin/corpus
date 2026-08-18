@@ -390,6 +390,176 @@ frontmatter still holds `docId: doc_researcher` — the same shape the two
 neighbouring tests use. Routing that to server-dev is the orchestrator's call;
 that file is another agent's right now.
 
+## PR #50 third review — MINOR 3, and the route half of MINOR 5
+
+Run on **opus** (`claude-opus-5[1m]`). Scope: `packages/contract/` only —
+`apps/cli/` and `apps/ui/` were held by other agents and were read, never
+written.
+
+### MINOR 3 — the archived clause is false, and here is the proof
+
+`ResidentSchema.docId` said the field is null when the named profile "has since
+been renamed, **archived**, or moved out of `.claude/agents/`". The archived
+third of that is false. Established two ways.
+
+**By code.** `targetRows` (`apps/server/src/threads/mentions.ts:153-156`) is
+`SELECT id, path, title, status FROM documents WHERE type = ? ORDER BY id` —
+**no status filter**. `targetIndex` (`:204-217`) skips a row on exactly one
+condition, `invocableName(row.path) === null`, which is the off-root gate;
+`status` is carried onto the `ResolvedTarget` and **read by nobody** (the only
+occurrence in the file is the assignment at `:209`). `resolveMentionTarget`
+(`:302-309`) is a lookup in that index, and `currentResident`
+(`apps/server/src/threads/read.ts:100-108`) is `target?.docId ?? null` over it.
+And archiving does not move an `agent-def`: `folderMove`
+(`apps/server/src/docs/archive.ts:124-138`) only ever moves a path already under
+`SKILLS_ROOT`/`SKILLS_ARCHIVED_ROOT`, so for every other type archiving is a
+`status: archived` frontmatter write and the path — the one input to the gate —
+is unchanged. `apps/server/src/threads/resident.ts:229-233` says the same thing
+in prose: *"An **archived** agent-def designates rather than being refused."*
+
+**Against a real server.** Scratch workspace at `/tmp/c64ws/ws`, real
+`apps/server/src/main.ts` on **port 8805** (never 8765, never 5173), stopped
+afterwards and the port confirmed free. All four arms of the sentence, run on the
+one workspace:
+
+| act on the profile                                | `resident` on the next `GET /api/threads/{id}` |
+| ------------------------------------------------- | ---------------------------------------------- |
+| `POST /api/docs/{id}/archive` (stays in root)     | `{"name":"scratch-persona","docId":"doc_5g4njtsp"}` — **unchanged** |
+| file moved to `data/docs/inbox/` by hand          | `{"name":"scratch-persona","docId":null}`      |
+| file renamed to `.claude/agents/renamed-persona.md` | `{"name":"scratch-persona","docId":null}`    |
+| `DELETE /api/docs/{id}`                           | `{"name":"renamed-persona","docId":null}`      |
+
+The archive response itself shows the path surviving:
+`archived .claude/agents/scratch-persona.md`. And an already-archived profile is
+still **designatable** — created `Archived Persona`, archived it, then
+`POST /api/threads/{id}/resident {"name":"archived-persona"}` answered
+`{"name":"archived-persona","docId":"doc_jz4ttnil"}` — which is the second half
+of the new wording, verified rather than inferred from
+`resident.ts`'s comment.
+
+Incidentally confirmed while setting the scenario up: `POST
+/api/docs/{id}/move` refuses an in-root `agent-def` outright — *"`.claude/agents/scratch-persona.md` is not under `data/docs/` and cannot be
+moved"* — so the move-out arm is reachable only by hand, exactly as this file's
+previous section predicted.
+
+**The fix.** `docId`'s description now lists **renamed, deleted, or moved out of
+`.claude/agents/`** (deleted was never listed and is one of the real ways in,
+covered by the server's own `rm`-and-reproject test), and states the corrected
+fact positively rather than by omission, because four other surfaces carry the
+false claim and this is the document they would be read against:
+
+> **Archiving a profile does not empty this field**: an archived `agent-def`
+> still under that root resolves exactly as before, and is still designatable, so
+> what stands here is its id and `name (profile missing)` is the wrong thing to
+> show for it. Archived-ness is not carried on a `Resident` at all — it is the
+> document's own `status`, on the document this id names, for the caller that
+> cares.
+
+The module docblock's third state (`schemas/agents.ts:117-123`) was rewritten to
+match.
+
+### MINOR 5 (route half) — the unconditional promise, reproduced then removed
+
+Reproduced on the same server. `POST /api/docs` with
+`{"type":"agent-def","title":"Legacy Analyst","folder":"inbox"}` →
+`data/docs/inbox/legacy-analyst.md`. Then, on a thread:
+
+- `{"name":"Legacy Analyst"}` → `404` *"…`data/docs/inbox/legacy-analyst.md`
+  declares `type: agent-def` but is not under `.claude/agents/`…"* — the path is
+  named.
+- `{"name":"legacy-analyst"}` → `404` *"no agent named legacy-analyst in this
+  workspace — a designation names an agent-def the way a mention does"* — the
+  **bare** refusal, from the stem the same paragraph told the reader to try.
+
+`unaddressableTarget` (`mentions.ts:272-287`) matches `aliasKey(row.title)`
+alone, by design: off root there is no invocable name, so the title is the only
+alias such a row ever had.
+
+The route now carries `DesignateResidentRequestSchema`'s existing qualifier
+**verbatim** — "where an off-root `agent-def` is titled the name given, that
+`404` names its path, because moving the file into `.claude/agents/` is what
+makes it designatable" — rather than an eighth phrasing, plus the asymmetry the
+route is the site that has to state, because it is the site that offers both
+spellings: *"**Only the title reaches that refusal**: off root there is no
+filename stem to answer to, so `legacy-analyst` for a document titled
+`Legacy Analyst` in the inbox is the bare `404` — its title is the spelling that
+says where it is."*
+
+### Pins, and falsifying them
+
+Two tests in `openapi.test.ts`, both against `buildOpenApiDocument()`:
+
+- **"qualifies the path-naming 404 identically wherever it is promised"** —
+  asserts the one qualifier string appears in `DesignateResidentRequest.name`
+  **and** in the route description. Not two hand-copied prose checks: the same
+  literal, so the next edit to either is a failing test.
+- **"does not list archiving among the ways a profile stops resolving"** — the
+  corrected list, the positive archived sentence, and then a **sentence-level
+  sweep**: every sentence mentioning archiving that also mentions
+  null/no-longer/gone/missing must be the one saying it changes nothing. Pinning
+  the absence of the old spelling would have let the claim back in new words,
+  which is precisely how it survived the CONTRACT-064 sweep.
+
+Falsified, each separately, by injecting the defect into the **source** (the test
+builds the document, so editing `openapi.json` proves nothing — that was the
+first attempt and it passed):
+
+- restore the route's old unconditional sentence → *"expected 'Gives a
+  **standalone** thread a resid…' to contain 'where an off-root `agent-def` is
+  titl…'"*, exit 1.
+- re-word the null-causes list as "renamed **or put away into the archive**, or
+  moved out of…" → exit 1 on the corrected-list assertion.
+- keep the corrected list and smuggle the claim back as a fresh sentence, *"An
+  agent-def put away into the archive stops resolving and leaves this null."* →
+  the sweep fails with that exact sentence printed as the offender. This is the
+  arm that matters; the first two would have been caught by a naive pin.
+
+Sources restored and `openapi.json` regenerated afterwards; the committed
+document contains the corrected prose.
+
+### Checks
+
+`npm run generate -w packages/contract` (never hand-edited) — exit 0, both
+artifacts rewritten. `VITEST_MAX_THREADS=4 npx vitest run packages/contract` —
+**2623 passed, 65 files**, exit 0. `npm run build -w packages/contract` — exit 0.
+`npm run typecheck -w packages/contract` — exit 0. `npm run lint` — exit 0.
+`prettier --check` on the five touched files — clean. Scratch server killed, 8805
+free, the user's 8765 untouched (a different pid throughout).
+
+### What the sweep turned up, now that one clause is known to have survived it
+
+The false claim is not confined to this package. **Not touched — reported for
+routing:**
+
+- `packages/kit/src/recipient/laneRows.ts:154` —
+  `MISSING_PROFILE_NOTE = "its profile is gone — renamed or archived since"`.
+  This is **user-visible text**, not a comment: a picker tells a person their
+  archived-but-working profile is gone. The worst instance of the four.
+  (ui-dev's domain.)
+- `apps/cli/src/commands/thread/designate.ts:60`, `:132`, `:182` — help text and
+  a comment; `:132` prints the claim in `--help`. Generated into `docs/cli.md:120`
+  ("renamed or archived since"), which is why the doc must not be hand-edited.
+  (cli-dev's domain, held concurrently.)
+- `apps/ui/src/thread/ResidentBadge.test.tsx:208`,
+  `ThreadPanel.test.tsx:588`, `residentActions.test.ts:41`/`:347`, and
+  `packages/kit/src/recipient/RecipientPicker.tsx:56`,
+  `useComposerRecipient.test.tsx:533` — comments repeating it.
+- `apps/server/src/threads/resident.test.ts:805` quotes the **old** `docId`
+  sentence verbatim ("renamed, archived, or moved out of…") as a comment; it is
+  now a stale quotation of a string that no longer exists.
+
+Two notes for whoever picks those up. First, the CLI's copy of the MINOR 5
+qualifier (`designate.ts:123-125`) bolds `**titled**` where both contract sites
+have it plain; the strings are otherwise identical. Harmless, but it means the
+three cannot be pinned as one literal. Second, **SPEC.md §7's rider is the root
+of this**: *"A profile that is renamed or archived after designation does not end
+the designation: the resident goes on owning its scope, and the missing profile
+is reported rather than silently substituted."* The first clause is true of
+archiving (the designation stands) and the second is not (nothing is missing).
+Every downstream site read the sentence as one claim. The contract now states the
+distinction; the spec sentence still invites the misreading, and tightening it is
+a SHARED issue and the user's call, not this agent's.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

@@ -4816,6 +4816,72 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     );
   });
 
+  /**
+   * PR #50 third review, MINOR 5 (route half). The rule that only a **title**
+   * reaches the path-naming `404` is stated at both published sites in one
+   * spelling, and the assertion is that they are literally the same string.
+   *
+   * The route promised the path-naming refusal unconditionally while
+   * `unaddressableTarget` (`apps/server/src/threads/mentions.ts`) matches on the
+   * title alone — so `--agent legacy-analyst` for an inbox document titled
+   * `Legacy Analyst` got the bare `404`, from a paragraph that had just told the
+   * reader a persona answers to its stem *or* its title.
+   * `DesignateResidentRequestSchema` already carried the qualifier; this pins
+   * the two together so a future edit to one is a failing test rather than a
+   * seventh phrasing of a rule that is now stated at seven sites.
+   */
+  it("qualifies the path-naming 404 identically wherever it is promised", () => {
+    const qualifier =
+      "where an off-root `agent-def` is titled the name given, that `404` names its path, " +
+      "because moving the file into `.claude/agents/` is what makes it designatable";
+    expect(
+      componentSchemas?.["DesignateResidentRequest"]?.properties?.["name"]?.description,
+    ).toContain(qualifier);
+    expect(operation("/api/threads/{id}/resident", "post").description).toContain(qualifier);
+    // And the route says what the qualifier costs the other spelling, since it
+    // is the site that offers both.
+    expect(operation("/api/threads/{id}/resident", "post").description).toContain(
+      "**Only the title reaches that refusal**",
+    );
+  });
+
+  /**
+   * PR #50 third review, MINOR 3. `Resident.docId` listed **archived** among the
+   * ways a profile stops resolving. It is false, and it was false before
+   * CONTRACT-064 rewrote this sentence as a correctness sweep of it.
+   *
+   * Established against a running server (workspace on port 8805): designate
+   * `scratch-persona`, archive `.claude/agents/scratch-persona.md`, re-read the
+   * thread — `{"name":"scratch-persona","docId":"doc_5g4njtsp"}`, unchanged. And
+   * the code says why: `targetRows` selects every row of the type with no status
+   * filter, `targetIndex` skips only rows whose `invocableName` is null
+   * (off-root), and archiving an `agent-def` writes `status: archived` without
+   * moving the file — only a `type: skill` changes folder. Renaming, deleting
+   * and moving out of the root each *do* null it; all three were run on the same
+   * workspace.
+   *
+   * Pinned as a **positive** claim plus a sentence-level sweep, not as the
+   * absence of one spelling: the false clause has to be unable to come back in
+   * any wording, and it rides in four other surfaces' prose besides this one.
+   */
+  it("does not list archiving among the ways a profile stops resolving", () => {
+    const description = componentSchemas?.["Resident"]?.properties?.["docId"]?.description ?? "";
+    expect(description).toContain("renamed, deleted, or moved out of `.claude/agents/`");
+    expect(description).toContain("**Archiving a profile does not empty this field**");
+    // Every sentence that mentions archiving must be one of the sentences
+    // saying it changes nothing — a re-added "renamed, archived, …" lands in a
+    // sentence that also carries "null", and fails here.
+    const offenders = description
+      .split(/(?<=\.)\s+/)
+      .filter(
+        (sentence) =>
+          /archiv/i.test(sentence) &&
+          /null|no longer|gone|missing/i.test(sentence) &&
+          !/does not empty this field/.test(sentence),
+      );
+    expect(offenders).toEqual([]);
+  });
+
   it("answers a designation and a release with the thread, so §14's warnings surface", () => {
     for (const method of ["post", "delete"] as const) {
       const ok = operation("/api/threads/{id}/resident", method).responses?.["200"];

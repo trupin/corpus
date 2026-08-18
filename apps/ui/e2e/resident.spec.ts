@@ -96,6 +96,29 @@ const CREATED_PROFILE: StubRow = {
   path: ".claude/agents/bookkeeper.md",
 };
 
+/**
+ * The same shape with a **padded** title, which is a row the projection really
+ * produces: `asString` (`projection/project-document.ts`) only decides whether a
+ * title is *there*, so `title: "  Padded Persona  "` reaches `documents.title`
+ * with its padding on.
+ *
+ * The two ends of the designation disagree about that padding on purpose — the
+ * menu offers and sends the title **trimmed** (`residentActions.ts`), and the
+ * server keys both the index and the lookup through one `aliasKey`
+ * (`threads/mentions.ts`), so the trimmed name lands. It is here because that
+ * agreement was broken twice in one release, once on each side, and neither
+ * break was visible in a browser: PR #50 NIT 7 fixed the server, and MINOR 4
+ * then found the e2e stub still comparing the caller's trimmed name against
+ * `row.title` untrimmed — so this designation `404`'d here and `200`'d against
+ * the real server, and no spec held a title this shape to notice.
+ */
+const PADDED_PROFILE: StubRow = {
+  id: "doc_padded",
+  type: "agent-def",
+  title: "  Padded Persona  ",
+  path: ".claude/agents/padded.md",
+};
+
 const CARD = '.thread-card[data-thread="th_solo"]';
 const BADGE = '[data-thread-panel="th_solo"] .t-resident';
 
@@ -236,6 +259,29 @@ test.describe("designating a resident", () => {
   });
 
   /**
+   * A padded title, designated through the real menu — PR #50 MINOR 4's case.
+   *
+   * The label is trimmed and so is the name on the wire, because a person picks
+   * a row and not a string; what comes back is the row's **stem**, the same
+   * answer `Bookkeeper` gets, because the resolved name is what a designation
+   * stores whichever spelling found it.
+   *
+   * The badge turning `profiled` is the whole assertion: a copy of the rule that
+   * keys `row.title` untrimmed answers this `404`, and the lane never appears.
+   */
+  test("designates a persona whose title is padded, sending it trimmed", async ({ page }) => {
+    const corpus = await board(page, [PADDED_PROFILE]);
+    await openMenu(page);
+    const item = page.getByRole("menu").locator('[data-act="resident-designate-doc_padded"]');
+    await expect(item).toContainText("Designate Padded Persona");
+    await item.click();
+
+    await expect.poll(async () => posted(corpus)).toEqual([{ name: "Padded Persona" }]);
+    await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "profiled");
+    await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("padded");
+  });
+
+  /**
    * **UI-123, in a browser: the two menus offer what the server will resolve,
    * and the document they drop is still a document.**
    *
@@ -317,11 +363,13 @@ test.describe("designating a resident", () => {
    * to what a healthy lane offers, on the one surface where a person acts on the
    * fact.
    *
-   * The lane is seeded rather than produced, because archiving an agent-def is
+   * The lane is seeded rather than produced, because losing a profile is
    * something the workspace does between two page loads and not something this
    * page can cause: `{name: "researcher", docId: null}` is exactly what
-   * `GET /api/agents` answers once the document behind a standing designation
-   * has been renamed or archived (CONTRACT-061).
+   * `GET /api/agents` answers once the document behind a standing designation has
+   * been renamed, deleted, or moved out of `.claude/agents/` (CONTRACT-061).
+   * Archiving it is **not** one of those — an archived agent-def still resolves,
+   * so its lane keeps its `docId` (`MISSING_PROFILE_CAUSES`).
    *
    * The workspace deliberately still holds a `researcher` agent-def — the
    * recreated-under-a-new-document case — because it is the sharpest reading of
