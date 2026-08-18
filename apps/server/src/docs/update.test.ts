@@ -710,6 +710,78 @@ describe("a hand-authored profile keeps working after the requirement lands", ()
     expect(parseDocument(ws.read(created.path)).data["name"]).toBe("archivist");
   });
 
+  // The case review 3's guard could not see, because it compared issue sets
+  // keyed on the field name: `name` was faulty before *and* after, so nothing
+  // looked introduced and the write manufactured the second divergence — one
+  // file loadable by Claude Code as `numbers` and resolved by Corpus as
+  // `@reviewer`. The comparison is per-field values now, so the fault the patch
+  // writes is refused whatever the field carried before.
+  it("refuses a patch that trades one fault on a field for a different one", async () => {
+    handAuthored("profile-refault-name", "description: Reviews changes.");
+    const id = profileId();
+
+    const response = await ws.put(`/api/docs/${id}`, { extra: { name: "numbers" } });
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { issues: { path: string; message: string }[] };
+    expect(payload.issues.map((issue) => issue.path)).toEqual(["body.extra.name"]);
+    expect(payload.issues[0]?.message).toContain("@reviewer");
+    // Nothing was written: the file still carries no `name` at all, and the
+    // check still reports the one fault it had before the request.
+    expect(parseDocument(ws.read(".claude/agents/reviewer.md")).data["name"]).toBeUndefined();
+    const checked = await ws.post("/api/check", { ids: [id] });
+    expect(await checked.json()).toMatchObject({
+      ok: false,
+      errors: [{ detail: expect.stringContaining("name: missing") as string }],
+    });
+  });
+
+  // The same trade in the other direction: a `name` that is already wrong may
+  // not be swapped for a differently wrong one.
+  it("refuses a patch that replaces a wrong name with another wrong name", async () => {
+    handAuthored("profile-rename-wrong", "name: numbers\ndescription: Reviews changes.");
+
+    const response = await ws.put(`/api/docs/${profileId()}`, { extra: { name: "digits" } });
+
+    expect(response.status).toBe(400);
+    expect(parseDocument(ws.read(".claude/agents/reviewer.md")).data["name"]).toBe("numbers");
+  });
+
+  // Requirement the narrowness exists for, in its hardest form: the field being
+  // repaired is not the faulty one, and the faulty one is left standing.
+  it("accepts a description repair on a profile whose name stays wrong", async () => {
+    handAuthored("profile-describe-wrong-name", "name: numbers");
+    const id = profileId();
+
+    const response = await ws.put(`/api/docs/${id}`, {
+      extra: { description: "Reviews changes, sharply." },
+    });
+
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(".claude/agents/reviewer.md")).data;
+    expect(parsed["description"]).toBe("Reviews changes, sharply.");
+    expect(parsed["name"]).toBe("numbers");
+    const checked = await ws.post("/api/check", { ids: [id] });
+    expect(await checked.json()).toMatchObject({
+      ok: false,
+      errors: [{ detail: expect.stringContaining("is not the filename") as string }],
+    });
+  });
+
+  // Why the comparison is on values and not on the keys the patch names: the
+  // board's autosave re-sends `extra` wholesale, so a document whose stored
+  // `name` is wrong must not have every save refused for echoing its own bytes.
+  it("accepts a save that echoes a faulty field back unchanged", async () => {
+    handAuthored("profile-echo-fault", "name: numbers\ndescription: Reviews changes.");
+
+    const response = await ws.put(`/api/docs/${profileId()}`, {
+      extra: { name: "numbers", description: "Reviews changes." },
+    });
+
+    expect(response.status).toBe(200);
+    expect(parseDocument(ws.read(".claude/agents/reviewer.md")).data["name"]).toBe("numbers");
+  });
+
   it("refuses a patch that would blank a description the file had", async () => {
     ws = createWriteWorkspace("profile-blank-description");
     ws.reproject();

@@ -289,8 +289,9 @@ function assertExtraWithinBound(
 }
 
 /**
- * A patch may not **introduce** a fault in Claude Code's two discovery fields
- * (SERVER-123 regression, PR #49 review 3).
+ * **A value this patch writes into one of Claude Code's two discovery fields
+ * must come out correct**; a fault the patch does not write is left alone
+ * (SERVER-123 regression, PR #49 reviews 3 and 4).
  *
  * `extra` is the one way a caller can write `name` or `description` on an
  * existing document, which makes this the second and last route that accepts
@@ -298,25 +299,44 @@ function assertExtraWithinBound(
  * first, and this is deliberately its mirror: same function
  * ({@link claudeCodeFrontmatterIssues}, the one `corpus doc check` reports
  * through), same `extra.<field>` issue paths, same refusal before the write
- * pipeline. Neither is a second copy of the rule; both ask the rule about the
- * caller's own values.
+ * pipeline, and the same line create draws on `name` ("a caller that supplies a
+ * different one is refused rather than silently overwritten"). Neither is a
+ * second copy of the rule; both ask the rule about the caller's own values.
  *
- * **Only a *new* fault is refused**, and that is the whole distinction the
- * regression turned on. The save path no longer blocks on this finding at all
- * (see `write.ts`'s `isClaudeCodeRequirement`), because a hand-authored profile
- * that has never carried a `description` must stay editable — and the command
- * that repairs it is a patch through this very function
- * (`--extra description=…`). Refusing every patch that leaves a fault standing
- * would refuse the repair itself, so what is refused is only a field this patch
- * makes worse: setting `name` to something the filename is not, or blanking a
- * `description` that was there. Everything the write path tolerates on a file it
- * did not author, it goes on tolerating; what it will not do is author the fault
- * on request.
+ * **The comparison is per field, between the value on disk and the value the
+ * patch would leave there** — not between the two issue *lists*. Those are three
+ * different questions and only the first is the one worth asking:
+ *
+ * - Comparing issue lists **keyed on the field name** (review 3's version) asks
+ *   "did this field acquire *a* fault?", which cannot see a field trading one
+ *   fault for another. Measured against a real server: a hand-authored
+ *   `.claude/agents/reviewer.md` with a `description` and no `name`, patched
+ *   with `--extra name=numbers`, has `{name}` faulty before *and* after, so
+ *   nothing looked introduced — and the write answered `200` and manufactured
+ *   the exact divergence SERVER-123 exists to close, one file loadable by Claude
+ *   Code as `numbers` and resolvable by Corpus as `@reviewer`. Keying on the
+ *   issue's *message* instead would close that hole but leaves the rule resting
+ *   on prose staying distinct enough to tell two faults apart, which is not a
+ *   property error text should have to carry.
+ * - Asking whether the patch **names** the field is wrong the other way: the
+ *   board's autosave re-sends `extra` wholesale, so a document whose stored
+ *   `name` is already wrong would have every save refused for echoing its own
+ *   bytes back. `sameValue` is what makes "writes" mean *changes*, exactly as it
+ *   does for every other field in {@link changedFields}.
+ *
+ * So the rule is: the server never **authors** a faulty Claude Code value, and
+ * goes on tolerating every one it did not author. A patch that touches only
+ * `description` may still leave a wrong `name` standing — which is what keeps
+ * `--extra description=…` a working repair for a profile faulty in both fields,
+ * the regression review 3 caught. The save path itself no longer blocks on this
+ * finding at all (see `write.ts`'s `isClaudeCodeRequirement`), so a
+ * hand-authored profile stays editable, archivable and bulk-actionable while
+ * `corpus doc check` goes on reporting it.
  *
  * Costs the autosave path nothing: the caller checks `patch.extra !== undefined`
  * first, and a body save carries no `extra`.
  */
-function assertClaudeCodeFieldsNotWorsened(
+function assertClaudeCodeFieldsAuthoredGood(
   path: string,
   before: Readonly<Record<string, unknown>>,
   after: Readonly<Record<string, unknown>>,
@@ -324,17 +344,15 @@ function assertClaudeCodeFieldsNotWorsened(
   const discoveredAs = claudeCodeRootFor(path)?.discoveredAs ?? null;
   if (discoveredAs === null) return;
 
-  const existing = new Set(
-    claudeCodeFrontmatterIssues(before, discoveredAs).map((issue) => issue.field),
+  const authored = claudeCodeFrontmatterIssues(after, discoveredAs).filter(
+    (issue) => !sameValue(before[issue.field], after[issue.field]),
   );
-  const introduced = claudeCodeFrontmatterIssues(after, discoveredAs).filter(
-    (issue) => !existing.has(issue.field),
-  );
-  if (introduced.length === 0) return;
+  if (authored.length === 0) return;
 
   throw badRequest(
-    `this patch would break Claude Code's frontmatter: ${introduced[0]?.message ?? "invalid"}`,
-    introduced.map((issue) => ({ path: `body.extra.${issue.field}`, message: issue.message })),
+    `this patch would write a Claude Code field this file cannot be loaded with: ` +
+      `${authored[0]?.message ?? "invalid"}`,
+    authored.map((issue) => ({ path: `body.extra.${issue.field}`, message: issue.message })),
   );
 }
 
@@ -471,7 +489,7 @@ export async function updateDocumentLocked(
   // all — the autosave path carries no `extra` and must not pay for the walk.
   if (patch.extra !== undefined) {
     assertExtraWithinBound(parsed.data, nextParsed.data);
-    assertClaudeCodeFieldsNotWorsened(loaded.path, parsed.data, nextParsed.data);
+    assertClaudeCodeFieldsAuthoredGood(loaded.path, parsed.data, nextParsed.data);
   }
 
   const text = serializeDocument(nextParsed);
