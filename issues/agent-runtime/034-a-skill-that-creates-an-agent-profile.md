@@ -276,6 +276,51 @@ name/filename tie, the read-back, the refusals, and eleven assertions pairing th
 worked example against the prose above it). Prettier and ESLint clean on the
 changed files.
 
+### Review fix (PR #49, third pass) — person-authored words in shell-quoted arguments
+
+Both of this skill's writes routed a person's words through a quoted flag
+argument. Measured against a real workspace (`~/.claude/jobs/4dd0ddef/tmp/ws`,
+server on port **8857**, stopped, port verified free):
+
+| what was written | what landed |
+| --- | --- |
+| `--title "Kitchen quote $18,400"` | `title: Kitchen quote ,400` — exit **0**, file created, committed |
+| `--extra note='it's fine'` | never runs: `bash: unexpected EOF while looking for matching '` |
+| `--extra note='it's fine, isn't it'` | runs, CLI refuses: `unexpected argument "fine,"` |
+
+So the two quoting styles fail on different characters, and the obvious repair
+for the loud one (reach for double quotes) is the silent one. **The CLI has no
+way out**: `-m`, `--file` and stdin feed the *body* alone — there is no
+`--title-file` and no stdin form for `--extra` (`corpus doc edit --help`,
+2026-08-17). The fix is therefore the idiom the body already uses, lifted onto
+the short arguments: `value=$(cat <<'EOF' … EOF )` and `"$value"`. Nothing is
+expanded on either leg, so the rule carries no list of dangerous characters.
+
+Re-drilled twice on a fresh `corpus init`, prompt containing both hazards
+(`"$18,400"` and apostrophes; transcripts `session.jsonl`, `session2.jsonl`).
+Both sessions copied the pattern from the worked example without being told to,
+spelling `--title "$title"` and `--extra description="$description"`. Read back
+off disk with `od -c`:
+
+```
+$   1   8   ,   4   0   0        ← intact
+w   o   r   k   s   p   a   c   e   '   s     ← intact
+d   o   e   s   n   '   t        ← intact
+```
+
+Pins updated in the tightening direction (`scripts/workspace-template.test.ts`):
+negative pins that no invocation spells `--title "` with a literal or
+`--extra <key>='`, positive pins that both writes spell the safe form in both
+places they appear, and a pin that the worked description actually contains an
+apostrophe. One pre-existing scanner was corrected with them — *quotes every
+heredoc it hands text to* read `<<-?\s*\S+`, which swallowed the backtick of a
+heredoc merely **named** in prose; it now stops at the delimiter, and still
+fails on `<<EOF` and `<<"EOF"`.
+
+AGENT-035 keeps the general problem (the same hazard on tags, form answers, and
+`corpus skill create --description`); this fix only stops this skill's own two
+commands from mangling input.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

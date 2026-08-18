@@ -71,10 +71,17 @@ worth weighing rather than dismissing: they were citing the section the document
 ## Acceptance Criteria
 
 - [x] Drafted amendment text quoted to the user **verbatim** and signed before
-      anything is applied — **not required in the end**: the correction replaces
-      a citation of a section that does not exist with one that does, changing no
-      behaviour and asserting nothing new, so it was applied as a correction
-      rather than an amendment. Recorded here rather than silently dropped
+      anything is applied — **not done, and that was the orchestrator's call to
+      make, not this issue's.** The three SPEC.md edits replace a citation of a
+      section that does not exist with one that does: no behaviour changes and
+      nothing new is asserted, so I judged it a correction rather than an
+      amendment and applied it unsigned. That judgement is recorded here to be
+      overturned, not to stand as a rule — PR #49's third review is right that
+      waiving sign-off on a SPEC.md edit belongs to the user. If the user would
+      rather it had been signed, the edit is three lines and trivially revertible.
+      Note it also makes SHARED-049's sentence *"the rider signed for this phase
+      authorised one specific insertion into §7 and nothing else"* incomplete:
+      these three rode alongside it, unsigned
 - [x] Every citation in SPEC.md points at a section that exists — the three in
       §7 line 329, line 363 and §9.2 line 459 now cite §9.2
 - [x] The eight issue files and `packages/contract/src/schemas/key.ts` are
@@ -96,8 +103,10 @@ _Not applicable until the amendment is signed._
 
 ## Completion Checklist (orchestrator)
 
-- [x] User sign-off on the amendment text — not required; see the first
-      acceptance criterion
+- [ ] User sign-off on the amendment text — **not obtained.** Left unticked
+      deliberately: the edits are applied and correct, and the signature is
+      genuinely absent. See the first acceptance criterion for the call and its
+      reasoning
 - [x] Committed with `[SHARED-046]` prefix (in `dbadd487`, alongside SHARED-048)
 
 ## The guard, and how this issue was briefly wrong

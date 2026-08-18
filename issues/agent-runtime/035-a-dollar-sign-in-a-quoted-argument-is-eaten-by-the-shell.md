@@ -105,6 +105,35 @@ Reproduce it first, exactly as the drill did: a real session, a title containing
 proves nothing about whether a session under load follows it — this repo has
 been wrong about that three times, and the drill is what found each one.
 
+### A second site, and a measured correction
+
+**`assets/workspace/claude/skills/comment/SKILL.md:809`** carries the same shape:
+`corpus skill create weekly-review --description "Run the weekly review over the
+corpus."` — person-facing prose through a double-quoted argument. Found while
+fixing the `profile` skill's two sites (PR #49 third review); left for this issue.
+
+**The apostrophe half of this defect is loud, not silent** — measured 2026-08-17,
+which is a correction to how it was first described:
+
+| written | landed |
+| --- | --- |
+| `--title "Kitchen quote $18,400"` | `title: Kitchen quote ,400` — **exit 0**, committed |
+| `--extra note='it's fine'` | never runs: `bash: unexpected EOF while looking for matching '` |
+| `--extra note='it's fine, isn't it'` | runs; CLI refuses `unexpected argument "fine,"` |
+
+That matters for the fix: **the obvious repair for the loud failure is the silent
+one.** An agent whose single quote just broke reaches for a double quote, which
+is the `$18,400` hole. So a rule that only says "watch your quoting" sends people
+from the failure they can see into the one they cannot.
+
+`profile` now solves it by building every person-facing value through a
+`<<'EOF'` heredoc and passing `"$var"` — nothing inside a quoted-terminator
+heredoc is expanded, so there is no character list to remember. Two real Claude
+Code sessions copied that pattern from the skill without being told. Whether that
+is the right shape for the *general* rule, and where it lives, is this issue's to
+decide — it was deliberately not registered as single-owner, so as not to
+prejudge that.
+
 ### Edge Cases
 
 - The value comes from a person's message, so it is arbitrary text

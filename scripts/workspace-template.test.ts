@@ -658,7 +658,12 @@ describe("skills", () => {
     });
 
     it.each(installedSkills)("$label quotes every heredoc it hands text to", ({ label, body }) => {
-      for (const heredoc of body.match(/<<-?\s*\S+/g) ?? []) {
+      // The delimiter, and nothing after it. `\S+` used to swallow whatever
+      // touched the token, which made a heredoc *named in prose* — `` `<<'EOF'`
+      // `` — read as the unquoted delimiter `<<'EOF'\``. A quoted delimiter is
+      // its quotes plus what is inside them; an unquoted one runs to the first
+      // space or backtick, so `<<EOF` and `<<"EOF"` still fail below.
+      for (const heredoc of body.match(/<<-?\s*(?:'[^'\n]*'|"[^"\n]*"|[^\s`]+)/g) ?? []) {
         expect(heredoc, `${label}: unquoted heredoc`).toMatch(/^<<'EOF'$/);
       }
       expect(body, `${label}: command substitution in an argument`).not.toMatch(/-m "\$\(/);
@@ -4071,9 +4076,15 @@ describe("profile skill body", () => {
    * and the address that follows from the two. Read off the path rather than
    * off an `--extra name=`, because since SERVER-123 the name is the filename
    * and the skill passes nothing: the title is the only input the example has.
+   *
+   * The title is read out of the **heredoc that builds it**, not off the flag,
+   * because the flag now carries `"$title"` — see *values a shell cannot read*
+   * below for why it has to.
    */
   const examplePath = /created doc_\w+ — (\.claude\/agents\/[a-z0-9-]+)\.md/.exec(body)?.[1];
-  const exampleTitle = /--type agent-def --title "([^"]+)"/.exec(body)?.[1];
+  const heredocValue = (variable: string): string | undefined =>
+    new RegExp(String.raw`^${variable}=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$`, "m").exec(body)?.[1];
+  const exampleTitle = heredocValue("title");
   const exampleName = examplePath?.slice(".claude/agents/".length);
 
   it("carries its sections, each of them substantial", () => {
@@ -4095,7 +4106,7 @@ describe("profile skill body", () => {
 
   it("teaches the create as the whole profile and the description as the judgement", () => {
     expect(body).toMatch(/corpus doc create --type agent-def --title/);
-    expect(body).toMatch(/--extra description='/);
+    expect(body).toMatch(/--extra description="\$description"/);
     // The reason the second command exists, stated as the consequence rather
     // than as a step: this is what a reader skips if it reads as bookkeeping.
     // Since SERVER-123 the consequence is a profile nobody picks, not one that
@@ -4198,7 +4209,91 @@ describe("profile skill body", () => {
 
   it("works an example description written as when to reach for the agent", () => {
     expect(body).toMatch(/write it as \*when to reach for this\s+one\*/);
-    expect(body).toMatch(/--extra description='Reach for this when /);
+    const worked = body.slice(body.indexOf("## Worked example"));
+    const description = /^description=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$/m.exec(worked)?.[1];
+    expect(description, "the worked example builds no description").toBeDefined();
+    expect(description).toMatch(/^Reach for this when /);
+  });
+
+  /**
+   * PR #49, third review. Both of this skill's writes carried person-authored
+   * words in a shell-quoted flag argument, and the two quoting styles fail on
+   * different characters — measured against a real workspace, 2026-08-17:
+   *
+   * - `--title "Kitchen quote $18,400"` created
+   *   `data/docs/inbox/kitchen-quote-400.md` with `title: Kitchen quote ,400`,
+   *   exit 0, committed. `$18` is a positional parameter and it is empty. This
+   *   is AGENT-035, and it is **silent**.
+   * - `--extra note='it's fine'` never runs (`unexpected EOF while looking for
+   *   matching '`); with an even number of apostrophes it runs and the CLI
+   *   refuses the fragments (`unexpected argument "fine,"`). This one is
+   *   **loud** — and that is exactly why it matters, because the obvious repair
+   *   for a broken single quote is a double quote, which is the silent hole
+   *   above. The skill states the pair as a pair for that reason.
+   *
+   * The CLI offers no way out: `-m`, `--file` and stdin feed the **body** alone,
+   * so there is no `--title-file` and no stdin form for `--extra` (checked
+   * against `corpus doc edit --help`, 2026-08-17). The fix is therefore the
+   * shell idiom the body already uses, lifted onto the short arguments: a
+   * `<<'EOF'` heredoc into a variable, and the variable passed in double quotes.
+   * Nothing is expanded on either leg, so the rule needs no list of dangerous
+   * characters.
+   *
+   * Pinned in the tightening direction, because the previous drill proved the
+   * **example** is what gets copied: the raw quoted forms must be gone from the
+   * file, the safe form must be what both writes spell, and the worked
+   * description must actually contain an apostrophe — an example that avoids
+   * the character the rule exists for demonstrates nothing.
+   */
+  it("routes every word a person reads through a heredoc, not a quoted argument", () => {
+    expect(body).toMatch(/\*\*Every word a person will read goes in through a heredoc/);
+    // The two failures named concretely, because a rule whose cost is abstract
+    // is the rule an agent under load re-derives from habit instead.
+    expect(body).toMatch(/\$18,400/);
+    expect(body).toMatch(/positional parameter/);
+    // Stated as a pair: the loud failure's repair is the silent failure. A text
+    // that names only one of them teaches the agent to swap one for the other.
+    expect(body).toMatch(/\*\*Neither quote saves you/);
+    expect(body).toMatch(/the repair for one is the hole\s+in the other/);
+    expect(body).toMatch(/unexpected EOF while looking for matching/);
+    // Why the form is total: the reader carries no character list.
+    expect(body).toMatch(/Nothing inside a `<<'EOF'` heredoc is expanded/);
+    expect(body).toMatch(/no list of characters to keep in your\s+head/);
+
+    // Negative pins, over the **invocations** rather than the whole body: the
+    // prose above names both broken forms on purpose, and a pin that could not
+    // tell an invocation from the sentence explaining it would forbid the
+    // explanation.
+    const commandLines = body.split("\n").filter((line) => line.trimStart().startsWith("corpus "));
+    expect(commandLines.length, "the skill invokes nothing").toBeGreaterThan(0);
+    for (const line of commandLines) {
+      expect(line, "a literal double-quoted --title is back").not.toMatch(/--title "(?!\$)/);
+      expect(line, "an --extra value is single-quoted again").not.toMatch(/--extra [a-z-]+='/);
+    }
+
+    // And the safe form is what both writes spell, in both places they appear.
+    const creates = commandLines.filter((line) =>
+      line.includes("corpus doc create --type agent-def"),
+    );
+    expect(creates.length, "the skill no longer writes a create").toBeGreaterThanOrEqual(2);
+    for (const line of creates) expect(line).toContain('--title "$title"');
+    const descriptionEdits = commandLines.filter((line) => line.includes("--extra description"));
+    expect(
+      descriptionEdits.length,
+      "the skill no longer sets a description",
+    ).toBeGreaterThanOrEqual(2);
+    for (const line of descriptionEdits) {
+      expect(line).toContain('--extra description="$description"');
+    }
+    // Every value the skill passes by name is built by a quoted heredoc first.
+    for (const variable of ["title", "description"]) {
+      expect(heredocValue(variable), `${variable} is passed but never built`).toBeDefined();
+    }
+    // The example carries the character the rule exists for; otherwise the
+    // pattern that gets copied is the one that has never been exercised.
+    const worked = body.slice(body.indexOf("## Worked example"));
+    const description = /^description=\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)$/m.exec(worked)?.[1];
+    expect(description, "the worked description carries no apostrophe").toMatch(/\w'\w/);
   });
 
   it("works an example persona that obeys the body rules above it", () => {

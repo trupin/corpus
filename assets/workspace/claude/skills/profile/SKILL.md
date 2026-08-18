@@ -126,11 +126,36 @@ writing. The list is small and typed — this is not a corpus sweep:
 corpus doc list --type agent-def
 ```
 
+**Every word a person will read goes in through a heredoc, the short ones included.** A body
+already does, which is why bodies come out intact; a flag argument does not, and the shell
+reads it on the way past. **Neither quote saves you, because they fail on different characters
+and the repair for one is the hole in the other.** Single quotes break on an apostrophe: in
+`--extra description='…'` the apostrophe in *don't*, *it's* or *the team's* ends the quoting
+early, and the command dies where you can see it — `unexpected EOF while looking for matching
+'` from the shell, or `unexpected argument "fine,"` from the CLI. The obvious repair is to
+reach for double quotes, and that is the trap: `--title "…"` is already double-quoted, and a
+name carrying `$18,400` arrives as `,400`, because `$18` is a positional parameter and it is
+empty. Nothing errors, nothing warns, and the wrong figure is committed and shown to a person
+as though you meant it. Build the value the way you build a body, and pass it by name:
+
+```bash
+title=$(cat <<'EOF'
+Bookkeeper
+EOF
+)
+```
+
+Nothing inside a `<<'EOF'` heredoc is expanded, because the terminator is quoted, and `"$title"`
+expands the variable and nothing within it. So there is no list of characters to keep in your
+head: `$`, a backtick, a backslash, a `!`, an apostrophe and a quote all reach the server as
+themselves. Use it for **both** values below every time, the ones that look safe included —
+you cannot see what you mangled afterwards, and the document is what a person reads.
+
 **Create the document.** `agent-def` has a document root of its own, so there is no `--folder`
 to pass: the document lands in `.claude/agents/`, at a filename slugged from the title.
 
 ```bash
-corpus doc create --type agent-def --title "Bookkeeper" --from agent <<'EOF'
+corpus doc create --type agent-def --title "$title" --from agent <<'EOF'
 The body — the persona, written to the rules above.
 EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
@@ -151,7 +176,11 @@ it in from the title so the profile loads at all, and a title is a label rather 
 it:
 
 ```bash
-corpus doc edit doc_b7c1d5 --extra description='Reach for this when a question is about money in the corpus — a balance, an invoice, what a figure was and which document it came from.' --from agent
+description=$(cat <<'EOF'
+Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place.
+EOF
+)
+corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
 ```
 
 That is a quality step and not a repair — skip it and what you have is a working profile
@@ -231,7 +260,11 @@ and is guessable rather than askable. Guess it, and say that you guessed.
 ```bash
 corpus doc list --type agent-def
 showing 0 documents
-corpus doc create --type agent-def --title "Bookkeeper" --from agent <<'EOF'
+title=$(cat <<'EOF'
+Bookkeeper
+EOF
+)
+corpus doc create --type agent-def --title "$title" --from agent <<'EOF'
 You keep this workspace's money documents in one shape.
 
 - Every figure you write carries its source: the id of the document it came from, and that document's date. A figure you cannot source does not go in the answer — say it is unsourced instead.
@@ -241,7 +274,11 @@ You keep this workspace's money documents in one shape.
 A good answer from you is a short table of figures with their sources and one sentence under it. Where that is not enough room, say what is missing rather than padding it out.
 EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
-corpus doc edit doc_b7c1d5 --extra description='Reach for this when a question is about money in the corpus — a balance, an invoice, what a figure was and which document it came from.' --from agent
+description=$(cat <<'EOF'
+Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place. It says which document every number came from and doesn't advise.
+EOF
+)
+corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
 edited doc_b7c1d5
 key 4f2a9c7e1b8d0356a4e9c2f7b1d84a06e35c9f2b7a08d146e2c95b3f7a1d0e84
 ```
