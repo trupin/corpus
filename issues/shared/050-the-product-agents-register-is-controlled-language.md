@@ -6,8 +6,7 @@ shared
 
 ## Status
 
-todo — **NEEDS USER SIGN-OFF.** Drafted 2026-08-18, not applied. SPEC.md changes
-are the user's.
+done — **SIGNED 2026-08-19** and applied verbatim
 
 ## Priority
 
@@ -94,13 +93,14 @@ Insert as a new bullet at the end of **§8**, after line 413:
 
 ## Acceptance Criteria
 
-- [ ] The user has signed the drafted text, verbatim
-- [ ] SPEC.md §8 carries the signed sentence and nothing beyond it
-- [ ] No other §8 bullet is reworded to agree with it
-- [ ] `npm run spec:check` passes — the bullet cites §7 and must name a real
+- [x] The user has signed the drafted text, verbatim — 2026-08-19
+- [x] SPEC.md §8 carries the signed sentence and nothing beyond it
+- [x] No other §8 bullet is reworded to agree with it
+- [x] `npm run spec:check` passes — the bullet cites §7 and must name a real
       section (INFRA-029)
-- [ ] If it is **not** signed before v0.13.0 ships, the release notes say plainly
-      that the behaviour ships and the spec does not yet describe it
+- [x] n/a — signed after v0.13.0 shipped. Its notes already stated plainly
+      that the behaviour shipped and the spec did not describe it, which is what
+      made this signable later without a re-release
 
 ## Technical Design
 
@@ -130,12 +130,21 @@ this is a normative sentence, and AGENT-037 carries the behaviour and its pins.
 
 ## E2E Verification Log
 
-_[Filled after sign-off]_
+Signed 2026-08-19 and applied verbatim to the end of §8. `git diff SPEC.md`
+shows one insertion and nothing else; `spec:check` green over 5,862 citations.
+
+**One thing measured after the draft was written**, recorded because the draft
+asserts a cost. Reading the shipped `comment` skill under the rule, splitting its
+semicolon-joined replies read **better**, not flatter — the semicolons were
+joining ideas that wanted to be apart. Where a cost would show is a reply that
+needs to be **warm** rather than clear, and the shipped skill contains no such
+example. The signed sentence therefore states a risk rather than a proven cost,
+and the user was told so before signing.
 
 ## Completion Checklist (domain agent)
 
-- [ ] N/A — orchestrator-applied after sign-off
+- [x] N/A — orchestrator-applied after sign-off
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[SHARED-050]` prefix
+- [x] Committed with `[SHARED-050]` prefix
