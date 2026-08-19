@@ -175,6 +175,15 @@ const fencedBlocks = (markdown: string): FencedBlock[] => {
   return blocks;
 };
 
+/**
+ * A sentence matched across whatever line wrapping the file happens to have.
+ * Skill bodies are hand-wrapped at about a hundred columns, so a pin that hard-
+ * codes where a phrase breaks turns red the next time somebody adds a word to
+ * the paragraph — and a pin a reflow breaks is a pin somebody deletes.
+ */
+const wrapped = (sentence: string): RegExp =>
+  new RegExp(sentence.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&").replaceAll(/\s+/g, "\\s+"));
+
 describe("template tree", () => {
   it("contains exactly the documented tree", () => {
     expect(templateFiles).toEqual(EXPECTED_TREE);
@@ -3577,6 +3586,192 @@ describe("converse skill body", () => {
     expect(body).toMatch(/treat any third one you find yourself\s+inventing as a mistake/);
   });
 
+  /**
+   * AGENT-038. The user named three properties and asked that they be relied
+   * on: *"take events and process them serially, without using more subagents.
+   * The goal is for them to keep a full conversation in their context without
+   * jumping back and forth from subagent to subagent."* All three were true of
+   * this file the day the request arrived, and nothing held any of them — they
+   * live in three different sections, and an editor tidying one would have been
+   * told nothing by anything in this suite.
+   *
+   * Each test below owns a different sentence, so each falsifies on its own.
+   * What they pin is the **consequence** in each case — the conversation is
+   * answered in this session, the events are worked in the conversation's own
+   * order, and a dispatch carries no lane across the boundary — never how the
+   * queue, the server or the subagent runtime brings that about, which is
+   * somebody else's to change (AGENT-036).
+   */
+  describe("a resident works serially, inline, and in one context", () => {
+    it("answers in this session, and its worked example answers there too", () => {
+      expect(body).toMatch(
+        wrapped("you read, you decide, you write, and you reply, in this session, in the context"),
+      );
+      // What the property buys, which is what stops a later editor "fixing" it
+      // back into a dispatch.
+      expect(body).toMatch(
+        wrapped("remembers the last four exchanges without being briefed on them"),
+      );
+      // AGENT-019's shape: an example that dispatched would beat the rule above
+      // it, so the one worked turn has to be worked where the rule says.
+      expect(body).toMatch(
+        wrapped(
+          "no dispatch, because there is nothing here a subagent would do better than the agent that has been in the conversation since the first message",
+        ),
+      );
+    });
+
+    it("works one claimed event at a time, in the conversation's order", () => {
+      expect(body).toMatch(
+        wrapped(
+          "**Work each claimed event one at a time, in the order the conversation has them.**",
+        ),
+      );
+      // Measured against a real server, 2026-08-19 (the drill in AGENT-038's E2E
+      // log): three replies posted inside one second came back from
+      // `corpus queue claim-all --thread` as Y, Z, X — the first message last,
+      // because a pending batch is a `readdir` and an event id sorts at random
+      // against the turn it belongs to. So a skill saying "in claim order" would
+      // have told the resident to answer the third message before the first.
+      // The order it works in is the thread's, which it is already holding.
+      expect(body).toMatch(wrapped("the order that governs is the thread's rather than"));
+      expect(body).toMatch(wrapped("take the earliest turn you are holding first"));
+      // And where that order is read, so the instruction is executable rather
+      // than an intention.
+      expect(body).toMatch(wrapped("You read that order in `corpus thread show th_4b8e2c`"));
+      expect(body).toMatch(wrapped("each event's payload names the turn it belongs to"));
+      expect(body).toMatch(
+        wrapped("There is no overlap set to compute here and nothing to run in parallel"),
+      );
+      expect(body).toMatch(
+        wrapped(
+          "answering the second message against a corpus where the first has not happened is worse than answering it a minute later",
+        ),
+      );
+      // Serial to the end of each event, not merely at the claim: settling
+      // trails the work rather than being swept up at the end of the batch.
+      expect(body).toMatch(wrapped("**Settle each event as you finish it**"));
+    });
+
+    it("hands a launched subagent no lane, so the conversation stays in one place", () => {
+      expect(body).toMatch(
+        wrapped(
+          "Two things a dispatch never carries across the boundary: your queue state and your lane",
+        ),
+      );
+      expect(body).toMatch(wrapped("never runs a claim, a park, or a terminal call"));
+      expect(body).toMatch(
+        wrapped("it is given no thread id to scope one with — it reports, and you record"),
+      );
+      // The resident keeps the event across the dispatch, which is what makes a
+      // side task a tool call rather than a handoff of the conversation.
+      expect(body).toMatch(
+        wrapped("you hold the event while it runs, and you settle from a report you have in hand"),
+      );
+    });
+  });
+
+  /**
+   * AGENT-038 / SHARED-055, signed 2026-08-19. The clause this replaces told the
+   * resident that a stated weight governed *"the work you are about to do —
+   * including your own"*. A resident is a running session on a fixed model, so
+   * that instruction cannot be carried out, and its failure path — say so twice
+   * — cannot fire either, because nothing signals to the session that it did not
+   * happen. The report would have looked right and the discarded choice would
+   * have been invisible.
+   *
+   * The rider settles it at the source: a resident's weight is set when it is
+   * designated, and a weight stated on a message governs what the resident hands
+   * off. So the pins below are on the two halves of that division, on the two
+   * things a designation can say (a weight, or nothing, which means the launcher
+   * chose), and on the ending a changed designation weight produces — stated as
+   * what the resident does, with no claim about how a launcher or a server
+   * arranges it.
+   */
+  describe("a resident's weight is its designation's", () => {
+    it("no longer tells the session to change what it is running as", () => {
+      expect(body, "the unsatisfiable clause is back").not.toMatch(/including your own/);
+      expect(body, "a message weight is back to governing the resident's turn").not.toMatch(
+        /governs the work you are about to do/,
+      );
+      expect(body).toMatch(
+        wrapped("**Your own weight is your designation's, and no message changes it.**"),
+      );
+      // The reason it cannot reach the resident's own turn, which is what stops
+      // the clause being restored as a courtesy to the symmetry.
+      expect(body).toMatch(
+        wrapped(
+          "becoming another one would mean discarding this conversation, which is the thing you are here to hold",
+        ),
+      );
+      expect(body).toMatch(wrapped("governs what you **hand off** and never your own turn"));
+      expect(body).toMatch(
+        wrapped("There is nothing in it for you to honour or to fail on your own account"),
+      );
+    });
+
+    it("keeps the stated weight binding on what the resident hands off", () => {
+      expect(body).toMatch(
+        wrapped("**A weight stated on a message is a directive over what you hand off.**"),
+      );
+      expect(body).toMatch(wrapped("the stage you delegate runs at it"));
+      expect(body).toMatch(
+        wrapped("You honour it rather than weighing it again, in either direction"),
+      );
+      // The "say so twice" path is kept exactly where it can still fire: a
+      // hand-off the resident could not make at the weight it was given.
+      expect(body).toMatch(
+        wrapped("Where a hand-off cannot be made at it, do the work anyway and say so twice"),
+      );
+      expect(body).toMatch(
+        wrapped("in the job's log while it runs, and in the reply the person receives"),
+      );
+    });
+
+    it("says what a designation carrying no weight means, and what to say once", () => {
+      expect(body).toMatch(
+        wrapped(
+          "**Where the designation carries no weight, the launcher chose one and said which**",
+        ),
+      );
+      expect(body).toMatch(wrapped("that is your answer rather than a choice to make again"));
+      // A launcher that could not meet what was asked is reported to the person
+      // once, in the first reply — a fact about the designation, not the turn.
+      expect(body).toMatch(
+        wrapped(
+          "**A weight your launch reports it could not meet is stated once, in your first reply.**",
+        ),
+      );
+      expect(body).toMatch(
+        wrapped("is a fact about this whole designation rather than about one turn"),
+      );
+      expect(body).toMatch(wrapped("It is never repeated on a later answer"));
+    });
+
+    it("ends the run when the designation's weight changed, without a goodbye", () => {
+      expect(body).toMatch(
+        wrapped(
+          "**A weight that changed on your row ends your run of it, and the designation stands.**",
+        ),
+      );
+      expect(body).toMatch(
+        wrapped(
+          "somebody has asked for this conversation to be worked at a weight this session cannot become",
+        ),
+      );
+      // The same ending as a release, reached one read later — and the same
+      // three actions, in the same order.
+      expect(body).toMatch(
+        wrapped("Finish the turn you are in, settle everything you claimed, and exit"),
+      );
+      // But not the same sign-off: the lane is still designated, so the farewell
+      // the release path posts would be false here.
+      expect(body).toMatch(wrapped("Write no goodbye and claim nothing further"));
+      expect(body).toMatch(wrapped("the conversation is not going back to the general agent"));
+      expect(body).toMatch(wrapped("taken again from the roster as soon as you stop parking"));
+    });
+  });
+
   it("settles first-person, and only what it claimed", () => {
     expect(body).toMatch(/\*\*2\. You settle your own lane\.\*\*/);
     expect(body).toMatch(/Nobody settles work they did not claim/);
@@ -4329,8 +4524,9 @@ describe("converse skill body", () => {
     }
     expect(body.match(/\bsleep\b/gi) ?? []).toHaveLength(1);
     expect(body).not.toContain("while true");
-    // Work in one lane is one conversation, so it is serial by construction.
-    expect(body).toMatch(/in claim order, one at a time/);
+    // Work in one lane is one conversation, so it is worked serially — and in
+    // the conversation's order, which AGENT-038 measured is not the batch's.
+    expect(body).toMatch(/one at a time, in the order the conversation has them/);
     expect(body).toMatch(/There is no overlap set to compute here/);
     // Halted is quiet, not an exit.
     expect(body).toContain('{"idle":true,"reason":"halted"}');
@@ -5322,10 +5518,6 @@ describe("one rule, one skill", () => {
     /park[^.]{0,24}?\b(?:nam|list|reserv|announc|flagg?|mark)(?:ed|es|e|ing)?\b|\b(?:nam|list|reserv|announc|flagg?|mark)(?:ed|es)?\s+(?:as\s+)?pending/i;
   const HELD_ELSEWHERE =
     /`inProgress`|held by|another (?:listener|caller)|second listener|claim comes back/i;
-
-  /** A sentence matched across whatever line wrapping the file happens to have. */
-  const wrapped = (sentence: string): RegExp =>
-    new RegExp(sentence.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&").replaceAll(/\s+/g, "\\s+"));
 
   // AGENT-035. A sentence explains what the shell does to an argument when it
   // names a character the shell acts on **and** what becomes of that argument.

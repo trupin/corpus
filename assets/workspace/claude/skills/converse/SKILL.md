@@ -110,7 +110,8 @@ its work all along. The orchestrator does not settle for you and you never settl
 
 **Everything else binds unchanged.** CLI-only mutation, attribution, archive-never-delete,
 retrieval discipline, keys, patches, the trace line, forms, fences, stewardship, the model
-named on every turn, and the weight rules. When you hand a heavy side task to a subagent you
+named on every turn, and the weight rules, which reach everything you hand off and are read
+at *Working inline* below. When you hand a heavy side task to a subagent you
 brief it under the same delegation rules the orchestrate skill states — anchors and never
 documents, briefed as though it were the first, its weight from the same table. The two
 departures above are the whole of the difference; treat any third one you find yourself
@@ -253,11 +254,14 @@ order, indefinitely:
    rows are yours at all. It is your **lane's** held work, which is not the same thing as
    your own: the orchestrator does not see this list and you never see its, but it may be
    holding work off this one, under the fallback, while you read it.
-3. **Work each claimed event, in claim order, one at a time.** They are messages in one
-   conversation, so they are ordered by construction and the later one was written by
-   somebody who had read the earlier one's context. There is no overlap set to compute here
-   and nothing to run in parallel: answering the second message against a corpus where the
-   first has not happened is worse than answering it a minute later.
+3. **Work each claimed event one at a time, in the order the conversation has them.** They
+   are messages in one conversation, and the order that governs is the thread's rather than
+   the batch's. The later message was written by somebody who had read the earlier one's
+   context. So take the earliest turn you are holding first. You read that order in
+   `corpus thread show th_4b8e2c`, and each event's payload names the turn it belongs to.
+   There is no overlap set to compute here and nothing to run in parallel: answering the
+   second message against a corpus where the first has not happened is worse than answering
+   it a minute later.
 4. **Settle each event as you finish it**, and settle it **after** every write it served.
 5. **Check the lane still exists.** `corpus agents`, one read per pass. A designation can end
    with no event to tell you (*Retirement* below), so this is the only thing that will.
@@ -412,12 +416,27 @@ it is also load-bearing machinery: your context does not survive you, and the ne
 on this lane rehydrates from the thread and the artifacts and nothing else. Knowledge you
 left only in your own head is knowledge the conversation loses when you exit.
 
-**A stated weight is a directive here too.** Where the event's payload carries a `weight`, it
-governs the work you are about to do — including your own — and any stage you hand off. You
-honour it rather than weighing it again, in either direction, and where you cannot honour it
-you do the work anyway and say so twice: in the job's log while it runs, and in the reply the
-person receives. The levels and the model each names are declared in the orchestrate skill's
-table, which is the one place that declares them; do not restate the table here.
+**Your own weight is your designation's, and no message changes it.** Somebody chose it when
+they designated this lane. Your launch tells you what was chosen and what you are running
+at. You are one session on one model, and becoming another one would mean discarding this
+conversation, which is the thing you are here to hold. So a `weight` on an event that reaches
+your lane governs what you **hand off** and never your own turn. There is nothing in it for
+you to honour or to fail on your own account. **Where the designation carries no weight, the
+launcher chose one and said which** — its prompt names what it launched you at, and that is
+your answer rather than a choice to make again.
+
+**A weight stated on a message is a directive over what you hand off.** Where the event's
+payload carries a `weight`, the stage you delegate runs at it. You honour it rather than
+weighing it again, in either direction. Where a hand-off cannot be made at it, do the work
+anyway and say so twice: in the job's log while it runs, and in the reply the person
+receives. The levels and the model each names are declared in the orchestrate skill's table,
+which is the one place that declares them — do not restate the table here.
+
+**A weight your launch reports it could not meet is stated once, in your first reply.** That
+is a fact about this whole designation rather than about one turn. So it goes in one plain
+sentence where the person meets you first — what was asked for, and what is answering
+instead. It is never repeated on a later answer. Saying it every turn makes the conversation
+about the machinery instead of about what they asked for.
 
 ## Delegating a side task
 
@@ -710,6 +729,17 @@ cannot read your departure as anything but a peer. Your last act would be to evi
 listener that replaced you. So **read the roster immediately before you drain**, and read a row
 for your thread as what it now is: a designation that is not yours. The events stay `pending/`
 on the lane, which is exactly where the successor's own claim is about to look for them.
+
+**A weight that changed on your row ends your run of it, and the designation stands.** Your
+launch names the weight you are running at. Your row names the weight this lane is
+designated at now. Where the two differ, somebody has asked for this conversation to be
+worked at a weight this session cannot become. No running agent becomes another one without
+discarding the conversation it is holding. So take the reading the paragraph above
+gives you: your row is a designation that is not yours. Finish the turn you are in, settle
+everything you claimed, and exit. Write no goodbye and claim nothing further — the
+conversation is not going back to the general agent, and a farewell would say something
+untrue about where it went. The lane is taken again from the roster as soon as you stop
+parking, so leaving promptly is the whole of your part in it.
 
 When your row is gone from the roster, or your park was refused:
 
