@@ -26,9 +26,14 @@
 import {
   ORCHESTRATOR_LANE,
   SCOPE_NODE_ABSENT,
+  SCOPE_PAGE_SIZE,
   walkScope,
+  type DocStatus,
   type Lane,
+  type ScopeMember,
+  type ScopeMemberVia,
   type ScopeWalkLookup,
+  type ScopeWalkNode,
 } from "@corpus/contract";
 import { originDocumentOf, resolveOrigin } from "../core/provenance.js";
 import { unknownLaneScope, unknownRecipient } from "../errors.js";
@@ -203,4 +208,153 @@ export function assertRecipientResolvable(db: ProjectionDb, recipient: Lane | un
 export function assertScopeIsLane(db: ProjectionDb, scope: Lane | undefined): void {
   if (scope === undefined || scope === ORCHESTRATOR_LANE) return;
   if (!isDesignatedRoot(db, scope)) throw unknownLaneScope(scope);
+}
+
+/**
+ * The candidate set the listing below walks: **every document in the corpus**,
+ * with both of §7's edges and the designation flag, most recently updated first.
+ *
+ * The same left join {@link NODE_SQL} makes, read in one pass instead of one
+ * primary-key hit per node, and for the reason a listing is not a climb: the
+ * climb starts from one artifact and touches the two or three nodes above it,
+ * while the inverse has to ask about every artifact there is. Three thousand
+ * point reads to answer one question is the shape that turns a read into a
+ * problem; one scan of an already-open database is 4 ms (measured, SERVER-130).
+ *
+ * **The order is the answer's order**, not a convenience: §7's listing puts the
+ * most recently updated members first so that a truncated page holds the live
+ * end of the scope, and doing it in SQL — over `documents_updated` — is what
+ * lets the loop stop as soon as it has one member too many. SQLite sorts NULL
+ * below every value, so an undated document falls to the end of a descending
+ * sort, which is where a member nothing has ever touched belongs. `id` breaks
+ * ties, so two documents written in the same second list in a stable order
+ * rather than in whatever order the index happened to yield.
+ */
+const SCOPE_CANDIDATES_SQL = `
+  SELECT documents.id AS id,
+         documents.title AS title,
+         documents.status AS status,
+         documents.origin AS origin,
+         threads.id AS threadId,
+         threads.parent_id AS parentId,
+         threads.resident_designated AS designated
+  FROM documents
+  LEFT JOIN threads ON threads.id = documents.id
+  ORDER BY documents.updated DESC, documents.id ASC`;
+
+type CandidateRow = {
+  readonly id: string;
+  readonly title: string;
+  /** Always one of `DOC_STATUSES`: the projector parses it and defaults (`project-document.ts`). */
+  readonly status: DocStatus;
+  readonly origin: string | null;
+  /** Non-null exactly when this document is a thread — the left join's own answer. */
+  readonly threadId: string | null;
+  readonly parentId: string | null;
+  readonly designated: number | null;
+};
+
+/** What `GET /api/threads/{id}/scope` answers with, minus the root's own id. */
+export interface ScopeListing {
+  readonly members: readonly ScopeMember[];
+  readonly truncated: boolean;
+}
+
+/**
+ * **The inverse of {@link createLaneScopeLookup}**: given a lane, every artifact
+ * whose walk lands on it (SPEC.md §7, SERVER-130).
+ *
+ * ## One walk, run the other way round
+ *
+ * There is no second rule here and there must never be one. Membership is
+ * decided by running the identical {@link walkScope} over each candidate and
+ * keeping the ones that answer *this* lane — so what this lists is, by
+ * construction, what an event posted on that artifact would be routed by. The
+ * cheap-looking alternative (climb `origin ?? parent`, or spread outwards from
+ * the root over the two edges reversed) is a second implementation of §7's edge
+ * order, which is the defect UI-119 cost a release to find: two copies, green in
+ * both suites, each claiming to encode the other's order. `scope-parity.test.ts`
+ * holds the two directions against one another over a derived corpus for exactly
+ * that reason.
+ *
+ * `via` is likewise **reported, not re-derived**: a member reaches the scope by
+ * its parent when the walk from that parent lands on this lane, and by its
+ * origin otherwise. Reading it off the row instead — *"has a parent, therefore
+ * `parent`"* — would mislabel a thread whose parent chain dead-ends and whose
+ * origin is what actually reached the root.
+ *
+ * ## A query, and nothing kept
+ *
+ * §7 makes scope *computed, never stored*, so this is one scan and one map,
+ * built and discarded per request: no membership table, nothing for
+ * `db rebuild` to reconstruct, and no cache that could answer from a
+ * designation the same request has just changed — the reason
+ * {@link projectionLookup} keeps none either.
+ *
+ * What *is* memoised is the walk, for the length of this one call: the node
+ * lookup answers from the scan rather than the database, and every verdict is
+ * kept by id, so a chain shared by a hundred documents is climbed once and the
+ * `via` question re-uses the answer the membership question already computed.
+ *
+ * ## Bounded, and the bound is honest
+ *
+ * The loop stops at the first member past {@link SCOPE_PAGE_SIZE} and says
+ * `truncated`. It can stop there — rather than counting the whole scope and then
+ * slicing — because the candidates arrive in the answer's own order, so a member
+ * it never looked at is a member that would have been cut. That is also why
+ * there is no `total`: counting is the enumeration the bound exists to prevent.
+ *
+ * @param root the designated thread, as its own first member (`via: "self"`).
+ * The caller has already established that it exists and is designated — those
+ * are the route's `404` and `409` — and passing the member rather than the id
+ * means this function never has to describe a root it cannot find.
+ */
+export function listScopeMembers(db: ProjectionDb, root: ScopeMember): ScopeListing {
+  const rows = db.prepare(SCOPE_CANDIDATES_SQL).all() as CandidateRow[];
+
+  const nodes = new Map<string, ScopeWalkNode>(
+    rows.map((row) => [
+      row.id,
+      { parent: row.parentId, origin: row.origin, designated: row.designated === 1 },
+    ]),
+  );
+  // A row this scan does not hold is `absent` for {@link projectionLookup}'s
+  // reason, one grain out: the scan read every document there is, so a miss is
+  // proof the corpus holds no such artifact — a dangling `origin` left by a
+  // deletion, or an id from another workspace.
+  const lookup: ScopeWalkLookup = (id) => nodes.get(id) ?? SCOPE_NODE_ABSENT;
+
+  const lanes = new Map<string, Lane | null>();
+  const laneOf = (id: string): Lane | null => {
+    const memo = lanes.get(id);
+    // `null` is a remembered verdict — the orchestrator's lane — and only
+    // `undefined` means nothing has been asked about this id yet.
+    if (memo !== undefined) return memo;
+    const walk = walkScope(id, lookup);
+    const lane = walk.kind === "lane" ? walk.lane : null;
+    lanes.set(id, lane);
+    return lane;
+  };
+
+  const viaOf = (row: CandidateRow): ScopeMemberVia =>
+    row.parentId !== null && laneOf(row.parentId) === root.id ? "parent" : "origin";
+
+  const members: ScopeMember[] = [root];
+  let truncated = false;
+  for (const row of rows) {
+    if (row.id === root.id) continue;
+    if (laneOf(row.id) !== root.id) continue;
+    if (members.length >= SCOPE_PAGE_SIZE) {
+      truncated = true;
+      break;
+    }
+    members.push({
+      id: row.id,
+      kind: row.threadId === null ? "doc" : "thread",
+      title: row.title,
+      status: row.status,
+      via: viaOf(row),
+    });
+  }
+  return { members, truncated };
 }

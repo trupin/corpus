@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -39,12 +39,12 @@ CONTRACT-068 defines the route that answers *given a designated thread, what is 
 
 ## Acceptance Criteria
 
-- [ ] The route is mounted and answers for a designated thread
-- [ ] A thread with no resident is a `404`/`409` per the contract's stated rule — the orchestrator's lane is not a scope
-- [ ] Parity test: over a derived fixture, every artifact the **enqueue-time** walk routes to lane L appears in L's listing, and nothing else does — one walk, two directions, proven equal
-- [ ] Bound honoured and `truncated` set
-- [ ] An archived document in scope is listed, with its status
-- [ ] Falsified: replace `walkScope` with `origin ?? parent` and the parity test goes red
+- [x] The route is mounted and answers for a designated thread
+- [x] A thread with no resident is a `404`/`409` per the contract's stated rule — the orchestrator's lane is not a scope
+- [x] Parity test: over a derived fixture, every artifact the **enqueue-time** walk routes to lane L appears in L's listing, and nothing else does — one walk, two directions, proven equal
+- [x] Bound honoured and `truncated` set
+- [x] An archived document in scope is listed, with its status
+- [x] Falsified: replace `walkScope` with `origin ?? parent` and the parity test goes red
 
 ## Technical Design
 
@@ -80,15 +80,110 @@ Route tests on the real app with a temp workspace, plus the parity test.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Implemented on: opus.** 2026-08-19.
+
+### What was built
+
+- `apps/server/src/queue/scope.ts` — additive: `listScopeMembers(db, root)` beside the
+  existing climb. One scan of `documents LEFT JOIN threads` ordered `updated DESC, id ASC`,
+  a `Map` of nodes built from that scan, and **the same `walkScope`** run per candidate
+  with the lookup and every verdict memoised for the length of the call. `via` is read off
+  the walk (`parent` when climbing from the member's parent lands on this lane, `origin`
+  otherwise), never off the row's columns.
+- `apps/server/src/threads/scope-route.ts` — the mount. `404` when the id names no thread,
+  `409` when the thread holds no resident (predicate: the shared `isDesignatedRoot`),
+  otherwise the listing.
+- `apps/server/src/app.ts` + `threads/index.ts` — mounted inside the projection block,
+  after the thread surface.
+
+### Falsification (acceptance criterion 6)
+
+`listScopeMembers`'s `laneOf` was temporarily replaced by the pre-SERVER-117
+`origin ?? parent` chain (the enqueue side left untouched), and
+`apps/server/src/queue/scope-parity.test.ts` was run alone:
+
+```
+× lane A's listing > is exactly the set the enqueue walk routes to it
+× lane B's listing > is exactly the set the enqueue walk routes to it
+× the two listings together > partition the corpus with the orchestrator's remainder
+  Tests  3 failed | 8 passed (11)
+```
+
+The diff named the artifacts, e.g. `th_pthlaneAothplain` (parent → lane A, origin →
+the undesignated thread) appearing in a listing the enqueue walk does not route there.
+Restored, 11/11 green. Note the `via` test stayed green under the falsification — it is
+consistent with whatever `laneOf` says — so the membership comparison is the load-bearing
+one.
+
+### Cost (a projection of a few thousand artifacts)
+
+Measured with a scratch script over a real projection seeded with three-link chains
+(document → thread on it → document written from that thread), median of 10 warm runs:
+
+| corpus | scope | median | min–max |
+| --- | --- | --- | --- |
+| 3,001 artifacts | 10 members (every artifact walked, no early exit) | **3.9 ms** | 3.4–4.5 ms |
+| 6,001 artifacts | truncated at 200 | 5.6 ms | 5.4–6.4 ms |
+| 9,001 artifacts | truncated at 200 | 9.0 ms | 8.8–10.9 ms |
+
+Roughly 1 ms per 1,000 artifacts, dominated by the scan rather than by the walks — the
+loop's early exit at the page size saves the walks and not the read. One enqueue climb on
+the same projection is under 0.05 ms, i.e. this read costs about what a hundred of them do.
+
+### E2E, real server on a throwaway workspace
+
+Port **8892**, workspace `…/scratchpad/ws-server-b`, `corpus init` from inside it, server
+started through the CLI (which runs `apps/server/src/main.ts` from source, so these are the
+bytes under review). The dev repo, 8765 and 5173 were never touched.
+
+1. `POST /api/threads` `{"body":"Please take this on @agent"}` → `th_2aninur5`, event
+   `evt_yyu4tpxvar6y`.
+2. `GET /api/threads/th_2aninur5/scope` **before** designating → `409`:
+   `{"code":"conflict","message":"th_2aninur5 has no resident, so it has no scope: SPEC.md §7 …
+   Designate a resident on this thread, or read \`GET /api/agents\` for the lanes that exist."}`
+3. `POST /api/threads/th_2aninur5/resident` `{}` → `resident {name: None, docId: None, weight: None}`;
+   `GET /api/agents` lists `['orchestrator', 'th_2aninur5']`.
+4. `POST /api/docs` with `job: evt_yyu4tpxvar6y` → `doc_aefyz2pg`, `origin: th_2aninur5`.
+   `POST /api/threads` `{parent: doc_aefyz2pg}` → `th_sx5z7cnm`; `{parent: th_2aninur5}` →
+   `th_wupkpufe`; an unrelated `POST /api/docs` → `doc_z4rx4nzg`, `origin: null`.
+5. `POST /api/docs/doc_aefyz2pg/archive` → `200`, and the member is still listed:
+   `{'id': 'doc_aefyz2pg', 'kind': 'doc', 'title': 'Findings', 'status': 'archived', 'via': 'origin'}`.
+6. `GET /api/threads/th_2aninur5/scope` → `200`, `truncated: false`, 5 members, root first
+   as `self`, the two subthreads as `parent`, the job's documents as `origin`, and
+   `doc_z4rx4nzg` absent (`unrelated listed: False`). Full body:
+
+```json
+{"thread":"th_2aninur5","members":[{"id":"th_2aninur5","kind":"thread","title":"Please take this on @agent","status":"open","via":"self"},{"id":"doc_aefyz2pg","kind":"doc","title":"Findings","status":"archived","via":"origin"},{"id":"th_sx5z7cnm","kind":"thread","title":"Re: Findings","status":"open","via":"parent"},{"id":"doc_xn3pfdya","kind":"doc","title":"Findings","status":"open","via":"origin"},{"id":"th_wupkpufe","kind":"thread","title":"Re: Please take this on @agent","status":"open","via":"parent"}],"truncated":false}
+```
+
+7. Refusals over the wire: `GET …/th_nosuch/scope` → `404`
+   `{"code":"not_found","message":"no thread with id th_nosuch"}`; `…/doc_aefyz2pg/scope` →
+   `400` (the contract's path param); `…/th_sx5z7cnm/scope` (an undesignated subthread) →
+   `409`. Request time on this workspace: `0.0005 s`.
+8. `corpus server stop` → `stopped (pid 1099)`; `lsof -nP -iTCP:8892 -sTCP:LISTEN` → free.
+
+### Checks
+
+- `VITEST_MAX_THREADS=4 vitest run apps/server/src/threads/scope-route.test.ts
+  apps/server/src/queue/scope-parity.test.ts apps/server/src/queue/scope.test.ts` → 69 passed.
+- `vitest run apps/server/src/app.test.ts apps/server/src/json-body.test.ts apps/server/src/agents`
+  → 99 passed (nothing the mount could have disturbed).
+- `eslint` and `prettier --check` clean on every touched file; `tsc --noEmit` in `apps/server`
+  reports nothing outside `threads/resident.ts`, which is SERVER-129's concurrent work.
+
+### Not done, deliberately
+
+No cursor and no `total` — the contract says so, and a count is the enumeration the bound
+exists to prevent. No projection table and no cache: §7's *computed, never stored* is
+taken literally, which the measurement above says is affordable.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
