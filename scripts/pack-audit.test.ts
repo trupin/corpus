@@ -30,6 +30,16 @@ function cleanListing(extra: readonly PackedFile[] = []): PackedFile[] {
     { path: "assets/workspace/gitignore", mode: READ_ONLY },
     { path: "assets/workspace/claude/skills/orchestrate/SKILL.md", mode: READ_ONLY },
     { path: "assets/workspace/claude/skills/comment/SKILL.md", mode: READ_ONLY },
+    // AGENT-037. The skill and the file that makes it standing are one change:
+    // shipping the skill without `CLAUDE.md` ships something nothing invokes.
+    { path: "assets/workspace/CLAUDE.md", mode: READ_ONLY },
+    { path: "assets/workspace/claude/skills/asd-ste100/SKILL.md", mode: READ_ONLY },
+    { path: "assets/workspace/claude/skills/asd-ste100/LICENSE", mode: READ_ONLY },
+    {
+      path: "assets/workspace/claude/skills/asd-ste100/references/writing-rules.md",
+      mode: READ_ONLY,
+    },
+    { path: "assets/workspace/claude/skills/asd-ste100/examples/before-after.md", mode: READ_ONLY },
     { path: "assets/workspace/data/docs/templates/note.md", mode: READ_ONLY },
     { path: "assets/workspace/data/docs/views/attention.md", mode: READ_ONLY },
     { path: "assets/workspace/data/docs/views/inbox.md", mode: READ_ONLY },

@@ -26,6 +26,8 @@ import {
   extractCorpusInvocationUses,
   extractCorpusInvocations,
   installedPath,
+  isNonDocument,
+  isVendored,
   listTemplateFiles,
   loadTemplateDocuments,
   normalizeInvocation,
@@ -34,13 +36,20 @@ import {
   parseFrontmatter,
   readCliDoc,
   readContractDoc,
+  VENDORED_PREFIXES,
   readWeightLevels,
 } from "./workspace-template.js";
 
 /** The template tree, exhaustively. Adding a file is a deliberate change to this list. */
 const EXPECTED_TREE = [
+  "CLAUDE.md",
   "README.md",
   "claude/agents/.gitkeep",
+  "claude/skills/asd-ste100/LICENSE",
+  "claude/skills/asd-ste100/PROVENANCE.md",
+  "claude/skills/asd-ste100/SKILL.md",
+  "claude/skills/asd-ste100/examples/before-after.md",
+  "claude/skills/asd-ste100/references/writing-rules.md",
   "claude/skills/comment/SKILL.md",
   "claude/skills/converse/SKILL.md",
   "claude/skills/orchestrate/SKILL.md",
@@ -114,7 +123,10 @@ const templatePlan = planTemplateInstall(TEMPLATE_ROOT);
  */
 const installedSkills: readonly InstalledSkill[] = [
   ...templatePlan
-    .filter((file) => file.to.startsWith(".claude/skills/") && file.to.endsWith(".md"))
+    .filter(
+      (file) =>
+        file.to.startsWith(".claude/skills/") && file.to.endsWith(".md") && !isVendored(file.from),
+    )
     .map((file) => ({
       label: `assets/workspace/${file.from}`,
       body: documentAt(file.from).body,
@@ -244,6 +256,149 @@ describe("seed documents", () => {
         expect(frontmatter.updated, relPath).toEqual(frontmatter.created);
       }
     }
+  });
+});
+
+describe("the vendored controlled-language skill (AGENT-037)", () => {
+  const vendoredFiles = [
+    "SKILL.md",
+    "LICENSE",
+    "references/writing-rules.md",
+    "examples/before-after.md",
+  ];
+
+  /**
+   * The harness copy is the pinned one — `.claude/skills/asd-ste100/PROVENANCE.md`
+   * names the upstream commit, and INFRA-030 verified that copy against it with
+   * `cmp`. Holding the product copy to the harness copy chains to the same
+   * commit without this test needing the network.
+   *
+   * The two trees keep separate copies deliberately (`.claude/` is the dev
+   * harness and reaches no user; `assets/workspace/` is the product), so nothing
+   * else would notice them drifting apart.
+   */
+  it.each(vendoredFiles)("ships %s byte-identical to the harness copy", (relPath) => {
+    const product = readFileSync(
+      path.join(TEMPLATE_ROOT, "claude/skills/asd-ste100", relPath),
+      "utf8",
+    );
+    const harness = readFileSync(
+      path.join(REPO_ROOT, ".claude/skills/asd-ste100", relPath),
+      "utf8",
+    );
+    expect(product).toBe(harness);
+  });
+
+  it("is excluded from the authored-document rules, and only it", () => {
+    // The exclusion has to be narrow: if it ever widened to a tree Corpus
+    // authors, those files would silently stop being held to §5 frontmatter and
+    // to every rule the installed-skill sweep applies.
+    expect(VENDORED_PREFIXES).toEqual(["claude/skills/asd-ste100/"]);
+    expect(listTemplateFiles(TEMPLATE_ROOT).filter((relPath) => isVendored(relPath)).length).toBe(
+      5,
+    );
+    expect(documents.some(({ relPath }) => isVendored(relPath))).toBe(false);
+  });
+
+  it("carries a provenance note naming the licence and the refresh", () => {
+    const provenance = readFileSync(
+      path.join(TEMPLATE_ROOT, "claude/skills/asd-ste100/PROVENANCE.md"),
+      "utf8",
+    );
+    expect(provenance).toContain("danyuchn/asd-ste100-skill");
+    expect(provenance).toContain("MIT");
+    // The one claim neither repository may make, because ASD's dictionary is
+    // not redistributable and is deliberately absent.
+    expect(provenance).toContain("claim ASD-STE100 compliance");
+  });
+});
+
+describe("the workspace CLAUDE.md (AGENT-037)", () => {
+  const claudeMd = readFileSync(path.join(TEMPLATE_ROOT, "CLAUDE.md"), "utf8");
+
+  /**
+   * Read directly, not through {@link loadTemplateDocuments}, because this file
+   * deliberately carries **no** frontmatter: the agent reads it as instructions
+   * every session, and nothing projects it. Giving it a §5 block to satisfy the
+   * loader would put eight lines of YAML at the top of the agent's own rules.
+   */
+  it("carries no frontmatter, and is excluded for that reason", () => {
+    expect(isNonDocument("CLAUDE.md")).toBe(true);
+    expect(claudeMd.startsWith("---")).toBe(false);
+    expect(documents.some(({ relPath }) => relPath === "CLAUDE.md")).toBe(false);
+    // README.md is the counterexample the exclusion must not swallow: seed
+    // content a person opens in the board, and it keeps its frontmatter.
+    expect(isNonDocument("README.md")).toBe(false);
+  });
+
+  /**
+   * A skill fires when something invokes it, and this one's triggers are
+   * on-demand. The file alone is inert; this paragraph is what makes the rule
+   * standing, which is the whole point of AGENT-037 and of INFRA-030 before it.
+   */
+  it("makes the skill standing rather than on-demand", () => {
+    expect(claudeMd).toContain(".claude/skills/asd-ste100/SKILL.md");
+    expect(claudeMd).toContain("STE-flavored");
+    expect(claudeMd).toMatch(/standing rule, not a skill you wait to be asked for/);
+  });
+
+  /**
+   * The two exemptions that carry the real risk, pinned separately because they
+   * fail in opposite directions. Dropping the quotation rule corrupts what
+   * somebody else wrote — the one failure a reader cannot see. Dropping the
+   * hedge rule turns a qualified statement into a different claim, which the
+   * skill itself calls the most common way a well-meant rewrite goes wrong.
+   */
+  it("exempts quotations from the rule", () => {
+    expect(claudeMd).toMatch(/never rewrite a quotation/i);
+    expect(claudeMd).toContain("a person's own words");
+    expect(claudeMd).toContain("an error string the server returned");
+  });
+
+  it("keeps a hedge at its original strength", () => {
+    expect(claudeMd).toContain("`may have failed` never becomes `failed`");
+    expect(claudeMd).toMatch(/different claim/);
+  });
+
+  /**
+   * The rule governs what the agent writes to a person, so the surfaces that
+   * have to obey it are the **worked reply examples** — what an agent copies —
+   * and not the skills' own instructional prose, which is written for the agent.
+   *
+   * This pin exists because AGENT-035 shipped 34 examples using `EOF` beside one
+   * paragraph saying `CORPUS_EOF`, and an example beats a paragraph. Two shipped
+   * reply bodies carried a semicolon, which STE Rule 8.1 bans outright rather
+   * than only as a clause join.
+   */
+  it.each(installedSkills)("$label models no reply a person reads with a semicolon", ({ body }) => {
+    // Scoped to `thread reply` deliberately. Those are the turns CLAUDE.md names
+    // first, and they are unambiguously "text you produce for a person". A
+    // document body the agent authors is also read by a person, and three of
+    // them carry a semicolon today — but a document is a different genre from a
+    // reply, and settling that is not this issue's to do. It is worth settling.
+    const replies = [
+      ...body.matchAll(/corpus thread reply[^\n]*<<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/g),
+    ].map(([, payload]) =>
+      // The trace is the reply's final line and is an **action report**, not
+      // prose: it has its own conventions, and `to 6.4%; resolved this thread`
+      // is pinned elsewhere as the shape that keeps a state change out of a
+      // second reporting convention. The rule under test is about the sentences
+      // a person reads above it.
+      (payload ?? "")
+        .split("\n")
+        .filter((line) => !line.startsWith("↳ "))
+        .join("\n"),
+    );
+    for (const payload of replies) {
+      expect(payload).not.toContain(";");
+    }
+  });
+
+  it("states the cost the user accepted rather than denying it", () => {
+    // The user chose "everything the agent writes" knowing the skill warns
+    // against applying STE where voice is the point. A file that omitted the
+    // cost would be quietly re-deciding that.
+    expect(claudeMd).toMatch(/flatter than one written for voice/);
   });
 });
 

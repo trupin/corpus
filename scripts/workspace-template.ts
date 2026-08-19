@@ -146,10 +146,68 @@ export function parseFrontmatter(relPath: string, source: string): TemplateDocum
   };
 }
 
-/** Parse every `.md` file in the template tree, rejecting duplicate ids. */
+/**
+ * Template subtrees holding third-party files copied byte for byte, which
+ * therefore do **not** carry Corpus frontmatter and are not template documents
+ * (AGENT-037).
+ *
+ * The prefix covers one file this repository *did* author: `PROVENANCE.md`, the
+ * note recording where the rest came from. It is excluded for a neighbouring
+ * reason rather than the same one — it documents the vendored files and travels
+ * with them, and giving a provenance note a §5 block would make it seed content,
+ * which it is not. Its own test asserts what it must say.
+ *
+ * Every other `.md` in this tree is authored here and carries frontmatter, which
+ * is why {@link loadTemplateDocuments} can demand it. A vendored file cannot:
+ * editing one to satisfy this repository would make the copy disagree with its
+ * source without saying so, and `PROVENANCE.md` beside them promises a refresh
+ * is a straight refetch.
+ *
+ * **The check is not weakened, it is exchanged.** These files are held to
+ * byte-identity with the harness copy under `.claude/skills/asd-ste100/`, which
+ * is a stricter assertion than "has frontmatter" — see the vendored-parity test.
+ *
+ * Note this is a *template* concern and not a projection one. In an installed
+ * workspace a skill root's shape already admits only `SKILL.md`, so
+ * `references/writing-rules.md` is not a document there either — but the
+ * template's own `README.md` carries frontmatter while being projected by
+ * nothing, so this loader's rule is a convention of this repository rather than
+ * a model of `classifyPath`.
+ */
+export const VENDORED_PREFIXES: readonly string[] = ["claude/skills/asd-ste100/"];
+
+/**
+ * Authored template files that are **not** documents, and must not be given
+ * frontmatter to satisfy this loader (AGENT-037).
+ *
+ * `CLAUDE.md` is the only one. It is read by the agent as instructions at the
+ * start of every session, and it is projected by nothing — it sits at the
+ * workspace root, outside every document root, so `classifyPath` returns null
+ * for it. Frontmatter there would be eight lines of YAML the agent reads as part
+ * of its instructions, asserting a document identity nothing consumes.
+ *
+ * `README.md` is deliberately **not** in this list even though nothing projects
+ * it either. It carries frontmatter because it is seed *content* — a note a
+ * person opens in the board — and the template's own convention is that content
+ * carries a §5 block. The distinction is who reads the file, not whether the
+ * projection indexes it.
+ */
+export const NON_DOCUMENT_FILES: readonly string[] = ["CLAUDE.md"];
+
+/** Whether a template-relative path is inside a {@link VENDORED_PREFIXES} subtree. */
+export function isVendored(relPath: string): boolean {
+  return VENDORED_PREFIXES.some((prefix) => relPath.startsWith(prefix));
+}
+
+/** Whether a template-relative path is authored here but is not a document. */
+export function isNonDocument(relPath: string): boolean {
+  return NON_DOCUMENT_FILES.includes(relPath);
+}
+
+/** Parse every authored `.md` file in the template tree, rejecting duplicate ids. */
 export function loadTemplateDocuments(root: string = TEMPLATE_ROOT): TemplateDocument[] {
   const documents = listTemplateFiles(root)
-    .filter((relPath) => relPath.endsWith(".md"))
+    .filter((relPath) => relPath.endsWith(".md") && !isVendored(relPath) && !isNonDocument(relPath))
     .map((relPath) => parseFrontmatter(relPath, readFileSync(path.join(root, relPath), "utf8")));
 
   const seen = new Map<string, string>();

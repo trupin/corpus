@@ -17,6 +17,7 @@ This file is **not** copied into workspaces.
 
 ```
 assets/workspace/
+  CLAUDE.md                              # rules that bind every skill — the agent's register (AGENT-037)
   README.md                              # the operator loop, one page
   gitignore                              # installs as .gitignore
   claude/                                # installs as .claude/
@@ -25,6 +26,12 @@ assets/workspace/
       comment/SKILL.md                   # handles comment.created / form.respond (SPEC §7-§8)
       converse/SKILL.md                  # a resident's own loop, on its conversation's lane (SPEC §7)
       profile/SKILL.md                   # writes a subagent profile into agents/ (SPEC §7, §11)
+      asd-ste100/                        # vendored, MIT — controlled language (AGENT-037)
+        SKILL.md                         #   the skill itself, byte-identical to .claude/skills/
+        LICENSE                          #   the licence it ships under
+        PROVENANCE.md                    #   source, pinned commit, refresh procedure
+        references/writing-rules.md      #   the two files SKILL.md points at; without them
+        examples/before-after.md         #   the shipped skill has dead links
     agents/.gitkeep                      # subagent personas — `type: agent-def` documents
   data/
     docs/
