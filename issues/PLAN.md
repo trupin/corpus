@@ -1058,6 +1058,7 @@ not a behaviour change.
 | CLI-053 | `corpus thread designate` names a weight, and `corpus agents` prints it | todo | P0 | CONTRACT-067, SERVER-129 |
 | CLI-054 | `corpus thread scope` lists what a resident owns | todo | P1 | CONTRACT-068, SERVER-130 |
 | AGENT-039 | A listener is launched at the designation's weight | todo | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
+| SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | todo | P0 | — |
 | SHARED-056 | §7 enumerates the core events and §9.2 the routes, and v0.14.0 added one of each (NEEDS SIGN-OFF) | todo | P1 | CONTRACT-068, CONTRACT-069 |
 
 **2026-08-19, v0.14.0 scope agreed.** SHARED-055 signed as drafted. Six issues
