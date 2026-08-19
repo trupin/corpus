@@ -91,9 +91,8 @@ tidier.
 
 ## What has to be decided
 
-1. **Is the problem real once AGENT-035's rule is in place?** The honest answer
-   may be no. Measure it: after the rule ships, does a real session still lose
-   characters? If it does not, close this issue and record the measurement.
+1. ~~Is the problem real once AGENT-035's rule is in place?~~ **Answered
+   2026-08-19: yes.** See the E2E log. Close-unbuilt is off the table.
 2. **What is the shape?** A per-flag `--<name>-file`, a single `--fields <json>`,
    or stdin. Stdin is already taken by the body on `doc create`, so it is not
    free.
@@ -138,7 +137,75 @@ Determined by the shape. The measurement in point 1 comes first.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+### Acceptance criterion 1, measured 2026-08-19 — the answer is **no, the rule is not sufficient**
+
+Real `corpus` 0.13.0, throwaway workspace, server on 8808 (never 8765, never
+5173). Model: opus.
+
+**Case 1 — the rule followed, ordinary hostile characters. Byte-exact.**
+
+A title built in a `<<'CORPUS_EOF'` heredoc and passed as `"$title"`:
+
+```
+title: O'Brien's quote — $18,400 for the `whoami` job, 50% down
+```
+
+stored identically. Apostrophes, `$`, a backtick and `%` all survive. AGENT-035's
+rule does exactly what it claims for every character.
+
+**Case 2 — the terminator inside the carried text. Executes, and the result is
+not truncation.**
+
+Carried text (a pasted vendor transcript, which is the arrival vector the skill
+names) containing a line reading exactly `CORPUS_EOF`, then a command, then more
+of the person's message. Following the rule exactly:
+
+```
+$ ls /tmp/corpus-cli051-pwned.txt
+-rw-r--r--@ 1 theophanerupin  wheel  0 Aug 19 07:46 /tmp/corpus-cli051-pwned.txt
+```
+
+The `touch` ran. `created doc_wvn4kxac`, exit 0. And the document that landed:
+
+```
+The vendor pasted their terminal session below.
+
+and this line is the rest of their message
+```
+
+**Read that carefully. This is not a truncated document.** The mechanism is
+worse than the earlier framing in this issue:
+
+1. The carried text's own `CORPUS_EOF` line closed the heredoc early
+2. The lines after it ran **as commands, inside the `$( )` substitution**
+3. `touch` executed and, being silent, left no trace in the value
+4. `echo`'s **stdout was captured into `$body`** — so a command's output was
+   spliced into the document *as though it were the person's content*
+5. The tail of the message is present, so nothing looks cut off
+
+A dropped tail is noticeable. **A missing middle with an intact tail is not.**
+The document reads as complete and coherent, and a reader has no signal that a
+line was removed and a command's output put in its place.
+
+### What this settles
+
+- **Point 1 of "What has to be decided" is answered: the problem is real after
+  AGENT-035's rule.** Close-unbuilt is off the table
+- The class is not "characters the shell eats" but "**the value can terminate its
+  own quoting**", which no choice of terminator removes — it only makes the
+  collision less likely
+- Guidance cannot close it, because the agent builds the value correctly and the
+  content decides the outcome
+- The priority raise to P1 (2026-08-18) is confirmed by measurement rather than
+  by argument
+
+### What is still open
+
+Points 2, 3 and 4 — the shape, how an agent knows to reach for it, and whether it
+earns its cost. Those are design, not measurement, and unchanged by this run.
+
+Server stopped, port 8808 free, workspace and `/tmp/corpus-cli051-pwned.txt`
+removed. Nothing written under `/Users/theophanerupin/cos`.
 
 ## Completion Checklist (domain agent)
 
