@@ -942,7 +942,7 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | done | P0 | SERVER-125 |
 | CONTRACT-064 | The designate schema still states the pre-SERVER-125 resolution rule (PR #50 review sweep) | done | P1 | SERVER-125 |
 | SERVER-127 | A bare .claude/skills/SKILL.md is addressable and loaded by nothing (UI-123 derived fixture) | done | P1 | SERVER-125 |
-| SHARED-051 | A persona is addressable by where it lives, and §11 says otherwise (PR #50 review, NEEDS SIGN-OFF) | todo | P0 | SERVER-125 |
+| SHARED-051 | A persona is addressable by where it lives, and §11 said otherwise (SIGNED 2026-08-19) | done | P0 | SERVER-125 |
 | SHARED-052 | A check can report what a save accepts, and §14 says it cannot (PR #50 review 2, NEEDS SIGN-OFF) | todo | P1 | SERVER-124 |
 | SHARED-053 | §7 says a renamed or archived profile goes missing; archiving does not (PR #50 review 3, NEEDS SIGN-OFF) | todo | P1 | — |
 

@@ -6,8 +6,7 @@ shared
 
 ## Status
 
-todo — **NEEDS USER SIGN-OFF.** Drafted 2026-08-18, not applied. SPEC.md changes
-are the user's.
+done — **SIGNED 2026-08-19** and applied verbatim (revision 3)
 
 ## Priority
 
@@ -150,14 +149,14 @@ Batching riders is how a live §4/§7 contradiction survived a sign-off before
 
 ## Acceptance Criteria
 
-- [ ] The user has signed the drafted text, verbatim, on its own
-- [ ] SPEC.md §11 no longer states that creating a subagent document anywhere
+- [x] The user has signed the drafted text, verbatim, on its own — 2026-08-19
+- [x] SPEC.md §11 no longer states that creating a subagent document anywhere
       makes it autocompletable
-- [ ] SPEC.md §8 states the root gate, and says a document about a persona stays
+- [x] SPEC.md §8 states the root gate, and says a document about a persona stays
       an ordinary document
-- [ ] `npm run spec:check` passes
-- [ ] No other §8 or §11 sentence is reworded to agree with it
-- [ ] If it is **not** signed before v0.12.0 ships, the release notes say plainly
+- [x] `npm run spec:check` passes — 5,862 citations
+- [x] No other §8 or §11 sentence is reworded to agree with it
+- [x] n/a — signed after v0.12.0 shipped. The release notes already stated the gap honestly, which is what made this signable later without a re-release
       that §11's sentence is stale, and the waiver is recorded as the
       orchestrator's rather than described as unnecessary
 
