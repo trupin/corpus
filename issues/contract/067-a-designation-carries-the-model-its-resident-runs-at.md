@@ -68,6 +68,14 @@ sentence nobody has signed.
    this for a stated weight — do the work, say so twice — and the same answer may
    not fit a designation, which is long-lived rather than per-request
 
+## Decided by the orchestrator, 2026-08-19 (SHARED-055 signed as drafted)
+
+1. **A weight level key, never a model name.** The field is `weight`, its schema is the existing `RequestedWeightSchema` (`schemas/weight.ts`) — the same token that travels on a message — so the vocabulary is the workspace's own tier table and no model name reaches the wire. "No model names in the UI" is a signed non-goal.
+2. **Optional on the request, nullable on `Resident`.** Omitting it keeps today's behaviour; `Resident.weight` is `string | null`, `null` meaning *none chosen — the launcher decides and says so*. Not a breaking change.
+3. **`Resident` reports it**, on the thread, the thread summary, the roster row, and the `resident.designated` event payload (which carries a `Resident`).
+4. **A level that no longer exists** is not the contract's to refuse — the table is skill text the server never reads. The description says the launcher reports a level it cannot meet, per §7's weight rider, and that a designation is long-lived so the report lands in the listener's first reply (AGENT-038/039).
+5. **The description states the boundary** in one sentence, reused verbatim by SERVER-129 and CLI-053: *"governs the resident's own turns; a weight stated on a message still governs what the resident hands off (SPEC.md §7, rider signed 2026-08-19)"*.
+
 ## Acceptance Criteria
 
 - [ ] SHARED-055 is signed before this starts

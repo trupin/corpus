@@ -72,6 +72,14 @@ thread, which is a different cost and a different implementation.
 4. **Does the agent get it too, or only the board?** A resident asking "what do I
    own" is a reasonable question, and it is the same endpoint
 
+## Decided by the orchestrator, 2026-08-19
+
+1. **A query, not a projection table** — computed per request with `walkScope`, so §7 stays literally true. SERVER-130 measures the cost and records it.
+2. **One frugal line per hit**: `{id, kind: "thread" | "doc", title, status, via: "origin" | "parent" | "self"}` — never a body. The thread itself is first with `via: "self"`.
+3. **Bounded**: a fixed page size stated in the description (200), a `truncated: boolean`, no cursor in this release. The bound exists so a scope cannot be an enumeration, not to make paging a feature.
+4. **The agent gets it too** — same endpoint, reached via CLI-054. It answers *"what do I own"*, and it is no sweep: it is the resident's own lane.
+5. **Route**: `GET /api/threads/{id}/scope`. A thread with no resident is refused with a `409` whose message says the orchestrator's lane is not a scope.
+
 ## Acceptance Criteria
 
 - [ ] Given a designated thread, the API answers what is in its scope

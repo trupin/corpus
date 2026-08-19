@@ -1046,12 +1046,22 @@ not a behaviour change.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-055 | A resident cannot honour a stated weight, and §7 says it must (SIGNED 2026-08-19) | done | P0 | — |
-| SERVER-128 | Releasing a resident tells nobody | todo | P0 | — |
+| SERVER-128 | Releasing a resident tells nobody | todo | P0 | CONTRACT-069 |
 | CONTRACT-067 | A designation carries the model its resident runs at | todo | P0 | SHARED-055 |
 | CONTRACT-068 | A scope is computed, and nothing can ask what is in it | todo | P0 | — |
 | UI-125 | The console shows who is resident and what they own | todo | P0 | CONTRACT-068 |
 | UI-126 | The composer is overloaded, and one of its controls does nothing | todo | P0 | SHARED-055 |
 | AGENT-038 | A resident works serially and inline, and nothing proves it | todo | P0 | SHARED-055 |
+| CONTRACT-069 | A release reaches the wire as an event | todo | P0 | — |
+| SERVER-129 | A designation stores and reports its weight | todo | P0 | CONTRACT-067 |
+| SERVER-130 | The server answers what a scope holds | todo | P0 | CONTRACT-068 |
+| CLI-053 | `corpus thread designate` names a weight, and `corpus agents` prints it | todo | P0 | CONTRACT-067, SERVER-129 |
+| CLI-054 | `corpus thread scope` lists what a resident owns | todo | P1 | CONTRACT-068, SERVER-130 |
+| AGENT-039 | A listener is launched at the designation's weight | todo | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
 
-**Two are unblocked today**: SERVER-128 and CONTRACT-068. The rest wait on a
-signature or on CONTRACT-068's endpoint.
+**2026-08-19, v0.14.0 scope agreed.** SHARED-055 signed as drafted. Six issues
+added so the release ships the feature whole rather than its wire and a stamp:
+the event type a release travels as, the server and CLI halves of designation
+weight and scope, and the orchestrate skill that turns a weight into a model at
+launch. The decisions each issue was filed on are recorded in the issue under
+*Decided by the orchestrator, 2026-08-19*.

@@ -73,6 +73,12 @@ is unattended, and no surface reports it.
    resident. Whether it carries the reason (released by a person, released by
    resolution, lapsed) decides whether the orchestrator can tell them apart
 
+## Decided by the orchestrator, 2026-08-19
+
+1. **Release enqueues `resident.released`** (CONTRACT-069 defines it), on the orchestrator's lane, payload `{threadId, resident, reason}` with `reason` one of `released | resolved | replaced`. A lapse is not a release and produces nothing. **Volume argument**: one event per release, and a release is a user-only act on one thread, so the bound is one event per designation-release cycle — the same as designation already costs. Nothing automatic releases in a loop.
+2. **Release is immediate for a parked resident.** The parked scoped `queue idle` long-poll for that lane returns **at once** when a release lands, so the resident reads the release on its very next line rather than after the rearm. The idle response shape is unchanged — it returns as an ordinary wake, and the resident's own next read of its designation finds it released (converse already handles this). Bound: the HTTP round-trip, under a second. A resident mid-turn is not interrupted; it finds the release when it next parks or claims — events stamped for its lane before the release stay its to settle, unchanged.
+3. **`replaced`** covers designating again over a live resident; the old one is released with that reason and the new designation's event follows.
+
 ## Acceptance Criteria
 
 - [ ] Releasing a resident is observable — the orchestrator learns of it by the

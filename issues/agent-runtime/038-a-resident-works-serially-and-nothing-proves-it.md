@@ -77,6 +77,14 @@ right, and the discarded choice is invisible.
 SHARED-055 is the spec rider that settles this. **This issue applies whatever is
 signed** and must not guess ahead of it.
 
+## Decided by the orchestrator, 2026-08-19 (SHARED-055 signed as drafted)
+
+- A resident's own weight comes from its **designation** (`Resident.weight`, CONTRACT-067); the skill says so, and says that a `null` there means the launcher chose and said what.
+- The weight clause at `:415-420` becomes: a stated weight on a message governs what the resident **hands off**, never its own turn. The "say so twice" path is deleted for the resident's own turn, because it cannot fire — and kept for a hand-off it cannot honour, where it can.
+- **A resident whose designation weight changed exits.** The resident already re-reads its designation at the top of each pass and exits on a release. The same read now also compares `weight` against what it was launched at (the launcher tells it in the prompt, AGENT-039); a difference is *the same ending, found one step later* — finish the current turn, settle what is claimed, and exit, so the orchestrator relaunches from the roster. Pin the consequence, not the mechanism.
+- **The launcher's "cannot meet" report** reaches the resident in its prompt; the resident states it once, in its first reply, in the register SHARED-050 set.
+- SERVER-128 makes a parked resident's idle return immediately on release; the skill's account at `:659-745` stays true and gains nothing mechanism-specific.
+
 ## Acceptance Criteria
 
 - [ ] Pins for all three properties, each falsified individually: inline by
