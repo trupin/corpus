@@ -1022,3 +1022,36 @@ uncertain.
 | UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | todo | P2 | — |
 | SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | todo | P2 | — |
 | CLI-052 | doc move's help omits .claude/ from what cannot be moved (PR #50 review 4 NIT) | todo | P3 | — |
+
+## Phase 36 — Residents you can see, stop, and choose (2026-08-19, user feedback)
+
+Five reports from the user after running residents for real. One of them turned
+out to be a **contradiction between two signed riders**, and it is the root of
+three of the five symptoms — so SHARED-055 gates most of this phase.
+
+**The contradiction.** §7's weight rider (signed 2026-08-06) says a stated weight
+is *"honoured, not weighed again"* and *"travels to whatever actually does the
+work"*. §7's resident rider (signed 2026-08-13) says *"a resident works its
+conversation inline"*. Neither mentions the other. A resident is a running
+session on a fixed model, so it cannot honour a weight for its **own** turn
+without discarding the conversation it exists to hold. The `converse` skill
+instructs it to anyway, with a failure clause that cannot detect its own failure
+— which is why the user saw the choice discarded **silently**.
+
+**What was already true.** The user asked to *"make sure"* residents work serially
+and inline, without hopping between subagents. They do, by the skill's own text
+and by design. What is missing is that nothing **proves** it — AGENT-038 is that,
+not a behaviour change.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-055 | A resident cannot honour a stated weight, and §7 says it must (NEEDS SIGN-OFF) | todo | P0 | — |
+| SERVER-128 | Releasing a resident tells nobody | todo | P0 | — |
+| CONTRACT-067 | A designation carries the model its resident runs at | todo | P0 | SHARED-055 |
+| CONTRACT-068 | A scope is computed, and nothing can ask what is in it | todo | P0 | — |
+| UI-125 | The console shows who is resident and what they own | todo | P0 | CONTRACT-068 |
+| UI-126 | The composer is overloaded, and one of its controls does nothing | todo | P0 | SHARED-055 |
+| AGENT-038 | A resident works serially and inline, and nothing proves it | todo | P0 | SHARED-055 |
+
+**Two are unblocked today**: SERVER-128 and CONTRACT-068. The rest wait on a
+signature or on CONTRACT-068's endpoint.
