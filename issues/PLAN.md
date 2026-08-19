@@ -1045,7 +1045,7 @@ not a behaviour change.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-055 | A resident cannot honour a stated weight, and §7 says it must (NEEDS SIGN-OFF) | todo | P0 | — |
+| SHARED-055 | A resident cannot honour a stated weight, and §7 says it must (SIGNED 2026-08-19) | done | P0 | — |
 | SERVER-128 | Releasing a resident tells nobody | todo | P0 | — |
 | CONTRACT-067 | A designation carries the model its resident runs at | todo | P0 | SHARED-055 |
 | CONTRACT-068 | A scope is computed, and nothing can ask what is in it | todo | P0 | — |
