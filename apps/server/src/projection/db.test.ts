@@ -75,10 +75,13 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     // a file to find out. Since the SHARED-048 rider (SERVER-121) that is three
     // columns and two questions: `resident_designated` is *is this a lane*, and
     // the pair below is *which profile* — null together for a general resident,
-    // who is designated and has none.
+    // who is designated and has none. Since the weight rider (SERVER-129) it is
+    // four columns and three questions, the third being *at what weight*: null
+    // for a designation that chose no level, and independent of the other two.
     "resident_designated",
     "resident_name",
     "resident_doc_id",
+    "resident_weight",
   ],
   anchors: ["doc_id", "anchor_id", "exact_text", "prefix", "suffix", "resolved_offset"],
   // `has_form` and `form_answered` are past §9.1's list, retyped from

@@ -56,7 +56,8 @@ const DESIGNATED_LANES_SQL = `
   SELECT threads.id AS id,
          documents.title AS title,
          threads.resident_name AS residentName,
-         threads.resident_doc_id AS residentDocId
+         threads.resident_doc_id AS residentDocId,
+         threads.resident_weight AS residentWeight
   FROM threads
   JOIN documents ON documents.id = threads.id
   WHERE threads.parent_id IS NULL AND threads.resident_designated = 1
@@ -68,6 +69,8 @@ interface DesignatedRow {
   /** The profile the designation named; `null` for a general resident. */
   readonly residentName: string | null;
   readonly residentDocId: string | null;
+  /** The level the designation chose (SERVER-129); `null` when it chose none. */
+  readonly residentWeight: string | null;
 }
 
 /**
@@ -207,7 +210,15 @@ function row(deps: RosterDeps, lane: Lane, identity: LaneIdentity): AgentLane {
  * conversation, which is true only of the orchestrator's.
  */
 function residentOf(projection: ProjectionDb, entry: DesignatedRow): Resident | null {
-  const stored = residentOrNull({ name: entry.residentName, docId: entry.residentDocId });
+  const stored = residentOrNull({
+    name: entry.residentName,
+    docId: entry.residentDocId,
+    // Reported, never refreshed (SERVER-129). The `docId` above is re-resolved
+    // because it answers a question about the workspace; a weight answers what
+    // the person chose, and the workspace holds nothing to re-resolve it
+    // against — the tier table is the orchestrate skill's own text.
+    weight: entry.residentWeight,
+  });
   return currentResident(projection, stored);
 }
 

@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -81,15 +81,15 @@ is unattended, and no surface reports it.
 
 ## Acceptance Criteria
 
-- [ ] Releasing a resident is observable — the orchestrator learns of it by the
+- [x] Releasing a resident is observable — the orchestrator learns of it by the
       same mechanism designation uses, or by a stated deliberate alternative
-- [ ] A release a person performs takes effect in a bounded, stated time, and the
+- [x] A release a person performs takes effect in a bounded, stated time, and the
       bound is short enough that "stop this agent" is an act rather than a wish
-- [ ] Resolution-driven release and person-driven release are distinguishable, or
+- [x] Resolution-driven release and person-driven release are distinguishable, or
       the record says why they need not be
-- [ ] **No event storm**: a workspace that designates and releases in a loop does
+- [x] **No event storm**: a workspace that designates and releases in a loop does
       not flood the queue. State the volume argument with a number
-- [ ] The lapse fallback (§7) is unchanged — a lapsed lane is not a release, and
+- [x] The lapse fallback (§7) is unchanged — a lapsed lane is not a release, and
       conflating them would make a slow agent look like a stopped one
 
 ## Technical Design
@@ -137,15 +137,131 @@ by restoring the `null` and confirming the release-observability tests go red.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Implemented on: opus.** Verified 2026-08-19 against a real `corpus server` process on port
+**8891**, in a throwaway workspace created by `corpus init` at
+`…/scratchpad/ws-server-a`. Never the dev repo, never 8765 or 5173.
+
+### Pre-fix state (the reported behaviour)
+
+`threads/resident.ts:112` documented the asymmetry as deliberate — *"the `resident.designated`
+event; `null` for a release, which enqueues none"* — and `releaseResident` returned
+`eventId: null` unconditionally. Releasing wrote the file, dropped the lane off the roster, and
+told nobody. A parked scoped `idle` on that lane went on being held until its window ran out.
+
+### 1. Release announces itself
+
+```
+DELETE /api/threads/th_qezon4cg/resident → 200
+.corpus/queue/pending/evt_*.json:
+  resident.released | lane orchestrator |
+    {"threadId":"th_qezon4cg","resident":{"name":"researcher","docId":"doc_agentdef9aac2cc9","weight":null},"reason":"released"}
+```
+
+On the **orchestrator's** lane, under the same carve-out `resident.designated` has.
+
+### 2. All three reasons, none of them a lapse
+
+One thread, driven through every ending (queue drained between steps):
+
+```
+same profile, SAME weight    → resident.designated only          (the existing re-announce)
+same profile, DIFFERENT weight → resident.released reason=replaced, then resident.designated
+POST .../resolve             → resident.released reason=resolved
+DELETE .../resident          → resident.released reason=released
+```
+
+The `replaced` payload carries the **displaced** occupant (`weight: "light"`), while the
+designation that followed carries the newcomer (`weight: "heavy"`). A lapse writes nothing and
+produces no event — §7's fallback is computed at claim time and is untouched.
+
+### 3. The bound: release → parked `idle` returns
+
+Real HTTP, real server, a scoped `idle` with a 60-second window parked for 2 s before the
+release:
+
+```
+release issued at  T
+idle returned      T + 112 ms   (HTTP 204)
+```
+
+The 112 ms includes two `node -e` process starts (~30–40 ms each) used to take the timestamps,
+so the server-side figure is well under 100 ms. The in-process test measures the same thing
+without that overhead: **46–52 ms over four runs** (`resident.test.ts`, *"returns the parked
+`idle` as an ordinary 204, well under a second"*, asserted `< 1000 ms`).
+
+Before this issue the same request returned after the full window — up to §7's ~8-minute rearm.
+
+### 4. The response shape is unchanged, and the re-park is what refuses
+
+The parked request answers `204` with no body: an ordinary empty window. The resident's *next*
+park is refused by SERVER-118's guard, which the converse skill already reads as its retirement:
+
+```
+GET /api/queue/idle?timeout=5&scope=th_qezon4cg
+→ 422 {"code":"unknown_recipient","recipient":"th_qezon4cg", …}
+```
+
+### 5. The orchestrator's own park is woken, not evicted
+
+Orchestrator parked unscoped, then a resident released elsewhere:
+
+```
+GET /api/queue/idle?timeout=30 → 200
+  events: [{"type":"resident.released", payload:{…,"reason":"released"}}]
+```
+
+So the two parties learn by their own mechanisms: the resident's park **ends**, the
+orchestrator's park **finds work**.
+
+### 6. `converse/SKILL.md:659-745` stays true — work in flight is untouched
+
+A turn addressed to the agent, stamped for the lane, then a release:
+
+```
+before release:  comment.created | lane th_dtarbizd | pending
+after  release:  comment.created | lane th_dtarbizd | pending    ← unmoved
+                 resident.released | lane orchestrator | pending
+POST /api/queue/claim-all?scope=th_dtarbizd → claimed [ 'comment.created' ]
+```
+
+Nothing in `pending/` or `in-progress/` is touched by a release, and the departing listener can
+still drain its own lane — which is exactly what the skill's retirement steps depend on.
+
+### 7. Volume
+
+One event per release. A release is a user-only act on one thread, so a designate/release cycle
+costs **two** events — the same order designation alone already cost. An idempotent `DELETE` on
+a thread with no resident announces nothing and evicts nobody, verified both as a route test and
+by the park that stayed parked through an unrelated release.
+
+`corpus db doctor` → `projection is clean — 20 documents from 20 files (8ms)`.
+
+### Falsifications
+
+1. **Disabled the eviction** (commented out `this.evictReleasedLane(event)` in
+   `queue/service.ts`). The four timing cases in *"a release ends a parked listener at once"*
+   went red, all four as `Test timed out in 5000ms` — the parked request went on being held,
+   which is the pre-fix behaviour exactly. Restored, green again.
+2. **Restored the `null` at the release site** (`releaseResident` returning
+   `releasedEventId: null` and enqueueing nothing). **4 tests red**: *"enqueues
+   `resident.released` on the orchestrator's lane, naming who left"*, *"leaves an already-queued
+   event on its lane when the resident is released"*, and two of the timing cases (no event ⇒ no
+   eviction, which is the same one path). Restored, green again.
+
+### Checks
+
+- `node_modules/.bin/tsc --noEmit` in `apps/server` — clean
+- `eslint apps/server/src --max-warnings 0` — clean; `prettier --check` — clean
+- `vitest run apps/server` — **193 files, 4306 tests, all passing**
+- Server stopped; `lsof -iTCP:8891` → port free
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

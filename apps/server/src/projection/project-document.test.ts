@@ -245,6 +245,7 @@ describe("projectDocument — threads and turns", () => {
       resident_designated: 0,
       resident_name: null,
       resident_doc_id: null,
+      resident_weight: null,
     });
 
     expect(db.prepare("SELECT idx, author, ts, body_md FROM turns ORDER BY idx").all()).toEqual([
@@ -287,6 +288,75 @@ describe("projectDocument — threads and turns", () => {
         resident_designated: 1,
         resident_name: "researcher",
         resident_doc_id: "doc_researcher",
+        // No `weight:` key on disk is "no level was chosen" — which is how every
+        // designation written before §7's weight rider spells it (SERVER-129).
+        resident_weight: null,
+      });
+    });
+
+    // SPEC.md §7's rider signed 2026-08-19 (SERVER-129). The third independent
+    // question about a designation, projected for the reason the other two are:
+    // `GET /api/agents` builds a row per lane out of these columns.
+    describe("the weight (SERVER-129)", () => {
+      it("projects a stated level verbatim, beside a profile", () => {
+        project(
+          "data/threads/th_res.md",
+          standalone("resident:\n  name: researcher\n  docId: doc_researcher\n  weight: heavy\n"),
+        );
+        expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+          resident_designated: 1,
+          resident_name: "researcher",
+          resident_weight: "heavy",
+        });
+      });
+
+      // Orthogonal to the profile pair: a general resident may run at a stated
+      // weight, which is an ordinary state and not a half-designation.
+      it("projects a general residency's weight", () => {
+        project(
+          "data/threads/th_res.md",
+          standalone("resident:\n  name: null\n  docId: null\n  weight: light\n"),
+        );
+        expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+          resident_designated: 1,
+          resident_name: null,
+          resident_weight: "light",
+        });
+      });
+
+      // A level the workspace's own tier table no longer defines is still a
+      // level somebody chose. The server never reads that table, so there is
+      // nothing here to check it against, and §7's weight rider puts the report
+      // of it in the launcher's first reply.
+      it("projects a level this server knows nothing about", () => {
+        project(
+          "data/threads/th_res.md",
+          standalone("resident:\n  name: null\n  docId: null\n  weight: featherweight\n"),
+        );
+        expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+          resident_designated: 1,
+          resident_weight: "featherweight",
+        });
+      });
+
+      // The block is one value. Honouring the profile while dropping an
+      // ill-shaped weight would silently substitute "no level chosen" for a
+      // choice somebody made, which is the one thing §7's rider forbids — so it
+      // degrades exactly as half a designation does.
+      it.each([
+        ["a number", "  weight: 3\n"],
+        ["a blank string", '  weight: "   "\n'],
+        ["two lines", "  weight: |\n    heavy\n    lifting\n"],
+      ])("projects nothing for a weight that is %s", (_label, weight) => {
+        project(
+          "data/threads/th_res.md",
+          standalone(`resident:\n  name: researcher\n  docId: doc_researcher\n${weight}`),
+        );
+        expect(db.prepare("SELECT * FROM threads").get()).toMatchObject({
+          resident_designated: 0,
+          resident_name: null,
+          resident_weight: null,
+        });
       });
     });
 

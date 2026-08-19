@@ -25,12 +25,19 @@ import {
 } from "../docs/index.js";
 import { AGENTS_KEY, DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { loadThread, toThreadSummary } from "./read.js";
+import { enqueueResidentReleased } from "./resident.js";
 import type { ThreadsWorkspace } from "./workspace.js";
 
 export interface StatusChange {
   readonly thread: ThreadSummary;
   /** `null` when the thread already had the requested status: nothing was written. */
   readonly result: MutationResult | null;
+  /**
+   * The `resident.released` this resolution enqueued (SERVER-128), or `null`
+   * when it released nobody — every reopen, and every resolve of a conversation
+   * that had no resident.
+   */
+  readonly releasedEventId: string | null;
 }
 
 export async function setThreadStatus(
@@ -56,8 +63,15 @@ export async function setThreadStatus(
     // hand-edited key is cleared here too rather than surviving forever.
     const releasing = status === "resolved" && Object.hasOwn(thread.loaded.parsed.data, "resident");
     if (thread.status === status && !releasing) {
-      return { thread: toThreadSummary(thread), result: null };
+      return { thread: toThreadSummary(thread), result: null, releasedEventId: null };
     }
+    // Captured before the write removes it. `thread.resident` rather than the
+    // raw key, for `releaseResident`'s reason: the key can be present without
+    // being a designation (a parented thread's, a plugin's), and a lane that
+    // never existed has no departure to announce — though the stray key is still
+    // cleared. Where it *is* a designation, this is the resident as every other
+    // surface reported it a moment ago.
+    const released = releasing ? thread.resident : null;
 
     const text = serializeDocument(
       setFrontmatterFields(thread.loaded.parsed, {
@@ -96,6 +110,15 @@ export async function setThreadStatus(
       },
     });
 
-    return { thread: toThreadSummary(loadThread(workspace, id)), result };
+    // §7's other way a designation ends, announced by the same event a person's
+    // release announces and distinguished only by its reason (SERVER-128): a
+    // settled conversation has nobody to keep resident, so resolution released
+    // it. Enqueued after the write, so the announcement describes a lane that has
+    // already stopped being one — and it is this enqueue that ends the resident's
+    // park, through `QueueService`.
+    const releasedEventId =
+      released === null ? null : await enqueueResidentReleased(workspace, id, released, "resolved");
+
+    return { thread: toThreadSummary(loadThread(workspace, id)), result, releasedEventId };
   });
 }

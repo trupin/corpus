@@ -25,7 +25,7 @@ import {
   type WriteWorkspace,
 } from "./thread-fixture.js";
 import { LANE_GRACE_MS } from "../queue/liveness.js";
-import { RESIDENT_DESIGNATED } from "./resident.js";
+import { RESIDENT_DESIGNATED, RESIDENT_RELEASED } from "./resident.js";
 
 let ws: WriteWorkspace;
 
@@ -78,16 +78,20 @@ const readThread = async (id: string): Promise<Record<string, unknown>> =>
   (await (await ws.request(`/api/threads/${id}`)).json()) as Record<string, unknown>;
 
 /**
- * The projection's three resident columns.
+ * The projection's four resident columns.
  *
  * `resident_designated` is the one the lane predicate, the recipient check and
- * the park guard all ask (SERVER-121); the other two carry the *profile*, and
- * are null together for a general resident. They are read as one row here
- * precisely so a case cannot assert the profile and leave the flag unstated.
+ * the park guard all ask (SERVER-121); the next two carry the *profile*, and are
+ * null together for a general resident; `resident_weight` carries the level the
+ * designation chose (SERVER-129), null when it chose none and independent of the
+ * other three. They are read as one row here precisely so a case cannot assert
+ * one and leave the rest unstated.
  */
 const residentRow = (id: string): unknown =>
   ws.db
-    .prepare("SELECT resident_designated, resident_name, resident_doc_id FROM threads WHERE id = ?")
+    .prepare(
+      "SELECT resident_designated, resident_name, resident_doc_id, resident_weight FROM threads WHERE id = ?",
+    )
     .get(id);
 
 /** Just the flag — "is this conversation a lane", the question routing asks. */
@@ -131,6 +135,31 @@ const designations = (): StoredEvent[] =>
     .filter((event) => event.type === RESIDENT_DESIGNATED)
     .sort((left, right) => left.created.localeCompare(right.created));
 
+/** Every pending `resident.released` (SERVER-128), oldest first, for the same reason. */
+const releases = (): StoredEvent[] =>
+  pendingPayloads()
+    .filter((event) => event.type === RESIDENT_RELEASED)
+    .sort((left, right) => left.created.localeCompare(right.created));
+
+/**
+ * Splices frontmatter lines into a thread file the server wrote, in front of the
+ * closing delimiter.
+ *
+ * Written as a function of the *closing* `---` rather than as a `.replace` on
+ * some key's line, because a thread's frontmatter has no blank line before it
+ * and the key set has grown twice: an anchor chosen for one field silently stops
+ * matching, and a test that inserted nothing then asserts on the state it was
+ * trying to change.
+ */
+function spliceFrontmatter(id: string, lines: string): void {
+  const path = threadPath(id);
+  const text = ws.read(path);
+  const close = text.indexOf("\n---\n", 4);
+  expect(close).toBeGreaterThan(0);
+  ws.write(path, `${text.slice(0, close + 1)}${lines}${text.slice(close + 1)}`);
+  ws.reproject();
+}
+
 /** The title the server derived for a created thread — what a commit subject names. */
 const titleOf = (created: { thread: Record<string, unknown> }): string =>
   created.thread["title"] as string;
@@ -152,6 +181,10 @@ describe("the event type", () => {
   // the contract's tuple; this is what keeps the two spellings one value.
   it("is one of the contract's core queue event types", () => {
     expect(CORE_QUEUE_EVENT_TYPES).toContain(RESIDENT_DESIGNATED);
+  });
+
+  it("has a release counterpart, published the same way (SERVER-128)", () => {
+    expect(CORE_QUEUE_EVENT_TYPES).toContain(RESIDENT_RELEASED);
   });
 });
 
@@ -177,15 +210,19 @@ describe("POST /api/threads/{id}/resident", () => {
       docId: "doc_researcher",
     });
     // Read back through the route a client uses, off the re-projected state.
+    // `weight` is null: this designation chose no level, which is the ordinary
+    // case and means the launcher decides (SERVER-129).
     expect((await readThread(created.id))["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      weight: null,
     });
     // And in the projection, where SERVER-111's enqueue path will ask.
     expect(residentRow(created.id)).toEqual({
       resident_designated: 1,
       resident_name: "researcher",
       resident_doc_id: "doc_researcher",
+      resident_weight: null,
     });
   });
 
@@ -276,8 +313,8 @@ describe("POST /api/threads/{id}/resident", () => {
       docId: "doc_editorone",
     });
     expect(designations().map((event) => event.payload["resident"])).toEqual([
-      { name: "researcher", docId: "doc_researcher" },
-      { name: "editor", docId: "doc_editorone" },
+      { name: "researcher", docId: "doc_researcher", weight: null },
+      { name: "editor", docId: "doc_editorone", weight: null },
     ]);
   });
 
@@ -300,6 +337,76 @@ describe("POST /api/threads/{id}/resident", () => {
     // for a listener that is no longer running to be launched again, and there
     // is no other verb for it.
     expect(designations()).toHaveLength(2);
+    // And it displaced nobody: the resident it re-announces is the one that was
+    // already here, so there is no departure (SERVER-128).
+    expect(releases()).toEqual([]);
+  });
+
+  /**
+   * SERVER-128's third reason. A thread has one resident or none, so designating
+   * over a live one is a release and a designation — two events, in that order,
+   * so the lane's old listener learns it is over before the newcomer's launch
+   * instruction lands.
+   *
+   * The released payload carries the **old** occupant. The newcomer travels on
+   * its own `resident.designated`, and a reader that mixed them up would log the
+   * arrival as the departure.
+   */
+  it("releases the displaced resident with reason `replaced`, before the new designation", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designate(created.id, "researcher");
+    ws.advance(61_000);
+
+    expect((await designate(created.id, "editor")).status).toBe(200);
+
+    expect(releases()).toHaveLength(1);
+    expect(releases()[0]).toMatchObject({
+      lane: "orchestrator",
+      payload: {
+        threadId: created.id,
+        resident: { name: "researcher", docId: "doc_researcher", weight: null },
+        reason: "replaced",
+      },
+    });
+    // Ordering, read off the queue rather than off the call: the release is
+    // created no later than the designation that displaced its subject.
+    const departure = releases()[0]?.created ?? "";
+    const arrival = designations().at(-1)?.created ?? "";
+    expect(departure <= arrival).toBe(true);
+  });
+
+  it("releases nobody when the designation is the first one", async () => {
+    const created = await createThread(ws, { body: "start" });
+
+    expect((await designate(created.id, "researcher")).status).toBe(200);
+
+    expect(releases()).toEqual([]);
+  });
+
+  // A weight change is a replacement too (SERVER-129): the listener cannot
+  // become another model without discarding the conversation, so the old one has
+  // to go and a new one has to be launched.
+  it("releases with reason `replaced` when only the weight changed", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await ws.post(`/api/threads/${created.id}/resident`, { name: "researcher", weight: "light" });
+    ws.advance(61_000);
+
+    expect(
+      (
+        await ws.post(`/api/threads/${created.id}/resident`, {
+          name: "researcher",
+          weight: "heavy",
+        })
+      ).status,
+    ).toBe(200);
+
+    expect(releases()).toHaveLength(1);
+    expect(releases()[0]).toMatchObject({
+      payload: {
+        resident: { name: "researcher", docId: "doc_researcher", weight: "light" },
+        reason: "replaced",
+      },
+    });
   });
 
   it("refuses the agent: designation is the person's act", async () => {
@@ -439,12 +546,17 @@ describe("designating with no profile at all", () => {
     // second grammar. The key being *present* is the designation; releasing
     // removes it.
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({ name: null, docId: null });
-    expect((await readThread(created.id))["resident"]).toEqual({ name: null, docId: null });
+    expect((await readThread(created.id))["resident"]).toEqual({
+      name: null,
+      docId: null,
+      weight: null,
+    });
     // And in the projection: designated, with no profile.
     expect(residentRow(created.id)).toEqual({
       resident_designated: 1,
       resident_name: null,
       resident_doc_id: null,
+      resident_weight: null,
     });
   });
 
@@ -473,7 +585,11 @@ describe("designating with no profile at all", () => {
     ws.reproject();
 
     expect(designatedRow(created.id)).toBe(1);
-    expect((await readThread(created.id))["resident"]).toEqual({ name: null, docId: null });
+    expect((await readThread(created.id))["resident"]).toEqual({
+      name: null,
+      docId: null,
+      weight: null,
+    });
   });
 
   it("commits once, authored by the acting party, naming the act in words", async () => {
@@ -556,9 +672,9 @@ describe("designating with no profile at all", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({ name: null, docId: null });
     expect(ws.log("%H")).toHaveLength(before + 1);
     expect(designations().map((event) => event.payload["resident"])).toEqual([
-      { name: null, docId: null },
-      { name: "researcher", docId: "doc_researcher" },
-      { name: null, docId: null },
+      { name: null, docId: null, weight: null },
+      { name: "researcher", docId: "doc_researcher", weight: null },
+      { name: null, docId: null, weight: null },
     ]);
   });
 
@@ -637,6 +753,7 @@ describe("DELETE /api/threads/{id}/resident", () => {
       resident_designated: 0,
       resident_name: null,
       resident_doc_id: null,
+      resident_weight: null,
     });
     expect(ws.log("%H")).toHaveLength(before + 1);
     expect(ws.log("%s")[0]).toBe(`resident release: ${titleOf(created)} (${created.id}) by user`);
@@ -661,13 +778,68 @@ describe("DELETE /api/threads/{id}/resident", () => {
     expect(frames).toEqual([]);
   });
 
-  it("enqueues nothing: §7 names one event, and it is designation's", async () => {
+  /**
+   * SERVER-128. Releasing used to enqueue nothing, which is the asymmetry the
+   * user reported: *"designating a resident sends an event to the orchestrator
+   * agent, but releasing one does not"*. The orchestrator was never told a lane
+   * had come back to it.
+   *
+   * The event lands on the **orchestrator's** lane whoever was released — a
+   * released resident does not announce its own end to itself — and carries who
+   * left and why, so `released`, `resolved` and `replaced` are three states a
+   * reader can tell apart rather than one silence.
+   */
+  it("enqueues `resident.released` on the orchestrator's lane, naming who left", async () => {
     const created = await createThread(ws, { body: "start" });
     await designate(created.id, "researcher");
+    ws.advance(61_000);
     const before = pendingEvents(ws).length;
 
     await release(created.id);
 
+    expect(pendingEvents(ws)).toHaveLength(before + 1);
+    const released = releases();
+    expect(released).toHaveLength(1);
+    expect(released[0]).toMatchObject({
+      type: "resident.released",
+      source: "thread",
+      status: "pending",
+      lane: "orchestrator",
+      payload: {
+        threadId: created.id,
+        resident: { name: "researcher", docId: "doc_researcher", weight: null },
+        reason: "released",
+      },
+    });
+  });
+
+  // §7's idempotent release: nothing to release is a no-op rather than an error,
+  // and **one release, one event** means a no-op announces nothing. A workspace
+  // that hammered `DELETE` would otherwise produce an event per call.
+  it("enqueues nothing when there was nobody to release", async () => {
+    const created = await createThread(ws, { body: "start" });
+    const before = pendingEvents(ws).length;
+
+    expect((await release(created.id)).status).toBe(200);
+
+    expect(pendingEvents(ws)).toHaveLength(before);
+  });
+
+  // The `resident:` key can be present without being a designation — a plugin's,
+  // or one hand-written onto a parented thread. Such a thread was never a lane:
+  // no event was ever routed to it and no listener was ever launched for it, so
+  // there is no departure to announce. The stray key is still cleared.
+  it("clears a `resident:` key that was never a designation, announcing nothing", async () => {
+    const host = await createDoc(ws, { type: "note", title: "Host", body: "Body." });
+    const child = await createThread(ws, { parent: host.id, body: "on the document" });
+    spliceFrontmatter(child.id, "resident:\n  name: researcher\n  docId: doc_researcher\n");
+    expect(threadFrontmatterOf(ws, child.id)["resident"]).toBeDefined();
+    ws.advance(61_000);
+    const before = pendingEvents(ws).length;
+
+    expect((await release(child.id)).status).toBe(200);
+
+    expect(threadFrontmatterOf(ws, child.id)["resident"]).toBeUndefined();
     expect(pendingEvents(ws)).toHaveLength(before);
   });
 
@@ -702,6 +874,7 @@ describe("resolving a conversation releases its resident (SPEC.md §7)", () => {
       resident_designated: 0,
       resident_name: null,
       resident_doc_id: null,
+      resident_weight: null,
     });
 
     ws.advance(61_000);
@@ -744,6 +917,280 @@ describe("resolving a conversation releases its resident (SPEC.md §7)", () => {
     expect(withResident[0]).toContainEqual(["agents"]);
     expect(without[0]).not.toContainEqual(["agents"]);
   });
+
+  /**
+   * SERVER-128. Resolution is the other way §7 ends a designation, and until
+   * this issue it was the *only* way that reached the orchestrator at all —
+   * because resolving a thread the person no longer wants a resident on was the
+   * workaround for release announcing nothing.
+   *
+   * It announces itself with the same event and a different `reason`, which is
+   * what makes "a person stopped this agent" and "the conversation settled"
+   * distinguishable by a reader rather than by a guess.
+   */
+  it("enqueues `resident.released` with reason `resolved`", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designate(created.id, "researcher");
+    ws.advance(61_000);
+
+    expect((await ws.post(`/api/threads/${created.id}/resolve`, {})).status).toBe(200);
+
+    expect(releases()).toHaveLength(1);
+    expect(releases()[0]).toMatchObject({
+      lane: "orchestrator",
+      payload: {
+        threadId: created.id,
+        resident: { name: "researcher", docId: "doc_researcher", weight: null },
+        reason: "resolved",
+      },
+    });
+  });
+
+  it("enqueues nothing when the conversation had no resident to release", async () => {
+    const created = await createThread(ws, { body: "start" });
+    ws.advance(61_000);
+
+    expect((await ws.post(`/api/threads/${created.id}/resolve`, {})).status).toBe(200);
+
+    expect(releases()).toEqual([]);
+  });
+
+  // Reopening is not a designation and releases nobody, so it announces nothing
+  // — the conversation resumes on the orchestrator's lane and designating again
+  // is a deliberate act.
+  it("enqueues nothing on reopen", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designate(created.id, "researcher");
+    await ws.post(`/api/threads/${created.id}/resolve`, {});
+    ws.advance(61_000);
+    const before = pendingEvents(ws).length;
+
+    expect((await ws.post(`/api/threads/${created.id}/reopen`, {})).status).toBe(200);
+
+    expect(pendingEvents(ws)).toHaveLength(before);
+  });
+});
+
+/**
+ * SPEC.md §7's rider signed 2026-08-19 (SERVER-129): *"A resident's weight is
+ * set when it is designated, not per message."* A resident is a running agent,
+ * so the model it works at is a property of the designation — it cannot change
+ * what it is without discarding the conversation it is holding.
+ *
+ * The server's part is small and deliberately dumb: store the level key the
+ * request stated, report it on every `Resident`, and interpret nothing. The tier
+ * table is the workspace's own orchestrate-skill text, which §2.4 lets a
+ * workspace edit on its own schedule and which this server never reads.
+ */
+describe("the weight a designation chooses (SERVER-129)", () => {
+  const designateWeighted = (id: string, body: Record<string, unknown>) =>
+    ws.post(`/api/threads/${id}/resident`, body);
+
+  it("stores the level and reports it on the thread, the summary and the roster", async () => {
+    const created = await createThread(ws, { body: "weighty matters" });
+
+    const response = await designateWeighted(created.id, { name: "researcher", weight: "heavy" });
+
+    expect(response.status).toBe(200);
+    // The response's own thread summary — what the composer redraws from.
+    expect((await response.json()) as Record<string, unknown>).toMatchObject({
+      thread: { resident: { name: "researcher", docId: "doc_researcher", weight: "heavy" } },
+    });
+    // On disk, beside `name` and `docId`: one key, the file being the source of
+    // truth.
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+      weight: "heavy",
+    });
+    expect((await readThread(created.id))["resident"]).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+      weight: "heavy",
+    });
+    expect(residentRow(created.id)).toEqual({
+      resident_designated: 1,
+      resident_name: "researcher",
+      resident_doc_id: "doc_researcher",
+      resident_weight: "heavy",
+    });
+    const roster = (await (await ws.request("/api/agents")).json()) as {
+      agents: { lane: string; resident: unknown }[];
+    };
+    expect(roster.agents.find((row) => row.lane === created.id)?.resident).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+      weight: "heavy",
+    });
+  });
+
+  // Absence is the only spelling of "no level chosen" on the request and on
+  // disk; `null` is the only spelling of it on the wire. The two meet in
+  // `residentFor`, and nothing writes `weight: null` into a file.
+  it("writes no key when none was chosen, and reads that back as null", async () => {
+    const created = await createThread(ws, { body: "no level" });
+
+    expect((await designate(created.id, "researcher")).status).toBe(200);
+
+    expect(Object.hasOwn(threadFrontmatterOf(ws, created.id)["resident"] as object, "weight")).toBe(
+      false,
+    );
+    expect(ws.read(threadPath(created.id))).not.toContain("weight:");
+    expect(((await readThread(created.id))["resident"] as { weight: unknown }).weight).toBeNull();
+  });
+
+  // A designation file written before the rider existed has no `weight` key at
+  // all. It must read back as a designation with no level, not as no
+  // designation — the tolerance is the whole reason the stored shape and the
+  // wire shape differ.
+  it("reads a designation written before weights existed as null", async () => {
+    const created = await createThread(ws, { body: "legacy" });
+    spliceFrontmatter(created.id, "resident:\n  name: researcher\n  docId: doc_researcher\n");
+
+    expect((await readThread(created.id))["resident"]).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+      weight: null,
+    });
+    expect(designatedRow(created.id)).toBe(1);
+  });
+
+  // Orthogonal to the profile pair: §7's ordinary designation names no profile,
+  // and it may still choose a level.
+  it("designates a general resident at a stated weight", async () => {
+    const created = await createThread(ws, { body: "general but heavy" });
+
+    expect((await designateWeighted(created.id, { weight: "heavy" })).status).toBe(200);
+
+    expect((await readThread(created.id))["resident"]).toEqual({
+      name: null,
+      docId: null,
+      weight: "heavy",
+    });
+  });
+
+  // The one behaviour change to re-designation: same profile, **different**
+  // level is a write and an event, because the listener has to be relaunched at
+  // the new weight. Same profile, same level is the existing no-op.
+  it("writes and announces when only the weight changes", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateWeighted(created.id, { name: "researcher", weight: "light" });
+    ws.advance(61_000);
+    const before = ws.log("%H").length;
+
+    expect(
+      (await designateWeighted(created.id, { name: "researcher", weight: "heavy" })).status,
+    ).toBe(200);
+
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+      weight: "heavy",
+    });
+    expect(designations().map((event) => event.payload["resident"])).toEqual([
+      { name: "researcher", docId: "doc_researcher", weight: "light" },
+      { name: "researcher", docId: "doc_researcher", weight: "heavy" },
+    ]);
+  });
+
+  it("writes nothing when the profile and the weight are both unchanged", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateWeighted(created.id, { name: "researcher", weight: "heavy" });
+    ws.advance(61_000);
+    const before = ws.log("%H").length;
+    const text = ws.read(threadPath(created.id));
+
+    expect(
+      (await designateWeighted(created.id, { name: "researcher", weight: "heavy" })).status,
+    ).toBe(200);
+
+    expect(ws.read(threadPath(created.id))).toBe(text);
+    expect(ws.log("%H")).toHaveLength(before);
+  });
+
+  // Dropping the weight is a change in the other direction: the designation now
+  // says "the launcher decides", which it did not say before.
+  it("treats dropping the weight as a change too", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateWeighted(created.id, { name: "researcher", weight: "heavy" });
+    ws.advance(61_000);
+    const before = ws.log("%H").length;
+
+    expect((await designate(created.id, "researcher")).status).toBe(200);
+
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+    });
+  });
+
+  /**
+   * The server does **not** validate the level against the tier table
+   * (CONTRACT-067 decision 4). It cannot: the table is the workspace's own skill
+   * text, edited on the workspace's schedule, so a check here would refuse a
+   * level the workspace's own guidance defines and could only be fixed by a
+   * release. A level nothing recognises is the launcher's to report, per §7's
+   * weight rider, in the listener's first reply.
+   */
+  it("stores a level this workspace's guidance does not define", async () => {
+    const created = await createThread(ws, { body: "unknown level" });
+
+    expect((await designateWeighted(created.id, { weight: "featherweight" })).status).toBe(200);
+
+    expect(((await readThread(created.id))["resident"] as { weight: unknown }).weight).toBe(
+      "featherweight",
+    );
+  });
+
+  // Shape *is* checked, by the contract, because the value is copied verbatim
+  // into a queue event file and echoed into a line-oriented job log.
+  it.each([
+    ["blank", "   "],
+    ["empty", ""],
+    ["two lines", "hea\nvy"],
+  ])("refuses a weight that is %s", async (_label, weight) => {
+    const created = await createThread(ws, { body: "start" });
+
+    expect((await designateWeighted(created.id, { weight })).status).toBe(400);
+
+    expect((await readThread(created.id))["resident"]).toBeNull();
+  });
+
+  // The release clears the weight with the rest of the block: `resident` is one
+  // key, and there is no state where a released conversation remembers a level.
+  it("removes the weight with the rest of the block on release", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateWeighted(created.id, { name: "researcher", weight: "heavy" });
+    ws.advance(61_000);
+
+    expect((await release(created.id)).status).toBe(200);
+
+    expect(Object.hasOwn(threadFrontmatterOf(ws, created.id), "resident")).toBe(false);
+    expect(residentRow(created.id)).toEqual({
+      resident_designated: 0,
+      resident_name: null,
+      resident_doc_id: null,
+      resident_weight: null,
+    });
+    expect((await readThread(created.id))["resident"]).toBeNull();
+  });
+
+  // The event the orchestrator launches a listener from has to carry the level,
+  // or the choice is made and then ignored (AGENT-039). Built from the
+  // contract's own payload schema, which is what makes that a build error rather
+  // than a silent drop.
+  it("carries the weight on the `resident.designated` payload", async () => {
+    const created = await createThread(ws, { body: "start" });
+
+    await designateWeighted(created.id, { name: "researcher", weight: "heavy" });
+
+    expect(designations()[0]?.payload).toEqual({
+      threadId: created.id,
+      resident: { name: "researcher", docId: "doc_researcher", weight: "heavy" },
+    });
+  });
 });
 
 describe("reading a resident back", () => {
@@ -762,6 +1209,7 @@ describe("reading a resident back", () => {
     expect((await readThread(created.id))["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researchernew",
+      weight: null,
     });
     // Nothing was rewritten to make that true: the file still holds what the
     // designation stored.
@@ -788,6 +1236,7 @@ describe("reading a resident back", () => {
     expect((await readThread(created.id))["resident"]).toEqual({
       name: "researcher",
       docId: null,
+      weight: null,
     });
     // Nothing was rewritten to say so: the designation stands, and the file
     // still holds the pair it was written with.
@@ -836,6 +1285,7 @@ describe("reading a resident back", () => {
     expect((await readThread(created.id))["resident"]).toEqual({
       name: "researcher",
       docId: null,
+      weight: null,
     });
     // The document it used to resolve to is still a document, under the same id
     // — so the null is about the root and not about existence. This is the whole
@@ -853,6 +1303,7 @@ describe("reading a resident back", () => {
       resident_designated: 1,
       resident_name: "researcher",
       resident_doc_id: "doc_researcher",
+      resident_weight: null,
     });
     // And the same gate now refuses a fresh designation by that name, naming the
     // file it will not use (SERVER-125).
@@ -882,6 +1333,7 @@ describe("reading a resident back", () => {
       resident_designated: 0,
       resident_name: null,
       resident_doc_id: null,
+      resident_weight: null,
     });
 
     // The release still clears it, rather than leaving a key no route can reach.
@@ -901,6 +1353,7 @@ describe("reading a resident back", () => {
       resident_designated: 0,
       resident_name: null,
       resident_doc_id: null,
+      resident_weight: null,
     });
   });
 });
@@ -966,7 +1419,10 @@ describe("what a designation routes", () => {
   });
 
   // §7 stamps once and never rewrites: releasing does not strand queued work,
-  // it only changes what the *next* enqueue is stamped with.
+  // it only changes what the *next* enqueue is stamped with. This is what the
+  // converse skill's account of retirement rests on — the events stamped for the
+  // lane before the release stay the departing listener's to settle — so the
+  // release's own announcement must be the *only* file it adds (SERVER-128).
   it("leaves an already-queued event on its lane when the resident is released", async () => {
     const created = await createThread(ws, { body: "start" });
     await designate(created.id, "researcher");
@@ -979,13 +1435,20 @@ describe("what a designation routes", () => {
     await release(created.id);
     ws.advance(61_000);
 
-    expect(onlyPending().lane).toBe(created.id);
+    // The turn's event is untouched, still stamped for the lane it was posted
+    // on; the release's own event is the orchestrator's.
+    expect(
+      pendingPayloads()
+        .map((event) => `${event.type}@${event.lane}`)
+        .sort(),
+    ).toEqual(["comment.created@" + created.id, "resident.released@orchestrator"].sort());
+
     await appendTurn(ws, created.id, { body: "second", requestsAgent: true });
     expect(
       pendingPayloads()
         .map((event) => event.lane)
         .sort(),
-    ).toEqual([created.id, "orchestrator"].sort());
+    ).toEqual([created.id, "orchestrator", "orchestrator"].sort());
   });
 
   describe("a recipient that names no lane", () => {
@@ -1192,5 +1655,159 @@ describe("what a designation routes", () => {
       parked.leave();
       await parked.done;
     });
+  });
+});
+
+/**
+ * **The user's actual pain, as a measurement** (SERVER-128).
+ *
+ * Reported 2026-08-19: *"I don't have a way to stop a resident agent without
+ * resolving the thread altogether or waiting for the orchestrator agent to
+ * discover the resident status."* A resident that is parked is blocked on an
+ * HTTP response — the same long-poll that makes parking free — so before this
+ * issue a release landed on a request the server went on holding for the rest of
+ * its window, up to §7's ~8-minute rearm. "Stop this agent" was a request that
+ * took effect at some point in the next eight minutes, with nothing to watch.
+ *
+ * It is now bounded by the release's own round trip. What is asserted below is
+ * that bound, in milliseconds, against a real server holding a real parked
+ * request — not that some code path was called.
+ */
+describe("a release ends a parked listener at once (SERVER-128)", () => {
+  /** A scoped park with a long window, so anything under a second is the eviction. */
+  function park(scope: string): { done: Promise<Response>; leave: () => void } {
+    const controller = new AbortController();
+    const done = ws
+      .request(`/api/queue/idle?timeout=60&scope=${scope}`, {
+        headers: AUTH,
+        signal: controller.signal,
+      })
+      .catch(() => new Response(null, { status: 499 }));
+    return {
+      done,
+      leave: () => {
+        controller.abort();
+      },
+    };
+  }
+
+  /** The park has to reach the handler before the release is issued. */
+  const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve, 50));
+
+  const parkedNow = (): number => ws.server.queue.parked;
+
+  it("returns the parked `idle` as an ordinary 204, well under a second", async () => {
+    const created = await createThread(ws, { body: "stop me" });
+    await designate(created.id, "researcher");
+    ws.advance(61_000);
+    const parked = park(created.id);
+    await settle();
+    expect(parkedNow()).toBe(1);
+
+    const startedAt = Date.now();
+    expect((await release(created.id)).status).toBe(200);
+    const response = await parked.done;
+    const elapsed = Date.now() - startedAt;
+
+    // The response shape is unchanged: an ordinary empty window, which the
+    // listener reads as "nothing to do" and follows with the roster read its
+    // loop already makes.
+    expect(response.status).toBe(204);
+    // The bound. Without the eviction this is the full 60 s window; with it, one
+    // round trip. A second is two orders of magnitude of headroom over what it
+    // measures and still three orders below the rearm it replaced.
+    expect(elapsed).toBeLessThan(1_000);
+    expect(parkedNow()).toBe(0);
+  });
+
+  // The eviction is per lane. The orchestrator's own park is woken by the
+  // release *event* like any other event on its lane — not evicted — so it goes
+  // on being a park that found work rather than a park that ended.
+  it("leaves another lane's park alone, and wakes the orchestrator with the event", async () => {
+    const evicted = await createThread(ws, { body: "released" });
+    const spared = await createThread(ws, { body: "left alone" });
+    await designate(evicted.id, "researcher");
+    await designate(spared.id, "editor");
+    ws.advance(61_000);
+    // Both designations are sitting on the orchestrator's lane; an `idle` with
+    // work waiting never parks at all, so they have to be claimed first.
+    expect((await ws.post("/api/queue/claim-all", {})).status).toBe(200);
+
+    const gone = park(evicted.id);
+    const kept = park(spared.id);
+    const orchestrator = park("orchestrator");
+    await settle();
+    expect(parkedNow()).toBe(3);
+
+    expect((await release(evicted.id)).status).toBe(200);
+
+    expect((await gone.done).status).toBe(204);
+    // The orchestrator was woken by the `resident.released` sitting in its lane,
+    // so its window ends with work rather than empty.
+    const woken = await orchestrator.done;
+    expect(woken.status).toBe(200);
+    expect(((await woken.json()) as { events: { type: string }[] }).events).toContainEqual(
+      expect.objectContaining({ type: RESIDENT_RELEASED }) as unknown,
+    );
+
+    // The untouched lane is still parked.
+    expect(parkedNow()).toBe(1);
+    kept.leave();
+    await kept.done;
+  });
+
+  // A designation that displaces a live listener ends its park by the same
+  // mechanism — the `replaced` release — so a person can hand a conversation to
+  // a different agent without waiting for the first one's window to run out.
+  it("ends the displaced listener's park when a new resident is designated", async () => {
+    const created = await createThread(ws, { body: "handed over" });
+    await designate(created.id, "researcher");
+    ws.advance(61_000);
+    const parked = park(created.id);
+    await settle();
+
+    const startedAt = Date.now();
+    expect((await designate(created.id, "editor")).status).toBe(200);
+    const response = await parked.done;
+
+    expect(response.status).toBe(204);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
+  // §7's other ending, and the workaround the user was driven to. It has the
+  // same bound now, which is why the workaround stops being one.
+  it("ends the park when resolving the conversation releases its resident", async () => {
+    const created = await createThread(ws, { body: "settled" });
+    await designate(created.id, "researcher");
+    ws.advance(61_000);
+    const parked = park(created.id);
+    await settle();
+
+    const startedAt = Date.now();
+    expect((await ws.post(`/api/threads/${created.id}/resolve`, {})).status).toBe(200);
+    const response = await parked.done;
+
+    expect(response.status).toBe(204);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
+  // A release with nothing to release announces nothing, so it evicts nothing —
+  // and the park it would otherwise have ended belongs to a listener that is
+  // still resident. This is what keeps a hammered idempotent `DELETE` from being
+  // a way to knock a lane's listener off its park.
+  it("evicts nobody when the release released nobody", async () => {
+    const created = await createThread(ws, { body: "still resident" });
+    await designate(created.id, "researcher");
+    ws.advance(61_000);
+    const other = await createThread(ws, { body: "no resident here" });
+    const parked = park(created.id);
+    await settle();
+
+    expect((await release(other.id)).status).toBe(200);
+    await settle();
+
+    expect(parkedNow()).toBe(1);
+    parked.leave();
+    await parked.done;
   });
 });

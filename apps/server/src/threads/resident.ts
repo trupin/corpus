@@ -56,14 +56,32 @@
 // when the status it asks for is the one that already holds, so the state has a
 // way out through the verb §7 names.
 //
-// **It does not wake a parked listener on release.** §7 wants a scoped `idle` on
-// a dissolved lane to return promptly, but the parking lot is lane-blind until
-// SERVER-111 keys it, so there is no per-lane waiter here to notify. That half
-// lands with lanes rather than being faked here.
+// **It does not end a parked listener itself, and no longer leaves it parked
+// either** (SERVER-128). A release used to be discovered up to a rearm window —
+// ~8 minutes — after it landed, which made "stop this agent" a request rather
+// than an act. It is now immediate, and the mechanism is deliberately *not* a
+// call from here into the parking lot: this module enqueues
+// `resident.released`, and `QueueService.enqueue` ends every park on the lane
+// that event names. One path, so a release that announces itself and a release
+// that ends the park cannot come apart — including the two releases this module
+// does not perform, resolution's (`threads/status.ts`) and any written later.
+//
+// **It does not touch work already stamped for the lane.** A release settles the
+// park and nothing else: events sitting in `pending/` or held in `in-progress/`
+// for that lane are still there, unmoved, and are the departing listener's to
+// drain (the converse skill's account of retirement depends on exactly this).
 
-import type { Actor, DesignateResidentRequest, Resident, ThreadSummary } from "@corpus/contract";
+import {
+  ResidentDesignatedPayloadSchema,
+  ResidentReleasedPayloadSchema,
+  type Actor,
+  type DesignateResidentRequest,
+  type Resident,
+  type ResidentReleaseReason,
+  type ThreadSummary,
+} from "@corpus/contract";
 import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";
-import { residentOrNull } from "../core/resident.js";
+import { residentOrNull, residentToStored } from "../core/resident.js";
 import {
   runMutation,
   validateBeforeWrite,
@@ -73,24 +91,25 @@ import {
 import { AGENTS_KEY, DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { conflict, forbidden, notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
-import { RESIDENT_DESIGNATED } from "../queue/lanes.js";
+import { RESIDENT_DESIGNATED, RESIDENT_RELEASED } from "../queue/lanes.js";
 import { MENTION_TYPE, resolveMentionTarget, unaddressableTarget } from "./mentions.js";
 import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
 import { EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
 
 /**
- * The one event type designation produces (SPEC.md §7). A member of the
+ * The two event types this module produces (SPEC.md §7). Both members of the
  * contract's `CORE_QUEUE_EVENT_TYPES`, pinned by this module's test rather than
- * spelled as an index into that tuple — exactly as `COMMENT_CREATED` is.
+ * spelled as indices into that tuple — exactly as `COMMENT_CREATED` is.
  *
- * **Defined in `queue/lanes.ts` and re-exported here** (SERVER-111): the reason
- * the name matters in a second place is the lane carve-out — a
- * `resident.designated` goes to the orchestrator's lane whoever is designated —
- * and that rule has to recognise the type this module produces. Two spellings of
- * it would be a designation that routes to the lane it announces, which starts
- * no listener at all.
+ * **Defined in `queue/lanes.ts` and re-exported here** (SERVER-111,
+ * SERVER-128): the reason the names matter in a second place is the lane
+ * carve-out — both go to the orchestrator's lane whoever is designated — and
+ * that rule has to recognise the types this module produces. Two spellings of
+ * either would be an announcement routed to the lane it announces: a designation
+ * that starts no listener, or a release read by the listener it ends and by
+ * nobody who could relaunch one.
  */
-export { RESIDENT_DESIGNATED } from "../queue/lanes.js";
+export { RESIDENT_DESIGNATED, RESIDENT_RELEASED } from "../queue/lanes.js";
 
 export const AGENT_DESIGNATE_MESSAGE =
   "designating a resident is user-only; a resident claims a conversation and everything that " +
@@ -107,10 +126,24 @@ export const NOT_STANDALONE_MESSAGE =
 
 export interface ResidentChange {
   readonly thread: ThreadSummary;
-  /** `null` when nothing was written — a re-designation of the same agent, or a release with nothing to release. */
+  /**
+   * `null` when nothing was written — a re-designation of the same agent *at the
+   * same weight*, or a release with nothing to release.
+   */
   readonly result: MutationResult | null;
   /** The `resident.designated` event; `null` for a release, which enqueues none. */
   readonly eventId: string | null;
+  /**
+   * The `resident.released` event (SERVER-128); `null` when nothing was
+   * released.
+   *
+   * A **release** sets it and leaves {@link eventId} null. A **designation**
+   * sets it only when it displaced a *different* resident — reason `replaced`,
+   * carrying the occupant that left — and then both fields are set, in that
+   * order on the queue: the lane's old listener learns it is over before the
+   * newcomer's launch instruction lands.
+   */
+  readonly releasedEventId: string | null;
 }
 
 /**
@@ -133,26 +166,96 @@ function requireStandalone(thread: LoadedThread): LoadedThread {
 
 /**
  * The payload AGENT-026's orchestrator reads to launch a listener: which
- * conversation was designated, and who to launch there.
+ * conversation was designated, who to launch there, and what to launch them at.
  *
- * The resident is carried resolved — `{name, docId}` — for the reason the
- * response carries it resolved: the consumer would otherwise repeat a lookup
- * this server has already made. **Both halves are null for a general resident**,
- * which is a designation like any other and not a designation of nobody: the
- * listener to launch is the workspace's ordinary agent, with no persona document
- * to read (SPEC.md §7, SHARED-048).
+ * The resident is carried resolved — the whole `Resident`, the same object the
+ * response carries — for the reason the response carries it resolved: the
+ * consumer would otherwise repeat a lookup this server has already made. **Every
+ * field may be null for a general resident**, which is a designation like any
+ * other and not a designation of nobody: the listener to launch is the
+ * workspace's ordinary agent, with no persona document to read and at whatever
+ * weight the launcher picks (SPEC.md §7, SHARED-048).
+ *
+ * **Built by the contract's own schema, never by hand** (SERVER-129). The
+ * hand-written record this replaced named `name` and `docId` and nothing else,
+ * so it silently dropped `weight` the moment the field existed — the listener
+ * launched at the launcher's guess while the designation said otherwise, and
+ * nothing anywhere failed. `parse` cannot drop a field: it copies the schema's
+ * shape, so the next field added to `Resident` arrives here without this
+ * function being touched.
  */
 export const residentDesignatedPayload = (
   threadId: string,
   resident: Resident,
-): Record<string, unknown> => ({
-  threadId,
-  resident: { name: resident.name, docId: resident.docId },
-});
+): Record<string, unknown> => ResidentDesignatedPayloadSchema.parse({ threadId, resident });
+
+/**
+ * The payload the orchestrator reads to learn a lane returned to it: which
+ * conversation, who left, and why (CONTRACT-069, SPEC.md §7).
+ *
+ * Built by the contract's schema for the reason above, and carrying the resident
+ * **as it stood when it left** — for `replaced`, the displaced occupant and
+ * never the newcomer, who travels on its own `resident.designated`.
+ */
+export const residentReleasedPayload = (
+  threadId: string,
+  resident: Resident,
+  reason: ResidentReleaseReason,
+): Record<string, unknown> => ResidentReleasedPayloadSchema.parse({ threadId, resident, reason });
+
+/**
+ * Announce a release on the orchestrator's lane, and answer with the event's id
+ * (SERVER-128).
+ *
+ * **One release, one event.** Every way a designation ends goes through here —
+ * a person's `DELETE` (`released`), resolution (`resolved`, from
+ * `threads/status.ts`), and a designation that displaces a live occupant
+ * (`replaced`) — so the three cannot come to announce themselves differently.
+ * A **lapse** does not come through here and produces nothing: §7's fallback is
+ * computed at claim time, writes nothing, and leaves the resident resident.
+ *
+ * The lane is the orchestrator's, stamped by `queue/lanes.ts` under the same
+ * carve-out `resident.designated` has: a released resident does not announce its
+ * own end to itself, and the orchestrator is the party that launched the
+ * listener and has to learn it is over.
+ *
+ * **Volume**: one event per release, and a release is a user-only act on one
+ * thread, so a designate/release cycle costs two events — the same order as
+ * designation alone already cost. Nothing in the server releases on a timer or
+ * in a loop.
+ */
+export async function enqueueResidentReleased(
+  workspace: ThreadsWorkspace,
+  threadId: string,
+  resident: Resident,
+  reason: ResidentReleaseReason,
+): Promise<string> {
+  const event = await workspace.enqueue({
+    type: RESIDENT_RELEASED,
+    source: EVENT_SOURCE.thread,
+    payload: residentReleasedPayload(threadId, resident, reason),
+  });
+  return event.id;
+}
 
 /** The `resident` key as the file itself spells it — the value a write compares against. */
 const fileResident = (thread: LoadedThread): Resident | null =>
   residentOrNull(thread.loaded.parsed.data["resident"]);
+
+/**
+ * Is this the designation the thread already has? — the one comparison that
+ * decides both whether a designation writes and whether it displaced anybody.
+ *
+ * **Every field of a `Resident`, and it is one function because both callers
+ * must agree.** The comparison used to be written inline and named `name` and
+ * `docId` only; when `weight` arrived (SERVER-129) a re-designation at a new
+ * level would have read as unchanged, leaving the file saying one thing and the
+ * running listener doing another with nothing to see. A field added to
+ * `Resident` later has to be added here — nothing will fail to compile — so this
+ * docblock is the reminder, and `resident.test.ts` pins one case per field.
+ */
+const sameResident = (a: Resident, b: Resident): boolean =>
+  a.name === b.name && a.docId === b.docId && a.weight === b.weight;
 
 /**
  * How a commit subject names a resident designated with **no** profile.
@@ -201,9 +304,24 @@ const GENERAL_RESIDENT_SUBJECT = "general resident";
  * nor the inner one in a titled `Legacy Analyst` can appear in one — the refusal
  * was quoting a string nobody can type, as the thing that fails to resolve. What
  * it means is said in words instead.
+ *
+ * **The weight is taken verbatim and checked against nothing** (SERVER-129,
+ * SPEC.md §7's rider signed 2026-08-19). It is a level key from the workspace's
+ * own tier table — the orchestrate skill's text, which §2.4 lets a workspace
+ * edit on its own schedule and which this server never reads — so a check here
+ * could only be against a list the server must not hold, and would refuse a
+ * level the workspace's own guidance defines. The contract's
+ * `RequestedWeightSchema` has already bounded its *shape*, which is the whole of
+ * what is checkable. `undefined` becomes `null`: the request has one spelling of
+ * "no level" and the `Resident` has one, and this is where they meet.
  */
-function residentFor(projection: ProjectionDb, name: string | undefined): Resident {
-  if (name === undefined) return { name: null, docId: null };
+function residentFor(
+  projection: ProjectionDb,
+  name: string | undefined,
+  weight: string | undefined,
+): Resident {
+  const chosen = weight ?? null;
+  if (name === undefined) return { name: null, docId: null, weight: chosen };
   const target = resolveMentionTarget(projection, MENTION_TYPE, name);
   if (target === null) {
     const wanted = name.trim();
@@ -219,7 +337,7 @@ function residentFor(projection: ProjectionDb, name: string | undefined): Reside
     );
   }
   // The **resolved** name is what gets stored, never the caller's spelling.
-  return { name: target.name, docId: target.docId };
+  return { name: target.name, docId: target.docId, weight: chosen };
 }
 
 /**
@@ -238,6 +356,20 @@ function residentFor(projection: ProjectionDb, name: string | undefined): Reside
  * `updated` for it would report a change nobody made — but the event is still
  * written, because it is how a person asks for a listener that is no longer
  * running to be launched again, and there is no other verb for that.
+ *
+ * **A different weight is a different state, so it writes** (SERVER-129). §7's
+ * rider makes a resident's weight a property of the designation — a running
+ * agent cannot become another one without discarding the conversation it is
+ * holding — so re-designating the same profile at a new level is not the
+ * re-announce above: the file changes, and the listener has to be relaunched.
+ *
+ * **A designation that displaces a *different* resident releases it first**
+ * (SERVER-128, reason `replaced`). A thread has one resident or none, so
+ * designating over a live one is a release and a designation, and the two travel
+ * as two events in that order. "Different" is by the same comparison the write
+ * turns on, weight included: the re-announce above displaces nobody and enqueues
+ * no release, while a weight change ends the old listener's run of the lane
+ * exactly as a profile change does.
  */
 export async function designateResident(
   workspace: ThreadsWorkspace,
@@ -255,14 +387,14 @@ export async function designateResident(
 
   return mutex.run(id, async (): Promise<ResidentChange> => {
     const thread = requireStandalone(loadThread(workspace, id));
-    const resident = residentFor(workspace.projection, request.name);
+    const resident = residentFor(workspace.projection, request.name, request.weight);
 
-    // Both halves compared, so replacing in either direction is a write:
-    // general → profiled moves `name`, profiled → general moves it back, and
-    // one profile → another moves both.
+    // Every field compared, so replacing along any of them is a write: general →
+    // profiled moves `name`, profiled → general moves it back, one profile →
+    // another moves both, and the same profile at a new level moves `weight`
+    // (SERVER-129).
     const current = fileResident(thread);
-    const unchanged =
-      current !== null && current.name === resident.name && current.docId === resident.docId;
+    const unchanged = current !== null && sameResident(current, resident);
 
     const named = resident.name ?? GENERAL_RESIDENT_SUBJECT;
     const result = unchanged
@@ -270,6 +402,23 @@ export async function designateResident(
       : await writeResident(workspace, thread, actor, resident, {
           subject: `resident designate: ${named} on ${thread.title} (${id}) by ${actor}`,
         });
+
+    // The displaced occupant's release (SERVER-128), before the newcomer's
+    // launch instruction and after the write that displaced it: the lane's old
+    // listener learns it is over from an event, and its park ends on this
+    // enqueue. `current !== null && !unchanged` is exactly "somebody else was
+    // here" — a first designation displaces nobody, and the re-announce above
+    // displaces the resident it re-announces, which is not a departure.
+    //
+    // The occupant is reported as `thread.resident` rather than as the raw
+    // `current`, so its `docId` is the one every other surface would have shown
+    // for it a moment earlier. The two differ only for a parented thread, which
+    // `requireStandalone` has already refused.
+    const displaced = current === null || unchanged ? null : thread.resident;
+    const releasedEventId =
+      displaced === null
+        ? null
+        : await enqueueResidentReleased(workspace, id, displaced, "replaced");
 
     // After the write, inside the lane, exactly as a turn's `comment.created`
     // is: the event announces a designation that already stands on disk. §7 puts
@@ -287,6 +436,7 @@ export async function designateResident(
       thread: toThreadSummary(result === null ? thread : loadThread(workspace, id)),
       result,
       eventId: event.id,
+      releasedEventId,
     };
   });
 }
@@ -303,6 +453,21 @@ export async function designateResident(
  * No refusal for a parented thread: the routes cannot put a resident on one, but
  * a hand-edited file can, and a release that refused the one thread whose key
  * ought not to be there would leave it there forever.
+ *
+ * **A release that releases somebody enqueues `resident.released`, reason
+ * `released`** (SERVER-128) — the symmetry designation always had, and the thing
+ * whose absence meant a person could stop a resident only by resolving the
+ * conversation or by waiting for the orchestrator to notice. The event is what
+ * ends the resident's park, too (see this module's header), so the act has an
+ * observable end measured in one HTTP round trip rather than in one rearm
+ * window.
+ *
+ * **"Releases somebody" is `thread.resident !== null`, not the key's presence.**
+ * The two differ exactly where the key is not a designation — a parented
+ * thread's, or a plugin's `resident:` meaning something else — and those are
+ * cleared without an announcement because nothing was ever a lane there: no
+ * event was ever routed to it, and no listener was ever launched for it. What is
+ * *written* still turns on the key, so a stray one is still removed.
  */
 export async function releaseResident(
   workspace: ThreadsWorkspace,
@@ -318,14 +483,33 @@ export async function releaseResident(
     // Read off the file rather than off `thread.resident`, which a parented
     // thread reports as null however its frontmatter reads (`core/resident.ts`).
     if (!Object.hasOwn(thread.loaded.parsed.data, "resident")) {
-      return { thread: toThreadSummary(thread), result: null, eventId: null };
+      return {
+        thread: toThreadSummary(thread),
+        result: null,
+        eventId: null,
+        releasedEventId: null,
+      };
     }
 
+    const released = thread.resident;
     const result = await writeResident(workspace, thread, actor, null, {
       subject: `resident release: ${thread.title} (${thread.id}) by ${actor}`,
     });
 
-    return { thread: toThreadSummary(loadThread(workspace, thread.id)), result, eventId: null };
+    // After the write, so the announcement describes a lane that has already
+    // stopped being one: the resident's next park is refused by
+    // `assertScopeIsLane` against the projection this write has just updated,
+    // and the enqueue that carries the announcement is also what ends the park
+    // it is holding now.
+    const releasedEventId =
+      released === null ? null : await enqueueResidentReleased(workspace, id, released, "released");
+
+    return {
+      thread: toThreadSummary(loadThread(workspace, thread.id)),
+      result,
+      eventId: null,
+      releasedEventId,
+    };
   });
 }
 
@@ -336,6 +520,10 @@ export async function releaseResident(
  * `null` **removes** the key rather than writing `resident: null` — §7 makes
  * dissolving the absence of a resident and never a third state, and a `null` on
  * disk would be a third spelling of it.
+ *
+ * The value written is `core/resident.ts`'s stored shape, the exact inverse of
+ * the reader every path asks — which is why a designation that chose no weight
+ * writes no `weight:` key rather than a null one (SERVER-129).
  */
 async function writeResident(
   workspace: ThreadsWorkspace,
@@ -346,7 +534,7 @@ async function writeResident(
 ): Promise<MutationResult> {
   const text = serializeDocument(
     setFrontmatterFields(thread.loaded.parsed, {
-      resident: resident ?? undefined,
+      resident: resident === null ? undefined : residentToStored(resident),
       updated: formatInstant(workspace.now()),
     }),
   );

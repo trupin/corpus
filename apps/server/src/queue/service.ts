@@ -1,5 +1,6 @@
 import {
   ORCHESTRATOR_LANE,
+  parseResidentReleasedPayload,
   type Lane,
   type QueueEventStatus,
   type QueueStatus,
@@ -462,7 +463,62 @@ export class QueueService {
     // the work it is **holding** — nobody is holding this yet (SERVER-115).
     this.invalidate(queueTransitionKeys(undefined, "pending"));
     this.wake(laneOf(event));
+    this.evictReleasedLane(event);
     return event;
+  }
+
+  /**
+   * A `resident.released` ends every park on the lane it names (SERVER-128).
+   *
+   * **Here, rather than at the three call sites that release**, because a
+   * release that announced itself without ending the park — or ended it without
+   * announcing — is a state nothing wants to be able to reach, and there are
+   * already three producers (a person's `DELETE`, resolution, and a designation
+   * that displaces an occupant) with more possible later. Riding on the event
+   * makes the two halves one act by construction, and gives the eviction the
+   * same lane the announcement was routed against.
+   *
+   * Read through the contract's own `parseResidentReleasedPayload`, so the type
+   * and the payload shape are the published ones and not a second reading of
+   * them. A payload this server did not write — an older release, a hand-dropped
+   * file — simply fails the parse and evicts nobody, which is the same
+   * conservative direction `readRequestedWeight` takes for the same reason.
+   *
+   * After the wake, deliberately: the wake concerns the **orchestrator's** lane
+   * (that is where a release is stamped) and the eviction concerns the released
+   * lane, so the two never touch the same waiter, and doing the announcement's
+   * work first keeps the ordinary path first.
+   */
+  private evictReleasedLane(event: StoredEvent): void {
+    const released = parseResidentReleasedPayload(event);
+    if (released === undefined) return;
+    this.evictLane(released.threadId);
+  }
+
+  /**
+   * Ends every parked `idle` scoped to `lane`, and answers how many there were.
+   *
+   * The lane's designation is gone by the time this runs, so those requests have
+   * nothing left to wait for: they return the contract's `204` at once instead of
+   * holding until their window runs out. §7's bound on discovering a release
+   * drops from the park rearm — up to ~8 minutes — to one HTTP round trip, which
+   * is what makes *release* an act with an observable end rather than a request
+   * that takes effect at some point in the next eight minutes.
+   *
+   * **Exact lane equality, not {@link visibleTo}.** The relation that decides who
+   * *sees* an event is deliberately asymmetric (the orchestrator sees lapsed
+   * lanes); the relation that decides whose park *ended* is not. Only the
+   * requests parked on this very lane are concerned, and the orchestrator's own
+   * park is left alone — it is woken by the release event itself, as by any other
+   * event on its lane.
+   *
+   * **Nothing queued is touched.** Events stamped for this lane before the
+   * release stay exactly where they are, in `pending/` or `in-progress/`, for the
+   * departing listener to drain — the converse skill's account of retirement
+   * depends on that, and a release that swept them would orphan work in flight.
+   */
+  evictLane(lane: Lane): number {
+    return this.waiters.evict((scope) => scope === lane);
   }
 
   /**
@@ -541,6 +597,13 @@ export class QueueService {
    * whole call, and the release is a `finally`: a window that expired, was
    * aborted by a dropped client, or threw has ended the same way as far as
    * presence is concerned.
+   *
+   * **A release ends the window at once** (SERVER-128). Where the lane's
+   * designation is removed while this request is parked on it, the request
+   * answers `204` on the release's own round trip rather than holding to the end
+   * of its window — see {@link evictLane}. Nothing about the response changes:
+   * it is the ordinary empty window, and the caller finds out *why* by reading
+   * its designation, or by being refused at its next park.
    */
   async idle(request: IdleRequest): Promise<QueueBatch | undefined> {
     const scope = request.scope ?? ORCHESTRATOR_LANE;
@@ -567,8 +630,14 @@ export class QueueService {
       // Parked **under its lane**: another lane's arrival must not end this
       // window, or a resident re-parks on every message the orchestrator gets
       // and a scoped park stops being the zero-token wait it is sold as.
-      const woke = await this.waiters.wait(scope, remaining, request.signal);
-      if (!woke) return undefined;
+      //
+      // Only `"woke"` goes round again. `"expired"` is the window ending and
+      // `"evicted"` is the lane ending (SERVER-128) — and the second one has to
+      // *leave the loop*, not merely fail to find work: a re-park on a lane
+      // nobody designates any more would hold this request open for the rest of
+      // its window, which is the wait the eviction exists to end.
+      const outcome = await this.waiters.wait(scope, remaining, request.signal);
+      if (outcome !== "woke") return undefined;
     }
   }
 
