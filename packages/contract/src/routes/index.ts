@@ -40,6 +40,7 @@ import { createSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
 import { reattachThread } from "./thread-reattach.js";
 import { designateResident, releaseResident } from "./thread-resident.js";
+import { getThreadScope } from "./thread-scope.js";
 import {
   deleteTurn,
   getThread,
@@ -76,6 +77,7 @@ export * from "./skills.js";
 export * from "./thread-create.js";
 export * from "./thread-reattach.js";
 export * from "./thread-resident.js";
+export * from "./thread-scope.js";
 export * from "./threads.js";
 export * from "./tree.js";
 export * from "./turn-append.js";
@@ -125,6 +127,11 @@ export * from "./upgrade.js";
  * `/api/threads/{id}`, and every other route at that depth is a `POST` or a
  * `DELETE`, so `context` competes with nothing.
  *
+ * `getThreadScope` follows `getThreadContext` for the same reason again: it is
+ * the other bounded read off a thread (CONTRACT-068), a `GET` one segment deeper
+ * than `/api/threads/{id}` where every other route is a `POST` or a `DELETE`, so
+ * `scope` competes with nothing and the position is for the reader.
+ *
  * `designateResident` and `releaseResident` close the thread group, after
  * `reattachThread`: they are the last of the thread's user-only acts, and they
  * are a `POST`/`DELETE` pair on one static segment, so the two belong adjacent.
@@ -159,6 +166,7 @@ export const contractRoutes = {
   createThread,
   getThread,
   getThreadContext,
+  getThreadScope,
   appendTurn,
   deleteTurn,
   respondToForm,

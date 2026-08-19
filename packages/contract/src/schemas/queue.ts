@@ -21,6 +21,16 @@ import { IsoDateTimeSchema } from "./time.js";
  *   SHARED-043). It lands on the **orchestrator's** lane whoever is designated,
  *   since a resident does not announce itself to itself; that carve-out is one
  *   of exactly two §7 names, the other being a message that stated a recipient.
+ *   Payload shape in `./agents.ts` (`ResidentDesignatedPayloadSchema`).
+ * - `resident.released` — a thread's resident was released (CONTRACT-069, the
+ *   wire half of SERVER-128): by a person, by the thread resolving (§7), or by a
+ *   new designation displacing it. It lands on the **orchestrator's** lane for
+ *   the same reason and under the same carve-out as `resident.designated` — a
+ *   released resident does not announce its own end to itself, and the
+ *   orchestrator is what has to learn that a lane returned to it. A **lapse is
+ *   not a release** and never produces one: §7's fallback is computed at claim
+ *   time and writes nothing. Payload shape in `./agents.ts`
+ *   (`ResidentReleasedPayloadSchema`).
  * - `agent.done` — background subagent wake-back, which §7 marks **reserved**:
  *   nothing produces it, and an arriving one is settled like a report. It is
  *   last because of that, not because it is newest.
@@ -30,14 +40,24 @@ import { IsoDateTimeSchema } from "./time.js";
  * handles it. `resident.designated` is core for the same reason — designation is
  * a first-class act of the product, visible in the queue, the job log and the
  * history exactly as a comment is, and §7 makes it ordinary queue vocabulary
- * rather than a side channel. The generated document publishes the whole set
+ * rather than a side channel — and `resident.released` is core because it is
+ * the other half of that same act: the orchestrator that launched a listener on
+ * a designation is the thing that has to stop it on a release, and an end that
+ * travelled on a side channel would be the one event in the lifecycle nobody
+ * could see in the queue. The generated document publishes the whole set
  * wherever an event type appears.
+ *
+ * **§7's "Core event types" sentence does not yet name `resident.released`.**
+ * It joins the inventory's pending amendments (`../routes/inventory.ts`) rather
+ * than the undocumented: this package never edits SPEC.md, and the amendment is
+ * the orchestrator's to take to the user.
  */
 export const CORE_QUEUE_EVENT_TYPES = [
   "comment.created",
   "form.respond",
   "doc.edited",
   "resident.designated",
+  "resident.released",
   "agent.done",
 ] as const;
 
@@ -124,7 +144,11 @@ export const QueueEventSchema = z
           "stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads " +
           "are declared beside their features: `form.respond` carries " +
           "`{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the " +
-          "answered form (SPEC.md §6, §7).\n\n" +
+          "answered form (SPEC.md §6, §7); `doc.edited` carries `{docId, sessionId, actor, " +
+          "endedBy, from, to, stats}` (SPEC.md §4); `resident.designated` carries " +
+          "`{threadId, resident}` and `resident.released` carries `{threadId, resident, reason}` " +
+          "(SPEC.md §7) — one release produces exactly one such event, and a lapse produces " +
+          "none.\n\n" +
           "**One key crosses every type: `weight`.** When the request that enqueued the event " +
           "stated the weight its work should be done at (SPEC.md §7, §11), that level name rides " +
           "here verbatim, and the dispatch honours it rather than weighing the work again. It is " +

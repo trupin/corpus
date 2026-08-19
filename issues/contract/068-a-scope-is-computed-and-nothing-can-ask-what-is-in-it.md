@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -82,14 +82,14 @@ thread, which is a different cost and a different implementation.
 
 ## Acceptance Criteria
 
-- [ ] Given a designated thread, the API answers what is in its scope
-- [ ] The answer is derived by the **same walk** the queue routes with, not a
+- [x] Given a designated thread, the API answers what is in its scope
+- [x] The answer is derived by the **same walk** the queue routes with, not a
       second implementation — `scripts/mention-offer-parity.test.ts` is the
       precedent for what happens when one rule gets two implementations
-- [ ] It is bounded, and the bound is stated in the description
-- [ ] §7's "computed, never stored" is either still literally true, or the record
+- [x] It is bounded, and the bound is stated in the description
+- [x] §7's "computed, never stored" is either still literally true, or the record
       says why a cache is consistent with it and `db rebuild` reconstructs it
-- [ ] `openapi.json` and `schema.generated.ts` regenerated, never hand-edited
+- [x] `openapi.json` and `schema.generated.ts` regenerated, never hand-edited
 
 ## Technical Design
 
@@ -137,15 +137,32 @@ cases its author imagined.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Implemented on: fable** (as recommended).
+
+**What changed** (all under `packages/contract/`):
+
+- `src/schemas/scope-listing.ts` (new) — `SCOPE_PAGE_SIZE = 200`, `SCOPE_MEMBER_KINDS = ["thread","doc"]`, `SCOPE_MEMBER_VIAS = ["self","parent","origin"]`, `ScopeMemberSchema` (`{id, kind, title, status, via}`, registered `ScopeMember`; `status` is `DocStatusSchema`, with the archived-is-still-in-scope rule on it; `via` documented as the edge `walkScope` took, `parent` winning when both edges exist), `ThreadScopeSchema` (`{thread, members (maxItems 200), truncated}`, registered `ThreadScope`; no cursor and **no `total`** — the module docblock records why: a total would cost the enumeration the bound forbids, unlike `InProgressSet.total` which is a directory count). Order stated: root first with `via: "self"`, then most recently updated first, so a truncated page holds the live end. Exported from `schemas/index.ts`.
+- `src/routes/thread-scope.ts` (new) — `getThreadScope`: `GET /api/threads/{id}/scope`, no query parameters, responses `200 ThreadScope`, `400`, `401`, `404`, `409 ConflictError` ("the orchestrator's lane is not a scope", remedy named). Description states computed-per-request by the same `walkScope` the queue routes with, the 200-member bound, and the 409 rationale.
+- `src/routes/index.ts` — registered after `getThreadContext` (docblock explains the position), re-exported. `src/routes/inventory.ts` — `GET /api/threads/{id}/scope` added after `…/context`, with its derivation paragraph and the note that §9.2 does not list it yet (pending amendment).
+- Tests: `src/schemas/scope-listing.test.ts` (new: frugal line, closed enums, archived member, either id prefix, cap at 200 refused at 201, `truncated` required, no cursor/total), `src/routes/index.test.ts` (mounted stub: root first, vias `self/origin/parent`, archived row, 409 for `th_undesignated`, 400 for a `doc_` id), `src/client/index.test.ts` (typed client narrows `via`/`kind` to the enums; the 409 read is a **narrowing** `if (error?.code !== "conflict") throw`, so it fails to compile if the 409 were undeclared), `src/openapi.test.ts` (pin against the generated document: parameters `["id"]`, responses exactly `200/400/401/404/409`, `ThreadScope` properties/required, `members.maxItems === 200`, `items.$ref` → `ScopeMember`, `ScopeMember` enums `kind`, `via`, `status`, and the description phrases "the orchestrator's lane is not a scope", "by the same walk the queue routes with", "computed, never stored", "Bounded at 200 members, with no cursor and no total").
+- `openapi.json` and `src/client/schema.generated.ts` regenerated, never hand-edited.
+
+**Evidence**
+
+1. Build/generate exit 0; `/usr/bin/grep -c "/api/threads/{id}/scope" packages/contract/openapi.json` ≥ 1; generation idempotent (identical `shasum` on a second run).
+2. **Falsification**: commented out `getThreadScope,` in `contractRoutes`, ran `vitest run packages/contract/src/openapi.test.ts -t "lists a designated thread's scope"` alone → exit 1, `Error: No get /api/threads/{id}/scope in the generated document.` Restored; `grep -c "^  getThreadScope,$" src/routes/index.ts` → 1; pin green.
+3. Scoped tests: 66 files / 2658 tests green (includes the inventory/registry parity tests, which would fail if the route and the inventory disagreed). `tsc --noEmit` (raw) → exit 0. eslint and prettier clean.
+4. Root `npm run typecheck`: no consumer breaks because of this route (it is additive); the failures listed on CONTRACT-067 are all from `Resident.weight`.
+
+**Deferred to the server (SERVER-130)**: the computation itself and its cost measurement; the parity test against the enqueue-time walk over a derived fixture belongs where both the projection and `walkScope` are reachable. **Pending spec amendment**: a §9.2 bullet for the route (recorded in `inventory.ts`).
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
