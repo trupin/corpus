@@ -1059,9 +1059,10 @@ not a behaviour change.
 | CLI-054 | `corpus thread scope` lists what a resident owns | done | P1 | CONTRACT-068, SERVER-130 |
 | AGENT-039 | A listener is launched at the designation's weight | done | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
 | SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | done | P0 | — |
-| SHARED-056 | §7 enumerates the core events and §9.2 the routes, and v0.14.0 added one of each (NEEDS SIGN-OFF) | todo | P1 | CONTRACT-068, CONTRACT-069 |
+| SHARED-056 | §7 enumerates the core events, §9.2 the routes, §11 the console — Phase 36 added one of each (NEEDS SIGN-OFF) | todo | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
+| SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | todo | P2 | SERVER-129 |
 
-**Phase 36 landed 2026-08-19/20 as v0.14.0.** Fourteen issues: the seven filed
+**Phase 36 landed 2026-08-19/20**, and is the scope agreed for v0.14.0 — a release is a separate, deliberate act and is not in the phase's PR. Fourteen issues: the seven filed
 from the user's reports, six filed to make them usable end to end, and one
 correctness bug a drill found (SERVER-131 — the claim batch was in `readdir`
 order, so a resident could answer the third message before the first).

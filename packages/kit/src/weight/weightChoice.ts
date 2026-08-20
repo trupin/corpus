@@ -179,7 +179,7 @@ export interface ComposerWeight {
  * otherwise editing the guidance to declare nothing would leave a composer
  * silently sending a weight it no longer shows, which is the "acts on you
  * unseen" case §11 forbids. A level that disappears while others remain is a
- * different matter and is *not* rewritten: {@link WeightPicker} keeps showing it
+ * different matter and is *not* rewritten: the composer's address control keeps showing it
  * so the person can see what will be sent, because the UI silently substituting
  * a surviving level would be the composer lying about the request.
  */

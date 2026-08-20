@@ -77,7 +77,9 @@ function assertDesignated(db: ProjectionDb, id: string): void {
   throw conflict(
     `${id} has no resident, so it has no scope: SPEC.md §7 gives a scope to a designated thread, ` +
       "and everything outside every scope is the orchestrator's by default. Designate a resident " +
-      "on this thread, or read `GET /api/agents` for the lanes that exist.",
+      "on this thread — which only a **standalone** thread may have, so a thread with a parent " +
+      "cannot gain one and has no scope to ask for — or read `GET /api/agents` for the lanes " +
+      "that exist.",
   );
 }
 
