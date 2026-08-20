@@ -6,8 +6,9 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { CorpusRequestError } from "../client/createCorpusClient.js";
 import { createCorpusTestHarness } from "../testing/index.js";
+import { composerAddress } from "../address/addressModel.js";
+import { ComposerAddress, RECIPIENT_GROUP_LABEL } from "../address/ComposerAddress.js";
 import { MISSING_PROFILE_MARK, MISSING_PROFILE_NOTE, ORCHESTRATOR_LABEL } from "./laneRows.js";
-import { RecipientPicker, RECIPIENT_GROUP_LABEL } from "./RecipientPicker.js";
 import { useComposerRecipient } from "./useComposerRecipient.js";
 
 afterEach(cleanup);
@@ -21,7 +22,7 @@ const JUST_NOW = new Date().toISOString();
 
 const RESIDENT_LANE: AgentLane = {
   lane: "th_root",
-  resident: { name: "claims-review", docId: "doc_agent" },
+  resident: { name: "claims-review", docId: "doc_agent", weight: "heavy" },
   live: true,
   since: JUST_NOW,
   summary: "reviewing the draft",
@@ -453,8 +454,19 @@ describe("a pick the server refuses", () => {
 });
 
 function Picker({ start }: { readonly start: string | null }): ReactElement {
+  // The rows live behind the address line since UI-126; no weight is passed,
+  // so the popover holds the recipient section alone and these tests stay
+  // about §7.
   const recipient = useComposerRecipient({ start });
-  return <RecipientPicker recipient={recipient} surface="probe" live={true} />;
+  return <ComposerAddress address={composerAddress({ recipient, live: true })} surface="probe" />;
+}
+
+/** Opens the popover the rows live in. Fails loudly when there is nothing to open. */
+function openAddress(): void {
+  const lineEl = document.querySelector<HTMLElement>('[data-address-line="probe"]');
+  if (lineEl === null) throw new Error("no address line");
+  if (lineEl.tagName !== "BUTTON") throw new Error("the address line does not open");
+  if (lineEl.getAttribute("aria-expanded") !== "true") fireEvent.click(lineEl);
 }
 
 function pickerFor(start: string | null, options: WireOptions = {}) {
@@ -473,27 +485,35 @@ const lanesShown = (): string[] =>
     (option) => option.dataset["recipientLane"] ?? "",
   );
 
-describe("RecipientPicker", () => {
-  it("draws nothing at all while the roster has not answered", async () => {
+describe("the address line's recipient rows", () => {
+  it("offers nothing to open while the roster has not answered", async () => {
     pickerFor("th_root", { lanes: "silent" });
     await waitFor(() => {
       expect(lanesShown()).toEqual([]);
     });
-    expect(document.querySelector("[data-recipient-picker]")).toBeNull();
+    // The §11 statement is said, not offered: a plain line, no popover behind it.
+    const lineEl = document.querySelector<HTMLElement>('[data-address-line="probe"]');
+    expect(lineEl?.tagName).toBe("SPAN");
+    expect(document.querySelector("[data-address-pop]")).toBeNull();
   });
 
-  it("draws nothing when the workspace has designated nothing", async () => {
+  it("offers nothing to open when the workspace has designated nothing", async () => {
     // One lane is no choice, and the answer would be the orchestrator either
-    // way: the composer is indistinguishable from before this feature.
+    // way: the line says so and opens to nothing.
     const transport = pickerFor("th_root", { lanes: [] });
     await waitFor(() => {
       expect(transport.calls).toContain("GET /api/agents");
     });
-    expect(document.querySelector("[data-recipient-picker]")).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector('[data-address-line="probe"]')?.tagName).toBe("SPAN");
+    });
+    expect(document.querySelector("[data-address-pop]")).toBeNull();
+    expect(lanesShown()).toEqual([]);
   });
 
   it("offers every lane, marks the computed default, and names who will answer", async () => {
     pickerFor("th_root", { lanes: [RESIDENT_LANE], graph: { th_root: {} } });
+    await waitFor(openAddress);
     await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
     await waitFor(() => {
       expect(lanesShown()).toEqual(["orchestrator", "th_root"]);
@@ -513,6 +533,7 @@ describe("RecipientPicker", () => {
       summary: null,
     };
     pickerFor("th_root", { lanes: [lapsed], graph: { th_root: {} } });
+    await waitFor(openAddress);
     await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
     const resident = await waitFor(() => {
       const found = document.querySelector<HTMLElement>('[data-recipient-lane="th_root"]');
@@ -540,8 +561,12 @@ describe("RecipientPicker", () => {
    * archived profile's lane arrives here with its `docId` intact).
    */
   it("reports a lane whose profile has gone, rather than drawing it as a healthy one", async () => {
-    const gone: AgentLane = { ...RESIDENT_LANE, resident: { name: "claims-review", docId: null } };
+    const gone: AgentLane = {
+      ...RESIDENT_LANE,
+      resident: { name: "claims-review", docId: null, weight: "heavy" },
+    };
     pickerFor("th_root", { lanes: [gone], graph: { th_root: {} } });
+    await waitFor(openAddress);
     await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
     const resident = await waitFor(() => {
       const found = document.querySelector<HTMLElement>('[data-recipient-lane="th_root"]');
@@ -564,6 +589,7 @@ describe("RecipientPicker", () => {
 
   it("leaves every other kind of lane unmarked", async () => {
     pickerFor("th_root", { lanes: [RESIDENT_LANE], graph: { th_root: {} } });
+    await waitFor(openAddress);
     await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
     await waitFor(() => {
       expect(lanesShown()).toEqual(["orchestrator", "th_root"]);
@@ -577,6 +603,7 @@ describe("RecipientPicker", () => {
 
   it("is operable from the keyboard — every option is a plain button", async () => {
     pickerFor("th_root", { lanes: [RESIDENT_LANE], graph: { th_root: {} } });
+    await waitFor(openAddress);
     await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
     for (const option of document.querySelectorAll("[data-recipient-lane]")) {
       expect(option.tagName).toBe("BUTTON");
@@ -586,6 +613,7 @@ describe("RecipientPicker", () => {
 
   it("reads a lane's line out on focus, without picking it", async () => {
     pickerFor("th_root", { lanes: [RESIDENT_LANE], graph: { th_root: {} } });
+    await waitFor(openAddress);
     await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
     const orchestrator = await waitFor(() => {
       const found = document.querySelector<HTMLElement>('[data-recipient-lane="orchestrator"]');
@@ -606,6 +634,7 @@ describe("RecipientPicker", () => {
    */
   it("makes an explicit pick of the default's own lane, and drops it on a second press", async () => {
     pickerFor("th_root", { lanes: [RESIDENT_LANE], graph: { th_root: {} } });
+    await waitFor(openAddress);
     await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
     const resident = await waitFor(() => {
       const found = document.querySelector<HTMLElement>('[data-recipient-lane="th_root"]');
@@ -628,6 +657,7 @@ describe("RecipientPicker", () => {
 
   it("moves the pressed state to a picked lane and back on a second press", async () => {
     pickerFor("th_root", { lanes: [RESIDENT_LANE], graph: { th_root: {} } });
+    await waitFor(openAddress);
     await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
     const orchestrator = await waitFor(() => {
       const found = document.querySelector<HTMLElement>('[data-recipient-lane="orchestrator"]');

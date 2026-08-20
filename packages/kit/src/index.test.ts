@@ -179,11 +179,6 @@ const RUNTIME_SURFACE = [
   // the weight a composer may state (SPEC.md §11's rider, signed 2026-08-06).
   // Published here so a plugin's composer offers the same levels a first-party
   // one does, with one import and no copy — the plugin row of §11's enumeration.
-  "WeightPicker",
-  "WEIGHT_PICKER_LABEL",
-  "WEIGHT_LIVE_TITLE",
-  "WEIGHT_INERT_TITLE",
-  "WEIGHT_UNKNOWN_TITLE",
   "WEIGHT_TABLE_HEADER",
   "useComposerWeight",
   "useWeightLevels",
@@ -198,18 +193,33 @@ const RUNTIME_SURFACE = [
   // on `@corpus/kit/testing`. SPEC.md §11 describes no "forget my weights"
   // action, so publishing one to plugin authors would invent one (UI-082's PR #35 review).
   "threadWeightScope",
-  "childThreadWeightScope",
   "docWeightScope",
   "GLOBAL_COMPOSE_WEIGHT_SCOPE",
+  // The control the weight and the recipient are shown through since UI-126:
+  // one line stating who answers and at what weight, opening to change either.
+  // For a resident's lane the weight section is a sentence naming the
+  // resident's weight, never a control whose choice would be discarded
+  // (SPEC.md §7 and §11, rider signed 2026-08-19).
+  "ComposerAddress",
+  "composerAddress",
+  "answeringRow",
+  "residentWeightSentence",
+  "weightLabel",
+  "ADDRESS_OPEN_TITLE",
+  "ADDRESS_FLOOR_TITLE",
+  "ADDRESSED_TO",
+  "LAUNCH_WEIGHT_CLAUSE",
+  "LINE_SEPARATOR",
+  "NOBODY_ASKED",
+  "RECIPIENT_GROUP_LABEL",
+  "RECIPIENT_LEAD",
+  "WEIGHT_GROUP_LABEL",
+  "WEIGHT_LEAD",
+  "WEIGHT_UNKNOWN_TITLE",
   // SPEC.md §7's recipient — the roster read, the scope walk, the one-message
   // override, and the control. Published for `WeightPicker`'s reason: a
   // composer a plugin contributes must be able to offer the same live roster.
   // `useAgentsRoster` is beside the other read hooks above.
-  "RecipientPicker",
-  "RECIPIENT_PICKER_LABEL",
-  "RECIPIENT_GROUP_LABEL",
-  "RECIPIENT_LIVE_TITLE",
-  "RECIPIENT_INERT_TITLE",
   "RECIPIENT_UNKNOWN_STATEMENT",
   "RECIPIENT_REFUSED_STATEMENT",
   "DEFAULT_ROW_NOTE",

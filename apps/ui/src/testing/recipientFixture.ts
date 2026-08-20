@@ -20,6 +20,13 @@ export const RESIDENT_THREAD_ID = "th_a";
 export const RESIDENT_NAME = "claims-review";
 
 /**
+ * The weight it was designated at — a level **key** from the workspace's tier
+ * table (SPEC.md §7, rider signed 2026-08-19), which is what a composer
+ * addressing this lane names instead of offering a choice (UI-126).
+ */
+export const RESIDENT_WEIGHT = "heavy";
+
+/**
  * A designated lane with a listener parked on it.
  *
  * `since` is computed rather than written down: `isAgentPresent` expires a
@@ -29,7 +36,7 @@ export const RESIDENT_NAME = "claims-review";
 export function residentLane(overrides: Partial<AgentLane> = {}): AgentLane {
   return {
     lane: RESIDENT_THREAD_ID,
-    resident: { name: RESIDENT_NAME, docId: "doc_agent" },
+    resident: { name: RESIDENT_NAME, docId: "doc_agent", weight: RESIDENT_WEIGHT },
     live: true,
     since: new Date().toISOString(),
     summary: "reviewing the draft",

@@ -26,8 +26,7 @@
     "./markdown.css": "./src/markdown/markdown.css",
     "./autocomplete.css": "./src/components/Autocomplete/autocomplete.css",
     "./composer.css": "./src/components/Composer/composer.css",
-    "./weight.css": "./src/weight/weight.css",
-    "./recipient.css": "./src/recipient/recipient.css",
+    "./address.css": "./src/address/address.css",
     "./package.json": "./package.json"
   },
   "files": [
@@ -37,8 +36,7 @@
     "src/markdown/markdown.css",
     "src/components/Autocomplete/autocomplete.css",
     "src/components/Composer/composer.css",
-    "src/weight/weight.css",
-    "src/recipient/recipient.css"
+    "src/address/address.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

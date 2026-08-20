@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -77,15 +77,15 @@ let them choose.
 
 ## Acceptance Criteria
 
-- [ ] The composer is lighter by default — state what a person sees when they
+- [x] The composer is lighter by default — state what a person sees when they
       have chosen nothing, and why that is the right floor
-- [ ] Recipient and weight are each reachable in one gesture
-- [ ] **No control is offered whose choice will be discarded.** For a resident
+- [x] Recipient and weight are each reachable in one gesture
+- [x] **No control is offered whose choice will be discarded.** For a resident
       recipient the weight control is not live and says why, per SHARED-055
-- [ ] §11's composer key contract is unchanged, and a test pins that
-- [ ] An IME composition commit still never submits — §11, and it is the kind of
+- [x] §11's composer key contract is unchanged, and a test pins that
+- [x] An IME composition commit still never submits — §11, and it is the kind of
       thing a control rewrite breaks silently
-- [ ] Every composer follows: global, thread reply, comment popover, comment on a
+- [x] Every composer follows: global, thread reply, comment popover, comment on a
       turn or a selection, and a plugin's. §11 lists them for a reason
 
 ## Technical Design
@@ -140,16 +140,31 @@ The key contract needs an e2e, not a unit test: `↵`, `⌘↵`, and an IME comm
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**implemented on: fable** — the implementing agent was killed by a session limit after writing the code and its tests, while driving the real UI for screenshots. The orchestrator ran the verification below and wrote it.
+
+**What a person sees by default, and why that is the floor.** The two always-expanded pickers are gone. Every composer now renders one line stating the outcome — who answers, and at what weight — and that line is a button opening a popover holding the recipient rows and, where there is something to weigh, the weight rows. The floor is the line alone, because §11 already requires a composer to say who it will reach before sending, so the sentence is not new furniture — it is the requirement, now carrying the control instead of sitting beside it. A composer whose send would reach nobody says `Nobody is asked` and offers no weight section at all: there is nothing to weigh, and an offered control with nothing behind it is the defect this issue exists to remove.
+
+**The resident rule, in the real browser.** `apps/ui/e2e/resident.spec.ts:427` now designates a general resident, opens the address line, and asserts two things: the popover states `works at the weight chosen at launch`, and it offers **zero** `[data-weight-key]` rows. That is SPEC.md §11's rider signed 2026-08-19, checked where the person's complaint lived rather than only in a unit test.
+
+**Falsified twice.**
+
+1. Unit: disabled the resident branch in `addressWeight` (`if (false && …)`), ran `packages/kit/src/address` alone — `8 failed | 24 passed`. Restored — `32 passed`.
+2. Browser: the same break, **after rebuilding `packages/kit`** — `e2e/resident.spec.ts:427` failed, `9 passed`. Restored and rebuilt — `10 passed`.
+
+The second one matters and nearly went unrecorded: the UI imports `@corpus/kit` through its `exports` map into `dist/`, so the first browser run against a broken `src/` passed and looked like proof the assertion was inert. It is not inert; the build step was stale.
+
+**Suites.** `apps/ui/e2e/weight.spec.ts`, `recipient.spec.ts`, `compose-keyboard.spec.ts`, `resident.spec.ts` — 45 specs, all pass, real Chromium. `packages/kit` + `apps/ui/src` unit: 205 files, 4043 tests, all pass. Typecheck clean in both workspaces.
+
+**Ports.** Vite on 5283, stub origin 8893 — never 5173, never 8765. Two orphaned servers left by the killed agent (vite on 5283, a tsx server on 8893) were found with `lsof` and killed before the run.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[UI-126]` prefix
+- [x] Committed with `[UI-126]` prefix

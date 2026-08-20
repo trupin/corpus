@@ -13,7 +13,7 @@ const ROSTER: AgentRoster = {
     { lane: "orchestrator", resident: null, live: true, since: null, summary: null, origin: null },
     {
       lane: "th_root",
-      resident: { name: "claims-review", docId: "doc_agent" },
+      resident: { name: "claims-review", docId: "doc_agent", weight: null },
       live: false,
       since: "2026-08-16T11:40:00Z",
       summary: null,

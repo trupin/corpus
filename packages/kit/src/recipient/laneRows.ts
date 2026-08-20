@@ -104,6 +104,21 @@ export interface LaneRow {
    */
   readonly note: string;
   /**
+   * The **weight this lane's resident works at** — a level key from the
+   * workspace's own tier table, the same vocabulary a message's `weight` carries
+   * — or `null` (SPEC.md §7, rider signed 2026-08-19: *"a resident's weight is
+   * set when it is designated, not per message"*).
+   *
+   * `null` on a resident's lane means the launcher chose, and is reported as
+   * that rather than as a level (`Resident.weight`, CONTRACT-067). The
+   * orchestrator's lane and an `unknown` row carry `null` because there is no
+   * designation to read it from — ask {@link LaneRow.kind} which of the two a
+   * `null` is, exactly as for {@link LaneRow.profile}. It is a **key and not a
+   * label**: the composer maps it through the declared levels before showing it,
+   * and shows the key itself when the guidance no longer declares it.
+   */
+  readonly weight: string | null;
+  /**
    * {@link LaneRow.note}'s fact at the width of a **row in a list** — empty
    * exactly where the note is, because one kind produces both. A surface with a
    * line to itself says the note; one whose rows sit side by side says this.
@@ -334,6 +349,7 @@ export function laneRow(row: AgentLane, now: Date): LaneRow {
     profile: row.resident?.name ?? null,
     profileDoc: row.resident?.docId ?? null,
     note: laneNote(kind),
+    weight: row.resident?.weight ?? null,
     mark: laneMark(kind),
     conversation: row.origin?.title ?? null,
   };
@@ -357,6 +373,7 @@ export function unknownLaneRow(lane: Lane): LaneRow {
     profile: null,
     profileDoc: null,
     note: "",
+    weight: null,
     mark: "",
     conversation: null,
   };

@@ -183,7 +183,11 @@ describe("commenting on a selection inside a turn", () => {
     const popover = await screen.findByRole("dialog", { name: "New comment" });
 
     // The popover's own control — the card's reply box has one too, and they
-    // share this conversation's standing choice.
+    // share this conversation's standing choice. The levels sit behind the
+    // address line since UI-126, so the comment popover is opened first and
+    // then the address popover inside it.
+    const addressLine = await within(popover).findByRole("button", { name: /will answer/u });
+    fireEvent.click(addressLine);
     const picker = await within(popover).findByRole("group", { name: "Weight" });
     expect([...picker.querySelectorAll("[data-weight-key]")].map((o) => o.textContent)).toEqual([
       "Small and mechanical",

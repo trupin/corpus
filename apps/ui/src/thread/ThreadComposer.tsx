@@ -2,17 +2,17 @@ import {
   AttachButton,
   AutocompleteMenu,
   COMPOSER_PRIMARY_KEY,
+  composerAddress,
+  ComposerAddress,
   composerReachesAgent,
   handleComposerKeyDown,
   PendingAttachments,
-  RecipientPicker,
   threadWeightScope,
   useAppendTurn,
   useAttachmentIntake,
   useAutocomplete,
   useComposerRecipient,
   useComposerWeight,
-  WeightPicker,
   type PendingAttachment,
   type RowNotice,
 } from "@corpus/kit";
@@ -78,13 +78,25 @@ export function ThreadComposer({
    * The weight, scoped to **this conversation** (SPEC.md §11's rider): two
    * columns showing the same thread show the same standing choice, exactly as
    * their collapse state agrees. Liveness follows the toggle beside it and
-   * nothing else — flipping to `○ note only` dims the control and keeps the
-   * choice, and the choice never touches the toggle in return.
+   * nothing else, and the choice never touches the toggle in return.
    */
   const weight = useComposerWeight(threadWeightScope(threadId));
   // A reply lands in this thread, so this thread is where the scope walk starts.
   const recipient = useComposerRecipient({ start: threadId });
-  const live = composerReachesAgent({ requestsAgent: asking });
+  /*
+   * The address (UI-126): who answers, at what weight, as one line. What it
+   * puts on the wire is `address.request` — the pick when one was made, and
+   * the weight **only where a level was offered and chosen**: on the floor
+   * (`○ note only`) nothing is weighed so nothing is stated, and for a
+   * resident recipient the weight was set at designation, so a standing choice
+   * is not sent rather than silently discarded (SPEC.md §7, rider signed
+   * 2026-08-19).
+   */
+  const address = composerAddress({
+    weight,
+    recipient,
+    live: composerReachesAgent({ requestsAgent: asking }),
+  });
 
   const applyCompletionResult = useCallback((result: { text: string; caret: number }) => {
     setText(result.text);
@@ -123,14 +135,11 @@ export function ThreadComposer({
       {
         body,
         requestsAgent: asking,
-        // Sent whatever the toggle says: liveness is a presentation rule, so a
-        // note-only turn still states what it was asked at. Nothing enqueues, so
-        // nothing reads it — and the composer said so before sending.
-        ...weight.request,
-        // `{}` unless a lane other than the computed default was picked — the
-        // default travels by being absent, which is what stops the UI's rule and
-        // the server's from ever disagreeing about it (SPEC.md §7).
-        ...recipient.request,
+        // `{}` unless something was actually stated: a picked lane travels as
+        // itself, an untouched default travels by being absent (SPEC.md §7),
+        // and a weight rides only where the composer offered levels — see the
+        // address derivation above for the two places it deliberately does not.
+        ...address.request,
         ...(attachments.length === 0
           ? {}
           : { files: attachments.map((attachment) => attachment.file) }),
@@ -165,7 +174,7 @@ export function ThreadComposer({
         },
       },
     );
-  }, [append, asking, hasContent, intake, onNotify, recipient, text, weight.request]);
+  }, [address.request, append, asking, hasContent, intake, onNotify, recipient, text]);
 
   return (
     <div
@@ -205,11 +214,9 @@ export function ThreadComposer({
         }}
       />
 
-      <WeightPicker weight={weight} live={live} surface={threadId} />
-      <RecipientPicker recipient={recipient} live={live} surface={threadId} />
-
       <div className="composer-foot">
         <AttachButton surface={threadId} onFiles={intake.add} />
+        <ComposerAddress address={address} surface={threadId} />
         <button
           type="button"
           className={asking ? "toggle on" : "toggle"}

@@ -1,0 +1,248 @@
+/*
+ * The composer's address (SPEC.md §11, UI-126) — `ComposerAddress`: the one
+ * line stating who answers and at what weight, and the popover it opens to
+ * change either. It replaces the two always-expanded rows the weight and
+ * recipient controls used to be, and carries their row anatomy with it
+ * (`.recipient-opt`, `.weight-opt`, `.lane-dot`), so one import dresses the
+ * whole surface:
+ *
+ *     import "@corpus/kit/address.css";
+ *
+ * Every value is a token from `tokens.css`, and the voice is the composer
+ * foot's mono (`design/index.html`'s `.composer-foot`) — the line sits in that
+ * register, and the popover keeps it rather than introducing another.
+ */
+
+.composer-address {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+/* ── The line ── */
+
+.address-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+/* The line truncates before it pushes a footer's send button out of reach:
+   the full sentence is on the title and in the popover. */
+.address-line-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-line > .address-caret {
+  color: var(--ink-3);
+  font-size: 8px;
+}
+
+button.address-line {
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+button.address-line:hover {
+  border-color: var(--accent);
+}
+
+/* Focus is visible on its own terms: the control claims no key, so the keyboard
+   path through it is the browser's, and it has to be followable. */
+button.address-line:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Said, not offered: the statement with nothing to change behind it. */
+.address-line.address-said {
+  padding: 2px 0;
+  color: var(--ink-3);
+}
+
+/* The floor reads quieter than a live address, and never as a failure. */
+.composer-address[data-address-live="false"] .address-line {
+  color: var(--ink-3);
+}
+
+/* A refusal is the one state the line must not read quietly (UI-118). */
+.composer-address:not([data-recipient-refused=""]) .address-line {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+/* ── The popover ── */
+
+.address-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 240px;
+  max-width: min(330px, 86vw);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 9px 10px;
+}
+
+.address-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.address-lead {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.recipient-lanes,
+.weight-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── Row anatomy, shared by both sections ── */
+
+.recipient-opt,
+.weight-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.recipient-opt:hover,
+.weight-opt:hover {
+  border-color: var(--accent);
+}
+
+.recipient-opt:focus-visible,
+.weight-opt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.recipient-opt.on,
+.weight-opt.on {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+  border-color: var(--accent);
+}
+
+/* The default is marked by a dashed edge, not by looking chosen: nothing is
+   chosen until somebody chooses it. */
+.recipient-opt[data-recipient-default="true"]:not(.on) {
+  border-style: dashed;
+}
+
+/* A level the workspace's guidance no longer declares, still standing as the
+   choice. Marked rather than hidden — it is what the request will state. */
+.weight-opt[data-weight-undeclared="true"] {
+  border-style: dashed;
+}
+
+/*
+ * The missing-profile report on a lane in a list (SPEC.md §7), inside the pill
+ * and one space from a real profile name. Italic and set back so it reads as a
+ * description of the lane rather than as something somebody titled a document.
+ * Not `--signal` — the designation stands and the resident goes on owning its
+ * scope, so this is news and not a fault.
+ */
+.recipient-mark {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.recipient-mark::before {
+  content: "· ";
+}
+
+/* The lane the server refused (SPEC.md §7's `422`, UI-118). It keeps its
+   pressed fill — the message is still addressed there and the text is still in
+   the box — and says the refusal on the line and the statement; this only stops
+   it reading as a working choice. Never `display: none`: a row that vanished
+   would take the person's own pick off the screen with it. */
+.recipient-opt[data-recipient-refused="true"] {
+  color: var(--signal);
+  border-color: var(--signal);
+  background: var(--signal-wash);
+  text-decoration: line-through;
+}
+
+.composer-address:not([data-recipient-refused=""]) .recipient-says {
+  color: var(--signal);
+}
+
+/* ── The liveness dot, in the console strip's vocabulary ── */
+
+.lane-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ink-3);
+}
+
+.lane-dot.live {
+  background: var(--good);
+}
+
+.lane-dot.lapsed {
+  background: var(--ink-3);
+}
+
+.lane-dot.waiting {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+
+.lane-dot.unknown {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+  opacity: 0.5;
+}
+
+/* ── The two sentences ── */
+
+.recipient-says {
+  color: var(--ink-3);
+}
+
+.recipient-default-note {
+  opacity: 0.7;
+}
+
+/* The rider signed 2026-08-19: where the weight control would be, the answer.
+   A sentence, not a disabled control — there is nothing here to operate. */
+.address-resident {
+  margin: 0;
+  max-width: 300px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}

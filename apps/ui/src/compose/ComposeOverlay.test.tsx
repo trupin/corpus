@@ -82,7 +82,17 @@ describe("ComposeOverlay", () => {
       const actions = [...(panel?.querySelectorAll(".compose-actions > *") ?? [])].map(
         (node) => node.className || node.tagName.toLowerCase(),
       );
-      expect(actions).toEqual(["clip", "input", "hint", "spacer", "btn-capture", "btn-ask"]);
+      // The address line (UI-126) sits between the 📎 and the hint; the two
+      // submits keep the bar's tail, which is the key contract's order.
+      expect(actions).toEqual([
+        "clip",
+        "input",
+        "composer-address",
+        "hint",
+        "spacer",
+        "btn-capture",
+        "btn-ask",
+      ]);
       expect(button(container, "btn-capture").textContent).toBe(CAPTURE_LABEL);
       expect(button(container, "btn-ask").textContent).toBe(ASK_LABEL);
       expect(panel?.querySelector(".compose-actions .hint")?.textContent).toBe(COMPOSE_HINT);

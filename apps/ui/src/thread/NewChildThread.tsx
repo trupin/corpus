@@ -1,16 +1,14 @@
 import {
   AttachButton,
-  childThreadWeightScope,
   COMPOSER_PRIMARY_KEY,
+  composerAddress,
+  ComposerAddress,
   composerReachesAgent,
   handleComposerKeyDown,
   PendingAttachments,
-  RecipientPicker,
   useAttachmentIntake,
   useComposerRecipient,
-  useComposerWeight,
   useCreateThread,
-  WeightPicker,
   type RowNotice,
 } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
@@ -59,20 +57,21 @@ export function NewChildThread({
   const [text, setText] = useState("");
   const intake = useAttachmentIntake();
   const create = useCreateThread();
-  /*
-   * A scope of this box's own, **not** the parent thread's (UI-082's PR #35 review). The control
-   * is offered here because §11 enumerates this surface, and it is never live,
-   * because this box sends `requestsAgent: false` unconditionally — so a choice
-   * made on it provably governs nothing. Under the parent thread's scope that
-   * dead control would nevertheless seed the reply box, which does reach the
-   * agent; `childThreadWeightScope` says why that is the "acts on you unseen"
-   * case in §11's clothing. Presentation only, as before: the choice is kept.
-   */
-  const weight = useComposerWeight(childThreadWeightScope(parentThreadId));
   // The child thread's parent is this thread, so the walk starts where the
   // comment lands — the same node the server's enqueue walk would start from.
   const recipient = useComposerRecipient({ start: parentThreadId });
-  const live = composerReachesAgent({ requestsAgent: false });
+  /*
+   * This box sends `requestsAgent: false` unconditionally, so its address sits
+   * on §11's floor: the line says nobody is asked, the popover offers the
+   * recipient rows alone, and no weight exists to state — a control that could
+   * never act used to stand here dimmed, which UI-126 replaced with nothing
+   * (SPEC.md §11: nothing to weigh where no work is asked for). The weight
+   * input is deliberately omitted, not merely inert.
+   */
+  const address = composerAddress({
+    recipient,
+    live: composerReachesAgent({ requestsAgent: false }),
+  });
 
   // Either alone is a comment (SPEC.md §6): a first turn needs text, a file, or
   // both.
@@ -93,8 +92,7 @@ export function NewChildThread({
         // until the person says otherwise, and the child card's composer is
         // where they say it.
         requestsAgent: false,
-        ...recipient.request,
-        ...weight.request,
+        ...address.request,
         // Present only when there are files: an empty list would send a plain
         // comment as a multipart upload (`useCreateThread`).
         ...(attachments.length === 0
@@ -148,10 +146,9 @@ export function NewChildThread({
           handleComposerKeyDown(event, { onPrimary: send, onEscape: onCancel });
         }}
       />
-      <WeightPicker weight={weight} live={live} surface={`child:${parentThreadId}`} />
-      <RecipientPicker recipient={recipient} live={live} surface={`child:${parentThreadId}`} />
       <div className="composer-foot">
         <AttachButton surface={`child:${parentThreadId}`} onFiles={intake.add} />
+        <ComposerAddress address={address} surface={`child:${parentThreadId}`} />
         <span className="composer-hint">creates a child thread</span>
         <button
           type="button"

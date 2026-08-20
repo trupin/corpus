@@ -2,7 +2,7 @@
  * SPEC.md §7's *"Every message has a recipient, and where you post computes
  * it"*, as one unit.
  *
- * Seven parts, and the split is the design:
+ * Six parts, and the split is the design:
  *
  *   - `scopeWalk.ts` — the pure walk. The **only** client-side reading of §7's
  *     scope rule, and it decides nothing that reaches the wire.
@@ -12,7 +12,10 @@
  *     line. Pure, because the honesty is in the wording.
  *   - `useComposerRecipient.ts` — the default, the one-message override, and the
  *     `{}`-or-`{recipient}` a composer spreads onto its request.
- *   - `RecipientPicker.tsx` — the control.
+ *   - `statement.ts` — the words a composer says about who answers. The
+ *     control itself is `../address/ComposerAddress.tsx` since UI-126, which
+ *     folded the recipient rows and the weight levels into one line-and-popover
+ *     surface.
  *   - `useResidentLane.ts` — the same two readings for a surface that is not a
  *     composer: is *this* conversation a lane, and which lane answers *here*
  *     (UI-109's badge, pending row and provenance line).
@@ -53,16 +56,10 @@ export {
 } from "./laneRows.js";
 export {
   DEFAULT_ROW_NOTE,
-  RECIPIENT_GROUP_LABEL,
-  RECIPIENT_INERT_TITLE,
-  RECIPIENT_LIVE_TITLE,
-  RECIPIENT_PICKER_LABEL,
   RECIPIENT_REFUSED_STATEMENT,
   RECIPIENT_UNKNOWN_STATEMENT,
-  RecipientPicker,
   statementFor,
-  type RecipientPickerProps,
-} from "./RecipientPicker.js";
+} from "./statement.js";
 export {
   laneOf,
   walkToLane,

@@ -58,8 +58,14 @@ const reply = (threadId: string): ReactElement => (
 );
 
 const pickers = (): HTMLElement[] => [
-  ...document.querySelectorAll<HTMLElement>("[data-weight-picker]"),
+  ...document.querySelectorAll<HTMLElement>("[data-composer-address]"),
 ];
+
+function lineOf(address: HTMLElement): HTMLElement {
+  const line = address.querySelector<HTMLElement>("[data-address-line]");
+  if (line === null) throw new Error("no address line");
+  return line;
+}
 
 function pressed(within: ParentNode = document): string[] {
   return [...within.querySelectorAll<HTMLElement>("[data-weight-key][aria-pressed='true']")].map(
@@ -67,9 +73,21 @@ function pressed(within: ParentNode = document): string[] {
   );
 }
 
+/**
+ * Waits for `count` composers and opens every address popover that offers one
+ * (UI-126) — the levels sit behind the line now. A line that is plain text (a
+ * floor, or nothing declared) is left as it is.
+ */
 async function drawn(count = 1): Promise<void> {
   await waitFor(() => {
     expect(pickers()).toHaveLength(count);
+    for (const address of pickers()) {
+      const line = lineOf(address);
+      if (line.tagName === "BUTTON" && line.getAttribute("aria-expanded") !== "true") {
+        fireEvent.click(line);
+      }
+    }
+    expect(document.querySelectorAll("[data-weight-key]").length).toBeGreaterThan(0);
   });
 }
 
@@ -147,7 +165,10 @@ describe("the starting point is per conversation", () => {
    * and the reply box's choice is not reflected on a control that cannot honour
    * it (UI-082's PR #35 review; it shared the parent thread's scope until then).
    */
-  it("is not shared with the comment-on-a-turn box, whose control can never act", async () => {
+  it("cannot be seeded by the comment-on-a-turn box, which offers no control at all", async () => {
+    // The old surface gave that box a dead control and a scope of its own to
+    // stop the dead control seeding this live one. UI-126 removes the control
+    // instead: the box is on the floor, so there is nothing there to leak.
     render(
       <Host transport={wire()}>
         <>
@@ -164,19 +185,14 @@ describe("the starting point is per conversation", () => {
     );
     await drawn(2);
     const [replyBox, childBox] = pickers();
-
-    fireEvent.click(
-      childBox?.querySelector<HTMLElement>("[data-weight-key='heavy']") as HTMLElement,
-    );
-    expect(pressed(childBox as HTMLElement)).toEqual(["heavy"]);
-    // The composer that reaches the agent is untouched by the one that cannot.
-    expect(pressed(replyBox as HTMLElement)).toEqual([]);
+    expect(childBox?.dataset["addressLive"]).toBe("false");
+    expect(childBox?.querySelectorAll("[data-weight-key]")).toHaveLength(0);
 
     fireEvent.click(
       replyBox?.querySelector<HTMLElement>("[data-weight-key='standard']") as HTMLElement,
     );
     expect(pressed(replyBox as HTMLElement)).toEqual(["standard"]);
-    expect(pressed(childBox as HTMLElement)).toEqual(["heavy"]);
+    expect(pressed(childBox as HTMLElement)).toEqual([]);
   });
 
   it("is not shared with a comment on a document, which is a different scope", async () => {
@@ -233,10 +249,10 @@ describe("liveness is presentation only", () => {
   it("is live while the composer says it is asking the agent", async () => {
     render(<Host transport={wire()}>{reply("th_a")}</Host>);
     await drawn();
-    expect(pickers()[0]?.dataset["weightLive"]).toBe("true");
+    expect(pickers()[0]?.dataset["addressLive"]).toBe("true");
   });
 
-  it("shows as having nothing to act on for note only, and keeps the choice", async () => {
+  it("offers nothing on note only, states nothing, and keeps the choice", async () => {
     const transport = wire();
     render(<Host transport={transport}>{reply("th_a")}</Host>);
     await drawn();
@@ -244,12 +260,14 @@ describe("liveness is presentation only", () => {
     fireEvent.click(screen.getByRole("button", { name: ASK_AGENT_LABEL }));
 
     expect(screen.getByRole("button", { name: NOTE_ONLY_LABEL })).toBeTruthy();
-    expect(pickers()[0]?.dataset["weightLive"]).toBe("false");
-    // Not cleared: clearing would be the control acting on the person unseen.
-    expect(pressed()).toEqual(["standard"]);
+    // The floor (UI-126): nothing to weigh, so no levels are offered at all —
+    // the old surface kept a dimmed control here, and what that control had
+    // accepted was sent while nothing would read it.
+    expect(pickers()[0]?.dataset["addressLive"]).toBe("false");
+    expect(document.querySelectorAll("[data-weight-key]")).toHaveLength(0);
 
-    // …and it still travels, because §8 alone decides what reaches the agent and
-    // the control is not wired into the send decision.
+    // Nothing is stated either: a value the surface no longer shows must not
+    // ride the wire — that is §11's "acts on you unseen" in wire form.
     fireEvent.change(screen.getByLabelText("Reply"), { target: { value: "a note" } });
     fireEvent.keyDown(screen.getByLabelText("Reply"), { key: "Enter", metaKey: true });
     await waitFor(() => {
@@ -260,7 +278,12 @@ describe("liveness is presentation only", () => {
       weight?: string;
     };
     expect(sent.requestsAgent).toBe(false);
-    expect(sent.weight).toBe("standard");
+    expect("weight" in sent).toBe(false);
+
+    // The choice was kept, not cleared: back on ask, it stands and travels.
+    fireEvent.click(screen.getByRole("button", { name: NOTE_ONLY_LABEL }));
+    await drawn();
+    expect(pressed()).toEqual(["standard"]);
   });
 
   it("never touches the ask-agent toggle in return", async () => {
@@ -275,7 +298,7 @@ describe("liveness is presentation only", () => {
     expect(toggle().getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("is inert on a composer that never asks the agent", async () => {
+  it("offers nothing at all on a composer that never asks the agent", async () => {
     render(
       <Host transport={wire()}>
         <NewChildThread
@@ -287,10 +310,14 @@ describe("liveness is presentation only", () => {
         />
       </Host>,
     );
-    await drawn();
     // A comment on a turn is a note until the child card's own composer says
-    // otherwise, so this surface says, honestly, that nothing will act on it.
-    expect(pickers()[0]?.dataset["weightLive"]).toBe("false");
+    // otherwise, so it sits on the floor: the line says nobody is asked, and
+    // there is no level anywhere to choose (UI-126).
+    await waitFor(() => {
+      expect(pickers()[0]?.dataset["addressLive"]).toBe("false");
+    });
+    expect(lineOf(pickers()[0] as HTMLElement).textContent).toContain("Nobody is asked");
+    expect(document.querySelectorAll("[data-weight-key]")).toHaveLength(0);
   });
 
   it("is live on the global composer, whose both submits reach the agent", async () => {
@@ -308,7 +335,7 @@ describe("liveness is presentation only", () => {
     }
     render(<ComposeHost />);
     await drawn();
-    expect(pickers()[0]?.dataset["weightLive"]).toBe("true");
+    expect(pickers()[0]?.dataset["addressLive"]).toBe("true");
   });
 });
 

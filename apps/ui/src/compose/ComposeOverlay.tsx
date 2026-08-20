@@ -4,16 +4,16 @@ import {
   COMPOSER_NEWLINE_HINT,
   COMPOSER_PRIMARY_KEY,
   COMPOSER_SECONDARY_KEY,
+  composerAddress,
+  ComposerAddress,
   composerReachesAgent,
   GLOBAL_COMPOSE_WEIGHT_SCOPE,
   handleComposerKeyDown,
   PendingAttachments,
-  RecipientPicker,
   useAttachmentIntake,
   useAutocomplete,
   useComposerRecipient,
   useComposerWeight,
-  WeightPicker,
   type PendingAttachment,
   type RowNotice,
 } from "@corpus/kit";
@@ -108,7 +108,20 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
    * scope boundary — and it routes this message and nothing else.
    */
   const recipient = useComposerRecipient({ start: null });
-  const live = composerReachesAgent({ requestsAgent: true });
+  /*
+   * The address (UI-126). Both submits send `requestsAgent: true`, so it is
+   * always live here. The weight rides `address.weightRequest` — stated only
+   * where a level was offered and chosen, so picking a **resident** for Ask
+   * (§7's summons) names that resident's designation-time weight instead of
+   * offering a choice it would discard (rider signed 2026-08-19); Capture,
+   * which is always the orchestrator's, shares the overlay's one control and
+   * therefore its one statement.
+   */
+  const address = composerAddress({
+    weight,
+    recipient,
+    live: composerReachesAgent({ requestsAgent: true }),
+  });
 
   useEffect(() => {
     textarea.current?.focus();
@@ -157,7 +170,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         const outcome = await compose.submit(mode, {
           text: body,
           files: attachments.map((attachment) => attachment.file),
-          weight: weight.request,
+          weight: address.weightRequest,
           recipient: recipient.request,
         });
         if (outcome.ok) {
@@ -181,7 +194,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         textarea.current?.focus();
       })();
     },
-    [canAsk, canCapture, compose, intake, onClose, recipient, text, weight.request],
+    [address.weightRequest, canAsk, canCapture, compose, intake, onClose, recipient, text],
   );
 
   /**
@@ -244,11 +257,9 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
 
         <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
 
-        <WeightPicker weight={weight} live={live} surface="compose" />
-        <RecipientPicker recipient={recipient} live={live} surface="compose" />
-
         <div className="compose-actions">
           <AttachButton surface="compose" onFiles={intake.add} />
+          <ComposerAddress address={address} surface="compose" />
           <span className="hint">{COMPOSE_HINT}</span>
           <span className="spacer" />
           <button

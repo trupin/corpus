@@ -552,7 +552,7 @@ describe("designating a resident", () => {
     const transport = standaloneWire([
       {
         lane: "th_solo",
-        resident: { name: null, docId: null },
+        resident: { name: null, docId: null, weight: null },
         live: false,
         since: null,
         summary: null,
@@ -598,7 +598,7 @@ describe("designating a resident", () => {
     const transport = standaloneWire([
       {
         lane: "th_solo",
-        resident: { name: "researcher", docId: null },
+        resident: { name: "researcher", docId: null, weight: null },
         live: false,
         since: null,
         summary: null,
@@ -662,7 +662,7 @@ describe("designating a resident", () => {
     const transport = standaloneWire([
       {
         lane: "th_solo",
-        resident: { name: "researcher", docId: "doc_agentdef" },
+        resident: { name: "researcher", docId: "doc_agentdef", weight: null },
         live: false,
         since: null,
         summary: null,

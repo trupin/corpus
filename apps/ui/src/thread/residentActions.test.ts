@@ -24,6 +24,7 @@ const RESIDENT: LaneRow = {
   profile: "researcher",
   profileDoc: "doc_a",
   note: "",
+  weight: null,
   mark: "",
   conversation: "Q3 planning",
 };

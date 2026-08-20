@@ -1726,9 +1726,12 @@ export async function stubCorpus(
         dropLane(id);
         return json(route, threadMutation(doc));
       }
-      const body = (requests.at(-1)?.body ?? {}) as { name?: unknown };
+      const body = (requests.at(-1)?.body ?? {}) as { name?: unknown; weight?: unknown };
       const name = typeof body.name === "string" ? body.name : undefined;
-      let resident: Resident = { name: null, docId: null };
+      // Recorded verbatim, as the server does (CONTRACT-067): the designation's
+      // weight is a level key, and `null` says the launcher chose.
+      const weight = typeof body.weight === "string" ? body.weight : null;
+      let resident: Resident = { name: null, docId: null, weight };
       if (name !== undefined) {
         const agentDefs = [...store.values()].filter((row) => row.type === "agent-def");
         const profile = resolveAgentDefName(agentDefs, name);
@@ -1741,7 +1744,7 @@ export async function stubCorpus(
         }
         // The **resolved** name, never the caller's spelling — and the resolved
         // name of a file under `.claude/agents/` is its stem, not its title.
-        resident = { name: profile.name, docId: profile.docId };
+        resident = { name: profile.name, docId: profile.docId, weight };
       }
       setLane(id, resident);
       return json(route, threadMutation(doc));
