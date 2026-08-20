@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -41,14 +41,14 @@ This issue makes the orchestrate skill:
 
 ## Acceptance Criteria
 
-- [ ] The launch paragraph resolves `resident.weight` through the tier table and launches at that model; `null` is *you decide*, logged
-- [ ] The roster-launch paragraph reads the weight from the row and still invents no resident
-- [ ] A weight that cannot be met is logged and handed to the listener in words
-- [ ] `resident.released` has a routing row, and the worked example shows one
-- [ ] The "already has a listener" rule states what a weight change does, in one reading
-- [ ] `scripts/workspace-template.test.ts` pins each: the table lookup sentence, the released row, and the roster-weight clause, each falsified individually
-- [ ] Every transcript in the skill touched here is re-derived by running the command (AGENT-036)
-- [ ] No claim about another component's internal refusals is added
+- [x] The launch paragraph resolves `resident.weight` through the tier table and launches at that model; `null` is *you decide*, logged
+- [x] The roster-launch paragraph reads the weight from the row and still invents no resident
+- [x] A weight that cannot be met is logged and handed to the listener in words
+- [x] `resident.released` has a routing row, and the worked example shows one
+- [x] The "already has a listener" rule states what a weight change does, in one reading
+- [x] `scripts/workspace-template.test.ts` pins each: the table lookup sentence, the released row, and the roster-weight clause, each falsified individually
+- [x] Every transcript in the skill touched here is re-derived by running the command (AGENT-036)
+- [x] No claim about another component's internal refusals is added
 
 ## Technical Design
 
@@ -74,16 +74,36 @@ Pins in `scripts/workspace-template.test.ts`, falsified one at a time.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**implemented on: opus** — the implementing agent was killed by an expired login after writing the skill and its pins, before it recorded this log. The orchestrator ran the falsifications below and wrote it.
+
+**The skill now says five things it did not.** The launch resolves the payload's `weight` through the tier table's **Key** column and launches the listener at that row's model. A `null` weight is *you decide*, logged on the designation's own event because a listener answers for weeks on one choice. `resident.released` has a routing row of its own — log who left and the payload's `reason`, complete the event, launch nothing. The roster-launch paragraph reads the weight off the row and still invents no resident, because a level key is a token rather than a rendering of who is resident. A re-designation that only changes the weight launches nothing this pass: the running listener finds its weight changed and ends its own run, and the roster relaunches on a later pass.
+
+**And the gap AGENT-038 flagged at `converse/SKILL.md:448` is closed**: a designation's weight reaches the resident's own turns and stops there. It is stated on no event, and nothing carries it into work the resident hands off — a hand-off with no stated weight is judged from the table, as the orchestrator judges one.
+
+**The transcripts were checked against a real server**, not composed. The `resident.designated` payload in the skill carries `"weight"` inside `resident`, which is the shape observed live on port 8896: `{"threadId": "th_7h2evk2h", "resident": {"name": null, "docId": null, "weight": "heavy"}}`. The `resident.released` transcript carries `{threadId, resident, reason}` with `reason: "released"`, which is the shape observed live: `{"threadId": "th_6rqf2wic", "resident": {"name": null, "docId": null, "weight": null}, "reason": "released"}`. The roster line the skill quotes — `a general resident at heavy` — is the exact string `corpus agents` printed on that same server.
+
+**Five pins, each falsified alone** (edit, run `scripts/workspace-template.test.ts`, `1 failed | 417 passed`, restore, `418 passed`):
+
+| Pin | Broken by |
+| --- | --- |
+| the tier-table lookup | *"Find the row whose Key cell holds it…"* → *"Launch the listener at whatever model you like."* |
+| the released routing row | renamed the row's event to `resident.retired` |
+| the roster weight clause | *"The weight is the one thing you do read off the row…"* → *"Read nothing off the row."* |
+| a changed weight | *"…is still nothing to launch this pass."* → *"…means relaunch at once."* |
+| the hand-off rule | *"…reaches the resident's own turns and stops there."* → *"…reaches everything the resident touches."* |
+
+A sixth pin (the unmeetable weight reaching the listener in words) is asserted by the same suite and was left unbroken — its sentence is covered by the launch-bullet assertions the first falsification already exercised.
+
+**Suite**: `scripts/workspace-template.test.ts`, 418 tests, all pass. No claim about another component's internal refusals was added.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[AGENT-039]` prefix
+- [x] Committed with `[AGENT-039]` prefix
