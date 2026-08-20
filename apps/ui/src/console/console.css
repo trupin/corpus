@@ -223,6 +223,42 @@
   background: var(--accent-wash);
 }
 
+/*
+ * The drawer's two bodies (UI-125): the queue's jobs, and §7's roster. `flex:
+ * none`, like the index row above it, so the tabs take their height from the
+ * drawer's chrome and the body keeps the height the resizer set.
+ *
+ * The mockup draws no tabs — there was one body when it was written — so this
+ * borrows the strip's voice rather than inventing one: the mono face at 11px,
+ * `--ink-3` at rest, and the selected tab in `--accent-wash`, which is the
+ * selection colour a job row already wears one pane below.
+ */
+.console-tabs {
+  display: flex;
+  gap: 4px;
+  flex: none;
+  padding: 5px 14px 0;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.console-tab {
+  padding: 4px 12px;
+  border-radius: 8px 8px 0 0;
+  color: var(--ink-3);
+}
+
+.console-tab:hover {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.console-tab.sel {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
 .console-body {
   display: flex;
   border-top: 1px solid var(--line);
@@ -450,8 +486,201 @@
   font-style: italic;
 }
 
-.job-empty {
+.job-empty,
+.lane-empty {
   padding: 20px;
   color: var(--ink-3);
   font-size: 12px;
+}
+
+/*
+ * ── The Residents tab (UI-125) ──
+ *
+ * The job tab's anatomy at the same measurements, deliberately: two
+ * master-detail panes one tab apart that looked different would read as two
+ * consoles. The list is `.job-list`'s 380 px, a row is `.job`'s geometry, and
+ * the selected row wears the same `--accent-wash`.
+ *
+ * The liveness dot is the recipient picker's own `.lane-dot`
+ * (`@corpus/kit/address.css`, imported in `main.tsx`) — the board badge already
+ * borrows it, and a third spelling of those four states is how they drift.
+ */
+
+.lane-list {
+  width: 380px;
+  flex: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  padding: 6px;
+}
+
+.lane {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.lane:hover {
+  background: var(--surface-2);
+}
+
+.lane.sel {
+  background: var(--accent-wash);
+}
+
+/*
+ * The name gives way and everything beside it holds, for `.job-title`'s reason:
+ * a conversation's title can be any length, while the mark, the weight and the
+ * liveness word are the facts the row exists to add. The full sentence is on the
+ * row's title and in the pane beside it.
+ */
+.lane-name {
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* §7's missing-profile report at row width — `--sepia`, the console's own
+   "worth mentioning, not broken" hue, never `--signal`: the designation stands
+   and the resident goes on owning its scope. */
+.lane-mark {
+  color: var(--sepia);
+  white-space: nowrap;
+  flex: none;
+}
+
+.lane-weight,
+.lane-meta {
+  color: var(--ink-3);
+  white-space: nowrap;
+  flex: none;
+}
+
+.lane-meta {
+  margin-left: auto;
+}
+
+.lane-scope {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lane-scope-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  flex: none;
+}
+
+.lane-scope-head .lane-name {
+  font-size: 12.5px;
+  flex: none;
+  max-width: 40%;
+}
+
+.lane-statement {
+  color: var(--ink-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-count {
+  color: var(--ink-3);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.scope-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.scope-member {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: left;
+}
+
+.scope-member:hover {
+  background: var(--surface-2);
+}
+
+.scope-kind {
+  color: var(--ink-3);
+  flex: none;
+  width: 44px;
+}
+
+.scope-title {
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-via {
+  color: var(--ink-3);
+  white-space: nowrap;
+  flex: none;
+}
+
+/* Archived or resolved, and still in scope (SPEC.md §7): the sepia says worth
+   knowing, not wrong. */
+.scope-status {
+  color: var(--sepia);
+  white-space: nowrap;
+  flex: none;
+}
+
+/*
+ * A sentence rather than a list: what the orchestrator's lane is, what a
+ * released lane means, and where the page stopped. Wrapped rather than
+ * truncated — a sentence cut at the drawer's edge is a sentence that stopped
+ * explaining.
+ */
+.lane-note {
+  padding: 14px 16px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.7;
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+}
+
+.scope-bound {
+  flex: none;
+  padding: 7px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
 }

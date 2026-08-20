@@ -6,6 +6,8 @@ import { ConsoleStrip } from "./ConsoleStrip";
 import { IndexStatusRow } from "./IndexPill";
 import { JobDetail } from "./JobDetail";
 import { JobList } from "./JobList";
+import { Residents } from "./Residents";
+import { CONSOLE_TABS, type ConsoleTab } from "./residentsModel";
 import { MAX_CONSOLE_HEIGHT_RATIO, MIN_CONSOLE_HEIGHT, useConsoleLayout } from "./useConsoleLayout";
 import "./console.css";
 
@@ -39,6 +41,14 @@ export function Console(): ReactElement {
   const halt = useHaltQueue();
   const resume = useResumeQueue();
   const [chosen, setChosen] = useState<string | null>(null);
+  /*
+   * Which body the drawer is showing (UI-125). Jobs is the default and stays
+   * §11's console: a drawer that opened on another tab would have moved the job
+   * list somebody expanded it to read. Not persisted, unlike the drawer's open
+   * state and height — those are what a person set, and this is where they are
+   * looking right now.
+   */
+  const [tab, setTab] = useState<ConsoleTab>("jobs");
 
   /*
    * The query's own answer, passed down **unsubstituted** (UI-098). The strip
@@ -110,9 +120,45 @@ export function Console(): ReactElement {
            * and the body keeps the height the resizer set.
            */}
           <IndexStatusRow status={index.data} />
-          <div className="console-body" style={{ height: `${String(layout.height)}px` }}>
-            <JobList jobs={rows} selectedId={selectedId} onSelect={setChosen} />
-            <JobDetail job={selected} enabled />
+          {/*
+           * Two bodies, one drawer (UI-125, asked for by the user): the queue's
+           * jobs, and §7's roster with what each lane owns. Both are the agent's
+           * own machinery, which is what §11 puts in the console — and both are
+           * master-detail, so one console has one shape.
+           */}
+          <div className="console-tabs" role="tablist" aria-label="Console">
+            {CONSOLE_TABS.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                id={`console-tab-${entry.id}`}
+                className={entry.id === tab ? "console-tab sel" : "console-tab"}
+                aria-selected={entry.id === tab}
+                aria-controls="console-panel"
+                onClick={() => {
+                  setTab(entry.id);
+                }}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+          <div
+            className="console-body"
+            id="console-panel"
+            role="tabpanel"
+            aria-labelledby={`console-tab-${tab}`}
+            style={{ height: `${String(layout.height)}px` }}
+          >
+            {tab === "jobs" ? (
+              <>
+                <JobList jobs={rows} selectedId={selectedId} onSelect={setChosen} />
+                <JobDetail job={selected} enabled />
+              </>
+            ) : (
+              <Residents />
+            )}
           </div>
         </>
       ) : null}

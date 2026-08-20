@@ -86,6 +86,10 @@ export { useQueueStatus } from "./query/useQueueStatus.js";
 // projection. A read and never a push, so there is no poll and no `staleTime`
 // override here or anywhere downstream.
 export { useAgentsRoster, type AgentRosterView } from "./query/useAgentsRoster.js";
+// …and what one of those lanes owns (SPEC.md §7, CONTRACT-068). The other half
+// of the same question, read the same way: an ordinary cached read of the
+// server's own walk, never a walk of its own.
+export { useThreadScope, type ThreadScopeView } from "./query/useThreadScope.js";
 // The semantic index's health report — the console strip's index pill reads it,
 // and it refreshes on the `["index"]` frames the embed worker already emits.
 export { useIndexStatus } from "./query/useIndexStatus.js";
@@ -154,6 +158,7 @@ export {
   relatedKey,
   searchKey,
   threadKey,
+  threadScopeKey,
   TREE_KEY,
   type CanonicalFilter,
   type QueryKey,

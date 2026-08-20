@@ -27,6 +27,7 @@ import type {
   SearchResults,
   Thread,
   ThreadMutationResponse,
+  ThreadScope,
   UpdateDocRequest,
   UpdateDocResponse,
 } from "@corpus/contract";
@@ -208,6 +209,29 @@ export interface CorpusClient {
   listDocs(filter: DocsFilter, options?: RequestOptions): Promise<DocList>;
   getDoc(id: string, options?: RequestOptions): Promise<Doc>;
   getThread(id: string, options?: RequestOptions): Promise<Thread>;
+  /**
+   * `GET /api/threads/{id}/scope` — **what a designated thread's lane owns**
+   * (SPEC.md §7, CONTRACT-068): the thread, every thread whose parent chain
+   * reaches it, every document whose `origin` reaches it, and every thread on
+   * such a document.
+   *
+   * The answer is **computed per request by the same walk the queue routes
+   * with**, so a caller renders what arrives and derives nothing: a surface that
+   * re-walked the graph client-side would be a second implementation of one
+   * rule, which is the defect `packages/kit/src/recipient/scopeWalk.ts` records
+   * the cost of. One frugal line per member and never a body.
+   *
+   * **Bounded, and the bound is in the contract** (`SCOPE_PAGE_SIZE`): there is
+   * no cursor and no total, because the cap exists so a scope cannot be
+   * enumerated rather than to make paging a feature. `truncated` is the field
+   * that says the cut happened, and a caller that hides it is presenting a
+   * capped list as a complete one.
+   *
+   * **`409` for a thread with no resident**: the orchestrator's lane is not a
+   * scope, so an undesignated thread has no scope to list rather than an empty
+   * one. `404` when the id is unknown or names a document that is not a thread.
+   */
+  getThreadScope(threadId: string, options?: RequestOptions): Promise<ThreadScope>;
   getTree(options?: RequestOptions): Promise<FolderTree>;
   /**
    * `GET /api/search` — ranked retrieval (SPEC.md §9.2).
@@ -853,6 +877,16 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "GET /api/threads/{id}",
         await api.GET("/api/threads/{id}", { params: { path: { id } }, ...signalOf(options) }),
+      );
+    },
+
+    async getThreadScope(threadId, options) {
+      return unwrap(
+        "GET /api/threads/{id}/scope",
+        await api.GET("/api/threads/{id}/scope", {
+          params: { path: { id: threadId } },
+          ...signalOf(options),
+        }),
       );
     },
 

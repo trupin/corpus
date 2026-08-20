@@ -92,6 +92,7 @@ const RUNTIME_SURFACE = [
   "relatedKey",
   "searchKey",
   "threadKey",
+  "threadScopeKey",
   "TREE_KEY",
   // live updates
   "Row",
@@ -226,6 +227,7 @@ const RUNTIME_SURFACE = [
   "statementFor",
   "useComposerRecipient",
   "useScopeWalk",
+  "useThreadScope",
   "walkToLane",
   "laneOf",
   // The third answer a `ScopeNodeLookup` may give: *the corpus does not hold

@@ -154,6 +154,27 @@ export function relatedKey(id: string): QueryKey {
 }
 
 /**
+ * One designated thread's scope: `["docs", <threadId>, "scope"]` — the listing
+ * `GET /api/threads/{id}/scope` answers (SPEC.md §7, CONTRACT-068).
+ *
+ * **Under `docKey(id)`, for {@link relatedKey}'s reason and one of its own.** The
+ * contract's key vocabulary is closed, so a new `["scope", id]` shape would be a
+ * contract change for a query the server already announces; and what a scope
+ * *contains* moves on ordinary document and thread writes rather than on
+ * anything named after an agent — a subthread created on a document in scope, a
+ * document written from the conversation, a member retitled or archived. Every
+ * one of those emits `["docs"]`, which TanStack matches as a prefix of this key,
+ * so the listing refreshes on frames that already exist.
+ *
+ * A thread is a document (SPEC.md §6), so a thread id is legal under `docKey`,
+ * and the `"scope"` tail is what keeps this distinct from the reader's own
+ * `["docs", id]`.
+ */
+export function threadScopeKey(threadId: string): QueryKey {
+  return [...docKey(threadId), "scope"];
+}
+
+/**
  * A ranked search: `["docs", "search", { …canonical params }]`.
  *
  * Under the `["docs"]` prefix for {@link relatedKey}'s reason — ranked hits go
