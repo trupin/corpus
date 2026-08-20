@@ -71,6 +71,35 @@ export const StoredEventSchema = QueueEventSchema.extend({
    * console row says, not who may claim.)
    */
   lane: LaneSchema.optional(),
+  /**
+   * When this event was enqueued, in epoch milliseconds, made strictly
+   * increasing within a process (SERVER-131).
+   *
+   * **Server-only bookkeeping**, beside `status` and `lane` and never on the
+   * wire: it exists so a batch can be handed over in the order the conversation
+   * has it, and an agent reads that order off the list rather than off a field.
+   *
+   * **`created` alone cannot carry that order.** SPEC.md §5 writes instants at
+   * second precision — turn timestamps double as turn identity (§6) — so three
+   * replies posted inside one second share one `created` to the character, and
+   * the tie-break left is the id, which is random. Measured on a real server on
+   * 2026-08-19: three replies one conversation apart, all stamped
+   * `2026-08-19T21:38:27Z`, came back Y, Z, X — the first message last, which is
+   * exactly what AGENT-038's drill reported. Widening `created` was not an
+   * option: it is the published wire value and §5 fixes its form.
+   *
+   * **Monotonic rather than a bare clock read**, so two events enqueued inside
+   * one millisecond — and every event enqueued under a test's frozen clock —
+   * still order by the order they were made. See `QueueService.nextSeq`.
+   *
+   * **Optional, and absence sorts first within its second.** Every event written
+   * before this field existed, and every file dropped into `pending/` by hand,
+   * has only its `created` to be ordered by, which is the order it always had.
+   * Like `lane`, it is written once at enqueue and never rewritten: a retry, a
+   * reap and a deferral all put the event back where the conversation had it,
+   * not at the end of the queue.
+   */
+  seq: z.number().int().min(0).optional(),
 });
 
 export type StoredEvent = z.infer<typeof StoredEventSchema> & {
@@ -112,6 +141,52 @@ export function withoutDeferral(event: StoredEvent): StoredEvent {
   return stripped;
 }
 
+/**
+ * `created` as epoch milliseconds; an instant that does not parse sorts oldest.
+ *
+ * `created` is validated as an ISO instant on the way in, so the guard is
+ * unreachable from disk — but a comparator that can return `NaN` makes `sort`
+ * behave arbitrarily, which is the whole class of defect this ordering exists to
+ * remove, so it is not left to be reasoned about.
+ */
+function createdRank(event: StoredEvent): number {
+  const parsed = Date.parse(event.created);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * The order the queue hands work over in: **the order the conversation has it**
+ * (SPEC.md §7, SERVER-131).
+ *
+ * A resident works its lane inline, one event at a time, and until this existed
+ * a batch arrived in `readdir` order — which is the event id's, and an id is
+ * random against the conversation. A resident obeying "work each claimed event
+ * in order" answered the third message before the first.
+ *
+ * Three keys, in this order, and each earns its place:
+ *
+ * 1. **`created`** — the event's own instant, the one an operator can read off
+ *    the file, and the only key a hand-dropped or pre-{@link StoredEvent.seq}
+ *    file has at all.
+ * 2. **`seq`** — the sub-second order, because §5 stamps `created` to the second
+ *    and a conversation moves faster than that. Absent sorts first within its
+ *    second, so a legacy file keeps the only position its evidence supports.
+ * 3. **`id`** — so the order is *total*: two events with the same instant and no
+ *    `seq` still come back the same way on every call, which is what stops a
+ *    batch depending on how a filesystem happened to list a directory.
+ *
+ * Lexicographic across all three rather than "seq when both have one": a
+ * comparator that switches keys per pair is not transitive, and an intransitive
+ * comparator is a `readdir` order with extra steps.
+ */
+export function byQueueOrder(left: StoredEvent, right: StoredEvent): number {
+  const created = createdRank(left) - createdRank(right);
+  if (created !== 0) return created;
+  const seq = (left.seq ?? 0) - (right.seq ?? 0);
+  if (seq !== 0) return seq;
+  return left.id.localeCompare(right.id);
+}
+
 /** The five contract fields, and nothing else: what every route responds with. */
 export function toWireEvent(event: StoredEvent): QueueEvent {
   return {
@@ -139,6 +214,16 @@ const isEnoent = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 
 const eventIdFromFileName = (name: string): string | undefined => EVENT_FILE_NAME.exec(name)?.[1];
+
+/** The event ids among a directory listing, in a stable order; see {@link QueueStore.listIds}. */
+function eventIdsIn(names: readonly string[]): string[] {
+  return names
+    .flatMap((name) => {
+      const id = eventIdFromFileName(name);
+      return id === undefined ? [] : [id];
+    })
+    .sort((left, right) => left.localeCompare(right));
+}
 
 /**
  * Hand-written and out-of-band files are read leniently and normalized in memory
@@ -265,6 +350,19 @@ export class QueueStore {
     }
   }
 
+  /**
+   * The event ids in a status directory, **sorted by id**.
+   *
+   * `readdir` order is the filesystem's, and it is neither stable across
+   * platforms nor meaningful anywhere: it is what made a claim batch arrive in
+   * no particular order (SERVER-131). Sorting here does not by itself produce
+   * §7's conversation order — that needs each event's `created`, which only a
+   * caller that reads the files can compare, so {@link byQueueOrder} is where a
+   * batch is actually ordered. What this gives every caller, including the ones
+   * that never read a file (`status`'s counts) or read them for their own reasons
+   * (`reapStale`, `requeueDeferredFor`), is that the *same* directory always
+   * yields the *same* list.
+   */
   async listIds(status: QueueEventStatus): Promise<string[]> {
     let names: string[];
     try {
@@ -273,12 +371,10 @@ export class QueueStore {
       if (isEnoent(error)) return [];
       throw error;
     }
-    return names.flatMap((name) => {
-      const id = eventIdFromFileName(name);
-      return id === undefined ? [] : [id];
-    });
+    return eventIdsIn(names);
   }
 
+  /** {@link listIds}, synchronously: the boot rebuild's reader. */
   listIdsSync(status: QueueEventStatus): string[] {
     let names: string[];
     try {
@@ -287,10 +383,7 @@ export class QueueStore {
       if (isEnoent(error)) return [];
       throw error;
     }
-    return names.flatMap((name) => {
-      const id = eventIdFromFileName(name);
-      return id === undefined ? [] : [id];
-    });
+    return eventIdsIn(names);
   }
 
   async countPending(): Promise<number> {

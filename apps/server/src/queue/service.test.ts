@@ -358,6 +358,125 @@ describe("claimAll", () => {
   });
 });
 
+// SPEC.md §7: a resident works its conversation inline, one event at a time, and
+// the skill that does so reads the order off the batch. It used to be `readdir`
+// order — the event id's, which is random against the conversation (SERVER-131).
+describe("the batch is in the order the conversation has it", () => {
+  const LANE = "th_resident";
+
+  /**
+   * Three events posted in this order, with ids that sort the *other* way, so a
+   * batch in id order and a batch in conversation order can never be confused.
+   * Ids come from the real drill (2026-08-19), where the conversation ran
+   * X → Y → Z and the batch came back Y, Z, X.
+   */
+  const POSTED = ["evt_y3blrq32r2n6", "evt_q7yaplbvcjop", "evt_xqr572cqvjf3"] as const;
+  const BY_ID = [...POSTED].sort();
+
+  const postThree = async (
+    service: QueueService,
+    options: { readonly apart?: boolean; readonly recipient?: string } = {},
+  ): Promise<void> => {
+    for (const [index, id] of POSTED.entries()) {
+      if (options.apart === true) clock += 60_000;
+      await service.enqueue({
+        id,
+        type: "comment.created",
+        source: "ui",
+        payload: { threadId: LANE, message: index },
+        ...(options.recipient === undefined ? {} : { recipient: options.recipient }),
+      });
+    }
+  };
+
+  it("orders one second's replies by when they were posted, not by their ids", async () => {
+    const service = makeService();
+    // The clock does not move: three replies inside one second share `created`
+    // to the character (SPEC.md §5 stamps instants to the second), which is
+    // exactly the drill that found this.
+    await postThree(service);
+    const created = new Set(
+      (await Promise.all(POSTED.map((id) => service.store.readEvent("pending", id)))).map((read) =>
+        read?.ok === true ? read.event.created : "",
+      ),
+    );
+    expect(created.size).toBe(1);
+    expect(BY_ID).not.toEqual([...POSTED]);
+
+    const claimed = await service.claimAll();
+    expect(claimed.events.map((event) => event.id)).toEqual([...POSTED]);
+    expect(claimed.events.map((event) => event.payload.message)).toEqual([0, 1, 2]);
+  });
+
+  it("orders replies minutes apart by `created`", async () => {
+    const service = makeService();
+    await postThree(service, { apart: true });
+
+    const claimed = await service.claimAll();
+    expect(claimed.events.map((event) => event.id)).toEqual([...POSTED]);
+    expect(new Set(claimed.events.map((event) => event.created)).size).toBe(3);
+  });
+
+  it("orders a scoped lane's batch the same way as the orchestrator's", async () => {
+    const service = makeService();
+    service.attachScopeLookup(() => LANE);
+    await postThree(service);
+
+    const claimed = await service.claimAll({ scope: LANE });
+    expect(claimed.events.map((event) => event.lane)).toEqual([LANE, LANE, LANE]);
+    expect(claimed.events.map((event) => event.id)).toEqual([...POSTED]);
+  });
+
+  // `idle` reports what the `claim-all` that follows it will hand over, so the
+  // two entry points must not disagree about the conversation's order either.
+  it("reports the same order from idle as claim-all then hands over", async () => {
+    const service = makeService();
+    await postThree(service);
+
+    const seen = await service.idle({ timeoutMs: 50 });
+    expect(seen?.events.map((event) => event.id)).toEqual([...POSTED]);
+    expect((await service.claimAll()).events.map((event) => event.id)).toEqual([...POSTED]);
+  });
+
+  it("keeps a retried event in its place rather than moving it to the end", async () => {
+    const service = makeService();
+    await postThree(service);
+    await service.claimAll();
+    await service.fail(POSTED[0]);
+    clock += 300_000;
+    await service.requeue(POSTED[0]);
+
+    const requeued = await service.store.readEvent("pending", POSTED[0]);
+    expect(requeued?.ok === true ? requeued.event.seq : undefined).toBe(clock - 300_000);
+    // Re-claimed beside a message posted after it, it is still the earlier one.
+    await service.enqueue({ type: "comment.created", source: "ui", payload: { message: "later" } });
+    const claimed = await service.claimAll();
+    expect(claimed.events[0]?.id).toBe(POSTED[0]);
+  });
+
+  it("puts an unreadable file last so a quarantine never splits a conversation", async () => {
+    const service = makeService();
+    await postThree(service);
+    // `evt_a…` sorts before every posted id, so `readdir` order would put it
+    // first and the old loop would have claimed it in the middle of the batch.
+    writeFileSync(service.store.pathFor("pending", "evt_a00000000000"), "{ truncated");
+
+    const claimed = await service.claimAll();
+    expect(claimed.events.map((event) => event.id)).toEqual([...POSTED]);
+    expect(await service.store.listIds("failed")).toEqual(["evt_a00000000000"]);
+  });
+
+  it("stamps a strictly increasing seq even when the clock does not move", async () => {
+    const service = makeService();
+    await postThree(service);
+
+    const seqs = (
+      await Promise.all(POSTED.map((id) => service.store.readEvent("pending", id)))
+    ).map((read) => (read?.ok === true ? read.event.seq : undefined));
+    expect(seqs).toEqual([clock, clock + 1, clock + 2]);
+  });
+});
+
 describe("complete, fail and abandon", () => {
   it("lands each event in its directory and records the failure reason", async () => {
     const service = makeService();

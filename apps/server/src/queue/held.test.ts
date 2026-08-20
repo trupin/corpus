@@ -123,23 +123,50 @@ describe("readHeldInProgress", () => {
     ]);
   });
 
-  it("orders a whole batch deterministically when every claim shares one instant", async () => {
-    // Instants are canonical to the second (SPEC.md §5), so one claim batch has
-    // one timestamp; the order within it must not depend on readdir.
+  // Instants are canonical to the second (SPEC.md §5), so one claim batch shares
+  // one `heldSince` to the character and the tie-break decides the whole order
+  // inside a batch. It used to be the id, which is random against the
+  // conversation — the same defect the claim batch had (SERVER-131).
+  it("reads one claim batch in the conversation's order, not its ids'", async () => {
+    const claimed = "2026-08-06T09:20:00Z";
     await hold(
-      event("evt_bbbbbbbbbbbb", "2026-08-06T09:20:00Z"),
-      event("evt_cccccccccccc", "2026-08-06T09:20:00Z"),
-      event("evt_aaaaaaaaaaaa", "2026-08-06T09:20:00Z"),
+      { ...event("evt_q7yaplbvcjop", claimed), seq: 1_001 },
+      { ...event("evt_xqr572cqvjf3", claimed), seq: 1_002 },
+      { ...event("evt_y3blrq32r2n6", claimed), seq: 1_000 },
     );
 
     const first = await readHeldInProgress(store, silentLogger);
     const second = await readHeldInProgress(store, silentLogger);
     expect(first.events.map((each) => each.id)).toEqual([
-      "evt_cccccccccccc",
-      "evt_bbbbbbbbbbbb",
-      "evt_aaaaaaaaaaaa",
+      "evt_y3blrq32r2n6",
+      "evt_q7yaplbvcjop",
+      "evt_xqr572cqvjf3",
     ]);
+    // Stability was never the whole requirement, but it is still required.
     expect(second.events.map((each) => each.id)).toEqual(first.events.map((each) => each.id));
+    // And it is not simply the ids, in either direction.
+    expect(first.events.map((each) => each.id)).not.toEqual(
+      first.events.map((each) => each.id).sort(),
+    );
+  });
+
+  // Two batches, each internally in conversation order: the newest claim still
+  // comes first, which is what the cap depends on (CONTRACT-033).
+  it("keeps most recently claimed first across batches", async () => {
+    await hold(
+      { ...event("evt_old1", "2026-08-06T09:00:00Z"), seq: 1 },
+      { ...event("evt_old2", "2026-08-06T09:00:00Z"), seq: 2 },
+      { ...event("evt_new1", "2026-08-06T09:30:00Z"), seq: 3 },
+      { ...event("evt_new2", "2026-08-06T09:30:00Z"), seq: 4 },
+    );
+
+    const held = await readHeldInProgress(store, silentLogger);
+    expect(held.events.map((each) => each.id)).toEqual([
+      "evt_new1",
+      "evt_new2",
+      "evt_old1",
+      "evt_old2",
+    ]);
   });
 
   it("caps the list, keeps the newest, and says the cut happened", async () => {

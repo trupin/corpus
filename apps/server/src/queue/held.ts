@@ -1,7 +1,7 @@
 import { MAX_IN_PROGRESS_REPORTED, type InProgressSet } from "@corpus/contract";
 import type { JobOrigin } from "../jobs/project.js";
 import type { Logger } from "../logger.js";
-import type { QueueStore, ReadEventResult, StoredEvent } from "./store.js";
+import { byQueueOrder, type QueueStore, type ReadEventResult, type StoredEvent } from "./store.js";
 
 /**
  * What the server still thinks the agent is doing: the events sitting in
@@ -78,22 +78,30 @@ function instantRank(event: StoredEvent): number {
 }
 
 /**
- * Most recently claimed first, ties broken by id descending.
+ * Most recently claimed first, and **within one claim, the order the
+ * conversation has** ({@link byQueueOrder}).
  *
- * The ordering is load-bearing when the cap bites (CONTRACT-033): the rows an
+ * The primary key is load-bearing when the cap bites (CONTRACT-033): the rows an
  * agent can actually account for are the ones it claimed recently, while ancient
  * residue from a session that died is `reap-stale`'s problem. Oldest-first would
  * let permanently unaccountable events occupy the window forever and hide every
- * fresh discrepancy behind them.
+ * fresh discrepancy behind them. That is unchanged, and so is the contract's
+ * published ordering — this fixes the tie-break underneath it.
  *
  * Instants are canonical to the second (SPEC.md §5), so a whole claimed batch
- * shares one timestamp; the id tie-break makes the order within it deterministic
- * rather than dependent on `readdir`. Which member of a batch comes first is
- * arbitrary — they were claimed at the same instant — but *stability* is not.
+ * shares one `heldSince` to the character and the tie-break decides the entire
+ * order *inside* a batch. It used to be the id descending, which is random
+ * against the conversation — the same defect the claim batch itself had
+ * (SERVER-131), reached by the same route. So the tie-break is now the claim's
+ * own order, which makes one batch read as the conversation reads, and leaves
+ * two batches in the order they were claimed.
+ *
+ * Stability was never the whole requirement: an order can be perfectly stable
+ * and still be nobody's.
  */
 function byMostRecentlyClaimed(left: StoredEvent, right: StoredEvent): number {
   const delta = instantRank(right) - instantRank(left);
-  return delta !== 0 ? delta : right.id.localeCompare(left.id);
+  return delta !== 0 ? delta : byQueueOrder(left, right);
 }
 
 /** What to put in a log field for a thrown value. */

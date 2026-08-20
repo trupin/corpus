@@ -32,6 +32,7 @@ import {
 } from "./project.js";
 import {
   QueueStore,
+  byQueueOrder,
   salvageEvent,
   withoutDeferral,
   type DeferralFields,
@@ -217,6 +218,16 @@ interface TransitionOptions {
     { readonly statuses: readonly QueueEventStatus[]; readonly verb: string } | undefined;
 }
 
+/**
+ * One file in `pending/`, with what could be read of it: see
+ * {@link QueueService.orderedPending}. An absent `event` is a file that did not
+ * parse, or one that was gone by the time it was read.
+ */
+interface PendingEntry {
+  readonly id: string;
+  readonly event?: StoredEvent | undefined;
+}
+
 /** English for a `409` that names the statuses a verb accepts. */
 function joinStatuses(statuses: readonly QueueEventStatus[]): string {
   if (statuses.length <= 1) return statuses[0] ?? "";
@@ -250,6 +261,8 @@ export class QueueService {
   private readonly waiters: WaiterRegistry;
   /** Serializes claim batches in this process; `ENOENT` covers the rest. */
   private claimChain: Promise<unknown> = Promise.resolve();
+  /** The last value {@link nextSeq} handed out; see {@link StoredEvent.seq}. */
+  private lastSeq = 0;
 
   constructor(options: QueueServiceOptions) {
     this.store = new QueueStore(options.corpusDir, options.observeWrite);
@@ -449,6 +462,9 @@ export class QueueService {
       // and the chain exists to keep readers from observing a half-written
       // *batch* of files, which a lane resolution neither performs nor observes.
       lane: laneFor(input, this.findScopeRoot),
+      // SPEC.md §7's order, stamped here for the same reason the lane is: once,
+      // at the only moment the answer is known, and never rewritten below.
+      seq: this.nextSeq(),
     };
     await this.store.writeEvent("pending", event);
     this.mirror.upsertEvent(event);
@@ -465,6 +481,23 @@ export class QueueService {
     this.wake(laneOf(event));
     this.evictReleasedLane(event);
     return event;
+  }
+
+  /**
+   * The next {@link StoredEvent.seq}: the clock, dragged forward whenever it
+   * would repeat itself.
+   *
+   * The clock alone is not enough twice over. Two enqueues inside one
+   * millisecond would tie, and a test's injected `now` is usually a constant, so
+   * every event a fixture makes would tie — and a queue whose order is only
+   * observable on a fast enough machine is not an order. `Math.max` keeps the
+   * value an epoch-milliseconds reading whenever real time has moved, which is
+   * what makes it comparable across a restart, and makes it *this* enqueue's
+   * position whenever it has not.
+   */
+  private nextSeq(): number {
+    this.lastSeq = Math.max(this.now(), this.lastSeq + 1);
+    return this.lastSeq;
   }
 
   /**
@@ -667,6 +700,14 @@ export class QueueService {
    *
    * It is read before the halt check as well: a halt stops work being handed
    * out, not the agent's ability to reconcile what it already holds.
+   *
+   * **The batch is in the order the conversation has it** — `created`, then
+   * `seq`, then id ({@link byQueueOrder}), for every lane (SERVER-131). SPEC.md
+   * §7 has a resident work its conversation inline, one event at a time, and
+   * the skill that does so reads the order off this list. Before this it was
+   * `readdir` order, which is the event id's: measured on a real server, three
+   * replies posted inside one second came back Y, Z, X — the first message
+   * last, answered third.
    */
   async claimAll(request: LaneScope = {}): Promise<QueueBatch> {
     const scope = request.scope ?? ORCHESTRATOR_LANE;
@@ -680,7 +721,12 @@ export class QueueService {
 
       const claimed: StoredEvent[] = [];
       let touched = false;
-      for (const id of await this.store.listIds("pending")) {
+      // The whole directory is read **before** the first move, so the batch can
+      // be ordered by what the files say rather than by the order they were
+      // listed in (SERVER-131). It is the same one read per pending file the
+      // interleaved version did, in the same serialized turn — the only thing
+      // that moved is where the reading stops and the claiming starts.
+      for (const { id, event: pending } of await this.orderedPending()) {
         // The lane is read **before** the move, off the file in `pending/`: a
         // claim that moved first and filtered afterwards would have to move
         // another lane's event back, and the window between the two renames is
@@ -691,8 +737,7 @@ export class QueueService {
         // quarantined below. Skipping it while scoped would leave a corrupt file
         // sitting in `pending/` for as long as no orchestrator claim ran, which
         // is the one outcome quarantine exists to prevent.
-        const pending = await this.store.readEvent("pending", id);
-        if (pending !== undefined && pending.ok && !this.visible(scope, pending.event)) continue;
+        if (pending !== undefined && !this.visible(scope, pending)) continue;
         if (!(await this.store.move("pending", "in-progress", id))) continue;
         touched = true;
         const read = await this.store.readEvent("in-progress", id);
@@ -851,6 +896,12 @@ export class QueueService {
       // stamping it, so it is the one place a lane could be silently dropped and
       // a resident's retried work quietly become the orchestrator's (SPEC.md §7:
       // the stamp is made once and never rewritten).
+      //
+      // `seq` is carried across for the same reason and with the same force
+      // (SERVER-131). A retry re-runs work the conversation already has a place
+      // for; minting a fresh one would move a retried message to the end of the
+      // conversation it belongs in the middle of. It rides beside `created`,
+      // which this rebuild already keeps for exactly that reason.
       const event: StoredEvent = {
         id: current.event.id,
         type: current.event.type,
@@ -861,6 +912,7 @@ export class QueueService {
         updated: formatInstant(this.now()),
         attempts: 0,
         ...(current.event.lane === undefined ? {} : { lane: current.event.lane }),
+        ...(current.event.seq === undefined ? {} : { seq: current.event.seq }),
       };
       await this.store.writeEvent("pending", event);
       this.mirror.upsertEvent(event);
@@ -1037,7 +1089,41 @@ export class QueueService {
       // `idle` is a read and never mutates the queue.
       else this.logger.debug("skipping malformed pending event", { id, reason: read.reason });
     }
+    // The same order `claimAll` hands the same events over in (SERVER-131), for
+    // the same reason the same predicate filters them: the loop's two entry
+    // points describe one queue, and an agent that read `idle`'s list and then
+    // worked `claim-all`'s must not find the conversation reshuffled between
+    // them.
+    events.sort(byQueueOrder);
     return events;
+  }
+
+  /**
+   * Every file in `pending/` read once, in the order the conversation has them
+   * (SPEC.md §7, SERVER-131).
+   *
+   * `event` is absent for a file that vanished between the listing and the read,
+   * and for one that does not parse — `claimAll` treats both the same way it
+   * always has: it claims them, because a corrupt file belongs to no lane and
+   * has to reach quarantine whoever is claiming.
+   *
+   * **The unreadable ones go last, and never between two events.** They carry no
+   * instant to be ordered by, so any position among the readable ones would be
+   * invented; they are also the only entries the batch never reports, so their
+   * position costs the agent nothing and putting them at the end keeps a
+   * quarantine from splitting a conversation in half.
+   */
+  private async orderedPending(): Promise<readonly PendingEntry[]> {
+    const readable: (PendingEntry & { readonly event: StoredEvent })[] = [];
+    const opaque: PendingEntry[] = [];
+    for (const id of await this.store.listIds("pending")) {
+      const read = await this.store.readEvent("pending", id);
+      if (read !== undefined && read.ok) readable.push({ id, event: read.event });
+      else opaque.push({ id });
+    }
+    readable.sort((left, right) => byQueueOrder(left.event, right.event));
+    // `opaque` is already in a stable order: `listIds` sorts by id.
+    return [...readable, ...opaque];
   }
 
   /**
