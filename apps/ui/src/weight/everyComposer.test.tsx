@@ -23,7 +23,8 @@ import { ThreadComposer } from "../thread/ThreadComposer";
 
 /**
  * **Every** composer offers the weight, and the surfaces are enumerated here
- * rather than sampled (SPEC.md §11's rider, signed 2026-08-06; UI-082).
+ * rather than sampled (SPEC.md §11's rider, signed 2026-08-06; UI-082, and the
+ * address line of UI-126, which the levels now sit behind).
  *
  * The enumeration is the point. SHARED-012's lesson, learned the expensive way
  * in UI-070, is that a spec sentence phrased per surface gets implemented on one
@@ -34,12 +35,16 @@ import { ThreadComposer } from "../thread/ThreadComposer";
  *
  * What each case pins is the same four sentences:
  *
- *   - the control is there, offering exactly what the workspace's guidance
- *     declares, in that order and with those names;
+ *   - the levels are offered, exactly what the workspace's guidance declares,
+ *     in that order and with those names — one gesture behind the address line;
  *   - **nothing is preselected**, and an untouched composer states no weight;
  *   - a stated level rides out on the request the surface makes;
- *   - a workspace declaring nothing gets **no control at all** — the composer is
- *     indistinguishable from before this feature existed.
+ *   - a workspace declaring nothing gets **no weight section at all**.
+ *
+ * The comment-on-a-turn box is deliberately **not** in the table any more: it
+ * sends `requestsAgent: false` unconditionally, so since UI-126 it sits on
+ * §11's floor — nothing to weigh, nothing offered, nothing stated — and has its
+ * own describe below instead of a dimmed control.
  */
 
 afterEach(() => {
@@ -58,6 +63,8 @@ interface Probe {
   readonly declarationRead: () => boolean;
   /** The writing field, for the key-contract assertions. */
   readonly field: () => HTMLTextAreaElement;
+  /** How many times this surface has submitted, for the IME pin. */
+  readonly posts: () => number;
 }
 
 interface Surface {
@@ -100,6 +107,9 @@ function composeProbe(body: string, mode: "ask" | "capture"): Probe {
   const path = mode === "ask" ? "/api/threads" : "/api/capture";
   return {
     field,
+    // Both endpoints: on this surface ⌘↵ is Ask whichever button `send` uses,
+    // and the IME pin is about the field, not about which submit.
+    posts: () => transport.to("/api/threads").length + transport.to("/api/capture").length,
     declarationRead: () => transport.to(`/api/docs/${ORCHESTRATE_SKILL_ID}`).length > 0,
     send: async () => {
       fireEvent.change(field(), { target: { value: "something to do" } });
@@ -126,6 +136,7 @@ function threadProbe(body: string): Probe {
   const field = (): HTMLTextAreaElement => screen.getByLabelText<HTMLTextAreaElement>("Reply");
   return {
     field,
+    posts: () => transport.of("POST", "/api/threads/th_a/turns").length,
     declarationRead: () => transport.of("GET", `/api/docs/${ORCHESTRATE_SKILL_ID}`).length > 0,
     send: async () => {
       fireEvent.change(field(), { target: { value: "a reply" } });
@@ -155,6 +166,7 @@ function childThreadProbe(body: string): Probe {
     screen.getByLabelText<HTMLTextAreaElement>("Comment on this turn");
   return {
     field,
+    posts: () => transport.of("POST", "/api/threads").length,
     declarationRead: () => transport.of("GET", `/api/docs/${ORCHESTRATE_SKILL_ID}`).length > 0,
     send: async () => {
       fireEvent.change(field(), { target: { value: "a comment" } });
@@ -187,6 +199,7 @@ function commentPopoverProbe(body: string): Probe {
   const field = (): HTMLTextAreaElement => screen.getByLabelText<HTMLTextAreaElement>("Comment");
   return {
     field,
+    posts: () => onSubmit.mock.calls.length,
     declarationRead: () => transport.of("GET", `/api/docs/${ORCHESTRATE_SKILL_ID}`).length > 0,
     send: async () => {
       fireEvent.change(field(), { target: { value: "a comment" } });
@@ -207,16 +220,14 @@ function commentPopoverProbe(body: string): Probe {
   };
 }
 
-/** §11's enumeration, in §11's order. */
+/** §11's enumeration, in §11's order — every composer whose send reaches the agent. */
 const SURFACES: readonly Surface[] = [
   { name: "the global composer — Ask", mount: (body) => composeProbe(body, "ask") },
   { name: "the global composer — Capture", mount: (body) => composeProbe(body, "capture") },
   { name: "a thread's reply box", mount: threadProbe },
   { name: "a comment on a document selection", mount: commentPopoverProbe },
-  { name: "a comment on a turn", mount: childThreadProbe },
 ];
 
-const picker = (): HTMLElement | null => document.querySelector("[data-weight-picker]");
 const optionKeys = (): string[] =>
   [...document.querySelectorAll<HTMLElement>("[data-weight-key]")].map(
     (option) => option.dataset["weightKey"] ?? "",
@@ -224,7 +235,22 @@ const optionKeys = (): string[] =>
 const optionLabels = (): (string | null)[] =>
   [...document.querySelectorAll("[data-weight-key]")].map((option) => option.textContent);
 
+/** The address line, wherever it currently stands. */
+function addressLine(): HTMLElement {
+  const found = document.querySelector<HTMLElement>("[data-address-line]");
+  if (found === null) throw new Error("no address line");
+  return found;
+}
+
+/** Opens the address popover the levels sit behind (UI-126). */
+function openAddress(): void {
+  const line = addressLine();
+  if (line.tagName !== "BUTTON") throw new Error("the address line does not open");
+  if (line.getAttribute("aria-expanded") !== "true") fireEvent.click(line);
+}
+
 async function drawn(): Promise<HTMLElement> {
+  await waitFor(openAddress);
   return screen.findByRole("group", { name: "Weight" });
 }
 
@@ -255,6 +281,7 @@ describe.each(SURFACES)("$name", (surface) => {
     surface.mount(THREE_LEVELS);
     const group = await drawn();
     expect(group.textContent).not.toMatch(/A model|Haiku|Sonnet|Opus/u);
+    expect(addressLine().textContent).not.toMatch(/A model|Haiku|Sonnet|Opus/u);
   });
 
   it("preselects nothing, and states no weight when nothing was chosen", async () => {
@@ -267,10 +294,12 @@ describe.each(SURFACES)("$name", (surface) => {
     expect("weight" in sent).toBe(false);
   });
 
-  it("carries the chosen level's Key on the request", async () => {
+  it("carries the chosen level's Key on the request, and says it on the line", async () => {
     const probe = surface.mount(THREE_LEVELS);
     await drawn();
     fireEvent.click(screen.getByRole("button", { name: "Heavy or judgment-laden" }));
+    // The line states the outcome before sending (SPEC.md §11's statement).
+    expect(addressLine().textContent).toContain("Heavy or judgment-laden");
     const sent = await probe.send();
     expect(sent["weight"]).toBe("heavy");
   });
@@ -284,22 +313,27 @@ describe.each(SURFACES)("$name", (surface) => {
     expect("weight" in sent).toBe(false);
   });
 
-  it("offers no control at all when the workspace declares no levels", async () => {
+  it("offers no weight at all when the workspace declares no levels", async () => {
     const probe = surface.mount(NO_LEVELS);
     await waitFor(() => {
       expect(probe.declarationRead()).toBe(true);
     });
     // Not a fallback list, not a disabled control, not a hint: nothing. A
-    // workspace on an older template (SPEC.md §2.4) must be indistinguishable
-    // from the app before this feature.
-    expect(picker()).toBeNull();
+    // workspace on an older template (SPEC.md §2.4) has nothing to open — the
+    // line says who answers and is plain text, not a control.
+    await waitFor(() => {
+      expect(addressLine().tagName).toBe("SPAN");
+    });
+    expect(document.querySelector("[data-address-pop]")).toBeNull();
     expect(optionKeys()).toEqual([]);
     const sent = await probe.send();
     expect("weight" in sent).toBe(false);
   });
 
-  it("claims no key: ↵ is still a newline and ⌘↵ still sends", async () => {
+  it("claims no key: ↵ is still a newline and ⌘↵ still sends, popover open or not", async () => {
     const probe = surface.mount(THREE_LEVELS);
+    // Open, and left open: the popover must claim nothing from the field
+    // (SPEC.md §11's key contract, UI-126 acceptance).
     await drawn();
     fireEvent.change(probe.field(), { target: { value: "half a thought" } });
     // Not prevented — the field's own insertion is the behaviour (SPEC.md §11).
@@ -317,5 +351,44 @@ describe.each(SURFACES)("$name", (surface) => {
       expect(option.tagName).toBe("BUTTON");
       expect(option.getAttribute("type")).toBe("button");
     }
+  });
+
+  /**
+   * §11: an IME composition commit never submits — and the popover is exactly
+   * the kind of control rewrite that breaks it silently, so the pin holds with
+   * it open (UI-126).
+   */
+  it("never submits on an IME composition commit, popover open", async () => {
+    const probe = surface.mount(THREE_LEVELS);
+    await drawn();
+    fireEvent.change(probe.field(), { target: { value: "にほんご" } });
+    fireEvent.keyDown(probe.field(), { key: "Enter", metaKey: true, isComposing: true });
+    expect(probe.posts()).toBe(0);
+    // …and the real chord, uncomposed, still submits with the popover open.
+    fireEvent.keyDown(probe.field(), { key: "Enter", metaKey: true });
+    await waitFor(() => {
+      expect(probe.posts()).toBe(1);
+    });
+  });
+});
+
+/**
+ * The comment-on-a-turn box (§11's floor, UI-126): it sends `requestsAgent:
+ * false` unconditionally, so no weight exists to offer or to state. The dimmed
+ * control that used to stand here is exactly what the issue removed — a choice
+ * it accepted was a choice nothing would read.
+ */
+describe("a comment on a turn — the floor", () => {
+  it("offers no weight, says nobody is asked, and states none on the wire", async () => {
+    const probe = childThreadProbe(THREE_LEVELS);
+    await waitFor(() => {
+      expect(addressLine().textContent).toContain("Nobody is asked");
+    });
+    expect(document.querySelectorAll("[data-weight-key]")).toHaveLength(0);
+    expect(screen.queryByRole("group", { name: "Weight" })).toBeNull();
+    const sent = await probe.send();
+    expect("weight" in sent).toBe(false);
+    // The keys are still the contract's.
+    expect(fireEvent.keyDown(probe.field(), { key: "Enter" })).toBe(true);
   });
 });

@@ -58,9 +58,12 @@ export {
   AGENT_RELEASE_MESSAGE,
   NOT_STANDALONE_MESSAGE,
   RESIDENT_DESIGNATED,
+  RESIDENT_RELEASED,
   designateResident,
+  enqueueResidentReleased,
   releaseResident,
   residentDesignatedPayload,
+  residentReleasedPayload,
 } from "./resident.js";
 export type { ResidentChange } from "./resident.js";
 export {
@@ -73,6 +76,8 @@ export {
 export type { ThreadReattachment } from "./reattach.js";
 export { mountThreadRoutes } from "./routes.js";
 export type { ThreadRoutesOptions } from "./routes.js";
+export { mountThreadScopeRoutes } from "./scope-route.js";
+export type { ThreadScopeDeps } from "./scope-route.js";
 export { markThreadSeen, movesForward, readSeenMarks } from "./seen.js";
 export { setThreadStatus } from "./status.js";
 export type { StatusChange } from "./status.js";

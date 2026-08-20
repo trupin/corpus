@@ -4530,12 +4530,21 @@ describe("a stated weight rides the request (CONTRACT-039)", () => {
     "POST /api/capture (multipart/form-data)",
   ];
 
-  it("offers a weight on every composer's request body", () => {
+  /**
+   * The one non-composer body carrying a `weight` is the designation
+   * (CONTRACT-067): §7's rider signed 2026-08-19 makes it the place a
+   * **resident's** weight is chosen, and a designation is not a composer, so
+   * it is named here as the single exception rather than folded into the set
+   * §11 enumerates. Its own pins live with the roster's, below.
+   */
+  const DESIGNATION_BODY = "POST /api/threads/{id}/resident (application/json)";
+
+  it("offers a weight on every composer's request body, and on the designation alone besides", () => {
     const carrying = requestBodies()
       .filter((body) => body.schema?.properties?.weight !== undefined)
       .map((body) => body.where)
       .sort();
-    expect(carrying).toEqual([...COMPOSER_BODIES].sort());
+    expect(carrying).toEqual([...COMPOSER_BODIES, DESIGNATION_BODY].sort());
   });
 
   it("publishes it as a plain bounded string, never an enumerated set of levels", () => {
@@ -4700,6 +4709,26 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     }
   });
 
+  /**
+   * CONTRACT-069. The release is core vocabulary beside the designation it ends,
+   * so it is published at every site the designation is — in the **generated**
+   * document, spelled literally rather than derived from the constant, which is
+   * the only form that fails when the member is removed. And the envelope names
+   * its payload and the one-release-one-event rule, since the payload itself is
+   * not a component.
+   */
+  it("publishes `resident.released` beside `resident.designated`, and names its payload", () => {
+    for (const component of ["QueueEvent", "InProgressEvent", "Job"]) {
+      const description = componentSchemas?.[component]?.properties?.type?.description ?? "";
+      expect(description, component).toContain("resident.designated, resident.released");
+    }
+    const payload = componentSchemas?.["QueueEvent"]?.properties?.payload?.description ?? "";
+    expect(payload).toContain("`resident.released` carries `{threadId, resident, reason}`");
+    expect(payload).toContain(
+      "one release produces exactly one such event, and a lapse produces none",
+    );
+  });
+
   it("gives Thread and ThreadSummary a required, nullable resident", () => {
     for (const component of ["Thread", "ThreadSummary"]) {
       expect(componentSchemas?.[component]?.required ?? [], component).toContain("resident");
@@ -4710,7 +4739,49 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
       expect(resident?.anyOf?.[1]?.type, component).toBe("null");
     }
     expect(componentSchemas?.["Resident"]?.type).toBe("object");
-    expect(componentSchemas?.["Resident"]?.required).toEqual(["name", "docId"]);
+    expect(componentSchemas?.["Resident"]?.required).toEqual(["name", "docId", "weight"]);
+  });
+
+  /**
+   * CONTRACT-067 / SPEC.md §7's rider signed 2026-08-19: *"A resident's weight
+   * is set when it is designated, not per message."* Pinned against the
+   * **generated** document, in the shape CONTRACT-064 used: the request field is
+   * optional and shape-bounded like a message's `weight`, the `Resident` reports
+   * it back required-and-nullable, and the boundary sentence is **literally the
+   * same string** at both published sites — one wording, so the rule cannot
+   * drift site by site as the agent-def root rule did.
+   */
+  it("lets a designation choose the resident's weight, and reports it on the Resident", () => {
+    const request = componentSchemas?.["DesignateResidentRequest"];
+    expect(Object.keys(request?.properties ?? {})).toEqual(["name", "weight"]);
+    expect(request?.required).toBeUndefined();
+    const requested = request?.properties?.["weight"];
+    expect(requested?.type).toBe("string");
+    expect(requested?.minLength).toBe(1);
+    expect(requested?.maxLength).toBe(REQUESTED_WEIGHT_MAX_LENGTH);
+    expect(requested?.enum).toBeUndefined();
+    expect(requested?.default).toBeUndefined();
+    expect(requested?.description).toContain("**Omit it to choose nothing**");
+    expect(requested?.description).toContain("never a model name");
+
+    const reported = componentSchemas?.["Resident"]?.properties?.["weight"];
+    expect(JSON.stringify(reported?.type)).toContain('"null"');
+    expect(reported?.maxLength).toBe(REQUESTED_WEIGHT_MAX_LENGTH);
+    expect(reported?.description).toContain("**Null means none was chosen**");
+
+    const boundary =
+      "governs the resident's own turns; a weight stated on a message still governs what the " +
+      "resident hands off (SPEC.md §7, rider signed 2026-08-19)";
+    for (const site of [
+      requested?.description,
+      reported?.description,
+      operation("/api/threads/{id}/resident", "post").description,
+    ]) {
+      expect(site).toContain(boundary);
+    }
+    expect(
+      JSON.stringify(operation("/api/threads/{id}/resident", "post").responses?.["200"]),
+    ).toContain("{name, docId, weight}");
   });
 
   /**
@@ -4725,7 +4796,9 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     for (const property of ["name", "docId"] as const) {
       expect(resident?.properties?.[property]?.type, property).toEqual(["string", "null"]);
     }
-    expect(resident?.required).toEqual(["name", "docId"]);
+    // `weight` joined the pair with CONTRACT-067, required and nullable for the
+    // same reason: null is a state (none chosen), never an absent key.
+    expect(resident?.required).toEqual(["name", "docId", "weight"]);
     // The refinement rejecting `{name: null, docId: "doc_…"}` is not expressible
     // in JSON Schema, so it is stated where a reader of the document meets it.
     expect(resident?.properties?.["docId"]?.description).toContain("Read the two fields together");
@@ -4910,6 +4983,47 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
       "403",
       "404",
     ]);
+  });
+
+  /**
+   * CONTRACT-068. The scope listing, pinned against the **generated** document
+   * in the shape CONTRACT-064 used: the route's refusals are exactly the ones
+   * the state can produce, the response is the frugal line with the closed
+   * enums the orchestrator decided, the bound is published as `maxItems` with
+   * the `truncated` flag beside it and no cursor or total, and the description
+   * says the membership is the queue's own walk.
+   */
+  it("lists a designated thread's scope, bounded, computed by the queue's walk", () => {
+    const op = operation("/api/threads/{id}/scope", "get");
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters?.map((entry) => entry.name)).toEqual(["id"]);
+    expect(Object.keys(op.responses ?? {})).toEqual(["200", "400", "401", "404", "409"]);
+    expect(JSON.stringify(op.responses?.["200"])).toContain("ThreadScope");
+    expect(JSON.stringify(op.responses?.["409"])).toContain("ConflictError");
+    expect(op.description).toContain("the orchestrator's lane is not a scope");
+    expect(op.description).toContain("by the same walk the queue routes with");
+    expect(op.description).toContain("computed, never stored");
+    expect(op.description).toContain("Bounded at 200 members, with no cursor and no total");
+
+    const scope = componentSchemas?.["ThreadScope"];
+    expect(Object.keys(scope?.properties ?? {})).toEqual(["thread", "members", "truncated"]);
+    expect(scope?.required).toEqual(["thread", "members", "truncated"]);
+    expect(scope?.properties?.["members"]?.maxItems).toBe(200);
+    expect(scope?.properties?.["members"]?.items?.$ref).toBe("#/components/schemas/ScopeMember");
+    expect(scope?.properties?.["truncated"]?.type).toBe("boolean");
+
+    const member = componentSchemas?.["ScopeMember"];
+    expect(Object.keys(member?.properties ?? {})).toEqual(["id", "kind", "title", "status", "via"]);
+    expect(member?.required).toEqual(["id", "kind", "title", "status", "via"]);
+    expect(member?.properties?.["kind"]?.enum).toEqual(["thread", "doc"]);
+    expect(member?.properties?.["via"]?.enum).toEqual(["self", "parent", "origin"]);
+    expect(member?.properties?.["status"]?.enum).toEqual(["open", "resolved", "archived"]);
+    expect(member?.properties?.["status"]?.description).toContain(
+      "**An archived document is still in scope**",
+    );
+    expect(member?.properties?.["via"]?.description).toContain(
+      "A member with both edges reports `parent`",
+    );
   });
 
   it("takes no input on the roster, and therefore declares no 400", () => {

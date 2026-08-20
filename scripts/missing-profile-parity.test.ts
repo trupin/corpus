@@ -133,7 +133,8 @@ function afterAct(act: Act | null): Workspace {
 
 /** `Resident.docId` as `GET /api/threads/{id}` would report it, for a standing designation. */
 const residentAfter = (workspace: Workspace): string | null =>
-  currentResident(workspace.db, { name: PERSONA_NAME, docId: "doc_scratch1" })?.docId ?? null;
+  currentResident(workspace.db, { name: PERSONA_NAME, docId: "doc_scratch1", weight: null })
+    ?.docId ?? null;
 
 afterEach(() => {
   ws?.close();

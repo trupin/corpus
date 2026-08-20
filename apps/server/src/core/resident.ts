@@ -25,8 +25,39 @@
 // different states and why nothing here has to tell a third one apart. Both keys
 // are still required to be present: `{}` and `{name: null}` are not the shape,
 // so a bare mapping under `resident:` stays a plugin's business.
+//
+// **`weight` is the one key whose absence is legal** (SERVER-129). Every
+// designation written before §7's weight rider has no such key, and none is what
+// "no level was chosen" has always looked like on disk, so the stored shape
+// takes an absent `weight` and the wire shape reports `null` for it. See
+// `withStoredWeight`.
 
 import { ResidentSchema, type Resident } from "@corpus/contract";
+
+/**
+ * The `weight` key as the *stored* shape spells it: **absent when none was
+ * chosen** (SERVER-129, SPEC.md §7's rider signed 2026-08-19).
+ *
+ * The wire's `Resident.weight` is required and nullable, because a response
+ * field that is sometimes missing is a field every consumer has to guard. A
+ * *file* is the opposite case: `weight: null` on disk would be a second spelling
+ * of "none chosen" beside the absent key, and every designation written before
+ * this rider existed already spells it the absent way. So the two shapes differ
+ * by exactly this normalization, applied at the one place a file becomes a
+ * `Resident`.
+ *
+ * It fills the key in rather than making it optional, so the value that reaches
+ * {@link ResidentSchema} is the contract's own shape and nothing here restates
+ * what a weight may be. A mapping that *does* carry the key — including
+ * `weight:` with no value, which YAML reads as null — passes through untouched.
+ */
+const withStoredWeight = (value: unknown): unknown =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  !Object.hasOwn(value, "weight")
+    ? { ...value, weight: null }
+    : value;
 
 /**
  * The resident stored on a frontmatter mapping, or `null`.
@@ -35,11 +66,41 @@ import { ResidentSchema, type Resident } from "@corpus/contract";
  * predicate, so "what the file may say" and "what the wire carries" are the same
  * shape by construction — including the name's bounds, which exist precisely so
  * an unbounded string never reaches a lookup.
+ *
+ * **The weight is read, never interpreted** (SERVER-129). It is a level key from
+ * the workspace's own tier table — skill text this server never reads — so the
+ * only check is the contract's shape check. What the value governs is stated
+ * once, in the contract's `RESIDENT_WEIGHT_BOUNDARY`, and is not restated here:
+ * the rule has one wording, so it cannot drift site by site.
+ *
+ * An **ill-shaped** weight (a number, a blank string, two lines) fails the parse
+ * and takes the whole block with it, exactly as half a designation does: the
+ * block is one value, and honouring the profile while dropping the weight would
+ * silently substitute "none chosen" for a choice somebody made — the one thing
+ * §7's weight rider forbids.
  */
 export const residentOrNull = (value: unknown): Resident | null => {
-  const parsed = ResidentSchema.safeParse(value);
-  return parsed.success ? { name: parsed.data.name, docId: parsed.data.docId } : null;
+  const parsed = ResidentSchema.safeParse(withStoredWeight(value));
+  return parsed.success
+    ? { name: parsed.data.name, docId: parsed.data.docId, weight: parsed.data.weight }
+    : null;
 };
+
+/**
+ * The frontmatter value a designation writes — {@link residentOrNull}'s inverse,
+ * and the one place the stored shape is produced (SERVER-129).
+ *
+ * `weight` is spread in rather than written as a key, for the reason
+ * `requestedWeightPayload` spreads its own: *absent stays absent structurally*.
+ * A hand-written `weight: resident.weight` would put a `null` on disk for every
+ * designation that chose no level, and a reader would then meet two spellings of
+ * the same nothing forever.
+ */
+export const residentToStored = (resident: Resident): Record<string, unknown> => ({
+  name: resident.name,
+  docId: resident.docId,
+  ...(resident.weight === null ? {} : { weight: resident.weight }),
+});
 
 /**
  * The resident a thread's frontmatter designates: {@link residentOrNull} of the

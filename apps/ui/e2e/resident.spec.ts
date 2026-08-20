@@ -382,7 +382,7 @@ test.describe("designating a resident", () => {
       lanes: [
         {
           lane: "th_solo",
-          resident: { name: "researcher", docId: null },
+          resident: { name: "researcher", docId: null, weight: null },
           live: false,
           since: null,
           summary: null,
@@ -432,10 +432,20 @@ test.describe("designating a resident", () => {
     await page.getByRole("menu").locator('[data-act="resident-designate-general"]').click();
     await expect(page.locator(BADGE)).toBeVisible();
 
-    const picker = '[data-recipient-picker="th_solo"]';
-    // Two lanes now exist, which is when the control draws at all.
+    const picker = '[data-composer-address="th_solo"]';
+    // Two lanes now exist, which is when the line opens at all (UI-126: the
+    // rows sit behind the composer's address line).
+    await page.locator('button[data-address-line="th_solo"]').click();
     await expect(page.locator(`${picker} [data-recipient-lane]`)).toHaveCount(2);
     const lane = page.locator(`${picker} [data-recipient-lane="th_solo"]`);
+    // UI-126 and SPEC.md §11's rider signed 2026-08-19: where the weight
+    // control would be for a resident's lane, the composer states the answer
+    // instead. A running agent cannot change what it is, so a control here
+    // would discard the choice in silence — which is what a person reported.
+    await expect(page.locator(`${picker} [data-resident-weight]`)).toContainText(
+      "works at the weight chosen at launch",
+    );
+    await expect(page.locator(`${picker} [data-weight-key]`)).toHaveCount(0);
     await expect(lane).toContainText("Q3 planning");
     // Posting here goes to it without anybody saying so — §7's computed default.
     await expect(lane).toHaveAttribute("data-recipient-default", "true");

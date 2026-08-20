@@ -76,8 +76,19 @@ function skill(body: string): StubRow {
   };
 }
 
-const PICKER = "[data-weight-picker]";
 const OPTION = "[data-weight-key]";
+
+/**
+ * Opens a composer's address popover, which the levels sit behind since UI-126.
+ * Typing closes it — a click into the field is a pointer landing outside — so
+ * tests reopen it before reading the options back.
+ */
+async function openAddress(page: Page, surface = "th_w"): Promise<void> {
+  const pop = page.locator(`[data-address-pop="${surface}"]`);
+  if ((await pop.count()) > 0) return;
+  await page.locator(`button[data-address-line="${surface}"]`).click();
+  await pop.waitFor();
+}
 
 async function board(page: Page, body: string): Promise<StubCorpus> {
   const corpus = await stubCorpus(page, [THREADS_VIEW, THREAD, skill(body)]);
@@ -101,10 +112,13 @@ async function reopenedThread(page: Page): Promise<void> {
   await expect(page.locator('.reader [data-composer="th_w"]')).toBeVisible();
 }
 
-/** The labels one picker is offering, in order. */
-function labels(page: Page, picker = PICKER): Promise<string[]> {
-  return page.locator(`${picker} ${OPTION}`).allInnerTexts();
+/** The labels one composer's popover is offering, in order. */
+function labels(page: Page, surface = "th_w"): Promise<string[]> {
+  return page.locator(`[data-address-pop="${surface}"] ${OPTION}`).allInnerTexts();
 }
+
+const option = (page: Page, key: string, surface = "th_w") =>
+  page.locator(`[data-address-pop="${surface}"] [data-weight-key="${key}"]`);
 
 test.describe("the weight a composer may state", () => {
   test("offers the levels the workspace's own guidance declares, and preselects none", async ({
@@ -113,25 +127,34 @@ test.describe("the weight a composer may state", () => {
     await board(page, THREE);
     await openThread(page);
 
-    const picker = page.locator('.reader .composer [data-weight-picker="th_w"]');
-    await expect(picker).toBeVisible();
-    expect(await labels(page, '[data-weight-picker="th_w"]')).toEqual([
+    // At rest the composer carries one line stating the outcome (UI-126); the
+    // levels are one gesture behind it.
+    const line = page.locator('button[data-address-line="th_w"]');
+    await expect(line).toBeVisible();
+    await openAddress(page);
+    expect(await labels(page)).toEqual([
       "Small and mechanical",
       "Standard",
       "Heavy or judgment-laden",
     ]);
-    // Nothing preselected: the ordinary case is stating nothing, and a composer
-    // nobody has touched behaves exactly as it did before this feature.
-    await expect(picker.locator(`${OPTION}[aria-pressed="true"]`)).toHaveCount(0);
+    // Nothing preselected: the ordinary case is stating nothing.
+    await expect(
+      page.locator(`[data-address-pop="th_w"] ${OPTION}[aria-pressed="true"]`),
+    ).toHaveCount(0);
     // The Model column is the agent's and never reaches a composer.
-    await expect(picker).not.toContainText("A model");
+    await expect(page.locator('[data-composer-address="th_w"]')).not.toContainText("A model");
   });
 
   test("sends the chosen level's key, and nothing when nothing is chosen", async ({ page }) => {
     const corpus = await board(page, THREE);
     await openThread(page);
 
-    await page.locator('[data-weight-picker="th_w"] [data-weight-key="heavy"]').click();
+    await openAddress(page);
+    await option(page, "heavy").click();
+    // The line states the outcome before sending (§11's statement).
+    await expect(page.locator('[data-address-line="th_w"]')).toContainText(
+      "Heavy or judgment-laden",
+    );
     await page.locator('[data-composer="th_w"]').fill("Please restructure this.");
     await page.locator('[data-dropzone="th_w"] .send').click();
 
@@ -144,10 +167,9 @@ test.describe("the weight a composer may state", () => {
     expect(first.weight).toBe("heavy");
 
     // Cleared in one gesture — and then the request states nothing at all.
-    await page.locator('[data-weight-picker="th_w"] [data-weight-key="heavy"]').click();
-    await expect(
-      page.locator('[data-weight-picker="th_w"] [data-weight-key="heavy"]'),
-    ).toHaveAttribute("aria-pressed", "false");
+    await openAddress(page);
+    await option(page, "heavy").click();
+    await expect(option(page, "heavy")).toHaveAttribute("aria-pressed", "false");
     await page.locator('[data-composer="th_w"]').fill("And this, unweighted.");
     await page.locator('[data-dropzone="th_w"] .send').click();
 
@@ -164,44 +186,51 @@ test.describe("the weight a composer may state", () => {
     await board(page, THREE);
     await openThread(page);
 
-    await page.locator('[data-weight-picker="th_w"] [data-weight-key="light"]').click();
+    await openAddress(page);
+    await option(page, "light").click();
     await page.locator('[data-composer="th_w"]').fill("A small edit, please.");
     await page.locator('[data-dropzone="th_w"] .send').click();
 
-    // Visibly the starting point of the next one, without being re-chosen.
-    await expect(
-      page.locator('[data-weight-picker="th_w"] [data-weight-key="light"]'),
-    ).toHaveAttribute("aria-pressed", "true");
+    // Visibly the starting point of the next one, without being re-chosen: the
+    // line says it at rest, and the option is pressed behind it.
+    await expect(page.locator('[data-address-line="th_w"]')).toContainText("Small and mechanical");
+    await openAddress(page);
+    await expect(option(page, "light")).toHaveAttribute("aria-pressed", "true");
 
     // Browser-local, and gone with the page: reload starts from nothing.
     await page.reload();
     await page.locator(".board").waitFor();
     await reopenedThread(page);
-    await expect(page.locator('[data-weight-picker="th_w"] [aria-pressed="true"]')).toHaveCount(0);
+    await expect(page.locator('[data-address-line="th_w"]')).not.toContainText(
+      "Small and mechanical",
+    );
+    await openAddress(page);
+    await expect(page.locator(`[data-address-pop="th_w"] [aria-pressed="true"]`)).toHaveCount(0);
   });
 
-  test("shows as having nothing to act on for a note-only reply, keeping the choice", async ({
-    page,
-  }) => {
+  test("offers nothing to weigh on a note-only reply, and keeps the choice", async ({ page }) => {
     await board(page, THREE);
     await openThread(page);
 
-    const picker = page.locator('[data-weight-picker="th_w"]');
-    await expect(picker).toHaveAttribute("data-weight-live", "true");
+    const address = page.locator('[data-composer-address="th_w"]');
+    await expect(address).toHaveAttribute("data-address-live", "true");
+    await openAddress(page);
+    await option(page, "standard").click();
 
+    // Note only is §11's floor since UI-126: the line says nobody is asked and
+    // no level is offered anywhere — never a dimmed control holding a value.
     await page.locator('[data-dropzone="th_w"] .composer-foot .toggle').click();
-    await expect(picker).toHaveAttribute("data-weight-live", "false");
-    // Flipping the toggle does not clear a choice, and the control never
-    // disables the toggle in return — §8 alone decides what reaches the agent.
-    await page.locator('[data-weight-picker="th_w"] [data-weight-key="standard"]').click();
-    await expect(
-      page.locator('[data-weight-picker="th_w"] [data-weight-key="standard"]'),
-    ).toHaveAttribute("aria-pressed", "true");
+    await expect(address).toHaveAttribute("data-address-live", "false");
+    await expect(page.locator('[data-address-line="th_w"]')).toContainText("Nobody is asked");
+    await expect(page.locator(`[data-composer-address="th_w"] ${OPTION}`)).toHaveCount(0);
+
+    // Flipping back, the choice was kept — clearing it would be the control
+    // acting on the person unseen — and the line states it again.
     await page.locator('[data-dropzone="th_w"] .composer-foot .toggle').click();
-    await expect(picker).toHaveAttribute("data-weight-live", "true");
-    await expect(
-      page.locator('[data-weight-picker="th_w"] [data-weight-key="standard"]'),
-    ).toHaveAttribute("aria-pressed", "true");
+    await expect(address).toHaveAttribute("data-address-live", "true");
+    await expect(page.locator('[data-address-line="th_w"]')).toContainText("Standard");
+    await openAddress(page);
+    await expect(option(page, "standard")).toHaveAttribute("aria-pressed", "true");
   });
 
   test("follows the guidance when it is edited — a rename and a fourth level, no rebuild", async ({
@@ -209,7 +238,8 @@ test.describe("the weight a composer may state", () => {
   }) => {
     await board(page, THREE);
     await openThread(page);
-    expect(await labels(page, '[data-weight-picker="th_w"]')).toEqual([
+    await openAddress(page);
+    expect(await labels(page)).toEqual([
       "Small and mechanical",
       "Standard",
       "Heavy or judgment-laden",
@@ -245,8 +275,9 @@ test.describe("the weight a composer may state", () => {
     await page.locator(".board").waitFor();
     await reopenedThread(page);
 
+    await openAddress(page);
     await expect
-      .poll(async () => labels(page, '[data-weight-picker="th_w"]'))
+      .poll(async () => labels(page))
       .toEqual(["Small and mechanical", "Ordinary", "Heavy or judgment-laden", "Exhaustive"]);
   });
 
@@ -255,10 +286,12 @@ test.describe("the weight a composer may state", () => {
     const corpus = await board(page, "## Delegation\n\nDispatch through the Task tool.\n");
     await openThread(page);
 
-    // Not a fallback list, not a disabled control: nothing. The composer is
-    // indistinguishable from the app before this feature — including on the
-    // wire, where its requests state no weight at all.
-    await expect(page.locator(PICKER)).toHaveCount(0);
+    // Not a fallback list, not a disabled control: nothing to open. The line
+    // says who answers as plain text — there is neither a level nor a second
+    // lane behind it — and the wire states no weight at all.
+    await expect(page.locator('[data-address-line="th_w"]')).toBeVisible();
+    await expect(page.locator('button[data-address-line="th_w"]')).toHaveCount(0);
+    await expect(page.locator(OPTION)).toHaveCount(0);
     await page.locator('[data-composer="th_w"]').fill("Just a reply.");
     await page.locator('[data-dropzone="th_w"] .send').click();
 
@@ -281,12 +314,15 @@ test.describe("the weight a composer may state", () => {
     await page.keyboard.press("c");
     await expect(page.locator(".compose-panel")).toBeVisible();
 
-    const picker = page.locator('.compose-panel [data-weight-picker="compose"]');
-    await expect(picker).toBeVisible();
-    await expect(picker).toHaveAttribute("data-weight-live", "true");
-    await expect(picker.locator(`${OPTION}[aria-pressed="true"]`)).toHaveCount(0);
+    const address = page.locator('.compose-panel [data-composer-address="compose"]');
+    await expect(address).toBeVisible();
+    await expect(address).toHaveAttribute("data-address-live", "true");
+    await openAddress(page, "compose");
+    await expect(
+      page.locator(`[data-address-pop="compose"] ${OPTION}[aria-pressed="true"]`),
+    ).toHaveCount(0);
 
-    await picker.locator('[data-weight-key="light"]').click();
+    await option(page, "light", "compose").click();
     await page.locator('[data-composer="compose"]').fill("A question for the agent.");
     await page.locator(".btn-ask").click();
 
@@ -299,7 +335,11 @@ test.describe("the weight a composer may state", () => {
     const corpus = await board(page, THREE);
     await openThread(page);
 
-    await page.locator('[data-weight-picker="th_w"] [data-weight-key="standard"]').click();
+    await openAddress(page);
+    await option(page, "standard").click();
+    // The line toggles its popover closed — no key involved — so the field
+    // underneath is clickable again.
+    await page.locator('button[data-address-line="th_w"]').click();
     const field = page.locator('[data-composer="th_w"]');
     await field.click();
     await field.pressSequentially("one");

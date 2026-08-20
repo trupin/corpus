@@ -10,8 +10,10 @@
  *     skill, as a projected document, through the ordinary document queries.
  *   - `weightChoice.ts` — the standing choice, browser-local, per conversation,
  *     and the single spelling of "nothing chosen".
- *   - `WeightPicker.tsx` + `composerReach.ts` — the control, and the one
- *     derivation of whether a composer says it will reach the agent.
+ *   - `composerReach.ts` — the one derivation of whether a composer says it
+ *     will reach the agent. The control itself is
+ *     `../address/ComposerAddress.tsx` since UI-126, which folded the weight
+ *     levels and the recipient rows into one line-and-popover surface.
  */
 
 export { composerReachesAgent, type ComposerReach } from "./composerReach.js";
@@ -21,7 +23,6 @@ export {
   useWeightLevels,
 } from "./useWeightLevels.js";
 export {
-  childThreadWeightScope,
   chooseWeight,
   docWeightScope,
   GLOBAL_COMPOSE_WEIGHT_SCOPE,
@@ -32,11 +33,3 @@ export {
   type ComposerWeight,
 } from "./weightChoice.js";
 export { parseWeightLevels, WEIGHT_TABLE_HEADER, type WeightLevel } from "./weightLevels.js";
-export {
-  WeightPicker,
-  WEIGHT_INERT_TITLE,
-  WEIGHT_LIVE_TITLE,
-  WEIGHT_PICKER_LABEL,
-  WEIGHT_UNKNOWN_TITLE,
-  type WeightPickerProps,
-} from "./WeightPicker.js";

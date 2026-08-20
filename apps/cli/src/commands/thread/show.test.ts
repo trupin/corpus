@@ -133,7 +133,7 @@ describe("corpus thread show", () => {
         ...ANCHORED,
         parent: null,
         anchor: null,
-        resident: { name: "researcher", docId: "doc_r1" },
+        resident: { name: "researcher", docId: "doc_r1", weight: null },
       }),
     );
 
@@ -154,7 +154,7 @@ describe("corpus thread show", () => {
     // `resident null · null`, which reads as a bug in the thread rather than as
     // the ordinary designation it is.
     const stub = await startStubServer(
-      jsonResponder(200, { ...ANCHORED, resident: { name: null, docId: null } }),
+      jsonResponder(200, { ...ANCHORED, resident: { name: null, docId: null, weight: null } }),
     );
 
     const harness = stubContext(stub, { args: ARGS });
@@ -171,7 +171,10 @@ describe("corpus thread show", () => {
     // under that root resolves. The two nulls a reader could confuse
     // are one level apart, so this must not read like the case above.
     const stub = await startStubServer(
-      jsonResponder(200, { ...ANCHORED, resident: { name: "researcher", docId: null } }),
+      jsonResponder(200, {
+        ...ANCHORED,
+        resident: { name: "researcher", docId: null, weight: null },
+      }),
     );
 
     const harness = stubContext(stub, { args: ARGS });
@@ -197,7 +200,10 @@ describe("corpus thread show", () => {
     // request, read from `GET /api/agents` and free to disagree for a grace
     // window. One read, one fact.
     const stub = await startStubServer(
-      jsonResponder(200, { ...ANCHORED, resident: { name: "researcher", docId: "doc_r1" } }),
+      jsonResponder(200, {
+        ...ANCHORED,
+        resident: { name: "researcher", docId: "doc_r1", weight: null },
+      }),
     );
 
     const harness = stubContext(stub, { args: ARGS });

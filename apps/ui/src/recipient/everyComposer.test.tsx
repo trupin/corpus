@@ -252,15 +252,28 @@ const lanesShown = (): string[] =>
     (option) => option.dataset["recipientLane"] ?? "",
   );
 
-const picker = (): HTMLElement | null => document.querySelector("[data-recipient-picker]");
-
 const laneOption = (lane: string): HTMLElement => {
   const found = document.querySelector<HTMLElement>(`[data-recipient-lane="${lane}"]`);
   if (found === null) throw new Error(`no option for lane ${lane}`);
   return found;
 };
 
+/** The address line the rows sit behind since UI-126, wherever it stands. */
+function addressLine(): HTMLElement {
+  const found = document.querySelector<HTMLElement>("[data-address-line]");
+  if (found === null) throw new Error("no address line");
+  return found;
+}
+
+/** Opens the address popover. Throws while there is nothing to open yet. */
+function openAddress(): void {
+  const line = addressLine();
+  if (line.tagName !== "BUTTON") throw new Error("the address line does not open");
+  if (line.getAttribute("aria-expanded") !== "true") fireEvent.click(line);
+}
+
 async function offered(): Promise<void> {
+  await waitFor(openAddress);
   await waitFor(() => {
     expect(lanesShown()).toEqual(["orchestrator", RESIDENT_THREAD_ID]);
   });
@@ -274,14 +287,18 @@ describe.each(SURFACES)("$name", (surface) => {
     expect(laneOption(RESIDENT_THREAD_ID).textContent).toContain(RESIDENT_NAME);
   });
 
-  it("offers no control at all when the workspace has designated nothing", async () => {
+  it("offers no roster at all when the workspace has designated nothing", async () => {
     const probe = surface.mount([]);
-    // Nothing to choose between, one possible answer: the composer is
-    // indistinguishable from before this feature.
+    // Nothing to choose between, one possible answer: the line says it and
+    // opens to nothing (these fixtures declare no weight levels either).
     await waitFor(() => {
       expect(probe.calls()).toContain("GET /api/agents");
     });
-    expect(picker()).toBeNull();
+    await waitFor(() => {
+      expect(addressLine().tagName).toBe("SPAN");
+    });
+    expect(document.querySelector("[data-address-pop]")).toBeNull();
+    expect(lanesShown()).toEqual([]);
     const sent = await probe.send();
     expect("recipient" in sent).toBe(false);
   });

@@ -8,16 +8,25 @@ import {
   DesignateResidentRequestSchema,
   LANE_SUMMARY_MAX_LENGTH,
   LaneOriginSchema,
+  parseResidentDesignatedPayload,
+  parseResidentReleasedPayload,
   presenceLiveField,
   presenceSinceField,
+  RESIDENT_DESIGNATED_EVENT_TYPE,
+  RESIDENT_WEIGHT_BOUNDARY,
+  RESIDENT_RELEASE_REASONS,
+  RESIDENT_RELEASED_EVENT_TYPE,
+  ResidentDesignatedPayloadSchema,
+  ResidentReleasedPayloadSchema,
   ResidentSchema,
   residentField,
 } from "./agents.js";
+import { REQUESTED_WEIGHT_MAX_LENGTH, RequestedWeightSchema } from "./weight.js";
 
-const resident = { name: "researcher", docId: "doc_agentdef" };
+const resident = { name: "researcher", docId: "doc_agentdef", weight: null };
 
 /** A designation that named no profile (SPEC.md §7, rider SHARED-048). */
-const generalResident = { name: null, docId: null };
+const generalResident = { name: null, docId: null, weight: null };
 
 const orchestratorLane = {
   lane: "orchestrator",
@@ -74,8 +83,8 @@ describe("Resident", () => {
   });
 
   it("demands both halves, present, even when both are null", () => {
-    expect(ResidentSchema.safeParse({ name: "researcher" }).success).toBe(false);
-    expect(ResidentSchema.safeParse({ docId: "doc_agentdef" }).success).toBe(false);
+    expect(ResidentSchema.safeParse({ name: "researcher", weight: null }).success).toBe(false);
+    expect(ResidentSchema.safeParse({ docId: "doc_agentdef", weight: null }).success).toBe(false);
     expect(ResidentSchema.safeParse({}).success).toBe(false);
   });
 
@@ -87,7 +96,11 @@ describe("Resident", () => {
    * and could collide with a real agent-def titled the same.
    */
   it("round-trips a general resident as two nulls, and never as a name", () => {
-    expect(ResidentSchema.parse(generalResident)).toEqual({ name: null, docId: null });
+    expect(ResidentSchema.parse(generalResident)).toEqual({
+      name: null,
+      docId: null,
+      weight: null,
+    });
   });
 
   /**
@@ -97,7 +110,7 @@ describe("Resident", () => {
    * from a general resident — one is ordinary, the other is worth mentioning.
    */
   it("round-trips a named profile that no longer resolves, distinguishably", () => {
-    const gone = { name: "researcher", docId: null };
+    const gone = { name: "researcher", docId: null, weight: null };
     expect(ResidentSchema.parse(gone)).toEqual(gone);
     expect(gone.name).not.toBe(generalResident.name);
   });
@@ -109,14 +122,63 @@ describe("Resident", () => {
    * (CONTRACT-037: a `oneOf` has no `type: "object"`).
    */
   it("refuses a docId with no name, which would be a document nobody named", () => {
-    const parsed = ResidentSchema.safeParse({ name: null, docId: "doc_agentdef" });
+    const parsed = ResidentSchema.safeParse({ name: null, docId: "doc_agentdef", weight: null });
     expect(parsed.success).toBe(false);
     expect(parsed.error?.issues[0]?.path).toEqual(["docId"]);
   });
 
   /** A blank name is still a mistake, wherever it appears. */
   it("still refuses a blank name rather than reading it as no profile", () => {
-    expect(ResidentSchema.safeParse({ name: "   ", docId: null }).success).toBe(false);
+    expect(ResidentSchema.safeParse({ name: "   ", docId: null, weight: null }).success).toBe(
+      false,
+    );
+  });
+});
+
+/**
+ * CONTRACT-067 / SPEC.md §7's rider signed 2026-08-19: a resident's weight is
+ * set when it is designated, not per message, and the `Resident` reports it.
+ */
+describe("Resident.weight", () => {
+  it("is required and nullable: null is none chosen, the launcher decides", () => {
+    expect(ResidentSchema.parse(resident).weight).toBeNull();
+    expect(ResidentSchema.safeParse({ name: "researcher", docId: "doc_agentdef" }).success).toBe(
+      false,
+    );
+  });
+
+  it("carries a level key verbatim, the same token a message's weight uses", () => {
+    expect(ResidentSchema.parse({ ...resident, weight: "heavy" }).weight).toBe("heavy");
+    expect(RequestedWeightSchema.parse("heavy")).toBe("heavy");
+  });
+
+  /** Orthogonal to the profile pair: a general resident may run at a stated weight. */
+  it("is independent of the profile pair", () => {
+    expect(ResidentSchema.parse({ ...generalResident, weight: "light" })).toEqual({
+      name: null,
+      docId: null,
+      weight: "light",
+    });
+    expect(ResidentSchema.parse({ name: "researcher", docId: null, weight: "light" }).weight).toBe(
+      "light",
+    );
+  });
+
+  it("refuses a blank or multi-line level, as the message field does", () => {
+    for (const weight of ["", "   ", "hea\nvy"]) {
+      expect(ResidentSchema.safeParse({ ...resident, weight }).success).toBe(false);
+    }
+  });
+
+  it("states the boundary in the one published wording, on both sides of the wire", () => {
+    expect(RESIDENT_WEIGHT_BOUNDARY).toBe(
+      "governs the resident's own turns; a weight stated on a message still governs what the " +
+        "resident hands off (SPEC.md §7, rider signed 2026-08-19)",
+    );
+    expect(ResidentSchema.shape.weight.description).toContain(RESIDENT_WEIGHT_BOUNDARY);
+    expect(DesignateResidentRequestSchema.shape.weight.description).toContain(
+      RESIDENT_WEIGHT_BOUNDARY,
+    );
   });
 });
 
@@ -211,7 +273,7 @@ describe("AgentLane", () => {
   it("carries a general-resident lane as a designated row, not as a residentless one", () => {
     const general = { ...residentLane, resident: generalResident };
     const parsed = AgentLaneSchema.parse(general);
-    expect(parsed.resident).toEqual({ name: null, docId: null });
+    expect(parsed.resident).toEqual({ name: null, docId: null, weight: null });
     expect(parsed.resident).not.toBeNull();
     // Everything else about the row is identical to a profiled lane's (SPEC.md
     // §7: "everything else about a resident is identical either way").
@@ -304,6 +366,31 @@ describe("DesignateResidentRequest", () => {
     });
   });
 
+  /**
+   * CONTRACT-067. The designation is the one place a resident's weight is
+   * chosen (SPEC.md §7, rider signed 2026-08-19). Optional, so omitting it keeps
+   * today's behaviour exactly; sent alone it designates a general resident at
+   * that weight, because the two fields are independent.
+   */
+  it("takes the weight the resident runs at, independently of the profile", () => {
+    expect(DesignateResidentRequestSchema.parse({ name: "researcher", weight: "heavy" })).toEqual({
+      name: "researcher",
+      weight: "heavy",
+    });
+    expect(DesignateResidentRequestSchema.parse({ weight: "heavy" })).toEqual({ weight: "heavy" });
+    expect(DesignateResidentRequestSchema.parse({}).weight).toBeUndefined();
+  });
+
+  it("has no null or blank spelling of no weight: absence is the only one", () => {
+    expect(DesignateResidentRequestSchema.safeParse({ weight: null }).success).toBe(false);
+    expect(DesignateResidentRequestSchema.safeParse({ weight: "" }).success).toBe(false);
+    expect(
+      DesignateResidentRequestSchema.safeParse({
+        weight: "x".repeat(REQUESTED_WEIGHT_MAX_LENGTH + 1),
+      }).success,
+    ).toBe(false);
+  });
+
   /** Strict, like every request body (CONTRACT-017). */
   it("refuses an unknown key rather than silently designating by the wrong field", () => {
     const parsed = DesignateResidentRequestSchema.safeParse({
@@ -355,5 +442,83 @@ describe("DesignateResidentRequest", () => {
    */
   it("has no null spelling: absence is the only way to ask for no profile", () => {
     expect(DesignateResidentRequestSchema.safeParse({ name: null }).success).toBe(false);
+  });
+});
+
+/**
+ * CONTRACT-069. The designation's payload, declared here rather than hand-built
+ * by the server, and the release's beside it.
+ */
+describe("the resident event payloads", () => {
+  const designated = { threadId: "th_x9y8", resident };
+  const released = { threadId: "th_x9y8", resident, reason: "released" };
+
+  it("carries a designation as the thread and the resolved resident", () => {
+    expect(ResidentDesignatedPayloadSchema.parse(designated)).toEqual(designated);
+    expect(
+      ResidentDesignatedPayloadSchema.parse({ ...designated, resident: generalResident }).resident,
+    ).toEqual(generalResident);
+  });
+
+  it("carries a release as the thread, who left, and why", () => {
+    expect(ResidentReleasedPayloadSchema.parse(released)).toEqual(released);
+  });
+
+  /**
+   * Three ways out of a designation (SPEC.md §7), and **a lapse is not one of
+   * them**: the fallback is computed at claim time and writes nothing.
+   */
+  it("closes the reasons at §7's three, with no lapse among them", () => {
+    expect([...RESIDENT_RELEASE_REASONS]).toEqual(["released", "resolved", "replaced"]);
+    for (const reason of RESIDENT_RELEASE_REASONS) {
+      expect(ResidentReleasedPayloadSchema.parse({ ...released, reason }).reason).toBe(reason);
+    }
+    expect(ResidentReleasedPayloadSchema.safeParse({ ...released, reason: "lapsed" }).success).toBe(
+      false,
+    );
+    expect(
+      ResidentReleasedPayloadSchema.safeParse({ ...released, reason: undefined }).success,
+    ).toBe(false);
+  });
+
+  it("demands the resident that left, so the orchestrator can say who", () => {
+    expect(
+      ResidentReleasedPayloadSchema.safeParse({ threadId: "th_x9y8", reason: "resolved" }).success,
+    ).toBe(false);
+    expect(ResidentReleasedPayloadSchema.safeParse({ ...released, resident: null }).success).toBe(
+      false,
+    );
+  });
+
+  it("refuses a document id where the root thread belongs", () => {
+    expect(
+      ResidentReleasedPayloadSchema.safeParse({ ...released, threadId: "doc_a1b2" }).success,
+    ).toBe(false);
+  });
+
+  it("narrows a queue event by type, and declines the other type and a malformed payload", () => {
+    expect(
+      parseResidentReleasedPayload({ type: RESIDENT_RELEASED_EVENT_TYPE, payload: released }),
+    ).toEqual(released);
+    expect(
+      parseResidentReleasedPayload({ type: RESIDENT_DESIGNATED_EVENT_TYPE, payload: released }),
+    ).toBeUndefined();
+    expect(
+      parseResidentReleasedPayload({ type: RESIDENT_RELEASED_EVENT_TYPE, payload: designated }),
+    ).toBeUndefined();
+    expect(
+      parseResidentDesignatedPayload({ type: RESIDENT_DESIGNATED_EVENT_TYPE, payload: designated }),
+    ).toEqual(designated);
+    expect(
+      parseResidentDesignatedPayload({ type: RESIDENT_RELEASED_EVENT_TYPE, payload: designated }),
+    ).toBeUndefined();
+    // An older server's designation carried a bare name; the parser declines it
+    // rather than throwing, because events come off disk.
+    expect(
+      parseResidentDesignatedPayload({
+        type: RESIDENT_DESIGNATED_EVENT_TYPE,
+        payload: { threadId: "th_x9y8", name: "researcher" },
+      }),
+    ).toBeUndefined();
   });
 });

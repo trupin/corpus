@@ -86,6 +86,10 @@ export { useQueueStatus } from "./query/useQueueStatus.js";
 // projection. A read and never a push, so there is no poll and no `staleTime`
 // override here or anywhere downstream.
 export { useAgentsRoster, type AgentRosterView } from "./query/useAgentsRoster.js";
+// …and what one of those lanes owns (SPEC.md §7, CONTRACT-068). The other half
+// of the same question, read the same way: an ordinary cached read of the
+// server's own walk, never a walk of its own.
+export { useThreadScope, type ThreadScopeView } from "./query/useThreadScope.js";
 // The semantic index's health report — the console strip's index pill reads it,
 // and it refreshes on the `["index"]` frames the embed worker already emits.
 export { useIndexStatus } from "./query/useIndexStatus.js";
@@ -154,6 +158,7 @@ export {
   relatedKey,
   searchKey,
   threadKey,
+  threadScopeKey,
   TREE_KEY,
   type CanonicalFilter,
   type QueryKey,
@@ -328,14 +333,12 @@ export {
 // (rider signed 2026-08-06). Here rather than in `apps/ui` for the same reason
 // the key contract and the attachment intake are: the sentence binds every
 // composer in the app *and* every composer a plugin contributes, and a plugin
-// may import nothing but this package. Its stylesheet is a subpath, like the
-// tokens: `import "@corpus/kit/weight.css"`.
+// may import nothing but this package.
 //
 // The levels are never enumerated here — `weight/weightLevels.ts` says why an
 // enum in this package would be wrong per workspace rather than merely
 // inelegant.
 export {
-  childThreadWeightScope,
   chooseWeight,
   composerReachesAgent,
   docWeightScope,
@@ -348,23 +351,46 @@ export {
   useComposerWeight,
   useWeightLevels,
   weightChoice,
-  WeightPicker,
-  WEIGHT_INERT_TITLE,
-  WEIGHT_LIVE_TITLE,
-  WEIGHT_PICKER_LABEL,
   WEIGHT_TABLE_HEADER,
-  WEIGHT_UNKNOWN_TITLE,
   type ComposerReach,
   type ComposerWeight,
   type WeightLevel,
-  type WeightPickerProps,
 } from "./weight/index.js";
 
+// The control both of the above are shown through since UI-126: one line
+// stating who answers and at what weight, opening to change either — and, for
+// a resident's lane, the sentence that replaces a weight control whose choice
+// would be discarded (SPEC.md §7 and §11, rider signed 2026-08-19). Here for
+// the same reason: §11's enumeration binds every composer a plugin
+// contributes. Stylesheet subpath: `import "@corpus/kit/address.css"`.
+export {
+  answeringRow,
+  composerAddress,
+  ComposerAddress,
+  residentWeightSentence,
+  weightLabel,
+  ADDRESS_FLOOR_TITLE,
+  ADDRESS_OPEN_TITLE,
+  ADDRESSED_TO,
+  LAUNCH_WEIGHT_CLAUSE,
+  LINE_SEPARATOR,
+  NOBODY_ASKED,
+  RECIPIENT_GROUP_LABEL,
+  RECIPIENT_LEAD,
+  WEIGHT_GROUP_LABEL,
+  WEIGHT_LEAD,
+  WEIGHT_UNKNOWN_TITLE,
+  type AddressWeight,
+  type ComposerAddressInput,
+  type ComposerAddressModel,
+  type ComposerAddressProps,
+  type ResidentWeight,
+} from "./address/index.js";
+
 // SPEC.md §7's recipient — the composer offers the live roster, the default is
-// computed from where the message is posted, and an override routes one message.
-// Here for `WeightPicker`'s reason: the sentence binds every composer in the app
-// and every composer a plugin contributes. Stylesheet subpath:
-// `import "@corpus/kit/recipient.css"`.
+// computed from where the message is posted, and an override routes one
+// message. Here for the weight family's reason: the sentence binds every
+// composer in the app and every composer a plugin contributes.
 export {
   laneLine,
   laneLiveness,
@@ -394,13 +420,8 @@ export {
   MISSING_PROFILE_NOTE,
   NEVER_SEEN_LINE,
   ORCHESTRATOR_LABEL,
-  RECIPIENT_GROUP_LABEL,
-  RECIPIENT_INERT_TITLE,
-  RECIPIENT_LIVE_TITLE,
-  RECIPIENT_PICKER_LABEL,
   RECIPIENT_REFUSED_STATEMENT,
   RECIPIENT_UNKNOWN_STATEMENT,
-  RecipientPicker,
   SCOPE_NODE_ABSENT,
   UNNAMED_RESIDENT_LABEL,
   type ComposerRecipient,
@@ -411,7 +432,6 @@ export {
   type LaneResidentKind,
   type LaneRow,
   type MissingProfileCause,
-  type RecipientPickerProps,
   type ResidentLane,
   type ScopeNode,
   type ScopeNodeLookup,

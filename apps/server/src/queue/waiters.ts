@@ -46,7 +46,26 @@ export interface WaiterRegistryOptions {
   readonly onProbeError?: (error: unknown) => void;
 }
 
-type Settle = (woke: boolean) => void;
+/**
+ * How a park ended, from the parked request's point of view (SERVER-128).
+ *
+ * Three values rather than a boolean, because the caller's next move differs for
+ * each and two of them used to be indistinguishable:
+ *
+ * - `"woke"` — work this scope can see has arrived. The caller re-reads and, if
+ *   the work turns out not to be for it after all, parks again for the rest of
+ *   its window. That re-park is what makes a wake cheap.
+ * - `"expired"` — the window ran out, the client went away, or the server is
+ *   closing. The caller answers with nothing.
+ * - `"evicted"` — the *lane* ended while the request was parked on it
+ *   ({@link WaiterRegistry.evict}). The caller must answer with nothing **and
+ *   must not park again**: there is no work to find, and re-parking would hold
+ *   the request open on a lane that no longer exists for the rest of its window
+ *   — the eight-minute silence SERVER-128 exists to remove.
+ */
+export type ParkOutcome = "woke" | "expired" | "evicted";
+
+type Settle = (outcome: ParkOutcome) => void;
 
 /**
  * Which parked scopes a wake-up concerns.
@@ -86,34 +105,35 @@ export class WaiterRegistry {
   }
 
   /**
-   * Parks until work arrives on a lane this `scope` can see (`true`), the window
-   * expires, the client disconnects, or the server shuts down (all `false`).
-   * Every exit path removes the waiter and its timer — a dropped client leaves
-   * nothing behind.
+   * Parks until work arrives on a lane this `scope` can see, the window expires,
+   * the client disconnects, the server shuts down, or the lane is evicted — see
+   * {@link ParkOutcome} for what each answer obliges the caller to do. Every exit
+   * path removes the waiter and its timer, so a dropped client leaves nothing
+   * behind.
    */
-  async wait(scope: Lane, timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
-    if (this.closed || signal?.aborted === true || timeoutMs <= 0) return false;
+  async wait(scope: Lane, timeoutMs: number, signal?: AbortSignal): Promise<ParkOutcome> {
+    if (this.closed || signal?.aborted === true || timeoutMs <= 0) return "expired";
 
-    return new Promise<boolean>((resolve) => {
+    return new Promise<ParkOutcome>((resolve) => {
       let settled = false;
-      const settle: Settle = (woke) => {
+      const settle: Settle = (outcome) => {
         if (settled) return;
         settled = true;
         this.waiters.delete(settle);
         clearTimeout(timer);
         signal?.removeEventListener("abort", onAbort);
         this.stopPollingWhenIdle();
-        resolve(woke);
+        resolve(outcome);
       };
 
       const timer = setTimeout(() => {
-        settle(false);
+        settle("expired");
       }, timeoutMs);
       // A parked request must never be the reason the process stays alive.
       timer.unref();
 
       const onAbort = (): void => {
-        settle(false);
+        settle("expired");
       };
       signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -125,14 +145,40 @@ export class WaiterRegistry {
   /** Work is available: release everyone whose scope `reaches` says it concerns. */
   notify(reaches: Reaches): void {
     for (const [settle, scope] of [...this.waiters]) {
-      if (reaches(scope)) settle(true);
+      if (reaches(scope)) settle("woke");
     }
+  }
+
+  /**
+   * The lane these scopes parked on has ended: settle them as `"evicted"`, and
+   * answer how many there were (SERVER-128).
+   *
+   * **Not `notify`.** A wake says *look again*, and looking again on a lane whose
+   * designation has just been removed finds nothing and parks for the rest of the
+   * window — which is exactly the up-to-eight-minute silence a person hitting
+   * *release* is trying to end. The outcome is a distinct value so the loop can
+   * tell "nothing yet" from "nothing ever", and that distinction is the whole
+   * mechanism.
+   *
+   * The predicate is a {@link Reaches} for consistency with `notify`, but the one
+   * caller passes exact lane equality: a release ends the parks on that lane and
+   * touches no other, least of all the orchestrator's — which learns about the
+   * release the ordinary way, from the event it was stamped with.
+   */
+  evict(reaches: Reaches): number {
+    let evicted = 0;
+    for (const [settle, scope] of [...this.waiters]) {
+      if (!reaches(scope)) continue;
+      settle("evicted");
+      evicted += 1;
+    }
+    return evicted;
   }
 
   /** Shutdown: release everyone as "expired" and stop the timer. */
   close(): void {
     this.closed = true;
-    for (const settle of [...this.waiters.keys()]) settle(false);
+    for (const settle of [...this.waiters.keys()]) settle("expired");
     this.stopPollingWhenIdle();
   }
 

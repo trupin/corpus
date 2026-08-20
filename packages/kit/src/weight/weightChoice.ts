@@ -107,34 +107,15 @@ export function resetWeightChoices(): void {
  * The scope of a thread's **reply box** — the composer that continues it.
  *
  * "The same conversation" is the thread, so two columns showing it share one
- * starting point. The comment-on-a-turn box sitting inside one of its turns does
- * **not**: see {@link childThreadWeightScope} for why a control that can never
- * act must not seed one that can.
+ * starting point. The comment-on-a-turn box sitting inside one of its turns
+ * does **not** share it — that box always sends `requestsAgent: false`, so it
+ * sits on §11's floor and offers no weight at all (UI-126); a scope for a
+ * choice that cannot be made would be a value nothing renders, which is the
+ * "acts on you unseen" case §11 forbids. Its `child:` scope was removed with
+ * its control.
  */
 export function threadWeightScope(threadId: string): string {
   return `thread:${threadId}`;
-}
-
-/**
- * The scope of the **comment-on-a-turn** box, which is its own and not the
- * parent thread's (UI-082's PR #35 review).
- *
- * That box always sends `requestsAgent: false` — a comment on a turn is a note
- * until the child card's own composer says otherwise — so its control is
- * permanently inert: whatever is chosen there provably governs nothing. Under
- * {@link threadWeightScope} that dead control would still *write*, and the value
- * would surface as the standing starting point of the parent thread's reply box,
- * which does reach the agent. §11 allows remembering a choice because the
- * surface that stores one renders it; a choice made where it could not act,
- * seeding a request where it can, is the "acts on you unseen" case wearing the
- * rule's clothes.
- *
- * So the box keeps a scope of its own. Two child boxes on the same parent thread
- * still share it — they are the same surface on the same conversation — and
- * neither touches the reply box.
- */
-export function childThreadWeightScope(parentThreadId: string): string {
-  return `child:${parentThreadId}`;
 }
 
 /**
@@ -198,7 +179,7 @@ export interface ComposerWeight {
  * otherwise editing the guidance to declare nothing would leave a composer
  * silently sending a weight it no longer shows, which is the "acts on you
  * unseen" case §11 forbids. A level that disappears while others remain is a
- * different matter and is *not* rewritten: {@link WeightPicker} keeps showing it
+ * different matter and is *not* rewritten: the composer's address control keeps showing it
  * so the person can see what will be sent, because the UI silently substituting
  * a surviving level would be the composer lying about the request.
  */

@@ -138,7 +138,7 @@ describe("the shape of the roster", () => {
     expect(rows.map((row) => row.lane)).toEqual(["orchestrator", id]);
     expect(rows[1]).toMatchObject({
       lane: id,
-      resident: { name: "researcher", docId: "doc_researcher" },
+      resident: { name: "researcher", docId: "doc_researcher", weight: null },
       live: false,
       since: null,
       origin: { id, title: "let us talk about the archive" },
@@ -174,7 +174,7 @@ describe("the shape of the roster", () => {
     // has gone reports null rather than an id pointing at nothing (SHARED-048's
     // "the missing profile is reported rather than silently substituted"). The
     // case below is the one this must stay distinguishable from.
-    expect((await laneRow(id)).resident).toEqual({ name: "researcher", docId: null });
+    expect((await laneRow(id)).resident).toEqual({ name: "researcher", docId: null, weight: null });
   });
 
   // SPEC.md §7's SHARED-048 rider: naming no profile is the **ordinary** case,
@@ -191,7 +191,7 @@ describe("the shape of the roster", () => {
     // `resident: null` on a roster row would mean the lane belongs to no
     // conversation, which is true only of the orchestrator's — so a general
     // resident is an **object** whose halves are both null.
-    expect(row.resident).toEqual({ name: null, docId: null });
+    expect(row.resident).toEqual({ name: null, docId: null, weight: null });
     expect(row.origin).toEqual({ id: created.id, title: expect.any(String) as string });
     expect(row.live).toBe(false);
     expect(row.since).toBeNull();
@@ -208,8 +208,47 @@ describe("the shape of the roster", () => {
     rmSync(join(ws.root, ".claude/agents/researcher.md"));
     ws.reproject();
 
-    expect((await laneRow(general.id)).resident).toEqual({ name: null, docId: null });
-    expect((await laneRow(profiled)).resident).toEqual({ name: "researcher", docId: null });
+    expect((await laneRow(general.id)).resident).toEqual({ name: null, docId: null, weight: null });
+    expect((await laneRow(profiled)).resident).toEqual({
+      name: "researcher",
+      docId: null,
+      weight: null,
+    });
+  });
+
+  // SPEC.md §7's rider signed 2026-08-19 (SERVER-129). A surface that shows who
+  // is resident has to show what it runs at, or the choice is invisible once
+  // made — and the roster is the surface UI-125 draws from.
+  it("reports the weight a lane was designated at, and null when none was chosen", async () => {
+    const heavy = await createThread(ws, { body: "weighty" });
+    expect(
+      (await ws.post(`/api/threads/${heavy.id}/resident`, { name: "researcher", weight: "heavy" }))
+        .status,
+    ).toBe(200);
+    const unweighted = await designatedThread("no level chosen");
+
+    expect((await laneRow(heavy.id)).resident).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+      weight: "heavy",
+    });
+    expect((await laneRow(unweighted)).resident?.weight).toBeNull();
+  });
+
+  // Orthogonal to the profile pair (SERVER-129): the weight is a property of the
+  // designation, not of the persona, so a general resident may run at a stated
+  // level. A roster that read the weight off the profile would answer null here.
+  it("reports a general resident's weight", async () => {
+    const general = await createThread(ws, { body: "general but heavy" });
+    expect((await ws.post(`/api/threads/${general.id}/resident`, { weight: "heavy" })).status).toBe(
+      200,
+    );
+
+    expect((await laneRow(general.id)).resident).toEqual({
+      name: null,
+      docId: null,
+      weight: "heavy",
+    });
   });
 
   // §7's presence is the parked scoped request and nothing else, so `live` must
@@ -562,35 +601,40 @@ describe("a scope that names no lane", () => {
     await Promise.all([named.done, unscoped.done]);
   });
 
-  // **The judgment call, stated as a test.** A resident released while its
-  // listener is parked is a real sequence, and it is CONTRACT-053's window: the
-  // park is *not* disturbed — §7's presence is the held request, and a lane the
-  // server is at this moment holding an `idle` open on has somebody listening on
-  // it whatever the frontmatter now says — so `agent.live` and the roster
-  // legitimately disagree until the listener stops and the lane lapses. What is
-  // refused is the **re-park**. A test that forbade all disagreement would
-  // forbid this one, which is why the assertion above is about a lane that was
-  // never designated rather than about the two answers always matching.
-  it("keeps a park admitted before the release, and refuses only the re-park", async () => {
+  // **The judgment call, restated by SERVER-128.** A resident released while its
+  // listener is parked is a real sequence, and it used to be CONTRACT-053's
+  // window: the park was left alone, so `agent.live` and the roster disagreed
+  // until the listener's own window ran out — up to §7's rearm, ~8 minutes.
+  //
+  // The release now **ends that park** on its own round trip, so the disagreement
+  // is bounded by the liveness tracker's grace window rather than by the park
+  // rearm. `live` is still true immediately afterwards, and that is correct
+  // rather than stale: presence deliberately spans the gap between one park and
+  // the next (SERVER-112), and the listener has had exactly one round trip to
+  // read its designation. What refuses is still the **re-park**, which is what
+  // the converse skill reads as its retirement.
+  it("ends a park admitted before the release, and refuses the re-park", async () => {
     const id = await designatedThread("released out from under its listener");
     const parked = park(id);
     await settle();
 
     expect((await ws.del(`/api/threads/${id}/resident`)).status).toBe(200);
 
-    // The legitimate disagreement: nothing lists the lane, and somebody is
-    // holding an `idle` open on it.
+    // The park is over — an ordinary empty window, not an error, and the
+    // listener is left to find out why by reading its designation.
+    expect((await parked.done).status).toBe(204);
+
+    // Nothing lists the lane, and presence still reports the listener that was
+    // there a moment ago: the grace window, not a stale record.
     expect((await roster()).map((row) => row.lane)).toEqual(["orchestrator"]);
     expect((await agent()).live).toBe(true);
 
     // The re-park is where the refusal lands.
     expect((await parkAndRead(id)).status).toBe(422);
 
-    // And the disagreement resolves itself: the listener stops, the lane lapses,
-    // and §7's fallback hands its already-stamped events to the orchestrator's
-    // unscoped claim rather than stranding them.
-    parked.leave();
-    await parked.done;
+    // And the disagreement resolves itself: the lane lapses, and §7's fallback
+    // hands its already-stamped events to the orchestrator's unscoped claim
+    // rather than stranding them.
     ws.advance(LANE_GRACE_MS + 1);
     expect((await agent()).live).toBe(false);
   });

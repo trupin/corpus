@@ -169,6 +169,15 @@
  * drafted for them here: this package never edits SPEC.md, and the amendment is
  * the orchestrator's to take to the user.
  *
+ * `GET /api/threads/{id}/scope` (CONTRACT-068) is derived from the same rider's
+ * scope paragraph — "a resident owns a scope, not a thread", membership
+ * "computed, never stored" — and from the user's request (2026-08-19) to see
+ * "the designated agents as well as what documents / threads are attached to
+ * their scope". A person reaches the workspace only through the server, so the
+ * listing is an endpoint, and §9.3 makes it a route declared here. Like the
+ * three above, **§9.2 does not list it yet**: it joins the pending amendments
+ * rather than the undocumented, and the bullet is the orchestrator's to draft.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -207,6 +216,7 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/threads",
   "GET /api/threads/{id}",
   "GET /api/threads/{id}/context",
+  "GET /api/threads/{id}/scope",
   "POST /api/threads/{id}/turns",
   "DELETE /api/threads/{id}/turns/{ts}",
   "POST /api/threads/{id}/turns/{ts}/form",

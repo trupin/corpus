@@ -324,8 +324,8 @@ function projectThread(
   db.prepare(
     `INSERT INTO threads
        (id, parent_id, status, agent, anchor_id, title, created, updated, turn_count, last_author,
-        last_ts, resident_designated, resident_name, resident_doc_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        last_ts, resident_designated, resident_name, resident_doc_id, resident_weight)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     parentId,
@@ -341,6 +341,10 @@ function projectThread(
     resident === null ? 0 : 1,
     resident?.name ?? null,
     resident?.docId ?? null,
+    // Verbatim (SERVER-129). NULL is "no level was chosen", which is both what a
+    // designation written before §7's weight rider says and what one that chose
+    // none says — there is one spelling of it on disk and one here.
+    resident?.weight ?? null,
   );
 
   // `OR IGNORE`: the primary key is (thread_id, ts) because a turn's timestamp

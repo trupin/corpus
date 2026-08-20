@@ -273,6 +273,7 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
       "thread/index.ts",
       "thread/release.ts",
       "thread/reply.ts",
+      "thread/scope.ts",
       "thread/show.ts",
       "thread/status.ts",
     ]);
@@ -404,6 +405,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "thread/index.ts",
       "thread/release.ts",
       "thread/reply.ts",
+      "thread/scope.ts",
       "thread/show.ts",
       "thread/status.ts",
       "upgrade/index.ts",

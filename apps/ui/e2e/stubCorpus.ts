@@ -41,6 +41,7 @@ import {
   type Resident,
   type ResolvedAnchor,
   type SearchResults,
+  type ThreadScope,
   type StaleKeyError,
   type StaleTier,
   type TextQuoteSelector,
@@ -134,6 +135,7 @@ type StubPayload =
   | SearchResults
   | Thread
   | ThreadMutationResponse
+  | ThreadScope
   | UnknownRecipientError
   | UpdateDocResponse
   | ValidationError;
@@ -1253,6 +1255,47 @@ export async function stubCorpus(
      * when some lane is, and a stub that let them disagree would be teaching the
      * suite a state the server cannot produce.
      */
+    /*
+     * `GET /api/threads/{id}/scope` — what a lane owns (SPEC.md §7, CONTRACT-068).
+     *
+     * Derived from the same store the board reads rather than seeded, so a spec
+     * that designates a resident and then asks what it owns gets an answer that
+     * follows from what it actually created. The root is always first with
+     * `via: "self"`, which is the contract's stated order.
+     */
+    if (/^\/api\/threads\/[^/]+\/scope$/.test(url.pathname) && method === "GET") {
+      const rootId = url.pathname.split("/")[3] ?? "";
+      if (laneOf(rootId) === undefined) {
+        return json(
+          route,
+          { code: "conflict", message: `${rootId} has no resident, so it has no scope` },
+          409,
+        );
+      }
+      const root = store.get(rootId);
+      const members = [
+        {
+          id: rootId,
+          kind: "thread" as const,
+          title: root?.title ?? rootId,
+          status: root?.status ?? "open",
+          via: "self" as const,
+        },
+        ...[...store.values()]
+          .filter(
+            (doc) => doc.id !== rootId && (doc.parent === rootId || doc.extra["origin"] === rootId),
+          )
+          .map((doc) => ({
+            id: doc.id,
+            kind: doc.type === "thread" ? ("thread" as const) : ("doc" as const),
+            title: doc.title,
+            status: doc.status ?? "open",
+            via: doc.parent === rootId ? ("parent" as const) : ("origin" as const),
+          })),
+      ];
+      return json(route, { thread: rootId, members, truncated: false } satisfies ThreadScope);
+    }
+
     if (url.pathname === "/api/agents") {
       const orchestrator: AgentLane = {
         lane: "orchestrator",
@@ -1726,9 +1769,12 @@ export async function stubCorpus(
         dropLane(id);
         return json(route, threadMutation(doc));
       }
-      const body = (requests.at(-1)?.body ?? {}) as { name?: unknown };
+      const body = (requests.at(-1)?.body ?? {}) as { name?: unknown; weight?: unknown };
       const name = typeof body.name === "string" ? body.name : undefined;
-      let resident: Resident = { name: null, docId: null };
+      // Recorded verbatim, as the server does (CONTRACT-067): the designation's
+      // weight is a level key, and `null` says the launcher chose.
+      const weight = typeof body.weight === "string" ? body.weight : null;
+      let resident: Resident = { name: null, docId: null, weight };
       if (name !== undefined) {
         const agentDefs = [...store.values()].filter((row) => row.type === "agent-def");
         const profile = resolveAgentDefName(agentDefs, name);
@@ -1741,7 +1787,7 @@ export async function stubCorpus(
         }
         // The **resolved** name, never the caller's spelling — and the resolved
         // name of a file under `.claude/agents/` is its stem, not its title.
-        resident = { name: profile.name, docId: profile.docId };
+        resident = { name: profile.name, docId: profile.docId, weight };
       }
       setLane(id, resident);
       return json(route, threadMutation(doc));

@@ -217,6 +217,13 @@
   color: var(--ink-3);
 }
 
+/* The address line (UI-126) shares the foot and yields before the send button
+   does: it truncates, and its full sentence is one gesture away. */
+.composer-foot .composer-address {
+  min-width: 0;
+  flex-shrink: 1;
+}
+
 .composer-foot .toggle {
   cursor: pointer;
 }

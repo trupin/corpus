@@ -350,7 +350,7 @@ test.describe("the top bar's way in", () => {
     );
   });
 
-  test("orders the actions 📎 · hint · Capture · Ask", async ({ page }) => {
+  test("orders the actions 📎 · address · hint · Capture · Ask", async ({ page }) => {
     await page.keyboard.press("c");
     await expect(page.locator(".compose-actions .btn-capture")).toHaveText("Capture ⇧⌘↵");
     await expect(page.locator(".compose-actions .btn-ask")).toHaveText("Ask ⌘↵");
@@ -359,7 +359,17 @@ test.describe("the top bar's way in", () => {
       .evaluateAll((nodes: Element[]): string[] =>
         nodes.map((node) => node.className || node.tagName.toLowerCase()),
       );
-    expect(order).toEqual(["clip", "input", "hint", "spacer", "btn-capture", "btn-ask"]);
+    // The address line (UI-126) sits between the 📎 and the hint; the submits
+    // keep the bar's tail, which is the key contract's order.
+    expect(order).toEqual([
+      "clip",
+      "input",
+      "composer-address",
+      "hint",
+      "spacer",
+      "btn-capture",
+      "btn-ask",
+    ]);
   });
 
   test("disables both submits until there is something to send", async ({ page }) => {

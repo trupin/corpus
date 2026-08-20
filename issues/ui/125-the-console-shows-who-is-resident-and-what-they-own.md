@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -68,15 +68,15 @@ rather than merely unstarted.
 
 ## Acceptance Criteria
 
-- [ ] One surface lists every designated lane and its resident
-- [ ] Each lane shows its scope, or a count with a way to see it, and the listing
+- [x] One surface lists every designated lane and its resident
+- [x] Each lane shows its scope, or a count with a way to see it, and the listing
       is bounded
-- [ ] A lapsed lane is visible and distinguishable from a live one, because that
+- [x] A lapsed lane is visible and distinguishable from a live one, because that
       is the state a person opens this to find
-- [ ] Nothing here re-implements the scope walk — it consumes CONTRACT-068's
+- [x] Nothing here re-implements the scope walk — it consumes CONTRACT-068's
       answer. Two implementations of one rule is the defect
       `scripts/mention-offer-parity.test.ts` exists to prevent
-- [ ] The empty state is followable: a workspace with no designations says how to
+- [x] The empty state is followable: a workspace with no designations says how to
       make one, and does not read as an error
 
 ## Technical Design
@@ -126,16 +126,40 @@ list.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**implemented on: opus** — the implementing agent was killed by an expired login after writing the tab and its unit tests, before typechecking, before any browser run, and before this log. The orchestrator finished the issue: fixed what did not compile, wrote the browser spec the acceptance criteria asked for, falsified it, and wrote this.
+
+**What shipped.** A second console tab, *Residents*, master-detail like the jobs tab it sits beside. The lane list names each lane's resident — a profile, or the conversation a general resident owns — with the weight it works at and whether it is live. Selecting a lane fetches **that lane's** scope and lists it, one line per member, each carrying how it got in (`self`, `parent`, `origin`). A truncated page says so rather than ending silently. The orchestrator's lane has no scope and says what it holds instead.
+
+**Two defects found while finishing it, one real and one not:**
+
+1. **Not real.** `Residents.test.tsx` asserted the weight *label* (`Heavy or judgment-laden`) after waiting only for the resident's *name*. The label arrives on a second round trip — the roster names the key `heavy`, and the workspace's own orchestrate skill is what turns it into words — so the assertion fired mid-load, on `weightLabel`'s documented key fallback. The wait now waits for the label. The product was correct.
+2. **Real, and compile-breaking.** The test's `BoardNavigation` stub declared `reveal` and `focusColumn`, neither of which exists on that interface (it has `open` and `revealColumn`). `apps/ui` did not typecheck. Fixed.
+
+Two new kit exports (`useThreadScope`, `threadScopeKey`) were also missing from the plugin surface list that `packages/kit/src/index.test.ts` pins, so that test was red. Declared.
+
+**Browser verification** — `apps/ui/e2e/residents-tab.spec.ts`, new, real Chromium on Vite 5283:
+
+- The drawer opens, the *Residents* tab is pressed, and **two** lanes list: the orchestrator's and the designated one.
+- The designated lane reads `researcher` and `data-lane-liveness="live"`.
+- **Nothing is fetched for a lane nobody selected** — the spec asserts zero `GET /api/threads/th_solo/scope` calls before the click. §7 forbids sweeping, and one request per lane on mount is what that would look like from here. This is the property jsdom cannot tell apart from an eager fetch, which is why it is the browser's to check.
+- After the click, the scope renders: the conversation itself `via: "self"`, its subthread `via: "parent"`, and an undesignated conversation in the same workspace **absent**.
+
+The e2e stub gained `GET /api/threads/{id}/scope`, derived from the store the board already reads rather than seeded, so the answer follows from what the spec actually created.
+
+**Falsified**: pinned `data-scope-via` to the constant `"self"` in `LaneScope.tsx` — the spec failed. Restored — it passed. (The `@corpus/kit` `dist/` trap from UI-126 does not apply here: the broken file is `apps/ui`'s own, which Vite serves from source.)
+
+**Suites**: `packages/kit` + `apps/ui/src` unit — 208 files, 4483 tests, all pass. `apps/ui` and `packages/kit` typecheck clean. Ports 5283/8893 — never 5173, never 8765, and both freed after the run.
+
+**A lane whose resident lapsed** renders as `lapsed` in the list, and its scope still lists — the designation stands whether or not a listener is holding a park, which is §7's distinction between a lapse and a release.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[UI-125]` prefix
+- [x] Committed with `[UI-125]` prefix

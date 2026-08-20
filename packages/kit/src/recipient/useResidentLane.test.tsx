@@ -19,7 +19,7 @@ const ORCHESTRATOR: AgentLane = {
 function designated(overrides: Partial<AgentLane> = {}): AgentLane {
   return {
     lane: "th_root",
-    resident: { name: "claims-review", docId: "doc_agent" },
+    resident: { name: "claims-review", docId: "doc_agent", weight: null },
     live: true,
     since: "2026-08-16T12:00:00Z",
     summary: "reading the policy",
@@ -128,6 +128,7 @@ describe("useLaneRow", () => {
         profile: "claims-review",
         profileDoc: "doc_agent",
         note: "",
+        weight: null,
         mark: "",
         conversation: "The claims conversation",
       });

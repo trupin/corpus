@@ -149,8 +149,17 @@
  * thread file's `resident` frontmatter, so the rebuild this bump triggers is the
  * whole migration — a v17 row was designated exactly when its `resident_name`
  * was set, which is what the re-projection writes.
+ *
+ * 18 → 19 (SERVER-129): `threads.resident_weight` — SPEC.md §7's rider signed
+ * 2026-08-19, *"a resident's weight is set when it is designated, not per
+ * message"*. The third independent question about a designation, after "is it a
+ * lane" and "which profile": **what does it run at**. A v18 database has no such
+ * column, the value is read straight off the thread file's `resident`
+ * frontmatter, and a designation written before the rider has no key there — so
+ * the rebuild this bump triggers is the whole migration and every carried-over
+ * row correctly reads NULL, which is "no level was chosen".
  */
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -357,7 +366,16 @@ CREATE TABLE threads (
   -- resident_designated is 0, and never authoritative about whether a lane
   -- exists.
   resident_name TEXT,
-  resident_doc_id TEXT
+  resident_doc_id TEXT,
+  -- What weight it was designated at (SERVER-129, SPEC.md §7's rider signed
+  -- 2026-08-19), verbatim from the file -- NULL when the designation chose no
+  -- level, which means the launcher decides. A third independent question:
+  -- orthogonal to the profile pair, so a general resident may run at a stated
+  -- weight and a profiled one at none. Projected for the reason the pair above
+  -- is: GET /api/agents builds a row per lane from these columns and must not
+  -- open a file per lane to answer what a designation says. Never interpreted
+  -- here -- the tier table is the workspace's own skill text.
+  resident_weight TEXT
 );
 
 CREATE TABLE anchors (

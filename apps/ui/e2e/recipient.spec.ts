@@ -62,16 +62,28 @@ const JUST_NOW = new Date().toISOString();
 
 const RESIDENT_LANE: AgentLane = {
   lane: "th_res",
-  resident: { name: "claims-review", docId: "doc_claims_agent" },
+  resident: { name: "claims-review", docId: "doc_claims_agent", weight: "heavy" },
   live: true,
   since: JUST_NOW,
   summary: "reading the policy",
   origin: { id: "th_res", title: "The claims conversation" },
 };
 
-const PICKER = '[data-recipient-picker="th_res"]';
+const PICKER = '[data-composer-address="th_res"]';
 const LANE = "[data-recipient-lane]";
 const TURNS = "/api/threads/th_res/turns";
+
+/**
+ * Opens the address popover the rows live behind (UI-126). Typing closes it —
+ * a click into the field is a pointer landing outside — so tests reopen it
+ * before reading the rows back.
+ */
+async function openAddress(page: Page): Promise<void> {
+  const pop = page.locator('[data-address-pop="th_res"]');
+  if ((await pop.count()) > 0) return;
+  await page.locator('button[data-address-line="th_res"]').click();
+  await pop.waitFor();
+}
 
 async function board(page: Page, lane: AgentLane = RESIDENT_LANE): Promise<StubCorpus> {
   const corpus = await stubCorpus(page, [THREADS_VIEW, RESIDENT_THREAD], {
@@ -81,7 +93,9 @@ async function board(page: Page, lane: AgentLane = RESIDENT_LANE): Promise<StubC
   await page.locator(".board").waitFor();
   await page.locator('.row[data-row-doc="th_res"]').click();
   await expect(page.locator('.reader [data-composer="th_res"]')).toBeVisible();
-  // The control only draws once the roster has answered with more than one lane.
+  // The line only opens once the roster has answered with more than one lane.
+  await expect(page.locator('button[data-address-line="th_res"]')).toBeVisible();
+  await openAddress(page);
   await expect(page.locator(`${PICKER} ${LANE}`)).toHaveCount(2);
   return corpus;
 }
@@ -135,6 +149,7 @@ test.describe("the recipient a composer states", () => {
     expect((await sent(corpus))[0]?.["recipient"]).toBe("th_res");
 
     // Pressed again it is dropped, and the next message states nothing.
+    await openAddress(page);
     await expect(laneOption(page, "th_res")).toHaveAttribute("data-recipient-chosen", "false");
     await reply(page, "And this one however you like.");
     await expect.poll(async () => (await sent(corpus)).length).toBe(2);
@@ -160,7 +175,7 @@ test.describe("the recipient a composer states", () => {
   }) => {
     const corpus = await board(page, {
       ...RESIDENT_LANE,
-      resident: { name: "claims-review", docId: null },
+      resident: { name: "claims-review", docId: null, weight: "heavy" },
     });
     const lane = laneOption(page, "th_res");
 
@@ -222,7 +237,13 @@ test.describe("the recipient a composer states", () => {
     const toast = page.locator('.toast[data-tone="error"]');
     await expect(toast).toContainText("names no lane");
     await expect(toast).toContainText("Nothing was written");
-    // …and stays on the row after the toast has dismissed itself.
+    // …and stays on the surface after the toast has dismissed itself: the
+    // address line itself says it, before anything is reopened…
+    await expect(page.locator('[data-address-line="th_res"]')).toContainText(
+      "is not a lane any more",
+    );
+    // …and the row wears it inside the popover.
+    await openAddress(page);
     await expect(laneOption(page, "th_res")).toHaveAttribute("data-recipient-refused", "true");
     await expect(page.locator('[data-recipient-statement="th_res"]')).toContainText(
       "is not a lane any more",

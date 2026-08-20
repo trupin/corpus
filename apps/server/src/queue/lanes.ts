@@ -37,16 +37,21 @@ import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
 import type { StoredEvent } from "./store.js";
 
 /**
- * The one event type that ignores the walk (SPEC.md §7).
+ * The two event types that ignore the walk (SPEC.md §7).
  *
- * It lives here rather than in `threads/resident.ts` — which re-exports it —
- * because the *reason* the name matters twice is this carve-out: the
- * announcement that a thread was designated has to reach the **orchestrator**,
- * which is what launches the listener. Routed by the ordinary rule it would land
- * on the lane it announces, so re-designating a live lane would hand the launch
- * instruction to the resident being replaced and the new one would never start.
+ * They live here rather than in `threads/resident.ts` — which re-exports them —
+ * because the *reason* the names matter twice is this carve-out: an
+ * announcement about who is resident on a lane has to reach the
+ * **orchestrator**, which is what launches and relaunches listeners. Routed by
+ * the ordinary rule each would land on the lane it announces, so re-designating
+ * a live lane would hand the launch instruction to the resident being replaced
+ * and the new one would never start, and a release would be readable only by
+ * the listener it ends.
  */
 export const RESIDENT_DESIGNATED = "resident.designated";
+
+/** The release half (SERVER-128, CONTRACT-069), under the same carve-out. */
+export const RESIDENT_RELEASED = "resident.released";
 
 /**
  * The lane an event was stamped with.
@@ -127,13 +132,15 @@ export interface LaneInput {
  * The two carve-outs are checked before the walk because that is what a carve-out
  * is, and in this order:
  *
- * 1. **`resident.designated` goes to the orchestrator, whoever is designated.**
- *    It wins over a recipient rather than losing to one, because the reason for
- *    it is not a routing preference a caller may express: the orchestrator is
- *    what launches a listener, so an announcement routed anywhere else launches
- *    nothing. No producer can reach this branch with a recipient anyway — the
- *    designation route declares no `recipient` field — so the order settles a
- *    question nothing asks today and keeps it settled if that changes.
+ * 1. **`resident.designated` and `resident.released` go to the orchestrator,
+ *    whoever is designated.** They win over a recipient rather than losing to
+ *    one, because the reason for them is not a routing preference a caller may
+ *    express: the orchestrator is what launches a listener and what has to learn
+ *    a lane came back, so an announcement routed anywhere else launches nothing
+ *    and is read by nobody who could act on it. No producer can reach this
+ *    branch with a recipient anyway — neither route declares a `recipient` field
+ *    — so the order settles a question nothing asks today and keeps it settled
+ *    if that changes.
  * 2. **A named recipient wins over the walk**, for the one message it was set
  *    on. This is the summons, and the stamp is what makes it arrive: a scoped
  *    claim sees only its own lane and an unscoped claim never sees a live lane's
@@ -143,7 +150,9 @@ export interface LaneInput {
  * Everything else is the walk.
  */
 export function laneFor(input: LaneInput, findScopeRoot: ScopeRootLookup): Lane {
-  if (input.type === RESIDENT_DESIGNATED) return ORCHESTRATOR_LANE;
+  if (input.type === RESIDENT_DESIGNATED || input.type === RESIDENT_RELEASED) {
+    return ORCHESTRATOR_LANE;
+  }
   if (input.recipient !== undefined) return input.recipient;
   return findScopeRoot(input.payload);
 }

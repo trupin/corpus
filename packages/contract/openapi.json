@@ -2460,11 +2460,21 @@
             "pattern": "^doc_[A-Za-z0-9]+$",
             "description": "The `type: agent-def` document `name` resolves to **right now**, or null when there is none to resolve — either because no profile was named, or because the one that was named has since been renamed, deleted, or moved out of `.claude/agents/`, the root a persona has to live in to be addressable at all. **Archiving a profile does not empty this field**: an archived `agent-def` still under that root resolves exactly as before, and is still designatable, so what stands here is its id and `name (profile missing)` is the wrong thing to show for it. Archived-ness is not carried on a `Resident` at all — it is the document's own `status`, on the document this id names, for the caller that cares. Read the two fields together: `name` null is a general resident, `name` set with this null is a resident whose profile has gone (SPEC.md §7 — the designation stands, and the missing profile is reported rather than silently substituted), and both set is a profile a reader can open. It is re-resolved on every response rather than stored, so what stands here is the document the name answers to now, never a stale id.",
             "example": "doc_a1b2c3"
+          },
+          "weight": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "The **weight this resident runs at**, or null (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is designated, not per message). Where set, it is a level's key from the workspace's own agent guidance — the same token a message's `weight` carries, never a model name — recorded verbatim from the designation and interpreted by nothing here. **Null means none was chosen**: the launcher decides what the resident runs at, and says so. Orthogonal to `name` and `docId` — a general resident may run at a stated weight, and a profiled one at none. It governs the resident's own turns; a weight stated on a message still governs what the resident hands off (SPEC.md §7, rider signed 2026-08-19). A designation is long-lived, so a level the launcher cannot meet is not refused here (the table is skill text the server never reads): the launcher reports it, per §7's weight rider, in the listener's first reply."
           }
         },
         "required": [
           "name",
-          "docId"
+          "docId",
+          "weight"
         ]
       },
       "Turn": {
@@ -3052,6 +3062,100 @@
         ],
         "additionalProperties": false
       },
+      "ThreadScope": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "pattern": "^th_[A-Za-z0-9]+$",
+            "description": "The designated thread this is the scope of — the root, and the name of the lane every member's events are stamped with (SPEC.md §7). It is also `members[0].id`.",
+            "example": "th_x9y8"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScopeMember"
+            },
+            "maxItems": 200,
+            "description": "Every artifact in the scope, capped at 200: the root thread first (`via: \"self\"`), then every other member most recently updated first, so when the cap bites the page holds the live end of the scope and what falls off is what nothing has touched for longest. **Computed per request by the same walk the queue routes with** (SPEC.md §7: scope is computed, never stored) — what is listed here is exactly what an event posted there would be routed to this lane by, and nothing else. One line per member and never a body."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the scope holds more than 200 members and the list was cut. Stated rather than left to be derived, for the reason `DocDiff.truncated` gives: a capped list that looks complete is the failure this flag exists to prevent. **There is no cursor and no total**, deliberately: the bound exists so that a scope cannot be enumerated, and a count would cost the very enumeration it forbids. A caller that needs one particular member reads it by id."
+          }
+        },
+        "required": [
+          "thread",
+          "members",
+          "truncated"
+        ]
+      },
+      "ScopeMember": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "The member's id — a `th_` id for a thread, a `doc_` id for a document. Open it with the verb `kind` names.",
+            "example": "doc_a1b2c3"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "thread",
+              "doc"
+            ],
+            "description": "`thread` for a conversation (open it with `GET /api/threads/{id}`), `doc` for any other document (`GET /api/docs/{id}`). A thread is a document (SPEC.md §6), so this tells a reader which surface to open and nothing about how the member reached the scope."
+          },
+          "title": {
+            "type": "string",
+            "description": "The member's **current** title, read at response time."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved",
+              "archived"
+            ],
+            "description": "The member's own lifecycle status, as its listing row carries it: `open` or `resolved` for a thread, `open`, `resolved` or `archived` for a document. **An archived document is still in scope**: membership is the walk over `origin` and `parent`, which archiving does not touch (SPEC.md §7) — detaching is the escape hatch, not archiving — so it is listed, and this field is what tells a reader it is archived."
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "self",
+              "parent",
+              "origin"
+            ],
+            "description": "How this member reaches the scope (SPEC.md §7), as the same walk that routes the queue reports it: `self` — this is the designated thread itself, the scope's root and the lane's name, always the first member; `parent` — a thread whose parent chain reaches the root, directly or through a document in scope (§7's “every thread on such a document”); `origin` — a document whose `origin` reaches the root, i.e. written by a job run from this conversation, including one written before the thread was designated. A member with both edges reports `parent`, because the walk tries a thread's parent chain before its own origin (the ranking `walkScope` documents). It is the edge the walk took, reported rather than re-derived by the reader."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "status",
+          "via"
+        ]
+      },
+      "ConflictError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "conflict"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
       "AppendTurnResponse": {
         "type": "object",
         "properties": {
@@ -3383,24 +3487,6 @@
           "warnings"
         ]
       },
-      "ConflictError": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "enum": [
-              "conflict"
-            ]
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message"
-        ]
-      },
       "FormAnswerRequest": {
         "type": "object",
         "properties": {
@@ -3625,6 +3711,12 @@
             "maxLength": 100,
             "example": "researcher",
             "description": "The **profile** to designate, by the invocable name `@<subagent>` mentions already use (SPEC.md §8): for a `type: agent-def` document **under `.claude/agents/`**, its filename stem or its title, matched case-insensitively — and the two routinely differ, since a persona created with the title `Legacy Analyst` is written to `legacy-analyst.md`. **Not a document id, and not an `agent-def` filed outside that root**: one under `data/docs/` is a document *about* a persona, nothing loads it as a subagent, and it answers to neither spelling. A name that resolves to no agent-def in this workspace is a `404` — a typo is refused rather than degraded to a general resident, because a typo that looked like it worked is the worse outcome — and where an off-root `agent-def` is titled the name given, that `404` names its path, because moving the file into `.claude/agents/` is what makes it designatable.\n\n**Omit it — or send no body at all — to designate a general resident**: an agent with no persona document, working the conversation as the workspace's ordinary agent does. That is the ordinary designation and needs nothing to exist in the workspace first (SPEC.md §7). Everything else is identical either way — the lane, the scope, presence, the lapse fallback, release, and resolution releasing it. A **blank** name is not absence: `\"\"` and `\"   \"` are `400`, because dropping a name by accident is a mistake and asking for no profile is a decision."
+          },
+          "weight": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "The **weight the resident runs at** (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is designated, not per message — a running agent cannot change what it is without discarding the conversation it holds, so the designation is the only place the choice exists). The value is a **level's key from the workspace's own agent guidance, verbatim** — the same token a message's `weight` carries, and never a model name: this contract enumerates no levels, because §7 keeps the tiers in the orchestrate skill and a published enum would reject a workspace's own vocabulary. Validated for **shape only** — non-blank, single line, at most 100 characters — and interpreted by nothing here. It governs the resident's own turns; a weight stated on a message still governs what the resident hands off (SPEC.md §7, rider signed 2026-08-19). **Omit it to choose nothing**, which keeps today's behaviour exactly: the resident runs at whatever the launcher starts it as, `Resident.weight` reads null, and the launcher says what it chose. No default, no `null` spelling, and an empty string is a `400` rather than a second way of saying nothing. A level the launcher cannot meet is not refused here — the tier table is skill text the server never reads — and since a designation is long-lived the report lands where §7's weight rider puts it: in the listener's first reply, naming what was asked for and what was done instead. Sent alone, it designates a general resident at that weight; the two fields are independent."
           }
         },
         "additionalProperties": false
@@ -3838,7 +3930,7 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. Plugins define their own."
+            "description": "Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. Plugins define their own."
           },
           "created": {
             "type": "string",
@@ -3853,7 +3945,7 @@
           "payload": {
             "type": "object",
             "additionalProperties": {},
-            "description": "Type-specific payload; plugins own the shape of their own event types, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the answered form (SPEC.md §6, §7).\n\n**One key crosses every type: `weight`.** When the request that enqueued the event stated the weight its work should be done at (SPEC.md §7, §11), that level name rides here verbatim, and the dispatch honours it rather than weighing the work again. It is **absent** when the request stated nothing, which means the orchestrator decides — never a default level, and never `null`. It is deliberately not part of any one payload shape: a weight is a property of *a request that asked for work*, so a plugin's own event type carries it the same way with no contract change."
+            "description": "Type-specific payload; plugins own the shape of their own event types, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the answered form (SPEC.md §6, §7); `doc.edited` carries `{docId, sessionId, actor, endedBy, from, to, stats}` (SPEC.md §4); `resident.designated` carries `{threadId, resident}` and `resident.released` carries `{threadId, resident, reason}` (SPEC.md §7) — one release produces exactly one such event, and a lapse produces none.\n\n**One key crosses every type: `weight`.** When the request that enqueued the event stated the weight its work should be done at (SPEC.md §7, §11), that level name rides here verbatim, and the dispatch honours it rather than weighing the work again. It is **absent** when the request stated nothing, which means the orchestrator decides — never a default level, and never `null`. It is deliberately not part of any one payload shape: a weight is a property of *a request that asked for work*, so a plugin's own event type carries it the same way with no contract change."
           }
         },
         "required": [
@@ -3904,7 +3996,7 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: plugins define their own. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes."
+            "description": "The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: plugins define their own. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes."
           },
           "heldSince": {
             "type": "string",
@@ -4053,7 +4145,7 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11)."
+            "description": "The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11)."
           },
           "status": {
             "type": "string",
@@ -6746,6 +6838,81 @@
         }
       }
     },
+    "/api/threads/{id}/scope": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "What a designated thread's resident owns",
+        "description": "The **scope** of a designated thread (SPEC.md §7): the thread itself, every thread whose parent chain reaches it, every document whose `origin` reaches it, and every thread on such a document — that is, everything whose events are stamped with this thread's lane. **One frugal line per member and never a body** (§7's retrieval discipline): id, kind, current title, status, and the edge it reached the scope by (`self` for the root, `parent`, `origin`).\n\n**Computed per request, by the same walk the queue routes with** — `scope` is computed, never stored (SPEC.md §7), so nothing here is a projection table or a cache: the server runs the identical `walkScope` that decides an event's lane over the corpus and keeps what lands on this one. A document created *before* the thread was designated is therefore listed when its origin reaches it, exactly as the queue would route a comment on it; an archived document is listed with `status: \"archived\"`, because archiving does not touch origin or parent and detaching is the only way out of a scope. A person asks this to see what an agent owns (SPEC.md §11); a resident asks it to learn what it owns — reading your own lane is not a sweep.\n\n**Bounded at 200 members, with no cursor and no total.** The root thread comes first, then the most recently updated members first, so a truncated page holds the live end of the scope; `truncated` says when the cut happened. The bound exists so that a scope cannot be an enumeration (§7 forbids the agent the sweep), not to make paging a feature — a caller that needs one particular member reads it by id.\n\n**`409` for a thread with no resident: the orchestrator's lane is not a scope.** §7 defines scope only for a designated thread; everything outside every scope falls on the orchestrator's lane by default, so an undesignated thread has no scope to list rather than an empty one, and answering `[]` or the thread alone would invent a scope the queue does not route by. The message says so and names the remedy: designate a resident, or read `GET /api/agents` for the lanes that exist. `404` when the thread is unknown, and when the id names a document that is not a thread, matching `GET /api/threads/{id}`. **No query parameters**: the bound lives in the contract, not in a flag. Read-only; no acting party.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "required": true,
+            "description": "Identifier of a thread document.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The scope, root first, at most 200 members, with `truncated` set when the cap cut it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadScope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with state that already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{id}/turns": {
       "post": {
         "tags": [
@@ -7479,7 +7646,7 @@
           "threads"
         ],
         "summary": "Designate a thread's resident agent (user-only)",
-        "description": "Gives a **standalone** thread a resident: a long-lived agent that owns that conversation and everything that grows out of it, rather than being dispatched to one message at a time (SPEC.md §7). From then on, work falling in that thread's **scope** — the thread, every thread whose parent chain reaches it, every document whose `origin` reaches it, and every thread on such a document — is enqueued on that scope's lane instead of the orchestrator's.\n\n**The body is optional in full: a bare `POST` designates a *general resident*** — an agent with no persona document, working the conversation as the workspace's ordinary agent does. §7 calls that the ordinary case, and it requires nothing to exist in the workspace first, so a fresh workspace with no `agent-def` documents can designate on its first day.\n\n**Naming a profile is the refinement.** `name`, when given, is the invocable name `@<subagent>` mentions already use (SPEC.md §8) — for a `type: agent-def` document **under `.claude/agents/`**, its filename stem or its title, case-insensitively, never a document id — and is how a conversation gets an agent that behaves differently from the default. `404` when the thread is unknown, and `404` when the name resolves to no such document: a name that misses is refused rather than degraded to a general resident, because a typo that looked like it worked is the worse outcome. An `agent-def` filed outside that root is one of those misses — it is a document *about* a persona, nothing loads it as a subagent, and it answers to neither spelling — and where an off-root `agent-def` is titled the name given, that `404` names its path, because moving the file into `.claude/agents/` is what makes it designatable. **Only the title reaches that refusal**: off root there is no filename stem to answer to, so `legacy-analyst` for a document titled `Legacy Analyst` in the inbox is the bare `404` — its title is the spelling that says where it is. A **blank** name (`\"\"`, `\"   \"`) is a `400` and not absence, for the same reason.\n\n**Everything else about a resident is identical either way** (SPEC.md §7) — the lane, the scope, presence, the lapse fallback, release, and resolution releasing it — because a profile says *how* the agent works and nothing about *what it owns*. The response carries the resolved `Resident`, whose `name` is null for a general one and whose `docId` is null when there is no profile document to point at, so the caller never repeats the lookup.\n\n**Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.\n\n**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident claims a conversation and every artifact that grows out of it, and an agent that could designate would be choosing who answers a person's messages (SPEC.md §7 — designation is user-only state).\n\n**It enqueues `resident.designated`, on the orchestrator's lane whoever is designated** — the resident does not announce itself to itself, one of exactly two carve-outs §7 makes to the lane rule. Nothing already queued moves: a lane is stamped once, at enqueue time, and never rewritten, so designating does not re-route work the orchestrator is already holding.\n\n**One action, one commit** (SPEC.md §4), authored by the acting party. It presents no key (SPEC.md §7): it sets one frontmatter field and replaces nothing a reader was holding.",
+        "description": "Gives a **standalone** thread a resident: a long-lived agent that owns that conversation and everything that grows out of it, rather than being dispatched to one message at a time (SPEC.md §7). From then on, work falling in that thread's **scope** — the thread, every thread whose parent chain reaches it, every document whose `origin` reaches it, and every thread on such a document — is enqueued on that scope's lane instead of the orchestrator's.\n\n**The body is optional in full: a bare `POST` designates a *general resident*** — an agent with no persona document, working the conversation as the workspace's ordinary agent does. §7 calls that the ordinary case, and it requires nothing to exist in the workspace first, so a fresh workspace with no `agent-def` documents can designate on its first day.\n\n**Naming a profile is the refinement.** `name`, when given, is the invocable name `@<subagent>` mentions already use (SPEC.md §8) — for a `type: agent-def` document **under `.claude/agents/`**, its filename stem or its title, case-insensitively, never a document id — and is how a conversation gets an agent that behaves differently from the default. `404` when the thread is unknown, and `404` when the name resolves to no such document: a name that misses is refused rather than degraded to a general resident, because a typo that looked like it worked is the worse outcome. An `agent-def` filed outside that root is one of those misses — it is a document *about* a persona, nothing loads it as a subagent, and it answers to neither spelling — and where an off-root `agent-def` is titled the name given, that `404` names its path, because moving the file into `.claude/agents/` is what makes it designatable. **Only the title reaches that refusal**: off root there is no filename stem to answer to, so `legacy-analyst` for a document titled `Legacy Analyst` in the inbox is the bare `404` — its title is the spelling that says where it is. A **blank** name (`\"\"`, `\"   \"`) is a `400` and not absence, for the same reason.\n\n**Everything else about a resident is identical either way** (SPEC.md §7) — the lane, the scope, presence, the lapse fallback, release, and resolution releasing it — because a profile says *how* the agent works and nothing about *what it owns*. The response carries the resolved `Resident`, whose `name` is null for a general one and whose `docId` is null when there is no profile document to point at, so the caller never repeats the lookup.\n\n**The designation is where the resident's weight is chosen** (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is designated, not per message). `weight`, when given, is a level's key from the workspace's own agent guidance — the same token a message's `weight` carries, never a model name — and it governs the resident's own turns; a weight stated on a message still governs what the resident hands off (SPEC.md §7, rider signed 2026-08-19). Omit it to choose nothing, which is today's behaviour exactly: the launcher decides, `Resident.weight` reads null, and the launcher says what it chose. The server records the value and interprets nothing about it; a level the launcher cannot meet is reported in the listener's first reply, not refused here. `Resident.weight` carries it back on the thread, the roster row and the `resident.designated` payload, so the choice is never write-only. A composer addressing this lane offers no per-turn weight and says why (SPEC.md §11).\n\n**Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409` — and a replacement is a release of the old occupant, so it enqueues a `resident.released` with `reason: \"replaced\"` beside the newcomer's `resident.designated`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.\n\n**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident claims a conversation and every artifact that grows out of it, and an agent that could designate would be choosing who answers a person's messages (SPEC.md §7 — designation is user-only state).\n\n**It enqueues `resident.designated`, on the orchestrator's lane whoever is designated** — the resident does not announce itself to itself, one of exactly two carve-outs §7 makes to the lane rule. Nothing already queued moves: a lane is stamped once, at enqueue time, and never rewritten, so designating does not re-route work the orchestrator is already holding.\n\n**One action, one commit** (SPEC.md §4), authored by the acting party. It presents no key (SPEC.md §7): it sets one frontmatter field and replaces nothing a reader was holding.",
         "parameters": [
           {
             "schema": {
@@ -7522,7 +7689,7 @@
         },
         "responses": {
           "200": {
-            "description": "The thread, its `resident` now the resolved `{name, docId}` — both null for a general resident — and any warnings raised while writing it.",
+            "description": "The thread, its `resident` now the resolved `{name, docId, weight}` — the first two null for a general resident, the third null when no weight was chosen — and any warnings raised while writing it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7588,7 +7755,7 @@
           "threads"
         ],
         "summary": "Release a thread's resident agent (user-only)",
-        "description": "Releases the thread's resident, returning its scope to ordinary routing (SPEC.md §7). Nothing is rewritten: events already stamped keep the lane they were stamped with, and everything enqueued afterwards routes as it did before there was a resident. Dissolving is the **absence** of a resident, never a third state.\n\n**Idempotent.** Releasing a thread that has no resident is a `200` that changes nothing, writes nothing and commits nothing — the caller often cannot know, and a release with nothing to release is a no-op rather than an error. It answers with the thread rather than a bare `204` because a release that *does* write can raise §14's warnings, and a rejected auto-commit has to be visible somewhere.\n\n**User-only**: `403` for `x-corpus-author: agent`, exactly as designating is — release is the other half of the same user-only state, and an agent able to release could quietly stop being resident in a conversation a person put it in.\n\n**Resolving a thread releases its resident too** (SPEC.md §7): a settled conversation has nobody to keep resident, so `POST /api/threads/{id}/resolve` does this as part of resolving. **Reopening does not bring it back** (SPEC.md §8) — the conversation resumes on the orchestrator's lane, and designating again is a deliberate act, as the first designation was.\n\n`404` when the thread is unknown. It presents no key (SPEC.md §7): it clears one frontmatter field and replaces nothing a reader was holding.",
+        "description": "Releases the thread's resident, returning its scope to ordinary routing (SPEC.md §7). Nothing is rewritten: events already stamped keep the lane they were stamped with, and everything enqueued afterwards routes as it did before there was a resident. Dissolving is the **absence** of a resident, never a third state.\n\n**A release that releases somebody enqueues `resident.released`, on the orchestrator's lane** — under the same carve-out as `resident.designated`: a released resident does not announce its own end to itself, and the orchestrator is what launched the listener and has to learn the lane returned to it. The payload names the thread, the resident that left and `reason: \"released\"`; resolution's release says `resolved`, a replacement says `replaced`, and a lapse is not a release and produces none. One release, one event.\n\n**Idempotent.** Releasing a thread that has no resident is a `200` that changes nothing, writes nothing and commits nothing — the caller often cannot know, and a release with nothing to release is a no-op rather than an error. It answers with the thread rather than a bare `204` because a release that *does* write can raise §14's warnings, and a rejected auto-commit has to be visible somewhere.\n\n**User-only**: `403` for `x-corpus-author: agent`, exactly as designating is — release is the other half of the same user-only state, and an agent able to release could quietly stop being resident in a conversation a person put it in.\n\n**Resolving a thread releases its resident too** (SPEC.md §7): a settled conversation has nobody to keep resident, so `POST /api/threads/{id}/resolve` does this as part of resolving. **Reopening does not bring it back** (SPEC.md §8) — the conversation resumes on the orchestrator's lane, and designating again is a deliberate act, as the first designation was.\n\n`404` when the thread is unknown. It presents no key (SPEC.md §7): it clears one frontmatter field and replaces nothing a reader was holding.",
         "parameters": [
           {
             "schema": {

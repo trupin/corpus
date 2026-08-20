@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { QUEUE_EVENT_STATUSES, QueueEventSchema } from "@corpus/contract";
 import {
+  byQueueOrder,
   MALFORMED_EVENT_TYPE,
   MAX_SALVAGED_BYTES,
   parseEventFile,
@@ -116,6 +117,75 @@ describe("listIds", () => {
     const missing = new QueueStore(join(root, "nowhere"));
     expect(await missing.listIds("pending")).toEqual([]);
     expect(missing.listIdsSync("pending")).toEqual([]);
+  });
+
+  // SERVER-131: `readdir` order is the filesystem's, and it is what let a claim
+  // batch arrive in no particular order. This pins the guarantee rather than
+  // reproducing a failure — APFS happens to list these names in order already,
+  // so removing the sort leaves this green on a Mac and red wherever it is not.
+  // The ordering that actually decides a batch is `byQueueOrder`, below.
+  it("returns the ids sorted, whatever order the files were written in", async () => {
+    for (const id of ["evt_ccccccccccc2", "evt_aaaaaaaaaaa0", "evt_bbbbbbbbbbb1"]) {
+      await store.writeEvent("pending", event({ id }));
+    }
+
+    const expected = ["evt_aaaaaaaaaaa0", "evt_bbbbbbbbbbb1", "evt_ccccccccccc2"];
+    expect(await store.listIds("pending")).toEqual(expected);
+    expect(store.listIdsSync("pending")).toEqual(expected);
+  });
+});
+
+// SPEC.md §7's conversation order, which a resident works its lane in.
+describe("byQueueOrder", () => {
+  const at = (created: string, seq?: number, id = "evt_aaaaaaaaaaaa"): StoredEvent =>
+    event({ id, created, ...(seq === undefined ? {} : { seq }) });
+
+  it("puts the earlier `created` first", () => {
+    const early = at("2026-08-19T21:38:26Z");
+    const late = at("2026-08-19T21:38:29Z");
+    expect([late, early].sort(byQueueOrder)).toEqual([early, late]);
+    expect(byQueueOrder(early, late)).toBeLessThan(0);
+    expect(byQueueOrder(late, early)).toBeGreaterThan(0);
+  });
+
+  // The measured case (2026-08-19): three replies posted inside one second all
+  // carry `2026-08-19T21:38:27Z`, because SPEC.md §5 stamps instants to the
+  // second. `created` alone cannot separate them and the id is random — the
+  // real drill came back Y, Z, X in exactly this id order.
+  it("separates one second's events by `seq`, not by their random ids", () => {
+    const first = at("2026-08-19T21:38:27Z", 1_000, "evt_y3blrq32r2n6");
+    const second = at("2026-08-19T21:38:27Z", 1_001, "evt_q7yaplbvcjop");
+    const third = at("2026-08-19T21:38:27Z", 1_002, "evt_xqr572cqvjf3");
+
+    expect([second, third, first].sort(byQueueOrder)).toEqual([first, second, third]);
+    // Sorting by the id alone is the defect, and it points the other way.
+    expect([second, third, first].sort(byQueueOrder).map((each) => each.id)).not.toEqual(
+      [second, third, first].map((each) => each.id).sort(),
+    );
+  });
+
+  it("orders an event with no `seq` before one from the same second that has one", () => {
+    const legacy = at("2026-08-19T21:38:27Z", undefined, "evt_zzzzzzzzzzzz");
+    const stamped = at("2026-08-19T21:38:27Z", 5, "evt_aaaaaaaaaaaa");
+    expect([stamped, legacy].sort(byQueueOrder)).toEqual([legacy, stamped]);
+  });
+
+  it("falls back to the id so the order is total", () => {
+    const left = at("2026-08-19T21:38:27Z", undefined, "evt_aaaaaaaaaaaa");
+    const right = at("2026-08-19T21:38:27Z", undefined, "evt_bbbbbbbbbbbb");
+    expect(byQueueOrder(left, right)).toBeLessThan(0);
+    expect(byQueueOrder(left, left)).toBe(0);
+  });
+
+  // A comparator that answers NaN makes `sort` do whatever it likes, which is
+  // the class of defect this ordering exists to remove. `created` is validated
+  // on the way in, so this is unreachable from disk — and still must not be a
+  // reasoning step.
+  it("never answers NaN for an instant that does not parse", () => {
+    const broken = at("not an instant", undefined, "evt_bbbbbbbbbbbb");
+    const good = at("2026-08-19T21:38:27Z", undefined, "evt_aaaaaaaaaaaa");
+    expect(Number.isNaN(byQueueOrder(broken, good))).toBe(false);
+    expect(byQueueOrder(broken, good)).toBeLessThan(0);
   });
 });
 

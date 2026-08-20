@@ -150,7 +150,7 @@ const agentRoster = {
     },
     {
       lane: "th_x9y8",
-      resident: { name: "researcher", docId: "doc_agentdef" },
+      resident: { name: "researcher", docId: "doc_agentdef", weight: null },
       live: false,
       since: "2026-07-19T09:40:00Z",
       summary: null,
@@ -584,6 +584,51 @@ function createStubApp() {
       200,
     );
   });
+  // The scope listing (CONTRACT-068). Root first with `via: "self"`, then the
+  // members; a thread with no resident is the `409` the route declares, because
+  // the orchestrator's lane is not a scope.
+  app.openapi(contractRoutes.getThreadScope, (c) => {
+    const { id } = c.req.valid("param");
+    if (id === "th_undesignated") {
+      return c.json(
+        {
+          code: "conflict" as const,
+          message: "the orchestrator's lane is not a scope: designate a resident first",
+        },
+        409,
+      );
+    }
+    return c.json(
+      {
+        thread: id,
+        members: [
+          {
+            id,
+            kind: "thread" as const,
+            title: "Re: rates",
+            status: "open" as const,
+            via: "self" as const,
+          },
+          {
+            id: "doc_a1b2c3",
+            kind: "doc" as const,
+            title: "Mortgage options",
+            status: "archived" as const,
+            via: "origin" as const,
+          },
+          {
+            id: "th_child1",
+            kind: "thread" as const,
+            title: "Re: Mortgage options",
+            status: "resolved" as const,
+            via: "parent" as const,
+          },
+        ],
+        truncated: false,
+      },
+      200,
+    );
+  });
   mountAppendTurn(app, (c) =>
     c.json({ thread: threadSummary, turn, eventId: null, warnings: [] }, 201),
   );
@@ -684,14 +729,19 @@ function createStubApp() {
   // `name` — or no body at all — is a *general* resident, and the stub answers
   // with the two nulls rather than inventing a name for it (SPEC.md §7).
   app.openapi(contractRoutes.designateResident, (c) => {
-    const name = c.req.valid("json")?.name ?? null;
+    const body = c.req.valid("json");
+    const name = body?.name ?? null;
     return c.json(
       {
         thread: {
           ...threadSummary,
           parent: null,
           anchor: null,
-          resident: { name, docId: name === null ? null : "doc_agentdef" },
+          resident: {
+            name,
+            docId: name === null ? null : "doc_agentdef",
+            weight: body?.weight ?? null,
+          },
         },
         warnings: [],
       },
@@ -1600,6 +1650,45 @@ describe("routes mounted on a Hono app", () => {
    * validates before any handler runs, so what the contract admits and what it
    * refuses are both observable here rather than only in the schema.
    */
+  /**
+   * CONTRACT-068. The listing is read off a mounted route so the response
+   * schema's cap and enums are enforced where the wire is: `via`, `kind` and
+   * `status` are closed sets, and the `409` for an undesignated thread is a
+   * declared response rather than a hope.
+   */
+  describe("the scope listing", () => {
+    it("answers root first, one frugal line per member, with the edge each came by", async () => {
+      const response = await createStubApp().request("/api/threads/th_x9y8/scope");
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        thread: string;
+        members: { id: string; via: string; kind: string; status: string }[];
+        truncated: boolean;
+      };
+      expect(body.thread).toBe("th_x9y8");
+      expect(body.members[0]).toMatchObject({ id: "th_x9y8", via: "self", kind: "thread" });
+      expect(body.members.map((member) => member.via)).toEqual(["self", "origin", "parent"]);
+      // An archived document is still in scope, and says so on its own row.
+      expect(body.members[1]?.status).toBe("archived");
+      expect(body.truncated).toBe(false);
+      // One line per member and never a body.
+      for (const member of body.members)
+        expect(Object.keys(member).sort()).toEqual(["id", "kind", "status", "title", "via"]);
+    });
+
+    it("refuses a thread with no resident with a 409 naming the remedy", async () => {
+      const response = await createStubApp().request("/api/threads/th_undesignated/scope");
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as { code: string; message: string };
+      expect(body.code).toBe("conflict");
+      expect(body.message).toContain("not a scope");
+    });
+
+    it("refuses a document id where a thread id belongs", async () => {
+      expect((await createStubApp().request("/api/threads/doc_a1b2c3/scope")).status).toBe(400);
+    });
+  });
+
   describe("designation, release and the roster", () => {
     const designate = async (body: unknown): Promise<Response> =>
       createStubApp().request("/api/threads/th_x9y8/resident", {
@@ -1609,7 +1698,9 @@ describe("routes mounted on a Hono app", () => {
       });
 
     type DesignationBody = {
-      thread: { resident: { name: string | null; docId: string | null } | null };
+      thread: {
+        resident: { name: string | null; docId: string | null; weight: string | null } | null;
+      };
       warnings: unknown[];
     };
 
@@ -1617,7 +1708,11 @@ describe("routes mounted on a Hono app", () => {
       const response = await designate({ name: "researcher" });
       expect(response.status).toBe(200);
       const body = (await response.json()) as DesignationBody;
-      expect(body.thread.resident).toEqual({ name: "researcher", docId: "doc_agentdef" });
+      expect(body.thread.resident).toEqual({
+        name: "researcher",
+        docId: "doc_agentdef",
+        weight: null,
+      });
       expect(body.warnings).toEqual([]);
     });
 
@@ -1631,7 +1726,21 @@ describe("routes mounted on a Hono app", () => {
       const response = await designate({});
       expect(response.status).toBe(200);
       const body = (await response.json()) as DesignationBody;
-      expect(body.thread.resident).toEqual({ name: null, docId: null });
+      expect(body.thread.resident).toEqual({ name: null, docId: null, weight: null });
+    });
+
+    /**
+     * CONTRACT-067. The designation carries the weight the resident runs at
+     * (SPEC.md §7, rider signed 2026-08-19) and the `Resident` reports it back;
+     * omitted, it reads null.
+     */
+    it("carries the weight through to the resident it answers with", async () => {
+      const response = await designate({ weight: "heavy" });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as DesignationBody;
+      expect(body.thread.resident).toEqual({ name: null, docId: null, weight: "heavy" });
+      expect((await designate({ weight: "" })).status).toBe(400);
+      expect((await designate({ weight: null })).status).toBe(400);
     });
 
     /** The body is optional in full, so a bare `POST` is the same designation. */
@@ -1641,7 +1750,7 @@ describe("routes mounted on a Hono app", () => {
       });
       expect(response.status).toBe(200);
       const body = (await response.json()) as DesignationBody;
-      expect(body.thread.resident).toEqual({ name: null, docId: null });
+      expect(body.thread.resident).toEqual({ name: null, docId: null, weight: null });
     });
 
     it.each([

@@ -157,6 +157,12 @@ function laneLabel(lane: AgentLane): string {
  * `resident unknown` is therefore what is left: the conversation *is* owned, we
  * cannot say by whom, and that is a different fact from either a general
  * resident or nobody at all.
+ *
+ * **The weight rides inside this cell rather than beside it** (CLI-053): a row
+ * is cells joined by ` · `, so a weight given a cell of its own would make one
+ * row four dot-separated fields and the next row three — which is exactly what
+ * a reader parsing a row positionally cannot survive. `commands/resident.ts`
+ * spells the join, once, for every surface that names a resident.
  */
 function residentCell(lane: AgentLane): readonly string[] {
   if (lane.lane === ORCHESTRATOR_LANE) return [];
@@ -206,6 +212,12 @@ export const agentsCommand: WorkspaceCommandSpec = {
     "about who owns the lane and is reported rather than silently substituted. **Archiving is not " +
     "one of those**: an archived `agent-def` still under that root resolves exactly as before, and " +
     "is still designatable, so the cell keeps printing its id.\n\n" +
+    "**The same cell says what the lane runs at**, where the designation chose a weight (SPEC.md " +
+    "§7, rider signed 2026-08-19): `researcher (doc_r1) at heavy`, `a general resident at heavy`. " +
+    "The word is a level's key from this workspace's own agent guidance, never a model name, and " +
+    "a designation that chose none prints nothing extra — no token is invented for an unstated " +
+    "weight, the same rule a null `name` carries. The weight is orthogonal to the profile, so " +
+    "all four combinations are ordinary rows.\n\n" +
     "**Presence is the parked request and nothing else.** A lane is live exactly while somebody " +
     "holds a parked `corpus queue idle --thread <id>`: there is no heartbeat to send, no " +
     "registration to keep fresh and nothing to reap, so an agent that stops parking stops being " +
@@ -236,8 +248,9 @@ export const agentsCommand: WorkspaceCommandSpec = {
     {
       command: "corpus agents",
       description:
-        'One row per lane — `th_4b8e2c "Q3 planning" · researcher (doc_r1) · live, parked 2m ago ' +
-        "— reading the mortgage docs` — with a lapsed or unattended lane shown rather than hidden.",
+        'One row per lane — `th_4b8e2c "Q3 planning" · researcher (doc_r1) at heavy · live, ' +
+        "parked 2m ago — reading the mortgage docs` — with a lapsed or unattended lane shown " +
+        "rather than hidden, and the `at …` omitted on a lane whose designation chose no weight.",
     },
     {
       command: "corpus agents --json",
@@ -245,7 +258,8 @@ export const agentsCommand: WorkspaceCommandSpec = {
         'The roster verbatim: `{"agents":[{"lane":"orchestrator","resident":null,"live":true,' +
         '"since":"2026-08-16T09:00:00.000Z","summary":null,"origin":null},…]}`. On a thread lane ' +
         "`resident` is an object whose `name` is null for a general resident, so a null `resident` " +
-        "there means the server could not name one at all.",
+        "there means the server could not name one at all. Its `weight` is the level the lane " +
+        "runs at, or null when the designation chose none.",
     },
     {
       command: "corpus agents --json | jq -r '.agents[] | select(.live) | .lane'",

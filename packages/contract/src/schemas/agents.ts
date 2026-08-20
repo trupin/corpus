@@ -2,6 +2,7 @@ import { z } from "@hono/zod-openapi";
 import { DocIdSchema, ThreadIdSchema } from "./id.js";
 import { LaneSchema, ORCHESTRATOR_LANE } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
+import { REQUESTED_WEIGHT_MAX_LENGTH, RequestedWeightSchema } from "./weight.js";
 
 /**
  * **The roster** — who is running, read behind an ordinary query key (SPEC.md
@@ -99,6 +100,18 @@ export const AgentNameSchema = z
   .openapi({ example: "researcher" });
 
 /**
+ * What a resident's weight governs, and what it does not — SPEC.md §7's rider
+ * signed 2026-08-19, in one sentence, published verbatim on
+ * `DesignateResidentRequest.weight` and `Resident.weight` and reused by the
+ * server (SERVER-129) and the CLI (CLI-053). One wording, so the rule cannot
+ * drift site by site as the agent-def root rule did (CONTRACT-064). Read it as
+ * the predicate of a sentence whose subject is the weight.
+ */
+export const RESIDENT_WEIGHT_BOUNDARY =
+  "governs the resident's own turns; a weight stated on a message still governs what the " +
+  "resident hands off (SPEC.md §7, rider signed 2026-08-19)";
+
+/**
  * A thread's resident: the agent that owns the conversation, and the profile it
  * works from — **when it has one** (SPEC.md §7, rider SHARED-048).
  *
@@ -124,6 +137,32 @@ export const AgentNameSchema = z
  *
  * The fourth combination is not a state — a `docId` with no `name` would be a
  * document nobody named — and the refinement below rejects it.
+ *
+ * ## A third field, orthogonal to both: `weight`
+ *
+ * SPEC.md §7's rider signed 2026-08-19: *"A resident's weight is set when it is
+ * designated, not per message."* A resident is a running agent, so the model it
+ * works at is a property of the designation — it cannot change what it is
+ * without discarding the conversation it is holding — and the designation is
+ * the only place the choice can be made. So it is carried **here**, on the
+ * `Resident` every surface already reads (the thread, the thread summary, the
+ * roster row, the `resident.designated` payload), rather than write-only on the
+ * request: a surface that shows who is resident (§11, UI-125) must show what it
+ * runs at, or the choice is invisible once made.
+ *
+ * It is `string | null`, **required and nullable** like every response-side
+ * field here. The value is the same token a message's `weight` carries
+ * ({@link RequestedWeightSchema}) — a level's key from the workspace's own tier
+ * table, never a model name, so "no model names in the UI" (a signed non-goal)
+ * holds by construction. `null` is *none chosen*: the launcher decides and says
+ * so. Orthogonal to the profile pair — `{name: null, docId: null, weight:
+ * "heavy"}` is a general resident running heavy, an ordinary state — so the
+ * refinement below does not mention it.
+ *
+ * **What it governs is stated once, in {@link RESIDENT_WEIGHT_BOUNDARY}**, and
+ * published verbatim on the request field and on this field. That sentence is
+ * what SERVER-129 and CLI-053 reuse; stating it anew at each site is how a rule
+ * stated at eight sites in v0.12.0 drifted (CONTRACT-064).
  *
  * ## Why null, and not a synthesised name
  *
@@ -174,6 +213,19 @@ export const ResidentSchema = z
         "substituted), and both set is a profile a reader can open. It is re-resolved on every " +
         "response rather than stored, so what stands here is the document the name answers to " +
         "now, never a stale id.",
+    ),
+    weight: RequestedWeightSchema.nullable().describe(
+      "The **weight this resident runs at**, or null (SPEC.md §7, rider signed 2026-08-19: a " +
+        "resident's weight is set when it is designated, not per message). Where set, it is a " +
+        "level's key from the workspace's own agent guidance — the same token a message's " +
+        "`weight` carries, never a model name — recorded verbatim from the designation and " +
+        "interpreted by nothing here. **Null means none was chosen**: the launcher decides what " +
+        "the resident runs at, and says so. Orthogonal to `name` and `docId` — a general " +
+        "resident may run at a stated weight, and a profiled one at none. It " +
+        `${RESIDENT_WEIGHT_BOUNDARY}. ` +
+        "A designation is long-lived, so a level the launcher cannot meet is not refused here " +
+        "(the table is skill text the server never reads): the launcher reports it, per §7's " +
+        "weight rider, in the listener's first reply.",
     ),
   })
   .refine((resident) => resident.name !== null || resident.docId === null, {
@@ -418,6 +470,18 @@ export const AgentRosterSchema = z
  *   {@link ResidentSchema} gives — it would reach a person's recipient list
  *   dressed as a profile, and could collide with a real one.
  *
+ * ## `weight` rides the same body, optional for the same reason (CONTRACT-067)
+ *
+ * SPEC.md §7's rider signed 2026-08-19 makes the designation the one place a
+ * resident's model is chosen. The field is {@link RequestedWeightSchema} — the
+ * level-key vocabulary a message's `weight` already uses, so the composer's
+ * picker (which reads the workspace's tier table, `packages/kit`'s
+ * `weightLevels.ts`) offers the same levels here with no second vocabulary —
+ * and it is optional because omitting it must mean what it meant before the
+ * field existed: the launcher decides. `Resident.weight` reports it back, null
+ * when omitted. What it governs is {@link RESIDENT_WEIGHT_BOUNDARY}, stated
+ * once.
+ *
  * ## The cost of absence-as-meaning, stated rather than discovered
  *
  * A caller whose variable is `undefined` by accident designates a general
@@ -451,8 +515,146 @@ export const DesignateResidentRequestSchema = z
         'and `"   "` are `400`, because dropping a name by accident is a mistake and asking for ' +
         "no profile is a decision.",
     ).optional(),
+    weight: RequestedWeightSchema.optional().describe(
+      "The **weight the resident runs at** (SPEC.md §7, rider signed 2026-08-19: a resident's " +
+        "weight is set when it is designated, not per message — a running agent cannot change " +
+        "what it is without discarding the conversation it holds, so the designation is the only " +
+        "place the choice exists). The value is a **level's key from the workspace's own agent " +
+        "guidance, verbatim** — the same token a message's `weight` carries, and never a model " +
+        "name: this contract enumerates no levels, because §7 keeps the tiers in the orchestrate " +
+        "skill and a published enum would reject a workspace's own vocabulary. Validated for " +
+        `**shape only** — non-blank, single line, at most ${REQUESTED_WEIGHT_MAX_LENGTH} ` +
+        "characters — and interpreted by nothing here. It " +
+        `${RESIDENT_WEIGHT_BOUNDARY}. ` +
+        "**Omit it to choose nothing**, which keeps today's behaviour exactly: the resident runs " +
+        "at whatever the launcher starts it as, `Resident.weight` reads null, and the launcher " +
+        "says what it chose. No default, no `null` spelling, and an empty string is a `400` " +
+        "rather than a second way of saying nothing. A level the launcher cannot meet is not " +
+        "refused here — the tier table is skill text the server never reads — and since a " +
+        "designation is long-lived the report lands where §7's weight rider puts it: in the " +
+        "listener's first reply, naming what was asked for and what was done instead. Sent " +
+        "alone, it designates a general resident at that weight; the two fields are independent.",
+    ),
   })
   .openapi("DesignateResidentRequest");
+
+/**
+ * The event type a designation enqueues, spelled here so this module does not
+ * depend on `./queue.ts` (which imports it) — the arrangement `./edit.ts` and
+ * `./form.ts` use for their own types. `queue.test.ts` pins that it is a member
+ * of `CORE_QUEUE_EVENT_TYPES`.
+ */
+export const RESIDENT_DESIGNATED_EVENT_TYPE = "resident.designated";
+
+/** The event type a release enqueues (CONTRACT-069); pinned the same way. */
+export const RESIDENT_RELEASED_EVENT_TYPE = "resident.released";
+
+/**
+ * The payload of a `resident.designated` event — what the orchestrator reads to
+ * launch a listener: which conversation was designated, and who to launch there
+ * (SPEC.md §7, rider SHARED-043; AGENT-026).
+ *
+ * The resident travels **resolved**, as the response carries it, so the consumer
+ * never repeats a lookup the server has already made. A general resident is
+ * `{name: null, docId: null, …}` — a designation like any other, not a
+ * designation of nobody: the listener to launch is the workspace's ordinary
+ * agent, with no persona document to read (SHARED-048).
+ *
+ * **It lands on the orchestrator's lane whoever is designated** — the resident
+ * does not announce itself to itself. The rule is stated once, on
+ * `CORE_QUEUE_EVENT_TYPES`'s docblock, and this payload carries no lane for the
+ * reason `QueueEvent` carries none.
+ *
+ * Not a registered component: it rides inside `QueueEvent.payload`, which §7
+ * keeps open, and no route publishes it on its own.
+ */
+export const ResidentDesignatedPayloadSchema = z.object({
+  threadId: ThreadIdSchema.describe(
+    "The standalone thread that was designated — the root of the scope the resident now owns, " +
+      "and the name of its lane.",
+  ),
+  // Referenced unmodified, deliberately: `.describe()` on a registered schema
+  // makes zod-to-openapi carry the component's name onto the derived one and
+  // rewrite the shared definition (CONTRACT-037). The resident is the same
+  // `Resident` the designation's response carried, resolved, so the listener to
+  // launch is read here and looked up nowhere.
+  resident: ResidentSchema,
+});
+
+/**
+ * Why a resident was released (CONTRACT-069; SPEC.md §7's three ways out of a
+ * designation). Closed, and **a lapse is not one of them**: §7's fallback is
+ * computed at claim time and writes nothing, so nothing is released and no
+ * event is produced.
+ */
+export const RESIDENT_RELEASE_REASONS = ["released", "resolved", "replaced"] as const;
+
+export const ResidentReleaseReasonSchema = z
+  .enum(RESIDENT_RELEASE_REASONS)
+  .describe(
+    "Why the resident left (SPEC.md §7). `released`: a person released it — `DELETE " +
+      "/api/threads/{id}/resident`. `resolved`: the thread was resolved, and a settled " +
+      "conversation has nobody to keep resident, so resolution released it. `replaced`: a new " +
+      "designation on the same thread displaced it — a thread has one resident or none, so " +
+      "designating again is a release of the old one and a designation of the new, and the " +
+      "`resident.designated` for the newcomer is a separate event. **A lapse is not a release** " +
+      "and never produces this event: a lane whose listener has gone quiet falls back to the " +
+      "orchestrator at claim time, nothing is written, and the resident is still resident.",
+  );
+
+/**
+ * The payload of a `resident.released` event — what the orchestrator reads to
+ * learn that a lane returned to it, and whose listener to stop (CONTRACT-069,
+ * the wire half of SERVER-128).
+ *
+ * **It lands on the orchestrator's lane**, under the same carve-out as
+ * {@link ResidentDesignatedPayloadSchema}: a released resident does not announce
+ * its own end to itself, and the orchestrator is the party that launched the
+ * listener and has to learn it is over. **One release, one event** — a release
+ * that releases nothing (the idempotent `DELETE` on a thread with no resident)
+ * produces none, and the event-storm argument lives with SERVER-128.
+ *
+ * `resident` is the resident **that was released** — the orchestrator logs who
+ * left, and for `replaced` it is the old occupant, never the new one. The
+ * newcomer travels on its own `resident.designated`.
+ */
+export const ResidentReleasedPayloadSchema = z.object({
+  threadId: ThreadIdSchema.describe(
+    "The thread whose resident was released — the root of the scope that has returned to " +
+      "ordinary routing, and the name of the lane that no longer has an owner.",
+  ),
+  // Referenced unmodified, for the reason given on the designated payload. This
+  // is the resident that was released, as it stood when it left: for `replaced`,
+  // the displaced occupant and never the newcomer. Carried so the orchestrator
+  // can log who left without a lookup the release itself has made impossible.
+  resident: ResidentSchema,
+  reason: ResidentReleaseReasonSchema,
+});
+
+/**
+ * Narrows a queue event to a release, or returns `undefined` when it is not one
+ * — a different type, or a payload that does not match. A malformed payload is
+ * not an exception, for the reason `parseDocEditedPayload` gives: events come
+ * off disk, and a consumer must survive one written by an older server.
+ */
+export function parseResidentReleasedPayload(event: {
+  readonly type: string;
+  readonly payload: unknown;
+}): ResidentReleasedPayload | undefined {
+  if (event.type !== RESIDENT_RELEASED_EVENT_TYPE) return undefined;
+  const parsed = ResidentReleasedPayloadSchema.safeParse(event.payload);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** The designation counterpart of {@link parseResidentReleasedPayload}. */
+export function parseResidentDesignatedPayload(event: {
+  readonly type: string;
+  readonly payload: unknown;
+}): ResidentDesignatedPayload | undefined {
+  if (event.type !== RESIDENT_DESIGNATED_EVENT_TYPE) return undefined;
+  const parsed = ResidentDesignatedPayloadSchema.safeParse(event.payload);
+  return parsed.success ? parsed.data : undefined;
+}
 
 export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
 export type Resident = z.infer<typeof ResidentSchema>;
@@ -460,3 +662,6 @@ export type LaneOrigin = z.infer<typeof LaneOriginSchema>;
 export type AgentLane = z.infer<typeof AgentLaneSchema>;
 export type AgentRoster = z.infer<typeof AgentRosterSchema>;
 export type DesignateResidentRequest = z.infer<typeof DesignateResidentRequestSchema>;
+export type ResidentDesignatedPayload = z.infer<typeof ResidentDesignatedPayloadSchema>;
+export type ResidentReleaseReason = z.infer<typeof ResidentReleaseReasonSchema>;
+export type ResidentReleasedPayload = z.infer<typeof ResidentReleasedPayloadSchema>;

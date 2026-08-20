@@ -1,15 +1,15 @@
 import {
   AttachButton,
   COMPOSER_PRIMARY_KEY,
+  composerAddress,
+  ComposerAddress,
   composerReachesAgent,
   handleComposerKeyDown,
   PendingAttachments,
-  RecipientPicker,
   useAttachmentIntake,
   useComposerRecipient,
   useComposerWeight,
   unknownRecipientLane,
-  WeightPicker,
   type ComposerRecipientRestore,
   type PendingAttachment,
 } from "@corpus/kit";
@@ -201,7 +201,18 @@ export function CommentPopover({
    */
   const weight = useComposerWeight(weightScope);
   const recipient = useComposerRecipient({ start: recipientScope, restore: restore?.recipient });
-  const live = composerReachesAgent({ requestsAgent: asking });
+  /*
+   * The address (UI-126): who answers, at what weight, one line above the foot.
+   * What it hands the host is `address.request` — the weight only where a
+   * level was offered and chosen, so `○ note only` states none and a resident
+   * recipient's designation-time weight is named rather than overridden
+   * (SPEC.md §7, rider signed 2026-08-19).
+   */
+  const address = composerAddress({
+    weight,
+    recipient,
+    live: composerReachesAgent({ requestsAgent: asking }),
+  });
 
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Popover, onEscape: onClose });
 
@@ -222,7 +233,7 @@ export function CommentPopover({
     // lifetime. A *refused* send is the one exception, and it is not a
     // persisting override: nothing was written, so `restore` brings the same
     // unsent message back whole — words, files and the lane it named alike.
-    onSubmit(text.trim(), asking, { ...weight.request, ...recipient.request }, intake.take());
+    onSubmit(text.trim(), asking, address.request, intake.take());
   };
 
   return createPortal(
@@ -289,10 +300,9 @@ export function CommentPopover({
           handleComposerKeyDown(event, { onPrimary: send, onEscape: onClose });
         }}
       />
-      <WeightPicker weight={weight} live={live} surface="comment" />
-      <RecipientPicker recipient={recipient} live={live} surface="comment" />
       <div className="composer-foot">
         <AttachButton surface="comment" onFiles={intake.add} />
+        <ComposerAddress address={address} surface="comment" />
         <button
           type="button"
           className={asking ? "toggle on" : "toggle"}

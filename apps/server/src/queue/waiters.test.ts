@@ -20,19 +20,19 @@ describe("WaiterRegistry", () => {
     });
 
     registry.notify(everyone);
-    expect(await parked).toBe(true);
+    expect(await parked).toBe("woke");
     expect(registry.size).toBe(0);
   });
 
-  it("expires with false when the window elapses", async () => {
+  it("expires when the window elapses", async () => {
     const registry = new WaiterRegistry({ probe: never });
-    expect(await registry.wait(ANY, 20)).toBe(false);
+    expect(await registry.wait(ANY, 20)).toBe("expired");
     expect(registry.size).toBe(0);
   });
 
   it("refuses to park at all for a non-positive window", async () => {
     const registry = new WaiterRegistry({ probe: never });
-    expect(await registry.wait(ANY, 0)).toBe(false);
+    expect(await registry.wait(ANY, 0)).toBe("expired");
     expect(registry.size).toBe(0);
   });
 
@@ -45,13 +45,13 @@ describe("WaiterRegistry", () => {
     });
 
     controller.abort();
-    expect(await parked).toBe(false);
+    expect(await parked).toBe("expired");
     expect(registry.size).toBe(0);
   });
 
   it("does not park a client that is already gone", async () => {
     const registry = new WaiterRegistry({ probe: never });
-    expect(await registry.wait(ANY, 5_000, AbortSignal.abort())).toBe(false);
+    expect(await registry.wait(ANY, 5_000, AbortSignal.abort())).toBe("expired");
     expect(registry.size).toBe(0);
   });
 
@@ -64,7 +64,7 @@ describe("WaiterRegistry", () => {
 
     const parked = registry.wait(ANY, 5_000);
     available = true;
-    expect(await parked).toBe(true);
+    expect(await parked).toBe("woke");
     expect(registry.size).toBe(0);
   });
 
@@ -80,7 +80,7 @@ describe("WaiterRegistry", () => {
       onProbeError,
     });
 
-    expect(await registry.wait(ANY, 5_000)).toBe(true);
+    expect(await registry.wait(ANY, 5_000)).toBe("woke");
     expect(onProbeError).toHaveBeenCalled();
   });
 
@@ -92,8 +92,8 @@ describe("WaiterRegistry", () => {
     });
 
     registry.close();
-    expect(await parked).toBe(false);
-    expect(await registry.wait(ANY, 5_000)).toBe(false);
+    expect(await parked).toBe("expired");
+    expect(await registry.wait(ANY, 5_000)).toBe("expired");
     expect(registry.size).toBe(0);
   });
 
@@ -109,11 +109,11 @@ describe("WaiterRegistry", () => {
       });
 
       registry.notify((scope) => scope === OTHER);
-      expect(await resident).toBe(true);
+      expect(await resident).toBe("woke");
       // Still parked: the other lane's arrival is not this one's business.
       expect(registry.size).toBe(1);
       registry.notify(everyone);
-      expect(await orchestrator).toBe(true);
+      expect(await orchestrator).toBe("woke");
     });
 
     it("probes each parked lane and wakes it on its own answer", async () => {
@@ -128,11 +128,51 @@ describe("WaiterRegistry", () => {
 
       const resident = registry.wait(OTHER, 5_000);
       const orchestrator = registry.wait(ANY, 200);
-      expect(await resident).toBe(true);
+      expect(await resident).toBe("woke");
       // The orchestrator's window expires rather than being woken by the other
       // lane's pending work.
-      expect(await orchestrator).toBe(false);
+      expect(await orchestrator).toBe("expired");
       expect(new Set(asked)).toEqual(new Set([OTHER, ANY]));
+    });
+
+    /**
+     * SERVER-128. The eviction is a *different outcome* from a wake, not a
+     * louder one: the whole point is that the caller can tell "nothing yet" from
+     * "nothing ever" and stop re-parking.
+     */
+    describe("eviction", () => {
+      it("settles the lane's waiters as evicted and leaves the others parked", async () => {
+        const registry = new WaiterRegistry({ probe: never });
+        const resident = registry.wait(OTHER, 5_000);
+        const orchestrator = registry.wait(ANY, 5_000);
+        await vi.waitFor(() => {
+          expect(registry.size).toBe(2);
+        });
+
+        expect(registry.evict((scope) => scope === OTHER)).toBe(1);
+        expect(await resident).toBe("evicted");
+        expect(registry.size).toBe(1);
+
+        registry.notify(everyone);
+        expect(await orchestrator).toBe("woke");
+      });
+
+      it("evicts every waiter on the lane, and reports how many", async () => {
+        const registry = new WaiterRegistry({ probe: never });
+        const both = [registry.wait(OTHER, 5_000), registry.wait(OTHER, 5_000)];
+        await vi.waitFor(() => {
+          expect(registry.size).toBe(2);
+        });
+
+        expect(registry.evict((scope) => scope === OTHER)).toBe(2);
+        expect(await Promise.all(both)).toEqual(["evicted", "evicted"]);
+        expect(registry.size).toBe(0);
+      });
+
+      it("evicts nobody when nothing is parked on the lane", () => {
+        const registry = new WaiterRegistry({ probe: never });
+        expect(registry.evict((scope) => scope === OTHER)).toBe(0);
+      });
     });
 
     it("reports the distinct lanes something is parked on", async () => {
@@ -167,7 +207,7 @@ describe("WaiterRegistry", () => {
       pollIntervalMs: 1,
     });
 
-    expect(await registry.wait(ANY, 60)).toBe(false);
+    expect(await registry.wait(ANY, 60)).toBe("expired");
     expect(overlapped).toBe(false);
   });
 });

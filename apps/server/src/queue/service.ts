@@ -1,5 +1,6 @@
 import {
   ORCHESTRATOR_LANE,
+  parseResidentReleasedPayload,
   type Lane,
   type QueueEventStatus,
   type QueueStatus,
@@ -31,6 +32,7 @@ import {
 } from "./project.js";
 import {
   QueueStore,
+  byQueueOrder,
   salvageEvent,
   withoutDeferral,
   type DeferralFields,
@@ -216,6 +218,16 @@ interface TransitionOptions {
     { readonly statuses: readonly QueueEventStatus[]; readonly verb: string } | undefined;
 }
 
+/**
+ * One file in `pending/`, with what could be read of it: see
+ * {@link QueueService.orderedPending}. An absent `event` is a file that did not
+ * parse, or one that was gone by the time it was read.
+ */
+interface PendingEntry {
+  readonly id: string;
+  readonly event?: StoredEvent | undefined;
+}
+
 /** English for a `409` that names the statuses a verb accepts. */
 function joinStatuses(statuses: readonly QueueEventStatus[]): string {
   if (statuses.length <= 1) return statuses[0] ?? "";
@@ -249,6 +261,8 @@ export class QueueService {
   private readonly waiters: WaiterRegistry;
   /** Serializes claim batches in this process; `ENOENT` covers the rest. */
   private claimChain: Promise<unknown> = Promise.resolve();
+  /** The last value {@link nextSeq} handed out; see {@link StoredEvent.seq}. */
+  private lastSeq = 0;
 
   constructor(options: QueueServiceOptions) {
     this.store = new QueueStore(options.corpusDir, options.observeWrite);
@@ -448,6 +462,9 @@ export class QueueService {
       // and the chain exists to keep readers from observing a half-written
       // *batch* of files, which a lane resolution neither performs nor observes.
       lane: laneFor(input, this.findScopeRoot),
+      // SPEC.md §7's order, stamped here for the same reason the lane is: once,
+      // at the only moment the answer is known, and never rewritten below.
+      seq: this.nextSeq(),
     };
     await this.store.writeEvent("pending", event);
     this.mirror.upsertEvent(event);
@@ -462,7 +479,79 @@ export class QueueService {
     // the work it is **holding** — nobody is holding this yet (SERVER-115).
     this.invalidate(queueTransitionKeys(undefined, "pending"));
     this.wake(laneOf(event));
+    this.evictReleasedLane(event);
     return event;
+  }
+
+  /**
+   * The next {@link StoredEvent.seq}: the clock, dragged forward whenever it
+   * would repeat itself.
+   *
+   * The clock alone is not enough twice over. Two enqueues inside one
+   * millisecond would tie, and a test's injected `now` is usually a constant, so
+   * every event a fixture makes would tie — and a queue whose order is only
+   * observable on a fast enough machine is not an order. `Math.max` keeps the
+   * value an epoch-milliseconds reading whenever real time has moved, which is
+   * what makes it comparable across a restart, and makes it *this* enqueue's
+   * position whenever it has not.
+   */
+  private nextSeq(): number {
+    this.lastSeq = Math.max(this.now(), this.lastSeq + 1);
+    return this.lastSeq;
+  }
+
+  /**
+   * A `resident.released` ends every park on the lane it names (SERVER-128).
+   *
+   * **Here, rather than at the three call sites that release**, because a
+   * release that announced itself without ending the park — or ended it without
+   * announcing — is a state nothing wants to be able to reach, and there are
+   * already three producers (a person's `DELETE`, resolution, and a designation
+   * that displaces an occupant) with more possible later. Riding on the event
+   * makes the two halves one act by construction, and gives the eviction the
+   * same lane the announcement was routed against.
+   *
+   * Read through the contract's own `parseResidentReleasedPayload`, so the type
+   * and the payload shape are the published ones and not a second reading of
+   * them. A payload this server did not write — an older release, a hand-dropped
+   * file — simply fails the parse and evicts nobody, which is the same
+   * conservative direction `readRequestedWeight` takes for the same reason.
+   *
+   * After the wake, deliberately: the wake concerns the **orchestrator's** lane
+   * (that is where a release is stamped) and the eviction concerns the released
+   * lane, so the two never touch the same waiter, and doing the announcement's
+   * work first keeps the ordinary path first.
+   */
+  private evictReleasedLane(event: StoredEvent): void {
+    const released = parseResidentReleasedPayload(event);
+    if (released === undefined) return;
+    this.evictLane(released.threadId);
+  }
+
+  /**
+   * Ends every parked `idle` scoped to `lane`, and answers how many there were.
+   *
+   * The lane's designation is gone by the time this runs, so those requests have
+   * nothing left to wait for: they return the contract's `204` at once instead of
+   * holding until their window runs out. §7's bound on discovering a release
+   * drops from the park rearm — up to ~8 minutes — to one HTTP round trip, which
+   * is what makes *release* an act with an observable end rather than a request
+   * that takes effect at some point in the next eight minutes.
+   *
+   * **Exact lane equality, not {@link visibleTo}.** The relation that decides who
+   * *sees* an event is deliberately asymmetric (the orchestrator sees lapsed
+   * lanes); the relation that decides whose park *ended* is not. Only the
+   * requests parked on this very lane are concerned, and the orchestrator's own
+   * park is left alone — it is woken by the release event itself, as by any other
+   * event on its lane.
+   *
+   * **Nothing queued is touched.** Events stamped for this lane before the
+   * release stay exactly where they are, in `pending/` or `in-progress/`, for the
+   * departing listener to drain — the converse skill's account of retirement
+   * depends on that, and a release that swept them would orphan work in flight.
+   */
+  evictLane(lane: Lane): number {
+    return this.waiters.evict((scope) => scope === lane);
   }
 
   /**
@@ -541,6 +630,13 @@ export class QueueService {
    * whole call, and the release is a `finally`: a window that expired, was
    * aborted by a dropped client, or threw has ended the same way as far as
    * presence is concerned.
+   *
+   * **A release ends the window at once** (SERVER-128). Where the lane's
+   * designation is removed while this request is parked on it, the request
+   * answers `204` on the release's own round trip rather than holding to the end
+   * of its window — see {@link evictLane}. Nothing about the response changes:
+   * it is the ordinary empty window, and the caller finds out *why* by reading
+   * its designation, or by being refused at its next park.
    */
   async idle(request: IdleRequest): Promise<QueueBatch | undefined> {
     const scope = request.scope ?? ORCHESTRATOR_LANE;
@@ -567,8 +663,14 @@ export class QueueService {
       // Parked **under its lane**: another lane's arrival must not end this
       // window, or a resident re-parks on every message the orchestrator gets
       // and a scoped park stops being the zero-token wait it is sold as.
-      const woke = await this.waiters.wait(scope, remaining, request.signal);
-      if (!woke) return undefined;
+      //
+      // Only `"woke"` goes round again. `"expired"` is the window ending and
+      // `"evicted"` is the lane ending (SERVER-128) — and the second one has to
+      // *leave the loop*, not merely fail to find work: a re-park on a lane
+      // nobody designates any more would hold this request open for the rest of
+      // its window, which is the wait the eviction exists to end.
+      const outcome = await this.waiters.wait(scope, remaining, request.signal);
+      if (outcome !== "woke") return undefined;
     }
   }
 
@@ -598,6 +700,14 @@ export class QueueService {
    *
    * It is read before the halt check as well: a halt stops work being handed
    * out, not the agent's ability to reconcile what it already holds.
+   *
+   * **The batch is in the order the conversation has it** — `created`, then
+   * `seq`, then id ({@link byQueueOrder}), for every lane (SERVER-131). SPEC.md
+   * §7 has a resident work its conversation inline, one event at a time, and
+   * the skill that does so reads the order off this list. Before this it was
+   * `readdir` order, which is the event id's: measured on a real server, three
+   * replies posted inside one second came back Y, Z, X — the first message
+   * last, answered third.
    */
   async claimAll(request: LaneScope = {}): Promise<QueueBatch> {
     const scope = request.scope ?? ORCHESTRATOR_LANE;
@@ -611,7 +721,12 @@ export class QueueService {
 
       const claimed: StoredEvent[] = [];
       let touched = false;
-      for (const id of await this.store.listIds("pending")) {
+      // The whole directory is read **before** the first move, so the batch can
+      // be ordered by what the files say rather than by the order they were
+      // listed in (SERVER-131). It is the same one read per pending file the
+      // interleaved version did, in the same serialized turn — the only thing
+      // that moved is where the reading stops and the claiming starts.
+      for (const { id, event: pending } of await this.orderedPending()) {
         // The lane is read **before** the move, off the file in `pending/`: a
         // claim that moved first and filtered afterwards would have to move
         // another lane's event back, and the window between the two renames is
@@ -622,8 +737,7 @@ export class QueueService {
         // quarantined below. Skipping it while scoped would leave a corrupt file
         // sitting in `pending/` for as long as no orchestrator claim ran, which
         // is the one outcome quarantine exists to prevent.
-        const pending = await this.store.readEvent("pending", id);
-        if (pending !== undefined && pending.ok && !this.visible(scope, pending.event)) continue;
+        if (pending !== undefined && !this.visible(scope, pending)) continue;
         if (!(await this.store.move("pending", "in-progress", id))) continue;
         touched = true;
         const read = await this.store.readEvent("in-progress", id);
@@ -782,6 +896,12 @@ export class QueueService {
       // stamping it, so it is the one place a lane could be silently dropped and
       // a resident's retried work quietly become the orchestrator's (SPEC.md §7:
       // the stamp is made once and never rewritten).
+      //
+      // `seq` is carried across for the same reason and with the same force
+      // (SERVER-131). A retry re-runs work the conversation already has a place
+      // for; minting a fresh one would move a retried message to the end of the
+      // conversation it belongs in the middle of. It rides beside `created`,
+      // which this rebuild already keeps for exactly that reason.
       const event: StoredEvent = {
         id: current.event.id,
         type: current.event.type,
@@ -792,6 +912,7 @@ export class QueueService {
         updated: formatInstant(this.now()),
         attempts: 0,
         ...(current.event.lane === undefined ? {} : { lane: current.event.lane }),
+        ...(current.event.seq === undefined ? {} : { seq: current.event.seq }),
       };
       await this.store.writeEvent("pending", event);
       this.mirror.upsertEvent(event);
@@ -968,7 +1089,41 @@ export class QueueService {
       // `idle` is a read and never mutates the queue.
       else this.logger.debug("skipping malformed pending event", { id, reason: read.reason });
     }
+    // The same order `claimAll` hands the same events over in (SERVER-131), for
+    // the same reason the same predicate filters them: the loop's two entry
+    // points describe one queue, and an agent that read `idle`'s list and then
+    // worked `claim-all`'s must not find the conversation reshuffled between
+    // them.
+    events.sort(byQueueOrder);
     return events;
+  }
+
+  /**
+   * Every file in `pending/` read once, in the order the conversation has them
+   * (SPEC.md §7, SERVER-131).
+   *
+   * `event` is absent for a file that vanished between the listing and the read,
+   * and for one that does not parse — `claimAll` treats both the same way it
+   * always has: it claims them, because a corrupt file belongs to no lane and
+   * has to reach quarantine whoever is claiming.
+   *
+   * **The unreadable ones go last, and never between two events.** They carry no
+   * instant to be ordered by, so any position among the readable ones would be
+   * invented; they are also the only entries the batch never reports, so their
+   * position costs the agent nothing and putting them at the end keeps a
+   * quarantine from splitting a conversation in half.
+   */
+  private async orderedPending(): Promise<readonly PendingEntry[]> {
+    const readable: (PendingEntry & { readonly event: StoredEvent })[] = [];
+    const opaque: PendingEntry[] = [];
+    for (const id of await this.store.listIds("pending")) {
+      const read = await this.store.readEvent("pending", id);
+      if (read !== undefined && read.ok) readable.push({ id, event: read.event });
+      else opaque.push({ id });
+    }
+    readable.sort((left, right) => byQueueOrder(left.event, right.event));
+    // `opaque` is already in a stable order: `listIds` sorts by id.
+    return [...readable, ...opaque];
   }
 
   /**

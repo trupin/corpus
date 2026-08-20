@@ -1544,6 +1544,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{id}/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a designated thread's resident owns
+         * @description The **scope** of a designated thread (SPEC.md §7): the thread itself, every thread whose parent chain reaches it, every document whose `origin` reaches it, and every thread on such a document — that is, everything whose events are stamped with this thread's lane. **One frugal line per member and never a body** (§7's retrieval discipline): id, kind, current title, status, and the edge it reached the scope by (`self` for the root, `parent`, `origin`).
+         *
+         *     **Computed per request, by the same walk the queue routes with** — `scope` is computed, never stored (SPEC.md §7), so nothing here is a projection table or a cache: the server runs the identical `walkScope` that decides an event's lane over the corpus and keeps what lands on this one. A document created *before* the thread was designated is therefore listed when its origin reaches it, exactly as the queue would route a comment on it; an archived document is listed with `status: "archived"`, because archiving does not touch origin or parent and detaching is the only way out of a scope. A person asks this to see what an agent owns (SPEC.md §11); a resident asks it to learn what it owns — reading your own lane is not a sweep.
+         *
+         *     **Bounded at 200 members, with no cursor and no total.** The root thread comes first, then the most recently updated members first, so a truncated page holds the live end of the scope; `truncated` says when the cut happened. The bound exists so that a scope cannot be an enumeration (§7 forbids the agent the sweep), not to make paging a feature — a caller that needs one particular member reads it by id.
+         *
+         *     **`409` for a thread with no resident: the orchestrator's lane is not a scope.** §7 defines scope only for a designated thread; everything outside every scope falls on the orchestrator's lane by default, so an undesignated thread has no scope to list rather than an empty one, and answering `[]` or the thread alone would invent a scope the queue does not route by. The message says so and names the remedy: designate a resident, or read `GET /api/agents` for the lanes that exist. `404` when the thread is unknown, and when the id names a document that is not a thread, matching `GET /api/threads/{id}`. **No query parameters**: the bound lives in the contract, not in a flag. Read-only; no acting party.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The scope, root first, at most 200 members, with `truncated` set when the cap cut it. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThreadScope"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{id}/turns": {
         parameters: {
             query?: never;
@@ -2196,7 +2280,9 @@ export interface paths {
          *
          *     **Everything else about a resident is identical either way** (SPEC.md §7) — the lane, the scope, presence, the lapse fallback, release, and resolution releasing it — because a profile says *how* the agent works and nothing about *what it owns*. The response carries the resolved `Resident`, whose `name` is null for a general one and whose `docId` is null when there is no profile document to point at, so the caller never repeats the lookup.
          *
-         *     **Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.
+         *     **The designation is where the resident's weight is chosen** (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is designated, not per message). `weight`, when given, is a level's key from the workspace's own agent guidance — the same token a message's `weight` carries, never a model name — and it governs the resident's own turns; a weight stated on a message still governs what the resident hands off (SPEC.md §7, rider signed 2026-08-19). Omit it to choose nothing, which is today's behaviour exactly: the launcher decides, `Resident.weight` reads null, and the launcher says what it chose. The server records the value and interprets nothing about it; a level the launcher cannot meet is reported in the listener's first reply, not refused here. `Resident.weight` carries it back on the thread, the roster row and the `resident.designated` payload, so the choice is never write-only. A composer addressing this lane offers no per-turn weight and says why (SPEC.md §11).
+         *
+         *     **Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409` — and a replacement is a release of the old occupant, so it enqueues a `resident.released` with `reason: "replaced"` beside the newcomer's `resident.designated`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.
          *
          *     **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident claims a conversation and every artifact that grows out of it, and an agent that could designate would be choosing who answers a person's messages (SPEC.md §7 — designation is user-only state).
          *
@@ -2224,7 +2310,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description The thread, its `resident` now the resolved `{name, docId}` — both null for a general resident — and any warnings raised while writing it. */
+                /** @description The thread, its `resident` now the resolved `{name, docId, weight}` — the first two null for a general resident, the third null when no weight was chosen — and any warnings raised while writing it. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -2283,6 +2369,8 @@ export interface paths {
         /**
          * Release a thread's resident agent (user-only)
          * @description Releases the thread's resident, returning its scope to ordinary routing (SPEC.md §7). Nothing is rewritten: events already stamped keep the lane they were stamped with, and everything enqueued afterwards routes as it did before there was a resident. Dissolving is the **absence** of a resident, never a third state.
+         *
+         *     **A release that releases somebody enqueues `resident.released`, on the orchestrator's lane** — under the same carve-out as `resident.designated`: a released resident does not announce its own end to itself, and the orchestrator is what launched the listener and has to learn the lane returned to it. The payload names the thread, the resident that left and `reason: "released"`; resolution's release says `resolved`, a replacement says `replaced`, and a lapse is not a release and produces none. One release, one event.
          *
          *     **Idempotent.** Releasing a thread that has no resident is a `200` that changes nothing, writes nothing and commits nothing — the caller often cannot know, and a release with nothing to release is a no-op rather than an error. It answers with the thread rather than a bare `204` because a release that *does* write can raise §14's warnings, and a rejected auto-commit has to be visible somewhere.
          *
@@ -4938,6 +5026,8 @@ export interface components {
              * @example doc_a1b2c3
              */
             docId: string | null;
+            /** @description The **weight this resident runs at**, or null (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is designated, not per message). Where set, it is a level's key from the workspace's own agent guidance — the same token a message's `weight` carries, never a model name — recorded verbatim from the designation and interpreted by nothing here. **Null means none was chosen**: the launcher decides what the resident runs at, and says so. Orthogonal to `name` and `docId` — a general resident may run at a stated weight, and a profiled one at none. It governs the resident's own turns; a weight stated on a message still governs what the resident hands off (SPEC.md §7, rider signed 2026-08-19). A designation is long-lived, so a level the launcher cannot meet is not refused here (the table is skill text the server never reads): the launcher reports it, per §7's weight rider, in the listener's first reply. */
+            weight: string | null;
         };
         Turn: {
             /**
@@ -5187,6 +5277,46 @@ export interface components {
              */
             deletedParent: string;
         };
+        ThreadScope: {
+            /**
+             * @description The designated thread this is the scope of — the root, and the name of the lane every member's events are stamped with (SPEC.md §7). It is also `members[0].id`.
+             * @example th_x9y8
+             */
+            thread: string;
+            /** @description Every artifact in the scope, capped at 200: the root thread first (`via: "self"`), then every other member most recently updated first, so when the cap bites the page holds the live end of the scope and what falls off is what nothing has touched for longest. **Computed per request by the same walk the queue routes with** (SPEC.md §7: scope is computed, never stored) — what is listed here is exactly what an event posted there would be routed to this lane by, and nothing else. One line per member and never a body. */
+            members: components["schemas"]["ScopeMember"][];
+            /** @description True when the scope holds more than 200 members and the list was cut. Stated rather than left to be derived, for the reason `DocDiff.truncated` gives: a capped list that looks complete is the failure this flag exists to prevent. **There is no cursor and no total**, deliberately: the bound exists so that a scope cannot be enumerated, and a count would cost the very enumeration it forbids. A caller that needs one particular member reads it by id. */
+            truncated: boolean;
+        };
+        ScopeMember: {
+            /**
+             * @description The member's id — a `th_` id for a thread, a `doc_` id for a document. Open it with the verb `kind` names.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /**
+             * @description `thread` for a conversation (open it with `GET /api/threads/{id}`), `doc` for any other document (`GET /api/docs/{id}`). A thread is a document (SPEC.md §6), so this tells a reader which surface to open and nothing about how the member reached the scope.
+             * @enum {string}
+             */
+            kind: "thread" | "doc";
+            /** @description The member's **current** title, read at response time. */
+            title: string;
+            /**
+             * @description The member's own lifecycle status, as its listing row carries it: `open` or `resolved` for a thread, `open`, `resolved` or `archived` for a document. **An archived document is still in scope**: membership is the walk over `origin` and `parent`, which archiving does not touch (SPEC.md §7) — detaching is the escape hatch, not archiving — so it is listed, and this field is what tells a reader it is archived.
+             * @enum {string}
+             */
+            status: "open" | "resolved" | "archived";
+            /**
+             * @description How this member reaches the scope (SPEC.md §7), as the same walk that routes the queue reports it: `self` — this is the designated thread itself, the scope's root and the lane's name, always the first member; `parent` — a thread whose parent chain reaches the root, directly or through a document in scope (§7's “every thread on such a document”); `origin` — a document whose `origin` reaches the root, i.e. written by a job run from this conversation, including one written before the thread was designated. A member with both edges reports `parent`, because the walk tries a thread's parent chain before its own origin (the ranking `walkScope` documents). It is the edge the walk took, reported rather than re-derived by the reader.
+             * @enum {string}
+             */
+            via: "self" | "parent" | "origin";
+        };
+        ConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+        };
         AppendTurnResponse: {
             thread: components["schemas"]["ThreadSummary"];
             turn: components["schemas"]["Turn"];
@@ -5311,11 +5441,6 @@ export interface components {
             /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
-        ConflictError: {
-            /** @enum {string} */
-            code: "conflict";
-            message: string;
-        };
         FormAnswerRequest: {
             /**
              * @description The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to **the thread the event itself names** and records that as the created document's `origin`, which is what makes scope membership computable (§7). Not the event's *lane*: §7 keeps the two apart deliberately — the lane routes the work (a summons carries the recipient's), while the origin files it (the conversation the message was posted in). **Optional everywhere**: a write that names no job records no origin and the document belongs to no conversation — forgetting it costs provenance, never correctness, so nothing is refused and nothing is lost. An id that names no event is a `422` rather than a silent omission: a caller that got the id wrong wanted the attribution, and dropping it quietly would leave it believing it had one.
@@ -5402,6 +5527,8 @@ export interface components {
              * @example researcher
              */
             name?: string;
+            /** @description The **weight the resident runs at** (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is designated, not per message — a running agent cannot change what it is without discarding the conversation it holds, so the designation is the only place the choice exists). The value is a **level's key from the workspace's own agent guidance, verbatim** — the same token a message's `weight` carries, and never a model name: this contract enumerates no levels, because §7 keeps the tiers in the orchestrate skill and a published enum would reject a workspace's own vocabulary. Validated for **shape only** — non-blank, single line, at most 100 characters — and interpreted by nothing here. It governs the resident's own turns; a weight stated on a message still governs what the resident hands off (SPEC.md §7, rider signed 2026-08-19). **Omit it to choose nothing**, which keeps today's behaviour exactly: the resident runs at whatever the launcher starts it as, `Resident.weight` reads null, and the launcher says what it chose. No default, no `null` spelling, and an empty string is a `400` rather than a second way of saying nothing. A level the launcher cannot meet is not refused here — the tier table is skill text the server never reads — and since a designation is long-lived the report lands where §7's weight rider puts it: in the listener's first reply, naming what was asked for and what was done instead. Sent alone, it designates a general resident at that weight; the two fields are independent. */
+            weight?: string;
         };
         AgentRoster: {
             /** @description Every lane of the queue. The `orchestrator` row is always present — it exists before anything has been designated and survives the last release — so a caller that finds an empty list has found a bug rather than a workspace with no agents. */
@@ -5472,7 +5599,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. Plugins define their own. */
+            /** @description Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. Plugins define their own. */
             type: string;
             /**
              * Format: date-time
@@ -5482,7 +5609,7 @@ export interface components {
             /** @description What produced the event, e.g. `ui` or `cli`. */
             source: string;
             /**
-             * @description Type-specific payload; plugins own the shape of their own event types, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the answered form (SPEC.md §6, §7).
+             * @description Type-specific payload; plugins own the shape of their own event types, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the answered form (SPEC.md §6, §7); `doc.edited` carries `{docId, sessionId, actor, endedBy, from, to, stats}` (SPEC.md §4); `resident.designated` carries `{threadId, resident}` and `resident.released` carries `{threadId, resident, reason}` (SPEC.md §7) — one release produces exactly one such event, and a lapse produces none.
              *
              *     **One key crosses every type: `weight`.** When the request that enqueued the event stated the weight its work should be done at (SPEC.md §7, §11), that level name rides here verbatim, and the dispatch honours it rather than weighing the work again. It is **absent** when the request stated nothing, which means the orchestrator decides — never a default level, and never `null`. It is deliberately not part of any one payload shape: a weight is a property of *a request that asked for work*, so a plugin's own event type carries it the same way with no contract change.
              */
@@ -5505,7 +5632,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: plugins define their own. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes. */
+            /** @description The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: plugins define their own. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes. */
             type: string;
             /**
              * Format: date-time
@@ -5558,7 +5685,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string;
-            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
+            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
             type: string;
             /**
              * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and the agent parked it because a person had an edit session open on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that session ends. Nothing refused it: the agent deferred because it saw, not because it was blocked.

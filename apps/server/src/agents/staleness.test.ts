@@ -292,6 +292,12 @@ describe("a document write and the roster", () => {
    * Designation and release already named the roster before this issue
    * (`threads/resident.ts`), and the measurement agrees with them rather than
    * doubling them — `dedupeKeys` sees one `["agents"]` either way.
+   *
+   * **Two frames since SERVER-128**: the write's, then the `resident.released`
+   * enqueue's. The second is the ordinary enqueue frame — the same one a
+   * mention's `comment.created` produces, and it names no `["agents"]` for the
+   * same reason: the event lands in `pending/`, and a lane's row reports the
+   * work it is *holding*.
    */
   it("names it once when a resident is released", async () => {
     const id = await designatedThread("released");
@@ -301,7 +307,10 @@ describe("a document write and the roster", () => {
       expect((await ws.del(`/api/threads/${id}/resident`)).status).toBe(200);
     });
 
-    expect(observed.frames).toEqual([[["docs"], ["docs", id], ["threads", id], ["agents"]]]);
+    expect(observed.frames).toEqual([
+      [["docs"], ["docs", id], ["threads", id], ["agents"]],
+      [["queue"], ["jobs"], ["docs"]],
+    ]);
     expect(observed.rosterMoved).toBe(true);
     expectLawful(observed);
   });

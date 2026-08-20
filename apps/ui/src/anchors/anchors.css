@@ -230,10 +230,10 @@
   margin-top: 8px;
 }
 
-/* The weight control (SPEC.md §11's rider) between the field and the foot. The
-   popover is 320px, so the row wraps rather than widening it — UI-070's
-   criterion for this surface is that a composer affordance must not reflow it
-   into a panel. */
-.comment-pop .weight-pick {
-  margin-top: 8px;
+/* The address line (UI-126) sits in the foot; the popover is 320px, so the
+   line truncates rather than widening it — UI-070's criterion for this surface
+   is that a composer affordance must not reflow it into a panel. */
+.comment-pop .composer-address {
+  min-width: 0;
+  flex-shrink: 1;
 }

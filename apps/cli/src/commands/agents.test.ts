@@ -37,7 +37,7 @@ const ORCHESTRATOR_ROW = {
 
 const LIVE_LANE = {
   lane: "th_4b8e2c",
-  resident: { name: "researcher", docId: "doc_r1" },
+  resident: { name: "researcher", docId: "doc_r1", weight: null },
   live: true,
   since: ago(12),
   summary: "reading the mortgage docs",
@@ -46,7 +46,7 @@ const LIVE_LANE = {
 
 const LAPSED_LANE = {
   lane: "th_9f1a2b",
-  resident: { name: "analyst", docId: "doc_a7" },
+  resident: { name: "analyst", docId: "doc_a7", weight: null },
   live: false,
   since: ago(41 * 60),
   summary: null,
@@ -55,7 +55,7 @@ const LAPSED_LANE = {
 
 const WAITING_LANE = {
   lane: "th_c0ffee",
-  resident: { name: "scribe", docId: "doc_s3" },
+  resident: { name: "scribe", docId: "doc_s3", weight: null },
   live: false,
   since: null,
   summary: null,
@@ -85,7 +85,7 @@ describe("corpus agents", () => {
   it("prints a mixed roster legibly: the orchestrator, a general lane, a profiled lane", async () => {
     const general = {
       lane: "th_11aa22",
-      resident: { name: null, docId: null },
+      resident: { name: null, docId: null, weight: null },
       live: true,
       since: ago(30),
       summary: null,
@@ -126,9 +126,9 @@ describe("corpus agents", () => {
     // SHARED-048. A reader of this one surface has to be able to say which of
     // these a conversation has: an agent with no profile, a profile they can
     // open, or a profile that has gone since it was designated.
-    const general = { ...LIVE_LANE, resident: { name: null, docId: null } };
+    const general = { ...LIVE_LANE, resident: { name: null, docId: null, weight: null } };
     const profiled = LIVE_LANE;
-    const orphaned = { ...LIVE_LANE, resident: { name: "researcher", docId: null } };
+    const orphaned = { ...LIVE_LANE, resident: { name: "researcher", docId: null, weight: null } };
 
     expect(renderLane(general, NOW)).toContain("· a general resident ·");
     expect(renderLane(profiled, NOW)).toContain("· researcher (doc_r1) ·");
@@ -141,6 +141,44 @@ describe("corpus agents", () => {
     // occupies the position `doc_r1` does, so a picker cannot confuse the two.
     expect(renderLane(general, NOW)).not.toContain("(");
     expect(renderLane(general, NOW)).not.toContain("null");
+  });
+
+  it("says what a lane runs at, in the resident's cell and not beside it", () => {
+    // CLI-053. A row is cells joined by ` · `, and this output is read
+    // positionally by an agent as well as by a person — so a weight given a cell
+    // of its own would make one row four dot-separated fields and the next row
+    // three. Inside the resident cell, every row has the same shape whether or
+    // not a weight was chosen.
+    const heavy = {
+      ...LIVE_LANE,
+      resident: { name: "researcher", docId: "doc_r1", weight: "heavy" },
+    };
+
+    expect(renderLane(heavy, NOW)).toBe(
+      'th_4b8e2c "Q3 planning" · researcher (doc_r1) at heavy · live, parked 12s ago — reading the mortgage docs',
+    );
+    expect(renderLane(heavy, NOW).split(" · ")).toHaveLength(
+      renderLane(LIVE_LANE, NOW).split(" · ").length,
+    );
+  });
+
+  it("shows nothing extra for a lane whose designation chose no weight", () => {
+    // The acceptance criterion: no invented word for null, the same rule
+    // `Resident.name` already carries.
+    const row = renderLane(LIVE_LANE, NOW);
+    expect(row).toBe(
+      'th_4b8e2c "Q3 planning" · researcher (doc_r1) · live, parked 12s ago — reading the mortgage docs',
+    );
+    expect(row).not.toContain(" at ");
+    expect(row).not.toContain("null");
+  });
+
+  it("carries a weight on a general resident too, since the two are independent", () => {
+    // §7's rider: a general resident may run at a stated weight and a profiled
+    // one at none, so all four combinations are ordinary rows.
+    const general = { ...LIVE_LANE, resident: { name: null, docId: null, weight: "heavy" } };
+    expect(renderLane(general, NOW)).toContain("· a general resident at heavy ·");
+    expect(renderLane(general, NOW)).not.toContain("(");
   });
 
   it("says a designated lane it cannot name is owned, not unowned", () => {

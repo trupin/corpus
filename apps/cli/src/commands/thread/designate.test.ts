@@ -1,4 +1,8 @@
-import { DesignateResidentRequestSchema, designateResident } from "@corpus/contract";
+import {
+  DesignateResidentRequestSchema,
+  designateResident,
+  RESIDENT_WEIGHT_BOUNDARY,
+} from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { ServerResponseError, UsageError } from "../../errors.js";
 import { collectRegistryProblems } from "../../registry/validate.js";
@@ -21,7 +25,7 @@ const THREAD = {
   parent: null,
   anchor: null,
   agent: "none",
-  resident: { name: "researcher", docId: "doc_r1" },
+  resident: { name: "researcher", docId: "doc_r1", weight: null },
   created: "2026-08-16T09:00:00.000Z",
   updated: "2026-08-16T09:05:00.000Z",
   turnCount: 1,
@@ -96,7 +100,7 @@ describe("corpus thread designate", () => {
     // SHARED-048: naming no profile is the ordinary case, and the contract
     // spells absence as an absent body — so a bare designation must not invent
     // `{}` , `{name: null}` or any other stand-in for it.
-    const general = { ...THREAD, resident: { name: null, docId: null } };
+    const general = { ...THREAD, resident: { name: null, docId: null, weight: null } };
     const stub = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
 
     const harness = stubContext(stub, { args: ARGS });
@@ -113,7 +117,7 @@ describe("corpus thread designate", () => {
     // The acceptance criterion in one assertion: a reader of the printed line
     // can tell "this conversation has an agent with no profile" from "this
     // conversation has profile X".
-    const general = { ...THREAD, resident: { name: null, docId: null } };
+    const general = { ...THREAD, resident: { name: null, docId: null, weight: null } };
     const bare = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
     const bareRun = stubContext(bare, { args: ARGS });
     await runThreadDesignate(bareRun.context);
@@ -132,7 +136,7 @@ describe("corpus thread designate", () => {
     // designation does not end the designation, and the miss is reported rather
     // than silently substituted. Archiving is not one of those — an archived
     // agent-def still under that root resolves, so it arrives with its id.
-    const orphaned = { ...THREAD, resident: { name: "researcher", docId: null } };
+    const orphaned = { ...THREAD, resident: { name: "researcher", docId: null, weight: null } };
     const stub = await startStubServer(jsonResponder(200, { thread: orphaned, warnings: [] }));
 
     const harness = stubContext(stub, { args: ARGS, flags: { agent: "researcher" } });
@@ -143,7 +147,10 @@ describe("corpus thread designate", () => {
   });
 
   it("emits the general resident's shape under --json without restating it", async () => {
-    const response = { thread: { ...THREAD, resident: { name: null, docId: null } }, warnings: [] };
+    const response = {
+      thread: { ...THREAD, resident: { name: null, docId: null, weight: null } },
+      warnings: [],
+    };
     const stub = await startStubServer(jsonResponder(200, response));
 
     const harness = stubContext(stub, { args: ARGS, json: true });
@@ -153,8 +160,112 @@ describe("corpus thread designate", () => {
     // this CLI chose for them.
     expect(harness.stdout()).toBe(`${JSON.stringify(response)}\n`);
     expect(JSON.parse(harness.stdout())).toMatchObject({
-      thread: { resident: { name: null, docId: null } },
+      thread: { resident: { name: null, docId: null, weight: null } },
     });
+  });
+
+  it("sends --weight in the body and prints the level the server echoed", async () => {
+    // CLI-053 / SPEC.md §7's rider: the designation is the one place a
+    // resident's weight is chosen, so this flag has to reach the wire.
+    const heavy = {
+      ...THREAD,
+      resident: { name: "researcher", docId: "doc_r1", weight: "heavy" },
+    };
+    const stub = await startStubServer(jsonResponder(200, { thread: heavy, warnings: [] }));
+
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { agent: "researcher", weight: "heavy" },
+    });
+    await runThreadDesignate(harness.context);
+
+    expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
+      name: "researcher",
+      weight: "heavy",
+    });
+    expect(harness.stdout()).toBe("designated researcher (doc_r1) at heavy on th_4b8e2c\n");
+  });
+
+  it("sends a weight with no profile, since the two fields are independent", async () => {
+    const general = { ...THREAD, resident: { name: null, docId: null, weight: "heavy" } };
+    const stub = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
+
+    const harness = stubContext(stub, { args: ARGS, flags: { weight: "heavy" } });
+    await runThreadDesignate(harness.context);
+
+    expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({ weight: "heavy" });
+    expect(harness.stdout()).toBe("designated a general resident at heavy on th_4b8e2c\n");
+  });
+
+  it("sends the workspace's own level key verbatim, checking it against no table", async () => {
+    // §7 keeps the tier table in the orchestrate skill, so a key this CLI has
+    // never heard of must reach the server unaltered — and a level the launcher
+    // cannot meet is the launcher's report, not a refusal here.
+    const odd = { ...THREAD, resident: { name: null, docId: null, weight: "tier-2" } };
+    const stub = await startStubServer(jsonResponder(200, { thread: odd, warnings: [] }));
+
+    const harness = stubContext(stub, { args: ARGS, flags: { weight: "tier-2" } });
+    await runThreadDesignate(harness.context);
+
+    expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({ weight: "tier-2" });
+    expect(harness.stdout()).toContain("at tier-2");
+  });
+
+  it("is byte-identical to today when --weight is left out", async () => {
+    // The acceptance criterion. Omitting the flag must send what a designation
+    // sent before the flag existed — no `weight` key, and with `--agent` also
+    // absent, no body at all.
+    const general = { ...THREAD, resident: { name: null, docId: null, weight: null } };
+    const bare = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
+    const bareRun = stubContext(bare, { args: ARGS });
+    await runThreadDesignate(bareRun.context);
+
+    expect(bare.requests[0]?.body).toBe("");
+    expect(bareRun.stdout()).toBe("designated a general resident on th_4b8e2c\n");
+
+    const named = await startStubServer(jsonResponder(200, { thread: THREAD, warnings: [] }));
+    const namedRun = stubContext(named, { args: ARGS, flags: { agent: "researcher" } });
+    await runThreadDesignate(namedRun.context);
+
+    expect(JSON.parse(named.requests[0]?.body ?? "")).toEqual({ name: "researcher" });
+    expect(namedRun.stdout()).toBe("designated researcher (doc_r1) on th_4b8e2c\n");
+  });
+
+  it("names the requested weight even if a 200 somehow carries no resident", async () => {
+    const stub = await startStubServer((_request, response) => {
+      sendJson(response, 200, { thread: { ...THREAD, resident: null }, warnings: [] });
+    });
+
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { agent: "researcher", weight: "heavy" },
+    });
+    await runThreadDesignate(harness.context);
+
+    expect(harness.stdout()).toBe("designated researcher at heavy on th_4b8e2c\n");
+  });
+
+  it("refuses a blank --weight rather than reading it as choosing nothing", async () => {
+    // Same rule as `--agent`: a variable that expanded to nothing is a mistake,
+    // and asking the launcher to decide is a decision. The server refuses a
+    // blank too, so this is that refusal one round trip earlier.
+    for (const blank of ["", "   "]) {
+      const stub = await startStubServer(jsonResponder(200, { thread: THREAD, warnings: [] }));
+
+      const harness = stubContext(stub, { args: ARGS, flags: { weight: blank } });
+      await expect(runThreadDesignate(harness.context)).rejects.toBeInstanceOf(UsageError);
+
+      expect(stub.requests).toEqual([]);
+    }
+  });
+
+  it("refuses a blank --weight even beside a good --agent, sending nothing", async () => {
+    const stub = await startStubServer(jsonResponder(200, { thread: THREAD, warnings: [] }));
+
+    const harness = stubContext(stub, { args: ARGS, flags: { agent: "researcher", weight: "" } });
+    await expect(runThreadDesignate(harness.context)).rejects.toBeInstanceOf(UsageError);
+
+    expect(stub.requests).toEqual([]);
   });
 
   it("refuses a blank --agent rather than reading it as naming nobody", async () => {
@@ -251,11 +362,26 @@ describe("the designate command spec", () => {
     );
   });
 
-  it("takes one required thread id and one optional --agent", () => {
+  it("takes one required thread id and two optional refinements", () => {
     expect(designateCommand.args).toEqual([
       { name: "id", required: true, description: "The standalone thread's id." },
     ]);
-    expect(designateCommand.flags.map((flag) => flag.name)).toEqual(["agent"]);
+    expect(designateCommand.flags.map((flag) => flag.name)).toEqual(["agent", "weight"]);
+  });
+
+  it("says the weight is the workspace's own word and never a model name", () => {
+    // The acceptance criterion, and the boundary is the contract's own
+    // sentence rather than a fourth restatement of it (CONTRACT-064's lesson).
+    const weightFlag = designateCommand.flags.find((flag) => flag.name === "weight");
+    expect(weightFlag?.description).toContain("never a model name");
+    expect(weightFlag?.description).toContain("this workspace's own agent guidance");
+    expect(weightFlag?.description).toContain(RESIDENT_WEIGHT_BOUNDARY);
+    expect(designateCommand.description).toContain(RESIDENT_WEIGHT_BOUNDARY);
+    expect(DesignateResidentRequestSchema.shape.weight.description).toContain(
+      RESIDENT_WEIGHT_BOUNDARY,
+    );
+    // And it says omitting it is a real choice rather than an oversight.
+    expect(weightFlag?.description).toContain("**Optional**");
   });
 
   it("says in one line when you would want each, and shows both", () => {

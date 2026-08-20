@@ -96,15 +96,24 @@ export interface LoadedThread {
  * **A general resident is returned untouched, without a lookup.** There is no
  * name to resolve, and `ResidentSchema`'s refinement already guarantees a null
  * name comes with a null id.
+ *
+ * **`weight` is carried through unchanged, and is the one field here that is
+ * *not* re-resolved** (SERVER-129). `docId` is re-read because it answers "what
+ * does this name point at now", a question about the workspace. A weight answers
+ * "what did the person choose", a question about the designation, and the
+ * workspace holds nothing to check it against — the tier table is the
+ * orchestrate skill's own text, which the server never reads. So a level that no
+ * longer exists comes back exactly as it was written, and §7's weight rider puts
+ * the report of it in the launcher's first reply rather than here.
  */
 export function currentResident(
   projection: ProjectionDb,
   stored: Resident | null,
 ): Resident | null {
   if (stored === null) return null;
-  if (stored.name === null) return { name: null, docId: null };
+  if (stored.name === null) return { name: null, docId: null, weight: stored.weight };
   const target = resolveMentionTarget(projection, MENTION_TYPE, stored.name);
-  return { name: stored.name, docId: target?.docId ?? null };
+  return { name: stored.name, docId: target?.docId ?? null, weight: stored.weight };
 }
 
 const asString = (value: unknown): string | null =>

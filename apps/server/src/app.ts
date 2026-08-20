@@ -31,7 +31,11 @@ import { mountCaptureRoutes } from "./capture/index.js";
 import { mountCheckRoutes } from "./check/index.js";
 import { mountSkillRoutes } from "./skills/index.js";
 import { createDocumentMutex, mountDocsRoutes, type DocsWorkspace } from "./docs/index.js";
-import { mountThreadRoutes, type ThreadsWorkspace } from "./threads/index.js";
+import {
+  mountThreadRoutes,
+  mountThreadScopeRoutes,
+  type ThreadsWorkspace,
+} from "./threads/index.js";
 import {
   EDIT_ACK_IDLE_MS,
   createEditSessionTracker,
@@ -611,6 +615,14 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // `mountSearchRoutes` reads it per request.
     mountThreadRoutes(app, threadsWorkspace, mutex, { semantic });
     mountCaptureRoutes(app, threadsWorkspace, mutex);
+
+    // §7's scope listing (SERVER-130): the inverse of the lane walk bound above,
+    // and a pure projection read — every column it reports is projected, so it
+    // needs neither the workspace nor the mutex the thread surface takes. Mounted
+    // beside that surface because the path is one segment under it, and inside
+    // this block for the roster's reason: without a database there are no lanes
+    // to have a scope.
+    mountThreadScopeRoutes(app, { projection: deps.projection });
 
     // §7's roster (SERVER-112). Mounted after the thread surface because that is
     // where a lane comes from — a designation is thread state — and inside this

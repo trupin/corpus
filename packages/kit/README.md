@@ -5,13 +5,13 @@ The plugin contract (SPEC.md §10). Plugin UI imports **only** from `@corpus/kit
 
 Three code entry points, and the stylesheets:
 
-| Import                                                                                      | What it is                                                                                        |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `@corpus/kit`                                                                               | The runtime contract: client, provider, hooks, key builders, components, types                    |
-| `@corpus/kit/plugin`                                                                        | The manifest surface: `definePlugin`, `PluginManifest`, `ColumnComponentProps`, `DocPanelProps`   |
-| `@corpus/kit/testing`                                                                       | Test doubles: `FakeEventSource`, `createCorpusTestHarness`                                        |
-| `@corpus/kit/tokens.css`                                                                    | The design tokens (light/dark). CSS has no compile step, so it is a stylesheet, not an export     |
-| `@corpus/kit/row.css`, `/markdown.css`, `/autocomplete.css`, `/composer.css`, `/weight.css` | The anatomy stylesheets for the components that need one — import the sheet next to the component |
+| Import                                                                                       | What it is                                                                                        |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `@corpus/kit`                                                                                | The runtime contract: client, provider, hooks, key builders, components, types                    |
+| `@corpus/kit/plugin`                                                                         | The manifest surface: `definePlugin`, `PluginManifest`, `ColumnComponentProps`, `DocPanelProps`   |
+| `@corpus/kit/testing`                                                                        | Test doubles: `FakeEventSource`, `createCorpusTestHarness`                                        |
+| `@corpus/kit/tokens.css`                                                                     | The design tokens (light/dark). CSS has no compile step, so it is a stylesheet, not an export     |
+| `@corpus/kit/row.css`, `/markdown.css`, `/autocomplete.css`, `/composer.css`, `/address.css` | The anatomy stylesheets for the components that need one — import the sheet next to the component |
 
 ## The kit is the only data path
 
@@ -57,7 +57,7 @@ native (SPEC.md §10) — each with its stylesheet as a subpath beside it:
 | Smart input           | `useAutocomplete`, `AutocompleteMenu`, `handleAutocompleteKeyDown` — the one `@` / `/` / `[[` implementation                                  | `autocomplete.css` |
 | Composer key contract | the `↵` / `⌘↵` / `⇧⌘↵` handling every composer obeys                                                                                          | —                  |
 | Composer attachments  | `useAttachmentIntake`, `PendingAttachments`, `AttachButton`, `releaseAttachments` — §6's three intake routes and the chips they preview as    | `composer.css`     |
-| Weight                | `WeightPicker`, `useComposerWeight`                                                                                                           | `weight.css`       |
+| Address               | `ComposerAddress`, `composerAddress`, `useComposerWeight`, `useComposerRecipient` — who answers, at what weight, one line and its popover     | `address.css`      |
 
 `src/index.ts` is the authority on the surface and says why each export is on it;
 this table is a map, not a census.

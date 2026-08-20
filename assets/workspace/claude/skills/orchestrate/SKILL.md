@@ -275,7 +275,8 @@ row below is failed with a reason and is never silently completed.
 | `comment.created`     | A subagent applying the **comment** skill to the thread named in the payload.                 |
 | `form.respond`        | A subagent applying the **comment** skill; the payload names the thread, the form's turn, and the answer. |
 | `doc.edited`          | A subagent working **Reflecting on a user edit** below — the one event whose procedure lives in this skill instead of in a skill of its own. Its dispatch carries the payload verbatim, both shas included. |
-| `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident` (Launching a listener below). It is the one row that is not a job. |
+| `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident`, at the model that `resident`'s `weight` names (Launching a listener below). It is one of the two rows that are not jobs. |
+| `resident.released`   | A conversation's resident has gone. Nothing is dispatched and nothing is launched: log who left and the payload's `reason`, then complete (Losing a listener below). It is the other row that is not a job. |
 | `agent.done`          | A finished piece of background work. Nothing produces this event today — reports reach you directly (Delegation below) — but an arriving one is handled like a report: verify the work its payload identifies and settle it. |
 | `<plugin>.<action>`   | A subagent applying the skill named `<plugin>` — the part before the first dot.               |
 | anything else         | `corpus queue fail <id> --reason "unknown event type: <type>"`                                |
@@ -285,14 +286,14 @@ the reply, skill genesis — belongs to the comment skill, applied inside the su
 skill routes and dispatches, and owns queue state, ordering, deferral, logging, and the halt
 switch.
 
-- **Launching a listener.** `resident.designated` is the one row above that is not a job.
-  Everything else you dispatch is work that reports back and settles; this one starts an agent
-  and gets out of its way. Launch a background subagent applying the **converse** skill,
+- **Launching a listener.** `resident.designated` is one of the two rows above that are not
+  jobs. Everything else you dispatch is work that reports back and settles. This one starts an
+  agent and gets out of its way. Launch a background subagent applying the **converse** skill,
   invoked as `/converse <the payload's threadId>`, and hand it the payload's `resident`
-  **exactly as it came** — both fields, whatever they hold — because a subagent inherits
+  **exactly as it came** — every field, whatever it holds — because a subagent inherits
   nothing and what you leave out of a prompt does not reach it. Most designations name no
-  profile and arrive as `{"name":null,"docId":null}`: an ordinary designation, and
-  the nulls travel as nulls. **Invent nothing to fill
+  profile and choose no weight, and arrive as `{"name":null,"docId":null,"weight":null}`: an
+  ordinary designation, and the nulls travel as nulls. **Invent nothing to fill
   them.** A word made up here arrives as the name of a profile, and sends the listener looking
   for a document nobody wrote. Where `name` is set it is a profile the designation was made
   for, and the id beside it goes with it. **What a listener does with either — a persona to
@@ -305,19 +306,60 @@ switch.
   verify. The one case that fails the event is a launch that did not happen, with the reason
   the launch gave.
 
+  **The designation chooses the model, and `weight` is how it says so.** That field sits
+  beside the two profile fields and carries a **Key** from the tier table in Delegation below.
+  **Find the row whose Key cell holds it, and launch the listener at that row's model.** Name
+  that model in the launch prompt too, because a resident is told what it runs at and nothing
+  else tells it. A `null` weight is *you decide*, exactly as a message that states no weight
+  is: judge it the way Delegation says, on a subject that is a whole conversation rather than
+  one turn. Either way, log the model you launched at on the designation's own event. A
+  listener answers for weeks, and a choice nobody recorded is a choice nobody can review.
+
+  **A weight you cannot meet is stated twice, and here the launch prompt is one of the two.**
+  Delegation below gives the three causes and the rule, and they bind a launch exactly as they
+  bind a dispatch. Launch anyway, at what your own judgment gives you, and log the deviation
+  on this event. Then put the same three things in the launch prompt in words: what was asked
+  for, that it could not be met, and what runs instead. A listener posts no reply about its
+  own launch, so this prompt is the only road those facts have into the conversation. **Where
+  they land in it is the converse skill's to state, and it is stated there alone.**
+
   ```bash
   corpus queue claim-all
-  {"events":[{"id":"evt_3f8c1a","type":"resident.designated","created":"2026-07-28T09:14:02Z","source":"thread","payload":{"threadId":"th_4b8e2c","resident":{"name":null,"docId":null}}}],"inProgress":{"events":[],"total":0,"truncated":false}}
+  {"events":[{"id":"evt_3f8c1a","type":"resident.designated","created":"2026-07-28T09:14:02Z","source":"thread","payload":{"threadId":"th_4b8e2c","resident":{"name":null,"docId":null,"weight":null}}}],"inProgress":{"events":[],"total":0,"truncated":false}}
   corpus agents
   orchestrator · waiting for a listener
   th_4b8e2c "Q3 planning" · a general resident · waiting for a listener
-  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c — a general resident"
+  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c — a general resident (Sonnet — judged, difficulty: an open-ended conversation, nothing stated)"
   corpus queue complete evt_3f8c1a
   ```
 
   Had that designation named `researcher`, three things would read differently and nothing
   else would: the payload's two fields, the roster's `researcher (doc_b7c1d5)`, and the log
-  line saying so. The launch is the same launch, and the row it came down is the same row.
+  line saying so. Had it also chosen a weight, three more would: the payload would carry
+  `"weight":"heavy"`, the roster row would read `a general resident at heavy`, and the launch
+  would go out at that row's model instead of at one you judged. The launch is the same
+  launch, and the row it came down is the same row.
+
+- **Losing a listener.** `resident.released` is the other row above that is not a job. A
+  resident has gone, and the payload's `reason` says how: `released` where a person released
+  the thread, `resolved` where they resolved it, `replaced` where they designated the lane
+  again. The payload's `resident` is the one that went, its weight included. Launch nothing
+  and dispatch nothing. Log who left and the reason, complete the event, and go on. You never
+  tell that listener and you never stand it down. It finds out on its own, and the converse
+  skill says how. What the lane becomes wants no rule of its own: a conversation with nobody
+  resident is worked on your lane again, under the routing every other thread gets.
+
+  ```bash
+  corpus queue claim-all
+  {"events":[{"id":"evt_5d2a7b","type":"resident.released","created":"2026-07-28T09:31:04Z","source":"thread","payload":{"threadId":"th_4b8e2c","resident":{"name":null,"docId":null,"weight":"heavy"},"reason":"released"}}],"inProgress":{"events":[],"total":0,"truncated":false}}
+  corpus job log evt_5d2a7b "th_4b8e2c released its resident — a general resident at heavy, reason: released"
+  corpus queue complete evt_5d2a7b
+  ```
+
+  **`replaced` is the one reason that is not an ending**, and it never arrives alone: the same
+  claim carries the `resident.designated` that took the lane over, for the same thread. Read
+  the pair as one act — one row names who is going, the other names who is coming — and settle
+  both. Whether anything is launched for it is the rule below.
 
 - **A lane that already has a listener gets nothing.** Read the roster before you launch:
   `corpus agents` says whether the payload's thread is `live`. A designation arrives whether
@@ -327,6 +369,16 @@ switch.
   conversation is not a correctness failure — the server still never hands one event to two
   claimants — but it is a conversation answered by two agents that cannot see each other's
   context, which is the same split story a second orchestrating session would make of yours.
+
+  **A weight that changed is still nothing to launch this pass.** A re-designation that only
+  changes the weight reaches you as the pair above, on a lane that may still read `live`. No
+  running agent becomes another model without discarding the conversation it holds, so that
+  listener ends its own run instead of changing. **When it goes, and how it finds out, is the
+  converse skill's to state.** What you rely on is the outcome: the row stops reading `live` on
+  some later pass. So launch nothing now, log that the lane is designated at a new weight and
+  that its launch is waiting, and complete both events. The rule below then launches the new
+  listener from the roster, at the weight the row prints by then. Standing the old one down
+  yourself would cut into whatever turn it is in, and would save one pass at most.
 
 - **A lane with nobody on it gets one, once a pass.** For every roster row that is not the
   orchestrator's and does not read `live`, launch a listener. This covers the two cases no
@@ -346,9 +398,19 @@ switch.
   **A launch made from the roster carries no resident, and must not invent one.** There is no
   payload behind it, and the row is not a substitute for one: it prints who is resident in
   words written for a person to read, and handing that rendering on as a name is the invention
-  ruled out above. Give the launch the thread id and nothing else. A listener started without
-  a resident in its prompt reads its own designation out of the corpus — the converse skill
-  states how, and this one does not.
+  ruled out above. Give the launch the thread id, and the weight below, and nothing else. A
+  listener started without a resident in its prompt reads its own designation out of the
+  corpus — the converse skill states how, and this one does not.
+
+  **The weight is the one thing you do read off the row, and reading it invents nothing.** The
+  row prints it after the resident — `a general resident at heavy` — and a **Key** is a token
+  the tier table declares rather than a rendering of anybody. It is also not the summary the
+  next bullet warns you off, which is a sentence written for a person and promised nothing. So
+  take that word, find its row in the tier table, and launch at that row's model, exactly as
+  you would from a payload. A row that prints nothing after the resident is a designation that
+  chose no weight, and you decide as you decide for a `null`. Name the model in the prompt here
+  too. A roster launch has no event of its own to log to, so the prompt is the whole record of
+  what you chose.
 
 - **A row that does not read `live` does not mean nobody is there — and you launch anyway.**
   Presence is the parked request and nothing else, so a row reads not-live for a listener that
@@ -517,6 +579,12 @@ delegated, so a stated weight goes into the dispatch prompt in words and governs
 actually does the work — and onward through every further delegation that work requires,
 including the stages below, whose deciding stage runs at it. Where the payload also names an
 `@<subagent>`, both are directives and they compose: that persona runs, at that weight.
+
+**A designation's weight reaches the resident's own turns and stops there.** Somebody chose it
+for one conversation, and it is stated on no event, so nothing carries it into work that
+resident hands off. **A hand-off no message stated a weight for is judged from this table, in
+the two passes above, exactly as you judge one** — by the resident, on its own lane, under the
+rules this section binds you with.
 
 **Stating no weight means you decide, exactly as you decide today.** The absence of a
 `weight` field is the two passes and never a fixed default: there is no level you fall back

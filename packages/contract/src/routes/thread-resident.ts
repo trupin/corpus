@@ -1,6 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { ActorHeaderSchema } from "../schemas/actor.js";
-import { DesignateResidentRequestSchema } from "../schemas/agents.js";
+import { DesignateResidentRequestSchema, RESIDENT_WEIGHT_BOUNDARY } from "../schemas/agents.js";
 import { ThreadIdSchema } from "../schemas/id.js";
 import { ThreadMutationResponseSchema } from "../schemas/thread.js";
 import {
@@ -98,9 +98,22 @@ export const designateResident = createRoute({
     "profile says *how* the agent works and nothing about *what it owns*. The response carries " +
     "the resolved `Resident`, whose `name` is null for a general one and whose `docId` is null " +
     "when there is no profile document to point at, so the caller never repeats the lookup.\n\n" +
+    "**The designation is where the resident's weight is chosen** (SPEC.md §7, rider signed " +
+    "2026-08-19: a resident's weight is set when it is designated, not per message). `weight`, " +
+    "when given, is a level's key from the workspace's own agent guidance — the same token a " +
+    "message's `weight` carries, never a model name — and it " +
+    `${RESIDENT_WEIGHT_BOUNDARY}. ` +
+    "Omit it to choose nothing, which is today's behaviour exactly: the launcher decides, " +
+    "`Resident.weight` reads null, and the launcher says what it chose. The server records the " +
+    "value and interprets nothing about it; a level the launcher cannot meet is reported in the " +
+    "listener's first reply, not refused here. `Resident.weight` carries it back on the thread, " +
+    "the roster row and the `resident.designated` payload, so the choice is never write-only. A " +
+    "composer addressing this lane offers no per-turn weight and says why (SPEC.md §11).\n\n" +
     "**Single-valued, so designating again replaces.** A thread has one resident or none, and " +
     "nothing has to arbitrate between two; designating a thread that already has one is a " +
-    "replacement rather than a `409`. What is refused is designating a thread that may not have a " +
+    "replacement rather than a `409` — and a replacement is a release of the old occupant, so it " +
+    'enqueues a `resident.released` with `reason: "replaced"` beside the newcomer\'s ' +
+    "`resident.designated`. What is refused is designating a thread that may not have a " +
     "resident at all: `409` for a thread with a parent — anchored or whole-document — because a " +
     "thread on a document is *about* that document, and a resident owns a conversation rather " +
     "than a passage.\n\n" +
@@ -128,8 +141,9 @@ export const designateResident = createRoute({
   responses: {
     200: jsonContent(
       ThreadMutationResponseSchema,
-      "The thread, its `resident` now the resolved `{name, docId}` — both null for a general " +
-        "resident — and any warnings raised while writing it.",
+      "The thread, its `resident` now the resolved `{name, docId, weight}` — the first two null " +
+        "for a general resident, the third null when no weight was chosen — and any warnings " +
+        "raised while writing it.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
@@ -149,6 +163,12 @@ export const releaseResident = createRoute({
     "Nothing is rewritten: events already stamped keep the lane they were stamped with, and " +
     "everything enqueued afterwards routes as it did before there was a resident. Dissolving is " +
     "the **absence** of a resident, never a third state.\n\n" +
+    "**A release that releases somebody enqueues `resident.released`, on the orchestrator's " +
+    "lane** — under the same carve-out as `resident.designated`: a released resident does not " +
+    "announce its own end to itself, and the orchestrator is what launched the listener and has " +
+    "to learn the lane returned to it. The payload names the thread, the resident that left and " +
+    '`reason: "released"`; resolution\'s release says `resolved`, a replacement says ' +
+    "`replaced`, and a lapse is not a release and produces none. One release, one event.\n\n" +
     "**Idempotent.** Releasing a thread that has no resident is a `200` that changes nothing, " +
     "writes nothing and commits nothing — the caller often cannot know, and a release with " +
     "nothing to release is a no-op rather than an error. It answers with the thread rather than a " +

@@ -22,6 +22,7 @@ import {
   QueueStatusSchema,
   ReapStaleResultSchema,
 } from "./queue.js";
+import { RESIDENT_DESIGNATED_EVENT_TYPE, RESIDENT_RELEASED_EVENT_TYPE } from "./agents.js";
 
 const event = {
   id: "evt_7c1d",
@@ -65,19 +66,28 @@ describe("queue vocabularies", () => {
 
   /**
    * CONTRACT-051. §7's "Core event types" sentence names five, and the fifth
-   * arrived with the resident-agent rider. Written out literally rather than
-   * derived from the constant, because a test that computes its expectation
-   * from the thing it is testing pins nothing — and this set is what every
-   * event-type description in the published document is built from.
+   * arrived with the resident-agent rider; CONTRACT-069 added the sixth,
+   * `resident.released`, beside the designation it ends (its §7 sentence is a
+   * pending amendment, recorded on the constant's docblock). Written out
+   * literally rather than derived from the constant, because a test that
+   * computes its expectation from the thing it is testing pins nothing — and
+   * this set is what every event-type description in the published document is
+   * built from.
    */
-  it("is exactly §7's five core types, in producer order", () => {
+  it("is exactly the six core types, in producer order", () => {
     expect([...CORE_QUEUE_EVENT_TYPES]).toEqual([
       "comment.created",
       "form.respond",
       "doc.edited",
       "resident.designated",
+      "resident.released",
       "agent.done",
     ]);
+  });
+
+  it("spells the resident event types identically where their payloads are declared", () => {
+    expect(CORE_QUEUE_EVENT_TYPES).toContain(RESIDENT_DESIGNATED_EVENT_TYPE);
+    expect(CORE_QUEUE_EVENT_TYPES).toContain(RESIDENT_RELEASED_EVENT_TYPE);
   });
 
   /**

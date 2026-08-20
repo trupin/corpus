@@ -24,7 +24,7 @@ const THREAD = {
   parent: null,
   anchor: null,
   agent: "none",
-  resident: { name: "researcher", docId: "doc_r1" },
+  resident: { name: "researcher", docId: "doc_r1", weight: null },
   turns: [],
 };
 
@@ -80,7 +80,7 @@ describe("corpus thread release", () => {
     // The two nulls this verb has to keep apart are one level from each other:
     // `resident: null` is nobody to release, and `{name: null}` is somebody with
     // no profile. Printing the second's `name` gave `released null from …`.
-    const stub = await startStubServer(residentStub({ name: null, docId: null }));
+    const stub = await startStubServer(residentStub({ name: null, docId: null, weight: null }));
 
     const harness = stubContext(stub, { args: ARGS });
     await runThreadRelease(harness.context);
@@ -89,7 +89,9 @@ describe("corpus thread release", () => {
   });
 
   it("names a departing resident whose profile has gone without inventing an id", async () => {
-    const stub = await startStubServer(residentStub({ name: "researcher", docId: null }));
+    const stub = await startStubServer(
+      residentStub({ name: "researcher", docId: null, weight: null }),
+    );
 
     const harness = stubContext(stub, { args: ARGS });
     await runThreadRelease(harness.context);

@@ -379,6 +379,39 @@ function createServer() {
    * the union is the whole point of the response, and a stub that only ever
    * answered one shape would never exercise the client's narrowing.
    */
+  // The scope listing (CONTRACT-068): the root first, then what the lane owns.
+  app.openapi(contractRoutes.getThreadScope, (c) => {
+    const { id } = c.req.valid("param");
+    if (id !== "th_x9y8") {
+      return c.json(
+        { code: "conflict" as const, message: "the orchestrator's lane is not a scope" },
+        409,
+      );
+    }
+    return c.json(
+      {
+        thread: id,
+        members: [
+          {
+            id,
+            kind: "thread" as const,
+            title: "Re: rates",
+            status: "open" as const,
+            via: "self" as const,
+          },
+          {
+            id: frontmatter.id,
+            kind: "doc" as const,
+            title: frontmatter.title,
+            status: "open" as const,
+            via: "origin" as const,
+          },
+        ],
+        truncated: false,
+      },
+      200,
+    );
+  });
   app.openapi(contractRoutes.getThreadContext, (c) => {
     const { id } = c.req.valid("param");
     const excerpts = [
@@ -457,14 +490,19 @@ function createServer() {
   // (SPEC.md §7, rider SHARED-048), which the stub answers as two nulls rather
   // than by inventing a name for it.
   app.openapi(contractRoutes.designateResident, (c) => {
-    const name = c.req.valid("json")?.name ?? null;
+    const body = c.req.valid("json");
+    const name = body?.name ?? null;
     return c.json(
       {
         thread: {
           ...threadSummary,
           parent: null,
           anchor: null,
-          resident: { name, docId: name === null ? null : "doc_agentdef" },
+          resident: {
+            name,
+            docId: name === null ? null : "doc_agentdef",
+            weight: body?.weight ?? null,
+          },
         },
         warnings: [],
       },
@@ -947,6 +985,35 @@ describe("the typed retrieval calls", () => {
  * key. The compile-time assertion below is the one that matters — a query
  * parameter added to this route would break it, not a run.
  */
+/**
+ * CONTRACT-068. The typed client narrows `via`, `kind` and `status` to the
+ * published enums, and the `409` is a declared error the client can read — a
+ * narrowing, so the assertion fails to compile if the response is undeclared.
+ */
+describe("the typed scope call", () => {
+  it("reads the scope root first, with the edge each member reached it by", async () => {
+    const { data } = await createTestClient().api.GET("/api/threads/{id}/scope", {
+      params: { path: { id: "th_x9y8" } },
+    });
+    expect(data?.thread).toBe("th_x9y8");
+    const vias: ("self" | "parent" | "origin")[] = (data?.members ?? []).map((m) => m.via);
+    expect(vias).toEqual(["self", "origin"]);
+    const kinds: ("thread" | "doc")[] = (data?.members ?? []).map((m) => m.kind);
+    expect(kinds).toEqual(["thread", "doc"]);
+    expect(data?.truncated).toBe(false);
+  });
+
+  it("reads the 409 an undesignated thread answers with", async () => {
+    const { data, error, response } = await createTestClient().api.GET("/api/threads/{id}/scope", {
+      params: { path: { id: "th_undesignated" } },
+    });
+    expect(response.status).toBe(409);
+    expect(data).toBeUndefined();
+    if (error?.code !== "conflict") throw new Error("expected a declared conflict");
+    expect(error.message).toContain("not a scope");
+  });
+});
+
 describe("the typed context-pack call", () => {
   type ContextOperation = paths["/api/threads/{id}/context"]["get"];
   type ContextTakesNoQuery = ContextOperation["parameters"] extends { query?: never }
@@ -1376,12 +1443,25 @@ describe("the roster and designation through the generated client (CONTRACT-051)
     expect(data?.agents[0]?.live).toBe(true);
   });
 
+  /** CONTRACT-067: the typed client can state a weight and read it back on the `Resident`. */
+  it("designates at a weight and reads it back on the resident", async () => {
+    const { data } = await createTestClient().api.POST("/api/threads/{id}/resident", {
+      params: { path: { id: "th_x9y8" } },
+      body: { name: "researcher", weight: "heavy" },
+    });
+    expect(data?.thread.resident?.weight).toBe("heavy");
+  });
+
   it("designates by the invocable name and reads the resolved resident back", async () => {
     const { data } = await createTestClient().api.POST("/api/threads/{id}/resident", {
       params: { path: { id: "th_x9y8" } },
       body: { name: "researcher" },
     });
-    expect(data?.thread.resident).toEqual({ name: "researcher", docId: "doc_agentdef" });
+    expect(data?.thread.resident).toEqual({
+      name: "researcher",
+      docId: "doc_agentdef",
+      weight: null,
+    });
   });
 
   /**
@@ -1399,7 +1479,7 @@ describe("the roster and designation through the generated client (CONTRACT-051)
       params: { path: { id: "th_x9y8" } },
       ...(body === undefined ? {} : { body }),
     });
-    expect(data?.thread.resident).toEqual({ name: null, docId: null });
+    expect(data?.thread.resident).toEqual({ name: null, docId: null, weight: null });
   });
 
   /**

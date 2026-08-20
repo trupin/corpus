@@ -6,7 +6,7 @@ shared
 
 ## Status
 
-todo — **NEEDS USER SIGN-OFF.** SPEC.md changes are the user's.
+done — signed by the user 2026-08-19 (as drafted, via the v0.14.0 `/goal`). Applied 2026-08-19.
 
 ## Priority
 
@@ -145,13 +145,13 @@ Two edits.
 
 ## Acceptance Criteria
 
-- [ ] The user has signed the drafted text, verbatim, on its own
-- [ ] §7 states that a resident's weight is set at designation
-- [ ] §11 states that the composer's weight control is not live for a resident's
+- [x] The user has signed the drafted text, verbatim, on its own
+- [x] §7 states that a resident's weight is set at designation
+- [x] §11 states that the composer's weight control is not live for a resident's
       lane, and says what it shows instead
-- [ ] Neither the weight rider nor the resident rider is reworded — the new text
+- [x] Neither the weight rider nor the resident rider is reworded — the new text
       names the boundary between them rather than editing either
-- [ ] `npm run spec:check` passes
+- [x] `npm run spec:check` passes
 
 ## Technical Design
 
@@ -181,7 +181,10 @@ UI-126's and AGENT-038's, each with its own pins.
 
 ## E2E Verification Log
 
-_[Filled after sign-off]_
+- 2026-08-19 — the user signed both edits as drafted, in the `/goal` that started v0.14.0.
+- Applied verbatim, dated 2026-08-19. `git diff SPEC.md`: 3 insertions, 1 line extended.
+- **Placement call.** The draft's §7 anchor (*"…nothing rewritten."*) does not exist in SPEC.md. The resident rider (§7, the *"Three rules of this section are per lane"* paragraph) sits before the weight rider (the *"Orchestrator skill"* paragraph), and the drafted text says *"the weight rider above"*. So the §7 text stands as its own paragraph after the Orchestrator-skill block, where both riders are above it and neither is reworded. The §11 text is appended to the weight paragraph, as drafted.
+- `npm run spec:check` — 5863 citations, pass.
 
 ## Completion Checklist (domain agent)
 
@@ -189,4 +192,4 @@ _[Filled after sign-off]_
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[SHARED-055]` prefix
+- [x] Committed with `[SHARED-055]` prefix

@@ -39,7 +39,7 @@ import { parseWeightLevels, type WeightLevel } from "./weightLevels.js";
  *
  * That failure would be **invisible**, which is why it is not answered with a
  * bigger `limit`. An empty level list means "this workspace declares nothing"
- * (see `weightLevels.ts` and `WeightPicker.tsx`) — a real §2.4 state an
+ * (see `weightLevels.ts` and `address/ComposerAddress.tsx`) — a real §2.4 state an
  * operator diagnoses by opening the skill and reading it. A missed page would
  * produce the same silence while the operator's table sat in plain sight, and
  * nobody would ever debug that. So the lookup is **exhaustive**: it walks
