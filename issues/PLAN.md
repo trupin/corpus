@@ -1046,20 +1046,32 @@ not a behaviour change.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-055 | A resident cannot honour a stated weight, and §7 says it must (SIGNED 2026-08-19) | done | P0 | — |
-| SERVER-128 | Releasing a resident tells nobody | todo | P0 | CONTRACT-069 |
-| CONTRACT-067 | A designation carries the model its resident runs at | todo | P0 | SHARED-055 |
-| CONTRACT-068 | A scope is computed, and nothing can ask what is in it | todo | P0 | — |
-| UI-125 | The console shows who is resident and what they own | todo | P0 | CONTRACT-068 |
-| UI-126 | The composer is overloaded, and one of its controls does nothing | todo | P0 | SHARED-055 |
-| AGENT-038 | A resident works serially and inline, and nothing proves it | todo | P0 | SHARED-055 |
-| CONTRACT-069 | A release reaches the wire as an event | todo | P0 | — |
-| SERVER-129 | A designation stores and reports its weight | todo | P0 | CONTRACT-067 |
-| SERVER-130 | The server answers what a scope holds | todo | P0 | CONTRACT-068 |
-| CLI-053 | `corpus thread designate` names a weight, and `corpus agents` prints it | todo | P0 | CONTRACT-067, SERVER-129 |
-| CLI-054 | `corpus thread scope` lists what a resident owns | todo | P1 | CONTRACT-068, SERVER-130 |
-| AGENT-039 | A listener is launched at the designation's weight | todo | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
-| SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | todo | P0 | — |
+| SERVER-128 | Releasing a resident tells nobody | done | P0 | CONTRACT-069 |
+| CONTRACT-067 | A designation carries the model its resident runs at | done | P0 | SHARED-055 |
+| CONTRACT-068 | A scope is computed, and nothing can ask what is in it | done | P0 | — |
+| UI-125 | The console shows who is resident and what they own | done | P0 | CONTRACT-068 |
+| UI-126 | The composer is overloaded, and one of its controls does nothing | done | P0 | SHARED-055 |
+| AGENT-038 | A resident works serially and inline, and nothing proves it | done | P0 | SHARED-055 |
+| CONTRACT-069 | A release reaches the wire as an event | done | P0 | — |
+| SERVER-129 | A designation stores and reports its weight | done | P0 | CONTRACT-067 |
+| SERVER-130 | The server answers what a scope holds | done | P0 | CONTRACT-068 |
+| CLI-053 | `corpus thread designate` names a weight, and `corpus agents` prints it | done | P0 | CONTRACT-067, SERVER-129 |
+| CLI-054 | `corpus thread scope` lists what a resident owns | done | P1 | CONTRACT-068, SERVER-130 |
+| AGENT-039 | A listener is launched at the designation's weight | done | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
+| SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | done | P0 | — |
 | SHARED-056 | §7 enumerates the core events and §9.2 the routes, and v0.14.0 added one of each (NEEDS SIGN-OFF) | todo | P1 | CONTRACT-068, CONTRACT-069 |
+
+**Phase 36 landed 2026-08-19/20 as v0.14.0.** Fourteen issues: the seven filed
+from the user's reports, six filed to make them usable end to end, and one
+correctness bug a drill found (SERVER-131 — the claim batch was in `readdir`
+order, so a resident could answer the third message before the first).
+
+**Three agents were killed mid-flight by a session limit and three more by an
+expired login**, each at its last step, with code written and tests green but no
+E2E log. The orchestrator verified and closed all six by hand rather than
+respawning. Two defects surfaced only in that sweep: a test stub declaring two
+members `BoardNavigation` does not have, which broke `apps/ui`'s typecheck, and
+a `String(unknown)` that would have printed `[object Object]` at a person.
 
 **2026-08-19, v0.14.0 scope agreed.** SHARED-055 signed as drafted. Six issues
 added so the release ships the feature whole rather than its wire and a stamp:
