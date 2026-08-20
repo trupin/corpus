@@ -4,6 +4,7 @@ import { createCommand } from "./create.js";
 import { designateCommand } from "./designate.js";
 import { releaseCommand } from "./release.js";
 import { replyCommand } from "./reply.js";
+import { scopeCommand } from "./scope.js";
 import { showCommand } from "./show.js";
 import { reopenCommand, resolveCommand } from "./status.js";
 
@@ -25,6 +26,12 @@ import { reopenCommand, resolveCommand } from "./status.js";
  * thread writes rather than under `corpus agents` — which is a read of who is
  * running and must stay one. Designation is thread state, set and released like
  * any other thread field, and this is where thread state lives.
+ *
+ * `scope` is the read that pair implies: a residency puts an agent in charge of
+ * a conversation *and everything that grows out of it*, and until CLI-054 there
+ * was no way to see what that had come to include. It sits here rather than
+ * under `corpus agents` for the same reason `designate` does — the scope is a
+ * fact about a thread, and `agents` is a read of who is running.
  */
 export const threadTopic: TopicSpec = {
   name: "thread",
@@ -38,7 +45,9 @@ export const threadTopic: TopicSpec = {
     "conversation, and `resolve`/`reopen` control " +
     "whether later turns keep waking it (SPEC.md §8). `designate` and `release` are the user's " +
     "half of SPEC.md §7's residency: they put a long-lived agent in charge of a standalone " +
-    "conversation and everything that grows out of it, and take it away again.",
+    "conversation and everything that grows out of it, and take it away again. `scope` lists what " +
+    '"everything that grows out of it" has come to mean — one line per artifact the resident ' +
+    "owns.",
   commands: [
     createCommand,
     showCommand,
@@ -48,5 +57,6 @@ export const threadTopic: TopicSpec = {
     reopenCommand,
     designateCommand,
     releaseCommand,
+    scopeCommand,
   ],
 };

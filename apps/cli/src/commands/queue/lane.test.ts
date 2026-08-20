@@ -85,12 +85,25 @@ describe("--thread, the lane a queue verb consumes", () => {
     expect(IDLE_LANE_FLAG.description).toContain("omit the flag");
     expect(IDLE_LANE_FLAG.description).toContain("designate a resident on that thread first");
     expect(IDLE_LANE_FLAG.description).toContain("pick a lane from `corpus agents`");
-    // The window SERVER-118 deliberately kept legal: released-while-parked is
-    // not the case being refused, and help that skipped it would read as a
-    // stricter rule than the server enforces.
+    // The case SERVER-118 deliberately left legal: released-while-parked is not
+    // what is being refused, and help that skipped it would read as a stricter
+    // rule than the server enforces.
     expect(IDLE_LANE_FLAG.description).toContain(
       "never a lane, not one that has stopped being one",
     );
+  });
+
+  it("says a release ends a park at once, which SERVER-128 made true", () => {
+    // The park used to run to the end of its window and the release was found
+    // on the next pass — up to a rearm, ~8 minutes. SERVER-128 ends every park
+    // on a released lane as the release lands, so §7's bound on discovering a
+    // release is now one HTTP round trip. Help that still described the window
+    // would tell a caller to expect minutes of silence that no longer happen.
+    expect(IDLE_LANE_FLAG.description).toContain("ended at once");
+    expect(IDLE_LANE_FLAG.description).not.toContain("keeps that park to the end of its window");
+    // What is still true, and what a reader would otherwise assume changed too:
+    // the lane stops being one, so the *re-park* is refused.
+    expect(IDLE_LANE_FLAG.description).toContain("re-park");
   });
 
   it("keeps claim-all's tolerance, with the reason it survives idle's refusal", () => {

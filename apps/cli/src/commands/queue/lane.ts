@@ -97,8 +97,10 @@ export const IDLE_LANE_FLAG: FlagSpec = {
     "leave `corpus agents` reporting a lane that does not exist. Nothing was parked and no work " +
     "was claimed, and there are three ways on: omit the flag to take the orchestrator's lane, " +
     "designate a resident on that thread first, or pick a lane from `corpus agents`. A resident " +
-    "released _while its listener is parked_ keeps that park to the end of its window — what is " +
-    "refused is a value that was never a lane, not one that has stopped being one. " +
+    "released _while its listener is parked_ has that park **ended at once** — the held request " +
+    "returns as the release lands, rather than running to the end of its window (SERVER-128) — " +
+    "and it is the **re-park** that is then refused: what this rejects is a value that was never " +
+    "a lane, not one that has stopped being one. " +
     "`corpus queue claim-all` accepts what this refuses, deliberately; its own `--thread` says why.",
 };
 

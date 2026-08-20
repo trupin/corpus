@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -33,11 +33,11 @@ CONTRACT-068 decision 4 asked whether the agent gets the scope listing too. **De
 
 ## Acceptance Criteria
 
-- [ ] `corpus thread scope <id>` prints one frugal line per artifact: id, type, title, status, and how it got in
-- [ ] A truncated listing says so on its last line, with the bound
-- [ ] A thread with no resident prints the server's refusal, in the CLI's ordinary error shape
-- [ ] `--json` (if the CLI's other listing verbs have it) returns the response verbatim
-- [ ] `--help` documents it; the `converse` skill is **not** edited here (that is AGENT-038's file, and the verb is optional for the skill)
+- [x] `corpus thread scope <id>` prints one frugal line per artifact: id, type, title, status, and how it got in
+- [x] A truncated listing says so on its last line, with the bound
+- [x] A thread with no resident prints the server's refusal, in the CLI's ordinary error shape
+- [x] `--json` (if the CLI's other listing verbs have it) returns the response verbatim
+- [x] `--help` documents it; the `converse` skill is **not** edited here (that is AGENT-038's file, and the verb is optional for the skill)
 
 ## Technical Design
 
@@ -63,16 +63,39 @@ Unit tests against a mocked client, snapshot re-derived by running.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**implemented on: opus** — the implementing agent was killed by a session limit after writing the code and its tests. The orchestrator ran the verification below and wrote it.
+
+**E2E, real server on port 8896, throwaway workspace** (`scratchpad/ws-verify`):
+
+```
+$ corpus thread scope th_7h2evk2h
+th_7h2evk2h  thread  open  self    Order drill
+th_ixoaoqeo  thread  open  parent  Side note
+```
+
+The unrelated document created in the same workspace (`doc_cvu3v7s7`, `data/docs/inbox/unrelated.md`) is **absent**, which is the point of the listing.
+
+**An undesignated thread is refused, and the refusal says what to do:**
+
+```
+$ corpus thread scope th_b47ott6n
+corpus: 409 conflict: th_b47ott6n has no resident, so it has no scope: SPEC.md §7 gives a
+scope to a designated thread, and everything outside every scope is the orchestrator's by
+default. Designate a resident on this thread, or read `GET /api/agents` for the lanes that exist.
+```
+
+**The `origin` case** is covered by SERVER-130's own real-server run (a `via: "origin"` member, including an archived one) and by its parity test against the enqueue-time walk. The CLI has no `--origin` flag on `doc create`, so this drill could not create one by hand.
+
+Unit suite: `apps/cli` 94 files, 1580 tests, all pass. Server stopped, port 8896 free.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[CLI-054]` prefix
+- [x] Committed with `[CLI-054]` prefix

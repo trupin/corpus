@@ -1,7 +1,8 @@
+import { RESIDENT_WEIGHT_BOUNDARY } from "@corpus/contract";
 import { UsageError } from "../../errors.js";
 import { warningSuffix } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
-import { GENERAL_RESIDENT, residentLabel } from "../resident.js";
+import { GENERAL_RESIDENT, residentLabel, withWeight } from "../resident.js";
 
 /**
  * `corpus thread designate` — give a conversation a resident (SPEC.md §7).
@@ -38,16 +39,36 @@ import { GENERAL_RESIDENT, residentLabel } from "../resident.js";
  * all can designate on its first day. Absence is spelled by sending no body, the
  * shape the contract chose so that the ordinary case costs a caller nothing to
  * express and cannot be confused with a release (that is the `DELETE`).
+ *
+ * **`--weight` is the other refinement, and the designation is the only place
+ * the choice exists** (SPEC.md §7's weight rider, signed 2026-08-19; CLI-053).
+ * A resident is a running agent, so what it runs at cannot change without
+ * discarding the conversation it is holding — which is why a weight belongs to
+ * the designation rather than to a message. Optional for the same reason
+ * `--agent` is: omitting it keeps today's behaviour exactly, and the launcher
+ * decides. The value is a level key from the workspace's own tier table, sent
+ * verbatim and checked here for shape alone — this CLI holds no table and
+ * validates against none, because the table is skill text the server never
+ * reads, and a level the launcher cannot meet is reported by the launcher, in
+ * the listener's first reply.
  */
 export async function runThreadDesignate(context: WorkspaceCommandContext): Promise<void> {
   const id = context.args.get("id");
   const name = resolveAgentName(context);
+  const weight = resolveWeight(context);
 
+  // Absence is spelled by omission at both levels: no field for a refinement
+  // nobody asked for, and no body at all when neither was asked for — the shape
+  // the contract chose, and the one a bare designation has always sent.
+  const body = {
+    ...(name === undefined ? {} : { name }),
+    ...(weight === undefined ? {} : { weight }),
+  };
   const request = { params: { path: { id } } };
   const response = await context.client.request((api) =>
     api.POST(
       "/api/threads/{id}/resident",
-      name === undefined ? request : { ...request, body: { name } },
+      Object.keys(body).length === 0 ? request : { ...request, body },
     ),
   );
 
@@ -60,13 +81,14 @@ export async function runThreadDesignate(context: WorkspaceCommandContext): Prom
   // renamed, deleted, or moved out of `.claude/agents/` should say *that* rather
   // than a stale id. **Archiving is not one of those**: an archived `agent-def`
   // still under that root resolves exactly as before, and is still designatable,
-  // so the line keeps printing its id. A `200` always carries a resident; the
-  // fallback exists so a server that somehow did not is reported as what was
-  // asked for rather than crashing on it.
+  // so the line keeps printing its id. The weight rides the same resident and
+  // is printed the same way, by the same label. A `200` always carries a
+  // resident; the fallback exists so a server that somehow did not is reported
+  // as what was asked for — weight included — rather than crashing on it.
   const resident = response.thread.resident;
   const who =
     resident === null || resident === undefined
-      ? (name ?? GENERAL_RESIDENT)
+      ? withWeight(name ?? GENERAL_RESIDENT, weight ?? null)
       : residentLabel(resident);
   context.out.line(`designated ${who} on ${id}${warningSuffix(response.warnings)}`);
 }
@@ -96,6 +118,37 @@ function resolveAgentName(context: WorkspaceCommandContext): string | undefined 
     });
   }
   return name;
+}
+
+/**
+ * `--weight <key>`, omitted, or a blank — the same three readings `--agent`
+ * has, refused in the same place and for the same reason.
+ *
+ * Omitting is a **decision**: let the launcher choose what the resident runs
+ * at, which is what every designation did before this flag existed.
+ * `--weight ""` is a **mistake** — a shell variable that expanded to nothing —
+ * and reading it as the decision would report a choice the caller never made.
+ * The server refuses a blank too (`RequestedWeightSchema` is non-blank), so
+ * this is that refusal one round trip earlier, with a hint attached.
+ *
+ * **Shape only, and no table.** Whether `heavy` is a level this workspace
+ * declares is not a question this CLI can answer: §7 keeps the tier table in
+ * the orchestrate skill, which the server never reads either. Validating
+ * against a table copied here would reject a workspace's own vocabulary, which
+ * is exactly what the contract refused to publish an enum for.
+ */
+function resolveWeight(context: WorkspaceCommandContext): string | undefined {
+  const weight = context.flags.string("weight");
+  if (weight === undefined) return undefined;
+  if (weight.trim() === "") {
+    throw new UsageError("--weight was given without a level.", {
+      hint:
+        "Name a level from this workspace's own agent guidance — `--weight heavy` — or leave the " +
+        "flag out entirely to let the launcher choose what the resident runs at. A blank is " +
+        "neither of those, and nothing was sent to the server.",
+    });
+  }
+  return weight;
 }
 
 export const designateCommand: WorkspaceCommandSpec = {
@@ -137,6 +190,22 @@ export const designateCommand: WorkspaceCommandSpec = {
     "anything for it. **Archiving is not one of those**: an archived `agent-def` still under that " +
     "root resolves exactly as before, and is still designatable, so the line keeps printing its " +
     "id.\n\n" +
+    "**`--weight` says what the resident runs at**, and the designation is the only place that " +
+    "choice exists (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is " +
+    "designated, not per message — a running agent cannot change what it is without discarding " +
+    "the conversation it holds). The value is a **level's key from this workspace's own agent " +
+    "guidance, verbatim** — the same word a message's weight carries, and **never a model name**. " +
+    "It " +
+    `${RESIDENT_WEIGHT_BOUNDARY}. ` +
+    "**Optional**: omit it and the launcher decides, exactly as every designation did before the " +
+    "flag existed. Nothing here checks the key against the table — §7 keeps the tiers in the " +
+    "orchestrate skill, which neither this CLI nor the server reads — so a level the launcher " +
+    "cannot meet is not refused at designation time: the launcher reports it in the listener's " +
+    "first reply, naming what was asked for and what was done instead. A blank " +
+    '(`--weight ""`) is a usage error and nothing is sent. Where a weight is set, every surface ' +
+    "that names the resident prints it after the resident — `a general resident at heavy`, " +
+    "`researcher (doc_r1) at heavy` — and where none was chosen they print nothing extra, since " +
+    "no word is invented for a weight nobody stated.\n\n" +
     "**Single-valued, so designating again replaces**, and **a repeat is not a no-op**: even when " +
     "the thread already has this exact resident and no file is written, the designation is " +
     "announced again — which is how a person asks for a listener that is no longer running to be " +
@@ -166,6 +235,22 @@ export const designateCommand: WorkspaceCommandSpec = {
         "and name a profile when it wants an agent that behaves differently from the default. A " +
         "blank name is a usage error rather than absence.",
     },
+    {
+      name: "weight",
+      type: "string",
+      valueName: "key",
+      description:
+        "The **level the resident runs at** (SPEC.md §7, rider signed 2026-08-19). A level's key " +
+        "from **this workspace's own agent guidance, verbatim** — the same word a message's " +
+        "weight carries — and **never a model name**: this CLI publishes no levels and holds no " +
+        "table, because §7 keeps the tiers in the orchestrate skill where a workspace states its " +
+        "own. It " +
+        `${RESIDENT_WEIGHT_BOUNDARY}. ` +
+        "**Optional**: omit it to choose nothing, which is what every designation did before this " +
+        "flag existed — the launcher decides and says so. Checked for shape only, so a key this " +
+        "workspace does not declare is accepted here and reported by the launcher in the " +
+        "listener's first reply. A blank is a usage error rather than absence.",
+    },
   ],
   examples: [
     {
@@ -181,13 +266,22 @@ export const designateCommand: WorkspaceCommandSpec = {
         "resolved to, so nothing has to repeat the lookup.",
     },
     {
+      command: "corpus thread designate th_4b8e2c --agent researcher --weight heavy",
+      description:
+        "The same, running at this workspace's `heavy` level — prints `designated researcher " +
+        "(doc_r1) at heavy on th_4b8e2c`. `heavy` is a key from the workspace's own tier table, " +
+        "not a model name, and `--weight` works just as well without `--agent`.",
+    },
+    {
       command: "corpus thread designate th_4b8e2c --json",
       description:
-        'One JSON value — `{"thread":{…,"resident":{"name":null,"docId":null}},"warnings":[]}` — ' +
-        "the thread as it now stands. Both fields null is a general resident; `name` set with " +
+        'One JSON value — `{"thread":{…,"resident":{"name":null,"docId":null,"weight":null}},' +
+        '"warnings":[]}` — the thread as it now stands. `name` and `docId` both null is a general ' +
+        "resident; `name` set with " +
         "`docId` null is a profile that has since been renamed, deleted, or moved out of " +
         "`.claude/agents/` — never one merely archived, which still resolves to its id; the whole " +
-        "`resident` null is a thread that has none.",
+        "`resident` null is a thread that has none. `weight` is independent of all three: the " +
+        "level the resident runs at, or null when none was chosen.",
     },
   ],
   handler: (context) => runThreadDesignate(context),

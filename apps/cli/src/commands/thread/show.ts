@@ -93,7 +93,10 @@ export const showCommand: WorkspaceCommandSpec = {
     "general resident`, and one whose profile has since been renamed, deleted, or moved out of " +
     "`.claude/agents/` prints `name (profile missing)`. **Archiving is not one of those**: an " +
     "archived `agent-def` still under that root resolves exactly as before, and is still " +
-    "designatable, so the line keeps printing its id. " +
+    "designatable, so the line keeps printing its id. Where the designation chose a weight " +
+    "(SPEC.md §7, rider signed 2026-08-19) the line names it after the resident — `resident a " +
+    "general resident at heavy` — with the word taken from this workspace's own agent guidance " +
+    "rather than being a model name, and a designation that chose none prints nothing extra. " +
     "An undesignated thread prints no such line, because having nobody " +
     "resident is the ordinary state rather than a value. That line reports the **designation** " +
     "and says nothing " +
