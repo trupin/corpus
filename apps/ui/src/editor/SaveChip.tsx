@@ -18,6 +18,13 @@ import type { SaveState } from "./useAutosave.js";
  * The anchor half of the copy is the response's too. `{remapped, orphaned}`
  * comes back from `PUT /api/docs/{id}`, and a save that orphaned a thread does
  * not get to claim `anchors ✓` (sprint-011 TEST-18).
+ *
+ * **The box does not follow the copy.** The five strings below span 246px, and
+ * a chip that grew with them walked its neighbours across the head and pushed
+ * the ⋯ and ⤢ controls out of the column (UI-135). So the element carries
+ * {@link RESERVED_SAVE_CHIP_TEXT} on `data-reserve`, `Reader.css` renders that
+ * invisibly to size the box, and the visible text draws inside it — reserved
+ * to the widest thing it can hold, in the font that actually shipped.
  */
 
 export interface SaveStatusValue {
@@ -88,6 +95,25 @@ export function saveChipText(state: SaveState): string {
   }
 }
 
+/**
+ * The widest string {@link saveChipText} produces, and therefore the width the
+ * chip's box is reserved to (UI-135, SPEC.md §11's *"nothing resizes because of
+ * what it holds"*).
+ *
+ * Derived rather than written out, so the reservation cannot drift from the
+ * copy: change a word above and the box changes with it. `orphaned` beats
+ * `moved` by three characters, and two digits is where the count stops being
+ * ordinary — a corpus where one save orphans a hundred conversations has a
+ * larger problem than a chip. Past that the text truncates into the reserved
+ * box and its whole value is on the element's `title`, which is SHARED-057's
+ * clause 2 and the reason an unbounded count needs no unbounded box.
+ */
+export const RESERVED_SAVE_CHIP_TEXT = saveChipText({
+  kind: "saved",
+  remapped: 0,
+  orphaned: 99,
+});
+
 export function saveChipClass(state: SaveState): string {
   switch (state.kind) {
     case "saving":
@@ -101,31 +127,47 @@ export function saveChipClass(state: SaveState): string {
   }
 }
 
+/**
+ * **The chip is always the same element**, and the retry lives inside it.
+ *
+ * It used to *become* a `<button>` when a failure offered a retry, and that one
+ * substitution was measurably a different width: Chromium refuses to shrink a
+ * `<button>` below its own content whatever `min-width` says, so in a head with
+ * a long back label the span shrank to 203px and the button held 247px — the
+ * chip changing size between two of its five states, which is the defect this
+ * whole file was corrected for (UI-135). Nesting the control keeps the flex item
+ * one element for the row's whole life, and costs nothing: the button is still a
+ * real button, still carries the failure's message, and still calls `retry`.
+ */
 export function SaveChip(): ReactElement {
   const { state, onRetry } = useContext(SaveStatusContext);
-
-  if (state.kind === "error" && onRetry !== null) {
-    return (
-      <button
-        type="button"
-        className={saveChipClass(state)}
-        data-save-chip
-        title={state.message}
-        onClick={onRetry}
-      >
-        {saveChipText(state)} — retry
-      </button>
-    );
-  }
+  const text = saveChipText(state);
+  const retry =
+    state.kind === "error" && onRetry !== null ? { message: state.message, run: onRetry } : null;
 
   return (
     <span
       className={saveChipClass(state)}
       data-save-chip
+      data-reserve={RESERVED_SAVE_CHIP_TEXT}
       role={state.kind === "idle" ? undefined : "status"}
-      {...(state.kind === "error" ? { title: state.message } : {})}
+      // The failure's own sentence beats the chip's three words, so an error
+      // keeps reporting it. Otherwise the title is the chip's whole text, which
+      // is what makes truncating it into the reserved box honest (SHARED-057).
+      {...(state.kind === "error" ? { title: state.message } : text === "" ? {} : { title: text })}
     >
-      {saveChipText(state)}
+      {retry === null ? (
+        <span className="save-chip-text">{text}</span>
+      ) : (
+        <button
+          type="button"
+          className="save-chip-text save-chip-retry"
+          title={retry.message}
+          onClick={retry.run}
+        >
+          {text} — retry
+        </button>
+      )}
     </span>
   );
 }

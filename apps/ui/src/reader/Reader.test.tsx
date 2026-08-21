@@ -275,8 +275,12 @@ describe("Reader", () => {
       />,
     );
     await showsTitle(container, "Mortgage options");
-    expect(container.querySelector(".back")?.getAttribute("title")).toBe(
+    expect(container.querySelector(".back")?.getAttribute("title")).toContain(
       "Back (shift-click, or ⇧esc: straight to list)",
+    );
+    // …behind the whole of the label, which the button truncates (UI-135).
+    expect(container.querySelector(".back")?.getAttribute("title")).toBe(
+      "‹ Rates — Back (shift-click, or ⇧esc: straight to list)",
     );
   });
 

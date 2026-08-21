@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -69,25 +69,28 @@ at 577 — **97px outside the column**, and clipped by `.col { overflow: hidden 
 
 ## Acceptance Criteria
 
-- [ ] **Measure the box, change the content, measure again, assert unchanged**: a
+- [x] **Measure the box, change the content, measure again, assert unchanged**: a
       Playwright spec records the bounding boxes of `⋯` and `⤢`, drives the save
       chip through all five of `saveChipText`'s outputs, and asserts **both
       buttons' boxes are identical in every state**
-- [ ] The same spec asserts `head.scrollWidth <= head.clientWidth` in every state,
+- [x] The same spec asserts `head.scrollWidth <= head.clientWidth` in every state,
       with the longest `Back` label the component permits — the head never
       overflows, so nothing is ever clipped
-- [ ] The save chip's full text stays reachable when it is truncated, per
+- [x] The save chip's full text stays reachable when it is truncated, per
       SHARED-057 clause 2 — a `title`, or the existing detail surface. It must not
       be silently cut
-- [ ] `.reader-id` may still move, or may be pinned — but if it moves, it is the
-      **only** thing that moves, and that is asserted
-- [ ] The column variant (`Column.css:348,363`) is covered by the same spec, at
-      the narrowest column width `board/columnWidth.ts` permits
-- [ ] `⤢` staying `disabled`-rather-than-unmounted while the doc loads
+- [x] `.reader-id` may still move, or may be pinned — but if it moves, it is the
+      **only** thing that moves, and that is asserted — it is **pinned**: with the
+      chip's box reserved there is nothing left to push it
+- [x] The column variant (`Column.css:348,363`) is covered by the same spec, at
+      the narrowest column width `board/columnWidth.ts` permits. `Column.css` was
+      **not edited**: its head rules set type and spacing only, so the base rules
+      in `Reader.css` reach the column variant unopposed
+- [x] `⤢` staying `disabled`-rather-than-unmounted while the doc loads
       (`ReaderHead.tsx:135`), and `SaveChip` rendering an empty element rather
       than nothing (`SaveChip.tsx:41-48`), both survive — those are already the
       right pattern and the fix must not undo them
-- [ ] **Falsification**: restore `flex: none` on the item that was given a shrink
+- [x] **Falsification**: restore `flex: none` on the item that was given a shrink
       budget and watch the spec fail
 
 ## Technical Design
@@ -168,15 +171,112 @@ also proves the state actually reaches the chip.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+Implemented on: **opus**. Real Chromium through Playwright against the real Vite
+dev server (`CORPUS_UI_PORT=5285`, `CORPUS_SERVER_ORIGIN=http://127.0.0.1:8895`).
+Spec: `apps/ui/e2e/reader-head-geometry.spec.ts`.
+
+### 1 — Reproduction (the unshrinkable head restored, 2026-08-20)
+
+`Reader.css`'s head block was reverted to its pre-fix rules (`.back` and
+`.save-chip` at `flex: none`, `.reader-id` at `nowrap`, no reservation) and the
+new spec run against it. Three of five tests failed, each on the defect:
+
+```
+holds every save state in one box …
+  Error: committed · git ✓ · 3 anchors moved: scrollWidth
+  expect(received).toBeLessThanOrEqual(expected)
+  Expected: <= 558      Received: 630
+
+survives the narrowest column …
+  expect(received).toBeLessThanOrEqual(expected)
+  Expected: <= 238      Received: 280
+
+reserves the chip's box …
+  Expected substring: "99 anchors orphaned"   Received string: "none"
+```
+
+630px of content in a 558px box at the reading width, 280 in 238 at the
+narrowest column. Same failure UI-128 measured (it reached 655 with a slightly
+longer parent title). The rule is broken by an ordinary save.
+
+### 2 — Verification (the fix restored)
+
+All five tests pass. The head's six recorded states — `""`, `saving…`,
+`committed · git ✓`, `… · 3 anchors moved`, `… · 12 anchors orphaned`,
+`save failed — retry`, all reached through real typing and real `PUT`s — give
+**byte-identical geometry**, in pixels measured from the head's own left edge:
+
+```
+head  scrollWidth=558  clientWidth=558  lastRight=546
+.back        x=12   w=166  right=178
+.reader-id   x=186  w=83   right=269
+.save-chip   x=277  w=203  right=480
+⋯ (.expand)  x=488  w=28   right=516
+⤢ (.expand)  x=524  w=22   right=546
+```
+
+Nothing moves at all — not the chip, not the id, not either control — and
+`scrollWidth == clientWidth`, so nothing is clipped. `lastRight=546 ≤ 558`: ⤢
+ends 12px *inside* the head it used to end 97px outside.
+
+Widths measured against the shipped stylesheet, mono at 10.5px:
+
+- the reservation (`committed · git ✓ · 99 anchors orphaned`, 39 chars) is
+  **246.55px** unconstrained — which is what the chip's box is at a short back
+  label, and what it shrinks *from* (to 203px) when a 40%-capped back label
+  squeezes the row. The shrink is the row's, not the chip's: it is the same
+  203px in all six states.
+- narrowest column (`MIN_COLUMN_WIDTH`, reached through a 288px viewport, since
+  `clampColumnWidth` measures the reading floor against the window): column
+  240px, head `clientWidth=214`, `scrollWidth=214`, both controls inside —
+  **and the same again with 💬 2 on the row**, the case that spends the last of
+  the slack. The chip, ⋯ and ⤢ are identical before and after the save there
+  too.
+
+Both controls take a real click and do their real work in both column widths:
+⋯ opens `.reader-head .comments-pop.open` (asserted visible, then `esc`), ⤢
+opens `.focus.open` (asserted visible, then `esc`).
+
+Truncation is revealed, never cut (SHARED-057 clause 2): `.back`'s `title` is
+`‹ <the whole parent title> — Back (shift-click, or ⇧esc: straight to list)`,
+`.reader-id`'s is `doc_note · git ✓`, and the chip's is its whole text
+(`committed · git ✓ · 12 anchors orphaned`), asserted in the browser.
+
+### 3 — Falsification
+
+The reproduction above **is** the falsification, run in that order: the
+unshrinkable head restored → three failures with the numbers above → restored →
+five passes. During it the spec also caught a defect of its own making: with the
+retry `<button>` *replacing* the chip, the chip measured 203px as a `<span>` and
+247px as a `<button>` in the same row, because Chromium will not shrink a
+`<button>` below its own content whatever `min-width` says. The retry control is
+nested inside the chip now, so the flex item is one element in every state.
+
+### 4 — Regression runs
+
+- `apps/ui/src` in full: **3159 passed**, 3 failed (all pre-existing, below).
+- e2e, reader-adjacent: `reader`, `editor`, `key-conflict`, `column-width`,
+  `related`, `soft-wrap`, `plugin-late-arrival`, `edit-session-close`, `smoke`,
+  `board`, `reader-head-geometry` — **72 passed** (the geometry spec has since
+  grown a sixth test and stands at 6/6).
+- e2e, reader-mounting: `thread`, `anchors`, `reveal`, `collapse`,
+  `context-menu`, `comment-move`, `todos-menu` — **100 passed**.
+- `tsc --noEmit` in `apps/ui`: clean. ESLint over `apps/ui/src` and
+  `apps/ui/e2e`: clean. Prettier: clean.
+
+**Pre-existing failure, not this issue's**: `apps/ui/src/editor/markdown/
+corpus.test.ts` fails 3 tests on `issues/ui/128-audit-every-surface-whose-size-
+follows-its-content.md` — a table in that issue file round-trips with 5 cells
+where it had 4. Nothing here touches the markdown pipeline; reported to the
+orchestrator.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in, reproduction first
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in, reproduction first
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
