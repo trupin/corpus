@@ -22,6 +22,80 @@
   color: var(--ink-3);
 
   /*
+   * ── The line's slot ──────────────────────────────────────────────────────
+   *
+   * SPEC.md §11's rider signed 2026-08-20: *"A component's size is a property
+   * of its place in the layout, never of the text that happens to be in it —
+   * so … a value that arrives later than the box holding it … move[s] nothing
+   * else on the screen."* This is that box (UI-137).
+   *
+   * **What went wrong.** The line reads `<who> · <weight>`, and the weight
+   * clause arrives on a *second* request — the roster names a level key
+   * (`heavy`), the workspace's own orchestrate skill turns it into words
+   * (`Heavy or judgment-laden`). While the slot took its width from that
+   * string, the arrival pushed the whole footer sideways. Measured in the
+   * reply composer at 1280×720:
+   *
+   *     .composer-address   x=95  w=181.7  →  w=220.0    (+38.3)
+   *     .send               x=453.3        →  x=461.8    (+8.5)   at rest
+   *
+   * and from an unsettled first paint, x=350.4 → x=461.8 (+111.4): the numbers
+   * depend on where the column had got to, which is itself the complaint. A
+   * control moved under the pointer, on the one control a composer exists to
+   * press.
+   *
+   * **Why not reserve the weight clause alone.** Considered and rejected. The
+   * *who* half is a profile name of no bounded length, so a line that reserved
+   * only the weight would still resize when the name arrived, when the
+   * recipient changed, or when a different lane was picked. That fixes one
+   * trigger and not the defect.
+   *
+   * **The number, measured against real content** (the rider's third clause).
+   * Everything here is in the line's own font, `10.5px var(--mono)`, where
+   * `1ch = 6.3219px`. The pill spends 30px on chrome — 9px of padding and 1px
+   * of border each side, a 5px gap and a 4.8px caret — so a slot of `w` shows
+   * `w − 30` of text.
+   *
+   *     115 (18ch)  Nobody is asked                              floor, whole
+   *     137 (22ch)  agent will answer                            whole
+   *     207         agent will answer · Standard
+   *     220         researcher will answer · heavy
+   *     289         ui-dev will answer · Small and mechanical
+   *     302         agent will answer · Heavy or judgment-laden
+   *     333         claims-review will answer · weight set at launch
+   *     384         release-researcher will answer · Heavy or judgment-laden
+   *
+   * **And the room the footer actually has, which is the binding constraint.**
+   * A column showing a reader is 560px wide — `READING_WIDTH_CEILING` in
+   * `apps/ui/src/board/columnWidth.ts`, the board's own reading width, not an
+   * accident of this fixture. That gives `.composer-foot` 434.2px, and its
+   * other four items need 292.6px at their natural size (📎 24, the ask-agent
+   * toggle 69.5, the hint 107.5, `Reply ⌘↵` 50.6, four 10px gaps). **141.6px
+   * is left.** `22ch` is 139.1px: the widest whole-`ch` slot that takes
+   * nothing from the send button — which today is squeezed to 41.9px of its
+   * natural 50.6px, so the reserve gives the send label back rather than
+   * costing it anything.
+   *
+   * So the slot holds the ordinary live line whole (`agent will answer`, 17
+   * characters) and the floor line whole (`Nobody is asked`, 15). A resident's
+   * name or a weight clause past that truncates **from the right**, which is
+   * the deliberate priority: *who answers* survives, and the weight — the
+   * shorter question, and the one the popover states in full one gesture away
+   * — is what gives. There is no wider honest number: the name is free text
+   * from a profile, so the sentence is unbounded from above, and the footer's
+   * room is fixed. Some content must truncate and this is the choice of which,
+   * the same shape of decision UI-127 recorded for the statement's four lines.
+   *
+   * The whole line is on the pill's own `title` (`ComposerAddress.tsx`), so a
+   * truncated statement is revealed rather than lost. In a footer with less
+   * room than this — the comment popover is 294px wide — the slot shrinks with
+   * `flex-shrink: 1` against a **fixed** basis, so it is still the layout and
+   * never the text that decides it.
+   */
+  --address-slot: 22ch;
+  flex: 0 1 var(--address-slot);
+
+  /*
    * The recipient statement's reserved box — SPEC.md §11's rider signed
    * 2026-08-20, "Nothing resizes because of what it holds". Declared here, on
    * the control, rather than beside `.recipient-says`, because the line height
@@ -61,19 +135,25 @@
 
 /* ── The line ── */
 
+/* Fills its slot, whichever way the statement is short of or over it: a pill
+   that shrank to a short line would still be a box sized by its text, and the
+   caret would walk left every time the words changed. */
 .address-line {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
+  flex: 1 1 auto;
   font: inherit;
   color: var(--ink-2);
   text-align: left;
 }
 
 /* The line truncates before it pushes a footer's send button out of reach:
-   the full sentence is on the title and in the popover. */
+   the full sentence is on the title and in the popover. It takes the slot's
+   whole measure, so the caret sits at the pill's right edge and stays there. */
 .address-line-text {
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -82,6 +162,9 @@
 .address-line > .address-caret {
   color: var(--ink-3);
   font-size: 8px;
+  /* Never the part that gives: the affordance that says the line opens has to
+     survive a statement too long for the slot. */
+  flex: none;
 }
 
 button.address-line {

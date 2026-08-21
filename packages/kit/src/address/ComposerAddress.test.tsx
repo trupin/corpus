@@ -7,7 +7,13 @@ import { laneRow } from "../recipient/laneRows.js";
 import { DEFAULT_ROW_NOTE } from "../recipient/statement.js";
 import type { ComposerRecipient } from "../recipient/useComposerRecipient.js";
 import type { ComposerWeight } from "../weight/weightChoice.js";
-import { composerAddress, residentWeightSentence, NOBODY_ASKED } from "./addressModel.js";
+import {
+  ADDRESS_FLOOR_TITLE,
+  ADDRESS_OPEN_TITLE,
+  composerAddress,
+  residentWeightSentence,
+  NOBODY_ASKED,
+} from "./addressModel.js";
 import { ComposerAddress, lanesCappedNote, WEIGHT_GROUP_LABEL } from "./ComposerAddress.js";
 
 /**
@@ -141,6 +147,45 @@ describe("the line", () => {
     expect(line().tagName).toBe("SPAN");
     fireEvent.click(line());
     expect(pop()).toBeNull();
+  });
+});
+
+/**
+ * The line's own reveal (SPEC.md §11's rider signed 2026-08-20, UI-137).
+ *
+ * Its **width** is the browser spec's — `apps/ui/e2e/address-geometry.spec.ts`,
+ * because the slot is a flex basis and jsdom implements no layout. What is
+ * pinned here is the half jsdom can see: the slot truncates the line by CSS, so
+ * the pill's own title has to carry the whole sentence, or a statement wider
+ * than 22ch is lost rather than revealed.
+ */
+describe("the line's title", () => {
+  it("leads with the whole statement, then says what pressing it does", () => {
+    // A resident recipient, whose line carries a weight clause and so is the
+    // statement the 22ch slot actually truncates.
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} computed="th_a" />);
+    const title = line().getAttribute("title") ?? "";
+    // The caret is not part of the sentence, so the text element is the one
+    // compared: it is what the slot truncates and what the title stands in for.
+    const said = line().querySelector(".address-line-text")?.textContent ?? "";
+    expect(said).not.toBe("");
+    expect(title.startsWith(said)).toBe(true);
+    expect(title).toContain(ADDRESS_OPEN_TITLE);
+  });
+
+  it("says the floor's own explanation there instead", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} live={false} />);
+    const title = line().getAttribute("title") ?? "";
+    expect(title).toContain(NOBODY_ASKED);
+    expect(title).toContain(ADDRESS_FLOOR_TITLE);
+  });
+
+  it("reveals the sentence alone where there is no gesture to explain", () => {
+    render(<Host lanes={[ORCHESTRATOR]} levels={[]} />);
+    expect(line().tagName).toBe("SPAN");
+    expect(line().getAttribute("title")).toBe(
+      line().querySelector(".address-line-text")?.textContent,
+    );
   });
 });
 

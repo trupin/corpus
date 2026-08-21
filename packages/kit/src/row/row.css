@@ -130,12 +130,29 @@
   flex: none;
 }
 
+/*
+ * The unread pill, whose content is a **word or a number** — `new` when a thread
+ * row has no honest count, otherwise `2`, `12` (`UnreadBadge`).
+ *
+ * That swap is the one case tabular figures cannot touch, so this is the site
+ * where a reservation is the whole fix: `new` is the widest of the three at 3ch,
+ * and the box is that plus the 6px dot, the 4px gap and 7px of padding either
+ * side. Every state now draws into one pill and `justify-content: center` keeps
+ * a single digit in the middle of it rather than against one edge.
+ *
+ * The pill sits in `.row-meta` before `.age`'s `margin-left: auto`, so without
+ * this a row that gained a second unread thread pushed its own context line
+ * (SPEC.md §11's rider, signed 2026-08-20).
+ */
 .unread {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
+  min-width: calc(3ch + 24px);
   font-family: var(--mono);
   font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
   color: var(--accent-ink);
   background: var(--accent-wash);
   border-radius: 99px;
@@ -192,11 +209,30 @@
   flex: none;
 }
 
+/*
+ * The age chip (SPEC.md §11's rider, signed 2026-08-20 — "Nothing resizes
+ * because of what it holds").
+ *
+ * `.row-meta .age` is `margin-left: auto`, so its neighbour is `.row-context`,
+ * the truncating one: every character the chip gains is a character cut off the
+ * context line.
+ *
+ * **Tabular figures, and three characters reserved.** Three is the digit range
+ * `humanizeAge` actually walks — `3h`, `12d`, `9w` → `10w` — so a crossing
+ * inside a unit moves nothing. It is deliberately *not* sized to the widest
+ * label: `just now` is eight characters and `stale · 8mo` is eleven, and
+ * reserving for those would take that width out of every context line on the
+ * board to hold a box that is mostly empty. Those two are unit and tier changes
+ * — a different word, hours apart — not the digit crossing the rider names.
+ */
 .age {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-3);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
 }
 
 /* ── The staleness ramp (SPEC.md §5) ─────────────────── */

@@ -97,6 +97,27 @@ export function lanesCappedNote(count: number): string {
 }
 
 /**
+ * What the pill reveals: **the whole statement, then what pressing it does.**
+ *
+ * The line's slot is a property of the footer and not of the sentence in it
+ * (UI-137, `address.css`), so a statement wider than 22ch truncates there —
+ * `agent will answer · Heavy or judgment-laden` is 302px against a 139px slot.
+ * SPEC.md §11's rider signed 2026-08-20 allows that only where the whole of it
+ * is reachable, so the sentence leads the title and the explanation follows it.
+ *
+ * **One title and not two.** UI-127 put the popover statement's own sentence on
+ * its own element because the truncation happened *there*, and the same
+ * argument would put this one on `.address-line-text`. It is on the pill
+ * instead: the text fills the pill, the two boxes differ by 10px of padding,
+ * and a person whose pointer landed on that padding would get the explanation
+ * where the sentence should have been. Nested titles do not merge, so the outer
+ * one has to be the complete answer.
+ */
+function lineTitle(line: string, live: boolean): string {
+  return `${line} — ${live ? ADDRESS_OPEN_TITLE : ADDRESS_FLOOR_TITLE}`;
+}
+
+/**
  * The card's declared ceiling, in px — `--address-pop-cap` in `address.css`,
  * which is where the number is measured and written down. Read rather than
  * duplicated: a constant kept in both places is a constant that drifts.
@@ -284,7 +305,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
           className="address-line"
           data-address-line={surface}
           aria-expanded={open}
-          title={address.live ? ADDRESS_OPEN_TITLE : ADDRESS_FLOOR_TITLE}
+          title={lineTitle(address.line, address.live)}
           onClick={() => {
             setOpen((current) => !current);
           }}
@@ -296,8 +317,14 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
         </button>
       ) : (
         // §11's recipient statement with nothing to change behind it: said, not
-        // offered. Plain text so it neither focuses nor pretends to open.
-        <span className="address-line address-said" data-address-line={surface}>
+        // offered. Plain text so it neither focuses nor pretends to open — and
+        // the sentence alone on the title, because there is no gesture here to
+        // explain and the slot truncates this line exactly as it does the other.
+        <span
+          className="address-line address-said"
+          data-address-line={surface}
+          title={address.line}
+        >
           <span className="address-line-text">{address.line}</span>
         </span>
       )}

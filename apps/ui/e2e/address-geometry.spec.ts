@@ -728,3 +728,382 @@ test.describe("a host the window bounds", () => {
     expect(card.y).toBeLessThan(scrollport.y);
   });
 });
+
+/**
+ * **The line's width is a property of its slot in the footer, never of the
+ * sentence in it** — UI-137, SPEC.md §11's rider signed 2026-08-20, measured in
+ * the same browser at the same 1280×720.
+ *
+ * ## What was wrong, and why it is the release's own headline
+ *
+ * The line reads `<who> · <weight>`. The weight clause arrives on a **second**
+ * request: the roster names a level key (`heavy`) and the workspace's own
+ * orchestrate skill turns it into words (`Heavy or judgment-laden`). While the
+ * slot took its width from that string, the arrival pushed the footer sideways
+ * and moved the **Send button** — a control, under the pointer, on the one
+ * control a composer exists to press. UI-131 measured it one surface over and
+ * handed it here rather than filing it: `address line w=124.83 → 170.97`,
+ * `send x=350.5 → 386.80`.
+ *
+ * ## The delay is the whole test
+ *
+ * `useWeightLevels` reaches the skill in two sequential round trips — a
+ * `?type=skill` scan, then a `useDoc` for the body — and between them
+ * `weightLabel` renders its documented fallback, the bare key. A spec that let
+ * both settle before it looked would see the finished line and reproduce
+ * nothing, so these hold the **body** open, let the scan through, measure,
+ * release, and measure again.
+ *
+ * ## Why the fixture also changes the name
+ *
+ * Reserving the weight clause alone was considered and rejected: *who* is a
+ * profile name of no bounded length, so a line that reserved only the weight
+ * would still resize when the name arrived or the recipient changed. These
+ * tests therefore swing the name between two characters and forty-five, and
+ * drop the composer to its floor, and assert the same two boxes each time.
+ */
+
+/** The level declaration in the shape the shipped orchestrate skill states it. */
+function declaring(rows: readonly (readonly [string, string])[]): string {
+  return [
+    "## Delegation",
+    "",
+    "| Weight | Key | Model | What falls here |",
+    "| ----------------------- | -------- | ---------- | ---------------- |",
+    ...rows.map(([label, key]) => `| ${label} | ${key} | **A model** | Guidance. |`),
+    "",
+    "Nothing outside this table declares a level.",
+  ].join("\n");
+}
+
+/** The three levels `assets/workspace/` ships, verbatim. */
+const SKILL: StubRow = {
+  id: "doc_orchestrate",
+  type: "skill",
+  title: "orchestrate",
+  path: ".claude/skills/orchestrate/SKILL.md",
+  body: declaring([
+    ["Small and mechanical", "light"],
+    ["Standard", "standard"],
+    ["Heavy or judgment-laden", "heavy"],
+  ]),
+};
+
+const HEAVY_KEY = "heavy";
+const HEAVY_LABEL = "Heavy or judgment-laden";
+
+/** Two characters, and forty-five: the same slot has to serve both. */
+const SHORT_NAME = "ui";
+const LONG_NAME = "release-researcher-for-the-quarterly-forecast";
+
+/**
+ * A roster whose two designated lanes are the same in every way but the length
+ * of the name, so a difference in geometry can only be the name.
+ */
+const NAMED_LANES: readonly AgentLane[] = [
+  {
+    lane: "th_host",
+    resident: { name: SHORT_NAME, docId: "doc_short_agent", weight: HEAVY_KEY },
+    live: true,
+    since: NOW.toISOString(),
+    summary: null,
+    origin: { id: "th_host", title: "Q3 planning" },
+  },
+  {
+    lane: "th_gone",
+    resident: { name: LONG_NAME, docId: "doc_long_agent", weight: HEAVY_KEY },
+    live: true,
+    since: NOW.toISOString(),
+    summary: null,
+    origin: { id: "th_gone", title: "The claims conversation" },
+  },
+];
+
+interface HeldBody {
+  /** Lets the held skill body through; safe to call more than once. */
+  readonly release: () => void;
+  /** How many body requests were actually intercepted. */
+  readonly hits: () => number;
+}
+
+/**
+ * Holds `GET /api/docs/doc_orchestrate` — and only it — until released.
+ *
+ * The `?type=skill` **scan** is deliberately let through: the line must reach
+ * the state this issue is about, which is "the level is known and its words are
+ * not here yet". Registering after `stubCorpus` is what puts this handler first
+ * (Playwright tries handlers in reverse registration order), and
+ * `route.fallback()` hands the request back to the stub once the gate opens.
+ */
+async function holdSkillBody(page: Page): Promise<HeldBody> {
+  let open = (): void => undefined;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let hits = 0;
+  await page.route("**/api/docs/doc_orchestrate", async (route) => {
+    hits += 1;
+    await gate;
+    await route.fallback();
+  });
+  return {
+    release: () => {
+      open();
+    },
+    hits: () => hits,
+  };
+}
+
+/**
+ * The two boxes this issue is about, unrounded.
+ *
+ * The send button is the acceptance test and the line is the cause, so both are
+ * read in one pass — a snapshot taken across two layouts could agree by
+ * accident. Sub-pixel values are kept: a control that moves by half a pixel has
+ * still moved, and the reserve makes them identical rather than close.
+ */
+async function slotBoxes(page: Page, surface: string, send: string): Promise<Record<string, Box>> {
+  return page.evaluate(
+    ([lineSelector, sendSelector]: readonly string[]) => {
+      const out: Record<string, { x: number; y: number; width: number; height: number }> = {};
+      for (const [name, selector] of [
+        ["line", lineSelector ?? ""],
+        ["send", sendSelector ?? ""],
+      ] as const) {
+        const element = document.querySelector(selector);
+        if (element === null) throw new Error(`no ${name} at ${selector}`);
+        const rect = element.getBoundingClientRect();
+        out[name] = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }
+      return out;
+    },
+    [`[data-address-line="${surface}"]`, send] as const,
+  );
+}
+
+/** Whether the line's own text is clipped, and what it reveals if it is. */
+async function revealOf(
+  page: Page,
+  surface: string,
+): Promise<{
+  readonly clipped: boolean;
+  readonly title: string | null;
+  readonly text: string;
+}> {
+  return page.evaluate((selector: string) => {
+    const line = document.querySelector(selector);
+    const text = line?.querySelector(".address-line-text");
+    if (line === null || text === null || text === undefined) throw new Error("no line");
+    return {
+      clipped: text.scrollWidth > text.clientWidth,
+      title: line.getAttribute("title"),
+      text: text.textContent ?? "",
+    };
+  }, `[data-address-line="${surface}"]`);
+}
+
+/** The board, and a reply composer on `th_host` whose lane has a resident. */
+async function openReply(page: Page, lanes: readonly AgentLane[]): Promise<HeldBody> {
+  await stubCorpus(page, [THREADS_VIEW, HOST, GONE, SKILL], {
+    lanes,
+    agent: { live: true, since: NOW.toISOString() },
+  });
+  const held = await holdSkillBody(page);
+  await page.goto("/");
+  await page.locator(".board").waitFor();
+  await page.locator('.row[data-row-doc="th_host"]').click();
+  await expect(page.locator('.reader [data-composer="th_host"]')).toBeVisible();
+  await page.mouse.move(AWAY.x, AWAY.y);
+  return held;
+}
+
+const REPLY_SEND = ".reader .composer-foot .send";
+
+test.describe("the address line has a slot, and Send stays where it is", () => {
+  test("the weight clause arriving late moves neither the line nor Send", async ({ page }) => {
+    const held = await openReply(page, NAMED_LANES);
+
+    const line = page.locator('[data-address-line="th_host"]');
+    await expect(line).toContainText(`· ${HEAVY_KEY}`);
+    // The column grows to its reading floor on open, and that transition is a
+    // movement of the *column* — settle it, or the measurement is of the wrong
+    // thing. `settled` is UI-127's, and it exists for exactly this reason.
+    await settled(page, page.locator(REPLY_SEND));
+    const before = await slotBoxes(page, "th_host", REPLY_SEND);
+
+    held.release();
+    await expect(line).toContainText(HEAVY_LABEL);
+    await settled(page, page.locator(REPLY_SEND));
+
+    expect(held.hits()).toBeGreaterThan(0);
+    // The whole issue, in two boxes.
+    expect(await slotBoxes(page, "th_host", REPLY_SEND)).toEqual(before);
+
+    // …and the words really did change under a box that did not, so this held
+    // across a real arrival and not across none.
+    const reveal = await revealOf(page, "th_host");
+    expect(reveal.text).toBe(`${SHORT_NAME} will answer · ${HEAVY_LABEL}`);
+    // Truncated in place and revealed, never accommodated (SHARED-057 clause 2).
+    expect(reveal.clipped).toBe(true);
+    expect(reveal.title).toContain(`${SHORT_NAME} will answer · ${HEAVY_LABEL}`);
+  });
+
+  test("changing the recipient between a long name and a short one moves nothing", async ({
+    page,
+  }) => {
+    const held = await openReply(page, NAMED_LANES);
+    held.release();
+
+    const line = page.locator('[data-address-line="th_host"]');
+    await expect(line).toContainText(HEAVY_LABEL);
+    await settled(page, page.locator(REPLY_SEND));
+    const at = await slotBoxes(page, "th_host", REPLY_SEND);
+
+    await page.locator('button[data-address-line="th_host"]').click();
+    await expect(page.locator(POP)).toBeVisible();
+    // The line moves nothing when the popover opens over it, either.
+    expect(await slotBoxes(page, "th_host", REPLY_SEND)).toEqual(at);
+
+    const said: string[] = [];
+    const clipped: boolean[] = [];
+    for (const lane of ["th_gone", "orchestrator", "th_host", "th_gone"]) {
+      await page.locator(`${PICKER} [data-recipient-lane="${lane}"]`).click();
+      await expect(page.locator(POP)).toBeVisible();
+      const reveal = await revealOf(page, "th_host");
+      said.push(reveal.text);
+      clipped.push(reveal.clipped);
+      expect(
+        await slotBoxes(page, "th_host", REPLY_SEND),
+        `picking ${lane} moved something`,
+      ).toEqual(at);
+    }
+
+    // Three genuinely different statements, one of them 45 characters of name.
+    expect(said[0]).toContain(`${LONG_NAME} will answer`);
+    expect(said[1]).toContain("agent will answer");
+    expect(said[2]).toContain(`${SHORT_NAME} will answer`);
+    expect(new Set(said).size).toBe(3);
+
+    // The slot is the declared 22ch — the number `address.css` measured, not a
+    // width this footer happened to settle on. 22 × 6.321875px.
+    expect(at["line"]?.width).toBeCloseTo(139.08, 1);
+    // And it is sized for the text people actually have (SHARED-057 clause 3):
+    // the ordinary live line with no weight stated is read, not revealed. The
+    // two weighted ones are the uncommon case, and both carry the whole
+    // sentence on the title.
+    expect(clipped[1], "`agent will answer` did not fit its slot").toBe(false);
+    expect(clipped[0]).toBe(true);
+    expect(clipped[2]).toBe(true);
+    const whole = await revealOf(page, "th_host");
+    expect(whole.title).toContain(whole.text);
+  });
+
+  test("the floor is the short end, and it moves nothing either", async ({ page }) => {
+    const held = await openReply(page, NAMED_LANES);
+    held.release();
+
+    const line = page.locator('[data-address-line="th_host"]');
+    await expect(line).toContainText(HEAVY_LABEL);
+    await settled(page, page.locator(REPLY_SEND));
+    const at = await slotBoxes(page, "th_host", REPLY_SEND);
+
+    // A composer that will not reach the agent says the shortest thing this
+    // control ever says. `◉ ask agent` and `○ note only` are the same length,
+    // so the toggle beside it cannot be what moves anything.
+    await page.locator(".reader .composer-foot .toggle").click();
+    await expect(line).toContainText("Nobody is asked");
+    expect(await slotBoxes(page, "th_host", REPLY_SEND)).toEqual(at);
+
+    // The floor fits its slot whole: the box is sized for the text people
+    // actually have, so the short end is read and not revealed (clause 3).
+    const floor = await revealOf(page, "th_host");
+    expect(floor.clipped).toBe(false);
+
+    await page.locator(".reader .composer-foot .toggle").click();
+    await expect(line).toContainText(HEAVY_LABEL);
+    expect(await slotBoxes(page, "th_host", REPLY_SEND)).toEqual(at);
+  });
+
+  test("the global composer's line has the same slot, and its submits hold", async ({ page }) => {
+    await stubCorpus(page, [THREADS_VIEW, HOST, GONE, SKILL], {
+      lanes: NAMED_LANES,
+      agent: { live: true, since: NOW.toISOString() },
+    });
+    const held = await holdSkillBody(page);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.keyboard.press("c");
+    await expect(page.locator(".compose-panel")).toBeVisible();
+
+    // The global composer answers to the orchestrator by default, so the weight
+    // clause needs a recipient that carries one: pick the long-named resident.
+    const line = page.locator('button[data-address-line="compose"]');
+    await settled(page, line);
+    await line.click();
+    await page.locator(`${picker("compose")} [data-recipient-lane="th_gone"]`).click();
+    await expect(line).toContainText(`· ${HEAVY_KEY}`);
+    // A second press on the line, never Escape: the app's escape chain owns
+    // that key at the surface grain and would close the whole panel.
+    await line.click();
+
+    const ASK = ".compose-actions .btn-ask";
+    await settled(page, page.locator(ASK));
+    const before = await slotBoxes(page, "compose", ASK);
+    const capture = await boxOf(page.locator(".compose-actions .btn-capture"));
+
+    held.release();
+    await expect(line).toContainText(HEAVY_LABEL);
+    await settled(page, page.locator(ASK));
+
+    expect(await slotBoxes(page, "compose", ASK)).toEqual(before);
+    expect(await boxOf(page.locator(".compose-actions .btn-capture"))).toEqual(capture);
+  });
+
+  test("the comment composer's line has the same slot, and Comment holds", async ({ page }) => {
+    const NOTE: StubRow = {
+      id: "doc_note",
+      type: "note",
+      title: "The policy",
+      path: "data/docs/notes/policy.md",
+      body: "Reimbursement is capped at the published rate for the quarter.\n",
+    };
+    await stubCorpus(page, [{ ...THREADS_VIEW, query: {} }, NOTE, HOST, GONE, SKILL], {
+      lanes: NAMED_LANES,
+      agent: { live: true, since: NOW.toISOString() },
+    });
+    const held = await holdSkillBody(page);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await page.locator(".reader .ProseMirror").waitFor();
+
+    const paragraph = page.locator(".reader .doc-body[contenteditable] > p").first();
+    await paragraph.selectText();
+    await paragraph.click({ button: "right" });
+    await page.getByRole("menu").locator('[data-act="comment"]').click();
+    await expect(page.getByRole("dialog", { name: "New comment" })).toBeVisible();
+
+    // The **short** name here, deliberately. This footer is 294px wide, and a
+    // 45-character name saturates the old content-driven width in both states —
+    // measured 164.13px before and after — so the long name would have made
+    // this test pass against the defect. The short one moves it: 134.38 →
+    // 157.09, and `Comment ⌘↵` with it.
+    const line = page.locator('button[data-address-line="comment"]');
+    await settled(page, line);
+    await line.click();
+    await page.locator(`${picker("comment")} [data-recipient-lane="th_host"]`).click();
+    await expect(line).toContainText(`· ${HEAVY_KEY}`);
+    await line.click();
+
+    const SEND = "[data-comment-send]";
+    await settled(page, page.locator(SEND));
+    const before = await slotBoxes(page, "comment", SEND);
+
+    held.release();
+    await expect(line).toContainText(HEAVY_LABEL);
+    await settled(page, page.locator(SEND));
+
+    expect(held.hits()).toBeGreaterThan(0);
+    expect(await slotBoxes(page, "comment", SEND)).toEqual(before);
+  });
+});
