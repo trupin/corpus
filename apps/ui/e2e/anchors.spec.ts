@@ -313,7 +313,14 @@ test.describe("the comment composer", () => {
        <div class="comment-pop open"><textarea class="cm-input"></textarea></div>`,
       [
         [".comment-pop", ["display"]],
-        [".comment-pop.open", ["display", "position", "width"]],
+        // No `width` here on purpose. It used to be collected and never
+        // asserted, which read as a pin and was not one. The card's width is
+        // load-bearing (UI-137 took it from 320 to 356 so `agent will answer`
+        // is read rather than clipped), and it is pinned where the thing it
+        // buys can be seen: `address-geometry.spec.ts` → "the comment
+        // composer's line has the same slot, and Comment holds", which asserts
+        // the statement is unclipped and the foot is one row.
+        [".comment-pop.open", ["display", "position"]],
         [".cm-input", ["resize", "font-size"]],
       ],
     );

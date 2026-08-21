@@ -239,7 +239,8 @@
  * **That is why the card is 356px and not the 320px it was.** This foot has no
  * hint to give — it is 📎, the address, `◉ ask agent` and `Comment ⌘↵` — so
  * every item in it is either the sentence or a control, and there is nothing
- * left to truncate. Measured at their natural size they need 327.22px:
+ * left to truncate. On this machine's glyphs they need 327.22px at their
+ * natural size:
  *
  *     📎 clip            24.00
  *     address slot      140.45   (17ch + chrome, `--address-slot`)
@@ -255,8 +256,19 @@
  * defect CI found at the reply composer, and it was here before CI found it
  * there.
  *
+ * **What 356 is not is a proof of headroom.** The 2.78px between 353.22 and 356
+ * is this machine's arithmetic, in this machine's fallback glyphs for 📎, `◉`
+ * and `⌘↵` — the same kind of local number that made `22ch` fail CI three runs
+ * running, and CI draws those glyphs wider. The claim this width does make is
+ * about behaviour rather than slack: above the point where the four items fit,
+ * the foot is one row; below it `flex-wrap` stacks whole controls, so what a
+ * wider mono costs is a second row of intact controls and never a clipped
+ * sentence or a sliver of a button. The regression test pins that behaviour —
+ * one row, statement unclipped — and not the number, so a legitimate
+ * re-measure may move 356 without touching the test.
+ *
  * UI-070's criterion for this surface still holds: a composer affordance must
- * not reflow the popover into a panel. 352px is 32px of card, once, decided by
+ * not reflow the popover into a panel. 356px is 36px of card, once, decided by
  * the layout — not a width that moves when the line's words change.
  */
 .comment-pop .composer-foot {

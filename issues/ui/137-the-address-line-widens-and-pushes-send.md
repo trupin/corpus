@@ -575,3 +575,161 @@ second row instead of giving anything up. Restored, **23 passed.**
   `retries: 2` covers it. Reported rather than fixed.
 - Four scratch specs were written for the measurements above and deleted. Ports
   5283 / 8893 were used and are free; Playwright starts and stops its own Vite.
+
+### Re-review of PR #53, five findings answered, 2026-08-21 (ui-dev, ran on: opus)
+
+Real Chromium (Playwright, Desktop Chrome) against the real Vite dev server on
+**5283** (`CORPUS_SERVER_ORIGIN=http://127.0.0.1:8893`, never 5173 / 8765). All
+five findings are in the change that answered the previous round. Finding 6 (a
+small inline image reserving the full reading measure) was recorded by the
+reviewer as an accepted tradeoff and is untouched.
+
+#### MAJOR 1 — the hint truncated and revealed nothing
+
+The previous round made `.composer-hint` the item that yields (`flex: 1 1 0`,
+ellipsis) and left the span bare, so the clip it deliberately produces threw the
+sentence away. Two sentences, and each is the only place the product says its
+thing: `thread stays open` / `reopens on reply` at the reply composer, and
+`creates a child thread` at the turn-comment box. Nothing else states that
+replying reopens a resolved thread.
+
+Both hosts now put the whole text on the span's `title` — SHARED-057 clause 2,
+the same reveal the address, the save chip and the toast each got.
+`NewChildThread`'s string became `CHILD_HINT` so the words and the reveal cannot
+drift apart. Assertions: the pressure spec, which already proves the clip, now
+also asserts `hint.title === hint.text === "thread stays open"` at the width
+where the clip happens; two unit tests pin both states of the reply hint and the
+child hint, which is the half jsdom can see.
+
+**The CSS comment was corrected, not left.** It defended the choice with "it
+repeats what pressing send does", which is untrue of all three strings. It now
+says what is true — the hint is the only item in the foot that is neither the
+sentence nor a control, and it is the largest of those — and states where the
+reveal lives.
+
+**Falsified.** `title` removed from `ThreadComposer.tsx` (app-local, no kit
+rebuild involved):
+
+```
+FAIL  a narrower column and wider siblings still leave the statement whole
+      Error: the clipped hint reveals nothing
+FAIL  ThreadComposer › hands the whole hint back on a title, in both states
+```
+
+Restored: green.
+
+#### MAJOR 2 — the 320→356 popover fix had no regression test
+
+Confirmed the reviewer's reading before fixing it. `anchors.spec.ts` collected
+`.comment-pop.open`'s `width` and asserted nothing about it, and the
+address-geometry comment test's `toEqual` sweep holds at 320 as well as 356 —
+with the pill floored and the foot wrapping, a reverted 320 no longer clips the
+address, it silently puts `Comment ⌘↵` on a second row, identically in both
+measurements.
+
+Pinned by the behaviour and not by the number, exactly as asked. The comment
+test now ends by picking the orchestrator lane, so the line reads the ordinary
+live statement, and asserts two things: `agent will answer` is unclipped, and
+the foot is **one row**. `footRows()` counts distinct vertical centres —
+`.composer-foot` is `align-items: center`, so items on one line share a centre
+whatever their heights are, which makes the count independent of the machine's
+glyphs. Counting tops would have called the 📎 button and the pill two rows.
+Neither assertion names 356, so a legitimate re-measure may move the card.
+
+`anchors.spec.ts`'s unasserted `width` collection was dropped, with a comment
+pointing at where the width is now pinned — a collected-and-unasserted property
+reads as a pin and is not one.
+
+**Falsified.** `.comment-pop` set back to `width: 320px`:
+
+```
+FAIL  the comment composer's line has the same slot, and Comment holds
+      Error: the foot wrapped
+      Expected: 1   Received: 2
+```
+
+The unclipped assertion passed at 320, as the reviewer predicted — which is why
+both are asserted and not just one. Restored: green.
+
+#### MINOR 3 — stale arithmetic
+
+`anchors.css` said "352px is 32px of card, once" three lines under its own 356
+and 36. The 352/32 statement was the wrong one (it is the pre-round-up 353.22
+mis-transcribed); it now reads **356px is 36px of card, once**.
+
+#### MINOR 4 — "356 is enough" softened to a behaviour
+
+The 2.78px between 353.22 and 356 is this machine's fallback glyphs for 📎, `◉`
+and `⌘↵`, and CI draws those wider — the same shape of local number that failed
+CI three runs running as `22ch`. The block no longer claims headroom. It states
+what is true and machine-independent: above the point where the four items fit
+the foot is one row, and below it `flex-wrap` stacks whole controls, so a wider
+mono costs a second row of intact controls and never a clipped sentence or a
+sliver of a button. The arithmetic table is kept, labelled as this machine's.
+
+#### MINOR 5 — protection restored at the small end, and the comment corrected
+
+**Option taken: both — restore the protection, and say where each claim holds.**
+The comment was measurably wrong and the overflow it hid is real, so correcting
+the prose alone would have documented a defect rather than fixed one.
+
+Measured first, in the real browser, sweeping the viewport with the compose
+panel open (`.compose-panel` is `min(640px, 100vw - 48px)`, so viewport and
+panel move together):
+
+```
+vw=520  panel 472  bar 470  scrollWidth 417  fits
+vw=480  panel 432  bar 430  scrollWidth 417  fits        (bar already 142.8px tall)
+vw=440  panel 392  bar 390  scrollWidth 417  OVERFLOWS by 27px
+vw=400  panel 352  bar 350  scrollWidth 417  OVERFLOWS by 67px
+```
+
+So the real edge is a viewport near **467px**, and the reviewer's "roughly 480"
+was right.
+
+The valve is `flex-wrap: wrap` on `.compose-actions` under `@media (max-width:
+560px)` — the same last valve `.composer-foot` keeps for a column near
+`MIN_COLUMN_WIDTH`, and it takes from the arrangement rather than from the
+sentence. **It is behind a query rather than simply on**, because the wrap is
+not free at the ordinary width: an item whose basis is its content takes a new
+line rather than shrink, so an unconditional wrap gives this hint its full 259px
+and puts `Ask ⌘↵` on a second row at every width. Measured at 1280: bar height
+74.1px as shipped, 96.1px with the wrap unconditional. **560 and not 467**
+because 467 is one machine's arithmetic and a machine with wider glyphs reaches
+the edge at a wider window — the margin is the point of the number.
+
+The comment now says the "nothing had to be taken from anything" claim holds
+above roughly a 470px viewport, records what the deleted `min-width: 0` used to
+buy, and carries the measurements above.
+
+A seventh test pins it: *the global composer's bar stays whole in a window too
+narrow for one row* — at 400×720 the bar does not overflow, neither submit is
+pushed outside the card, and the sentence did not pay for it (`agent will
+answer` unclipped, pill still equal to `--address-slot`). It asserts **no
+overflow** and not an arrangement: how the rows fall is a property of the
+machine's glyphs.
+
+**Falsified.** The `@media` block removed:
+
+```
+FAIL  the global composer's bar stays whole in a window too narrow for one row
+      Error: the action bar overflowed its card
+      Expected: false   Received: true
+```
+
+Restored: green.
+
+#### Checks
+
+- `address-geometry`, `anchors`, `anchor-layer`, `comment-move`, `turn-comment`,
+  `thread`, `compose-keyboard`, `recipient`: **97 passed**, against 96 before
+  this round — the one new test is MINOR 5's. Every prior assertion is green and
+  unmodified. `address-geometry` itself is now 24 tests, and the sixth pressure
+  spec keeps `hint.clipped === true` untouched.
+- Scoped unit run (`packages/kit apps/ui/src`): **209 files, 4111 tests passed**
+  (4109 before, plus the two hint-reveal tests).
+- `tsc --noEmit` clean in `apps/ui`. ESLint and Prettier clean over every file
+  touched. No rule disabled. `packages/kit` was not modified this round, so no
+  rebuild of its `dist/` was needed and none of the falsifications crossed it.
+- One scratch spec was written for the compose-bar sweep and deleted. Ports 5283
+  / 8893 were used and are free; Playwright starts and stops its own Vite.

@@ -901,6 +901,28 @@ async function slotWidth(page: Page, surface: string): Promise<number> {
   });
 }
 
+/**
+ * How many flex lines a composer foot is laid out on.
+ *
+ * `.composer-foot` is `align-items: center`, so every item on one line shares a
+ * vertical centre whatever its own height is — which makes the count of
+ * distinct centres the count of rows, and makes it independent of the mono the
+ * machine happens to have. Comparing tops instead would count the 📎 button and
+ * the address pill as two rows, because they are two heights.
+ *
+ * Zero-sized children are skipped: `AttachButton` renders a hidden `<input
+ * type="file">` that has no box at all.
+ */
+async function footRows(page: Page, selector: string): Promise<number> {
+  return page.locator(selector).evaluate((el) => {
+    const centres = [...el.children]
+      .map((child) => child.getBoundingClientRect())
+      .filter((rect) => rect.width > 0 || rect.height > 0)
+      .map((rect) => Math.round(rect.top + rect.height / 2));
+    return new Set(centres).size;
+  });
+}
+
 /** Whether the line's own text is clipped, and what it reveals if it is. */
 async function revealOf(
   page: Page,
@@ -1109,6 +1131,71 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
     expect(await boxOf(page.locator(".compose-actions .btn-capture"))).toEqual(capture);
   });
 
+  /**
+   * **What the floor cost the global composer's bar, and what pays for it now.**
+   *
+   * `compose.css` used to override the slot with `min-width: 0`, and the stated
+   * reason was that the hint "must not push the two submits off it at the panel's
+   * minimum width" — a shrinking address was the bar's protection at the small
+   * end. UI-137 took the override away, because a shrinking address was also
+   * `agent will answer` clipped to 89px of the 107 it needs.
+   *
+   * Measured on this machine after that, at the panel's own widths (the panel is
+   * `min(640px, 100vw - 48px)`, so viewport and panel move together):
+   *
+   *     viewport 480   bar 430   content needs 417   fits
+   *     viewport 440   bar 390   content needs 417   overflows by 27px
+   *
+   * So the claim "nothing had to be taken from anything" held above a viewport
+   * near 467px and not below it. `flex-wrap` under a `max-width: 560px` query is
+   * the valve — whole controls stack, the sentence is untouched — and this test
+   * is what says the valve is there. It asserts no overflow and not an
+   * arrangement: how the rows fall is a property of the machine's glyphs, and
+   * pinning that is the mistake `22ch` already made twice.
+   */
+  test("the global composer's bar stays whole in a window too narrow for one row", async ({
+    page,
+  }) => {
+    await stubCorpus(page, [THREADS_VIEW, HOST, GONE, SKILL], {
+      lanes: NAMED_LANES,
+      agent: { live: true, since: NOW.toISOString() },
+    });
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.keyboard.press("c");
+    await expect(page.locator(".compose-panel")).toBeVisible();
+
+    const ASK = ".compose-actions .btn-ask";
+    await settled(page, page.locator(ASK));
+    await page.setViewportSize({ width: 400, height: 720 });
+    await settled(page, page.locator(ASK));
+
+    const bar = await page.locator(".compose-actions").evaluate((el) => {
+      const panel = el.closest(".compose-panel")?.getBoundingClientRect();
+      const submits = [...el.querySelectorAll(".btn-ask, .btn-capture")].map((b) =>
+        b.getBoundingClientRect(),
+      );
+      return {
+        overflows: el.scrollWidth > el.clientWidth,
+        escapes: submits.some(
+          (r) => panel === undefined || r.right > panel.right + 0.5 || r.left < panel.left - 0.5,
+        ),
+        submits: submits.length,
+      };
+    });
+    expect(bar.submits).toBe(2);
+    expect(bar.overflows, "the action bar overflowed its card").toBe(false);
+    expect(bar.escapes, "a submit was pushed off the card").toBe(false);
+
+    // And the sentence did not pay for it: the address holds its slot, and the
+    // ordinary live statement is read rather than revealed, at this width too.
+    const reveal = await revealOf(page, "compose");
+    expect(reveal.text).toBe("agent will answer");
+    expect(reveal.clipped, "`agent will answer` did not fit its slot").toBe(false);
+    const slot = await slotWidth(page, "compose");
+    expect((await slotBoxes(page, "compose", ASK))["line"]?.width).toBeCloseTo(slot, 1);
+  });
+
   test("the comment composer's line has the same slot, and Comment holds", async ({ page }) => {
     const NOTE: StubRow = {
       id: "doc_note",
@@ -1158,6 +1245,28 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
 
     expect(held.hits()).toBeGreaterThan(0);
     expect(await slotBoxes(page, "comment", SEND)).toEqual(before);
+
+    // **What the card's extra 36px bought, pinned by the behaviour and not by
+    // the number** (`anchors.css`, `.comment-pop`). At 320 this foot had 294px
+    // for four items that need more, and there is no hint here to take it from
+    // — every item is either the sentence or a control. Two things went wrong
+    // at that width and each is asserted below: `agent will answer` was clipped
+    // on the ordinary reading path (measured 93px of the 107 it needs), and
+    // once the address was floored the shortfall came out of the arrangement
+    // instead, wrapping `Comment ⌘↵` onto a second row.
+    //
+    // Neither assertion names 356, so a re-measure that moves the card is free
+    // to move it — what it may not do is put the statement or the submit back
+    // where they were.
+    await line.click();
+    await page.locator(`${picker("comment")} [data-recipient-lane="orchestrator"]`).click();
+    await line.click();
+    await expect(page.locator(popOf("comment"))).toBeHidden();
+
+    const ordinary = await revealOf(page, "comment");
+    expect(ordinary.text).toBe("agent will answer");
+    expect(ordinary.clipped, "`agent will answer` did not fit the popover's slot").toBe(false);
+    expect(await footRows(page, ".comment-pop.open .composer-foot"), "the foot wrapped").toBe(1);
   });
 
   /**
@@ -1226,9 +1335,17 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
     // nothing below is being tested.
     const hint = await page.locator(".reader .composer-foot .composer-hint").evaluate((el) => ({
       clipped: el.scrollWidth > el.clientWidth,
-      width: el.getBoundingClientRect().width,
+      title: el.getAttribute("title"),
+      text: el.textContent ?? "",
     }));
     expect(hint.clipped, "the footer was not under pressure").toBe(true);
+
+    // **And the clip reveals** — SHARED-057 clause 2, at the width where the
+    // clip actually happens. `thread stays open` is said in exactly one place
+    // in the product, so a hint chosen to be the item that yields must hand its
+    // whole sentence back on a `title` or the choice loses the sentence.
+    expect(hint.text).toBe("thread stays open");
+    expect(hint.title, "the clipped hint reveals nothing").toBe(hint.text);
 
     // The weight clause arrives into a footer that is already out of room.
     held.release();

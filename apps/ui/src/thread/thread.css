@@ -236,13 +236,20 @@
  * items want more than that whenever the mono runs wide. Something has to
  * truncate, and the whole of this block is the choice of which.
  *
- * **The hint gives.** It repeats what pressing send does, and a person who has
- * read it once does not need the rest of it. Measured at the reading width it
- * is the largest item in the foot after the address (107.5px against the
- * toggle's 69.6 and `Reply ⌘↵`'s 50.6), so it is also the one with the most to
- * give. It truncates rather than wraps: a wrapped hint makes the whole foot two
- * lines tall and takes the send button's width down with it — measured at
- * `send w=36.69 h=34 → w=23.94 h=51`, a 24px-wide, three-line-tall control.
+ * **The hint gives.** It is the only item in the foot that is neither the
+ * sentence nor a control, and measured at the reading width it is the largest
+ * of what is left (107.5px against the toggle's 69.6 and `Reply ⌘↵`'s 50.6), so
+ * it is the one with the most to give. It truncates rather than wraps: a
+ * wrapped hint makes the whole foot two lines tall and takes the send button's
+ * width down with it — measured at `send w=36.69 h=34 → w=23.94 h=51`, a
+ * 24px-wide, three-line-tall control.
+ *
+ * **It gives, but it does not go.** `thread stays open` / `reopens on reply`
+ * and the child composer's `creates a child thread` are each said in exactly
+ * one place in the product, so a clipped hint that revealed nothing would be
+ * SHARED-057 clause 2 broken. Every host of this class puts the whole sentence
+ * on the span's `title` — `ThreadComposer.tsx` and `NewChildThread.tsx` — and
+ * `address-geometry.spec.ts` asserts it at the width where the clip happens.
  *
  * **The address line does not.** Its slot is `@corpus/kit/address.css`'s
  * `--address-slot`, a `min-width` sized to hold `agent will answer` whole in

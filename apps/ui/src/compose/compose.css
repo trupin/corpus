@@ -66,17 +66,56 @@
  * overridden here with `min-width: 0`, and `agent will answer` was clipped to
  * 89px of the 107 it needs as a result.
  *
- * Nothing had to be taken from anything to pay for that. This hint is the item
- * with slack: it wraps to a second line inside the same bar, whose height is
- * set by the two submit buttons beside it, so the whole of it is still read.
- * That is why there is no `text-overflow` here and there is one on the thread
- * composer's hint — that foot is a single 17px row, and a hint that wrapped
- * there would make the composer taller instead of giving anything up.
+ * **Above roughly a 470px viewport, nothing had to be taken from anything to
+ * pay for that.** This hint is the item with slack: it wraps to further lines
+ * inside the same bar, so the whole of it is still read, and that is why there
+ * is no `text-overflow` here and there is one on the thread composer's hint —
+ * that foot is a single 17px row, and a hint that wrapped there would make the
+ * composer taller instead of giving anything up.
+ *
+ * That qualifier is the whole of what the deleted `min-width: 0` used to buy.
+ * It let the address shrink, and a shrinking address is what kept the two
+ * submits on the bar at the panel's narrowest. With the address floored, the
+ * bar's items have a minimum, and below it they would overflow the card rather
+ * than yield. Measured on this machine, at the compose panel's own widths:
+ *
+ *     viewport 520   panel 472   bar 470   content needs 417   one row of controls
+ *     viewport 480   panel 432   bar 430   content needs 417   still fits
+ *     viewport 440   panel 392   bar 390   content needs 417   overflows by 27px
+ *
+ * so the real edge is a viewport near 467px. The valve below restores the
+ * protection, and takes it from the arrangement rather than from the sentence.
  */
 .compose-actions .hint {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-3);
+}
+
+/*
+ * **The last valve, for a window too narrow for one row of controls** — the
+ * same one `.composer-foot` keeps for a column dragged near
+ * `MIN_COLUMN_WIDTH`. Whole controls stack rather than any one of them being
+ * squeezed into a sliver or pushed off the card.
+ *
+ * It is behind a query and not simply on, because `flex-wrap: wrap` is not free
+ * up here: an item whose basis is its content takes a new line rather than
+ * shrink, so an always-wrapping bar sends this hint to its full 259px and puts
+ * `Ask ⌘↵` on a second row at every width. Measured at 1280: bar height 74.1px
+ * as shipped against 96.1px with the wrap unconditional.
+ *
+ * **560px and not 467px** because 467 is one machine's arithmetic in one
+ * machine's glyphs, and a machine whose mono and buttons draw wider reaches the
+ * edge at a wider window. The margin is the point of the number. Above it the
+ * bar is untouched, below it it is intact instead of overflowing, and neither
+ * side depends on what the address line says. The panel is
+ * `min(640px, 100vw - 48px)`, so its width is a pure function of the viewport
+ * and a viewport query lands exactly where a container query would.
+ */
+@media (max-width: 560px) {
+  .compose-actions {
+    flex-wrap: wrap;
+  }
 }
 
 .compose-actions .spacer {
