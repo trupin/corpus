@@ -44,14 +44,6 @@
   padding: 0 18px 8px;
 }
 
-/* The address line (UI-126) sits in the action bar and must not push the two
-   submits off it at the panel's minimum width: it truncates, and its popover
-   opens above the bar. */
-.compose-actions .composer-address {
-  min-width: 0;
-  flex-shrink: 1;
-}
-
 /* The same highlight the thread composer shows while a file is over it. */
 .compose-panel.dropping {
   outline: 2px solid var(--accent);
@@ -68,6 +60,19 @@
   background: var(--surface-2);
 }
 
+/*
+ * The address line (UI-126) sits in this bar and holds the slot
+ * `@corpus/kit/address.css` gives it, unshrunk (UI-137) — it used to be
+ * overridden here with `min-width: 0`, and `agent will answer` was clipped to
+ * 89px of the 107 it needs as a result.
+ *
+ * Nothing had to be taken from anything to pay for that. This hint is the item
+ * with slack: it wraps to a second line inside the same bar, whose height is
+ * set by the two submit buttons beside it, so the whole of it is still read.
+ * That is why there is no `text-overflow` here and there is one on the thread
+ * composer's hint — that foot is a single 17px row, and a hint that wrapped
+ * there would make the composer taller instead of giving anything up.
+ */
 .compose-actions .hint {
   font-family: var(--mono);
   font-size: 10.5px;

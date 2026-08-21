@@ -382,3 +382,196 @@ basis with `flex: 0 1 auto` fails five of the twenty-two specs.
 Recorded rather than quietly amended, because "the test only fails on CI" is the
 shape that gets a real defect waved through, and here it was the opposite —
 twice.
+
+### A product defect this issue shipped, found by CI, 2026-08-21 (ui-dev, ran on: opus)
+
+The third CI failure was **not** the test's. Real Chromium (Playwright, Desktop
+Chrome) against the real Vite dev server on **5283**
+(`CORPUS_SERVER_ORIGIN=http://127.0.0.1:8893`, never 5173 / 8765), at all three
+composer hosts.
+
+#### 1. What CI was right about
+
+Three runs in a row: ``Error: `agent will answer` did not fit its slot``. The
+reserve was `22ch`, and `22ch` is a number this laptop produced: 22 × 6.313px is
+139.08px, and 141.56px was what the reply composer's footer had spare. On CI's
+Linux mono the footer's other items are wider, the pill shrank below its basis to
+**131.61px**, and at that width the **ordinary live statement** no longer fitted.
+
+SHARED-057 clause 3 sizes this box *"for the text people actually have… so
+revealing is the uncommon case and not the ordinary reading path"*. A slot that
+clips `agent will answer` is that clause violated. CI was a second machine, not a
+special environment, and the same clip was already reachable here — see §3.
+
+**The arithmetic that made it fragile.** `22ch` scales with the font. The pill's
+chrome does not: 20px of padding and border, a 5px gap, a caret. So `22ch` buys
+`22 − chrome/ch` characters of sentence — 17.3 in this repo's mono on macOS, and
+fewer in any mono whose `ch` is smaller. It was never a 17-character reserve. It
+was a 22-character reserve minus a font-dependent tax, and it happened to clear
+17 characters by 1.91px on the machine that chose it.
+
+#### 2. The floor, in `ch`, and what it holds
+
+```css
+--address-hold: 17ch;    /* `agent will answer` */
+--address-chrome: 33px;  /* 20 padding+border · 5 gap · 8 caret */
+--address-slot: calc(var(--address-hold) + var(--address-chrome));
+min-width: var(--address-slot);
+flex: 0 1 var(--address-slot);
+```
+
+**17 characters, and what they hold: `agent will answer`** — the ordinary live
+statement, before anybody picks a recipient or a weight. `Nobody is asked` (15)
+fits inside it. Everything longer still truncates from the right, so *who
+answers* survives and the weight gives, exactly as before.
+
+The floor and the preference are now one number, and the number is derived from
+the sentence rather than from a footer's spare room. `--address-chrome` is in px
+because the chrome is in px, and the caret's 8px is a full em of its own font
+size rather than the 4.83px this machine renders `▾` at — the glyph is not in the
+mono and comes from whatever fallback the machine has, so a wider one must not
+eat a character. Measured here: the pill is **140.45px** against the 139.06 it
+was, +1.4px, absorbed by the send button's `margin-left: auto`. `send x=444.58`
+before and after.
+
+#### 3. What yields instead — measured, not assumed
+
+The footer's room is fixed and something must truncate. The hint is what gives,
+and the numbers say why. At the reading width (column 560px, `.composer-foot`
+434.16px) the foot's items are:
+
+```
+📎 clip            24.00
+address slot      140.45
+◉ ask agent        69.55
+thread stays open 107.47   ← the largest item after the address
+Reply ⌘↵           50.58
+4 × 10px gap       40.00
+```
+
+The hint is the only item that is neither the sentence nor a control, and it is
+the biggest of them. It now takes what is left over and truncates (`flex: 1 1 0`,
+`max-width: max-content`, ellipsis); the toggle and the send button are
+`flex: none`. Measured down a narrowing column, the address and both controls
+hold their size and only the hint gives:
+
+```
+column 560   hint 107.47   send x=444.58 w=50.58   one row
+column 480   hint  71.42   send x=406.42 w=50.58   one row
+column 440   hint  31.42   send x=366.42 w=50.58   one row   (reads `thr…`)
+column 240   hint  15.88   send x=166.42 w=50.58   three rows, every control whole
+```
+
+Before this, the same narrowing squeezed *everything*: at column 480 the toggle,
+the hint and the send all shrank and wrapped to 34px tall, and UI-137's own
+falsification recorded `send w=36.69 h=34 → w=23.94 h=51` — a 24px-wide,
+three-line-tall control. `flex-wrap: wrap` on `.composer-foot` is the last valve
+for a column near `MIN_COLUMN_WIDTH`: whole controls stack instead of every one
+of them turning into a sliver. Nothing in that layout depends on what the line
+says, so the wrap point is a property of the footer and never of its content.
+
+**The global composer** needed nothing taken from anything. Its hint wraps to a
+second line inside a bar whose height the two submit buttons already set, so the
+whole of `@ agents · / skills · [[ refs · ↵ newline` is still read
+(`.compose-actions` bar height 74.13px, unchanged).
+
+#### 4. The comment popover, which was already clipping the ordinary line
+
+The 294px foot was **not** survivable, and it was wrong before CI said anything:
+measured on this machine, `agent will answer` had 93px of the 107 it needs and
+was clipped. That host has no hint — 📎, the address, `◉ ask agent`,
+`Comment ⌘↵` — so every item in it is either the sentence or a control and there
+is nothing to truncate. At their natural size they need **327.22px**:
+
+```
+📎 24.00 · address 140.45 · ◉ ask agent 69.55 · Comment ⌘↵ 63.22 · 3×10 gap 30.00
+= 327.22   + 24px padding + 2px border = 353.22
+```
+
+**So `.comment-pop` is 356px rather than 320px** — a 36px wider card, once,
+decided by the layout. Measured after: foot 330px, one row, `agent will answer`
+whole, `Comment ⌘↵` at `x=731.78` in both the held and the released state. This
+is the one visible change beyond the pill and it is stated rather than slipped
+in. UI-070's criterion for the surface still holds: the card does not reflow into
+a panel, and its width does not move when the line's words change. Verified by
+screenshot and by `anchors`, `anchor-layer`, `comment-move` and `turn-comment`,
+which are green unmodified.
+
+#### 5. Simulating CI's pressure, rather than trusting this machine's metrics
+
+A new sixth test, `a narrower column and wider siblings still leave the statement
+whole`, constructs the pressure with two levers at once and neither is a font
+this machine happens not to have:
+
+1. **A narrower column** — the view document carries `width: 264`, so the reading
+   column is 440px and the foot 356px: **78px less room** than the number the old
+   reserve was fitted to.
+2. **Wider siblings** — `letter-spacing: 0.12em` on everything in the foot
+   *except* the address, which is what "CI's mono renders the other items wider"
+   does to the layout without touching the sentence the address has to hold.
+
+It asserts the foot really is short of room (the hint is clipped — otherwise
+nothing below is being tested), then the three things that matter: the Send box
+is identical across the weight clause's arrival, `agent will answer` is not
+clipped, and the pill equals `--address-slot`.
+
+**The slot is now read out of the running page** rather than written down:
+`slotWidth()` measures a probe of `width: var(--address-slot)` inside the line,
+so it inherits the line's font. A hard-coded `139.08` is what failed CI twice,
+and a `22ch` probe was the same mistake in a better disguise.
+
+#### 6. Falsification — twice, each with the kit rebuild
+
+**(a) The floor removed.** `min-width: var(--address-slot)` → `min-width: 0` in
+`address.css` (the exact pre-fix state: shrink permitted below the basis),
+`npm run build -w packages/kit`, the spec re-run. **Exactly one test failed, with
+CI's own sentence:**
+
+```
+FAIL: the global composer's line has the same slot, and its submits hold
+Error: `agent will answer` did not fit its slot
+Expected: false   Received: true
+```
+
+Restored, rebuilt, **23 passed.**
+
+**Where the floor binds, and why the assertion moved to the global composer.**
+The reply composer's foot now wraps, and a wrapping flex line never shrinks the
+items on it — so once the hint yields from a `0` basis, the address there cannot
+be squeezed at all. `.compose-actions` does not wrap and its hint asks for its
+full 232px, so the address is the item flexbox takes from: **119.84px against the
+140.45 the slot declares, clipped**, the moment `min-width` comes off. That is
+where the floor is load-bearing, and that is where the spec now asserts it.
+
+A stronger first attempt — deleting the declaration outright — restored
+`min-width: auto` and blew up nine tests with pills of 282px and 554px. True, but
+it falsifies the *ceiling* as well as the floor, so it was redone as above.
+
+**(b) The yield removed.** The hint's `flex: 1 1 0` / `max-content` / ellipsis
+block cut back to `min-width: 0`. The new pressure test failed on its own guard —
+`the footer was not under pressure` — because an `auto`-basis hint wraps to a
+second row instead of giving anything up. Restored, **23 passed.**
+
+#### 7. Checks
+
+- `address-geometry.spec.ts`: **23 passed** — UI-127's 5, UI-130's 12 and
+  UI-137's 5 unmodified, plus 1 new. The two amendments inside the existing
+  tests are the slot probe (a pixel constant → the declaration) and one added
+  assertion in the global-composer test.
+- `recipient`, `weight`, `compose-keyboard`, `resident`, `residents-tab`:
+  **46 passed**, the same count UI-127, UI-130 and UI-137 recorded.
+- `thread`, `anchors`, `anchor-layer`, `comment-move`, `turn-comment`,
+  `composer-sticky`, `attachments`, `autocomplete-keys`: **63 passed.**
+- `forms`, `context-menu`, `clipboard`, `console`, `reader-head-geometry`,
+  `column-width`, `collapse`, `smoke`: **117 passed.**
+- Scoped unit run (`packages/kit apps/ui/src`): **209 files, 4109 tests passed.**
+- `tsc --noEmit`: clean in `packages/kit` and in `apps/ui`. ESLint and Prettier
+  clean over every file touched. No rule disabled.
+- **One pre-existing flake seen and not caused here**: `reveal.spec.ts` →
+  *"reveals the first of the duplicates when that is the one clicked"* fails
+  about half the time locally on a scroll-settle race (`distanceToItem` 23.06
+  against `< 12`). It opens a todos **document** reader — no composer foot, no
+  comment popover — so nothing in this change can reach it, and CI's
+  `retries: 2` covers it. Reported rather than fixed.
+- Four scratch specs were written for the measurements above and deleted. Ports
+  5283 / 8893 were used and are free; Playwright starts and stops its own Vite.

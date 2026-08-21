@@ -881,6 +881,26 @@ async function slotBoxes(page: Page, surface: string, send: string): Promise<Rec
   );
 }
 
+/**
+ * The slot the layout gave the line, resolved by the browser rather than
+ * written down here.
+ *
+ * `--address-slot` is `calc(17ch + 33px)`, and a spec that turned that into a
+ * pixel count would pin the machine that ran it — which is exactly how this
+ * spec failed CI twice. The probe inherits the line's font, so `ch` resolves
+ * the way the line's own `ch` resolves, whatever mono the machine has.
+ */
+async function slotWidth(page: Page, surface: string): Promise<number> {
+  return page.locator(`[data-address-line="${surface}"]`).evaluate((el) => {
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:var(--address-slot)";
+    el.appendChild(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    return width;
+  });
+}
+
 /** Whether the line's own text is clipped, and what it reveals if it is. */
 async function revealOf(
   page: Page,
@@ -984,29 +1004,19 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
     expect(said[2]).toContain(`${SHORT_NAME} will answer`);
     expect(new Set(said).size).toBe(3);
 
-    // The line never grows past its declared slot — and **the slot is a
-    // ceiling, not an equality**.
+    // The line never grows past its declared slot — and **the slot is read
+    // from the declaration, never written down as a pixel count**.
     //
-    // `address.css` declares `flex: 0 1 var(--address-slot)`, so shrink is
-    // permitted on purpose: a footer with less room than the basis gets a
-    // narrower pill, and the layout still decides it rather than the text.
-    // Asserting `width === 22ch` pinned a machine instead of the rule and
-    // failed CI twice — first against a hard-coded 139.08px, then against this
-    // probe, because CI's mono makes the footer's other items wider and the
-    // pill legitimately shrinks to 131.61px.
+    // A hard-coded `139.08` failed CI twice, because `139.08` is what this
+    // repo's mono resolves `22ch` to on macOS and CI's Linux resolves the same
+    // declaration to `131.61`. Reading `--address-slot` out of the running page
+    // asks the question in the unit the answer is in.
     //
     // The rule's other half is asserted above: three recipients produce three
     // different sentences, and `toEqual(at)` proves none of them moved
     // anything. This adds the ceiling — content can never push the pill *wider*
     // than the slot the layout gave it.
-    const slot = await page.locator('[data-address-line="th_host"]').evaluate((el) => {
-      const probe = document.createElement("span");
-      probe.style.cssText = "position:absolute;visibility:hidden;width:22ch";
-      el.appendChild(probe);
-      const w = probe.getBoundingClientRect().width;
-      probe.remove();
-      return w;
-    });
+    const slot = await slotWidth(page, "th_host");
     expect(at["line"]?.width).toBeLessThanOrEqual(slot + 0.5);
     // And it is sized for the text people actually have (SHARED-057 clause 3):
     // the ordinary live line with no weight stated is read, not revealed. The
@@ -1056,10 +1066,29 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
     await page.keyboard.press("c");
     await expect(page.locator(".compose-panel")).toBeVisible();
 
-    // The global composer answers to the orchestrator by default, so the weight
-    // clause needs a recipient that carries one: pick the long-named resident.
     const line = page.locator('button[data-address-line="compose"]');
     await settled(page, line);
+
+    // **This bar is where the floor is load-bearing** (UI-137's third finding),
+    // and the state it opens in is the one that shows it: the global composer
+    // answers to the orchestrator by default, so the line reads the ordinary
+    // live statement with nothing picked yet.
+    //
+    // This action row does not wrap, and its hint asks for the whole 232px of
+    // `@ agents · / skills · [[ refs · ↵ newline`, so the address is the item
+    // flexbox takes from — measured at 119.84px against the 140.45 the slot
+    // declares, with `agent will answer` clipped, the moment `min-width` comes
+    // off `.composer-address`. The reply composer cannot show this: its foot
+    // wraps, and a wrapping flex line never shrinks the items on it.
+    const ordinary = await revealOf(page, "compose");
+    expect(ordinary.text).toBe("agent will answer");
+    expect(ordinary.clipped, "`agent will answer` did not fit its slot").toBe(false);
+    expect(
+      (await slotBoxes(page, "compose", ".compose-actions .btn-ask"))["line"]?.width,
+    ).toBeCloseTo(await slotWidth(page, "compose"), 1);
+
+    // The weight clause needs a recipient that carries one: pick the long-named
+    // resident.
     await line.click();
     await page.locator(`${picker("compose")} [data-recipient-lane="th_gone"]`).click();
     await expect(line).toContainText(`· ${HEAVY_KEY}`);
@@ -1104,11 +1133,14 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
     await page.getByRole("menu").locator('[data-act="comment"]').click();
     await expect(page.getByRole("dialog", { name: "New comment" })).toBeVisible();
 
-    // The **short** name here, deliberately. This footer is 294px wide, and a
-    // 45-character name saturates the old content-driven width in both states —
-    // measured 164.13px before and after — so the long name would have made
-    // this test pass against the defect. The short one moves it: 134.38 →
-    // 157.09, and `Comment ⌘↵` with it.
+    // The **short** name here, deliberately. This footer was 294px wide when
+    // the test was written, and a 45-character name saturated the old
+    // content-driven width in both states — measured 164.13px before and after
+    // — so the long name would have made this test pass against the defect. The
+    // short one moves it: 134.38 → 157.09, and `Comment ⌘↵` with it. (The card
+    // is 356px since UI-137's third finding, and the foot 330px: the address
+    // slot no longer fits inside 294 and this foot has no hint to take it from.
+    // The reasoning is in `anchors.css`, beside the width.)
     const line = page.locator('button[data-address-line="comment"]');
     await settled(page, line);
     await line.click();
@@ -1126,5 +1158,98 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
 
     expect(held.hits()).toBeGreaterThan(0);
     expect(await slotBoxes(page, "comment", SEND)).toEqual(before);
+  });
+
+  /**
+   * **The footer under a machine wider than this one** — UI-137's third
+   * finding, and the first one that was the product's rather than the test's.
+   *
+   * ## What CI kept saying
+   *
+   * Three runs in a row: ``Error: `agent will answer` did not fit its slot``.
+   * The first `--address-slot` was `22ch`, a number reached by measuring this
+   * laptop's footer and taking the widest whole-`ch` reserve that fitted in it.
+   * On CI's Linux mono the footer's other items are wider, the pill shrank
+   * below its basis to 131.61px against 139.08 here, and at that width the
+   * **ordinary live statement** no longer fitted. SHARED-057 clause 3 sizes
+   * this box "for the text people actually have… so revealing is the uncommon
+   * case and not the ordinary reading path" — a slot that clips
+   * `agent will answer` is that clause violated, on CI, on a user's machine
+   * with a different mono, and in any column narrower than the reading width.
+   *
+   * ## The pressure, constructed rather than waited for
+   *
+   * Two things at once, and neither of them is a font this machine happens not
+   * to have:
+   *
+   * 1. **A narrower column.** The view document carries `width: 264`, so the
+   *    reading column is 440px rather than 560 (`readerWidth`,
+   *    `apps/ui/src/board/columnWidth.ts`) and the foot 356px rather than
+   *    434 — 78px less room than the number the old reserve was fitted to.
+   * 2. **Wider siblings.** `letter-spacing` on everything in the foot *except*
+   *    the address, which is what "CI's mono renders the other items wider"
+   *    does to the layout, without touching the sentence the address has to
+   *    hold. The address's own font is untouched: a test that widened that too
+   *    would be asking the slot to hold more than 17 characters, which it
+   *    never promised.
+   *
+   * Under both, the assertions that matter are the same three the tests above
+   * make at the reading width — the statement fits, the pill is the slot, the
+   * send button does not move — plus the one this fix is answerable for: the
+   * hint is what gave.
+   */
+  test("a narrower column and wider siblings still leave the statement whole", async ({ page }) => {
+    await stubCorpus(page, [{ ...THREADS_VIEW, extra: { width: 264 } }, HOST, GONE, SKILL], {
+      lanes: NAMED_LANES,
+      agent: { live: true, since: NOW.toISOString() },
+    });
+    const held = await holdSkillBody(page);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.addStyleTag({
+      content: `.composer-foot > *:not(.composer-address) { letter-spacing: 0.12em }`,
+    });
+    await page.locator('.row[data-row-doc="th_host"]').click();
+    await expect(page.locator('.reader [data-composer="th_host"]')).toBeVisible();
+    await page.mouse.move(AWAY.x, AWAY.y);
+
+    const line = page.locator('[data-address-line="th_host"]');
+    await expect(line).toContainText(`· ${HEAVY_KEY}`);
+    await settled(page, page.locator(REPLY_SEND));
+    const under = await slotBoxes(page, "th_host", REPLY_SEND);
+    expect(await boxOf(page.locator(".reader .composer-foot"))).toEqual(
+      expect.objectContaining({ width: 356 }),
+    );
+
+    // The pressure is real: the hint is clipped, which is the whole of what
+    // this fix decided. If it is not, the footer was never short of room and
+    // nothing below is being tested.
+    const hint = await page.locator(".reader .composer-foot .composer-hint").evaluate((el) => ({
+      clipped: el.scrollWidth > el.clientWidth,
+      width: el.getBoundingClientRect().width,
+    }));
+    expect(hint.clipped, "the footer was not under pressure").toBe(true);
+
+    // The weight clause arrives into a footer that is already out of room.
+    held.release();
+    await expect(line).toContainText(HEAVY_LABEL);
+    await settled(page, page.locator(REPLY_SEND));
+    expect(held.hits()).toBeGreaterThan(0);
+    expect(await slotBoxes(page, "th_host", REPLY_SEND)).toEqual(under);
+
+    // And the ordinary live statement is read rather than revealed, at this
+    // width, with the siblings demanding more than the footer has.
+    await page.locator('button[data-address-line="th_host"]').click();
+    await expect(page.locator(POP)).toBeVisible();
+    await page.locator(`${PICKER} [data-recipient-lane="orchestrator"]`).click();
+    const reveal = await revealOf(page, "th_host");
+    expect(reveal.text).toBe("agent will answer");
+    expect(reveal.clipped, "`agent will answer` did not fit its slot").toBe(false);
+
+    // The floor held: the pill is the slot the layout declared, not what was
+    // left over after the siblings had taken theirs.
+    const slot = await slotWidth(page, "th_host");
+    expect(under["line"]?.width).toBeCloseTo(slot, 1);
+    expect(await slotBoxes(page, "th_host", REPLY_SEND)).toEqual(under);
   });
 });

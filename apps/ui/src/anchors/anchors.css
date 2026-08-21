@@ -126,7 +126,9 @@
 .comment-pop {
   position: fixed;
   z-index: 60;
-  width: 320px;
+  /* 356px, and the 36px it gained over 320 are the address line's slot — the
+     arithmetic is under `.comment-pop .composer-foot` below (UI-137). */
+  width: 356px;
   max-width: calc(100vw - 24px);
   background: var(--surface);
   border: 1px solid var(--line);
@@ -230,10 +232,33 @@
   margin-top: 8px;
 }
 
-/* The address line (UI-126) sits in the foot; the popover is 320px, so the
-   line truncates rather than widening it — UI-070's criterion for this surface
-   is that a composer affordance must not reflow it into a panel. */
-.comment-pop .composer-address {
-  min-width: 0;
-  flex-shrink: 1;
+/*
+ * The address line (UI-126) sits in this foot too, and holds the same slot it
+ * holds everywhere: `agent will answer` is read here, not revealed (UI-137).
+ *
+ * **That is why the card is 356px and not the 320px it was.** This foot has no
+ * hint to give — it is 📎, the address, `◉ ask agent` and `Comment ⌘↵` — so
+ * every item in it is either the sentence or a control, and there is nothing
+ * left to truncate. Measured at their natural size they need 327.22px:
+ *
+ *     📎 clip            24.00
+ *     address slot      140.45   (17ch + chrome, `--address-slot`)
+ *     ◉ ask agent        69.55
+ *     Comment ⌘↵         63.22
+ *     3 × 10px gap       30.00
+ *                      -------
+ *                       327.22   + 24px of padding + 2px of border = 353.22
+ *
+ * 356 is that, rounded up to a multiple of four. At 320 the card gave the foot
+ * 294px and the shortfall came out of the address: measured `agent will answer`
+ * at 93px of the 107 it needs, clipped on the ordinary reading path — the same
+ * defect CI found at the reply composer, and it was here before CI found it
+ * there.
+ *
+ * UI-070's criterion for this surface still holds: a composer affordance must
+ * not reflow the popover into a panel. 352px is 32px of card, once, decided by
+ * the layout — not a width that moves when the line's words change.
+ */
+.comment-pop .composer-foot {
+  flex-wrap: wrap;
 }

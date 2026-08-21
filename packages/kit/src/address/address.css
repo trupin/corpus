@@ -16,7 +16,6 @@
 .composer-address {
   position: relative;
   display: flex;
-  min-width: 0;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-3);
@@ -51,48 +50,76 @@
    * trigger and not the defect.
    *
    * **The number, measured against real content** (the rider's third clause).
-   * Everything here is in the line's own font, `10.5px var(--mono)`, where
-   * `1ch = 6.3219px`. The pill spends 30px on chrome — 9px of padding and 1px
-   * of border each side, a 5px gap and a 4.8px caret — so a slot of `w` shows
-   * `w − 30` of text.
+   * The line is monospaced (`10.5px var(--mono)`), so every statement has an
+   * exact length in characters and that length is the same on every machine.
+   * The pill also spends `--address-chrome` on everything that is *not* the
+   * sentence, so a slot of `w` shows `w − var(--address-chrome)` of text:
    *
-   *     115 (18ch)  Nobody is asked                              floor, whole
-   *     137 (22ch)  agent will answer                            whole
-   *     207         agent will answer · Standard
-   *     220         researcher will answer · heavy
-   *     289         ui-dev will answer · Small and mechanical
-   *     302         agent will answer · Heavy or judgment-laden
-   *     333         claims-review will answer · weight set at launch
-   *     384         release-researcher will answer · Heavy or judgment-laden
+   *     15ch  Nobody is asked                                    floor, whole
+   *     17ch  agent will answer                        ordinary and live, whole
+   *     27ch  agent will answer · Standard
+   *     29ch  researcher will answer · heavy
+   *     40ch  ui-dev will answer · Small and mechanical
+   *     42ch  agent will answer · Heavy or judgment-laden
+   *     47ch  claims-review will answer · weight set at launch
+   *     56ch  release-researcher will answer · Heavy or judgment-laden
    *
-   * **And the room the footer actually has, which is the binding constraint.**
-   * A column showing a reader is 560px wide — `READING_WIDTH_CEILING` in
-   * `apps/ui/src/board/columnWidth.ts`, the board's own reading width, not an
-   * accident of this fixture. That gives `.composer-foot` 434.2px, and its
-   * other four items need 292.6px at their natural size (📎 24, the ask-agent
-   * toggle 69.5, the hint 107.5, `Reply ⌘↵` 50.6, four 10px gaps). **141.6px
-   * is left.** `22ch` is 139.1px: the widest whole-`ch` slot that takes
-   * nothing from the send button — which today is squeezed to 41.9px of its
-   * natural 50.6px, so the reserve gives the send label back rather than
-   * costing it anything.
+   * **The slot holds 17 characters: `agent will answer`.** That is the
+   * ordinary live statement — what the line says before anybody picks a
+   * recipient or a weight — and the rider requires the ordinary reading path
+   * to be read rather than revealed. The floor line (`Nobody is asked`, 15)
+   * fits inside it. A resident's name or a weight clause past that truncates
+   * **from the right**, which is the deliberate priority: *who answers*
+   * survives, and the weight — the shorter question, stated in full in the
+   * popover one gesture away — is what gives. There is no wider honest number:
+   * the name is free text from a profile, so the sentence is unbounded from
+   * above. Some content must truncate and this is the choice of which, the
+   * same shape of decision UI-127 recorded for the statement's four lines.
    *
-   * So the slot holds the ordinary live line whole (`agent will answer`, 17
-   * characters) and the floor line whole (`Nobody is asked`, 15). A resident's
-   * name or a weight clause past that truncates **from the right**, which is
-   * the deliberate priority: *who answers* survives, and the weight — the
-   * shorter question, and the one the popover states in full one gesture away
-   * — is what gives. There is no wider honest number: the name is free text
-   * from a profile, so the sentence is unbounded from above, and the footer's
-   * room is fixed. Some content must truncate and this is the choice of which,
-   * the same shape of decision UI-127 recorded for the statement's four lines.
+   * **Why the number is `17ch + chrome` and not a round `ch` count.** The
+   * first version of this reserve was `22ch`, chosen because 22 × 6.313px is
+   * 139px and 141.6px was what the reply composer's footer had spare. That
+   * pinned the machine that measured it twice over. A `ch` is the advance of
+   * `0` in whatever mono the machine resolves, and the chrome is a fixed count
+   * of pixels, so `22ch` buys 17.3 characters of sentence in this repo's mono
+   * on macOS and fewer in a mono whose `ch` is smaller. CI's Linux clipped
+   * `agent will answer` at 131.6px of pill — the ordinary statement, cut, on
+   * the reading path — three runs in a row. Deriving the slot from the
+   * sentence instead (`17ch`) and adding the chrome in the unit the chrome is
+   * actually in (px) makes the reserve say what it means in every font.
+   *
+   * **The floor, and what yields instead.** `min-width` is what makes this a
+   * reserve rather than a preference: `flex-shrink` alone let a footer whose
+   * other items ran wide take the sentence's own characters, which is the
+   * defect wearing a different font. The footer's room is still fixed, so
+   * something must give when it runs out, and the change is *which*: the
+   * composer's hint (`thread stays open`) truncates, and the toggle and the
+   * send button hold their natural size — see `apps/ui/src/thread/thread.css`,
+   * which sets that order. The hint repeats what pressing send does. The
+   * address line says who is about to be spoken to.
    *
    * The whole line is on the pill's own `title` (`ComposerAddress.tsx`), so a
-   * truncated statement is revealed rather than lost. In a footer with less
-   * room than this — the comment popover is 294px wide — the slot shrinks with
-   * `flex-shrink: 1` against a **fixed** basis, so it is still the layout and
-   * never the text that decides it.
+   * truncated statement is revealed rather than lost.
    */
-  --address-slot: 22ch;
+
+  /* 17 characters — `agent will answer`, the ordinary live statement. */
+  --address-hold: 17ch;
+
+  /*
+   * What the pill spends on things that are not the sentence: 9px of padding
+   * and 1px of border each side (20px), the 5px gap before the caret, and 8px
+   * for the caret. The caret is `▾`, which is not in the mono and is drawn
+   * from whatever fallback the machine has — this machine renders it at
+   * 4.83px, and the reserve takes a full em of its 8px size instead, so a
+   * wider fallback cannot eat a character of the sentence.
+   */
+  --address-chrome: 33px;
+
+  --address-slot: calc(var(--address-hold) + var(--address-chrome));
+
+  /* The floor and the preference are the same number: the slot is what the
+     layout gives this line, and content can neither grow it nor cut into it. */
+  min-width: var(--address-slot);
   flex: 0 1 var(--address-slot);
 
   /*
