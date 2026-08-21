@@ -131,10 +131,30 @@
   flex: none;
 }
 
+/*
+ * The row count, and the two things that keep it from moving `.col-title`
+ * (SPEC.md §11's rider, signed 2026-08-20 — "a count reaching two digits" is
+ * named in it).
+ *
+ * `.col-title` is the truncating item in this row, so a count that widens does
+ * not eat slack — once the title is long enough to fill the head, it re-cuts the
+ * title, which is the text a person is reading.
+ *
+ * - **Tabular figures** make `19` and `10` the same width, so a count changing
+ *   inside a digit count moves nothing at all.
+ * - **`min-width: 3ch`** covers the crossing itself: `—`, `7`, `12` and `128`
+ *   all draw into one box. Three, not four: a fourth reserved digit is a visible
+ *   hole beside every ordinary column, and the rider asks for the box the text
+ *   people actually have. A workspace whose column reaches `1024` widens by one
+ *   digit at that crossing and then stays put.
+ */
 .col-count {
   margin-left: auto;
   font-family: var(--mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
   color: var(--ink-3);
   flex: none;
 }

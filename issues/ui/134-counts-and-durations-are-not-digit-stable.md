@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -71,18 +71,18 @@ Each of these changes while a person is watching:
 
 ## Acceptance Criteria
 
-- [ ] **Measure the box, change the content, measure again, assert unchanged**: a
+- [x] **Measure the box, change the content, measure again, assert unchanged**: a
       Playwright spec renders each affected span at a one-digit value, records its
       bounding box and its right-hand neighbour's, changes the value to two
       digits, and asserts **both boxes are unchanged**
-- [ ] The assertion covers at least one span per surface — board, reader, console,
+- [x] The assertion covers at least one span per surface — board, reader, console,
       kit row, plugin — not one span in total
-- [ ] `humanizeElapsed`'s unit crossings are covered: `59m → 1h 00m` and
+- [x] `humanizeElapsed`'s unit crossings are covered: `59m → 1h 00m` and
       `23h 59m → 1d 00h` are the widest jumps in the set and are not solved by
       digit width alone
-- [ ] Nothing is achieved by changing what a count *says*. Truncating `128` to
+- [x] Nothing is achieved by changing what a count *says*. Truncating `128` to
       `99+` would be a separate product decision and is **not** in scope
-- [ ] **Falsification**: remove the numeric setting and watch the spec fail
+- [x] **Falsification**: remove the numeric setting and watch the spec fail
 
 ## Technical Design
 
@@ -160,15 +160,140 @@ geometry spec. jsdom would pass against the current code.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+Implemented on: **opus**. Real Chromium via Playwright against the real Vite dev
+server (`CORPUS_UI_PORT=5289`, `CORPUS_SERVER_ORIGIN=http://127.0.0.1:8899`).
+
+### Reproduction
+
+The issue's own grep, re-run before any change, still returned nothing:
+
+```
+/usr/bin/grep -rn "tabular-nums\|font-variant-numeric" \
+  --include='*.css' --include='*.ts' --include='*.tsx' --include='*.html' \
+  . --exclude-dir=node_modules --exclude-dir=dist
+→ no matches
+```
+
+### The ledger
+
+**Changed — tabular figures _and_ a reserved slot.** These are the spans where
+the number is the whole content and its digit count changes under the eye:
+
+| Span | File | Reservation |
+| --- | --- | --- |
+| `.col-count` | `apps/ui/src/board/Column.css` | `min-width: 3ch` |
+| `.comments-count` _(new span inside 💬)_ | `apps/ui/src/reader/Reader.css`, `ReaderHead.tsx` | `min-width: 2ch` |
+| `.index-failed` | `apps/ui/src/console/console.css` | `min-width: 9ch` |
+| `.age` | `packages/kit/src/row/row.css` | `min-width: 3ch` |
+| `.unread` | `packages/kit/src/row/row.css` | `min-width: calc(3ch + 24px)`, centred |
+| `.todos-group-count` | `plugins/todos/ui/todos.css` | `min-width: 2ch` |
+
+**Changed — tabular figures only**, because no honest reservation exists:
+
+- `.c-counts` — its *segments* come and go (`queued` and `deferred` are omitted
+  at zero), so a `min-width` would be a box sized for a string.
+- `.scope-count` — the plural on `member` and the `listed`/`in scope` suffix both
+  vary on non-digit axes, and it changes on a selection rather than a clock.
+  UI-131's own note already lists it as wanting its own measurement.
+- `.working` — SPEC.md §8's pending row. Defensive: the row's box is not its
+  text, and the tick was measured to move nothing either way.
+
+**Already safe — listed, not changed:**
+
+- `.cp-meta` (`9 turns`) — a block on its own line inside `.comments-pop`, which
+  is `width: 300px`.
+- The save chip's anchor counts — `.save-chip` is a **reserved** box with a
+  documented decision (UI-135) about which state overflows it. Re-sizing another
+  issue's box was not this issue's to do.
+- `.lane-weight` — `width: 24ch` (UI-131).
+- `humanizeElapsed`'s two callers — `.t-resident-line` and `.address-line-text`
+  both truncate with an ellipsis and keep the whole sentence on a `title`.
+
+**Found and not fixed, flagged instead:** `.lane-meta` is in this issue's table
+but renders a **word** — `live`, `lapsed`, `waiting`, `unknown` — not a number.
+It does change width on the 15 s clock, and `margin-left: auto` puts it against
+`.lane-name`, so it does move something. That is a word-width question in the
+surface UI-131 is holding, not a digit crossing, and no digit setting touches it.
+
+### What happens at a digit-count crossing
+
+Every reservation is sized to **the digit range the site plausibly reaches**, not
+to a worst case — the rider asks for the box the text people actually have, and a
+four-digit slot beside a count that is always `3` is a visible hole. So:
+
+- `.col-count` holds `—` through `128`; a column reaching `1024` widens by one
+  digit **once** and then holds.
+- `.comments-count` and `.todos-group-count` hold through `99`; the hundredth
+  thread or item widens once.
+- `.age` holds `3h` → `12d` → `10w`; `just now` (8 characters) and
+  `stale · 8mo` (11) exceed it naturally, and those are tier changes, hours
+  apart, not digit crossings.
+- `.index-failed` holds through `999 failed`.
+- `humanizeElapsed` is the one nothing closes: `59m → 1h 00m` adds three
+  characters and `23h 59m → 1d 00h` **removes** one. Those are shape changes, not
+  width changes, and `packages/kit/src/time/elapsed.test.ts` pins them so a later
+  format change is a deliberate one.
+
+### The spec
+
+`apps/ui/e2e/digit-geometry.spec.ts`, 7 tests, all passing — one per surface
+(board, kit row, reader, console, plugin) plus two on §8's pending row driven by
+`page.clock`, which is the one site that moves with nobody touching anything.
+
+Where a surface can show both values at once — two columns, three rows, two todo
+groups — the assertion compares them **in one frame**, which removes every
+question about what else settled between two measurements.
+
+### Falsification
+
+Every `font-variant-numeric`, `min-width`, `text-align` and `justify-content`
+this issue added was stripped from all six stylesheets, and the spec re-run:
+
+```
+the board's column count …          ✘  the count's box grew: 6.625 → 13.25px
+the kit row's unread pill …         ✘  `9` = 30.33px against `new` = 42.97px
+the reader's thread count …         ✘  the 💬 control: 45.25 → 51.875px
+the console's failed-chunk count …  ✘  the sentence: 1068.02 → 1054.77px
+the todos plugin's group count …    ✘  the list's name: 282.70 → 275.42px
+the pending row's clock (×2)        ✓  passes either way — see below
+```
+
+Restored from byte copies, re-run, 7 passed.
+
+**The two pending-row tests pass with and without the change, and that is
+recorded rather than hidden.** The row's box is decided by the thread card, not
+by its sentence, so nothing there was ever moving: the tests are a guard on a
+site the audit expected to be broken and measurement found sound. What the run
+did surface was a **measurement** error worth keeping — a thread card settles in
+stages, and a box read on the frame `.working` first appears was 308.13px against
+a settled 456.16px. `settledBox` in the spec waits for two agreeing measurements,
+because the question is always *did this move by itself*.
+
+### Two fixture gaps closed on the way
+
+`stubCorpus` answered `unreadThreads: 0` for every row, so no spec could reach
+the unread pill at all — and it is the one badge whose content is a **word or a
+number**, which is the only case a reservation rather than a font feature fixes.
+It is now seeded (`StubRow.unreadThreads`, absent ⇒ `0`). The todos column's own
+aggregate route is answered in the spec, because `stubCorpus`'s `{}` fallback
+gives the plugin a shape it validates and refuses.
+
+### Regression sweep
+
+`apps/ui/src` + `packages/kit` unit suites — 209 files, 4107 tests, all passing.
+The whole `apps/ui` Playwright suite — 465 tests, 461 passed; the four failures
+(`smoke`, `soft-wrap`, `todos`, `turn-comment`) each pass on a serial re-run and
+are load flakes from a shared machine, not regressions. `tsc --noEmit` clean in
+`packages/kit`, `apps/ui` and `plugins/todos`. `eslint` and `prettier --check`
+clean.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in, reproduction first
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in, reproduction first
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

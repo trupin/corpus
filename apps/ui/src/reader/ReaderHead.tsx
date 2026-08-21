@@ -153,7 +153,11 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
             setOpen(open === "comments" ? null : "comments");
           }}
         >
-          💬 {threads.length}
+          {/* The count is its own box, so crossing into two digits does not
+              widen the control and re-cut `.back` and `.reader-id` beside it
+              (SPEC.md §11's rider; `.comments-count` carries the reservation).
+              `textContent` is unchanged — still `💬 1`. */}
+          💬 <span className="comments-count">{threads.length}</span>
         </button>
       )}
       <button

@@ -111,6 +111,17 @@
 }
 
 /* ── The honest pending indicator (SPEC.md §8) ── */
+/*
+ * The pending row (SPEC.md §8). Its last tier carries a duration that ticks on a
+ * clock with no data arriving at all — `still working — 18m`, `19m`, `20m` — so
+ * the figures are tabular (SPEC.md §11's rider, signed 2026-08-20).
+ *
+ * **No reservation here, and the unit crossings are not a defect.** The duration
+ * ends a sentence that ends the row: nothing is aligned against it, so
+ * `59m → 1h 00m` and `23h 59m → 1d 00h` lengthen the sentence and move nothing.
+ * Changing what `humanizeElapsed` *says* to make its three shapes one width
+ * would be a copy decision, and this row is one of its two callers.
+ */
 .working {
   display: flex;
   align-items: center;
@@ -119,6 +130,7 @@
   border-top: 1px solid var(--line);
   color: var(--ink-3);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Composer ── */
