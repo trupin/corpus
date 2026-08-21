@@ -1262,10 +1262,11 @@ that nothing tells you your skills are stale until the agent tries the verb.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| CLI-055 | `doc show` reads a whole document or nothing, so the cheapest read path bypasses the CLI | todo | P0 | — |
+| CLI-055 | `doc show` reads a whole document or nothing, so the cheapest read path bypasses the CLI | done | P0 | — |
 | CLI-056 | Help text costs an agent more to read than the work it describes | todo | P1 | — |
 | CLI-057 | `doc show` takes one id, so reading five documents costs five processes | todo | P2 | — |
 | CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | todo | P1 | — |
 | CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | todo | P2 | — |
 | SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
 | PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | todo | P1 | PLUGINS-016 |
+| CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | todo | P2 | — |
