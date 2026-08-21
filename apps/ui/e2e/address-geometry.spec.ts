@@ -984,9 +984,26 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
     expect(said[2]).toContain(`${SHORT_NAME} will answer`);
     expect(new Set(said).size).toBe(3);
 
-    // The slot is the declared 22ch — the number `address.css` measured, not a
-    // width this footer happened to settle on. 22 × 6.321875px.
-    expect(at["line"]?.width).toBeCloseTo(139.08, 1);
+    // The slot is the declared 22ch — the number `address.css` states, not a
+    // width this footer happened to settle on.
+    //
+    // Measured against the element's OWN `ch`, never against a pixel constant.
+    // `ch` is the font's zero-advance, so the same rule is 139.08px in this
+    // repo's mono on macOS and 131.61px on CI's Linux — a hard-coded 139.08
+    // pins the machine that wrote it rather than the rule, and did exactly that
+    // (PR #53, CI-only failure, two retries).
+    // The probe declares `22ch` itself rather than measuring `1ch` and
+    // multiplying: the browser rounds the whole length once, so `1ch × 22`
+    // lands 0.19px away from what `width: 22ch` actually resolves to.
+    const slot = await page.locator('[data-address-line="th_host"]').evaluate((el) => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;width:22ch";
+      el.appendChild(probe);
+      const w = probe.getBoundingClientRect().width;
+      probe.remove();
+      return w;
+    });
+    expect(at["line"]?.width).toBeCloseTo(slot, 1);
     // And it is sized for the text people actually have (SHARED-057 clause 3):
     // the ordinary live line with no weight stated is read, not revealed. The
     // two weighted ones are the uncommon case, and both carry the whole

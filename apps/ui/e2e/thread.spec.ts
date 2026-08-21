@@ -308,10 +308,13 @@ test.describe("the composer's shipped stylesheet", () => {
     await page.goto("/");
     const styles = await measure(
       page,
-      // `md-img turn-att-img` is what `CorpusImage` composes, and since UI-129
-      // it is the kit's class that carries the mockup's box — a probe on the
-      // host class alone would be measuring half the element the app renders.
-      `${COMPOSER}<img class="md-img turn-att-img" alt=""/><span class="att-file">📄 policy.pdf</span>`,
+      // `md-img turn-att-img` inside `.turn-atts` is what the thread renders,
+      // and every part of that matters since UI-129: the kit's `.md-img` carries
+      // the reserved box, the strip carries the 240px that makes it the
+      // mockup's *thumbnail* rather than the kit's reading-width default, and
+      // the host class carries the frame. A probe on any one of the three would
+      // be measuring part of the element the app draws.
+      `${COMPOSER}<div class="turn-atts"><img class="md-img turn-att-img" alt=""/></div><span class="att-file">📄 policy.pdf</span>`,
       [
         [".att-chip", ["border-radius", "font-size", "background-color"]],
         [".att-chip img", ["height"]],
@@ -328,6 +331,11 @@ test.describe("the composer's shipped stylesheet", () => {
      * (UI-129). A `max-` pair says nothing about an image that has not decoded
      * yet, which is the whole of what that issue fixed: the box has to be the
      * same before the bytes, during them and after them.
+     *
+     * The height is not stated anywhere in the product — `.turn-atts` sets the
+     * width and the kit's `aspect-ratio: 4 / 3` produces the 180. Asserting it
+     * here is asserting that the two halves of the mockup's figure still agree
+     * (PR #53 review of UI-129).
      */
     expect(styles[".turn-att-img"]?.["width"]).toBe("240px");
     expect(styles[".turn-att-img"]?.["height"]).toBe("180px");

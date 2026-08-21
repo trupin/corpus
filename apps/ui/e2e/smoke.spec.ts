@@ -224,9 +224,24 @@ test.describe("theme", () => {
     await page.goto("/");
     const compose = page.locator(".btn-compose");
 
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Tab");
+    /*
+     * Wait for the app to be interactive before tabbing, and tab **until**
+     * the button has focus rather than a fixed three times (UI-047).
+     *
+     * A fixed count assumes the tab order is already what it will be. On a
+     * loaded CI runner the shell can still be mounting when `goto` resolves, so
+     * three presses land somewhere else and the assertion fails on a product
+     * that is fine — it failed exactly that way on PR #53's first CI run. What
+     * the test is for is that the compose button is **reachable by keyboard and
+     * shows the prototype's ring** when it is, and neither claim is about how
+     * many presses it takes.
+     */
+    await expect(compose).toBeVisible();
+    await expect(page.locator(".board")).toBeVisible();
+    for (let press = 0; press < 12; press += 1) {
+      if (await compose.evaluate((el) => el === document.activeElement)) break;
+      await page.keyboard.press("Tab");
+    }
     await expect(compose).toBeFocused();
 
     await expect(compose).toHaveCSS("outline-width", "2px");

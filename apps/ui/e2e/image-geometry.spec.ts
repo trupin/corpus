@@ -34,6 +34,12 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * body (`MarkdownView`), a turn attachment (`.turn-att-img`) and the editor's
  * ProseMirror node view — and a reservation that held in only one of them would
  * be a fix for one host rather than for the component.
+ *
+ * **The box is per surface, and that is asserted too** (PR #53 review). Prose
+ * takes the reading measure, an attachment strip takes the mockup's 240×180
+ * thumbnail, and a spec that only checked "nothing moved" would pass against a
+ * body whose screenshot had been shrunk to a thumbnail — which is the defect the
+ * review found. Every measurement below therefore names which box it expects.
  */
 
 /**
@@ -110,11 +116,42 @@ function solidPng(width: number, height: number): Buffer {
 const LARGE_PNG = solidPng(LARGE_PNG_WIDTH, LARGE_PNG_HEIGHT);
 
 /**
- * The reserved box, as `@corpus/kit/markdown.css` states it. Asserted rather
- * than derived: a box read back out of the picture that is already on screen
- * would agree with a natural-size image, which is the defect.
+ * The attachment strip's reserved box, as `apps/ui/src/thread/thread.css` and
+ * `design/index.html` both state it. Asserted rather than derived: a box read
+ * back out of the picture that is already on screen would agree with a
+ * natural-size image, which is the defect.
  */
-const BOX = { width: 240, height: 180 };
+const ATTACHMENT_BOX = { width: 240, height: 180 };
+
+/**
+ * The shape every reserved box has, at whatever width its surface gives it —
+ * `aspect-ratio: 4 / 3` in `@corpus/kit/markdown.css`, which is the mockup's
+ * own figure.
+ */
+const BOX_RATIO = 4 / 3;
+
+/**
+ * A prose picture is **not** a thumbnail (PR #53 review of UI-129). It takes
+ * the whole reading measure, so its box is derived from the surface rather than
+ * stated here — the measure depends on the column's width and on `.doc-body`'s
+ * 62ch, and hard-coding a pixel number would pin the column instead of the
+ * image.
+ *
+ * The paragraph beneath the picture is what the measure is read from: it is a
+ * block in the same body, so its content width **is** the width a `width: 100%`
+ * image resolves against.
+ *
+ * This is the assertion the review turned on. A universal 240×180 fails it — a
+ * body at the reading measure is far wider than 240 — which is exactly how the
+ * fix was falsified.
+ */
+function expectReadingBox(picture: Box, measure: Box): void {
+  expect(picture.width).toBe(measure.width);
+  // The shape, to the pixel the rounding leaves.
+  expect(Math.abs(picture.height - picture.width / BOX_RATIO)).toBeLessThanOrEqual(1);
+  // And unmistakably a reading size rather than the thumbnail it used to be.
+  expect(picture.width).toBeGreaterThan(ATTACHMENT_BOX.width * 1.5);
+}
 
 const THREAD_ID = "th_geo";
 const TURN_TS = "2026-08-20T09:00:00Z";
@@ -130,6 +167,8 @@ const ATTACHMENT_SENTINEL = "ATTACHMENT-SENTINEL";
 const EDITOR_SENTINEL = "EDITOR-SENTINEL";
 /** The paragraph under the remote picture that never answers. */
 const REMOTE_SENTINEL = "REMOTE-SENTINEL";
+/** The paragraph under a **screenshot** in a document body. */
+const BODY_SENTINEL = "BODY-SENTINEL";
 
 const THREADS_VIEW: StubRow = {
   id: "doc_view_threads",
@@ -197,6 +236,26 @@ const NOTE: StubRow = {
     "And a remote one that never answers: ![remote](https://example.invalid/never.png)",
     "",
     `${REMOTE_SENTINEL} — the paragraph under the remote picture.`,
+    "",
+  ].join("\n"),
+};
+
+/**
+ * **The reviewer's case**: a 900×600 screenshot in a document body, which is
+ * what "an image that carries content" means in practice. It gets its own
+ * document rather than joining `NOTE` so that the surfaces above keep measuring
+ * exactly one picture each.
+ */
+const SCREENSHOT_NOTE: StubRow = {
+  id: "doc_chart",
+  title: "The broker's chart",
+  path: "data/docs/inbox/chart.md",
+  body: [
+    "The chart below is the one the broker sent.",
+    "",
+    `![plan.png](${PLAN})`,
+    "",
+    `${BODY_SENTINEL} — the paragraph under the screenshot.`,
     "",
   ].join("\n"),
 };
@@ -321,9 +380,11 @@ test.describe("an image reserves its box before the bytes arrive", () => {
       strip: await boxOf(pending.last()),
     };
 
-    // The reservation itself: neither placeholder is a chip hugging its label.
-    expect({ width: before.prose.width, height: before.prose.height }).toEqual(BOX);
-    expect({ width: before.strip.width, height: before.strip.height }).toEqual(BOX);
+    // The reservation itself: neither placeholder is a chip hugging its label,
+    // and each is its own surface's box — the message's prose takes the reading
+    // measure, the attachment strip takes the mockup's thumbnail.
+    expectReadingBox(before.prose, before.turn);
+    expect({ width: before.strip.width, height: before.strip.height }).toEqual(ATTACHMENT_BOX);
 
     held.release();
     await expect
@@ -343,8 +404,8 @@ test.describe("an image reserves its box before the bytes arrive", () => {
 
     // And the picture took the box that was reserved for it rather than its own
     // natural 48×36 — which is what makes the two lines above true.
-    expect({ width: after.prose.width, height: after.prose.height }).toEqual(BOX);
-    expect({ width: after.strip.width, height: after.strip.height }).toEqual(BOX);
+    expectReadingBox(after.prose, after.turn);
+    expect({ width: after.strip.width, height: after.strip.height }).toEqual(ATTACHMENT_BOX);
     expect(after.prose.y).toBe(before.prose.y);
     expect(after.strip.y).toBe(before.strip.y);
   });
@@ -366,7 +427,7 @@ test.describe("an image reserves its box before the bytes arrive", () => {
 
     const sentinel = page.locator(".reader .ProseMirror p", { hasText: EDITOR_SENTINEL });
     const before = { sentinel: await boxOf(sentinel), picture: await boxOf(pending) };
-    expect({ width: before.picture.width, height: before.picture.height }).toEqual(BOX);
+    expectReadingBox(before.picture, before.sentinel);
 
     held.release();
     const attachment = page.locator('.reader img.md-img[alt="shot.png"]');
@@ -377,7 +438,7 @@ test.describe("an image reserves its box before the bytes arrive", () => {
     const after = { sentinel: await boxOf(sentinel), picture: await boxOf(attachment) };
     expect(after.sentinel.y).toBe(before.sentinel.y);
     expect(after.picture.y).toBe(before.picture.y);
-    expect({ width: after.picture.width, height: after.picture.height }).toEqual(BOX);
+    expectReadingBox(after.picture, after.sentinel);
   });
 
   /**
@@ -423,7 +484,7 @@ test.describe("an image reserves its box before the bytes arrive", () => {
     await settledReader(page);
     const sentinel = page.locator(".reader .ProseMirror p", { hasText: REMOTE_SENTINEL });
     const before = { sentinel: await boxOf(sentinel), remote: await boxOf(remote) };
-    expect({ width: before.remote.width, height: before.remote.height }).toEqual(BOX);
+    expectReadingBox(before.remote, before.sentinel);
 
     failRemote();
     // `complete` with no intrinsic width is the browser reporting a load that
@@ -437,8 +498,69 @@ test.describe("an image reserves its box before the bytes arrive", () => {
       .toBe(0);
 
     const after = { sentinel: await boxOf(sentinel), remote: await boxOf(remote) };
-    expect({ width: after.remote.width, height: after.remote.height }).toEqual(BOX);
+    expectReadingBox(after.remote, after.sentinel);
     expect(after.remote.y).toBe(before.remote.y);
     expect(after.sentinel.y).toBe(before.sentinel.y);
+  });
+
+  /**
+   * **The review's own case** (PR #53, MAJOR against the first version of this
+   * fix): a 900×600 screenshot in a document body used to render at the reading
+   * measure and be legible there, and a universal 240×180 reservation made it a
+   * thumbnail — turning the full-screen viewer into the ordinary way to read an
+   * image that carries content, which SPEC.md §11's third clause forbids
+   * ("revealing is the uncommon case and not the ordinary reading path").
+   *
+   * So this measures the picture as well as the sentinel: the box must be both
+   * **stable** across the decode and **the reading measure**, and no earlier
+   * version of the CSS satisfies both. The natural-size original fails the first
+   * assertion, the 240×180 reservation fails the second.
+   */
+  test("draws a document body's screenshot at the reading measure, not a thumbnail", async ({
+    page,
+  }) => {
+    const held = await holdAttachments(page);
+    await stubCorpus(page, [NOTES_VIEW, SCREENSHOT_NOTE]);
+
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_chart"]').click();
+    await expect(page.locator(".reader .ProseMirror")).toBeVisible();
+
+    const pending = page.locator(".reader .doc-image .md-img-pending");
+    await expect(pending).toHaveCount(1);
+    await settledReader(page);
+
+    const sentinel = page.locator(".reader .ProseMirror p", { hasText: BODY_SENTINEL });
+    const before = { sentinel: await boxOf(sentinel), picture: await boxOf(pending) };
+    expectReadingBox(before.picture, before.sentinel);
+
+    held.release();
+    const picture = page.locator('.reader img.md-img[alt="plan.png"]');
+    await expect
+      .poll(async () => picture.evaluate((node) => (node as HTMLImageElement).naturalWidth))
+      .toBe(LARGE_PNG_WIDTH);
+
+    const after = { sentinel: await boxOf(sentinel), picture: await boxOf(picture) };
+    // Stable, first: the paragraph under a screenshot does not move when the
+    // 900×600 lands, which is the guarantee this issue exists for.
+    expect(after.sentinel.y).toBe(before.sentinel.y);
+    expect(after.picture.y).toBe(before.picture.y);
+    // And readable, second: the box is the body's own measure, so the whole
+    // screenshot is drawn as wide as the prose beside it. `scale-down` fits the
+    // 3:2 picture inside the 4:3 box by its width, so what is actually painted
+    // is the full measure across — nothing is left for the viewer to reveal.
+    expectReadingBox(after.picture, after.sentinel);
+    const painted = await picture.evaluate((node) => {
+      const image = node as HTMLImageElement;
+      const box = image.getBoundingClientRect();
+      const scale = Math.min(
+        box.width / image.naturalWidth,
+        box.height / image.naturalHeight,
+        1, // `scale-down` never enlarges.
+      );
+      return { width: image.naturalWidth * scale, height: image.naturalHeight * scale };
+    });
+    expect(Math.round(painted.width)).toBe(after.picture.width);
   });
 });
