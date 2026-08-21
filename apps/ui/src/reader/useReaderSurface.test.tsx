@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 import type { RevealTarget } from "@corpus/kit/plugin";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { docFixture } from "../testing/readerFixture";
+import { ToastProvider } from "../shell/Toasts";
+import { docFixture, threadRowFixture } from "../testing/readerFixture";
 import type { ReaderDoc } from "./useReaderDoc";
 import { useReaderSurface } from "./useReaderSurface";
 
@@ -25,7 +26,7 @@ afterEach(() => {
   for (const layer of document.querySelectorAll("[data-reveal-flash]")) layer.remove();
 });
 
-function readerDoc(docId: string, body: string): ReaderDoc {
+function readerDoc(docId: string, body: string, threads?: ThreadState): ReaderDoc {
   return {
     docId,
     doc: docFixture({ frontmatter: { id: docId, title: docId }, body }),
@@ -36,29 +37,38 @@ function readerDoc(docId: string, body: string): ReaderDoc {
     isThread: false,
     thread: undefined,
     threadPending: false,
-    threadsSettled: true,
-    threads: [],
+    threadsSettled: threads?.settled ?? true,
+    threads: (threads?.ids ?? []).map((id) => threadRowFixture({ id })),
     backlinks: [],
     related: [],
   };
+}
+
+/** The conversation list as the reader sees it: in flight, or answered. */
+interface ThreadState {
+  readonly settled: boolean;
+  readonly ids?: readonly string[];
 }
 
 interface SurfaceProps {
   readonly docId: string;
   readonly text: string;
   readonly reveal?: RevealTarget | undefined;
+  /** Spending the navigation instruction, observed. */
+  readonly onRevealed?: (() => void) | undefined;
+  readonly threads?: ThreadState | undefined;
 }
 
 /** The surface with a body the reveal can actually find its words in. */
-function Surface({ docId, text, reveal }: SurfaceProps): ReactElement {
+function Surface({ docId, text, reveal, onRevealed, threads }: SurfaceProps): ReactElement {
   const surface = useReaderSurface({
-    reader: readerDoc(docId, text),
+    reader: readerDoc(docId, text, threads),
     restoreY: 0,
     // What both hosts pass: one value per navigation entry.
     navToken: `${docId}#0`,
     onScroll: () => undefined,
     reveal,
-    onRevealed: () => undefined,
+    onRevealed: onRevealed ?? (() => undefined),
   });
   return (
     <div ref={surface.scrollRef} className="reader-scroll">
@@ -119,5 +129,161 @@ describe("a reveal flash and the navigation that lit it", () => {
     view.unmount();
 
     expect(flashes()).toBe(0);
+  });
+});
+
+/**
+ * UI-140. The reveal used to retry five times, 80 ms apart, and then spend the
+ * navigation instruction whether or not anything had been drawn — so a cold
+ * open whose body took longer than ~320 ms to render opened the document at the
+ * top, drew no flash and forgot what it was for. Measured at **2.5% of opens**
+ * (9 of 360) at eight Playwright workers, and ~19% with four cores busy.
+ *
+ * The reader shows `Loading…` and no body at all while plugin discovery is
+ * pending, so those 320 ms were spent searching a placeholder. That is the
+ * shape the tests below reproduce: a surface that says nothing, then says
+ * something.
+ */
+describe("a reveal whose body has not arrived yet", () => {
+  /** Long enough to have exhausted the ladder this replaces, twice over. */
+  const PAST_THE_OLD_BUDGET_MS = 700;
+
+  function rest(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  it("does not give up on a surface that has told it nothing", async () => {
+    const revealed = vi.fn();
+    render(<Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} />);
+
+    await rest(PAST_THE_OLD_BUDGET_MS);
+
+    // Nothing drawn, because there is nothing to draw on — and, crucially, the
+    // instruction is still in hand. "Not there yet" is not "not there".
+    expect(flashes()).toBe(0);
+    expect(revealed).not.toHaveBeenCalled();
+  });
+
+  it("draws the flash when the body arrives long after that budget", async () => {
+    const revealed = vi.fn();
+    const view = render(
+      <Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} />,
+    );
+    await rest(PAST_THE_OLD_BUDGET_MS);
+    expect(flashes()).toBe(0);
+
+    // Discovery settles and the document renders. The same instruction, still
+    // pending — this is a re-render, not a navigation, so the effect does not
+    // re-run and the search that is already climbing is the one that finds it.
+    view.rerender(<Surface docId="doc_a" text="Buy milk" reveal={BUY} onRevealed={revealed} />);
+
+    await waitFor(() => {
+      expect(flashes()).toBe(1);
+    });
+    expect(revealed).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up once the surface has arrived without the words, and says which", async () => {
+    const revealed = vi.fn();
+    const view = render(
+      <ToastProvider>
+        <Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} />
+      </ToastProvider>,
+    );
+    // The body arrives, and the quote is not in it: edited away between the
+    // click and the open. This is the case that must still terminate.
+    view.rerender(
+      <ToastProvider>
+        <Surface docId="doc_a" text="Sell bread" reveal={BUY} onRevealed={revealed} />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      expect(revealed).toHaveBeenCalledTimes(1);
+    });
+    expect(flashes()).toBe(0);
+    // …and the reader is told, rather than left at the top of a document with
+    // no account of why.
+    const toast = document.querySelector(".toast .msg");
+    expect(toast?.textContent).toContain("Buy milk");
+    expect(toast?.textContent).toContain("no longer on this document");
+  });
+});
+
+/**
+ * The same defect one request over (UI-140).
+ *
+ * A thread reveal used to fire the instant the *document* had content and spend
+ * the instruction there and then — but `reader.threads` is a second request, and
+ * an empty list reads the same whether the document has no conversations or the
+ * list has not landed. So a cold open silently expanded nothing, measured at 1
+ * open in 80 under eight Playwright workers.
+ */
+describe("a reveal that names a conversation the list has not answered for yet", () => {
+  const THREAD: RevealTarget = { kind: "thread", threadId: "th_1" };
+
+  it("waits for the list rather than spending the instruction on an empty one", async () => {
+    const revealed = vi.fn();
+    const view = render(
+      <Surface
+        docId="doc_a"
+        text="Buy milk"
+        reveal={THREAD}
+        onRevealed={revealed}
+        threads={{ settled: false }}
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(revealed).not.toHaveBeenCalled();
+
+    view.rerender(
+      <Surface
+        docId="doc_a"
+        text="Buy milk"
+        reveal={THREAD}
+        onRevealed={revealed}
+        threads={{ settled: true, ids: ["th_1"] }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(revealed).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * The list answering "no conversations at all" is a real answer, and it looks
+   * exactly like a list in flight from the array alone — which is why the
+   * settled flag is part of what the reveal reads, not something beside it.
+   */
+  it("gives up, and says so, once the list has answered without it", async () => {
+    const revealed = vi.fn();
+    const view = render(
+      <ToastProvider>
+        <Surface
+          docId="doc_a"
+          text="Buy milk"
+          reveal={THREAD}
+          onRevealed={revealed}
+          threads={{ settled: false }}
+        />
+      </ToastProvider>,
+    );
+    view.rerender(
+      <ToastProvider>
+        <Surface
+          docId="doc_a"
+          text="Buy milk"
+          reveal={THREAD}
+          onRevealed={revealed}
+          threads={{ settled: true }}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      expect(revealed).toHaveBeenCalledTimes(1);
+    });
+    expect(document.querySelector(".toast .msg")?.textContent).toContain("That conversation");
   });
 });

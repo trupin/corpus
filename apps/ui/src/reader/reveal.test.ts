@@ -8,8 +8,14 @@ import {
   flashRange,
   indexText,
   REVEAL_FLASH_MS,
+  REVEAL_QUIET_FRAMES,
+  REVEAL_WAIT_MS,
   revealItem,
+  revealMissNotice,
+  revealPatience,
   scrollRangeIntoView,
+  surfaceText,
+  type RevealLook,
 } from "./reveal";
 
 /**
@@ -390,5 +396,135 @@ describe("revealItem", () => {
       .firstElementChild as HTMLElement;
     expect(revealItem(container, item("Call the plumber"))).toBeNull();
     expect(document.querySelector("[data-reveal-flash]")).toBeNull();
+  });
+});
+
+/**
+ * UI-140. The old ladder retried five times 80 ms apart and then spent the
+ * navigation instruction whether or not anything had been drawn — so a cold
+ * open whose body took longer than ~320 ms to render opened the document at the
+ * top, drew nothing, and forgot what it was for. Measured at 2.5% of opens.
+ *
+ * What is pinned here is the replacement's one claim: **it never concludes
+ * "absent" from a surface that has told it nothing.**
+ */
+describe("revealPatience", () => {
+  /** Feeds `looks` at the same surface, one notional frame apart. */
+  function feed(
+    patience: ReturnType<typeof revealPatience>,
+    surface: string,
+    looks: number,
+    from = 0,
+  ): RevealLook {
+    let last = patience(surface, from);
+    for (let index = 1; index < looks; index += 1) last = patience(surface, from + index * 16);
+    return last;
+  }
+
+  it("keeps looking, past any millisecond budget, while the surface has not moved", () => {
+    const patience = revealPatience();
+    // Far more looks than the old five, and the surface has said nothing: this
+    // is the `Loading…` gap, and it is "not there yet", not "not there".
+    const verdict = feed(patience, "Loading…", 100);
+    expect(verdict.giveUp).toBeNull();
+  });
+
+  it("searches only on the looks where the surface changed", () => {
+    const patience = revealPatience();
+    expect(patience("Loading…", 0).search).toBe(true);
+    expect(patience("Loading…", 16).search).toBe(false);
+    expect(patience("Buy milk", 32).search).toBe(true);
+    expect(patience("Buy milk", 48).search).toBe(false);
+  });
+
+  it("accepts the words are absent once the surface has arrived and gone quiet", () => {
+    const patience = revealPatience();
+    patience("Loading…", 0);
+    // The body lands. From here the surface has moved once and is still.
+    expect(patience("Sell bread", 16).giveUp).toBeNull();
+    for (let frame = 1; frame < REVEAL_QUIET_FRAMES; frame += 1) {
+      expect(patience("Sell bread", 16 + frame * 16).giveUp).toBeNull();
+    }
+    expect(patience("Sell bread", 16 + REVEAL_QUIET_FRAMES * 16).giveUp).toBe("absent");
+  });
+
+  it("starts the quiet count again every time the surface moves", () => {
+    const patience = revealPatience();
+    patience("Loading…", 0);
+    patience("half a body", 16);
+    // One frame short of the verdict, and then the renderer moves again.
+    for (let frame = 1; frame < REVEAL_QUIET_FRAMES; frame += 1) {
+      expect(patience("half a body", 16 + frame * 16).giveUp).toBeNull();
+    }
+    expect(patience("a whole body", 1_000).giveUp).toBeNull();
+    expect(feed(patience, "a whole body", REVEAL_QUIET_FRAMES - 1, 1_016).giveUp).toBeNull();
+  });
+
+  it("stops at the ceiling when the surface never settles", () => {
+    const patience = revealPatience();
+    // A surface that changes on every look never goes quiet, so only the
+    // ceiling can end it — and it must.
+    for (let frame = 0; frame * 16 < REVEAL_WAIT_MS; frame += 1) {
+      expect(patience(`frame ${String(frame)}`, frame * 16).giveUp).toBeNull();
+    }
+    expect(patience("frame last", REVEAL_WAIT_MS).giveUp).toBe("unresolved");
+  });
+
+  it("waits far longer than the 320 ms budget it replaces", () => {
+    // The measured worst gap between the reader's placeholder and its rendered
+    // body, on a laptop running eight browsers, was 1733 ms.
+    expect(REVEAL_WAIT_MS).toBeGreaterThan(1_733);
+  });
+});
+
+describe("surfaceText", () => {
+  it("reads the whole container, not one renderer's markup", () => {
+    const host = mount("<div><p>Buy <strong>milk</strong></p><li>Sell bread</li></div>");
+    expect(surfaceText(host.firstElementChild as HTMLElement)).toBe("Buy milkSell bread");
+  });
+});
+
+/** Giving up is not silent (UI-140): the reader is told which quote was lost. */
+describe("revealMissNotice", () => {
+  const target: RevealItem = { kind: "item", exact: "Book the passport appointment" };
+
+  it("names the quote, and calls a document that moved on information", () => {
+    const notice = revealMissNotice(target, "absent");
+    expect(notice.tone).toBe("info");
+    expect(notice.message).toContain("Book the passport appointment");
+    expect(notice.message).toContain("no longer on this document");
+  });
+
+  it("calls a document that never rendered a fault", () => {
+    const notice = revealMissNotice(target, "unresolved");
+    expect(notice.tone).toBe("error");
+    expect(notice.message).toContain("did not finish loading");
+  });
+
+  it("cuts a quote too long to be a toast, and marks the cut", () => {
+    const long = "x".repeat(200);
+    const message = revealMissNotice({ kind: "item", exact: long }, "absent").message;
+    expect(message).toContain("…");
+    expect(message.length).toBeLessThan(100);
+  });
+
+  it("collapses a quote captured with the file's line breaks in it", () => {
+    const notice = revealMissNotice({ kind: "item", exact: "Buy\n  milk" }, "absent");
+    expect(notice.message).toContain("Buy milk");
+  });
+
+  /**
+   * A conversation's id is a key, not a name, so quoting it back would tell the
+   * reader nothing they could act on. It is named by what it is instead.
+   */
+  it("names a conversation without misquoting its id", () => {
+    const absent = revealMissNotice({ kind: "thread", threadId: "th_1" }, "absent");
+    expect(absent.tone).toBe("info");
+    expect(absent.message).toBe("That conversation is no longer on this document.");
+    expect(absent.message).not.toContain("th_1");
+
+    const unresolved = revealMissNotice({ kind: "thread", threadId: "th_1" }, "unresolved");
+    expect(unresolved.tone).toBe("error");
+    expect(unresolved.message).toContain("that conversation");
   });
 });
