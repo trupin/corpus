@@ -13,6 +13,9 @@ import type { RevealTarget } from "@corpus/kit/plugin";
 import { useRef, type ReactElement } from "react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";
+import { CommentsTab } from "../comments/CommentsTab";
+import type { ReaderTab } from "../comments/CommentsSwitch";
+import type { CommentFilters } from "../comments/commentsModel";
 import { useAnchorLayer } from "../anchors/useAnchorLayer";
 import { useMarginLayout } from "../anchors/useMarginLayout";
 import { DocEditor, editorHandlesType } from "../editor/DocEditor";
@@ -153,12 +156,31 @@ export interface DocViewProps {
    */
   readonly onNavigate: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
+  /**
+   * Which half of the reader the header's switch is on (SPEC.md §11's rider).
+   *
+   * The two are **alternatives, not layers**: the body is unmounted while the
+   * comments list is shown. §7 counts *displayed* content, and a `ThreadCard`
+   * kept mounted behind a hidden body would mark conversations seen that nobody
+   * looked at — so the list replaces the body rather than covering it. The cost
+   * is the editor's remount when the switch flips back, which flushes the
+   * pending save exactly as a navigation does.
+   */
+  readonly tab: ReaderTab;
+  readonly filters: CommentFilters;
+  readonly onFilters: (filters: CommentFilters) => void;
+  /** Back to the document, then reveal this conversation at its anchor (UI-037). */
+  readonly onReveal: (threadId: string) => void;
 }
 
 export function DocView({
   reader,
   selectTitle,
   flashThread,
+  tab,
+  filters,
+  onFilters,
+  onReveal,
   onNavigate,
   onNotify,
 }: DocViewProps): ReactElement {
@@ -243,6 +265,18 @@ export function DocView({
     PluginView === null &&
     editorHandlesType(doc.frontmatter.type);
   /**
+   * Whether the document half is the one being shown.
+   *
+   * Every placement the body owns — the editor, the chips at their anchors, the
+   * margin column, the below-body list, backlinks and related — is gated on
+   * this, and so is the anchor layer's `editable`. Two reasons, and the second
+   * is the one that would have bitten: a conversation is listed in the comments
+   * tab *and* placed at its anchor, so leaving the anchored placements mounted
+   * would put two `ThreadPanel`s for one conversation on one screen, each
+   * marking it seen and each holding its own fold.
+   */
+  const showsBody = tab === "document";
+  /**
    * Whether the body branch below has **already placed this document's threads**
    * (UI-087).
    *
@@ -282,7 +316,10 @@ export function DocView({
     anchors: doc?.anchors ?? [],
     threads: reader.threads,
     threadsSettled: reader.threadsSettled,
-    editable: anchorsHost,
+    // False while the comments list is showing: with no editor mounted there is
+    // nothing to select, nothing to comment on, and no body for the margin to
+    // measure itself against.
+    editable: anchorsHost && showsBody,
     flashThread,
     onNotify,
   });
@@ -442,149 +479,206 @@ export function DocView({
         {DocPanel !== null ? <DocPanel doc={doc} /> : null}
 
         {/*
-         * The one body-rendering call site. A thread document's body IS its
-         * conversation (SPEC.md §6: "the conversation is the document"), which is
-         * why a thread opened from a column reads as turns rather than as the
-         * markdown file behind them. A plugin `View` replaces the standard
-         * document view wholesale for its registered type (SPEC.md §10).
+         * The comments list, in place of the body — SPEC.md §11's rider: *"the
+         * trade the user accepted is seeing one or the other, not both"*.
          *
-         * With no plugin, a non-core type falls through to the **editor**, not
-         * to a static render (UI-014): §10's deleted-plugin degradation is the
-         * loss of the plugin's chrome, and §15 M6's "renders as plain markdown"
-         * is satisfied by the plain-markdown body the editor shows — which the
-         * user can still fix, as they can on every other document.
+         * It is offered on every document, including one whose body a plugin
+         * `View` owns and one that is itself a thread: a conversation can carry
+         * child threads, and "what is outstanding here" is the same question
+         * whatever the document is made of.
          */}
-        {reader.isThread ? (
-          <div className="doc-body thread-conversation">
-            {/*
-             * The conversation you opened — placed by the same rule as every
-             * other placement (PR #25 review, MAJOR).
-             *
-             * This panel used to opt out of the rule, on the reading that
-             * navigating to a thread is newer than the rule and therefore wins
-             * §11's precedence. It is not: §11's precedence clause is about
-             * "collapsing or expanding it **yourself**", an explicit gesture,
-             * while the rule applies "when a conversation is **placed**" — and
-             * opening a thread in a reader is a placement. §6 settles the rest
-             * in one line, "a resolved thread is collapsed by default *wherever
-             * it is shown*", and §11 enumerates this placement by name. The
-             * exception also broke the half of §11 that is not open to reading
-             * at all: "a change to the thread's status re-asserts the rule…
-             * **so resolving a conversation collapses it even while it is open
-             * on screen**", which resolving a thread-as-document did not do.
-             */}
-            {placementKnown ? (
-              <ThreadPanel
-                summary={openThreadSummary(
-                  reader.docId,
-                  reader.thread,
-                  openThreadParent.data,
-                  openThreadReadState(reader.docId, reader.thread, openThreadRow),
-                )}
-                host="standalone"
-                onOpenDoc={onNavigate}
-                onNotify={onNotify}
-              />
-            ) : (
-              <p className="reader-note">Loading…</p>
-            )}
-          </div>
-        ) : anchorsHost ? (
-          /*
-           * Keyed by document id: a navigation is a remount, which is what
-           * flushes the outgoing document's pending save before the editor
-           * rebinds. A rename, an SSE refresh or a key refused and re-presented
-           * changes no key here, and therefore keeps the caret, the scroll and
-           * the selection.
-           */
-          <DocEditor
-            key={doc.frontmatter.id}
+        {showsBody ? null : (
+          <CommentsTab
             docId={doc.frontmatter.id}
+            threads={reader.threads}
+            /*
+             * The **server's** verdict about the body as it stands, which is
+             * what decides the anchored axis. `DocRow.anchorQuote` would not:
+             * it is the stored selector's text and survives the anchor going
+             * orphaned, so a list built on it files every orphan under
+             * "anchored" — the one row the rider exists to surface.
+             */
+            anchors={doc.anchors}
             body={doc.body}
-            documentKey={doc.key}
-            onOpenRef={onNavigate}
-            onComment={anchors.onComment}
-            onAnchors={anchors.onAnchors}
-            onEditor={anchors.onEditor}
+            filters={filters}
+            onFilters={onFilters}
+            flashThread={flashThread}
+            onReveal={onReveal}
+            onOpenDoc={onNavigate}
+            onNotify={onNotify}
           />
-        ) : PluginView !== null ? (
-          <PluginView doc={doc} />
-        ) : (
-          <MarkdownView markdown={doc.body} className="doc-body" onOpenRef={onNavigate} />
         )}
 
         {/*
-         * Anchored threads sit at their anchors (a chip between two blocks, or a
-         * card in the margin); only the ones with no place in the body are listed
-         * here — never anchored, orphaned, or anchored somewhere this view cannot
-         * point at (`anchorPlacement.segmentsOf`).
-         */}
-        {anchorsHost ? (
-          <>
-            <AnchorChips
-              threads={anchors.anchored}
-              parentId={doc.frontmatter.id}
-              flashThread={flashThread}
-              onOpenDoc={onNavigate}
-              onNotify={onNotify}
-              hostFor={anchors.slotHost}
-            />
-            <DetachedThreads
-              wholeDocument={anchors.wholeDocument}
-              orphaned={anchors.orphaned}
-              unplaced={anchors.unplaced}
-              /*
-               * A detached comment is offered a way back only where the body it
-               * would attach to is on screen and in the coordinate space the
-               * server answers in — which is here, in the anchor layer's own
-               * host, and nowhere else (UI-086).
-               */
-              reattach={{
-                docId: doc.frontmatter.id,
-                body: doc.body,
-                anchors: anchors.effectiveAnchors,
-              }}
-              flashThread={flashThread}
-              onOpenDoc={onNavigate}
-              onNotify={onNotify}
-            />
-          </>
-        ) : null}
-
-        {/*
-         * And the threads **nothing above has placed** — the list UI-005 put
-         * here, now asking the question it always meant (see
-         * `bodyPlacesThreads`).
+         * The document half.
          *
-         * A plugin `View` and the static markdown fallback host no anchor layer
-         * and no conversation, so for them this is the only render their threads
-         * ever get: the branch is load-bearing and removing it would silently
-         * drop every thread on those documents. A thread reaches this line with
-         * its children already placed per turn (SPEC.md §11), so it lists
-         * nothing — and a child whose anchor went orphaned is not lost with the
-         * list, because `placeChildThreads` has already put it after the last
-         * turn rather than leaving it for this one.
+         * **The editor is hidden rather than unmounted** while the list is
+         * showing, and the reason is the reveal seam. `useAnchorLayer`'s flash
+         * effect expands a clipped changelog entry around the anchored highlight
+         * and scrolls to it — once, in the commit that sets the flash — so a body
+         * that mounts a beat later has nothing for it to find, and UI-089's clip
+         * stayed shut on every reveal out of this list (caught by
+         * `changelog.spec.ts`). Hiding costs nothing §7 protects: a document body
+         * displays no conversation, and every placement that *does* — the chips at
+         * their anchors, the margin, the below-body list — is unmounted below, so
+         * nothing is marked seen behind a surface nobody is looking at.
+         *
+         * The wrapper is `display: contents`, so it is invisible to layout and the
+         * body's own measure is untouched; `[hidden]` is what takes it off screen.
+         * The other three body branches *do* place conversations — a thread's body
+         * is its conversation, and a plugin `View` and the static fallback both
+         * fall through to the thread list below — so they are unmounted, and only
+         * the editor is kept.
          */}
-        {bodyPlacesThreads || reader.threads.length === 0 ? null : (
-          <div className="thread-slots">
-            {reader.threads.map((row) => (
-              <ThreadPanel
-                key={row.id}
-                summary={summaryFromRow(row)}
-                host="slot"
-                flashing={flashThread === row.id}
+        <div className="doc-body-slot" hidden={!showsBody}>
+          {/*
+           * The one body-rendering call site. A thread document's body IS its
+           * conversation (SPEC.md §6: "the conversation is the document"), which is
+           * why a thread opened from a column reads as turns rather than as the
+           * markdown file behind them. A plugin `View` replaces the standard
+           * document view wholesale for its registered type (SPEC.md §10).
+           *
+           * With no plugin, a non-core type falls through to the **editor**, not
+           * to a static render (UI-014): §10's deleted-plugin degradation is the
+           * loss of the plugin's chrome, and §15 M6's "renders as plain markdown"
+           * is satisfied by the plain-markdown body the editor shows — which the
+           * user can still fix, as they can on every other document.
+           */}
+          {!showsBody && !anchorsHost ? null : reader.isThread ? (
+            <div className="doc-body thread-conversation">
+              {/*
+               * The conversation you opened — placed by the same rule as every
+               * other placement (PR #25 review, MAJOR).
+               *
+               * This panel used to opt out of the rule, on the reading that
+               * navigating to a thread is newer than the rule and therefore wins
+               * §11's precedence. It is not: §11's precedence clause is about
+               * "collapsing or expanding it **yourself**", an explicit gesture,
+               * while the rule applies "when a conversation is **placed**" — and
+               * opening a thread in a reader is a placement. §6 settles the rest
+               * in one line, "a resolved thread is collapsed by default *wherever
+               * it is shown*", and §11 enumerates this placement by name. The
+               * exception also broke the half of §11 that is not open to reading
+               * at all: "a change to the thread's status re-asserts the rule…
+               * **so resolving a conversation collapses it even while it is open
+               * on screen**", which resolving a thread-as-document did not do.
+               */}
+              {placementKnown ? (
+                <ThreadPanel
+                  summary={openThreadSummary(
+                    reader.docId,
+                    reader.thread,
+                    openThreadParent.data,
+                    openThreadReadState(reader.docId, reader.thread, openThreadRow),
+                  )}
+                  host="standalone"
+                  onOpenDoc={onNavigate}
+                  onNotify={onNotify}
+                />
+              ) : (
+                <p className="reader-note">Loading…</p>
+              )}
+            </div>
+          ) : anchorsHost ? (
+            /*
+             * Keyed by document id: a navigation is a remount, which is what
+             * flushes the outgoing document's pending save before the editor
+             * rebinds. A rename, an SSE refresh or a key refused and re-presented
+             * changes no key here, and therefore keeps the caret, the scroll and
+             * the selection.
+             */
+            <DocEditor
+              key={doc.frontmatter.id}
+              docId={doc.frontmatter.id}
+              body={doc.body}
+              documentKey={doc.key}
+              onOpenRef={onNavigate}
+              onComment={anchors.onComment}
+              onAnchors={anchors.onAnchors}
+              onEditor={anchors.onEditor}
+            />
+          ) : PluginView !== null ? (
+            <PluginView doc={doc} />
+          ) : (
+            <MarkdownView markdown={doc.body} className="doc-body" onOpenRef={onNavigate} />
+          )}
+
+          {/*
+           * Anchored threads sit at their anchors (a chip between two blocks, or a
+           * card in the margin); only the ones with no place in the body are listed
+           * here — never anchored, orphaned, or anchored somewhere this view cannot
+           * point at (`anchorPlacement.segmentsOf`).
+           */}
+          {showsBody && anchorsHost ? (
+            <>
+              <AnchorChips
+                threads={anchors.anchored}
+                parentId={doc.frontmatter.id}
+                flashThread={flashThread}
+                onOpenDoc={onNavigate}
+                onNotify={onNotify}
+                hostFor={anchors.slotHost}
+              />
+              <DetachedThreads
+                wholeDocument={anchors.wholeDocument}
+                orphaned={anchors.orphaned}
+                unplaced={anchors.unplaced}
+                /*
+                 * A detached comment is offered a way back only where the body it
+                 * would attach to is on screen and in the coordinate space the
+                 * server answers in — which is here, in the anchor layer's own
+                 * host, and nowhere else (UI-086).
+                 */
+                reattach={{
+                  docId: doc.frontmatter.id,
+                  body: doc.body,
+                  anchors: anchors.effectiveAnchors,
+                }}
+                flashThread={flashThread}
                 onOpenDoc={onNavigate}
                 onNotify={onNotify}
               />
-            ))}
-          </div>
-        )}
+            </>
+          ) : null}
 
-        <Backlinks backlinks={reader.backlinks} onOpen={onNavigate} />
-        <RelatedPanel related={reader.related} onOpen={onNavigate} />
+          {/*
+           * And the threads **nothing above has placed** — the list UI-005 put
+           * here, now asking the question it always meant (see
+           * `bodyPlacesThreads`).
+           *
+           * A plugin `View` and the static markdown fallback host no anchor layer
+           * and no conversation, so for them this is the only render their threads
+           * ever get: the branch is load-bearing and removing it would silently
+           * drop every thread on those documents. A thread reaches this line with
+           * its children already placed per turn (SPEC.md §11), so it lists
+           * nothing — and a child whose anchor went orphaned is not lost with the
+           * list, because `placeChildThreads` has already put it after the last
+           * turn rather than leaving it for this one.
+           */}
+          {!showsBody || bodyPlacesThreads || reader.threads.length === 0 ? null : (
+            <div className="thread-slots">
+              {reader.threads.map((row) => (
+                <ThreadPanel
+                  key={row.id}
+                  summary={summaryFromRow(row)}
+                  host="slot"
+                  flashing={flashThread === row.id}
+                  onOpenDoc={onNavigate}
+                  onNotify={onNotify}
+                />
+              ))}
+            </div>
+          )}
+
+          <Backlinks backlinks={reader.backlinks} onOpen={onNavigate} />
+          <RelatedPanel related={reader.related} onOpen={onNavigate} />
+        </div>
       </div>
 
-      {anchors.marginMode ? (
+      {/* `editable` already turns the margin off when the list is showing, but
+          it does so in an effect — one frame later. The gate is stated here too
+          so the cards are never drawn beside a body that is not on screen. */}
+      {showsBody && anchors.marginMode ? (
         <MarginColumn
           threads={anchors.anchored}
           parentId={doc.frontmatter.id}
@@ -595,7 +689,7 @@ export function DocView({
         />
       ) : null}
 
-      {anchors.draft === null ? null : (
+      {!showsBody || anchors.draft === null ? null : (
         <CommentPopover
           quote={anchors.draft.selection.selector.exact}
           top={anchors.draft.top}

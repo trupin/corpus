@@ -1,16 +1,22 @@
 import type { Doc, DocRow } from "@corpus/contract";
 import { useDoc, type RowNotice } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
+import { CommentsSwitch, type ReaderTab } from "../comments/CommentsSwitch";
 import { SaveChip } from "../editor/SaveChip";
-import { CommentsPopover } from "./CommentsPopover";
 import { DocMenu } from "./DocMenu";
 import type { NavEntry } from "./useNavStack";
 
 /**
  * The reader's header bar, element for element from `design/index.html`: a
  * `.back` accent button, the mono `.reader-id` pushed right, an (empty)
- * `.save-chip` slot, the 💬 `.comments-btn`, the ⋯ document menu and the ⤢
- * focus button — the last two both `.expand`.
+ * `.save-chip` slot, the `Document / Comments` switch, the ⋯ document menu and
+ * the ⤢ focus button — the last two both `.expand`.
+ *
+ * **💬 is the switch now** (UI-063). It opened a popover listing every thread on
+ * the document with nothing to do about any of them; it reaches a list that can
+ * be filtered, replied to and written into, so the popover was subsumed rather
+ * than kept beside it. One control, not two — see `CommentsSwitch` for the
+ * measurement that rules the second one out.
  *
  * Shared by the column reader and focus mode, whose heads carry the same
  * actions; focus mode adds a close control and the esc hint and drops ⤢, since
@@ -52,7 +58,9 @@ export interface ReaderHeadProps {
   /** ⤢ — omitted in focus mode, which is already full screen. */
   readonly onExpand?: (() => void) | undefined;
   readonly onBack: (toList: boolean) => void;
-  readonly onSelectThread: (threadId: string) => void;
+  /** Which half of the reader is showing (SPEC.md §11's `Document / Comments` switch). */
+  readonly tab: ReaderTab;
+  readonly onTab: (tab: ReaderTab) => void;
   readonly onGone: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -114,7 +122,7 @@ export function readerIdText(docId: string): string {
 
 export function ReaderHead(props: ReaderHeadProps): ReactElement {
   const { doc, previous, threads } = props;
-  const [open, setOpen] = useState<"comments" | "menu" | null>(null);
+  const [open, setOpen] = useState<"menu" | null>(null);
   // The document Back returns to is the one we just came from, so it is in the
   // cache and this costs no request in the case that matters.
   const previousDoc = useDoc(previous?.docId);
@@ -143,22 +151,12 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
         {readerIdText(props.docId)}
       </span>
       <SaveChip />
-      {threads.length === 0 ? null : (
-        <button
-          type="button"
-          className="comments-btn"
-          aria-label={`${String(threads.length)} threads on this document`}
-          aria-expanded={open === "comments"}
-          onClick={() => {
-            setOpen(open === "comments" ? null : "comments");
-          }}
-        >
-          {/* The count is its own box, so crossing into two digits does not
-              widen the control and re-cut `.back` and `.reader-id` beside it
-              (SPEC.md §11's rider; `.comments-count` carries the reservation).
-              `textContent` is unchanged — still `💬 1`. */}
-          💬 <span className="comments-count">{threads.length}</span>
-        </button>
+      {/* Under 💬's own condition, plus one: whenever the list is showing, so
+          the way back is never missing. A document with no comments reaches the
+          list through the ⋯ menu — see `CommentsSwitch` for why the head cannot
+          simply carry it unconditionally. */}
+      {threads.length === 0 && props.tab !== "comments" ? null : (
+        <CommentsSwitch tab={props.tab} count={threads.length} onTab={props.onTab} />
       )}
       <button
         type="button"
@@ -187,23 +185,19 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
         </button>
       )}
 
-      {open === "comments" ? (
-        <CommentsPopover
-          threads={threads}
-          onSelect={(threadId) => {
-            setOpen(null);
-            props.onSelectThread(threadId);
-          }}
-          onClose={() => {
-            setOpen(null);
-          }}
-        />
-      ) : null}
-
       {open === "menu" && doc !== undefined ? (
         <DocMenu
           doc={doc}
           threadStatus={props.threadStatus}
+          /*
+           * The list's other way in, and the only one on a document with no
+           * comments yet (UI-067). It costs the head nothing, and the ⋯ set is
+           * where a document's own actions already live.
+           */
+          onComments={() => {
+            setOpen(null);
+            props.onTab("comments");
+          }}
           onClose={() => {
             setOpen(null);
           }}

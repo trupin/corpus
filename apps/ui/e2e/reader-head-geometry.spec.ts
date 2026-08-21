@@ -415,7 +415,8 @@ test.describe("the reader head never resizes because of what it holds", () => {
 
   /**
    * The same narrow head with a fourth item in it: 💬, which appears whenever the
-   * document has conversations on it.
+   * document has conversations on it — and which is the `Document / Comments`
+   * switch since UI-063, in the same box.
    *
    * UI-128 measured 💬 as *not* pushing the controls, and that had to stay true —
    * but it is the case that spends the last of the row's slack, so it is the one

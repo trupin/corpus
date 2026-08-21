@@ -3,6 +3,7 @@ import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, type ReactElement } from "react";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import type { NavEntry } from "../board/useBoardLocalState";
+import { useCommentsTab } from "../comments/useCommentsTab";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { ThreadCollapseProvider } from "../thread/ThreadCollapseContext";
@@ -140,6 +141,11 @@ function ColumnReader({
     onAbandoned: stack.drop,
   });
 
+  // Which half of the reader is showing, and the comments list's two axes
+  // (SPEC.md §11's rider). Per column: two readers on one document each keep
+  // their own, exactly as their folds and their scroll do.
+  const comments = useCommentsTab(docId, surface.jumpToThread);
+
   const contextMenu = useReaderContextMenu({
     doc: reader.doc,
     threadStatus: reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null,
@@ -194,7 +200,8 @@ function ColumnReader({
             if (toList) stack.toList();
             else stack.back();
           }}
-          onSelectThread={surface.jumpToThread}
+          tab={comments.tab}
+          onTab={comments.setTab}
           onGone={stack.back}
           onNotify={onNotify}
         />
@@ -209,6 +216,10 @@ function ColumnReader({
             reader={reader}
             selectTitle={selectTitle}
             flashThread={surface.flashThread}
+            tab={comments.tab}
+            filters={comments.filters}
+            onFilters={comments.setFilters}
+            onReveal={comments.reveal}
             onNavigate={navigate}
             onNotify={onNotify}
           />

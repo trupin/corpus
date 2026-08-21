@@ -3,6 +3,7 @@ import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
+import { useCommentsTab } from "../comments/useCommentsTab";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { ThreadCollapseProvider } from "../thread/ThreadCollapseContext";
@@ -119,6 +120,11 @@ function FocusReader({
     onAbandoned: stack.drop,
   });
 
+  // Focus mode's own switch and its own filters — one full-screen reader, one
+  // answer, distinct from the column it was opened from for the same reason its
+  // folds and its navigation stack are.
+  const comments = useCommentsTab(current, surface.jumpToThread);
+
   const contextMenu = useReaderContextMenu({
     doc: reader.doc,
     threadStatus: reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null,
@@ -168,7 +174,8 @@ function FocusReader({
             if (toList) stack.toList();
             else stack.back();
           }}
-          onSelectThread={surface.jumpToThread}
+          tab={comments.tab}
+          onTab={comments.setTab}
           onGone={stack.back}
           onNotify={onNotify}
         />
@@ -184,6 +191,10 @@ function FocusReader({
               reader={reader}
               selectTitle={false}
               flashThread={surface.flashThread}
+              tab={comments.tab}
+              filters={comments.filters}
+              onFilters={comments.setFilters}
+              onReveal={comments.reveal}
               onNavigate={navigate}
               onNotify={onNotify}
             />

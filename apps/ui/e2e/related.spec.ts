@@ -92,11 +92,16 @@ test.describe("the related panel", () => {
     await expect(page.locator(".reader .related .ref")).toHaveText("Mortgage options");
     await expect(page.locator(".reader .related .relation")).toHaveText("linked");
 
-    // In that order, as siblings in the document's own column.
+    /*
+     * In that order, as siblings below the body. They sit inside
+     * `.doc-body-slot` (UI-063), the document half's wrapper, which is
+     * `display: contents` — invisible to layout, and a real element the walk
+     * has to step into.
+     */
     const order = await page
-      .locator(".reader .doc-main")
-      .evaluate((main) =>
-        [...main.children]
+      .locator(".reader .doc-main .doc-body-slot")
+      .evaluate((half) =>
+        [...half.children]
           .map((child) => child.className)
           .filter((name) => name === "backlinks" || name === "related"),
       );

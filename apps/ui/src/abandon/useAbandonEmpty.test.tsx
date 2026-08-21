@@ -239,8 +239,13 @@ describe("leaving an empty document", () => {
     });
     render(<Host wire={wire} initial={[{ docId: "doc_blank", scrollY: 0 }]} />);
     await opened("Untitled");
+    // The thread has landed once 💬 is on the head — which is the
+    // `Document / Comments` switch since UI-063, and appears only on a document
+    // that has conversations.
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /threads on this document/i })).toBeTruthy();
+      // Matched on the control's stable prefix, not on the whole sentence: the
+      // count is pluralised, so "1 comment" and "2 comments" are different tails.
+      expect(screen.getByRole("button", { name: /^comments —/i })).toBeTruthy();
     });
 
     press(BACK);

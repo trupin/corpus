@@ -239,11 +239,14 @@ test.describe("a conversation anchored inside a clipped entry", () => {
   test("expands the clip when the conversation is revealed", async ({ page }) => {
     await openNote(page);
 
-    // The 💬 popover is how a reader jumps to a conversation by name. Before
-    // UI-089 this landed on a box of no height: the jump "succeeded" and showed
-    // the reader nothing, which is exactly the quiet failure §11 forbids.
-    await page.locator('.reader[data-reader-doc="doc_note"] .comments-btn').click();
-    await page.locator('[data-cp-item="th_old"]').click();
+    // The comments list is how a reader jumps to a conversation by name — the
+    // 💬 popover this replaced did the same, through the same reveal seam
+    // (UI-037). Before UI-089 this landed on a box of no height: the jump
+    // "succeeded" and showed the reader nothing, which is exactly the quiet
+    // failure §11 forbids.
+    const reader = page.locator('.reader[data-reader-doc="doc_note"]');
+    await reader.locator(".comments-btn").click();
+    await reader.locator('[data-comment-row="th_old"] [data-reveal-thread]').click();
 
     await expect(clippedEntries(page)).toHaveCount(0);
     const highlight = page.locator('.reader .anchor-hl[data-thread="th_old"]');

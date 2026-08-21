@@ -321,11 +321,19 @@ test.describe("a plugin arriving after the reader opened", () => {
       const main = document.querySelector(".reader .doc-main");
       if (main === null) return null;
       const editor = main.querySelector("[data-doc-editor]");
-      const previous = editor?.previousElementSibling ?? null;
+      /*
+       * What comes before the body **on screen**. The editor sits inside
+       * `.doc-body-slot` (UI-063), which is `display: contents` and therefore
+       * takes no room and reserves none — so when the editor is that wrapper's
+       * first child, the thing before the body is whatever precedes the wrapper.
+       */
+      const slot = editor?.closest(".doc-body-slot") ?? null;
+      const previous =
+        editor?.previousElementSibling ?? (slot === null ? null : slot.previousElementSibling);
       return {
         panels: main.querySelectorAll(".doc-panel, [data-doc-panel-slot]").length,
-        // The editor's own previous sibling: the frontmatter form's title, and
-        // nothing wedged between the two holding a place for a panel.
+        // The frontmatter form's title, and nothing wedged between the two
+        // holding a place for a panel.
         precededBy: previous === null ? null : previous.className,
       };
     });

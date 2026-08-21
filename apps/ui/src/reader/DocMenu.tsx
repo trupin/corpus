@@ -8,8 +8,8 @@ import { usePopoverShift } from "./popover";
 import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
 
 /**
- * The reader's ⋯ menu (SPEC.md §11): Still current, Resolve/Reopen for threads,
- * Archive, and Delete.
+ * The reader's ⋯ menu (SPEC.md §11): Comments, Still current, Resolve/Reopen for
+ * threads, Archive, and Delete.
  *
  * **It declares nothing.** The items come from `useDocActions`, which the
  * reader's *context* menu reads too — one source of actions, two presentations
@@ -41,6 +41,15 @@ export interface DocMenuProps {
   /** Thread status, for the Resolve/Reopen label; `null` on non-threads. */
   readonly threadStatus: string | null;
   readonly onClose: () => void;
+  /**
+   * Show the document's comments list (SPEC.md §11's rider, UI-063).
+   *
+   * Here as well as on the head's own toggle, because the toggle appears only
+   * once a document has conversations — see `comments/CommentsSwitch`, which
+   * measures why the head cannot carry it unconditionally. This item is what
+   * makes "comment without selecting" reachable on a document with none.
+   */
+  readonly onComments?: (() => void) | undefined;
   /** The document left: the host pops it off the navigation stack. */
   readonly onGone: () => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -50,6 +59,7 @@ export function DocMenu({
   doc,
   threadStatus,
   onClose,
+  onComments,
   onGone,
   onNotify,
 }: DocMenuProps): ReactElement {
@@ -65,7 +75,13 @@ export function DocMenu({
       type: doc.frontmatter.type,
       status: threadStatus ?? doc.frontmatter.status,
     },
-    { surface: "reader", onNotify, close: onClose, onGone },
+    {
+      surface: "reader",
+      onNotify,
+      close: onClose,
+      onGone,
+      ...(onComments === undefined ? {} : { onComments }),
+    },
   );
 
   return (

@@ -42,7 +42,8 @@ function Host({ transport, ...overrides }: HostProps): ReactElement {
         previous={null}
         listTitle="Finance"
         onBack={() => undefined}
-        onSelectThread={() => undefined}
+        tab="document"
+        onTab={() => undefined}
         onGone={() => undefined}
         onNotify={() => undefined}
         {...overrides}

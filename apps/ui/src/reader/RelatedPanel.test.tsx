@@ -299,8 +299,14 @@ describe("the related panel", () => {
     const { container } = render(<Column transport={wire()} />);
     await showsPanel(container);
 
-    const main = container.querySelector(".doc-main") as HTMLElement;
-    const panels = [...main.children].filter(
+    /*
+     * Both panels live in `.doc-body-slot`, the document half's wrapper (UI-063).
+     * It is `display: contents`, so it changes nothing about how the two are laid
+     * out — but it is a real element in the tree, which is what this walk has to
+     * step into.
+     */
+    const half = container.querySelector(".doc-main .doc-body-slot") as HTMLElement;
+    const panels = [...half.children].filter(
       (child) => child.classList.contains("backlinks") || child.classList.contains("related"),
     );
     expect(panels.map((panel) => panel.className)).toEqual(["backlinks", "related"]);
