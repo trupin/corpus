@@ -1224,6 +1224,7 @@ left in a report.
 | SHARED-058 | A refusal outlives its toast — the console's Notices tab (AUTHORIZED 2026-08-21, applied) | done | P1 | — |
 | UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | todo | P0 | — |
 | UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | todo | P2 | UI-063 |
+| SHARED-060 | §11 puts the comments switch in the header unconditionally, and the header cannot hold it — **DRAFTED, UNSIGNED** | todo | P1 | — |
 
 
 ## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
