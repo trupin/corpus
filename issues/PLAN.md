@@ -1228,6 +1228,7 @@ left in a report.
 | SHARED-061 | A surface is as large as its place allows — **DRAFTED, UNSIGNED** (applied, then reverted on PR #54 review) | todo | P0 | — |
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
+| UI-144 | A deleted document's reveal names the wrong absence, and a ref is written in render (PR #54 re-review NITs) | todo | P3 | — |
 
 
 ## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
