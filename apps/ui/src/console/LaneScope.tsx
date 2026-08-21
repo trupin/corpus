@@ -83,7 +83,15 @@ export function LaneScope({ row, levels }: LaneScopeProps): ReactElement {
       <div className="lane-scope-head">
         <LaneDot liveness={row.liveness} />
         <span className="lane-name">{row.name}</span>
-        {weight === "" ? null : <span className="lane-weight">{weight}</span>}
+        {/* Reserved and fixed, for `LaneList`'s reason and one more: the name
+            here is `flex: none`, so only `.lane-statement` could pay for a
+            weight that grew — and re-truncating the sentence this pane exists
+            to show is exactly what SHARED-057 forbids. */}
+        {weight === "" ? null : (
+          <span className="lane-weight" title={weight}>
+            {weight}
+          </span>
+        )}
         <span className="lane-statement" data-lane-statement={row.lane}>
           {laneStatement(row)}
         </span>

@@ -227,7 +227,13 @@ export function ThreadComposer({
         >
           {asking ? ASK_AGENT_LABEL : NOTE_ONLY_LABEL}
         </button>
-        <span className="composer-hint">{resolved ? RESOLVED_HINT : OPEN_HINT}</span>
+        {/* The hint is the item the foot truncates when it runs out of room
+            (`thread.css`), and neither of these two sentences is said anywhere
+            else in the product — so the whole of it rides on a `title`, which
+            is SHARED-057 clause 2: truncation reveals rather than hides. */}
+        <span className="composer-hint" title={resolved ? RESOLVED_HINT : OPEN_HINT}>
+          {resolved ? RESOLVED_HINT : OPEN_HINT}
+        </span>
         <button type="button" className="send" disabled={!canSend} onClick={send}>
           {SEND_LABEL}
         </button>

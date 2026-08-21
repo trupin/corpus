@@ -239,7 +239,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-042 | Clipboard fidelity: rich HTML copy out, rich paste in as markdown (§11 rider, signed) | done | P1 | — |
 | INFRA-017 | Coverage merge OOMs: every browser dump parsed at once (PR #19 CI blocker) | done | P0 | — |
 | INFRA-018 | Halve the e2e coverage payload at the collector (INFRA-017 follow-up) | todo | P2 | INFRA-017 |
-| UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | todo | P2 | — |
+| UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | done | P2 | — |
 | UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | todo | P2 | — |
 | INFRA-019 | A slow pre-push gate outlives the SSH session git opened (141, blocked v0.2.0 + phase 12) | done | P0 | — |
 | SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | todo | P2 | — |
@@ -938,13 +938,13 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | AGENT-036 | A transcript line the CLI cannot print; SERVER-125 made the other finding true | done | P2 | — |
 | AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | done | P1 | — |
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
-| SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |
+| SHARED-049 | SPEC enumerates two product skills and the workspace ships four (SIGNED 2026-08-20) | done | P2 | — |
 | UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | done | P0 | SERVER-125 |
 | CONTRACT-064 | The designate schema still states the pre-SERVER-125 resolution rule (PR #50 review sweep) | done | P1 | SERVER-125 |
 | SERVER-127 | A bare .claude/skills/SKILL.md is addressable and loaded by nothing (UI-123 derived fixture) | done | P1 | SERVER-125 |
 | SHARED-051 | A persona is addressable by where it lives, and §11 said otherwise (SIGNED 2026-08-19) | done | P0 | SERVER-125 |
-| SHARED-052 | A check can report what a save accepts, and §14 says it cannot (PR #50 review 2, NEEDS SIGN-OFF) | todo | P1 | SERVER-124 |
-| SHARED-053 | §7 says a renamed or archived profile goes missing; archiving does not (PR #50 review 3, NEEDS SIGN-OFF) | todo | P1 | — |
+| SHARED-052 | A check can report what a save accepts, and §14 says it cannot (SIGNED 2026-08-20) | done | P1 | SERVER-124 |
+| SHARED-053 | §7 says a renamed or archived profile goes missing; archiving does not (SIGNED 2026-08-20) | done | P1 | — |
 
 **v0.12.0** is the `done` rows above: *everything the profile release left
 half-true*. One story, one tag. The controlled-language work below is a second
@@ -1059,8 +1059,68 @@ not a behaviour change.
 | CLI-054 | `corpus thread scope` lists what a resident owns | done | P1 | CONTRACT-068, SERVER-130 |
 | AGENT-039 | A listener is launched at the designation's weight | done | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
 | SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | done | P0 | — |
-| SHARED-056 | §7 enumerates the core events, §9.2 the routes, §11 the console — Phase 36 added one of each (NEEDS SIGN-OFF) | todo | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
+| SHARED-056 | §7 enumerates the core events, §9.2 the routes, §11 the console (SIGNED 2026-08-20) | done | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
 | SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | todo | P2 | SERVER-129 |
+
+## Phase 37 — Nothing moves under your cursor (2026-08-20, user report)
+
+Two reports in one day, and the second is the first generalized. A P0: *"The drop
+down to pick an agent when commenting is blinking up and down which makes it
+impossible to use."* Then the class behind it: *"Elements resize based on their
+content, which then moves other elements that are stacked on top of it or aligned
+right."*
+
+**Nothing in SPEC.md forbade it**, which is why it shipped. SHARED-057 is the
+rule, signed before the audit measures anything against it — an audit without a
+rule produces taste, and an audit with one produces findings a person can check.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-057 | Nothing resizes because of what it holds (SIGNED 2026-08-20) | done | P0 | — |
+| UI-127 | The recipient picker oscillates under the pointer | done | P0 | SHARED-057 |
+| UI-128 | Audit: every surface whose size follows its content | done | P0 | SHARED-057 |
+| UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
+| UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
+| UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | todo | P2 | — |
+| UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | todo | P1 | — |
+| UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
+
+**UI-128's ledger ranks six reachable clusters**, each measured in a real browser
+and each filed below in the order a person hits them. The audit also found that
+UI-127's hover shape occurs in **exactly one place** — the class behind it is the
+late-arriving value, which is three of these six.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| UI-129 | An image reserves no box until it decodes (rank 1) | done | P0 | UI-128 |
+| UI-135 | The reader head's controls leave the column after a save (rank 2) | done | P0 | UI-128 |
+| UI-131 | A label that arrives late reflows the row it lands in (rank 3) | done | P0 | UI-128 |
+| UI-132 | The toast stack collapses toward its anchor (rank 4) | done | P1 | UI-128 |
+| UI-133 | The console strip's height is its text, and the board pays (rank 5) | done | P1 | UI-128 |
+| UI-134 | Counts and durations are not digit-stable (rank 6) | done | P2 | UI-128 |
+
+**Two things UI-128 escalated rather than filed.** `.title-grow`
+(`Reader.css:168-215`) makes the title box's height its text **on purpose** —
+UI-065 argued for it and SHARED-057 was signed after, so it is a spec
+adjudication, not a defect. And eight latent sites look reachable on reading and
+lack only a browser measurement (`RefNodeView`, `ScopeProvenance`, the anchor
+chips, the search filter chips, the todo item preview, `useAnchorLayer`'s
+margin-mode guard, the todo comment popover's guessed size, and the autocomplete's
+stale `top`) — a second sweep should measure those eight first.
+
+**The riders v0.14.0 carried forward are signed and applied in this phase**:
+SHARED-049, -052, -053, -056 as drafted. SHARED-053's two stale quotations were
+corrected with it.
+
+**The audit ran against the signed rule and found 12 reachable sites in 6
+clusters, 31 latent, 58 compliant.** All six reachable clusters were built, plus
+three more the fixes themselves surfaced: the popover's missing ceiling (UI-130),
+the address line pushing Send (UI-137), and the reader head's overflow (UI-135).
+`.title-grow` was adjudicated compliant under SHARED-057's stated exception.
+
+**Left filed, and named rather than omitted**: UI-136 (three surfaces drawn
+larger than the room they open into), SHARED-054's code half, SERVER-132, and the
+31 latent sites — eight of which the ledger flags as promotion candidates.
 
 **Phase 36 landed 2026-08-19/20**, and is the scope agreed for v0.14.0 — a release is a separate, deliberate act and is not in the phase's PR. Fourteen issues: the seven filed
 from the user's reports, six filed to make them usable end to end, and one

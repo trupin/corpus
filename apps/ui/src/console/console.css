@@ -14,10 +14,34 @@
   background: var(--surface);
 }
 
+/*
+ * The strip's height is a property of the strip, not of what it says (SPEC.md
+ * §11's rider, signed 2026-08-20 — "Nothing resizes because of what it holds").
+ *
+ * Without this, `.console { flex: none }` against `.board { flex: 1 }` means
+ * every extra line the strip takes is a line the board loses: measured at
+ * 39.94px → 45.88px the moment one skipped plugin wrapped, and the board fell
+ * 622.50px → 616.56px with nobody touching anything (UI-133).
+ *
+ * **The number is measured, not guessed** (rider clause 3). The tallest child is
+ * a pill: 11px mono at the body's 1.45 line-height is 15.94px, plus 4px padding
+ * above and below and a 1px border, which is 25.94px; inside 7px of strip
+ * padding that is 39.94px. 40px is that height rounded up, so the strip's real
+ * content clears it in every state and nothing is clipped.
+ *
+ * `overflow: hidden` is the backstop, not the mechanism. Every child below is
+ * single-line and truncates in place, so there is nothing to clip; a future
+ * child that forgets loses its overflow here instead of taking it from the
+ * board. The focus ring on the HALT button is 26px inside a 40px box, so it
+ * survives the clip.
+ */
 .console-strip {
   display: flex;
   align-items: center;
   gap: 12px;
+  height: 40px;
+  flex: none;
+  overflow: hidden;
   padding: 7px 18px;
   font-family: var(--mono);
   font-size: 11px;
@@ -56,13 +80,57 @@
   white-space: nowrap;
 }
 
+/*
+ * `corpus <version>` — the server's own string, so it is bounded here rather
+ * than trusted. 24ch clears every semver this project has published and a
+ * pre-release suffix besides; anything longer ellipsises and `ServerStatus`
+ * carries the whole of it in `title` (rider clause 2). `server unreachable` is
+ * 18 characters and never truncates.
+ */
 .c-status {
   color: var(--ink-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 24ch;
 }
 
+/*
+ * `N running · N queued · N done · N failed`, on ordinary queue traffic
+ * (SPEC.md §11's rider, 2026-08-20).
+ *
+ * **Tabular figures and no reservation**, deliberately. The span's *segments*
+ * come and go — `queued` and `deferred` are omitted at zero — so a `min-width`
+ * would be a box sized for a string rather than for a digit count, which is the
+ * reservation the rider warns against. What it does need is for `9 done` →
+ * `10 done` to stop nudging the strip's spacer on every job that finishes.
+ */
 .c-counts {
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The plugin-load warning (SPEC.md §10, `ConsoleStrip.tsx`). It shipped with
+ * **no rule at all**, which made it the one wrappable child in a row where
+ * everything else is `nowrap` — a plugin id or a load reason could take a
+ * second line out of the board (UI-133).
+ *
+ * It is the strip's designated shrinker: `flex: 0 1 auto` with `min-width: 0`
+ * means a long id gives way here rather than squeezing the counts or pushing
+ * the HALT button, and the whole warning is already in the span's `title`.
+ *
+ * The colour is inherited on purpose. Whether a skipped plugin should be
+ * `--sepia` or `--signal` in the strip is a look decision the mockup does not
+ * answer, and it is not this issue's to make.
+ */
+.c-plugin-warn {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 /* The prototype's `.c-failed` colour, under the console-drawer-scoped name. */
@@ -166,11 +234,23 @@
  * so it takes its height from the drawer's chrome rather than from the height
  * the resizer gave `.console-body`.
  */
+/*
+ * One line, and its height is its own (rider clause 1). It sits in the same
+ * `flex: none` column as the strip, so a second line here was a second line off
+ * the board: measured at 28.94px → 44.88px on one realistic `detail` sentence,
+ * and the board fell 348.63px → 332.69px (UI-133).
+ *
+ * Measured like the strip's: 11px mono at 1.45 is 15.94px, plus 6px of padding
+ * above and below and the 1px top border, which is 28.94px. 29px is that,
+ * rounded up.
+ */
 .index-status {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: none;
+  height: 29px;
+  overflow: hidden;
   padding: 6px 18px;
   border-top: 1px solid var(--line);
   font-family: var(--mono);
@@ -178,17 +258,41 @@
   color: var(--ink-2);
 }
 
-/* The server's wording, wrapped rather than truncated: a sentence cut at the
- * drawer's edge is a sentence that stopped explaining. */
+/*
+ * The server's wording, truncated in place rather than wrapped.
+ *
+ * This rule used to wrap (`overflow-wrap: anywhere`), on the reasoning that a
+ * sentence cut at the drawer's edge is a sentence that stopped explaining. The
+ * reasoning is right and the conclusion is inverted under SPEC.md §11's rider
+ * (2026-08-20): text that does not fit is **revealed, not accommodated**. So the
+ * line is cut here and the whole sentence goes to the span's `title`
+ * (`IndexPill.tsx`), which is where a person reads it without the board moving
+ * to make room.
+ */
 .index-detail {
   min-width: 0;
-  overflow-wrap: anywhere;
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/*
+ * Chunks that will not drain by themselves, climbing while indexing runs.
+ *
+ * `margin-left: auto` puts it against `.index-detail`, which truncates, so its
+ * width is taken out of the server's sentence. Tabular figures hold it steady
+ * inside a digit count, and `9ch` — the width of `147 failed` — holds it across
+ * the crossing. One character of slack beside `9 failed` is the whole cost
+ * (SPEC.md §11's rider, 2026-08-20).
+ */
 .index-failed {
   color: var(--signal);
   white-space: nowrap;
   margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  min-width: 9ch;
+  text-align: right;
 }
 
 .halt-btn {
@@ -566,6 +670,61 @@
   flex: none;
 }
 
+/*
+ * ── The reserved box, and the pattern the next late-arriving value copies ──
+ *
+ * SPEC.md §11's rider, signed 2026-08-20: "Nothing resizes because of what it
+ * holds… a value that arrives later than the box holding it moves nothing else
+ * on the screen."
+ *
+ * **The value here arrives on a second round trip.** The roster names the level
+ * *key* (`heavy`); the words are the workspace's own, parsed out of its
+ * orchestrate skill by `useWeightLevels`, which needs an exhaustive `?type=skill`
+ * scan and then a `useDoc` for the body. Until both land, `weightLabel` renders
+ * its documented fallback — the bare key — and UI-128 measured what happened
+ * when the label finally arrived: this box grew 119px and `.lane-name` lost the
+ * same 119px, on a 380px row that is a `<button>` a person clicks the moment the
+ * tab opens. What they pressed was not what they aimed at.
+ *
+ * **The pattern (UI-131's approach 1 of the three its issue lists): reserve the
+ * box, truncate what does not fit, reveal the whole of it on a `title`.**
+ *
+ * - The reservation is a fixed `width`, never a `min-width`. A `min-width`
+ *   computed from the levels once they arrive would still be one reflow — the
+ *   box would grow from the key's width to the reservation the moment the
+ *   answer landed, which is the same defect with a different trigger.
+ * - It is expressed in `ch` because this row is `var(--mono)`: the unit *is*
+ *   "how many characters of room", which is the only honest way to size a slot
+ *   against text. 24ch is one character past the longest label
+ *   `assets/workspace/`'s orchestrate skill declares — "Heavy or
+ *   judgment-laden", 23 characters — so **the shipped vocabulary never
+ *   truncates** (rider clause 3: measured against real content, so revealing is
+ *   the uncommon case). `LAUNCH_WEIGHT_CLAUSE` ("weight set at launch", 20) and
+ *   every bare key fit inside it too.
+ * - A workspace may declare longer words, and §2.4 says it may keep them
+ *   indefinitely. Those ellipsize in place and stay wholly readable on the
+ *   element's own `title` — never widen the box, which is what put the meta word
+ *   outside the row entirely in the measurement above.
+ *
+ * Approach 2 — paint nothing until the levels are known — is better behaviour
+ * and was not taken: an empty level list also means "this workspace declares
+ * nothing", where the key is the true and final answer (UI-098: an absent answer
+ * is never presented as one), and telling the two apart needs `useWeightLevels`
+ * to publish whether its queries have settled, which is a plugin-facing kit
+ * change. Approach 3 — shorten the labels — is not the product's to make.
+ *
+ * The seven sites UI-128 lists as latent (`RefNodeView`, `ScopeProvenance`, the
+ * anchor chips, the search filter chips, the todo preview, `.scope-count`, the
+ * agent pill) each want their own measurement first, but this is the answer they
+ * should reach for: fixed box in `ch` against the real vocabulary, ellipsis, and
+ * the full value on a `title`.
+ */
+.lane-weight {
+  width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .lane-meta {
   margin-left: auto;
 }
@@ -602,10 +761,24 @@
   white-space: nowrap;
 }
 
+/*
+ * `12 members listed` / `1 member in scope`.
+ *
+ * **Tabular figures only.** Two of the three things that change here are not
+ * digits: the plural on `member`, and the suffix, which flips on the server's
+ * `truncated` flag. A `min-width` big enough to hold all of that would be a box
+ * sized for the longest *string* rather than for a count, and it would take
+ * those characters permanently out of `.lane-statement` beside it — the opposite
+ * of the rider's "sized for the text people actually have". The count also
+ * changes only when somebody selects another lane, which is a gesture, not a
+ * clock. UI-131's note above already lists this span as wanting its own
+ * measurement before it gets a fixed box; this rule does not pre-empt that.
+ */
 .scope-count {
   color: var(--ink-3);
   margin-left: auto;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .scope-list {

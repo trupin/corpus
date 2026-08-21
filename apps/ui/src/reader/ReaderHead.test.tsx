@@ -4,7 +4,14 @@ import { cleanup, render, fireEvent, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
-import { backLabel, ReaderHead, showsBack, type ReaderHeadProps } from "./ReaderHead";
+import {
+  backLabel,
+  backTitle,
+  readerIdText,
+  ReaderHead,
+  showsBack,
+  type ReaderHeadProps,
+} from "./ReaderHead";
 import type { NavEntry } from "./useNavStack";
 
 /**
@@ -103,7 +110,9 @@ describe("ReaderHead's back button", () => {
   it("is always there in a column, where it is the only way back to the list", () => {
     const { container } = render(<Host />);
     expect(backButton(container)?.textContent).toBe("‹ Finance");
-    expect(backButton(container)?.getAttribute("title")).toBe("Back to list");
+    // The whole label leads, because the button truncates it (UI-135); the hint
+    // that used to be the entire tooltip follows.
+    expect(backButton(container)?.getAttribute("title")).toBe("‹ Finance — Back to list");
     expect(container.querySelector("[data-close-focus]")).toBeNull();
   });
 
@@ -112,5 +121,39 @@ describe("ReaderHead's back button", () => {
     const { container } = render(<Host onBack={onBack} />);
     fireEvent.click(backButton(container) as HTMLElement, { shiftKey: true });
     expect(onBack).toHaveBeenCalledWith(true);
+  });
+});
+
+/**
+ * The head is a fixed box holding text of unknown length (UI-135, SPEC.md §11).
+ * The geometry that makes that work is asserted in a real browser
+ * (`e2e/reader-head-geometry.spec.ts`); what this file owes it is the pair of
+ * `title`s, because a truncation with nothing behind it is a value quietly cut.
+ */
+describe("what a truncated head reveals (SHARED-057 clause 2)", () => {
+  it("puts the whole back label ahead of the hint on the tooltip", () => {
+    expect(backTitle("‹ Finance", null)).toBe("‹ Finance — Back to list");
+    expect(backTitle("‹ Mortgage options", DEPTH)).toBe(
+      "‹ Mortgage options — Back (shift-click, or ⇧esc: straight to list)",
+    );
+  });
+
+  it("carries the label in an element that can hold an ellipsis", async () => {
+    const { container } = render(<Host previous={DEPTH} />);
+    await waitFor(() => {
+      expect(backButton(container)?.querySelector(".back-label")?.textContent).toBe(
+        "‹ Mortgage options",
+      );
+    });
+    // The button is a flex row, where `text-overflow` reaches nothing.
+    expect(backButton(container)?.textContent).toBe("‹ Mortgage options");
+  });
+
+  it("reveals the whole document id, which the head also truncates", () => {
+    expect(readerIdText("doc_r")).toBe("doc_r · git ✓");
+    const { container } = render(<Host docId="doc_a_very_long_identifier" />);
+    const id = container.querySelector(".reader-id");
+    expect(id?.textContent).toBe("doc_a_very_long_identifier · git ✓");
+    expect(id?.getAttribute("title")).toBe("doc_a_very_long_identifier · git ✓");
   });
 });

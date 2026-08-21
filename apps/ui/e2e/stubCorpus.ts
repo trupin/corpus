@@ -21,7 +21,9 @@ import {
   type DocRow,
   type DocStatus,
   type FolderTree,
+  type Health,
   type Form,
+  type IndexStatus,
   type FormAnswerRequest,
   type FormAnswerResponse,
   type AgentLane,
@@ -124,6 +126,8 @@ type StubPayload =
   | DocMutationResponse
   | FolderTree
   | FormAnswerResponse
+  | Health
+  | IndexStatus
   | JobList
   | MarkSeenResult
   | NotFoundError
@@ -206,6 +210,20 @@ export interface StubRow {
    */
   readonly unread?: boolean;
   /**
+   * How many of this document's child threads carry a turn nobody has seen —
+   * `DocRow.unreadThreads` (CONTRACT-012), the number the row's unread pill
+   * shows on a **document** row.
+   *
+   * Seeded rather than derived, and the reason is in `asRow`'s own list of what
+   * this stub does not know: the server counts child threads whose last turn is
+   * newer than the seen mark, which is a comparison against a mark this stub has
+   * no store for. The field stayed flatly `0`, so no spec could reach the pill
+   * at all — and it is the one badge whose content is a *word or a number*
+   * (`new` vs `12`), which is a width question a stub that never lights it
+   * cannot ask (UI-134). Absent, it is still `0`.
+   */
+  readonly unreadThreads?: number;
+  /**
    * The ranked answer `GET /api/docs/{id}/related` gives for this document
    * (UI-025), in the server's order.
    *
@@ -252,6 +270,8 @@ interface StoredDoc {
   parent: string | null;
   extra: Record<string, unknown>;
   stale: StaleTier | null;
+  /** Seeded, never derived — see {@link StubRow.unreadThreads}. */
+  unreadThreads: number;
   /**
    * Stamped on every write, exactly as the server stamps it. Kept per document
    * rather than as one frozen constant because a surface may legitimately key
@@ -609,6 +629,7 @@ function seeded(row: StubRow): StoredDoc {
     agent: "none",
     related: row.related ?? null,
     unread: row.unread ?? false,
+    unreadThreads: row.unreadThreads ?? 0,
     anchors: (row.anchors ?? []).map((anchor) => ({
       anchorId: anchor.anchorId,
       threadId: anchor.threadId,
@@ -910,9 +931,10 @@ export async function stubCorpus(
    * assert less than the server would show it (no shipped spec does today —
    * UI-102's sweep checked):
    *
-   * - `unreadThreads` is always `0`. The server counts a document's child
-   *   threads whose last turn is newer than the seen mark, so a parent of an
-   *   unread conversation wears a pill here that this stub never lights.
+   * - `unreadThreads` is whatever the spec **seeded** and never derived. The
+   *   server counts a document's child threads whose last turn is newer than the
+   *   seen mark; this stub holds no seen mark, so an unseeded parent of an
+   *   unread conversation still wears no pill here.
    * - `awaitingAgent` is always `false` on a thread. The server's rule is
    *   `agent <> 'none' AND status = 'open' AND last_author = 'user'`, which a
    *   thread created through this stub's own `POST /api/threads` with
@@ -970,7 +992,7 @@ export async function stubCorpus(
       lastTurn: doc.type === "thread" ? (last?.body ?? null) : null,
       unread: doc.type === "thread" ? doc.unread : null,
       awaitingAgent: doc.type === "thread" ? false : null,
-      unreadThreads: 0,
+      unreadThreads: doc.type === "thread" ? 0 : doc.unreadThreads,
       unansweredForms: unansweredFormsOf(doc),
       attention: attentionOf(doc),
       snippets: [],
@@ -1193,6 +1215,46 @@ export async function stubCorpus(
       return json(route, { jobs: answer.map(asJob) } satisfies JobList);
     }
     if (url.pathname === "/api/tree") return json(route, { folders: [] } satisfies FolderTree);
+    /*
+     * `GET /api/index/status` — the strip's index pill (SPEC.md §11's
+     * index-pill rider).
+     *
+     * Nobody had written a handler, so the `{}` fallback at the bottom of this
+     * function answered it, and the pill in **every** stubCorpus spec read
+     * `index: undefined · undefined/NaN` — a wider, uglier string than any real
+     * one, in a strip several specs measure (UI-133). Nothing validates a JSON
+     * response, so it never raised anything.
+     *
+     * A caught-up index is the honest default for a stub with no worker: there
+     * is nothing queued because nothing here queues.
+     */
+    /*
+     * `GET /api/health` — the strip's reachability notice (SPEC.md §2.1).
+     *
+     * Unhandled for the same reason and with the same result as the index
+     * status above: the `{}` fallback answered it, `health.data` was an object
+     * rather than `undefined`, and the strip rendered `corpus ` with an empty
+     * version in every stubCorpus spec. A stub that answers the rest of the API
+     * is a reachable server, so it says so.
+     */
+    if (url.pathname === "/api/health") {
+      return json(route, {
+        status: "ok",
+        version: "0.0.0-stub",
+        uptimeSeconds: 1,
+        workspace: "/tmp/stub-workspace",
+      } satisfies Health);
+    }
+    if (url.pathname === "/api/index/status") {
+      return json(route, {
+        indexed: store.size,
+        pending: 0,
+        failed: 0,
+        identity: "stub/none@0",
+        rebuilding: false,
+        state: "current",
+      } satisfies IndexStatus);
+    }
     /*
      * `GET /api/queue/status` — the console strip's counts (SPEC.md §7).
      *

@@ -16,27 +16,171 @@
 .composer-address {
   position: relative;
   display: flex;
-  min-width: 0;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-3);
+
+  /*
+   * ── The line's slot ──────────────────────────────────────────────────────
+   *
+   * SPEC.md §11's rider signed 2026-08-20: *"A component's size is a property
+   * of its place in the layout, never of the text that happens to be in it —
+   * so … a value that arrives later than the box holding it … move[s] nothing
+   * else on the screen."* This is that box (UI-137).
+   *
+   * **What went wrong.** The line reads `<who> · <weight>`, and the weight
+   * clause arrives on a *second* request — the roster names a level key
+   * (`heavy`), the workspace's own orchestrate skill turns it into words
+   * (`Heavy or judgment-laden`). While the slot took its width from that
+   * string, the arrival pushed the whole footer sideways. Measured in the
+   * reply composer at 1280×720:
+   *
+   *     .composer-address   x=95  w=181.7  →  w=220.0    (+38.3)
+   *     .send               x=453.3        →  x=461.8    (+8.5)   at rest
+   *
+   * and from an unsettled first paint, x=350.4 → x=461.8 (+111.4): the numbers
+   * depend on where the column had got to, which is itself the complaint. A
+   * control moved under the pointer, on the one control a composer exists to
+   * press.
+   *
+   * **Why not reserve the weight clause alone.** Considered and rejected. The
+   * *who* half is a profile name of no bounded length, so a line that reserved
+   * only the weight would still resize when the name arrived, when the
+   * recipient changed, or when a different lane was picked. That fixes one
+   * trigger and not the defect.
+   *
+   * **The number, measured against real content** (the rider's third clause).
+   * The line is monospaced (`10.5px var(--mono)`), so every statement has an
+   * exact length in characters and that length is the same on every machine.
+   * The pill also spends `--address-chrome` on everything that is *not* the
+   * sentence, so a slot of `w` shows `w − var(--address-chrome)` of text:
+   *
+   *     15ch  Nobody is asked                                    floor, whole
+   *     17ch  agent will answer                        ordinary and live, whole
+   *     27ch  agent will answer · Standard
+   *     29ch  researcher will answer · heavy
+   *     40ch  ui-dev will answer · Small and mechanical
+   *     42ch  agent will answer · Heavy or judgment-laden
+   *     47ch  claims-review will answer · weight set at launch
+   *     56ch  release-researcher will answer · Heavy or judgment-laden
+   *
+   * **The slot holds 17 characters: `agent will answer`.** That is the
+   * ordinary live statement — what the line says before anybody picks a
+   * recipient or a weight — and the rider requires the ordinary reading path
+   * to be read rather than revealed. The floor line (`Nobody is asked`, 15)
+   * fits inside it. A resident's name or a weight clause past that truncates
+   * **from the right**, which is the deliberate priority: *who answers*
+   * survives, and the weight — the shorter question, stated in full in the
+   * popover one gesture away — is what gives. There is no wider honest number:
+   * the name is free text from a profile, so the sentence is unbounded from
+   * above. Some content must truncate and this is the choice of which, the
+   * same shape of decision UI-127 recorded for the statement's four lines.
+   *
+   * **Why the number is `17ch + chrome` and not a round `ch` count.** The
+   * first version of this reserve was `22ch`, chosen because 22 × 6.313px is
+   * 139px and 141.6px was what the reply composer's footer had spare. That
+   * pinned the machine that measured it twice over. A `ch` is the advance of
+   * `0` in whatever mono the machine resolves, and the chrome is a fixed count
+   * of pixels, so `22ch` buys 17.3 characters of sentence in this repo's mono
+   * on macOS and fewer in a mono whose `ch` is smaller. CI's Linux clipped
+   * `agent will answer` at 131.6px of pill — the ordinary statement, cut, on
+   * the reading path — three runs in a row. Deriving the slot from the
+   * sentence instead (`17ch`) and adding the chrome in the unit the chrome is
+   * actually in (px) makes the reserve say what it means in every font.
+   *
+   * **The floor, and what yields instead.** `min-width` is what makes this a
+   * reserve rather than a preference: `flex-shrink` alone let a footer whose
+   * other items ran wide take the sentence's own characters, which is the
+   * defect wearing a different font. The footer's room is still fixed, so
+   * something must give when it runs out, and the change is *which*: the
+   * composer's hint (`thread stays open`) truncates, and the toggle and the
+   * send button hold their natural size — see `apps/ui/src/thread/thread.css`,
+   * which sets that order. The hint repeats what pressing send does. The
+   * address line says who is about to be spoken to.
+   *
+   * The whole line is on the pill's own `title` (`ComposerAddress.tsx`), so a
+   * truncated statement is revealed rather than lost.
+   */
+
+  /* 17 characters — `agent will answer`, the ordinary live statement. */
+  --address-hold: 17ch;
+
+  /*
+   * What the pill spends on things that are not the sentence: 9px of padding
+   * and 1px of border each side (20px), the 5px gap before the caret, and 8px
+   * for the caret. The caret is `▾`, which is not in the mono and is drawn
+   * from whatever fallback the machine has — this machine renders it at
+   * 4.83px, and the reserve takes a full em of its 8px size instead, so a
+   * wider fallback cannot eat a character of the sentence.
+   */
+  --address-chrome: 33px;
+
+  --address-slot: calc(var(--address-hold) + var(--address-chrome));
+
+  /* The floor and the preference are the same number: the slot is what the
+     layout gives this line, and content can neither grow it nor cut into it. */
+  min-width: var(--address-slot);
+  flex: 0 1 var(--address-slot);
+
+  /*
+   * The recipient statement's reserved box — SPEC.md §11's rider signed
+   * 2026-08-20, "Nothing resizes because of what it holds". Declared here, on
+   * the control, rather than beside `.recipient-says`, because the line height
+   * and the line count are one measurement and have to be changed together:
+   * the reserved height is computed from both, and a pair that drifts apart is
+   * a box that no longer holds the number of lines it clamps to.
+   *
+   * **Four lines is measured, not guessed** (UI-127). The popover is 240px wide
+   * at every composer host — its `min-width` wins, because the shrink-to-fit
+   * width is bounded by `.composer-address`, which is only as wide as the
+   * address line pill — so the statement wraps in a 218px measure at every one
+   * of them. Against the real statements that measure produces:
+   *
+   *     agent will answer — last seen 4m ago — nobody is listening        2
+   *     claims-review will answer — reading the policy (default here)     2
+   *     <conversation> will answer — no listener yet                      2
+   *     release-researcher will answer — last seen 17m ago —
+   *       the orchestrator will answer until it returns                   4
+   *     claims-review will answer — its profile is gone — renamed,
+   *       deleted, or moved out of .claude/agents/ since — last seen
+   *       17m ago — the orchestrator will answer until it returns         6
+   *
+   * A lapsed lane is ordinary — every agent that is not parked right now reads
+   * that way — so the box holds it whole. §7's missing-profile report is the
+   * one statement that overflows, and §7 itself calls that news rather than the
+   * reading path. It is revealed rather than accommodated: the whole sentence
+   * is on this element's own `title` and on the row's, which has carried
+   * `name — note — line` since UI-126.
+   *
+   * There is no "longest real statement" to size to instead: `AgentLane.summary`
+   * is free text the agent writes, so the sentence is unbounded from above and
+   * some content must truncate. The choice is which content, and it is this one.
+   */
+  --says-line-height: 1.6;
+  --says-lines: 4;
 }
 
 /* ── The line ── */
 
+/* Fills its slot, whichever way the statement is short of or over it: a pill
+   that shrank to a short line would still be a box sized by its text, and the
+   caret would walk left every time the words changed. */
 .address-line {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
+  flex: 1 1 auto;
   font: inherit;
   color: var(--ink-2);
   text-align: left;
 }
 
 /* The line truncates before it pushes a footer's send button out of reach:
-   the full sentence is on the title and in the popover. */
+   the full sentence is on the title and in the popover. It takes the slot's
+   whole measure, so the caret sits at the pill's right edge and stays there. */
 .address-line-text {
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -45,6 +189,9 @@
 .address-line > .address-caret {
   color: var(--ink-3);
   font-size: 8px;
+  /* Never the part that gives: the affordance that says the line opens has to
+     survive a statement too long for the slot. */
+  flex: none;
 }
 
 button.address-line {
@@ -85,6 +232,50 @@ button.address-line:focus-visible {
 
 /* ── The popover ── */
 
+/*
+ * The card has a ceiling, and the lane list is what gives way (UI-130).
+ *
+ * It is `bottom`-anchored and grows **upward** out of a composer that sits
+ * inside `.reader-scroll` — a scrollport, not the window. With no ceiling it
+ * simply kept growing: measured at 1280×720 with twenty lanes the card was
+ * 667px tall and its top reached **y=−248**, while the reader's scrollport
+ * starts at y=159. Twelve of the twenty rows were off-screen entirely and five
+ * more were behind the top bar, the column head and `.reader-head`, which took
+ * the pointer events aimed at them (`document.elementFromPoint` answered
+ * `DIV.reader-head` at three of the row centres). Those lanes could not be
+ * chosen at all.
+ *
+ * **Two numbers and a clamp:**
+ *
+ * - `--address-pop-cap: 280px` — the ceiling, and it is measured rather than
+ *   round: **the ordinary roster fits whole under it**. The orchestrator plus
+ *   two conversation lanes, with the four-line statement reserve and a
+ *   resident's weight sentence, is a 256px card, so nothing about the ordinary
+ *   case scrolls. The fourth lane is where the list starts to scroll — and says
+ *   so. It is the same register `design/index.html` uses for a popover list
+ *   (`.ac-menu` caps at 200px).
+ * - **The room above the line** — how much space there actually is inside the
+ *   nearest scrollport, which is the one thing CSS cannot ask. It arrives as
+ *   `--address-pop-max`, written by `ComposerAddress.tsx` when the card opens.
+ *   Measured at 1280×720 above a reply composer on a one-turn conversation:
+ *   **254px**; at 1280×400, 102px. It is the room and not the cap that makes the
+ *   guarantee, because the room is what shrinks when the window does — and it
+ *   is why a composer scrolled up near the top of its reader is bounded too,
+ *   which no constant could have done.
+ * - **One row is the floor**, and it is measured rather than declared, because
+ *   the parts above and below the list are not all the same height (a resident's
+ *   weight sentence is three lines where a level row is one). A card squeezed
+ *   until the list was 0px high would clear the head and offer nothing, which is
+ *   the defect wearing different clothes — so where the room will not take the
+ *   fixed parts and one row, `--address-pop-shift` moves the card *down* until
+ *   its top is 6px inside the scrollport. It is a clamp and never a flip: the
+ *   card stays where a person looks for it, above the line, and in the one
+ *   viewport where it cannot fit at all (1280×400, whose reader scrollport is
+ *   187px) it covers its own composer rather than the head.
+ *
+ * Only the lane list scrolls. The statement and the weight section are the
+ * parts UI-127 stabilised, and a scroll offset must never be able to move them.
+ */
 .address-pop {
   position: absolute;
   bottom: calc(100% + 6px);
@@ -100,17 +291,55 @@ button.address-line:focus-visible {
   border-radius: 9px;
   box-shadow: var(--shadow);
   padding: 9px 10px;
+
+  --address-pop-cap: 280px;
+  /* `--address-pop-max` is the fitted bound `ComposerAddress.tsx` writes when
+     the card opens; the cap is what stands until it does, and what bounds it
+     afterwards. */
+  max-height: var(--address-pop-max, var(--address-pop-cap));
+  transform: translateY(var(--address-pop-shift, 0px));
 }
 
 .address-section {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Every section keeps its size; the lane list's is the one that gives. */
+  flex: none;
+}
+
+/* The section the ceiling is paid out of: it takes the slack and passes it to
+   the list, which is the only child here allowed to scroll. */
+.address-recipient {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The lead and, when the list is capped, what says so — one line either way, so
+   the note costs the card no height (SPEC.md §11's rider, 2026-08-20). */
+.address-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex: none;
 }
 
 .address-lead {
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  flex: none;
+}
+
+/*
+ * A capped list that looked complete would be a silent cap, which is the one
+ * thing a bounded listing must not be. So the card says the count out loud, and
+ * the scrollbar below corroborates it.
+ */
+.address-more {
+  flex: none;
+  color: var(--ink-3);
+  white-space: nowrap;
 }
 
 .recipient-lanes,
@@ -119,6 +348,31 @@ button.address-line:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
+}
+
+.recipient-lanes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* A wrap container given a height distributes its lines by default; the rows
+     belong at the top of the list, not spread down it. */
+  align-content: flex-start;
+  /* Reserved always, so the roster that grows past the ceiling does not re-wrap
+     the rows that were already there. */
+  scrollbar-gutter: stable;
+}
+
+/* The board's own scrollbar vocabulary (`design/index.html`: `.col-list`,
+   `.reader-scroll`). Styling it also takes the list off macOS's overlay
+   scrollbars, which are invisible until you already scrolled — exactly the
+   affordance a capped list cannot afford to hide. */
+.recipient-lanes::-webkit-scrollbar {
+  width: 8px;
+}
+
+.recipient-lanes::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 99px;
 }
 
 /* ── Row anatomy, shared by both sections ── */
@@ -230,8 +484,28 @@ button.address-line:focus-visible {
 
 /* ── The two sentences ── */
 
+/*
+ * The statement's box is a property of its place and never of the sentence in
+ * it. The popover is anchored by its bottom edge and grows upward, so a
+ * statement that added a line moved every row above it — including the row
+ * under the cursor, which un-hovered, which shortened the statement, which
+ * brought the row back: the surface oscillated until the pointer gave up
+ * (UI-127, and the loop SPEC.md §11's rider names in so many words).
+ *
+ * The height is fixed and the clamp holds the text to the same count, so the
+ * two agree whichever way the sentence is short of or over the reserve. See
+ * `--says-lines` on `.composer-address` for the measurement behind the number.
+ */
 .recipient-says {
   color: var(--ink-3);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--says-lines);
+  overflow: hidden;
+  /* Never let a flex column steal a line back from the reserve. */
+  flex: none;
+  line-height: var(--says-line-height);
+  height: calc(var(--says-lines) * var(--says-line-height) * 1em);
 }
 
 .recipient-default-note {
@@ -245,4 +519,6 @@ button.address-line:focus-visible {
   max-width: 300px;
   color: var(--ink-3);
   line-height: 1.5;
+  /* Outside the ceiling's give, like every section but the list. */
+  flex: none;
 }

@@ -104,9 +104,11 @@ describe("Resident", () => {
   });
 
   /**
-   * §7: *"A profile that is renamed or archived after designation does not end
-   * the designation … the missing profile is reported rather than silently
-   * substituted."* This pair is that report, and it must stay tellable apart
+   * §7, as amended by SHARED-053 (signed 2026-08-20): *"A profile that is
+   * renamed, deleted, or moved out of `.claude/agents/` after designation does
+   * not end the designation … the missing profile is reported rather than
+   * silently substituted."* **Archiving is not one of those cases**, so an
+   * archived profile never produces this pair. It must stay tellable apart
    * from a general resident — one is ordinary, the other is worth mentioning.
    */
   it("round-trips a named profile that no longer resolves, distinguishably", () => {

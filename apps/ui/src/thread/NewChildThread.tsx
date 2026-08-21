@@ -37,6 +37,12 @@ import { GrowingTextarea } from "./GrowingTextarea";
  * for every composer now, which is why this one no longer states it.
  */
 
+/**
+ * What this box makes, and the only place the product says it. One constant so
+ * the words and the `title` that reveals them cannot drift apart.
+ */
+export const CHILD_HINT = "creates a child thread";
+
 export interface NewChildThreadProps {
   /** The thread being commented on — the new thread's `parent`. */
   readonly parentThreadId: string;
@@ -149,7 +155,12 @@ export function NewChildThread({
       <div className="composer-foot">
         <AttachButton surface={`child:${parentThreadId}`} onFiles={intake.add} />
         <ComposerAddress address={address} surface={`child:${parentThreadId}`} />
-        <span className="composer-hint">creates a child thread</span>
+        {/* Same reveal as the reply composer's hint, for the same reason: this
+            foot truncates it, and this is the only place the box says what
+            pressing Comment makes (SHARED-057 clause 2). */}
+        <span className="composer-hint" title={CHILD_HINT}>
+          {CHILD_HINT}
+        </span>
         <button
           type="button"
           className="send"

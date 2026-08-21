@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readerTransport, type ReaderTransport } from "../testing/readerFixture";
-import { NewChildThread } from "./NewChildThread";
+import { CHILD_HINT, NewChildThread } from "./NewChildThread";
 
 afterEach(cleanup);
 
@@ -133,5 +133,18 @@ describe("commenting on a turn", () => {
     const send = screen.getByRole("button", { name: /Comment/u });
     expect(send.textContent).toBe("Comment ⌘↵");
     expect(send.hasAttribute("disabled")).toBe(true);
+  });
+
+  /**
+   * SHARED-057 clause 2, for the one sentence that says what this box makes.
+   * It shares `.composer-hint` with the reply composer, so it shares that
+   * foot's decision to truncate the hint when the room runs out — and a
+   * truncation has to reveal.
+   */
+  it("hands the whole hint back on a title", () => {
+    const { container } = render(<Host transport={readerTransport({})} />);
+    const hint = container.querySelector(".composer-hint");
+    expect(hint?.textContent).toBe(CHILD_HINT);
+    expect(hint?.getAttribute("title")).toBe(CHILD_HINT);
   });
 });

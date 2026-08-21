@@ -41,6 +41,7 @@ export type {
 } from "./addressModel.js";
 export {
   ComposerAddress,
+  lanesCappedNote,
   RECIPIENT_GROUP_LABEL,
   RECIPIENT_LEAD,
   WEIGHT_GROUP_LABEL,

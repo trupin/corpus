@@ -367,6 +367,7 @@ export {
   answeringRow,
   composerAddress,
   ComposerAddress,
+  lanesCappedNote,
   residentWeightSentence,
   weightLabel,
   ADDRESS_FLOOR_TITLE,

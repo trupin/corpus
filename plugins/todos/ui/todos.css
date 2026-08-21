@@ -367,9 +367,21 @@
   white-space: nowrap;
 }
 
+/*
+ * The item count, which changes whenever "Show completed" is toggled.
+ *
+ * `margin-left: auto` puts it against `.todos-group-title`, which truncates, so
+ * a count crossing into two digits re-cuts the list's own name. Tabular figures
+ * hold it inside a digit count and `2ch` holds it across the crossing — two
+ * because a checklist of a hundred items is not the case this box is sized for
+ * (SPEC.md §11's rider, signed 2026-08-20).
+ */
 .todos-group-count {
   margin-left: auto;
   color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+  text-align: right;
 }
 
 .todos-column .check {

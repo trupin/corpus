@@ -198,6 +198,26 @@ export function laneStatement(row: LaneRow): string {
 }
 
 /**
+ * The whole of a lane row, for the row's own `title` — the statement, plus the
+ * weight the row shows in a box that cannot grow to hold it.
+ *
+ * `.lane-weight` is a fixed reservation (see `console.css`, UI-131), so a
+ * workspace whose own words run past it gets an ellipsis on the row. SHARED-057
+ * clause 2 says text that does not fit is *revealed* rather than accommodated,
+ * and the row already had a title to reveal it on — so the weight joins it here,
+ * with the ` · ` the composer's address line already uses between a recipient
+ * and its weight, rather than the ` — ` that joins the statement's own clauses.
+ *
+ * Silence stays silent: the orchestrator's lane has no designation, and appending
+ * a bare separator to its statement would read as a clause somebody lost.
+ */
+export function laneRowTitle(row: LaneRow, levels: readonly WeightLevel[]): string {
+  const weight = laneWeightLabel(row, levels);
+  const statement = laneStatement(row);
+  return weight === "" ? statement : `${statement} · ${weight}`;
+}
+
+/**
  * How many members are on the page, and whether that is the whole scope.
  *
  * The completeness word is spent only on a definite `truncated: false`. There is

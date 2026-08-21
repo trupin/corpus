@@ -22,6 +22,14 @@ import type { NavEntry } from "./useNavStack";
  * thread's conversation, a plugin-typed document — it renders as the empty
  * element the head has always carried, so the head does not reflow when the
  * surface changes.
+ *
+ * **The row is a fixed box holding text of unknown length**, and `Reader.css`'s
+ * head block is where that is arranged (UI-135): the controls never yield, the
+ * back label and the id truncate with the whole of each on a `title`, and the
+ * save chip's box is reserved to its ordinary state. What this file owes that
+ * arrangement is the two `title`s — see {@link backTitle} and
+ * {@link readerIdText} — because a truncation with nothing behind it is a
+ * value quietly cut, which SHARED-057 rules out.
  */
 
 export interface ReaderHeadProps {
@@ -84,6 +92,26 @@ export function showsBack(variant: ReaderHeadProps["variant"], previous: NavEntr
   return variant !== "focus" || previous !== null;
 }
 
+/**
+ * The back button's tooltip: **the label, whole, and then what the button does**.
+ *
+ * The label is a parent document's title and the button truncates it — the head
+ * is a fixed box and the title is not (UI-135) — so SHARED-057's clause 2
+ * applies: *"truncate it in place and give the whole of it to a tooltip"*. The
+ * hint that used to be the entire tooltip follows it, because the shift-click
+ * shortcut is not discoverable anywhere else.
+ */
+export function backTitle(label: string, previous: NavEntry | null): string {
+  return previous === null
+    ? `${label} — Back to list`
+    : `${label} — Back (shift-click, or ⇧esc: straight to list)`;
+}
+
+/** What `.reader-id` reads, and what its `title` reveals when it is truncated. */
+export function readerIdText(docId: string): string {
+  return `${docId} · git ✓`;
+}
+
 export function ReaderHead(props: ReaderHeadProps): ReactElement {
   const { doc, previous, threads } = props;
   const [open, setOpen] = useState<"comments" | "menu" | null>(null);
@@ -99,18 +127,21 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
         <button
           type="button"
           className="back"
-          title={
-            previous === null ? "Back to list" : "Back (shift-click, or ⇧esc: straight to list)"
-          }
+          title={backTitle(backLabel(previous, previousTitle, props.listTitle), previous)}
           onClick={(event) => {
             props.onBack(event.shiftKey);
           }}
         >
-          {backLabel(previous, previousTitle, props.listTitle)}
+          {/* The label is its own element so it can carry the ellipsis: the
+              button is a flex row and `text-overflow` does not reach a flex
+              container's own text. */}
+          <span className="back-label">{backLabel(previous, previousTitle, props.listTitle)}</span>
         </button>
       ) : null}
       {props.hint === undefined ? null : <span className="focus-hint">{props.hint}</span>}
-      <span className="reader-id">{props.docId} · git ✓</span>
+      <span className="reader-id" title={readerIdText(props.docId)}>
+        {readerIdText(props.docId)}
+      </span>
       <SaveChip />
       {threads.length === 0 ? null : (
         <button
@@ -122,7 +153,11 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
             setOpen(open === "comments" ? null : "comments");
           }}
         >
-          💬 {threads.length}
+          {/* The count is its own box, so crossing into two digits does not
+              widen the control and re-cut `.back` and `.reader-id` beside it
+              (SPEC.md §11's rider; `.comments-count` carries the reservation).
+              `textContent` is unchanged — still `💬 1`. */}
+          💬 <span className="comments-count">{threads.length}</span>
         </button>
       )}
       <button

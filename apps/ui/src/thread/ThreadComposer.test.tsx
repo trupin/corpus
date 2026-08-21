@@ -63,6 +63,27 @@ describe("ThreadComposer", () => {
     expect(container.querySelector(".composer-hint")?.textContent).toBe(RESOLVED_HINT);
   });
 
+  /**
+   * SHARED-057 clause 2. The foot truncates this hint when it runs out of room
+   * (`thread.css` chose it as the item that yields), and these two sentences
+   * are the only place the product says either thing — so the whole of each has
+   * to be reachable from the clipped span. jsdom lays nothing out, so the clip
+   * itself is asserted in `address-geometry.spec.ts`; what is pinned here is
+   * that the reveal exists and matches the words, in both states.
+   */
+  it("hands the whole hint back on a title, in both states", () => {
+    for (const [resolved, words] of [
+      [false, OPEN_HINT],
+      [true, RESOLVED_HINT],
+    ] as const) {
+      const { container, unmount } = render(<Host transport={wire()} resolved={resolved} />);
+      const hint = container.querySelector(".composer-hint");
+      expect(hint?.textContent).toBe(words);
+      expect(hint?.getAttribute("title")).toBe(words);
+      unmount();
+    }
+  });
+
   it("cannot send an empty turn, and can send an attachment-only one", async () => {
     const transport = wire();
     const { container } = render(<Host transport={transport} />);

@@ -4,10 +4,17 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { laneRow } from "../recipient/laneRows.js";
+import { DEFAULT_ROW_NOTE } from "../recipient/statement.js";
 import type { ComposerRecipient } from "../recipient/useComposerRecipient.js";
 import type { ComposerWeight } from "../weight/weightChoice.js";
-import { composerAddress, residentWeightSentence, NOBODY_ASKED } from "./addressModel.js";
-import { ComposerAddress, WEIGHT_GROUP_LABEL } from "./ComposerAddress.js";
+import {
+  ADDRESS_FLOOR_TITLE,
+  ADDRESS_OPEN_TITLE,
+  composerAddress,
+  residentWeightSentence,
+  NOBODY_ASKED,
+} from "./addressModel.js";
+import { ComposerAddress, lanesCappedNote, WEIGHT_GROUP_LABEL } from "./ComposerAddress.js";
 
 /**
  * The control (UI-126): the line, the popover, and what the popover refuses to
@@ -143,6 +150,45 @@ describe("the line", () => {
   });
 });
 
+/**
+ * The line's own reveal (SPEC.md §11's rider signed 2026-08-20, UI-137).
+ *
+ * Its **width** is the browser spec's — `apps/ui/e2e/address-geometry.spec.ts`,
+ * because the slot is a flex basis and jsdom implements no layout. What is
+ * pinned here is the half jsdom can see: the slot truncates the line by CSS, so
+ * the pill's own title has to carry the whole sentence, or a statement wider
+ * than 22ch is lost rather than revealed.
+ */
+describe("the line's title", () => {
+  it("leads with the whole statement, then says what pressing it does", () => {
+    // A resident recipient, whose line carries a weight clause and so is the
+    // statement the 22ch slot actually truncates.
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} computed="th_a" />);
+    const title = line().getAttribute("title") ?? "";
+    // The caret is not part of the sentence, so the text element is the one
+    // compared: it is what the slot truncates and what the title stands in for.
+    const said = line().querySelector(".address-line-text")?.textContent ?? "";
+    expect(said).not.toBe("");
+    expect(title.startsWith(said)).toBe(true);
+    expect(title).toContain(ADDRESS_OPEN_TITLE);
+  });
+
+  it("says the floor's own explanation there instead", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} live={false} />);
+    const title = line().getAttribute("title") ?? "";
+    expect(title).toContain(NOBODY_ASKED);
+    expect(title).toContain(ADDRESS_FLOOR_TITLE);
+  });
+
+  it("reveals the sentence alone where there is no gesture to explain", () => {
+    render(<Host lanes={[ORCHESTRATOR]} levels={[]} />);
+    expect(line().tagName).toBe("SPAN");
+    expect(line().getAttribute("title")).toBe(
+      line().querySelector(".address-line-text")?.textContent,
+    );
+  });
+});
+
 describe("the two sections", () => {
   it("offers the lanes and the levels, each row an ordinary button", () => {
     render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
@@ -250,5 +296,89 @@ describe("the floor", () => {
     expect(document.querySelectorAll("[data-recipient-lane]")).toHaveLength(2);
     expect(weightKeys()).toEqual([]);
     expect(document.querySelector("[data-resident-weight]")).toBeNull();
+  });
+});
+
+/**
+ * The statement under the rows (SPEC.md §11's rider signed 2026-08-20, UI-127).
+ *
+ * Its **height** is the browser spec's — `apps/ui/e2e/address-geometry.spec.ts`,
+ * because jsdom implements no layout and the defect was a layout loop. What is
+ * pinned here is the half jsdom can see: the sentence is truncated by CSS, so
+ * the title has to carry the *whole* of it, clause for clause, or the reveal
+ * SHARED-057 asks for reveals less than the box it stands in for.
+ */
+describe("the statement", () => {
+  const statement = (): HTMLElement => {
+    const found = document.querySelector<HTMLElement>('[data-recipient-statement="probe"]');
+    if (found === null) throw new Error("no statement");
+    return found;
+  };
+  const row = (lane: string): HTMLElement => {
+    const found = document.querySelector<HTMLElement>(`[data-recipient-lane="${lane}"]`);
+    if (found === null) throw new Error(`no row for ${lane}`);
+    return found;
+  };
+
+  it("carries the whole sentence on its title, the default note included", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(line());
+    // At rest it states the effective recipient, which here is the computed
+    // default — so the note is part of the sentence and part of the title.
+    expect(statement().textContent).toContain(`(${DEFAULT_ROW_NOTE})`);
+    expect(statement().title).toBe(statement().textContent);
+  });
+
+  it("changes words and title together as the pointer previews a lane", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(line());
+    const atRest = statement().title;
+
+    fireEvent.mouseEnter(row("th_a"));
+    expect(statement().textContent).toContain("Ana will answer");
+    expect(statement().textContent).toContain("reviewing the draft");
+    expect(statement().title).toBe(statement().textContent);
+    expect(statement().title).not.toBe(atRest);
+
+    fireEvent.mouseLeave(row("th_a"));
+    expect(statement().title).toBe(atRest);
+  });
+
+  it("does the same for the keyboard, which drives the identical state", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(line());
+    const atRest = statement().title;
+
+    fireEvent.focus(row("th_a"));
+    expect(statement().textContent).toContain("Ana will answer");
+    expect(statement().title).toBe(statement().textContent);
+
+    fireEvent.blur(row("th_a"));
+    expect(statement().title).toBe(atRest);
+  });
+});
+
+/**
+ * The half of UI-130 that does not need layout. **The geometry is
+ * `apps/ui/e2e/address-geometry.spec.ts`'s** — jsdom reports every box as
+ * `0×0`, so a bound, a scroll and an overlap are all invisible here, and a unit
+ * test that asserted them would be asserting nothing.
+ *
+ * What is left is worth pinning anyway: the words, and that the fitting effect
+ * runs at all without a layout under it. A `useLayoutEffect` that threw on a
+ * `null` box would take every composer down with it.
+ */
+describe("the capped lane list", () => {
+  it("says the count and how to reach the rest", () => {
+    expect(lanesCappedNote(20)).toBe("20 lanes · scroll for the rest");
+  });
+
+  it("opens without a layout under it, and offers no note when nothing is capped", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(screen.getByRole("button", { name: /answer/i }));
+    // jsdom measures every box as zero, so the list can never be short of its
+    // content — the note is absent, and nothing threw on the way there.
+    expect(document.querySelector("[data-address-more]")).toBeNull();
+    expect(document.querySelector(".recipient-lanes")).not.toBeNull();
   });
 });

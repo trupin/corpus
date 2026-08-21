@@ -3,8 +3,11 @@ import type { ReactElement } from "react";
 import { indexDotClass, indexPillText } from "./consoleModel";
 
 /**
- * The semantic index's pill, beside the agent pill (SPEC.md §11's index-pill
- * rider, signed 2026-08-02).
+ * The semantic index's pill (SPEC.md §11's index-pill rider, signed
+ * 2026-08-02). It sits at the end of the strip's left group, immediately
+ * before the spacer — UI-133 moved it there from beside the agent pill,
+ * because its sentence is the strip's one unbounded string and anything after
+ * it was shoved 233px sideways when the sentence grew.
  *
  * It is the agent pill's twin by construction — same shape, same dot vocabulary,
  * same `.dot` child — because the two report the same kind of thing: what a
@@ -59,7 +62,18 @@ export function IndexStatusRow({
   return (
     <div className="index-status" data-index-state={status.state}>
       <span className={indexDotClass(status)} aria-hidden="true" />
-      {detail === undefined ? null : <span className="index-detail">{detail}</span>}
+      {detail === undefined ? null : (
+        /*
+         * Truncated in place, whole in `title` (SPEC.md §11's rider, signed
+         * 2026-08-20). The row used to wrap this sentence, which took its second
+         * line out of the board — measured at 28.94px → 44.88px on the row and
+         * 348.63px → 332.69px on the board (UI-133). The sentence is the
+         * server's and can be any length, so the box cannot be its.
+         */
+        <span className="index-detail" title={detail}>
+          {detail}
+        </span>
+      )}
       {status.failed === 0 ? null : <span className="index-failed">{status.failed} failed</span>}
     </div>
   );

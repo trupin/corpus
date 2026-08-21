@@ -27,6 +27,38 @@
   display: none;
 }
 
+/*
+ * ── The head, and the rule it used to break (UI-135) ─────────────────────
+ *
+ * SPEC.md §11: *"Nothing resizes because of what it holds… Text that does not
+ * fit is revealed rather than accommodated."* This row carries three runs of
+ * text nobody chose the length of — a parent document's title on `.back`, the
+ * document id, and a save chip whose copy grows *because the person just
+ * typed* — and until UI-135 **not one item in it could shrink**. `.back` and
+ * `.save-chip` were `flex: none`, `.reader-id` was `nowrap`, so the row's only
+ * give was `margin-left: auto`. When that ran out the row overflowed the
+ * `.col { overflow: hidden }` parent: measured at 655px of content in a 558px
+ * box, ⤢ ending 97px outside the column, and both ⋯ and ⤢ clipped away — the
+ * two controls a person reaches for immediately after editing.
+ *
+ * Every item in the row is now one of three kinds, and which kind it is
+ * decides everything about how it behaves:
+ *
+ * - **The controls never yield.** 💬, ⋯, ⤢ and focus mode's ✕ Close keep
+ *   `flex: none`. They are glyphs with no content to follow, and a control
+ *   that can be squeezed out of the column is the whole of this defect.
+ * - **The variable text yields.** `.back` and `.reader-id` truncate, and the
+ *   whole of each is on a `title` — SHARED-057's "revealed rather than
+ *   accommodated". `.back` yields first and furthest (`flex-shrink: 4`): it
+ *   labels a *place*, while the id names the document you are looking at.
+ * - **The save chip is reserved**, so its five states all draw into one box
+ *   and none of them moves a neighbour. See `.save-chip` below.
+ *
+ * Nothing here widens the head or the column. A column's width is its view
+ * document's, deliberately (`board/columnWidth.ts`), and a head that demanded
+ * a minimum would make the content decide the column — the same rule broken
+ * one level up.
+ */
 .reader-head {
   position: relative;
   flex: none;
@@ -43,8 +75,25 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  flex: none;
+  /* Yields first, and four times as fast as the id beside it. */
+  flex: 0 4 auto;
+  min-width: 0;
   max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Focus mode's ✕ Close is a `.back` too, and it is a control with fixed copy:
+   it keeps its size like every other control in the row. */
+.back[data-close-focus] {
+  flex: none;
+}
+
+/* The ellipsis lives on the label rather than on the button, because
+   `text-overflow` does nothing to a flex container's own text and `.back` is a
+   flex row — the prototype puts the chevron beside the label. */
+.back-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -56,14 +105,77 @@
   color: var(--ink-3);
   margin-left: auto;
   white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/*
+ * The chip's box is **reserved**, not fitted (UI-135).
+ *
+ * `saveChipText` has five outputs and they span 246px — an idle chip is empty,
+ * `committed · git ✓ · 12 anchors orphaned` is 39 characters — so a chip sized
+ * to its content walked `.reader-id` 246px across the head on every save, and
+ * with a long `.back` beside it pushed ⋯ and ⤢ out of the column entirely.
+ *
+ * **The reservation is the ordinary save, not the worst one.** It is the wider
+ * of the two strings a chip ordinarily shows — `committed · git ✓`, and
+ * `save failed — retry` at about 120px, which wins because clipping `— retry`
+ * would leave a control whose label stops mid-word. Neither depends on a count,
+ * and one or the other is what a chip says on nearly every save. The single
+ * source is `SaveChip.tsx`'s `RESERVED_SAVE_CHIP_TEXT`, derived from those two
+ * rather than written here — a number typed into this comment is how the two
+ * came to disagree in the first place. Reserving the
+ * 246px worst case instead was tried and reversed: it held every state in one
+ * box and paid for it by leaving the reading width permanently short, with the
+ * back label squeezed below its own cap and the document id truncating on a
+ * head where nothing unusual was happening. SPEC.md §11 asks for the opposite
+ * — *"the box is sized for the text people actually have… so revealing is the
+ * uncommon case and not the ordinary reading path"* — so the anchor tail is
+ * the thing that gets revealed, and the head is the thing that stays whole.
+ *
+ * The reservation is a hidden copy of a real string rather than a `ch` count,
+ * and that is deliberate: `·` and `✓` are not in every monospace face, so a
+ * number measured on one machine would be wrong on a machine whose `--mono`
+ * falls through differently. `SaveChip` derives the string from `saveChipText`
+ * itself and puts it on `data-reserve` — the two cannot drift — the `::before`
+ * renders it invisibly, and the box ends up exactly as wide as that string, in
+ * whatever font actually shipped. Same trick as `.title-grow::after` below,
+ * for the same reason.
+ *
+ * The visible text is taken out of flow so the longer states — an anchor count
+ * of any size — truncate *into* the reserved box instead of widening it. The
+ * whole of each is on the element's `title`. It is also why the retry control
+ * is nested rather than substituted: see `SaveChip`.
+ */
 .save-chip {
+  position: relative;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-3);
   white-space: nowrap;
-  flex: none;
+  /* Never shrinks for its own text — the reservation above is a constant. It
+     shrinks only when the row has run out of room, which is the container's
+     business and not the chip's, and it shrinks by the same amount whatever
+     the chip currently says. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.save-chip::before {
+  content: attr(data-reserve);
+  visibility: hidden;
+}
+
+/* The chip's ink, and the retry button when there is one: both draw inside the
+   reserved box rather than deciding it. */
+.save-chip-text {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .expand {
@@ -323,6 +435,28 @@
   border-radius: 99px;
   padding: 3px 9px;
   flex: none;
+}
+
+/*
+ * The thread count inside 💬, in its own box (SPEC.md §11's rider, 2026-08-20).
+ *
+ * The button is `flex: none` — a control that never yields, by the rule above —
+ * so a count crossing into two digits widens the *control*, and the head pays
+ * for it out of `.back` and `.reader-id`, the two runs of text this head
+ * truncates. The count lands the moment `useThreads` answers, which is after the
+ * head has already painted.
+ *
+ * The reservation is on the number and not on the button because 💬 is an emoji:
+ * its advance width is the platform's, not the font's, so a `ch` count spanning
+ * the whole control would be wrong on some machine. Two digits is the plausible
+ * range for threads anchored in one document; a third widens the control once
+ * and then holds.
+ */
+.comments-count {
+  display: inline-block;
+  min-width: 2ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .comments-pop {

@@ -111,6 +111,17 @@
 }
 
 /* ── The honest pending indicator (SPEC.md §8) ── */
+/*
+ * The pending row (SPEC.md §8). Its last tier carries a duration that ticks on a
+ * clock with no data arriving at all — `still working — 18m`, `19m`, `20m` — so
+ * the figures are tabular (SPEC.md §11's rider, signed 2026-08-20).
+ *
+ * **No reservation here, and the unit crossings are not a defect.** The duration
+ * ends a sentence that ends the row: nothing is aligned against it, so
+ * `59m → 1h 00m` and `23h 59m → 1d 00h` lengthen the sentence and move nothing.
+ * Changing what `humanizeElapsed` *says* to make its three shapes one width
+ * would be a copy decision, and this row is one of its two callers.
+ */
 .working {
   display: flex;
   align-items: center;
@@ -119,6 +130,7 @@
   border-top: 1px solid var(--line);
   color: var(--ink-3);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Composer ── */
@@ -217,15 +229,65 @@
   color: var(--ink-3);
 }
 
-/* The address line (UI-126) shares the foot and yields before the send button
-   does: it truncates, and its full sentence is one gesture away. */
-.composer-foot .composer-address {
+/*
+ * ── What gives when the foot runs out of room (UI-137) ───────────────────────
+ *
+ * The foot's room is fixed — 434px at the board's reading width — and its five
+ * items want more than that whenever the mono runs wide. Something has to
+ * truncate, and the whole of this block is the choice of which.
+ *
+ * **The hint gives.** It is the only item in the foot that is neither the
+ * sentence nor a control, and measured at the reading width it is the largest
+ * of what is left (107.5px against the toggle's 69.6 and `Reply ⌘↵`'s 50.6), so
+ * it is the one with the most to give. It truncates rather than wraps: a
+ * wrapped hint makes the whole foot two lines tall and takes the send button's
+ * width down with it — measured at `send w=36.69 h=34 → w=23.94 h=51`, a
+ * 24px-wide, three-line-tall control.
+ *
+ * **It gives, but it does not go.** `thread stays open` / `reopens on reply`
+ * and the child composer's `creates a child thread` are each said in exactly
+ * one place in the product, so a clipped hint that revealed nothing would be
+ * SHARED-057 clause 2 broken. Every host of this class puts the whole sentence
+ * on the span's `title` — `ThreadComposer.tsx` and `NewChildThread.tsx` — and
+ * `address-geometry.spec.ts` asserts it at the width where the clip happens.
+ *
+ * **The address line does not.** Its slot is `@corpus/kit/address.css`'s
+ * `--address-slot`, a `min-width` sized to hold `agent will answer` whole in
+ * any mono. Letting the footer's pressure cut into that is what CI caught three
+ * runs running: the ordinary live statement, clipped, on the reading path.
+ *
+ * **The controls do not.** `flex: none` on the toggle and the send button: they
+ * are controls, their labels are their state, and UI-137's whole complaint was
+ * a send button that moved and shrank because a label arrived elsewhere.
+ *
+ * `flex-wrap` is the last valve, for a reader column dragged near
+ * `MIN_COLUMN_WIDTH` (240px), where even the hint at zero leaves too little.
+ * The foot then stacks whole controls instead of squeezing every one of them
+ * into a sliver. Nothing here depends on what the line says, so the wrap point
+ * is a property of the footer and never of its content.
+ */
+.composer-foot {
+  flex-wrap: wrap;
+}
+
+.composer-foot .composer-hint {
+  /* Basis `0` and not `auto` on purpose. In a wrapping flex line an item whose
+     basis is its content wraps to the next line rather than shrinking, so a
+     hint sized by its own text would push itself onto a second row and make the
+     foot taller instead of giving anything up. From `0` it takes the room that
+     is left over and no more — `max-content` caps the growth, so at the reading
+     width it is its full self and the send button keeps its `auto` margin. */
+  flex: 1 1 0;
+  max-width: max-content;
   min-width: 0;
-  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-foot .toggle {
   cursor: pointer;
+  flex: none;
 }
 
 .composer-foot .toggle.on {
@@ -236,6 +298,7 @@
   margin-left: auto;
   color: var(--accent-ink);
   font-weight: 600;
+  flex: none;
 }
 
 .composer-foot .send:disabled {
@@ -255,19 +318,51 @@
  * and the reply box's drop highlight (`.composer.dropping`, above), which is
  * per-surface by design.
  */
-.turn-att-img {
-  max-width: 240px;
-  max-height: 180px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  display: block;
+/*
+ * The mockup's 240×180 preview is no longer a `max-` cap here (UI-129): it is
+ * the *reserved* box, honoured before the bytes arrive as well as after. A cap
+ * says nothing about an image that has not decoded, which is the whole of what
+ * UI-129 is about.
+ *
+ * **240px is stated here and nowhere else** (PR #53 review). The kit reserves a
+ * 4:3 box at the surface's own width, and its default is the reading measure —
+ * right for prose, where an image carries content someone has to read, and
+ * wrong for an attachment, which is a thumbnail hanging off a message. This is
+ * the mockup's own figure (`design/index.html`: `.turn-att-img { max-width:
+ * 240px; max-height: 180px }`) and this strip is the surface it draws it for.
+ * Only the width is stated: the height follows the kit's ratio to the same
+ * 180px, so the two numbers cannot drift apart. `--md-img-box-w` sits on the
+ * container rather than on `.turn-att-img` because a custom property inherits,
+ * and the picture is one of the three elements an attachment is over its life.
+ *
+ * The **stacking and the gap** moved up to the strip for that same reason. An
+ * attachment is a pending chip, then either the picture or a broken chip, and
+ * `CorpusImage` puts the host's class on the picture alone. A `display` and a
+ * `margin-top` declared on `.turn-att-img` therefore applied to only one of the
+ * three, and the strip shifted by 3px at the moment the bytes landed. The
+ * container's rule cannot tell the three apart, which is exactly what makes it
+ * the right place for it.
+ *
+ * What stays below is what is the thread's alone: the frame.
+ */
+.turn-atts {
+  --md-img-box-w: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   margin-top: 6px;
 }
 
+.turn-att-img {
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+/* The gap is `.turn-atts`'s now — see the note above `.turn-att-img` (UI-129). */
 .att-file {
   display: inline-flex;
   gap: 6px;
-  margin-top: 6px;
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 3px 9px;

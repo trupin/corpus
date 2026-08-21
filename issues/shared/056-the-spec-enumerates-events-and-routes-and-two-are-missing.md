@@ -6,7 +6,7 @@ shared
 
 ## Status
 
-todo — **NEEDS USER SIGN-OFF.** SPEC.md changes are the user's. Drafted 2026-08-19 during v0.14.0, not applied.
+done — signed by the user 2026-08-20 (as drafted, in the v0.15.0 go-ahead). All five edits applied verbatim to SPEC.md on 2026-08-20. This rider is SPEC text only and has no code half.
 
 ## Priority
 
@@ -56,10 +56,10 @@ All three are enumerations, and an enumeration that omits a member is false rath
 
 ## Acceptance Criteria
 
-- [ ] The user has signed the drafted text, verbatim, on its own
-- [ ] §11 describes the console's two tabs and what the Residents tab shows
-- [ ] `npm run spec:check` passes
+- [x] The user has signed the drafted text, verbatim, on its own
+- [x] §11 describes the console's two tabs and what the Residents tab shows
+- [x] `npm run spec:check` passes
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[SHARED-056]` prefix after sign-off
+- [x] Committed with `[SHARED-056]` prefix after sign-off
