@@ -103,6 +103,18 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
   const rows = recipient.rows ?? [];
   const showRows = rows.length >= 2;
   const shown = rows.find((row) => row.lane === (previewed ?? recipient.effective));
+  const says = statementFor(
+    shown,
+    shown?.lane === recipient.chosen,
+    shown !== undefined && shown.lane === recipient.refused,
+  );
+  // Marks the row a send with nothing picked would go to — a clause of the same
+  // sentence, so it is composed here and not only rendered, or the title would
+  // reveal less than the box it stands in for.
+  const defaultNote =
+    shown !== undefined && shown.lane === recipient.computed && shown.lane !== recipient.refused
+      ? ` (${DEFAULT_ROW_NOTE})`
+      : "";
 
   return (
     <div
@@ -153,17 +165,21 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                   />
                 ))}
               </div>
-              <span className="recipient-says" data-recipient-statement={surface}>
-                {statementFor(
-                  shown,
-                  shown?.lane === recipient.chosen,
-                  shown !== undefined && shown.lane === recipient.refused,
+              {/* The box is reserved (SPEC.md §11's rider signed 2026-08-20):
+               * previewing a lane changes these words and never this height,
+               * because a popover anchored by its bottom edge that grew on
+               * hover moved the row out from under the cursor. A statement
+               * longer than the reserve truncates in place, and the whole of
+               * it is on this title and on the row's. */}
+              <span
+                className="recipient-says"
+                data-recipient-statement={surface}
+                title={`${says}${defaultNote}`}
+              >
+                {says}
+                {defaultNote === "" ? null : (
+                  <span className="recipient-default-note">{defaultNote}</span>
                 )}
-                {shown !== undefined &&
-                shown.lane === recipient.computed &&
-                shown.lane !== recipient.refused ? (
-                  <span className="recipient-default-note"> ({DEFAULT_ROW_NOTE})</span>
-                ) : null}
               </span>
             </div>
           ) : null}

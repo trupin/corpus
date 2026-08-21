@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { laneRow } from "../recipient/laneRows.js";
+import { DEFAULT_ROW_NOTE } from "../recipient/statement.js";
 import type { ComposerRecipient } from "../recipient/useComposerRecipient.js";
 import type { ComposerWeight } from "../weight/weightChoice.js";
 import { composerAddress, residentWeightSentence, NOBODY_ASKED } from "./addressModel.js";
@@ -250,5 +251,64 @@ describe("the floor", () => {
     expect(document.querySelectorAll("[data-recipient-lane]")).toHaveLength(2);
     expect(weightKeys()).toEqual([]);
     expect(document.querySelector("[data-resident-weight]")).toBeNull();
+  });
+});
+
+/**
+ * The statement under the rows (SPEC.md §11's rider signed 2026-08-20, UI-127).
+ *
+ * Its **height** is the browser spec's — `apps/ui/e2e/address-geometry.spec.ts`,
+ * because jsdom implements no layout and the defect was a layout loop. What is
+ * pinned here is the half jsdom can see: the sentence is truncated by CSS, so
+ * the title has to carry the *whole* of it, clause for clause, or the reveal
+ * SHARED-057 asks for reveals less than the box it stands in for.
+ */
+describe("the statement", () => {
+  const statement = (): HTMLElement => {
+    const found = document.querySelector<HTMLElement>('[data-recipient-statement="probe"]');
+    if (found === null) throw new Error("no statement");
+    return found;
+  };
+  const row = (lane: string): HTMLElement => {
+    const found = document.querySelector<HTMLElement>(`[data-recipient-lane="${lane}"]`);
+    if (found === null) throw new Error(`no row for ${lane}`);
+    return found;
+  };
+
+  it("carries the whole sentence on its title, the default note included", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(line());
+    // At rest it states the effective recipient, which here is the computed
+    // default — so the note is part of the sentence and part of the title.
+    expect(statement().textContent).toContain(`(${DEFAULT_ROW_NOTE})`);
+    expect(statement().title).toBe(statement().textContent);
+  });
+
+  it("changes words and title together as the pointer previews a lane", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(line());
+    const atRest = statement().title;
+
+    fireEvent.mouseEnter(row("th_a"));
+    expect(statement().textContent).toContain("Ana will answer");
+    expect(statement().textContent).toContain("reviewing the draft");
+    expect(statement().title).toBe(statement().textContent);
+    expect(statement().title).not.toBe(atRest);
+
+    fireEvent.mouseLeave(row("th_a"));
+    expect(statement().title).toBe(atRest);
+  });
+
+  it("does the same for the keyboard, which drives the identical state", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(line());
+    const atRest = statement().title;
+
+    fireEvent.focus(row("th_a"));
+    expect(statement().textContent).toContain("Ana will answer");
+    expect(statement().title).toBe(statement().textContent);
+
+    fireEvent.blur(row("th_a"));
+    expect(statement().title).toBe(atRest);
   });
 });
