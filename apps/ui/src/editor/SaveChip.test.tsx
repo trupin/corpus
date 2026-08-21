@@ -65,40 +65,39 @@ describe("copy", () => {
 /**
  * The reservation (UI-135). The *width* it produces is a browser fact and is
  * asserted in `e2e/reader-head-geometry.spec.ts`; what is checkable here is
- * that the string being reserved really is the longest copy the chip can reach
- * on the ordinary path, so the box is measured against real content rather than
- * a placeholder (SPEC.md §11's third clause).
+ * **which** string is being reserved — the ordinary reading path, not the worst
+ * case, which is what SPEC.md §11's third clause asks for.
  */
 describe("the reserved width", () => {
-  it("is the widest string the copy can produce, and is derived from it", () => {
-    expect(RESERVED_SAVE_CHIP_TEXT).toBe("committed · git ✓ · 99 anchors orphaned");
-    const reachable: readonly SaveState[] = [
-      { kind: "idle" },
-      { kind: "saving" },
-      { kind: "saved", remapped: 0, orphaned: 0 },
-      { kind: "saved", remapped: 1, orphaned: 0 },
-      { kind: "saved", remapped: 99, orphaned: 0 },
-      { kind: "saved", remapped: 0, orphaned: 1 },
-      { kind: "saved", remapped: 0, orphaned: 99 },
-      { kind: "error", message: "HTTP 500" },
-    ];
-    for (const state of reachable) {
-      expect(saveChipText(state).length).toBeLessThanOrEqual(RESERVED_SAVE_CHIP_TEXT.length);
+  /**
+   * The box holds what a save ordinarily says, and it holds the retry whole,
+   * because a control whose label stops mid-word is the same defect as a
+   * control pushed out of the column.
+   */
+  it("is the ordinary save, plus enough room for the retry to say `retry`", () => {
+    expect(RESERVED_SAVE_CHIP_TEXT).toBe("save failed — retry");
+    for (const ordinary of ["committed · git ✓", "saving…", "save failed", ""]) {
+      expect(ordinary.length).toBeLessThanOrEqual(RESERVED_SAVE_CHIP_TEXT.length);
     }
-    // `— retry` is appended outside `saveChipText`, and the failure copy is
-    // short enough that the suffix still fits the reserved box.
-    expect("save failed — retry".length).toBeLessThanOrEqual(RESERVED_SAVE_CHIP_TEXT.length);
   });
 
   /**
-   * The one case the box does not cover, named rather than pretended away: an
-   * anchor count of three digits or more. It truncates, and the `title` below
-   * is what makes truncating it honest.
+   * And it is emphatically **not** the worst case. Reserving
+   * `committed · git ✓ · 99 anchors orphaned` was tried and reversed: 246px of
+   * head spent on a message almost no save carries left the ordinary reading
+   * width truncating the back label and the document id. The anchor tail is the
+   * uncommon case, so the anchor tail is what gets revealed instead.
    */
-  it("does not pretend to cover an unbounded count", () => {
-    expect(saveChipText({ kind: "saved", remapped: 0, orphaned: 128 }).length).toBeGreaterThan(
-      RESERVED_SAVE_CHIP_TEXT.length,
-    );
+  it("is not the worst case the copy can reach", () => {
+    const uncommon: readonly SaveState[] = [
+      { kind: "saved", remapped: 3, orphaned: 0 },
+      { kind: "saved", remapped: 0, orphaned: 12 },
+      { kind: "saved", remapped: 0, orphaned: 128 },
+    ];
+    for (const state of uncommon) {
+      expect(saveChipText(state).length).toBeGreaterThan(RESERVED_SAVE_CHIP_TEXT.length);
+    }
+    expect(RESERVED_SAVE_CHIP_TEXT).not.toContain("anchors");
   });
 });
 

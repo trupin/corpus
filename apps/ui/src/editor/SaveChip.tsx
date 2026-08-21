@@ -23,8 +23,8 @@ import type { SaveState } from "./useAutosave.js";
  * a chip that grew with them walked its neighbours across the head and pushed
  * the ⋯ and ⤢ controls out of the column (UI-135). So the element carries
  * {@link RESERVED_SAVE_CHIP_TEXT} on `data-reserve`, `Reader.css` renders that
- * invisibly to size the box, and the visible text draws inside it — reserved
- * to the widest thing it can hold, in the font that actually shipped.
+ * invisibly to size the box, and every state draws inside it — one box, in the
+ * font that actually shipped, whatever the chip currently says.
  */
 
 export interface SaveStatusValue {
@@ -96,23 +96,52 @@ export function saveChipText(state: SaveState): string {
 }
 
 /**
- * The widest string {@link saveChipText} produces, and therefore the width the
- * chip's box is reserved to (UI-135, SPEC.md §11's *"nothing resizes because of
- * what it holds"*).
- *
- * Derived rather than written out, so the reservation cannot drift from the
- * copy: change a word above and the box changes with it. `orphaned` beats
- * `moved` by three characters, and two digits is where the count stops being
- * ordinary — a corpus where one save orphans a hundred conversations has a
- * larger problem than a chip. Past that the text truncates into the reserved
- * box and its whole value is on the element's `title`, which is SHARED-057's
- * clause 2 and the reason an unbounded count needs no unbounded box.
+ * What the error chip appends to its copy. A constant, so the string the chip
+ * renders and the string the box is reserved for are the same string.
  */
-export const RESERVED_SAVE_CHIP_TEXT = saveChipText({
-  kind: "saved",
-  remapped: 0,
-  orphaned: 99,
-});
+const RETRY_SUFFIX = " — retry";
+
+/**
+ * **The two things the chip ordinarily says.** Both are bounded, both are what
+ * a person actually reads on an ordinary day, and neither depends on a count:
+ * a save that went through, and a save that did not and offers its retry.
+ */
+const ORDINARY_SAVE_CHIP_TEXTS = [
+  saveChipText({ kind: "saved", remapped: 0, orphaned: 0 }),
+  saveChipText({ kind: "error", message: "" }) + RETRY_SUFFIX,
+] as const;
+
+/**
+ * **The width the chip's box is reserved to** (UI-135, SPEC.md §11's *"nothing
+ * resizes because of what it holds"*): the wider of the two ordinary strings
+ * above, derived rather than written out, so the reservation cannot drift from
+ * the copy. Change a word in `saveChipText` and the box changes with it.
+ *
+ * **The ordinary states, not the widest one**, and that choice was reversed
+ * once under review. The first version reserved
+ * `committed · git ✓ · 99 anchors orphaned` — 246px, the worst case
+ * `saveChipText` can reach. It held every state in one box and paid for it by
+ * spending 46% of the head on a message almost no save carries: at the reading
+ * width the back label was squeezed below its own cap and the document id
+ * truncated with nothing unusual on screen. That is SHARED-057's third clause
+ * read backwards. The clause asks for the opposite — *"the box is sized for the
+ * text people actually have, measured against real content rather than a
+ * placeholder, so revealing is the uncommon case and not the ordinary reading
+ * path."* A save that moves or orphans an anchor **is** the uncommon case, so
+ * its tail truncates inside this box and its whole string is on the element's
+ * `title`, which is clause 2 and what makes truncating it honest.
+ *
+ * **Why the failure is in the reckoning and the anchor tail is not.** Both are
+ * longer than `committed · git ✓`, and the difference is that one of them is a
+ * control. `— retry` is the affordance: a box that clipped it would leave a
+ * button whose label stops mid-word, which is the same defect as a control
+ * pushed out of the column, one element in. It costs two characters over the
+ * committed line and it is bounded, so it is part of the ordinary size rather
+ * than a worst case bolted onto it.
+ */
+export const RESERVED_SAVE_CHIP_TEXT = ORDINARY_SAVE_CHIP_TEXTS.reduce((widest, text) =>
+  text.length > widest.length ? text : widest,
+);
 
 export function saveChipClass(state: SaveState): string {
   switch (state.kind) {
@@ -165,7 +194,8 @@ export function SaveChip(): ReactElement {
           title={retry.message}
           onClick={retry.run}
         >
-          {text} — retry
+          {text}
+          {RETRY_SUFFIX}
         </button>
       )}
     </span>

@@ -119,19 +119,30 @@
  * to its content walked `.reader-id` 246px across the head on every save, and
  * with a long `.back` beside it pushed ⋯ and ⤢ out of the column entirely.
  *
- * The reservation is a hidden copy of the widest string rather than a `ch`
- * count, and that is deliberate: `·` and `✓` are not in every monospace face,
- * so a number measured on one machine would be wrong on a machine whose
- * `--mono` falls through differently. `SaveChip` derives the string from
- * `saveChipText` itself and puts it on `data-reserve` — the two cannot drift —
- * the `::before` renders it invisibly, and the box ends up exactly as wide as
- * the widest thing it can hold, in whatever font actually shipped. Same trick
- * as `.title-grow::after` below, for the same reason.
+ * **The reservation is the ordinary save, not the worst one.** It is
+ * `committed · git ✓` — about 107px — which is what a save says when nothing
+ * went wrong with its anchors, and that is nearly every save. Reserving the
+ * 246px worst case instead was tried and reversed: it held every state in one
+ * box and paid for it by leaving the reading width permanently short, with the
+ * back label squeezed below its own cap and the document id truncating on a
+ * head where nothing unusual was happening. SPEC.md §11 asks for the opposite
+ * — *"the box is sized for the text people actually have… so revealing is the
+ * uncommon case and not the ordinary reading path"* — so the anchor tail is
+ * the thing that gets revealed, and the head is the thing that stays whole.
  *
- * The visible text is taken out of flow so the one unbounded case — an anchor
- * count of three digits or more — truncates *into* the reserved box instead of
- * widening it. Its whole value is on the element's `title`. It is also why the
- * retry control is nested rather than substituted: see `SaveChip`.
+ * The reservation is a hidden copy of a real string rather than a `ch` count,
+ * and that is deliberate: `·` and `✓` are not in every monospace face, so a
+ * number measured on one machine would be wrong on a machine whose `--mono`
+ * falls through differently. `SaveChip` derives the string from `saveChipText`
+ * itself and puts it on `data-reserve` — the two cannot drift — the `::before`
+ * renders it invisibly, and the box ends up exactly as wide as that string, in
+ * whatever font actually shipped. Same trick as `.title-grow::after` below,
+ * for the same reason.
+ *
+ * The visible text is taken out of flow so the longer states — an anchor count
+ * of any size — truncate *into* the reserved box instead of widening it. The
+ * whole of each is on the element's `title`. It is also why the retry control
+ * is nested rather than substituted: see `SaveChip`.
  */
 .save-chip {
   position: relative;

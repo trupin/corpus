@@ -78,7 +78,9 @@ at 577 — **97px outside the column**, and clipped by `.col { overflow: hidden 
       overflows, so nothing is ever clipped
 - [x] The save chip's full text stays reachable when it is truncated, per
       SHARED-057 clause 2 — a `title`, or the existing detail surface. It must not
-      be silently cut
+      be silently cut. **The box is reserved to the ordinary state** (120px, the
+      wider of `committed · git ✓` and `save failed — retry`), not to the worst
+      case — changed on review, see the E2E log §2
 - [x] `.reader-id` may still move, or may be pinned — but if it moves, it is the
       **only** thing that moves, and that is asserted — it is **pinned**: with the
       chip's box reserved there is nothing left to push it
@@ -179,7 +181,7 @@ Spec: `apps/ui/e2e/reader-head-geometry.spec.ts`.
 
 `Reader.css`'s head block was reverted to its pre-fix rules (`.back` and
 `.save-chip` at `flex: none`, `.reader-id` at `nowrap`, no reservation) and the
-new spec run against it. Three of five tests failed, each on the defect:
+new spec run against it. Five of seven tests failed, each on the defect:
 
 ```
 holds every save state in one box …
@@ -187,55 +189,89 @@ holds every save state in one box …
   expect(received).toBeLessThanOrEqual(expected)
   Expected: <= 558      Received: 630
 
-survives the narrowest column …
-  expect(received).toBeLessThanOrEqual(expected)
-  Expected: <= 238      Received: 280
-
-reserves the chip's box …
-  Expected substring: "99 anchors orphaned"   Received string: "none"
+survives the narrowest column …            Expected: <= 238   Received: 280
+still fits … with conversations …          Expected: <= 238   Received: 334
+reserves the chip's box …                  Expected substring: "retry"
+                                           Received string:    "none"
+leaves the ordinary head whole …           the back label is squeezed below
+                                           its own cap
 ```
 
 630px of content in a 558px box at the reading width, 280 in 238 at the
-narrowest column. Same failure UI-128 measured (it reached 655 with a slightly
-longer parent title). The rule is broken by an ordinary save.
+narrowest column, 334 in 238 once the document also carries conversations. Same
+failure UI-128 measured (it reached 655 with a slightly longer parent title).
+The rule is broken by an ordinary save.
 
-### 2 — Verification (the fix restored)
+### 2 — The reservation was changed after review: widest state → ordinary state
 
-All five tests pass. The head's six recorded states — `""`, `saving…`,
+The first version shipped reserved `committed · git ✓ · 99 anchors orphaned` —
+**246.55px**, the widest string `saveChipText` can reach. It satisfied every
+acceptance criterion, and it was reversed on review, because it read SPEC.md
+§11's third clause backwards: *"the box is sized for the text people actually
+have, measured against real content rather than a placeholder, so revealing is
+the uncommon case and not the ordinary reading path."* Spending 46% of the head
+on a message almost no save carries left the **ordinary** reading width
+permanently short — measured, with nothing unusual on screen at all:
+
+```
+reserved to the WIDEST state (246.55px) — reading width, long parent title
+  .back        w=166   (its own cap is 214: squeezed 48px below it)
+  .reader-id   w=83    (truncated — the id of the document you are looking at)
+  .save-chip   w=203   (the reservation itself, shrunk by the row)
+```
+
+The box is now reserved to what a save **ordinarily** says. Two bounded strings
+are in the reckoning and the wider wins: `committed · git ✓` (17 chars) and
+`save failed — retry` (19 chars). The failure is included because `— retry` is
+a *control* — a box that clipped it would leave a button whose label stops
+mid-word, which is the same defect as a control pushed out of the column, one
+element in. It costs two characters. The anchor tail is the uncommon case, so
+the anchor tail is what truncates, with its whole string on the chip's `title`
+(clause 2).
+
+### 3 — Verification (the fix restored, ordinary-state reservation)
+
+All seven tests pass. The head's six recorded states — `""`, `saving…`,
 `committed · git ✓`, `… · 3 anchors moved`, `… · 12 anchors orphaned`,
 `save failed — retry`, all reached through real typing and real `PUT`s — give
-**byte-identical geometry**, in pixels measured from the head's own left edge:
+**byte-identical geometry**, in pixels measured from the head's own left edge,
+at the reading width with a parent title long enough to cap `.back`:
 
 ```
 head  scrollWidth=558  clientWidth=558  lastRight=546
-.back        x=12   w=166  right=178
-.reader-id   x=186  w=83   right=269
-.save-chip   x=277  w=203  right=480
+.back        x=12   w=214  right=226     ← at its 40% cap (213.6), not below it
+.reader-id   x=251  w=101  right=352     ← whole, `scrollWidth == clientWidth`
+.save-chip   x=360  w=120  right=480     ← the reservation, unshrunk
 ⋯ (.expand)  x=488  w=28   right=516
 ⤢ (.expand)  x=524  w=22   right=546
 ```
 
 Nothing moves at all — not the chip, not the id, not either control — and
 `scrollWidth == clientWidth`, so nothing is clipped. `lastRight=546 ≤ 558`: ⤢
-ends 12px *inside* the head it used to end 97px outside.
+ends 12px *inside* the head it used to end 97px outside. The row now finishes
+with **25px of slack still in its auto margin** (`.back` ends at 226, the id
+starts at 251), which is the whole difference from §2: at the reading width the
+head is no longer in shrink mode at all.
 
 Widths measured against the shipped stylesheet, mono at 10.5px:
 
-- the reservation (`committed · git ✓ · 99 anchors orphaned`, 39 chars) is
-  **246.55px** unconstrained — which is what the chip's box is at a short back
-  label, and what it shrinks *from* (to 203px) when a 40%-capped back label
-  squeezes the row. The shrink is the row's, not the chip's: it is the same
-  203px in all six states.
+- the reservation (`save failed — retry`, 19 chars) is **120px**, and
+  `committed · git ✓` draws inside it with room to spare — asserted directly:
+  `.save-chip-text` has `scrollWidth == clientWidth` after a real save.
+- the ordinary head with a **short** back label (`‹ Inbox`, 39px) puts the id
+  and the chip in exactly the same places — `id x=251 w=101`, `chip x=360
+  w=120` — because the auto margin, not the chip, absorbs the difference.
 - narrowest column (`MIN_COLUMN_WIDTH`, reached through a 288px viewport, since
   `clampColumnWidth` measures the reading floor against the window): column
-  240px, head `clientWidth=214`, `scrollWidth=214`, both controls inside —
-  **and the same again with 💬 2 on the row**, the case that spends the last of
-  the slack. The chip, ⋯ and ⤢ are identical before and after the save there
-  too.
+  240px, head `clientWidth=238`, `scrollWidth=238`. Everything variable yields
+  and both controls hold: `.back` w=0, `.reader-id` w=60 (clipped), `.save-chip`
+  w=72 (clipped), `⋯` x=168 w=28, `⤢` x=204 w=22 — ending at 226 inside a 238px
+  row. **The same again with 💬 2 on the row**, the case that spends the last of
+  the slack.
 
-Both controls take a real click and do their real work in both column widths:
-⋯ opens `.reader-head .comments-pop.open` (asserted visible, then `esc`), ⤢
-opens `.focus.open` (asserted visible, then `esc`).
+Both controls take a real click and do their real work at both column widths and
+with 💬 present: ⋯ opens `.reader-head .comments-pop.open` (asserted visible,
+then `esc`), ⤢ opens `.focus.open` (asserted visible, then `esc`).
 
 Truncation is revealed, never cut (SHARED-057 clause 2): `.back`'s `title` is
 `‹ <the whole parent title> — Back (shift-click, or ⇧esc: straight to list)`,
@@ -244,31 +280,27 @@ Truncation is revealed, never cut (SHARED-057 clause 2): `.back`'s `title` is
 
 ### 3 — Falsification
 
-The reproduction above **is** the falsification, run in that order: the
-unshrinkable head restored → three failures with the numbers above → restored →
-five passes. During it the spec also caught a defect of its own making: with the
+The reproduction above **is** the falsification, run in that order, and it was
+run twice — once against the widest-state reservation and again after the change
+to the ordinary state. The second time: the unshrinkable head restored → five
+failures with the numbers in §1 → restored → seven passes. During it the spec also caught a defect of its own making: with the
 retry `<button>` *replacing* the chip, the chip measured 203px as a `<span>` and
 247px as a `<button>` in the same row, because Chromium will not shrink a
 `<button>` below its own content whatever `min-width` says. The retry control is
 nested inside the chip now, so the flex item is one element in every state.
 
-### 4 — Regression runs
+### 4 — Regression runs (after the reservation change)
 
-- `apps/ui/src` in full: **3159 passed**, 3 failed (all pre-existing, below).
-- e2e, reader-adjacent: `reader`, `editor`, `key-conflict`, `column-width`,
-  `related`, `soft-wrap`, `plugin-late-arrival`, `edit-session-close`, `smoke`,
-  `board`, `reader-head-geometry` — **72 passed** (the geometry spec has since
-  grown a sixth test and stands at 6/6).
-- e2e, reader-mounting: `thread`, `anchors`, `reveal`, `collapse`,
-  `context-menu`, `comment-move`, `todos-menu` — **100 passed**.
+- `apps/ui/src/editor` + `apps/ui/src/reader`: **1139 passed**. (Before the
+  change, `apps/ui/src` in full was 3159 passed with 3 failures in
+  `editor/markdown/corpus.test.ts` on UI-128's issue file — a markdown table
+  round-tripping 4 cells as 5, unrelated to this issue. Those now pass.)
+- e2e, one batch: `reader`, `editor`, `key-conflict`, `column-width`, `related`,
+  `soft-wrap`, `plugin-late-arrival`, `edit-session-close`, `smoke`, `board`,
+  `thread`, `anchors`, `reveal`, `collapse`, `context-menu`, `comment-move`,
+  `reader-head-geometry` — **164 passed**.
 - `tsc --noEmit` in `apps/ui`: clean. ESLint over `apps/ui/src` and
   `apps/ui/e2e`: clean. Prettier: clean.
-
-**Pre-existing failure, not this issue's**: `apps/ui/src/editor/markdown/
-corpus.test.ts` fails 3 tests on `issues/ui/128-audit-every-surface-whose-size-
-follows-its-content.md` — a table in that issue file round-trips with 5 cells
-where it had 4. Nothing here touches the markdown pipeline; reported to the
-orchestrator.
 
 ## Completion Checklist (domain agent)
 

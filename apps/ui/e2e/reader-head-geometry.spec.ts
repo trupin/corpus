@@ -455,15 +455,22 @@ test.describe("the reader head never resizes because of what it holds", () => {
    *
    * The hidden copy is `SaveChip`'s own `saveChipText` output, carried on
    * `data-reserve` and drawn by `Reader.css`'s `::before`. If either half is
-   * removed the box stops being reserved and the test above starts failing for a
+   * removed the box stops being reserved and the tests above start failing for a
    * reason that reads as a layout mystery — so the mechanism is named here.
+   *
+   * It is also where the *choice* of string is pinned. The box is sized for
+   * what a save ordinarily says, and the anchor tail — the uncommon case — is
+   * what truncates and gets revealed instead (SPEC.md §11's third clause).
+   * Reserving the worst case was tried and reversed, so the assertion that the
+   * reservation carries no anchor count is deliberate rather than incidental.
    */
-  test("reserves the chip's box with a hidden copy of its longest string", async ({ page }) => {
+  test("reserves the chip's box for what a save ordinarily says", async ({ page }) => {
     await stubCorpus(page, [VIEW, PARENT, NOTE]);
     await openWithLongBackLabel(page);
 
     const reserved = await page.locator(CHIP).getAttribute("data-reserve");
-    expect(reserved).toBe("committed · git ✓ · 99 anchors orphaned");
+    expect(reserved).toBe("save failed — retry");
+    expect(reserved).not.toContain("anchors");
 
     const drawn = await page.locator(CHIP).evaluate((chip) => ({
       content: getComputedStyle(chip, "::before").content,
@@ -472,10 +479,75 @@ test.describe("the reader head never resizes because of what it holds", () => {
       text: chip.textContent,
       width: Math.round(chip.getBoundingClientRect().width * 100) / 100,
     }));
-    expect(drawn.content).toContain("99 anchors orphaned");
+    expect(drawn.content).toContain("retry");
     expect(drawn.visibility).toBe("hidden");
     expect(drawn.text).toBe("");
+    // Wide enough to hold `committed · git ✓` whole, narrow enough that it is
+    // not the 246px worst case that used to squeeze the rest of the row.
     expect(drawn.width).toBeGreaterThan(100);
+    expect(drawn.width).toBeLessThan(160);
+  });
+
+  /**
+   * The point of choosing the ordinary state: **the ordinary head stops
+   * truncating**. With the worst case reserved, a reader opened from a
+   * long-titled parent had its back label squeezed below its own 40% cap and
+   * its document id cut short, with nothing unusual on screen at all.
+   */
+  test("leaves the ordinary head whole — the id entire, the back label at its cap", async ({
+    page,
+  }) => {
+    await stubCorpus(page, [VIEW, PARENT, NOTE]);
+    await planSaves(page, [{ kind: "ok", remapped: 0, orphaned: 0 }]);
+    await openWithLongBackLabel(page);
+    await expect(page.locator(COLUMN)).toHaveCSS("width", "560px");
+
+    const fits = await page.evaluate(() => {
+      const head = document.querySelector(".col.reading .reader-head");
+      if (head === null) throw new Error("no reader head");
+      // `max-width: 40%` resolves against the row's **content** box, so the cap
+      // is 40% of what is left after the head's own padding.
+      const padding = getComputedStyle(head);
+      const content =
+        head.clientWidth -
+        Number.parseFloat(padding.paddingLeft) -
+        Number.parseFloat(padding.paddingRight);
+      const of = (selector: string): { clipped: boolean; width: number; cap: number } => {
+        const element = head.querySelector(selector);
+        if (element === null) throw new Error(`no ${selector}`);
+        return {
+          clipped: element.scrollWidth > element.clientWidth,
+          width: Math.round(element.getBoundingClientRect().width),
+          // Being *at* the cap is the component's own rule; being below it is
+          // the row having run out of room, which is what this test rules out.
+          cap: Math.round(content * 0.4),
+        };
+      };
+      return { id: of(".reader-id"), back: of(".back") };
+    });
+
+    // The document id is not truncated at all — nothing is pushing it.
+    expect(fits.id.clipped, "the document id is cut short on an ordinary head").toBe(false);
+    // The back label is at the cap the component sets, not below it.
+    expect(fits.back.width, "the back label is squeezed below its own cap").toBeGreaterThanOrEqual(
+      fits.back.cap - 1,
+    );
+
+    // …and it is still true after a save, which is when the chip fills up.
+    await nudge(page, " Whole.");
+    await expect(page.locator(CHIP)).toHaveText("committed · git ✓");
+    await expect(page.locator(CHIP)).toHaveAttribute("title", "committed · git ✓");
+    const after = await page.evaluate(() => {
+      const id = document.querySelector(".col.reading .reader-id");
+      const chip = document.querySelector(".col.reading [data-save-chip] .save-chip-text");
+      if (id === null || chip === null) throw new Error("no head");
+      return {
+        idClipped: id.scrollWidth > id.clientWidth,
+        chipClipped: chip.scrollWidth > chip.clientWidth,
+      };
+    });
+    expect(after.idClipped, "the id is cut short once the chip fills").toBe(false);
+    expect(after.chipClipped, "an ordinary save does not fit its own box").toBe(false);
   });
 
   /**
