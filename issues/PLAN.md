@@ -1080,12 +1080,6 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-127 | The recipient picker oscillates under the pointer | done | P0 | SHARED-057 |
 | UI-128 | Audit: every surface whose size follows its content | done | P0 | SHARED-057 |
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
-| UI-129 | An image reserves no box until it decodes | done | P0 | SHARED-057 |
-| UI-131 | A label that arrives late reflows the row it lands in | done | P0 | SHARED-057 |
-| UI-132 | The toast stack collapses toward its anchor | done | P0 | SHARED-057 |
-| UI-133 | The console strip's height is its text, and the board pays | done | P1 | SHARED-057 |
-| UI-134 | Counts and durations are not digit-stable | done | P1 | SHARED-057 |
-| UI-135 | The reader head's controls leave the column after a save | done | P0 | SHARED-057 |
 | UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
 | UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
 
@@ -1096,9 +1090,9 @@ late-arriving value, which is three of these six.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| UI-129 | An image reserves no box until it decodes (rank 1) | todo | P0 | UI-128 |
-| UI-135 | The reader head's controls leave the column after a save (rank 2) | todo | P0 | UI-128 |
-| UI-131 | A label that arrives late reflows the row it lands in (rank 3) | todo | P0 | UI-128 |
+| UI-129 | An image reserves no box until it decodes (rank 1) | done | P0 | UI-128 |
+| UI-135 | The reader head's controls leave the column after a save (rank 2) | done | P0 | UI-128 |
+| UI-131 | A label that arrives late reflows the row it lands in (rank 3) | done | P0 | UI-128 |
 | UI-132 | The toast stack collapses toward its anchor (rank 4) | done | P1 | UI-128 |
 | UI-133 | The console strip's height is its text, and the board pays (rank 5) | done | P1 | UI-128 |
 | UI-134 | Counts and durations are not digit-stable (rank 6) | done | P2 | UI-128 |
