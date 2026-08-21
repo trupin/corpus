@@ -73,6 +73,30 @@ with the toggle present.
 
 ## The drafted amendment
 
+**Rewritten 2026-08-21 after the pr-reviewer found the first draft described a
+rule the code does not implement.** The first draft said the switch appears
+"wherever the head has room for it". The shipped condition is **count-based**:
+the switch renders when the document has conversations, or whenever the list is
+already showing. Those diverge in both directions, and the reviewer named both:
+
+- a comment-less document in a **wide** head — full screen at 1400px, room to
+  spare — carries no switch, though a room-based rule says it should;
+- the over-full 560px head **with** comments does seat the switch, and pays for
+  it by truncating the document id.
+
+So signing the first draft would have left the code contradicting the amended
+spec. That is worth stating plainly: the paper was wrong, not the code.
+
+**And the second divergence is not a defect.** A head that truncates its
+document id and reveals the whole of it on a `title` is UI-135's rule working as
+written — controls never yield, variable text truncates and is revealed. What
+UI-135 rejected was the id truncating *on a head where nothing unusual is
+happening*. A long parent title, an active save chip and a conversation count
+together are not nothing.
+
+**So the real deviation is narrower than the first draft claimed**, and it is
+this one thing: **a document with no comments has no switch.**
+
 Replace, in §11's Document view bullet:
 
 > A document's comments are also available as a **list**, reached by a Document
@@ -83,32 +107,32 @@ with:
 
 > A document's comments are also available as a **list**, present in both column
 > view and full screen. The reader's header carries a **Document / Comments**
-> switch wherever the head has room for it — it is the same control that opens
-> the comments, in the same place, showing which of the two is displayed. The
-> head's geometry comes first (§11's rule that nothing resizes because of what
-> it holds): a head that cannot seat the switch without pushing a control out of
-> the column or truncating one does not seat it, and the list is reached from
-> the document's own ⋯ menu instead, which is always present. **The list is
-> never unreachable** — that is the guarantee, and the switch is the fast path
-> to it rather than the only one.
+> switch **once the document has a conversation to show** — it is the same
+> control that opens the comments, in the same place, showing which of the two
+> is displayed, and it stays while the list is open so the way back is never
+> missing. A document with no comments yet reaches the list from its own ⋯ menu,
+> where its actions already live. **The list is never unreachable, and a comment
+> can always be started without selecting text** — that is the guarantee; the
+> switch is the fast path to it rather than the only one, and the head does not
+> spend a control's width on a list with nothing in it.
 
 ## What the user is being asked to decide
 
-1. **Ratify the amendment as drafted** — the switch is best-effort, the ⋯ path
-   is the guarantee. This is what v0.16.0 ships.
-2. **Or spend one of the three signed tunings** to buy the 61px, and keep §11
-   unconditional. Each is a real trade and none is free: a shorter document id
-   means truncating it sooner, a smaller `.back` cap means less of the parent's
-   title, a narrower save-chip reserve re-opens the question UI-135 measured at
-   120px.
-3. **Or accept that the head is over-full** and say so plainly, which would make
-   this an argument for a second row rather than a smaller control — a much
-   larger change and not one this release should make.
+1. **Ratify as drafted** — the switch arrives with the first conversation, the ⋯
+   path is the guarantee. This is what v0.16.0 ships, and the amendment now
+   describes it exactly.
+2. **Make the switch unconditional anyway**, and buy the room by spending one of
+   three tunings someone already signed: a shorter document id (UI-135's yield
+   order), a smaller `.back` cap, or a narrower save-chip reserve (UI-134's box).
+   Each is a real trade. The measurement says 61px is needed and 13px is
+   available in the worst configuration.
+3. **Make it room-based** — the first draft's rule, shown above. It is
+   defensible and it is *more* work than it looks: a control that appears as a
+   window widens and vanishes as it narrows is close to what SHARED-057 was
+   signed to stop, so it would need a rule about when it may change.
 
-The orchestrator recommends **1**. The ⋯ path is a real path, it is always
-present, and it costs one gesture in the single configuration where the head is
-full. Option 2 spends a decision someone already made, to fix a case that
-happens only when a long parent title and an active save chip coincide.
+The orchestrator recommends **1**. The ⋯ path is always present, and a switch
+between two views where one of them is empty is chrome without a job.
 
 ## Acceptance
 Nothing until signed. If signed, the orchestrator applies the text to §11 and

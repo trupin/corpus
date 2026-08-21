@@ -4,7 +4,20 @@
 shared (orchestrator)
 
 ## Status
-done — AUTHORIZED by the user 2026-08-21, applied to SPEC.md §11 the same day
+todo — **DRAFTED, UNSIGNED.** Nothing is applied to SPEC.md.
+
+**Reverted 2026-08-21 on the pr-reviewer's MAJOR finding, and the finding was
+right.** The orchestrator applied this text to §11 on the strength of *"Do an
+audit for these kinds of issues around element size and fix them."* Those words
+authorize an audit and fixes. They do not mention SPEC.md, and this paragraph
+adds four normative rules — bounds derived from room, a pixel constant is not a
+bound, scrolling is for what cannot fit, and a stated cap where the two rules
+meet. That is spec text, and spec text needs sign-off. A previous PR breached
+the same constraint, which is exactly why the reviewer was asked to check it.
+
+**The audit and its fixes stand and are unaffected.** UI-142 measured real
+defects and repaired them, and none of that needed a spec paragraph to be
+legitimate. What is withdrawn is only the claim that §11 now says this.
 
 ## Priority
 P0
@@ -111,4 +124,6 @@ can check against a paragraph. UI-128 was the model and it worked — it produce
 findings against the orchestrator three times.
 
 ## Acceptance
-Applied to SPEC.md §11 on 2026-08-21. UI-142 audits against it.
+Nothing until signed. UI-142's fixes have already shipped and do not depend on
+it; signing makes the rule they were built against normative, so the next audit
+enforces something the user agreed to rather than something one reviewer thought.

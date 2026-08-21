@@ -1225,7 +1225,7 @@ left in a report.
 | UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | done | P0 | — |
 | UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | todo | P2 | UI-063 |
 | SHARED-060 | §11 puts the comments switch in the header unconditionally, and the header cannot hold it — **DRAFTED, UNSIGNED** | todo | P1 | — |
-| SHARED-061 | A surface is as large as its place allows (AUTHORIZED 2026-08-21, applied) | done | P0 | — |
+| SHARED-061 | A surface is as large as its place allows — **DRAFTED, UNSIGNED** (applied, then reverted on PR #54 review) | todo | P0 | — |
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 
