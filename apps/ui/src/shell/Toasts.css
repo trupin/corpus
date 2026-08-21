@@ -1,14 +1,52 @@
-/* Toasts, ported from `design/index.html` (`.toast-wrap`, `.toast`). */
+/*
+ * Toasts, ported from `design/index.html` (`.toast-wrap`, `.toast`).
+ *
+ * **The stack is reserved slots, not a flow** (UI-132; SPEC.md §11's rider
+ * signed 2026-08-20). The prototype's wrapper is a bottom-anchored flex column,
+ * which means every departure drags the survivors toward the anchor — 47px per
+ * expiry on UI-128's one-line toasts, 65px on the two-line ones this suite
+ * raises, through the `✕` the pointer was aimed at. Here the
+ * wrapper is a grid of exactly `MAX_TOASTS` rows of one fixed height, its row
+ * template written from that constant in `Toasts.tsx`, and each toast is placed
+ * in the row its slot names. A toast holds its row for its whole life, so
+ * neither an arrival nor a departure can move another toast by a pixel.
+ *
+ * The grid reserves its full height whether or not the slots are filled, so it
+ * must never be a lid over the console strip: the wrapper takes no pointer
+ * events and the toasts take them back.
+ */
 
 .toast-wrap {
+  /*
+   * The height a toast has, whatever text it is given. Two lines is measured
+   * against the notices this product actually raises — the longest of them,
+   * "Captured to inbox/ — a document and a filing thread were created; the
+   * agent will file it." and "Pinned — a view document was created for “…”
+   * (pinned: true, order: last).", wrap to two at this width — so revealing is
+   * the uncommon case and not the ordinary reading path. Longer than that is
+   * clamped in place, and a toast is the one surface where that is safe: it
+   * narrates an act whose result is on the surface that raised it.
+   */
+  --toast-font: 12px;
+  --toast-line-height: 1.4;
+  --toast-lines: 2;
+  --toast-pad-y: 10px;
+  --toast-gap: 8px;
+  /* text + padding + the 1px border on each edge. */
+  --toast-h: calc(
+    var(--toast-lines) * var(--toast-line-height) * var(--toast-font) + 2 * var(--toast-pad-y) + 2px
+  );
+
   position: fixed;
   bottom: 18px;
   right: 18px;
   z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
+  display: grid;
+  /* `grid-template-rows` comes from `MAX_TOASTS`, inline in `Toasts.tsx`. */
+  gap: var(--toast-gap);
+  justify-items: end;
+  width: min(360px, calc(100vw - 36px));
+  pointer-events: none;
 }
 
 /* An empty wrapper must not sit over the console strip swallowing clicks. */
@@ -17,17 +55,35 @@
 }
 
 .toast {
+  grid-column: 1;
+  height: var(--toast-h);
+  max-width: 100%;
+  /* The wrapper is a hole in the pointer surface; the toast is not. */
+  pointer-events: auto;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: var(--shadow);
-  padding: 10px 14px;
+  padding: var(--toast-pad-y) 14px;
   display: flex;
   gap: 10px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--toast-font);
+  line-height: var(--toast-line-height);
   color: var(--ink-2);
-  max-width: 360px;
+}
+
+/*
+ * The clamp and the box agree on the line count, so text that does not fit is
+ * cut rather than allowed to decide the height — the same arrangement as
+ * `.recipient-says` in the kit, and for the same reason.
+ */
+.toast .msg {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--toast-lines);
+  overflow: hidden;
 }
 
 .toast .tick {

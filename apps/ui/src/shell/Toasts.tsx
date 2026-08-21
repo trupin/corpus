@@ -31,6 +31,24 @@ import "./Toasts.css";
  * FIND-4. The two *DOM* nodes the finding counted are `.toast-wrap` and its
  * single `.toast` child, which a `[class*="toast"]` probe matches both of, and
  * whose text is identical whenever exactly one toast is up.
+ *
+ * **Nothing in the stack moves** (SPEC.md §11's rider, signed 2026-08-20; the
+ * defect is UI-132). The wrapper used to be a bottom-anchored flow with the
+ * newest toast first, so the oldest — the one whose six seconds runs out first
+ * — was the bottom child, and its departure dropped every survivor 47px toward
+ * the anchor, straight through the `✕` a person was reaching for. The stack is
+ * now {@link MAX_TOASTS} **reserved slots** of one fixed height: a toast is
+ * given a slot when it arrives, keeps it until it goes, and no arrival or
+ * departure ever re-slots another toast. See `Toasts.css` for the geometry.
+ *
+ * The slot answers "does not move". "Does not vanish under you" is the other
+ * half, and it is {@link ToastProvider}'s `pointed`/`focused` refs: the dwell
+ * still elapses on time, but a toast the pointer is on or the focus is in is
+ * marked overdue instead of dropped, and goes the instant the person leaves it.
+ * That cannot grow a wall — the cap is still three, and a notice arriving at a
+ * full stack takes the slot of the oldest toast **nobody is touching**. At most
+ * one toast is under the pointer and at most one holds focus, so with three
+ * slots there is always one to take.
  */
 
 export type ToastTone = "info" | "error";
@@ -42,6 +60,12 @@ export interface ToastNotice {
 
 interface ActiveToast extends ToastNotice {
   readonly id: number;
+  /**
+   * The reserved slot this toast occupies for its whole life. `0` sits against
+   * the anchor at the bottom-right corner and the stack grows upward, so a
+   * lone toast lands exactly where the prototype puts it.
+   */
+  readonly slot: number;
 }
 
 /** The prototype's cap and dwell. */
@@ -54,6 +78,29 @@ const noop: Notify = () => undefined;
 
 const ToastContext = createContext<Notify>(noop);
 
+/** The lowest reserved slot nothing occupies, or `null` when all are taken. */
+function freeSlot(current: readonly ActiveToast[]): number | null {
+  for (let slot = 0; slot < MAX_TOASTS; slot++) {
+    if (!current.some((toast) => toast.slot === slot)) return slot;
+  }
+  return null;
+}
+
+/**
+ * Which toast gives up its slot to an arriving notice when every slot is taken:
+ * the oldest one the person is not touching. The state array is append-only —
+ * `stacked` does the ordering for the render and leaves it alone — so the first
+ * match is the oldest. At most one toast is under the pointer and at most one
+ * holds focus, so with three slots there is always one to find; the fallback is
+ * the oldest outright, and only a cap of two or fewer could reach it.
+ */
+function displaced(
+  current: readonly ActiveToast[],
+  held: (id: number) => boolean,
+): ActiveToast | undefined {
+  return current.find((toast) => !held(toast.id)) ?? current[0];
+}
+
 /**
  * Pushes a toast. Outside a provider this is a no-op rather than a throw: a
  * plugin's row rendered in isolation should not crash for narrating itself.
@@ -65,36 +112,87 @@ export function useToast(): Notify {
 export function ToastProvider({ children }: { readonly children?: ReactNode }): ReactElement {
   const [toasts, setToasts] = useState<readonly ActiveToast[]>([]);
   const nextId = useRef(0);
-  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  /** The one toast under the pointer, and the one focus is inside. */
+  const pointed = useRef<number | null>(null);
+  const focused = useRef<number | null>(null);
+  /** Toasts whose dwell ran out while the person was still on them. */
+  const overdue = useRef(new Set<number>());
 
-  const dismiss = useCallback((id: number) => {
+  const isHeld = useCallback((id: number) => pointed.current === id || focused.current === id, []);
+
+  const drop = useCallback((id: number) => {
+    const timer = timers.current.get(id);
+    if (timer !== undefined) clearTimeout(timer);
+    timers.current.delete(id);
+    overdue.current.delete(id);
+    if (pointed.current === id) pointed.current = null;
+    if (focused.current === id) focused.current = null;
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
+
+  /** The dwell elapsed. A toast the person is on waits for them to leave. */
+  const expire = useCallback(
+    (id: number) => {
+      timers.current.delete(id);
+      if (isHeld(id)) {
+        overdue.current.add(id);
+        return;
+      }
+      drop(id);
+    },
+    [drop, isHeld],
+  );
+
+  /** The person left a toast: it goes now if its dwell ran out while they were on it. */
+  const settle = useCallback(
+    (id: number) => {
+      if (isHeld(id) || !overdue.current.has(id)) return;
+      drop(id);
+    },
+    [drop, isHeld],
+  );
 
   const notify = useCallback<Notify>(
     (notice) => {
       const id = nextId.current++;
-      // Newest first, and the oldest falls off the end — the prototype trims the
-      // wrapper's children to three.
-      setToasts((current) => [{ ...notice, id }, ...current].slice(0, MAX_TOASTS));
+      setToasts((current) => {
+        const slot = freeSlot(current);
+        if (slot !== null) return [...current, { ...notice, id, slot }];
+        // Full: the arriving notice inherits a slot rather than shifting one.
+        // The timer of the toast that leaves this way is left to fire into an
+        // id that is gone, which `drop` handles as a no-op — clearing it here
+        // would be a side effect inside a state updater.
+        const leaving = displaced(current, isHeld);
+        if (leaving === undefined) return current;
+        return [
+          ...current.filter((toast) => toast.id !== leaving.id),
+          { ...notice, id, slot: leaving.slot },
+        ];
+      });
       const timer = setTimeout(() => {
-        timers.current.delete(timer);
-        dismiss(id);
+        expire(id);
       }, TOAST_DURATION_MS);
-      timers.current.add(timer);
+      timers.current.set(id, timer);
     },
-    [dismiss],
+    [expire, isHeld],
   );
 
   useEffect(() => {
     const pending = timers.current;
     return () => {
-      for (const timer of pending) clearTimeout(timer);
+      for (const timer of pending.values()) clearTimeout(timer);
       pending.clear();
     };
   }, []);
 
   const value = useMemo(() => notify, [notify]);
+  /**
+   * Highest slot first, so the DOM order is the order the stack reads
+   * top-to-bottom — which is also the order Tab walks the close buttons in.
+   * The slot, not this array, decides where a toast is painted.
+   */
+  const stacked = useMemo(() => [...toasts].sort((a, b) => b.slot - a.slot), [toasts]);
 
   return (
     <ToastContext.Provider value={value}>
@@ -103,19 +201,46 @@ export function ToastProvider({ children }: { readonly children?: ReactNode }): 
           is the surface that genuinely *is* a `role="status"`, and two of them
           would leave "the status" ambiguous. `aria-atomic="false"` keeps a new
           toast announced on its own rather than re-reading the whole stack. */}
-      <div className="toast-wrap" aria-live="polite" aria-atomic="false">
-        {toasts.map((toast) => (
-          <div key={toast.id} className="toast" data-tone={toast.tone}>
+      <div
+        className="toast-wrap"
+        aria-live="polite"
+        aria-atomic="false"
+        // The reserve is exactly the cap, and the cap is a TypeScript constant.
+        style={{ gridTemplateRows: `repeat(${String(MAX_TOASTS)}, var(--toast-h))` }}
+      >
+        {stacked.map((toast) => (
+          <div
+            key={toast.id}
+            className="toast"
+            data-tone={toast.tone}
+            data-slot={toast.slot}
+            style={{ gridRow: MAX_TOASTS - toast.slot }}
+            onPointerEnter={() => {
+              pointed.current = toast.id;
+            }}
+            onPointerLeave={() => {
+              if (pointed.current === toast.id) pointed.current = null;
+              settle(toast.id);
+            }}
+            onFocus={() => {
+              focused.current = toast.id;
+            }}
+            onBlur={() => {
+              if (focused.current === toast.id) focused.current = null;
+              settle(toast.id);
+            }}
+          >
             <span className="tick" aria-hidden="true">
               {toast.tone === "error" ? "!" : "✓"}
             </span>
-            <span>{toast.message}</span>
+            {/* Clamped, never grown: the box is the same box whatever is in it. */}
+            <span className="msg">{toast.message}</span>
             <button
               type="button"
               className="close"
               aria-label="Dismiss"
               onClick={() => {
-                dismiss(toast.id);
+                drop(toast.id);
               }}
             >
               ✕
