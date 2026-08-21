@@ -1,7 +1,7 @@
 import { LaneDot, type LaneRow, type WeightLevel } from "@corpus/kit";
 import type { ReactElement } from "react";
 import {
-  laneStatement,
+  laneRowTitle,
   laneWeightLabel,
   NO_DESIGNATIONS_NOTE,
   ROSTER_PENDING_NOTE,
@@ -71,7 +71,7 @@ export function LaneList({ rows, levels, selectedLane, onSelect }: LaneListProps
             data-lane={row.lane}
             data-lane-liveness={row.liveness}
             data-lane-kind={row.kind}
-            title={laneStatement(row)}
+            title={laneRowTitle(row, levels)}
             onClick={() => {
               onSelect(row.lane);
             }}
@@ -79,7 +79,14 @@ export function LaneList({ rows, levels, selectedLane, onSelect }: LaneListProps
             <LaneDot liveness={row.liveness} />
             <span className="lane-name">{row.name}</span>
             {row.mark === "" ? null : <span className="lane-mark">{row.mark}</span>}
-            {weight === "" ? null : <span className="lane-weight">{weight}</span>}
+            {/* The box is reserved and fixed (`console.css`), because this
+                value arrives one round trip after the row does; anything past
+                the reservation ellipsizes and is revealed on `title`. */}
+            {weight === "" ? null : (
+              <span className="lane-weight" title={weight}>
+                {weight}
+              </span>
+            )}
             <span className="lane-meta">{row.liveness}</span>
           </button>
         );

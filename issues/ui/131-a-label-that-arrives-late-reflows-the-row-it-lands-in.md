@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -80,25 +80,25 @@ reusable answer and a comment saying what it is.
 
 ## Acceptance Criteria
 
-- [ ] **Measure the box, change the content, measure again, assert unchanged**: a
+- [x] **Measure the box, change the content, measure again, assert unchanged**: a
       Playwright spec holds the orchestrate skill's body open, records
       `.lane-name`, `.lane-mark`, `.lane-weight` and `.lane-meta` bounding boxes,
       releases it, and asserts **every one of them is unchanged**
-- [ ] The same assertion for `LaneScope`'s head, where `.lane-statement` is the
+- [x] The same assertion for `LaneScope`'s head, where `.lane-statement` is the
       element that must not re-truncate
-- [ ] Both the key and the label remain **readable**. If the label is truncated to
+- [x] Both the key and the label remain **readable**. If the label is truncated to
       fit a reserved box, the whole of it is reachable per SHARED-057 clause 2 —
       the row already carries `title={laneStatement(row)}`, so extending that is
       the cheap answer
-- [ ] The fallback stays honest. `weightLabel` returning the raw key when the
+- [x] The fallback stays honest. `weightLabel` returning the raw key when the
       workspace no longer declares it (`addressModel.ts:188`) is a **real state**,
       not a loading state, and must keep rendering. UI-098's rule holds: an absent
       answer is never presented as one
-- [ ] The chosen pattern is written down in a comment where the next site can find
+- [x] The chosen pattern is written down in a comment where the next site can find
       it, naming which of the three approaches below was taken and why
-- [ ] `Residents.test.tsx:221-226` — which already documents the swap in prose —
+- [x] `Residents.test.tsx:221-226` — which already documents the swap in prose —
       is updated to assert the geometry rather than only the text
-- [ ] **Falsification**: remove the reservation, rebuild `packages/kit`'s `dist/`
+- [x] **Falsification**: remove the reservation, rebuild `packages/kit`'s `dist/`
       if the change reaches kit, and watch the spec fail
 
 ## Technical Design
@@ -191,15 +191,119 @@ current, defective code.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Implemented on: opus.** Real Chromium (Playwright, Desktop Chrome), real Vite dev
+server on `CORPUS_UI_PORT=5287`, `CORPUS_SERVER_ORIGIN=http://127.0.0.1:8897`.
+The spec is `apps/ui/e2e/resident-weight-geometry.spec.ts`. It seeds a roster
+with two designated lanes at `weight: heavy`, seeds the orchestrate skill with
+the three levels the template ships, and **holds `GET /api/docs/doc_orchestrate`
+open** with a Playwright route registered *after* `stubCorpus` (handlers run in
+reverse registration order, `route.fallback()` hands the request back once the
+gate opens). The `?type=skill` scan is let through, so the row reaches the state
+this issue is about: the skill is located and its words are not here yet.
+
+### 1. Reproduction, before any change (2026-08-20)
+
+Held the body, opened the console's Residents tab, selected `th_solo`, waited for
+the scope count so the second late arrival could not confound the first, measured
+every child, released, measured again.
+
+```
+.lane row (380px list, the row is a <button>)
+  name    x=32        w=251.375  →  x=32        w=132.171875   (−119.203)
+  weight  x=293.375   w=33.125   →  x=174.171875 w=152.328125  (+119.203, left edge −119.203)
+  meta    x=336.5     w=26.5     →  unchanged
+```
+
+That is the audit's 119px, to three decimal places, and the weight's own left edge
+moves the same 119px left under a pointer.
+
+A second reproduction with a workspace label longer than any reservation
+(`"Heavy, judgment-laden, and not to be handed to a machine unattended"`) is worse
+than a reflow — it **breaks the row**:
+
+```
+  name    w=251.375 → w=0            (the name disappears)
+  weight  x=293.375 w=33.125 → x=42 w=443.71875
+  meta    x=336.5   → x=495.71875    (outside the 367px row entirely)
+```
+
+### 2. After the change — nothing moves
+
+Same steps, same held request. Every recorded box is byte-identical before and
+after, on all three surfaces measured:
+
+```
+.lane row       name x=32 w=125.5625 · weight x=167.5625 w=158.9375 · meta x=336.5 w=26.5
+.lane w/ mark   name x=32 w=36.078125 · mark x=78.078125 w=79.484375
+                weight x=167.5625 w=158.9375 · meta x=336.5 w=26.5
+.lane-scope-head name x=410 w=62.765625 · weight x=482.765625 w=158.9375
+                 statement x=651.703125 w=145.703125 · count x=1146.78125 w=119.21875
+```
+
+`24ch` resolves to **158.9375px** in this row's `var(--mono)` at 11px.
+`"Heavy or judgment-laden"` measures 152.328125px, so the shipped vocabulary's
+longest label fits whole — asserted in the spec as
+`scrollWidth > clientWidth === false`.
+
+### 3. The over-long workspace label
+
+Geometry identical before and after, and the value stays readable: the box
+ellipsizes (`scrollWidth > clientWidth === true`), carries the whole label on its
+own `title`, and the row's `title` carries it too through `laneRowTitle`. Asserted
+on both `.lane-weight` sites.
+
+### 4. A workspace that declares no levels
+
+`GET /api/docs/doc_orchestrate` answers a body with no table. The row keeps
+showing `heavy` — the key, in the reserved box — on the row and in the scope
+head. The reservation did not turn a real answer into silence (UI-098).
+
+### 5. Falsification
+
+Deleted the whole `.lane-weight { width: 24ch; overflow: hidden; text-overflow:
+ellipsis; }` rule and re-ran with no other change. Both geometry tests failed with
+exactly the reproduction numbers above (`name 251.375 → 132.171875`,
+`weight 33.125 → 152.328125 at x 293.375 → 174.171875`; the over-long case
+`name → 0`, `meta → x=495.71875`). Restored the rule and re-ran: all three pass.
+**No kit rebuild was needed** — the change is entirely in `apps/ui`, which Vite
+serves from source. Nothing in `packages/kit` was touched, so the `dist/` trap
+that voided the UI-097 falsification does not apply here, and this is recorded so
+the next reader does not assume it was skipped.
+
+Re-ran the neighbouring specs that touch these surfaces —
+`residents-tab.spec.ts`, `weight.spec.ts`, `console.spec.ts` — 27 tests, all pass.
+
+### 6. Escalation: the same shape, measured, on the composer's address line
+
+While checking for other sites of this shape I measured
+`ComposerAddress`'s `.address-line` (`packages/kit`) under the same held request.
+It moves, and it moves a control:
+
+```
+  address line   x=95 w=124.828125  →  x=95 w=170.96875   (+46.14)
+  toggle         x=229.828125       →  x=275.96875        (+46.14)
+  send button    x=350.5            →  x=386.796875       (+36.30)
+```
+
+Text `"researcher will answer · heavy"` → `"researcher will answer · Heavy or
+judgment-laden"`. **Not fixed here, deliberately.** The console's answer does not
+transfer: the clause is inside one `.address-line-text` string built by
+`addressLine()`, and the line reads `<who> · <weight>` where `<who>` is an
+arbitrary-length name — so there is no fixed vocabulary to size a `ch`
+reservation against. The two fixes available are (a) split the weight clause into
+its own reserved element, which changes a plugin-facing package's rendered DOM
+and its model, or (b) make the line take its width from the footer instead of its
+text, which changes how the pill looks in `design/index.html`. Both are decisions
+above this issue, and this is handed over as a measurement rather than filed
+separately.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in, reproduction first
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in, reproduction first
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

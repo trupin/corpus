@@ -100,6 +100,13 @@ interface Workspace {
   readonly scope?: ThreadScope;
   /** Answers every scope read with the contract's `409` — the lane was released. */
   readonly released?: boolean;
+  /**
+   * Never answers `GET /api/docs/doc_orchestrate`, so the workspace's own words
+   * for a level stay in flight (UI-131). The scan still answers: the state this
+   * pins is "the skill is located and its table is not here yet", which is where
+   * `weightLabel` prints the bare key.
+   */
+  readonly holdSkill?: boolean;
 }
 
 function json(body: unknown, status = 200): Promise<Response> {
@@ -139,7 +146,11 @@ function transport(workspace: Workspace = {}): {
     if (url.pathname === "/api/docs" && url.search === SKILL_QUERY_SEARCH) {
       return json({ items: [skillRow()], page: { total: 1, limit: 200, offset: 0 } });
     }
-    if (url.pathname === "/api/docs/doc_orchestrate") return json(skillDoc());
+    if (url.pathname === "/api/docs/doc_orchestrate") {
+      return workspace.holdSkill === true
+        ? new Promise<Response>(() => undefined)
+        : json(skillDoc());
+    }
     if (url.pathname === "/api/docs") {
       return json({ items: [], page: { total: 0, limit: 50, offset: 0 } });
     }
@@ -196,6 +207,13 @@ const laneRow = (lane: string): HTMLElement => {
   return row as HTMLElement;
 };
 
+/** The one reserved box a lane's weight lives in, whichever answer is in it. */
+const weightBox = (lane: string): HTMLElement => {
+  const box = laneRow(lane).querySelector(".lane-weight");
+  if (box === null) throw new Error(`no weight box on ${lane}`);
+  return box as HTMLElement;
+};
+
 afterEach(() => {
   cleanup();
   harness?.queryClient.clear();
@@ -234,6 +252,43 @@ describe("the lane list", () => {
     // by the role would be two rows nobody can pick between (CONTRACT-061).
     expect(laneRow("th_rent").textContent).toContain("Rent planning");
     expect(laneRow("th_rent").getAttribute("data-lane-liveness")).toBe("waiting");
+  });
+
+  /*
+   * UI-131. The comment above documents a swap this suite could never see the
+   * cost of: the box grew 119px when the words landed, on a 380px row that is a
+   * `<button>` — and jsdom implements no layout at all, so it passed against the
+   * defect it described. **The geometry is asserted in a real browser**, by
+   * `apps/ui/e2e/resident-weight-geometry.spec.ts`, which holds the skill body
+   * open and measures every child of the row before and after it lands.
+   *
+   * What these two assert is the contract that makes the reservation possible:
+   * one box, reserved by class (`console.css` sizes `.lane-weight` in `ch`),
+   * holding whichever answer is current — and the whole of that answer on a
+   * `title`, so a workspace whose own words run past the reservation still reads.
+   */
+  it("holds the key in the weight box while the workspace's own words are in flight", async () => {
+    renderResidents({ holdSkill: true });
+
+    await waitFor(() => {
+      expect(weightBox("th_claims").textContent).toBe("heavy");
+    });
+    expect(weightBox("th_claims").getAttribute("title")).toBe("heavy");
+  });
+
+  it("puts the words in that same box, and the whole of them on a title", async () => {
+    renderResidents();
+
+    await waitFor(() => {
+      expect(weightBox("th_claims").textContent).toBe("Heavy or judgment-laden");
+    });
+    expect(weightBox("th_claims").getAttribute("title")).toBe("Heavy or judgment-laden");
+    // …and the row's one sentence carries it too, so the value is reachable from
+    // the row a person is already pointing at (SHARED-057 clause 2).
+    expect(laneRow("th_claims").getAttribute("title")).toContain("Heavy or judgment-laden");
+    // The orchestrator's lane has no designation to weigh, so its own sentence
+    // gains no clause — a dangling separator would read as one somebody lost.
+    expect(laneRow("orchestrator").getAttribute("title")).not.toContain(" · ");
   });
 
   it("reports a missing profile beside the name it still stands on", async () => {

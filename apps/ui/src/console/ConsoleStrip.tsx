@@ -31,8 +31,13 @@ export function ServerStatus(): ReactElement {
       </span>
     );
   }
+  /*
+   * `title` because the version is the server's string, not ours: `.c-status`
+   * is bounded at 24ch and a long pre-release tag ellipsises, so the whole of
+   * it has to be reachable in place (SPEC.md §11's rider, clause 2).
+   */
   return (
-    <span className="c-status" role="status">
+    <span className="c-status" role="status" title={`corpus ${health.data.version}`}>
       corpus {health.data.version}
     </span>
   );
@@ -142,8 +147,24 @@ export function ConsoleStrip({
       </span>
       <span>console</span>
       <AgentPill status={status} />
-      {index === undefined ? null : <IndexPill status={index} />}
       <ConsoleCounts status={counts} />
+      {/*
+       * The index pill sits **after** the counts and immediately before the
+       * spacer, which is the one slot in this row where a late arrival displaces
+       * nothing (SPEC.md §11's rider — "a value that arrives later than the box
+       * holding it" moves nothing else).
+       *
+       * `GET /api/index/status` answers after first paint, and the pill is
+       * roughly 210px of it. Between the agent pill and the counts, that 210px
+       * pushed `.c-counts` right on the frame the answer landed. Here the left
+       * group is already laid out and the right group is anchored to the right
+       * edge, so the pill materialises into the spacer's slack.
+       *
+       * The alternative — reserving its slot — was rejected: a workspace with no
+       * semantic index would carry a 210px hole in its strip forever, which is a
+       * worse answer to the same question.
+       */}
+      {index === undefined ? null : <IndexPill status={index} />}
       <span className="spacer" />
       <PluginWarnings />
       <ServerStatus />
