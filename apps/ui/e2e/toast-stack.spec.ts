@@ -30,6 +30,9 @@ const LONG_REFUSAL =
   "another name in the same folder, and creating a second one would leave two " +
   "columns claiming the same query.";
 
+/** Two of the six-second dwells, driven rather than waited on. */
+const TWO_DWELLS_MS = 12_000;
+
 /** `e` with nothing open or highlighted, and `r` with no thread: no network. */
 async function raise(page: Page, key: "e" | "r"): Promise<void> {
   await page.keyboard.press(key);
@@ -197,12 +200,65 @@ test.describe("the toast stack", () => {
     expect(await slotBox(page, 0)).toEqual({ x: shortBox.x, y: shortBox.y });
 
     // What did not fit is cut rather than accommodated.
-    const clipped = await tall
-      .locator(".msg")
-      .evaluate((node) => node.scrollHeight > node.clientHeight);
+    const message = tall.locator(".msg");
+    const clipped = await message.evaluate((node) => node.scrollHeight > node.clientHeight);
     expect(clipped).toBe(true);
     // The whole of it is still what assistive tech reads.
     await expect(tall).toContainText(LONG_REFUSAL);
+  });
+
+  /**
+   * PR #53's MAJOR against UI-132: the fixed box cuts the message, and a cut
+   * with no reveal is SHARED-057 clause 2. It bites hardest on an **error**
+   * toast, whose reason is a server string of no bounded length that appears on
+   * no other surface — so the cut copy would be the only copy. Every toast
+   * carries its whole message on a `title`, and the hold is what makes that
+   * reachable: the tooltip needs a steady pointer, and a toast under the
+   * pointer does not go until the pointer leaves.
+   */
+  test("reveals on a title what the clamp cuts, and stays up long enough to read", async ({
+    page,
+  }) => {
+    await page.route("**/api/docs", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "conflict", message: LONG_REFUSAL }),
+      });
+    });
+
+    // The ordinary confirmation carries it too — the reveal is unconditional,
+    // like every other clamped surface in this release.
+    await raise(page, "e");
+    const short = page.locator('.toast[data-slot="0"] .msg');
+    expect(await short.getAttribute("title")).toBe(await short.textContent());
+
+    await page.locator(".ghost-col").click();
+    await page.getByRole("menuitem", { name: /Due this week/ }).click();
+    const failed = page.locator('.toast[data-tone="error"]');
+    await expect(failed).toContainText("Pin failed", { timeout: 15_000 });
+
+    const message = failed.locator(".msg");
+    // The box really does cut this one…
+    expect(await message.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+    // …and the whole refusal, server string and all, is on the title.
+    const revealed = await message.getAttribute("title");
+    expect(revealed).toContain(LONG_REFUSAL);
+    expect(revealed).toBe(await message.textContent());
+
+    // Reachable, not theoretical: with the pointer on it the toast outlives two
+    // whole dwells, so the tooltip has time to appear and be read.
+    const box = await failed.boundingBox();
+    expect(box).not.toBeNull();
+    if (box === null) return;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.clock.runFor(TWO_DWELLS_MS);
+    await expect(failed).toBeVisible();
+    expect(await message.getAttribute("title")).toBe(revealed);
   });
 
   test("reserves its slots without laying a lid over the console strip", async ({ page }) => {

@@ -233,8 +233,19 @@ export function ToastProvider({ children }: { readonly children?: ReactNode }): 
             <span className="tick" aria-hidden="true">
               {toast.tone === "error" ? "!" : "✓"}
             </span>
-            {/* Clamped, never grown: the box is the same box whatever is in it. */}
-            <span className="msg">{toast.message}</span>
+            {/*
+              Clamped, never grown: the box is the same box whatever is in it.
+              The clamp is a cut, so it needs a reveal (SHARED-057 clause 2) —
+              the `title` carries the whole notice, unconditionally, like every
+              other clamped surface in this release. It is not decoration on an
+              error toast: the `message` of a refusal is a server string of no
+              bounded length, and it exists nowhere else in the UI. The reveal
+              is reachable because a toast the pointer is on is held (see
+              `ToastProvider`), so the tooltip's dwell outlives the toast's.
+            */}
+            <span className="msg" title={toast.message}>
+              {toast.message}
+            </span>
             <button
               type="button"
               className="close"

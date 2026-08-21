@@ -6,7 +6,7 @@ shared
 
 ## Status
 
-done — signed by the user 2026-08-20 (as drafted, in the v0.15.0 go-ahead). SPEC.md text applied 2026-08-20; any downstream code half is tracked by its own issue.
+done — signed by the user 2026-08-20 (as drafted, in the v0.15.0 go-ahead). SPEC.md text applied 2026-08-20. The CLI half was already true from PR #50 (`doc check`'s help states the exit-6/save asymmetry); the remaining consequence, an ill-shaped block that vanishes a designation silently, is **SERVER-132**.
 
 ## Priority
 
@@ -107,14 +107,17 @@ failures"* in the first bullet at line 594:
 
 ## Acceptance Criteria
 
-- [ ] The user has signed the drafted text, verbatim, on its own
-- [ ] SPEC.md §14 states that a finding may be reported without refusing the write
-- [ ] `corpus doc check`'s CLI help says the same, in one sentence, and
+- [x] The user has signed the drafted text, verbatim, on its own
+- [x] SPEC.md §14 states that a finding may be reported without refusing the write
+- [x] `corpus doc check`'s CLI help says the same, in one sentence, and
       `docs/cli.md` is **regenerated** rather than hand-edited
-- [ ] The release notes for the version that ships SERVER-124 state the exit-code
-      change plainly, so a workspace gating on `doc check` is not surprised
-- [ ] `npm run spec:check` passes
-- [ ] No other §14 bullet is reworded to agree with it
+- [x] The release notes for the version that ships SERVER-124 state the exit-code
+      change plainly, so a workspace gating on `doc check` is not surprised —
+      **carried to v0.15.0's notes**, since SERVER-124 shipped in v0.12.0 before
+      this rider was signed and its notes could not have stated a rule that did
+      not yet exist
+- [x] `npm run spec:check` passes
+- [x] No other §14 bullet is reworded to agree with it
 
 ## Technical Design
 
@@ -155,8 +158,8 @@ _[Filled after sign-off]_
 
 ## Completion Checklist (domain agent)
 
-- [ ] N/A — orchestrator-applied after sign-off
+- [x] N/A — orchestrator-applied after sign-off
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[SHARED-052]` prefix
+- [x] Committed with `[SHARED-052]` prefix

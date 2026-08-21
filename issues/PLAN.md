@@ -1081,6 +1081,7 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-128 | Audit: every surface whose size follows its content | done | P0 | SHARED-057 |
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
 | UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
+| UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | todo | P2 | — |
 | UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
 
 **UI-128's ledger ranks six reachable clusters**, each measured in a real browser

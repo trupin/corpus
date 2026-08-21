@@ -624,3 +624,37 @@ sweep. It has since landed (UI-127) and gained a second finding of its own
 (UI-130, the popover's missing ceiling, found by that issue's own measurement
 rather than by this audit). **The address surface is therefore covered**, by two
 issues, and does not need the re-sweep this ledger asked for.
+
+
+## Corrections after PR #53's review, 2026-08-20
+
+The reviewer read this ledger as a deliverable and found three places where it
+does not hold up. All three are recorded rather than quietly edited, because a
+ledger whose errors are silently repaired teaches a reader to trust it more than
+it deserves.
+
+**1. The headline "12 reachable sites" is not reconstructible from the table.**
+The A-table has eight numbered rows, one of which lists twelve spans. The
+stylesheet-coverage claim is checkable — 28, enumerated — and this count is not.
+Read the **six clusters** as the load-bearing number: those are what issues were
+filed against, and each is traceable to its rows. The site count is an
+approximation of how many spans those clusters touch.
+
+**2. `.col-count` is listed in §C as an explicit non-finding and again as a
+cluster-6 span, which UI-134 then changed.** The two readings are not
+reconcilable and §C is the wrong one: UI-134's own comment records that the count
+re-cuts the title beside it, which is text a person is reading. Treat the
+cluster-6 row as correct and §C's compliance reasoning as withdrawn.
+
+**3. Adjudication 3 was wrong within hours and was left standing.** It ruled the
+address surface *covered* and said it needed no re-sweep, because UI-127 and
+UI-130 had worked it. UI-131's implementer then measured a reachable P0 in
+exactly that surface — the address line pushing Send, filed as UI-137 and fixed
+in this release. The adjudication is withdrawn: **the address surface was never
+swept by this audit**, and it was two independent measurements, not this ledger,
+that found what was wrong with it.
+
+**4. One residual has no owner and now does.** UI-134's log flagged
+`.lane-meta` — a word swapping on a fifteen-second clock, `margin-left: auto`, so
+it re-cuts `.lane-name` beside it — as found-and-not-fixed. It appears in no
+latent row here and in no issue. Filed as **UI-138**.

@@ -26,7 +26,7 @@ import type { NavEntry } from "./useNavStack";
  * **The row is a fixed box holding text of unknown length**, and `Reader.css`'s
  * head block is where that is arranged (UI-135): the controls never yield, the
  * back label and the id truncate with the whole of each on a `title`, and the
- * save chip's box is reserved to its widest state. What this file owes that
+ * save chip's box is reserved to its ordinary state. What this file owes that
  * arrangement is the two `title`s — see {@link backTitle} and
  * {@link readerIdText} — because a truncation with nothing behind it is a
  * value quietly cut, which SHARED-057 rules out.

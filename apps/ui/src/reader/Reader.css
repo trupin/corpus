@@ -119,9 +119,14 @@
  * to its content walked `.reader-id` 246px across the head on every save, and
  * with a long `.back` beside it pushed ⋯ and ⤢ out of the column entirely.
  *
- * **The reservation is the ordinary save, not the worst one.** It is
- * `committed · git ✓` — about 107px — which is what a save says when nothing
- * went wrong with its anchors, and that is nearly every save. Reserving the
+ * **The reservation is the ordinary save, not the worst one.** It is the wider
+ * of the two strings a chip ordinarily shows — `committed · git ✓`, and
+ * `save failed — retry` at about 120px, which wins because clipping `— retry`
+ * would leave a control whose label stops mid-word. Neither depends on a count,
+ * and one or the other is what a chip says on nearly every save. The single
+ * source is `SaveChip.tsx`'s `RESERVED_SAVE_CHIP_TEXT`, derived from those two
+ * rather than written here — a number typed into this comment is how the two
+ * came to disagree in the first place. Reserving the
  * 246px worst case instead was tried and reversed: it held every state in one
  * box and paid for it by leaving the reading width permanently short, with the
  * back label squeezed below its own cap and the document id truncating on a

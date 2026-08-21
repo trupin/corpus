@@ -268,25 +268,34 @@
  * per-surface by design.
  */
 /*
- * The mockup's 240×180 preview cap is no longer stated here (UI-129): it is now
- * the *reserved* box every image in the product gets, declared once on `.md-img`
- * in `@corpus/kit/markdown.css` and honoured before the bytes arrive as well as
- * after. Restating it as a `max-` pair here would be a second set of numbers
- * saying the same thing, and — worse — a cap says nothing about an image that
- * has not decoded, which is the whole of what UI-129 is about. Retuning this
- * surface alone means setting `--md-img-box-w` / `--md-img-box-h` on `.turn-atts`.
+ * The mockup's 240×180 preview is no longer a `max-` cap here (UI-129): it is
+ * the *reserved* box, honoured before the bytes arrive as well as after. A cap
+ * says nothing about an image that has not decoded, which is the whole of what
+ * UI-129 is about.
  *
- * The **stacking and the gap** moved up to the strip for the same issue's
- * reason. An attachment is three different elements over its life — a pending
- * chip, then either the picture or a broken chip — and `CorpusImage` puts the
- * host's class on the picture alone. A `display` and a `margin-top` declared
- * here therefore applied to only one of the three, and the strip shifted by 3px
- * at the moment the bytes landed. The container's rule cannot tell the three
- * apart, which is exactly what makes it the right place for it.
+ * **240px is stated here and nowhere else** (PR #53 review). The kit reserves a
+ * 4:3 box at the surface's own width, and its default is the reading measure —
+ * right for prose, where an image carries content someone has to read, and
+ * wrong for an attachment, which is a thumbnail hanging off a message. This is
+ * the mockup's own figure (`design/index.html`: `.turn-att-img { max-width:
+ * 240px; max-height: 180px }`) and this strip is the surface it draws it for.
+ * Only the width is stated: the height follows the kit's ratio to the same
+ * 180px, so the two numbers cannot drift apart. `--md-img-box-w` sits on the
+ * container rather than on `.turn-att-img` because a custom property inherits,
+ * and the picture is one of the three elements an attachment is over its life.
  *
- * What stays here is what is the thread's alone: the frame.
+ * The **stacking and the gap** moved up to the strip for that same reason. An
+ * attachment is a pending chip, then either the picture or a broken chip, and
+ * `CorpusImage` puts the host's class on the picture alone. A `display` and a
+ * `margin-top` declared on `.turn-att-img` therefore applied to only one of the
+ * three, and the strip shifted by 3px at the moment the bytes landed. The
+ * container's rule cannot tell the three apart, which is exactly what makes it
+ * the right place for it.
+ *
+ * What stays below is what is the thread's alone: the frame.
  */
 .turn-atts {
+  --md-img-box-w: 240px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;

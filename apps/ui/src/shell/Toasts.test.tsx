@@ -251,6 +251,25 @@ describe("ToastProvider", () => {
     });
   });
 
+  /**
+   * The box is fixed, so a notice longer than two lines is cut — and a cut with
+   * no reveal loses the only copy of a refusal's reason, which is a server
+   * string this UI shows nowhere else. Every toast carries its whole message on
+   * a `title`, the pattern the rest of this release's clamped surfaces use.
+   */
+  it("carries the whole notice on a title, so the clamp has a reveal", () => {
+    render(
+      <ToastProvider>
+        <Narrator />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByText("fail"));
+    const message = document.querySelector(".toast .msg");
+    expect(message?.textContent).toBe("Reorder failed — locked");
+    expect(message?.getAttribute("title")).toBe("Reorder failed — locked");
+  });
+
   it("marks a failure differently from a confirmation", () => {
     render(
       <ToastProvider>

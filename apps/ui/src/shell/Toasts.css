@@ -23,9 +23,17 @@
    * "Captured to inbox/ — a document and a filing thread were created; the
    * agent will file it." and "Pinned — a view document was created for “…”
    * (pinned: true, order: last).", wrap to two at this width — so revealing is
-   * the uncommon case and not the ordinary reading path. Longer than that is
-   * clamped in place, and a toast is the one surface where that is safe: it
-   * narrates an act whose result is on the surface that raised it.
+   * the uncommon case and not the ordinary reading path.
+   *
+   * Longer than that is cut, and a cut needs a reveal (SHARED-057 clause 2).
+   * The first draft argued a toast needs none, because it narrates an act whose
+   * result is on the surface that raised it. That holds for a confirmation and
+   * not for a refusal: an error toast's `message` is a server string of no
+   * bounded length that appears on no other surface, so cutting it with no
+   * reveal loses the only copy of the reason. Every toast therefore carries its
+   * whole message on a `title` (`Toasts.tsx`), which the hold makes reachable —
+   * a toast the pointer is on does not go until the pointer leaves, so the
+   * tooltip has longer to appear than the toast has to live.
    */
   --toast-font: 12px;
   --toast-line-height: 1.4;

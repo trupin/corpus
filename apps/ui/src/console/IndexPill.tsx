@@ -3,8 +3,11 @@ import type { ReactElement } from "react";
 import { indexDotClass, indexPillText } from "./consoleModel";
 
 /**
- * The semantic index's pill, beside the agent pill (SPEC.md §11's index-pill
- * rider, signed 2026-08-02).
+ * The semantic index's pill (SPEC.md §11's index-pill rider, signed
+ * 2026-08-02). It sits at the end of the strip's left group, immediately
+ * before the spacer — UI-133 moved it there from beside the agent pill,
+ * because its sentence is the strip's one unbounded string and anything after
+ * it was shoved 233px sideways when the sentence grew.
  *
  * It is the agent pill's twin by construction — same shape, same dot vocabulary,
  * same `.dot` child — because the two report the same kind of thing: what a
