@@ -1079,6 +1079,7 @@ rule produces taste, and an audit with one produces findings a person can check.
 | SHARED-057 | Nothing resizes because of what it holds (SIGNED 2026-08-20) | done | P0 | — |
 | UI-127 | The recipient picker oscillates under the pointer | todo | P0 | SHARED-057 |
 | UI-128 | Audit: every surface whose size follows its content | todo | P0 | SHARED-057 |
+| UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | todo | P1 | — |
 
 **The riders v0.14.0 carried forward are signed and applied in this phase**:
 SHARED-049, -052, -053, -056 as drafted, plus SHARED-054's code half and
