@@ -26,6 +26,7 @@ import { summaryFromRow, type ThreadSummary } from "../thread/CollapsedThread";
 import { ThreadPanel } from "../thread/ThreadPanel";
 import { readStateOf, type ThreadReadState } from "../thread/threadCollapse";
 import { Backlinks } from "./Backlinks";
+import { DocWidthHandle } from "./DocWidthContext";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { RelatedPanel } from "./RelatedPanel";
 import { ScopeProvenance } from "./ScopeProvenance";
@@ -431,6 +432,19 @@ export function DocView({
          */
         {...(PluginView === null ? {} : { "data-plugin-surface": "" })}
       >
+        {/*
+         * The body's own right edge, as a grab handle (SPEC.md §11's width
+         * rider). First in the document half so it is one Tab from the head
+         * rather than one Tab past the whole editor, and rendered only while a
+         * body is on screen: the comments list carries no measure, and a
+         * control that visibly does nothing is worse than no control.
+         *
+         * It draws nothing at all outside a reader — `DocWidthContext` is
+         * `null` there — so a `DocView` in a component test lays out exactly as
+         * it did before there was a handle.
+         */}
+        {showsBody ? <DocWidthHandle /> : null}
+
         <FrontmatterForm
           /*
            * Keyed by document id, exactly as `DocEditor` is: a navigation is a

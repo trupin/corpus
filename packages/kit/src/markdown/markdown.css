@@ -10,13 +10,33 @@
  *
  * is how. The reading measure (62ch here, 66ch in focus mode) belongs to the
  * host, which knows how wide its column is; only the type treatment is here.
+ *
+ * ── The measure is a default, not a cap (UI-066) ──────────────────────────
+ *
+ * SPEC.md §11: *"The document body has a comfortable default width, and the
+ * reader can change it — in column view and in full screen."* So `62ch` moves
+ * from being the width to being the **fallback**: a host that sets
+ * `--doc-measure` on any ancestor decides, and one that sets nothing gets
+ * exactly the shipped measure, character for character.
+ *
+ * A custom property is what makes that a one-line change here rather than a
+ * second stylesheet. `62ch` stays a `ch` when nobody has chosen — the measure
+ * is typographic and must follow this element's own serif — and becomes a pixel
+ * width the moment somebody drags, which is what makes every measured element
+ * in the reader line up at exactly the same edge (`apps/ui`'s `Reader.css` and
+ * `FocusMode.css` carry the same fallback pattern for the title, the panels and
+ * the banners).
+ *
+ * **Everything stretches uniformly, prose included** (SHARED-010 Amendment 2).
+ * The variant where prose kept a reading measure while tables and fences broke
+ * out was offered to the user and declined: what you drag is what you get.
  */
 
 .doc-body {
   font-family: var(--serif);
   font-size: 15px;
   line-height: 1.62;
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
   /*
    * The prose half of the wrap `.doc-body pre` already does for fences
    * (UI-050 — the argument is stated there and not repeated). A pasted URL is
