@@ -13,9 +13,12 @@ import {
   revealItem,
   revealMissNotice,
   revealPatience,
+  REVEAL_SETTLED_ATTRIBUTE,
   scrollRangeIntoView,
+  surfaceSettled,
   surfaceText,
   type RevealLook,
+  type RevealSurface,
 } from "./reveal";
 
 /**
@@ -409,10 +412,20 @@ describe("revealItem", () => {
  * "absent" from a surface that has told it nothing.**
  */
 describe("revealPatience", () => {
+  /** A surface still arriving: it has words on it, but no verdict about itself. */
+  function pending(text: string): RevealSurface {
+    return { text, settled: false };
+  }
+
+  /** A surface that says it has arrived at what it is showing. */
+  function arrived(text: string): RevealSurface {
+    return { text, settled: true };
+  }
+
   /** Feeds `looks` at the same surface, one notional frame apart. */
   function feed(
     patience: ReturnType<typeof revealPatience>,
-    surface: string,
+    surface: RevealSurface,
     looks: number,
     from = 0,
   ): RevealLook {
@@ -425,39 +438,79 @@ describe("revealPatience", () => {
     const patience = revealPatience();
     // Far more looks than the old five, and the surface has said nothing: this
     // is the `Loading…` gap, and it is "not there yet", not "not there".
-    const verdict = feed(patience, "Loading…", 100);
+    const verdict = feed(patience, pending("Loading…"), 100);
     expect(verdict.giveUp).toBeNull();
   });
 
   it("searches only on the looks where the surface changed", () => {
     const patience = revealPatience();
-    expect(patience("Loading…", 0).search).toBe(true);
-    expect(patience("Loading…", 16).search).toBe(false);
-    expect(patience("Buy milk", 32).search).toBe(true);
-    expect(patience("Buy milk", 48).search).toBe(false);
+    expect(patience(pending("Loading…"), 0).search).toBe(true);
+    expect(patience(pending("Loading…"), 16).search).toBe(false);
+    expect(patience(arrived("Buy milk"), 32).search).toBe(true);
+    expect(patience(arrived("Buy milk"), 48).search).toBe(false);
+  });
+
+  it("searches again when a surface answers without its text changing", () => {
+    const patience = revealPatience();
+    // The conversation list answering "none at all" is the case: the same empty
+    // reading either side of the one moment that makes it conclusive.
+    expect(patience(pending(""), 0).search).toBe(true);
+    expect(patience(pending(""), 16).search).toBe(false);
+    expect(patience(arrived(""), 32).search).toBe(true);
   });
 
   it("accepts the words are absent once the surface has arrived and gone quiet", () => {
     const patience = revealPatience();
-    patience("Loading…", 0);
+    patience(pending("Loading…"), 0);
     // The body lands. From here the surface has moved once and is still.
-    expect(patience("Sell bread", 16).giveUp).toBeNull();
+    expect(patience(arrived("Sell bread"), 16).giveUp).toBeNull();
     for (let frame = 1; frame < REVEAL_QUIET_FRAMES; frame += 1) {
-      expect(patience("Sell bread", 16 + frame * 16).giveUp).toBeNull();
+      expect(patience(arrived("Sell bread"), 16 + frame * 16).giveUp).toBeNull();
     }
-    expect(patience("Sell bread", 16 + REVEAL_QUIET_FRAMES * 16).giveUp).toBe("absent");
+    expect(patience(arrived("Sell bread"), 16 + REVEAL_QUIET_FRAMES * 16).giveUp).toBe("absent");
+  });
+
+  /**
+   * The warm open, and the defect this half of the mechanism was added for (PR
+   * #54 review). A cached document renders its body in the same commit that
+   * gives the reader content, so the reveal's *first* look is at a finished
+   * surface that will never change again. Concluding arrival from movement
+   * alone, `absent` is unreachable here: the reveal could only run out the
+   * ceiling and then report a document that loaded perfectly as one that failed
+   * to load, in the tone kept for faults.
+   */
+  it("concludes absence from a first look at a surface that says it has arrived", () => {
+    const patience = revealPatience();
+    // No `Loading…` before it, and nothing after it: one state, forever.
+    for (let frame = 0; frame <= REVEAL_QUIET_FRAMES; frame += 1) {
+      const verdict = patience(arrived("Sell bread"), frame * 16);
+      // Well inside the ceiling — the point is that it never gets there.
+      expect(frame * 16).toBeLessThan(REVEAL_WAIT_MS);
+      if (frame < REVEAL_QUIET_FRAMES) expect(verdict.giveUp).toBeNull();
+      else expect(verdict.giveUp).toBe("absent");
+    }
+  });
+
+  it("does not conclude absence from a still surface that has said nothing", () => {
+    const patience = revealPatience();
+    // The same shape as the warm open above, minus the one claim that makes it
+    // conclusive: this must reach the ceiling rather than the verdict.
+    const verdict = feed(patience, pending("Loading…"), REVEAL_QUIET_FRAMES * 3);
+    expect(verdict.giveUp).toBeNull();
   });
 
   it("starts the quiet count again every time the surface moves", () => {
     const patience = revealPatience();
-    patience("Loading…", 0);
-    patience("half a body", 16);
+    patience(pending("Loading…"), 0);
+    patience(arrived("half a body"), 16);
     // One frame short of the verdict, and then the renderer moves again.
     for (let frame = 1; frame < REVEAL_QUIET_FRAMES; frame += 1) {
-      expect(patience("half a body", 16 + frame * 16).giveUp).toBeNull();
+      expect(patience(arrived("half a body"), 16 + frame * 16).giveUp).toBeNull();
     }
-    expect(patience("a whole body", 1_000).giveUp).toBeNull();
-    expect(feed(patience, "a whole body", REVEAL_QUIET_FRAMES - 1, 1_016).giveUp).toBeNull();
+    expect(patience(arrived("a whole body"), 1_000).giveUp).toBeNull();
+    expect(
+      feed(patience, arrived("a whole body"), REVEAL_QUIET_FRAMES - 1, 1_016).giveUp,
+    ).toBeNull();
   });
 
   it("stops at the ceiling when the surface never settles", () => {
@@ -465,9 +518,9 @@ describe("revealPatience", () => {
     // A surface that changes on every look never goes quiet, so only the
     // ceiling can end it — and it must.
     for (let frame = 0; frame * 16 < REVEAL_WAIT_MS; frame += 1) {
-      expect(patience(`frame ${String(frame)}`, frame * 16).giveUp).toBeNull();
+      expect(patience(pending(`frame ${String(frame)}`), frame * 16).giveUp).toBeNull();
     }
-    expect(patience("frame last", REVEAL_WAIT_MS).giveUp).toBe("unresolved");
+    expect(patience(pending("frame last"), REVEAL_WAIT_MS).giveUp).toBe("unresolved");
   });
 
   it("waits far longer than the 320 ms budget it replaces", () => {
@@ -481,6 +534,31 @@ describe("surfaceText", () => {
   it("reads the whole container, not one renderer's markup", () => {
     const host = mount("<div><p>Buy <strong>milk</strong></p><li>Sell bread</li></div>");
     expect(surfaceText(host.firstElementChild as HTMLElement)).toBe("Buy milkSell bread");
+  });
+});
+
+/**
+ * The surface's other answer (PR #54 review): whether it has finished arriving.
+ * Declared by the renderer, and never inferred — a renderer that says nothing is
+ * still arriving, which costs a reveal patience and never costs it a wrong
+ * verdict.
+ */
+describe("surfaceSettled", () => {
+  it("is false for a surface that has not said anything", () => {
+    const host = mount('<div class="scroll"><p>Loading…</p></div>');
+    expect(surfaceSettled(host.firstElementChild as HTMLElement)).toBe(false);
+  });
+
+  it("is true when the renderer marks what it has arrived at", () => {
+    const host = mount(
+      `<div class="scroll"><div ${REVEAL_SETTLED_ATTRIBUTE}><p>Buy milk</p></div></div>`,
+    );
+    expect(surfaceSettled(host.firstElementChild as HTMLElement)).toBe(true);
+  });
+
+  it("is true when the container is itself what arrived", () => {
+    const host = mount(`<div ${REVEAL_SETTLED_ATTRIBUTE}><p>Buy milk</p></div>`);
+    expect(surfaceSettled(host.firstElementChild as HTMLElement)).toBe(true);
   });
 });
 

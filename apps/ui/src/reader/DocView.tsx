@@ -29,6 +29,7 @@ import { Backlinks } from "./Backlinks";
 import { DocWidthHandle } from "./DocWidthContext";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { RelatedPanel } from "./RelatedPanel";
+import { REVEAL_SETTLED_ATTRIBUTE } from "./reveal";
 import { ScopeProvenance } from "./ScopeProvenance";
 import type { ReaderDoc } from "./useReaderDoc";
 
@@ -345,9 +346,20 @@ export function DocView({
     threadIds: anchors.anchored.map((thread) => thread.threadId),
   });
 
+  /**
+   * The three renders below are this reader's whole vocabulary, and exactly two
+   * of them are somewhere it has *arrived*. A reveal has to tell them apart —
+   * "the quote is not on this document" and "the document has not rendered yet"
+   * are its two ways of failing, and only the surface knows which — so the two
+   * terminal renders say so and the `Loading…` one deliberately does not.
+   * `reveal.ts`'s {@link REVEAL_SETTLED_ATTRIBUTE} is where that contract, and
+   * the reason it is declared rather than guessed at, is written down.
+   */
+  const arrived = { [REVEAL_SETTLED_ATTRIBUTE]: "" };
+
   if (reader.isMissing) {
     return (
-      <div className="reader-gone" role="status">
+      <div className="reader-gone" role="status" {...arrived}>
         <p className="col-card-title">This document no longer exists</p>
         <p className="col-card-body">
           {reader.docId} was deleted. Its history is still in git — nothing was lost from the
@@ -359,7 +371,7 @@ export function DocView({
 
   if (reader.error !== null) {
     return (
-      <div className="reader-gone" role="alert">
+      <div className="reader-gone" role="alert" {...arrived}>
         <p className="col-card-title">This document could not be read</p>
         <p className="col-card-body">{reader.error.message}</p>
       </div>
@@ -423,6 +435,9 @@ export function DocView({
         className="doc-main"
         ref={anchors.mainRef}
         onContextMenu={selectionMenu}
+        // Arrived: the body is on screen, and a reveal that cannot find its
+        // words in it has found them absent rather than early (see above).
+        {...arrived}
         /*
          * A plugin `View` owns its whole body surface (SPEC.md §10), so core
          * paints no menu of its own over it — the plugin contributes one if it

@@ -363,6 +363,119 @@ Not one assertion added, not one weakened, no `timeout` raised, `REVEAL_FLASH_MS
 unchanged. UI-079 refused to harden it because it is this surface's only alarm,
 and the refusal held: the alarm is what measured the before and the after.
 
+## Follow-up, 2026-08-21 — the warm open reached the wrong verdict
+
+Found by the cold pr-reviewer on PR #54 (MINOR, and a real user-visible defect),
+fixed on `phase-38-comments-have-a-place`. Implemented on **opus** — Opus 5 (1M
+context), ui-dev. This is a defect in the mechanism Decision 2 above built, so it
+belongs here rather than in a new issue.
+
+### What was wrong
+
+`revealPatience` could only reach `absent` after watching the surface change at
+least once (`arrived` required `last !== null`). That is evidence a **cold** open
+produces and a **warm** one cannot: a document already in the query cache, opened
+with plugin discovery long since settled, renders its body in the *same commit*
+that flips `hasContent`, so the reveal's first look is at a finished surface that
+never changes again. With the quote edited away, `absent` was unreachable, the
+reveal ran the full `REVEAL_WAIT_MS` and then raised the **error**-tone
+`unresolved` notice — *"the document did not finish loading"* — for a document
+that had loaded perfectly, lighting the console's unread-error marker for an
+ordinary edit. It always terminated. What was wrong was the account.
+
+The two tones UI-140 built for exactly this distinction were right. The
+discriminator behind them was not.
+
+### The fix — arrival is two questions, and either answer is enough
+
+A surface now answers **two** things per look, not one: `RevealSurface = {text,
+settled}`. `arrived` is set by `settled || (changed && last !== null)`, so a first
+look at a surface that *says* it has arrived is as good as watching one arrive.
+The rule the mechanism exists for is untouched: a surface that has neither moved
+nor said anything is still never concluded absent.
+
+`settled` is **declared by the renderer, never sniffed**, and opt-in in the safe
+direction — a renderer that says nothing reads as still arriving, which is
+exactly the old behaviour, so a forgotten marker costs a reveal the ceiling and
+can never make it claim absence it has not earned. `DocView` marks its two
+*terminal* renders (`.doc-main`, and the `.reader-gone` note for a deleted or
+unreadable document) with `data-reader-settled`, and deliberately does **not**
+mark `Loading…` — the `doc === undefined || discovery === "pending"` branch that
+is the whole reason UI-140 exists. The thread branch already had this fact and
+was smuggling it through the text (`"settled …" | "pending …"`); it is now the
+`settled` field proper, and a change in it counts as a change, so a list
+answering "no conversations at all" is still the conclusive moment it was.
+
+Two rejected alternatives, for the next reader:
+
+- **Mark the placeholder and invert** (`settled` = no `data-reader-pending` in
+  the container). One attribute instead of three, but it defaults *unsafe*: any
+  surface that forgets it, or renders its own placeholder, is read as arrived and
+  can be told its words are gone before they were ever drawn.
+- **Recompute `DocView`'s gate inside `useReaderSurface`** from `reader` plus
+  `usePluginDiscovery()`. No DOM involved, but it is a second copy of a
+  three-branch render condition in a file that cannot see the render, and the two
+  would drift. The marker observes what actually reached the screen.
+
+Known and accepted: a placeholder a plugin `View` paints *inside* the marked body
+is invisible to this. No shipped plugin registers a `View` (todos deliberately
+does not), and `REVEAL_QUIET_FRAMES` still has to elapse with the surface
+completely still, so anything that swaps within ~330 ms is covered regardless. A
+slower `View` should mark its own arrival — written down on
+`REVEAL_SETTLED_ATTRIBUTE`.
+
+### Measured in a real browser, before and after
+
+Same rig as above (`CORPUS_UI_PORT=5273`, no `CORPUS_SERVER_ORIGIN`, port 8765
+untouched), through a scratch probe spec that seeds a reveal for a quote the
+document does not contain and samples `.reader-scroll`, the marker, the flash and
+the toast every frame. The probe is deleted; nothing of it remains in
+`apps/ui/e2e/`. **Warm shape** = the document response delayed 900 ms so plugin
+discovery settles first, which is what makes the body appear in the reader's
+first commit with content.
+
+| shape | rule | verdict |
+| --- | --- | --- |
+| warm, quote absent | **old** | `len=87 settled=1` at 998 ms, then **`error`** at **5017 ms**: *"Could not show "Feed the cat" — the document did not finish loading."* |
+| warm, quote absent | **new** | body at 993 ms, **`info`** at **1302 ms**: *""Feed the cat" is no longer on this document."* — 309 ms, which is `REVEAL_QUIET_FRAMES` |
+| cold, quote absent (discovery held 1.5 s) | new | silent `len=8 settled=0` for 1.5 s, body at 1585 ms, `info` at 1923 ms — still terminates |
+| cold, quote present (discovery held 1.5 s) | new | silent 1.5 s and **no verdict**, body at 1582 ms, flash drawn at 1598 ms, no toast at all |
+
+The last two rows are UI-140's own guarantees, re-measured: a genuinely-absent
+target on a cold open still terminates, and a surface that has told the reveal
+nothing is still not concluded absent — 1.5 s past the point 20 quiet frames
+would have expired.
+
+### Unit verification, and the falsification of it
+
+- New tests: `reveal.test.ts` — `concludes absence from a first look at a surface
+  that says it has arrived`, `does not conclude absence from a still surface that
+  has said nothing`, `searches again when a surface answers without its text
+  changing`, and a `surfaceSettled` describe. `useReaderSurface.test.tsx` — a new
+  describe, `a reveal into a body that was already on screen`, whose miss case
+  asserts the **tone** and reaches its verdict inside `waitFor`'s own second (a
+  quarter of the ceiling). `DocView.test.tsx` — the marker contract at its source:
+  absent on `Loading…`, present with the body.
+- **Falsified**, twice, because a test that cannot fail proves nothing:
+  - Restoring the old rule (`if (changed && last !== null) arrived = true`) turns
+    exactly **2 tests red** — the two warm-open ones — and leaves `does not
+    conclude absence from a still surface that has said nothing` green, which is
+    what shows the guarantee was preserved rather than traded away.
+  - Removing `{...arrived}` from `.doc-main` turns the `DocView` marker test red.
+- `apps/ui/src` — **3320 passed, 154 files**. `eslint`, `prettier --check`,
+  `tsc --noEmit -p apps/ui` — all clean, no rule disabled.
+- e2e, `--workers=1`: `reveal.spec.ts` **18/18** (still byte-for-byte unchanged),
+  plus `comments-tab`, `plugin-late-arrival`, `todos`, `todos-menu` (57 total) and
+  `reader`, `changelog`, `notices`, `anchors` (27 total) — all green.
+
+### Files
+
+- `apps/ui/src/reader/reveal.ts` — `RevealSurface`, `REVEAL_SETTLED_ATTRIBUTE`,
+  `surfaceSettled`, and the `arrived` rule
+- `apps/ui/src/reader/useReaderSurface.ts` — both aims read the pair
+- `apps/ui/src/reader/DocView.tsx` — the marker on the two terminal renders
+- the three test files above
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing — 5 new unit tests in `useReaderSurface.test.tsx`,

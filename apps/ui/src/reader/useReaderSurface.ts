@@ -7,6 +7,7 @@ import {
   revealItem,
   revealMissNotice,
   revealPatience,
+  surfaceSettled,
   surfaceText,
   type RevealGaveUp,
 } from "./reveal";
@@ -297,7 +298,10 @@ export function useReaderSurface({
    * animation frame and re-searches only when what it is aimed at changed,
    * because a surface that has not changed cannot have gained the words. When it
    * stops is `revealPatience`'s decision, and that comment is where the two
-   * failure modes — "not there" and "not there yet" — are told apart.
+   * failure modes — "not there" and "not there yet" — are told apart. Each look
+   * reads both halves of that question: the words, and whether what is being
+   * waited on has arrived — `DocView`'s body rather than its `Loading…`, the
+   * conversation list rather than an empty array that has answered nothing.
    *
    * **Both destinations climb the same ladder**, which they did not used to. A
    * thread reveal fired the instant the *document* had content and then spent
@@ -350,10 +354,10 @@ export function useReaderSurface({
             // that answers "no conversations at all" leaves `threads` empty and
             // would otherwise look identical to a list still in flight, so the
             // one moment that distinguishes them would pass unseen.
-            read: () =>
-              `${threadsSettled.current ? "settled" : "pending"} ${rows.current
-                .map((row) => row.id)
-                .join(" ")}`,
+            read: () => ({
+              text: rows.current.map((row) => row.id).join(" "),
+              settled: threadsSettled.current,
+            }),
             take: () => {
               if (!rows.current.some((row) => row.id === reveal.threadId)) return false;
               jumpToThread(reveal.threadId);
@@ -363,7 +367,11 @@ export function useReaderSurface({
         : {
             read: () => {
               const container = scrollRef.current;
-              return container === null ? "" : surfaceText(container);
+              // A reader with no scroller has neither words nor a verdict about
+              // itself: unsettled, which is what keeps it being waited for.
+              return container === null
+                ? { text: "", settled: false }
+                : { text: surfaceText(container), settled: surfaceSettled(container) };
             },
             take: () => {
               const container = scrollRef.current;

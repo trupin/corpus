@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 /**
  * How a plugin-rendered popover gets dismissed — the one convention `apps/ui`
@@ -53,7 +53,20 @@ export function useDismissable(
   onClose: () => void,
   options: DismissOptions = {},
 ): void {
-  const { guard } = options;
+  /**
+   * The guard is **read** at the moment of the click, never captured — so it is
+   * held here rather than depended on (PR #54 review).
+   *
+   * A caller writes the ordinary `guard: () => text.trim() !== ""`, which is a
+   * new function on every render. In the dependency array that tears both global
+   * listeners down and puts them back on every keystroke of the very draft the
+   * guard exists to protect. The ref is what lets the effect depend on nothing
+   * that changes, without a suppressed lint rule and without asking every caller
+   * to memoise a one-line predicate.
+   */
+  const guard = useRef(options.guard);
+  guard.current = options.guard;
+
   useEffect(() => {
     const onKeyDownCapture = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
@@ -69,7 +82,7 @@ export function useDismissable(
       if (surface.current?.contains(event.target as Node) === true) return;
       // Asked now, not when the listener was attached: the draft this protects
       // is typed after that. Escape still closes — see the module docblock.
-      if (guard?.() === true) return;
+      if (guard.current?.() === true) return;
       onClose();
     };
     window.addEventListener("keydown", onKeyDownCapture, true);
@@ -78,5 +91,5 @@ export function useDismissable(
       window.removeEventListener("keydown", onKeyDownCapture, true);
       document.removeEventListener("mousedown", onPointerDown, true);
     };
-  }, [surface, onClose, guard]);
+  }, [surface, onClose]);
 }

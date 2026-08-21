@@ -28,15 +28,15 @@ import "./reveal.css";
 export const REVEAL_FLASH_MS = 1200;
 
 /**
- * Frames the surface must sit **unchanged, after it has changed at least once**,
+ * Frames the surface must sit **unchanged, once it is known to have arrived**,
  * before a reveal accepts that the words are not on it (UI-140).
  *
  * This is the whole of the "not there" / "not there yet" distinction, and it is
  * measured against the surface rather than against a clock. A surface that has
- * moved once and then stopped has finished arriving, so a search of it that
- * finds nothing is evidence of absence. A surface that has not moved at all
- * since the reveal started has told the reveal nothing, and no amount of waiting
- * on a stopwatch turns silence into evidence — see {@link revealPatience}.
+ * arrived and then stopped moving can be searched conclusively, so a search of
+ * it that finds nothing is evidence of absence. A surface that has told the
+ * reveal nothing has told it nothing, and no amount of waiting on a stopwatch
+ * turns silence into evidence — see {@link revealPatience}.
  *
  * **Frames, not milliseconds, because the question is "how many chances did the
  * renderer have to change this?"** — and a frame is exactly one such chance. The
@@ -498,6 +498,56 @@ export function surfaceText(container: HTMLElement): string {
   return container.textContent ?? "";
 }
 
+/**
+ * The attribute a renderer puts on what it shows **once it has finished
+ * arriving at it** — its body, or its "this document is gone" note.
+ *
+ * The reveal's other question of the surface, and the one text cannot answer
+ * (UI-140 follow-up, PR #54 review). "Has this surface arrived?" was inferred
+ * from having watched it change, which is true of a cold open and false of a
+ * warm one: a cached document whose body renders in the same commit that gives
+ * the reader content is fully arrived at the *first* look and never changes
+ * again. Inferring from movement alone, that surface can only ever time out —
+ * so a quote edited away from a document that loaded perfectly was reported,
+ * four seconds later, as a document that failed to load.
+ *
+ * **Declared rather than sniffed, and opt-in in the safe direction.** A renderer
+ * that says nothing is treated as still arriving, which is exactly the old
+ * behaviour: a forgotten marker costs a reveal the ceiling, and never causes it
+ * to claim absence it has not earned. `DocView` marks its two terminal renders
+ * and deliberately does not mark `Loading…`, which is the state UI-140 exists
+ * for.
+ *
+ * **What it cannot see**: a placeholder a plugin `View` paints *inside* the
+ * marked body. No shipped plugin registers a `View` (todos deliberately does
+ * not), and {@link REVEAL_QUIET_FRAMES} still has to elapse with the surface
+ * completely still, so a placeholder that swaps within ~330 ms is covered
+ * anyway. A `View` slower than that should mark its own arrival instead of its
+ * host's.
+ */
+export const REVEAL_SETTLED_ATTRIBUTE = "data-reader-settled";
+
+/** Whether the surface has said it finished arriving — see the attribute. */
+export function surfaceSettled(container: HTMLElement): boolean {
+  return (
+    container.hasAttribute(REVEAL_SETTLED_ATTRIBUTE) ||
+    container.querySelector(`[${REVEAL_SETTLED_ATTRIBUTE}]`) !== null
+  );
+}
+
+/** One look at the surface: the words on it, and whether it has finished. */
+export interface RevealSurface {
+  /** What a reveal searches — {@link surfaceText}, or a list's own reading. */
+  readonly text: string;
+  /**
+   * Whether the thing being waited on has arrived: the reader has rendered a
+   * body rather than its placeholder, the conversation list has answered. A
+   * surface that does not know says `false`, which costs patience and never
+   * spends it — see {@link revealPatience}.
+   */
+  readonly settled: boolean;
+}
+
 /** Why a reveal stopped looking. Neither means it found anything. */
 export type RevealGaveUp =
   /** The surface finished arriving and does not contain the words. */
@@ -527,29 +577,44 @@ export interface RevealLook {
  * The fix is not a longer stopwatch. It is refusing to answer a question the
  * surface has not been asked yet:
  *
- * - **The surface has not changed since the reveal started.** It has said
- *   nothing. Keep looking, however long that takes — this is the `Loading…` gap,
- *   and it is `not there yet`.
- * - **The surface changed and has now been still for {@link REVEAL_QUIET_FRAMES}
- *   frames.** It has finished arriving, and a search of it that found nothing is
+ * - **The surface has not arrived, however it is asked.** It has said nothing.
+ *   Keep looking, however long that takes — this is the `Loading…` gap, and it
+ *   is `not there yet`.
+ * - **The surface has arrived and has now been still for
+ *   {@link REVEAL_QUIET_FRAMES} frames.** A search of it that found nothing is
  *   evidence. This is `not there`, and it is how a quote the document genuinely
  *   no longer contains still stops being asked for.
  * - **{@link REVEAL_WAIT_MS} passed either way.** The ceiling, so a surface that
  *   never settles — a plugin `View` that renders something else, a document that
  *   never arrives — terminates rather than searching forever.
  *
+ * **Arrival is two questions, and either answer is enough** (PR #54 review). The
+ * original asked only *did I watch it change*, which is evidence on a cold open
+ * and unobtainable on a warm one: a cached body renders in the commit that gives
+ * the reader content, so the first look is also the last, and a quote edited
+ * away from a perfectly-loaded document could only ever reach the ceiling — four
+ * seconds of waiting and then, in the tone kept for failures, the wrong account
+ * of it. So the surface may also *say* it has arrived
+ * ({@link RevealSurface.settled}), and a first look at a surface that says so is
+ * as good as watching one arrive. What has not changed is the rule the whole
+ * mechanism is for: a surface that has neither moved nor said anything is never
+ * concluded absent.
+ *
  * Searching is driven by the same signal: a surface that has not changed cannot
  * have gained the words, so re-walking it would be work with a knowable answer.
  */
-export function revealPatience(): (surface: string, elapsedMs: number) => RevealLook {
-  let last: string | null = null;
+export function revealPatience(): (surface: RevealSurface, elapsedMs: number) => RevealLook {
+  let last: RevealSurface | null = null;
   let arrived = false;
   let quiet = 0;
 
   return (surface, elapsedMs) => {
-    const changed = surface !== last;
-    // The first look is a change from nothing, which is not the surface moving.
-    if (changed && last !== null) arrived = true;
+    // Settledness is half of the reading, so a list that answers "nothing at
+    // all" — same empty text as a list still in flight — is still a change.
+    const changed = last === null || surface.text !== last.text || surface.settled !== last.settled;
+    // The first look is a change from nothing, which is not the surface moving —
+    // but a first look at a surface that reports itself arrived is evidence.
+    if (surface.settled || (changed && last !== null)) arrived = true;
     quiet = changed ? 0 : quiet + 1;
     last = surface;
 

@@ -5,13 +5,14 @@ import { useCallback, useEffect, useRef, type KeyboardEvent, type RefObject } fr
  * menu conventions ("arrows move, `↵` activates, `esc` closes"), owned in one
  * place.
  *
- * It exists because there are three of these surfaces and only one of them had
- * the behaviour: the pointer-positioned `ContextMenu`, the reader's ⋯ `DocMenu`
- * and the 💬 `CommentsPopover` all paint a menu over the page, and in the two
- * popovers focus never entered at all — `↓` left `activeElement` on the trigger,
- * so `↵` re-toggled the trigger and no action ever ran from the keyboard
- * (UI-030). The fix is this extraction rather than two more copies of the same
- * fifty lines, which is what "share the mechanism, don't fork it" asks for.
+ * It exists because the behaviour was in one of these surfaces and missing from
+ * the rest: the pointer-positioned `ContextMenu` had it, and the reader's ⋯
+ * `DocMenu` did not — `↓` left `activeElement` on the trigger, so `↵` re-toggled
+ * the trigger and no action ever ran from the keyboard (UI-030). The fix is this
+ * extraction rather than another copy of the same fifty lines, which is what
+ * "share the mechanism, don't fork it" asks for. A third caller, the reader's
+ * 💬 popover, was moved onto it at the same time and went with the popover when
+ * UI-063 replaced that surface with the comments list.
  *
  * **`↵` is deliberately not handled here.** A focused `<button>` activates on
  * `↵` and on Space through its default action; re-implementing that would be a

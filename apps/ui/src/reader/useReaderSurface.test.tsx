@@ -5,6 +5,7 @@ import { type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../shell/Toasts";
 import { docFixture, threadRowFixture } from "../testing/readerFixture";
+import { REVEAL_SETTLED_ATTRIBUTE } from "./reveal";
 import type { ReaderDoc } from "./useReaderDoc";
 import { useReaderSurface } from "./useReaderSurface";
 
@@ -57,10 +58,23 @@ interface SurfaceProps {
   /** Spending the navigation instruction, observed. */
   readonly onRevealed?: (() => void) | undefined;
   readonly threads?: ThreadState | undefined;
+  /**
+   * Whether the surface says it has finished arriving — `DocView`'s body, which
+   * carries the marker, against its `Loading…`, which deliberately does not.
+   * The ordinary case is a rendered body, so that is the default.
+   */
+  readonly arrived?: boolean | undefined;
 }
 
 /** The surface with a body the reveal can actually find its words in. */
-function Surface({ docId, text, reveal, onRevealed, threads }: SurfaceProps): ReactElement {
+function Surface({
+  docId,
+  text,
+  reveal,
+  onRevealed,
+  threads,
+  arrived = true,
+}: SurfaceProps): ReactElement {
   const surface = useReaderSurface({
     reader: readerDoc(docId, text, threads),
     restoreY: 0,
@@ -72,7 +86,7 @@ function Surface({ docId, text, reveal, onRevealed, threads }: SurfaceProps): Re
   });
   return (
     <div ref={surface.scrollRef} className="reader-scroll">
-      <p>{text}</p>
+      <p {...(arrived ? { [REVEAL_SETTLED_ATTRIBUTE]: "" } : {})}>{text}</p>
     </div>
   );
 }
@@ -154,7 +168,9 @@ describe("a reveal whose body has not arrived yet", () => {
 
   it("does not give up on a surface that has told it nothing", async () => {
     const revealed = vi.fn();
-    render(<Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} />);
+    render(
+      <Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} arrived={false} />,
+    );
 
     await rest(PAST_THE_OLD_BUDGET_MS);
 
@@ -167,7 +183,7 @@ describe("a reveal whose body has not arrived yet", () => {
   it("draws the flash when the body arrives long after that budget", async () => {
     const revealed = vi.fn();
     const view = render(
-      <Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} />,
+      <Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} arrived={false} />,
     );
     await rest(PAST_THE_OLD_BUDGET_MS);
     expect(flashes()).toBe(0);
@@ -187,7 +203,7 @@ describe("a reveal whose body has not arrived yet", () => {
     const revealed = vi.fn();
     const view = render(
       <ToastProvider>
-        <Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} />
+        <Surface docId="doc_a" text="Loading…" reveal={BUY} onRevealed={revealed} arrived={false} />
       </ToastProvider>,
     );
     // The body arrives, and the quote is not in it: edited away between the
@@ -207,6 +223,57 @@ describe("a reveal whose body has not arrived yet", () => {
     const toast = document.querySelector(".toast .msg");
     expect(toast?.textContent).toContain("Buy milk");
     expect(toast?.textContent).toContain("no longer on this document");
+  });
+});
+
+/**
+ * The other half of the same distinction, found in review of UI-140 (PR #54).
+ *
+ * A **warm** open renders the body in the same commit that gives the reader
+ * content — a document already in the query cache, with plugin discovery long
+ * since settled — so the reveal's first look is at a finished surface that never
+ * changes again. Arrival inferred from movement alone is unobtainable there, so
+ * a quote edited away could not be called absent: the reveal ran the full
+ * `REVEAL_WAIT_MS` and then blamed the loading of a document that had loaded
+ * perfectly, in the tone that marks the console with an unread error.
+ *
+ * It always terminated. What was wrong was the account it gave.
+ */
+describe("a reveal into a body that was already on screen", () => {
+  it("calls a quote that was edited away absent, not a document that failed to load", async () => {
+    const revealed = vi.fn();
+    // One render, one commit: no placeholder before it and no change after it.
+    render(
+      <ToastProvider>
+        <Surface docId="doc_a" text="Sell bread" reveal={BUY} onRevealed={revealed} />
+      </ToastProvider>,
+    );
+
+    // Inside `waitFor`'s own second, which is a quarter of the ceiling: the
+    // verdict is reached by watching the surface, not by outlasting it.
+    await waitFor(() => {
+      expect(revealed).toHaveBeenCalledTimes(1);
+    });
+    expect(flashes()).toBe(0);
+    const toast = document.querySelector(".toast");
+    expect(toast?.getAttribute("data-tone")).toBe("info");
+    expect(toast?.querySelector(".msg")?.textContent).toContain("no longer on this document");
+    expect(toast?.querySelector(".msg")?.textContent).not.toContain("did not finish loading");
+  });
+
+  it("still draws the flash when the words are on that body", async () => {
+    const revealed = vi.fn();
+    render(
+      <ToastProvider>
+        <Surface docId="doc_a" text="Buy milk" reveal={BUY} onRevealed={revealed} />
+      </ToastProvider>,
+    );
+
+    expect(flashes()).toBe(1);
+    await waitFor(() => {
+      expect(revealed).toHaveBeenCalledTimes(1);
+    });
+    expect(document.querySelector(".toast")).toBeNull();
   });
 });
 

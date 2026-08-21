@@ -329,6 +329,33 @@ describe("TodoItemComposer", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * The guard is read at the click, not captured — so a draft that changes on
+   * every keystroke must not take the dismissal listeners down and put them back
+   * with it (PR #54 review). Invisible to a user, and exactly the kind of churn
+   * that stops being invisible when something else starts listening too.
+   */
+  it("attaches its dismissal listeners once, however much is typed into it", () => {
+    const attach = vi.spyOn(document, "addEventListener");
+    const detach = vi.spyOn(document, "removeEventListener");
+    const { onClose } = mount();
+    const mousedowns = (spy: typeof attach): number =>
+      spy.mock.calls.filter(([type]) => type === "mousedown").length;
+    expect(mousedowns(attach)).toBe(1);
+
+    fireEvent.change(input(), { target: { value: "who" } });
+    fireEvent.change(input(), { target: { value: "who was" } });
+    fireEvent.change(input(), { target: { value: "who was the plumber again?" } });
+
+    expect(mousedowns(attach)).toBe(1);
+    expect(mousedowns(detach)).toBe(0);
+    // …and it is still the *current* draft that is protected, not the empty one
+    // the listener was attached with.
+    fireEvent.mouseDown(document.body);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(input().value).toBe("who was the plumber again?");
+  });
+
   it("still closes a guarded composer on Escape, which is the explicit way out", () => {
     const { onClose } = mount();
     fireEvent.change(input(), { target: { value: "a long draft" } });
