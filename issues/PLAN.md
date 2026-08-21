@@ -434,7 +434,7 @@ belongs to the same fix wave.
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
-| UI-079 | `reveal.spec` waits on a decoration with a finite lifetime (duration-shaped) | todo | P2 | — |
+| UI-079 | `reveal.spec` waits on a decoration with a finite lifetime — **misfiled**, the spec was right; replaced by UI-140 | closed | P2 | — |
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
 | SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
@@ -720,7 +720,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | CONTRACT-060 | The grace window is derived two different ways, and both tests pass by coincidence | done | P1 | — |
 | UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
 | SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
-| UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | todo | P1 | — |
+| UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | done | P1 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 
@@ -1213,3 +1213,4 @@ adjacent but not in these files.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-058 | A refusal outlives its toast — the console's Notices tab (AUTHORIZED 2026-08-21, applied) | done | P1 | — |
+| UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | todo | P0 | — |
