@@ -165,13 +165,39 @@
  * them and after them. A wrong-but-stable box beats a box that changes after
  * the reader's eye has settled on what is under it.
  *
- * **240×180**, because `design/index.html` already states that box and nothing
- * else: `.turn-att-img` is the one image size the mockup draws, and a
- * screenshot — which fills a 4:3 box or is capped by it — is what people
- * actually attach. That is the rider's own test, "the box is sized for the text
- * people actually have, measured against real content rather than a
- * placeholder". Retune it per surface by setting `--md-img-box-w` /
- * `--md-img-box-h` on any ancestor.
+ * **The shape is 4:3, and the scale is the surface's** (PR #53 review). The
+ * first version of this reservation stated one box — 240×180 — for every image
+ * in the product, and that number is `design/index.html`'s `.turn-att-img`: the
+ * mockup's figure for a *thumbnail hanging off a message*, which is the only
+ * image the mockup draws. Applied to a document body it read SPEC.md §11's
+ * third clause backwards. A 900×600 screenshot in a body rendered at the
+ * reading measure before this issue and was legible there. At 240×180 it is a
+ * thumbnail, so opening the viewer becomes the ordinary way to read an image
+ * that carries content — and clause 3 says revealing is the *uncommon* case.
+ * On a surface with no viewer mounted there is no reveal at all, and the
+ * content would simply be unreadable.
+ *
+ * So the ratio is stated once and the width is the surface's own:
+ *
+ * - **Prose — a document body, a turn's message, a plugin surface — takes the
+ *   whole reading measure** (`width: 100%` inside `.doc-body`'s 62ch). That is
+ *   the widest the column allows and the size those images rendered at before
+ *   the reservation existed, so the change restores the reading size and adds
+ *   only the stability. It is also what makes revealing uncommon: at the
+ *   measure there is nothing more of the picture to show.
+ * - **A turn's attachment strip takes 240px** — `.turn-atts` sets
+ *   `--md-img-box-w`, and the height follows the ratio to the mockup's own
+ *   180px. A thumbnail beside a message is what the mockup draws and what an
+ *   attachment is.
+ *
+ * `4 / 3` is the mockup's shape, kept so the two scales are one figure. The
+ * height is never stated in pixels: it follows the used width, so a column
+ * dragged narrow shrinks the box instead of leaving a tall empty one.
+ *
+ * **A wrong-but-stable box still beats a jump**, so where the picture's own
+ * ratio differs from 4:3 it letterboxes inside the reservation rather than
+ * resizing it — `object-fit` below. Retune any surface with
+ * `--md-img-box-w` / `--md-img-box-h` on any ancestor.
  *
  * **All three states share the box** — the pending chip, the broken chip and
  * the picture — because one renderer draws all three, and a box that changed
@@ -181,9 +207,16 @@
 .md-img-pending,
 .md-img-broken {
   box-sizing: border-box;
-  width: var(--md-img-box-w, 240px);
+  width: var(--md-img-box-w, 100%);
   max-width: 100%;
-  height: var(--md-img-box-h, 180px);
+  /*
+   * `auto` against the ratio, not a number. A surface that states a width gets
+   * the matching height for free (240px → 180px, the mockup's pair), and a box
+   * clamped by `max-width` in a narrow column keeps its shape instead of
+   * holding a height its width can no longer fill.
+   */
+  height: var(--md-img-box-h, auto);
+  aspect-ratio: 4 / 3;
   /*
    * Stated for the three of them together, and load-bearing. An `<img>` and an
    * `inline-flex` chip are both atomic inline-level boxes, but they take their

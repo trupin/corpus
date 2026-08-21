@@ -310,3 +310,43 @@ Nothing about how images are stored, fetched or authorised was touched.
 ## Completion Checklist (orchestrator)
 
 - [ ] Committed with `[UI-129]` prefix
+
+
+### After PR #53's review, 2026-08-20
+
+**MAJOR raised and fixed.** The reviewer found the universal 240×180 reservation
+regressed **document-body** images from natural-size-under-a-width-cap to a fixed
+thumbnail: a 900×600 diagram in a body rendered at ~530px and legible before, and
+at 240×180 after, making click-to-zoom the ordinary reading path. That is
+SHARED-057 clause 3 read backwards — *"revealing is the uncommon case"* — and it
+is the **same mistake UI-135 made and reversed** in this release, one surface
+over.
+
+**The box is now per surface, through the retune hooks the first pass had already
+built and left unused:**
+
+- A **document body** takes the default: `width: 100%` of its measure, with
+  `aspect-ratio: 4 / 3` and `height: auto`. So a body image is back to its
+  reading size, and the reservation adds only the stability. At the measure there
+  is nothing more of the picture to show, which is what makes revealing genuinely
+  uncommon.
+- A **turn's attachment strip** sets `--md-img-box-w: 240px` on `.turn-atts`, and
+  the height follows the ratio to the mockup's own 180px. A thumbnail beside a
+  message is what the mockup draws and what an attachment is.
+
+The height is never a pixel number: it follows the used width, so a column
+dragged narrow shrinks the box rather than leaving a tall empty one. All three
+states still share the box, so the no-jump guarantee is unchanged.
+
+**Falsified by the orchestrator** after the implementing agent was killed by a
+session limit mid-restore: forcing the default back to `240px` fails 4 of the
+image-geometry specs; restored, 4 pass. The kit was rebuilt before each run,
+because `apps/ui` reads it from `dist/`.
+
+**Verified**: `packages/kit/src/markdown` unit tests, and `image-geometry`,
+`thread`, `attachments` — 24 e2e specs, all green.
+
+**A bookkeeping note.** This issue's e2e spec changes were swept into UI-047's
+commit by an over-broad `git add apps/ui`. The content is right and the
+attribution is not; recorded here rather than rewritten, because the commits were
+already made and the record is cheaper to correct than the history.
