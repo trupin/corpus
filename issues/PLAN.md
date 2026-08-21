@@ -1225,6 +1225,8 @@ left in a report.
 | UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | todo | P0 | — |
 | UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | todo | P2 | UI-063 |
 | SHARED-060 | §11 puts the comments switch in the header unconditionally, and the header cannot hold it — **DRAFTED, UNSIGNED** | todo | P1 | — |
+| SHARED-061 | A surface is as large as its place allows (AUTHORIZED 2026-08-21, applied) | done | P0 | — |
+| UI-142 | Audit: every surface drawn smaller than the room it has | todo | P0 | SHARED-061 |
 
 
 ## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
