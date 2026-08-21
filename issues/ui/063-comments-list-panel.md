@@ -197,13 +197,75 @@ either.
 So the switch is **the 💬 button, as a two-state toggle**: same element, same
 place, same width, `aria-pressed` while the list is showing, the count in the
 same reserved box UI-134 gave it. One control out, one control in — literally the
-same one. It keeps 💬's own render condition (a document with conversations),
-plus one: whenever the list is showing, so the way back is never missing. A
-document with **no** comments reaches the list through the reader's ⋯ menu, where
-the document's own actions already live and which costs the row nothing.
+same one.
 
 After that change, all 8 head-geometry tests pass, including the two above and
 `still fits when the document carries conversations, at that same width`.
+
+### The deviation from §11, measured — the switch is NOT unconditional
+
+§11's rider reads *"reached by a Document / Comments switch in the reader's
+header"*, with no clause about the document already having conversations. It was
+built that way and **measured**. It does not fit on one head, and not by a
+margin that padding could close.
+
+At a 560px column (534px of content), on a document reached from a long-titled
+parent so `.back` sits at its own `max-width: 40%` cap. `natural` is what each
+item would take if the row had the room; `drawn` is what it got:
+
+| item | natural | drawn |
+| --- | --- | --- |
+| `.back` | 214 (its cap) | 206 |
+| `.reader-id` | 101 | **85, clipped** |
+| `.save-chip` | 120 | **101** |
+| `.comments-btn` | 52 | 52 |
+| `⋯` | 28 | 28 |
+| `⤢` | 22 | 22 |
+| gaps | 5 × 9 = 45 | 45 |
+| **total** | **582** | 539 |
+
+Content is **534**. So:
+
+```
+natural with the toggle      582   →  deficit 48px
+natural without the toggle   521   →  slack   13px
+```
+
+The row has **13px of slack** and the toggle needs **61px** — 52 plus its gap.
+No control of any width fits, so this is not a padding-shaving problem, and the
+two items that pay are precisely the pair UI-135's own log records as the
+rejected trade: *"the back label squeezed below its own cap and the document id
+truncating on a head where nothing unusual was happening."*
+
+Every other head measured has room. The **same column with an ordinary back
+label** (`‹ Inbox`) draws back 39, id 114 unclipped, chip at its full 120, toggle
+52, ⋯ 28, ⤢ 22 — 420 of 534, **114px of slack**. Both 240px cases pass with the
+toggle present.
+
+So the toggle keeps 💬's own render condition, plus one: whenever the list is
+showing, so the way back is never missing. **A document with no comments reaches
+the list through the reader's ⋯ menu**, which costs the row nothing, and
+`comments-tab.spec.ts` walks that whole path — ⋯ → Comments → the empty
+sentence → type → send → one row, no toggle before and a pressed toggle after.
+
+Restoring §11's unconditional reading needs room the head does not have: a
+shorter `.reader-id`, a smaller `.back` cap, or a narrower save-chip reservation
+— each of them somebody else's signed tuning. Reported to the orchestrator as a
+deviation to be recorded rather than a defect to be hidden.
+
+### The unfiltered empty list has its own sentence
+
+Because a person now arrives at it **deliberately**, through ⋯, in order to write
+the first comment on a document. So it names the act rather than the absence, and
+says the one thing that is not obvious:
+
+```
+No comments on this document yet. Write the first one below — no text selection needed.
+```
+
+A list emptied by a **filter** says something else entirely — it names the filter
+and counts what it is hiding — and the two are pinned apart in
+`commentsModel.test.ts` and asserted in the browser.
 
 ### The reveal, and why the editor is hidden rather than unmounted
 

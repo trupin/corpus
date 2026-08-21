@@ -240,7 +240,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-017 | Coverage merge OOMs: every browser dump parsed at once (PR #19 CI blocker) | done | P0 | — |
 | INFRA-018 | Halve the e2e coverage payload at the collector (INFRA-017 follow-up) | todo | P2 | INFRA-017 |
 | UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | done | P2 | — |
-| UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | todo | P2 | — |
+| UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | done | P2 | — |
 | INFRA-019 | A slow pre-push gate outlives the SSH session git opened (141, blocked v0.2.0 + phase 12) | done | P0 | — |
 | SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | todo | P2 | — |
 
@@ -345,7 +345,7 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | UI-054 | Newlines typed into a turn don't render — `a\nb` shows as `a b` (UI-052 finding) | done | P1 | UI-052 |
 | UI-050 | Fenced canvases: wrap long lines, collapse tall blocks (2nd report) | done | P1 | SHARED-009 |
 | PLUGINS-011 | Todos item composer adopts the composer key contract | done | P2 | UI-052 |
-| UI-055 | Design mockup still shows and binds the old composer keys (UI-052 finding) | todo | P2 | UI-052 |
+| UI-055 | Design mockup still shows and binds the old composer keys (UI-052 finding) | done | P2 | UI-052 |
 | UI-056 | E2E stub misrepresents anchor resolution; no threads route (UI-051 finding) | done | P1 | UI-051 |
 | AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | done | P1 | AGENT-010 |
 | UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | done | P2 | — |
@@ -373,9 +373,9 @@ belongs to the same fix wave.
 | --- | --- | --- | --- | --- |
 | SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | done | P1 | — |
 | UI-064 | `<br>` inside a table cell renders as literal text | done | P1 | — |
-| UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | todo | P1 | SHARED-010 |
+| UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | done | P1 | SHARED-010 |
 | UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
-| UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
+| UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | done | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
 | SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | done | P1 | — |
 | UI-070 | Attachments in every composer, through one kit surface | done | P1 | SHARED-012 |
@@ -474,7 +474,7 @@ belongs to the same fix wave.
 | CONTRACT-040 | An open form's count is not on the row, so "more than one" cannot be shown (UI-084 finding) | done | P2 | CONTRACT-038 |
 | SERVER-084 | Count the unanswered forms on a row, from the query that already finds them | done | P1 | CONTRACT-040 |
 | SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | todo | P2 | SERVER-068, CONTRACT-038 |
-| UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | todo | P2 | — |
+| UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | done | P2 | — |
 | UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | done | P1 | UI-062 |
 | SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | done | P1 | — |
 | CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | done | P1 | — |
@@ -515,7 +515,7 @@ cheapest moment for that to happen.
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
 | CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
 | UI-095 | Clicking a comment does not take you to it, opened | done | P1 | — |
-| UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
+| UI-096 | The collapse control is a 13px glyph crowded against resolve | done | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
 | UI-097 | A request nobody has picked up says "agent is working…" | done | P1 | SHARED-033 |
 | CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | done | P1 | SHARED-033 |
@@ -1210,7 +1210,49 @@ work needing its own design pass, not debt. CONTRACT-036 (`unread` on the wire)
 would pull contract and server into a UI release. UI-138, UI-100 and UI-080 are
 adjacent but not in these files.
 
+**Filed during the phase and deliberately not in it**: **UI-141** — UI-063
+replaced the reader head's 💬 popover, so `design/index.html` now draws a control
+the app no longer has and no comments list at all. It is the same staleness
+UI-055 was filed for one release earlier, in the same file, and UI-055's scope was
+held to the composer keys ("nothing else in the mockup changes") rather than
+quietly widened. The mockup is authoritative for look and feel, and this release
+had two agents read a stale contract out of it — so it is written down rather than
+left in a report.
+
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-058 | A refusal outlives its toast — the console's Notices tab (AUTHORIZED 2026-08-21, applied) | done | P1 | — |
 | UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | todo | P0 | — |
+| UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | todo | P2 | UI-063 |
+
+
+## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
+
+Seven findings from live use, six of them measured rather than felt. **Not in
+v0.16.0** — that release is about comments, and this is a different sentence. It
+is filed now so the measurements are not lost, and it is the strongest candidate
+for the release after.
+
+**The throughline**: the CLI is the agent's whole surface (SPEC §2, and CLAUDE.md's
+second architecture decision says the agent uses *only* the CLI), and the agent
+pays for it in context and in latency. Two of the seven turn out to be
+spec/code disagreements rather than wishes — CLI-055 because the cheapest read
+path currently goes around the CLI, and SERVER-133 because SPEC §5 calls the
+staleness thresholds "defaults" and nothing can override them.
+
+**The seventh needed no issue.** The report asked whether `corpus skill rollback`
+was planned, dropped, or never existed. It existed and was deliberately removed
+by CLI-040 on 2026-08-12 under SHARED-042. The tool repo is guarded and a
+workspace created today is correct; a workspace created earlier keeps stale
+skills until `corpus upgrade` syncs the template. CLI-059 covers the residue —
+that nothing tells you your skills are stale until the agent tries the verb.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| CLI-055 | `doc show` reads a whole document or nothing, so the cheapest read path bypasses the CLI | todo | P0 | — |
+| CLI-056 | Help text costs an agent more to read than the work it describes | todo | P1 | — |
+| CLI-057 | `doc show` takes one id, so reading five documents costs five processes | todo | P2 | — |
+| CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | todo | P1 | — |
+| CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | todo | P2 | — |
+| SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
+| PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | todo | P1 | PLUGINS-016 |
