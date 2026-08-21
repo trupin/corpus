@@ -1062,6 +1062,28 @@ not a behaviour change.
 | SHARED-056 | §7 enumerates the core events, §9.2 the routes, §11 the console — Phase 36 added one of each (NEEDS SIGN-OFF) | todo | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
 | SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | todo | P2 | SERVER-129 |
 
+## Phase 37 — Nothing moves under your cursor (2026-08-20, user report)
+
+Two reports in one day, and the second is the first generalized. A P0: *"The drop
+down to pick an agent when commenting is blinking up and down which makes it
+impossible to use."* Then the class behind it: *"Elements resize based on their
+content, which then moves other elements that are stacked on top of it or aligned
+right."*
+
+**Nothing in SPEC.md forbade it**, which is why it shipped. SHARED-057 is the
+rule, signed before the audit measures anything against it — an audit without a
+rule produces taste, and an audit with one produces findings a person can check.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-057 | Nothing resizes because of what it holds (SIGNED 2026-08-20) | done | P0 | — |
+| UI-127 | The recipient picker oscillates under the pointer | todo | P0 | SHARED-057 |
+| UI-128 | Audit: every surface whose size follows its content | todo | P0 | SHARED-057 |
+
+**The riders v0.14.0 carried forward are signed and applied in this phase**:
+SHARED-049, -052, -053, -056 as drafted, plus SHARED-054's code half and
+SERVER-132 behind -052.
+
 **Phase 36 landed 2026-08-19/20**, and is the scope agreed for v0.14.0 — a release is a separate, deliberate act and is not in the phase's PR. Fourteen issues: the seven filed
 from the user's reports, six filed to make them usable end to end, and one
 correctness bug a drill found (SERVER-131 — the claim batch was in `readdir`
