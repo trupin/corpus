@@ -1229,10 +1229,20 @@ left in a report.
 
 ## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
 
-Seven findings from live use, six of them measured rather than felt. **Not in
-v0.16.0** — that release is about comments, and this is a different sentence. It
-is filed now so the measurements are not lost, and it is the strongest candidate
-for the release after.
+Seven findings from live use, six of them measured rather than felt.
+
+**In v0.16.0 by the user's decision, 2026-08-21.** The orchestrator filed this
+phase out of the release on the ground that it is a different sentence from the
+comment surface, said so, and the user overruled it. That stands as their call,
+and the release notes state plainly that v0.16.0 has two halves rather than
+pretending they are one idea. The headline names both.
+
+**CLI-058 is unchanged by the fold-in.** It asks for a measurement, the cheap
+half of option 1, and a recommendation — not a session mode. A long-lived
+process introduces a stateful component where the tool is deliberately
+stateless, and §2's "nothing is global" plus workspace resolution both have to
+be answered before anyone builds one. That decision reaches the user with
+numbers attached rather than arriving already built.
 
 **The throughline**: the CLI is the agent's whole surface (SPEC §2, and CLAUDE.md's
 second architecture decision says the agent uses *only* the CLI), and the agent
