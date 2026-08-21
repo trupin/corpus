@@ -121,7 +121,59 @@ because this defect is a layout loop and jsdom implements no layout.
 
 ## E2E Verification Log
 
-_[Agent fills — the reproduction goes here first]_
+### Reproduction (orchestrator, 2026-08-20, real Chromium on Vite 5283)
+
+Fixture: a standalone thread with a general lane and a **missing-profile**
+resident (`{name: "claims-review", docId: null}`), which produces the control's
+longest statement. Scratch spec kept at
+`scratchpad/ui127-repro.spec.ts`.
+
+**1. Playwright refuses to hover the row at all**, which is the defect in the
+tool's own words:
+
+```
+Error: locator.hover: Test timeout of 30000ms exceeded.
+  - locator resolved to <button … data-recipient-lane="th_solo" …>
+  - attempting hover action
+    2 × waiting for element to be visible and stable
+      - element is not stable
+    - retrying hover action
+    54 × waiting for element to be visible and stable
+      - element is not stable
+```
+
+58 stability retries across 30 seconds. Playwright calls an element stable when
+its bounding box is unchanged across two consecutive animation frames, so this
+is a measurement that the row never stops moving — not an impression.
+
+**2. The amplitude, measured with the pointer parked at coordinates captured
+before the popover could move** (so the pointer cannot chase it):
+
+```
+pointer away: says_h=85  pop_h=273
+on row0     : says_h=34  pop_h=222
+away again  : says_h=85  pop_h=273
+on row1     : says_h=85  pop_h=273
+```
+
+**51 pixels**, and `.recipient-says` accounts for all of it.
+
+**3. What the mechanism actually is — the reading-diagnosis above had the
+direction wrong.** The statement does not *grow* on hover; the **resting** state
+is the tall one. Effective recipient is the resident lane, whose statement is the
+three-line missing-profile note (85px). Previewing the orchestrator lane collapses
+it to one line (34px). The popover is bottom-anchored, so 51px vanishes from its
+height and its contents shift — the row leaves the cursor, the preview clears,
+the statement returns to three lines, the row comes back, and it repeats.
+
+The direction does not change the fix, and the correction is recorded because a
+fix aimed at "stop it growing" would have been aimed at the wrong end.
+
+**4. It is content-dependent, which is why it escaped every existing test.** With
+two lanes whose statements happen to be the same height, nothing moves — the
+first attempt at this reproduction passed for exactly that reason. It takes a
+workspace where one lane's statement is longer than another's, which is the
+ordinary case with a real profile name and precisely what the user has.
 
 ## Completion Checklist (domain agent)
 
