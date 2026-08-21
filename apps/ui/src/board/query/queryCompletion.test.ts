@@ -80,10 +80,33 @@ describe("detectQueryTrigger", () => {
     expect(applyQueryCompletion(text, trigger as never, "type").text).toBe("type=&status=open");
   });
 
-  it("leaves the spacing a person typed around the token alone", () => {
-    const { text, caret } = at("ty|e = note");
+  /**
+   * UI-048 item 4. The repair looked for the field's `=` at the token's own end,
+   * and `tokenEnd` deliberately leaves trailing whitespace outside the token — so
+   * a space between the name and its operator hid the operator, the completion
+   * concluded the field was unequipped, and it wrote a **second** one:
+   * `type= = note`, which `parseQueryString` reads as the field `type` holding
+   * the value ` = note`.
+   *
+   * The space is still the person's, and it is still there after the operator.
+   * What the repair no longer does is add an operator to a field that has one.
+   */
+  it.each([
+    ["a space before the operator", "ty| =note", "type=note"],
+    ["spaces on both sides of it", "ty|e = note", "type= note"],
+    ["a tab before it", "ty|\t=note", "type=note"],
+  ])("repairs a name across the gap to its own `=` — %s", (_case, marked, expected) => {
+    const { text, caret } = at(marked);
     const trigger = detectQueryTrigger(text, caret);
-    expect(applyQueryCompletion(text, trigger as never, "type").text).toBe("type= = note");
+    expect(applyQueryCompletion(text, trigger as never, "type").text).toBe(expected);
+  });
+
+  it("still adds the operator where the field genuinely has none", () => {
+    // Nothing closes a field name but `=` or `&`, so the whole run is the token
+    // and the completion replaces it — the pre-existing rule, unchanged.
+    const { text, caret } = at("ty|e note");
+    const trigger = detectQueryTrigger(text, caret);
+    expect(applyQueryCompletion(text, trigger as never, "type").text).toBe("type=");
   });
 
   it("refuses a caret outside the text rather than inventing a trigger", () => {

@@ -304,7 +304,9 @@ const BLOCK_ELEMENTS = new Set([
  *    each becomes a paragraph holding a hard break — a `\` on its own line in
  *    the saved markdown. A break with a block either side of it says nothing
  *    markdown does not say with a blank line; a break with *text* either side
- *    of it is the line separator every mail client writes, and it stays.
+ *    of it is the line separator every mail client writes, and it stays. A
+ *    break beside another break is separating nothing at all — see
+ *    {@link isInline}.
  *
  * **Gated on the signature, and that is the point** (PR #19 review). This is a
  * DOMParser round trip, and a round trip is not free: `readHTML` in
@@ -315,6 +317,23 @@ const BLOCK_ELEMENTS = new Set([
  * returned byte for byte and reaches that parser exactly as the clipboard wrote
  * it. If Docs ever stops stamping the wrapper, the three repairs stop with it
  * and a Docs paste degrades to ugly-but-lossless, which is the right way round.
+ *
+ * **What the gate costs, in full** (UI-048 item 2, decided and kept). The
+ * signature is *Docs'*, and repair 2 is not: **Gmail message bodies and Google
+ * Search results wrap links in the same `google.com/url?q=…` hop**, and neither
+ * carries a `docs-internal-guid`. So copying a linked sentence out of Gmail
+ * writes the ~200-character redirect into the file, exactly as it did before
+ * this function existed.
+ *
+ * Unwrapping redirects unconditionally was considered and rejected, and the
+ * reason is the paragraph above rather than any doubt about the repair itself:
+ * a link-attribute rewrite cannot weld two lines together, but reaching the
+ * attribute means the DOMParser round trip, and the round trip is what loses
+ * `wrapMap` and `<style>` on **every** paste in the workspace. Paying a
+ * whole-clipboard regression to fix one origin's links is the wrong way round.
+ * A string-level rewrite that never parses would change the trade, and would
+ * have to survive entity-encoded attributes; that is a separate change with its
+ * own tests, not a flag flipped here.
  *
  * Everything else is left exactly as it arrived: the mark rules key on the
  * inline styles, so stripping them would lose the emphasis this is here to keep.
@@ -370,6 +389,21 @@ function meaningfulSibling(node: Node, direction: "previousSibling" | "nextSibli
 function isInline(node: Node | null): boolean {
   if (node === null) return false;
   if (node.nodeType === TEXT_NODE) return true;
+  /*
+   * **A `<br>` is not content another `<br>` can be separating** (UI-048 item 1).
+   *
+   * It is an inline element in HTML, and reading it that way made a *run* of
+   * breaks keep itself alive: in `<p>A</p><br><br><p>B</p>` — an empty paragraph
+   * in a Docs selection — each break saw the other as inline neighbour and both
+   * survived, writing two stray `\` lines into the saved markdown. Nothing was
+   * being separated; the two were only holding each other up.
+   *
+   * The deliberate blank line still survives, and that is what makes this the
+   * right side to err on: in `<div>one<br><br>two</div>` the first break has text
+   * before it and the second has text after it, so both keep their answer from
+   * real content rather than from each other.
+   */
+  if (node.nodeName.toLowerCase() === "br") return false;
   return !BLOCK_ELEMENTS.has(node.nodeName.toLowerCase());
 }
 

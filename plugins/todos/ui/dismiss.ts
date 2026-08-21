@@ -23,8 +23,37 @@ import { useEffect, type RefObject } from "react";
  * UI-045 item 3 is the real fix: a kit seam a plugin can register a layer with,
  * so two plugin surfaces have a defined order between them. This is the
  * workaround until then, and it is deliberately the *only* copy of it.
+ *
+ * **An outside click never throws away unsaved text** (UI-048 item 3). A menu
+ * should close when you press elsewhere; a data-entry surface holding a draft
+ * should not, and the signed composer contract made `↵` a newline, which
+ * actively encourages drafts long enough to be worth losing. Core reached the
+ * same place from the other direction — `apps/ui`'s `CommentPopover` has no
+ * outside-click dismissal at all — and a plugin imitating a behaviour core has
+ * abandoned is worse than either behaviour. So the surface may declare what it
+ * would lose, through {@link DismissOptions.guard}, and an empty one still
+ * closes on a click away, because closing it costs nothing. Escape is untouched
+ * either way: it is the explicit "put this down", and it is what a caller who
+ * wants out of a guarded surface presses.
  */
-export function useDismissable(surface: RefObject<HTMLElement | null>, onClose: () => void): void {
+
+export interface DismissOptions {
+  /**
+   * True while the surface holds something an outside click would destroy.
+   *
+   * Read at the moment of the click rather than captured, so a draft typed after
+   * the listener was attached still counts. Absent — a menu, a sheet — means
+   * there is nothing to lose and an outside click closes as it always did.
+   */
+  readonly guard?: () => boolean;
+}
+
+export function useDismissable(
+  surface: RefObject<HTMLElement | null>,
+  onClose: () => void,
+  options: DismissOptions = {},
+): void {
+  const { guard } = options;
   useEffect(() => {
     const onKeyDownCapture = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
@@ -38,6 +67,9 @@ export function useDismissable(surface: RefObject<HTMLElement | null>, onClose: 
       // `target` is whatever was pressed; the DOM types it as `EventTarget`,
       // and `contains` is the only question being asked of it.
       if (surface.current?.contains(event.target as Node) === true) return;
+      // Asked now, not when the listener was attached: the draft this protects
+      // is typed after that. Escape still closes — see the module docblock.
+      if (guard?.() === true) return;
       onClose();
     };
     window.addEventListener("keydown", onKeyDownCapture, true);
@@ -46,5 +78,5 @@ export function useDismissable(surface: RefObject<HTMLElement | null>, onClose: 
       window.removeEventListener("keydown", onKeyDownCapture, true);
       document.removeEventListener("mousedown", onPointerDown, true);
     };
-  }, [surface, onClose]);
+  }, [surface, onClose, guard]);
 }
