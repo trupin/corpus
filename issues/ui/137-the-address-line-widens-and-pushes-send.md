@@ -357,3 +357,28 @@ of this control to diverge from, and the honest report is:
 ## Completion Checklist (orchestrator)
 
 - [ ] Committed with `[UI-137]` prefix
+
+
+### A test defect this issue shipped, found by CI, 2026-08-20
+
+The spec asserted `width === 22ch` as a pixel constant (`139.08`). That failed
+CI twice and never failed locally, and both failures were the test's rather than
+the product's.
+
+1. **139.08px is 22ch in this repo's mono on macOS.** CI's Linux resolves the
+   same declaration to 131.61px. A constant derived from a font pins the machine
+   that measured it.
+2. **Measuring `22ch` at runtime was still wrong**, because the assertion itself
+   was: `address.css` declares `flex: 0 1 var(--address-slot)`, so **shrink is
+   permitted on purpose**. CI's wider footer items shrink the pill below its
+   basis legitimately. Equality was never the rule.
+
+The rule is a **ceiling**: content can never push the pill wider than the slot
+the layout gave it, and the pill is identical across recipients — which the
+`toEqual` sweep above it already proved. The assertion is now
+`toBeLessThanOrEqual(slot)`, and it is still load-bearing: replacing the fixed
+basis with `flex: 0 1 auto` fails five of the twenty-two specs.
+
+Recorded rather than quietly amended, because "the test only fails on CI" is the
+shape that gets a real defect waved through, and here it was the opposite —
+twice.

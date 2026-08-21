@@ -984,17 +984,21 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
     expect(said[2]).toContain(`${SHORT_NAME} will answer`);
     expect(new Set(said).size).toBe(3);
 
-    // The slot is the declared 22ch — the number `address.css` states, not a
-    // width this footer happened to settle on.
+    // The line never grows past its declared slot — and **the slot is a
+    // ceiling, not an equality**.
     //
-    // Measured against the element's OWN `ch`, never against a pixel constant.
-    // `ch` is the font's zero-advance, so the same rule is 139.08px in this
-    // repo's mono on macOS and 131.61px on CI's Linux — a hard-coded 139.08
-    // pins the machine that wrote it rather than the rule, and did exactly that
-    // (PR #53, CI-only failure, two retries).
-    // The probe declares `22ch` itself rather than measuring `1ch` and
-    // multiplying: the browser rounds the whole length once, so `1ch × 22`
-    // lands 0.19px away from what `width: 22ch` actually resolves to.
+    // `address.css` declares `flex: 0 1 var(--address-slot)`, so shrink is
+    // permitted on purpose: a footer with less room than the basis gets a
+    // narrower pill, and the layout still decides it rather than the text.
+    // Asserting `width === 22ch` pinned a machine instead of the rule and
+    // failed CI twice — first against a hard-coded 139.08px, then against this
+    // probe, because CI's mono makes the footer's other items wider and the
+    // pill legitimately shrinks to 131.61px.
+    //
+    // The rule's other half is asserted above: three recipients produce three
+    // different sentences, and `toEqual(at)` proves none of them moved
+    // anything. This adds the ceiling — content can never push the pill *wider*
+    // than the slot the layout gave it.
     const slot = await page.locator('[data-address-line="th_host"]').evaluate((el) => {
       const probe = document.createElement("span");
       probe.style.cssText = "position:absolute;visibility:hidden;width:22ch";
@@ -1003,7 +1007,7 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
       probe.remove();
       return w;
     });
-    expect(at["line"]?.width).toBeCloseTo(slot, 1);
+    expect(at["line"]?.width).toBeLessThanOrEqual(slot + 0.5);
     // And it is sized for the text people actually have (SHARED-057 clause 3):
     // the ordinary live line with no weight stated is read, not revealed. The
     // two weighted ones are the uncommon case, and both carry the whole
