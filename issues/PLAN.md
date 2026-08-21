@@ -1229,6 +1229,9 @@ left in a report.
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 | UI-144 | A deleted document's reveal names the wrong absence, and a ref is written in render (PR #54 re-review NITs) | todo | P3 | — |
+| AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
+| AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
+| CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
 
 
 ## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
