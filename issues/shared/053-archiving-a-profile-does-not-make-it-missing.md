@@ -107,17 +107,17 @@ Replace the final sentence of §7's resident rider at line 323:
 
 ## Acceptance Criteria
 
-- [ ] The user has signed the drafted text, verbatim, on its own
-- [ ] §7's rider distinguishes archiving from the three causes that do null a
+- [x] The user has signed the drafted text, verbatim, on its own
+- [x] §7's rider distinguishes archiving from the three causes that do null a
       profile
-- [ ] `packages/kit/src/recipient/laneRows.ts`'s user-visible string no longer
+- [x] `packages/kit/src/recipient/laneRows.ts`'s user-visible string no longer
       tells a person a working profile is gone
-- [ ] The CLI's `--help` and the regenerated `docs/cli.md` agree
-- [ ] The stale quotation in `apps/server/src/threads/resident.test.ts` is
+- [x] The CLI's `--help` and the regenerated `docs/cli.md` agree
+- [x] The stale quotation in `apps/server/src/threads/resident.test.ts` is
       corrected or dropped
-- [ ] One wording, pinned across the surfaces that state it — this claim reached
+- [x] One wording, pinned across the surfaces that state it — this claim reached
       five places because nothing held them together
-- [ ] `npm run spec:check` passes
+- [x] `npm run spec:check` passes
 
 ## Technical Design
 
@@ -151,12 +151,30 @@ absence is why four agents wrote the same false half independently.
 
 ## E2E Verification Log
 
-_[Filled after sign-off]_
+- 2026-08-20 — the user signed the drafted text in the v0.15.0 go-ahead. Applied
+  verbatim to §7's resident rider, dated `(Rider signed 2026-08-17, amended
+  2026-08-20.)` — the original rider stands and this replaces one sentence of it,
+  so re-dating the whole rider would have claimed it was all signed yesterday.
+- **Three of the five downstream surfaces were already correct**, fixed by PR #50
+  before this rider was signed: `laneRows.ts` composes its note from
+  `MISSING_PROFILE_CAUSES`, which excludes archiving; the CLI's help and
+  `docs/cli.md` already say *"Archiving is not one of those"*; and
+  `apps/cli/src/commands/resident.test.ts:179` pins that no surface contains the
+  phrase `renamed or archived`.
+- **Two carried the pre-amendment sentence as a quotation** and were corrected:
+  `apps/server/src/threads/resident.test.ts:1222` and
+  `packages/contract/src/schemas/agents.test.ts:107`. Both now quote what §7 says
+  and both name archiving as excluded.
+- `/usr/bin/grep -rn "renamed or archived" apps/ packages/ docs/` returns only the
+  pin that forbids the phrase.
+- Tests: `resident.test.ts` (server), `agents.test.ts` (contract),
+  `resident.test.ts` (cli) — 156 tests, all pass.
+- implemented on: fable (orchestrator).
 
 ## Completion Checklist (domain agent)
 
-- [ ] N/A — orchestrator-applied after sign-off
+- [x] N/A — orchestrator-applied after sign-off
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[SHARED-053]` prefix
+- [x] Committed with `[SHARED-053]` prefix

@@ -1219,10 +1219,13 @@ describe("reading a resident back", () => {
     });
   });
 
-  // SPEC.md §7's SHARED-048 rider: "a profile that is renamed or archived after
+  // SPEC.md §7's SHARED-048 rider, as amended by SHARED-053 (signed 2026-08-20):
+  // "a profile that is renamed, deleted, or moved out of `.claude/agents/` after
   // designation does not end the designation: the resident goes on owning its
   // scope, and the missing profile is **reported rather than silently
-  // substituted**". The report is `docId: null` — the contract's `docId` is what
+  // substituted**". **Archiving is not one of those cases** — an archived
+  // agent-def still resolves, so it never reaches this state. The report is
+  // `docId: null` — the contract's `docId` is what
   // the name resolves to *right now* — and repeating the stored id instead would
   // send a reader to a document the workspace no longer has, which is the exact
   // failure the re-read exists to prevent.
