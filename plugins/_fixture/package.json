@@ -1,7 +1,7 @@
 {
   "name": "corpus-plugin-fixture",
   "private": true,
-  "version": "0.14.0",
+  "version": "0.15.0",
   "type": "module",
   "description": "Test-only fixture plugin exercising every PLUGINS-001 extension point. The leading underscore excludes it from production surfaces (SPEC.md §10).",
   "scripts": {
