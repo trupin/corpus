@@ -76,7 +76,9 @@ const ago = (ms: number): string => new Date(NOW.getTime() - ms).toISOString();
 
 /**
  * Two designated lanes which, with the orchestrator's, give three statements of
- * three different lengths — measured in the popover's own 218px measure:
+ * three different lengths — the line counts as measured in the popover's own
+ * 218px measure, which is what it had while its width was the constant UI-142
+ * removed:
  *
  *     agent will answer — last seen 4m ago — nobody is listening        2 lines
  *     release-researcher will answer — last seen 17m ago —
@@ -86,8 +88,15 @@ const ago = (ms: number): string => new Date(NOW.getTime() - ms).toISOString();
  *       17m ago — the orchestrator will answer until it returns         6 lines
  *
  * A lapsed lane is ordinary: every agent that is not parked right now reads
- * that way. §7's missing-profile report is the one statement that overflows the
- * reserve, and §7 itself calls that news rather than the reading path.
+ * that way.
+ *
+ * **The counts are smaller now and the fixture still works**, which is worth
+ * saying rather than leaving to be rediscovered. The card takes its measure from
+ * the room since UI-142, so a reply composer wraps these in ~378px and the six
+ * fits in four. What this spec needs is only that the three statements are
+ * *different heights from each other* — that is what made a bottom-anchored card
+ * oscillate — and they still are. The one assertion that depended on the six
+ * overflowing the reserve is marked where it changed.
  */
 const LANES: readonly AgentLane[] = [
   {
@@ -286,23 +295,28 @@ test.describe("the address popover holds still while you read it", () => {
     expect(new Set(said).size).toBe(count);
   });
 
-  test("a statement longer than its box truncates in place, and the whole of it is still reachable", async ({
-    page,
-  }) => {
+  test("a statement is revealed whole however the box treats it", async ({ page }) => {
     await open(page);
     const says = page.locator(SAYS);
     const gone = page.locator(`${PICKER} [data-recipient-lane="th_gone"]`);
     await gone.focus();
 
-    // Truncated in place, not accommodated: the text overflows a box that did
-    // not grow to take it.
-    const clipped = await says.evaluate((element) => ({
-      client: element.clientHeight,
-      scroll: element.scrollHeight,
-    }));
-    expect(clipped.scroll).toBeGreaterThan(clipped.client);
+    // **This assertion used to be `scroll > client`, and UI-142 is why it is
+    // not any more.** §7's missing-profile report is six lines in the 218px
+    // measure the card had while its width was a constant, and it was the one
+    // ordinary statement that overflowed the four-line reserve. The card takes
+    // its measure from the room now, so at a reply composer the same sentence
+    // fits — which is the rider of 2026-08-21 working, not a test going soft:
+    // *"scrolling is for content that cannot fit, never for content that was
+    // not given room."* What still has to hold, and what this test is for, is
+    // that the reserve is a reserve: the box does not grow to take the
+    // sentence, whichever way the sentence falls. The geometry tests above
+    // measure that directly, across every lane.
+    //
+    // The clipped case has moved to its own fixture below, where the sentence
+    // is a lane's free-text summary and is therefore long by construction.
 
-    // …and revealed: the whole sentence is on the statement's own title, and
+    // Revealed: the whole sentence is on the statement's own title, and
     // the row's has carried `name — note — line` since UI-126.
     const whole = `claims-review will answer — ${MISSING_PROFILE_NOTE} — last seen 17m ago — the orchestrator will answer until it returns`;
     await expect(says).toHaveAttribute("title", whole);
@@ -488,6 +502,7 @@ test.describe("the address popover has a ceiling", () => {
 
         const head = await boxOf(page.locator(".reader-head"));
         const card = await boxOf(page.locator(POP));
+        const scroll = await boxOf(page.locator(".reader-scroll"));
 
         // The measurement this issue exists for. Before the bound, twenty lanes
         // put the card's top at y=-248 against a head ending at y=159.
@@ -495,11 +510,32 @@ test.describe("the address popover has a ceiling", () => {
           card.y,
           `the card rose into the head (${JSON.stringify(card)})`,
         ).toBeGreaterThanOrEqual(head.y + head.height);
-        // …and it is bounded, rather than merely happening to fit today.
-        expect(card.height).toBeLessThanOrEqual(280);
-        // The bound did not come out of the card's width, which is what UI-127's
-        // four-line statement reserve is measured against.
-        expect(card.width).toBe(240);
+
+        // …and it is bounded **by the room**, rather than by a number (UI-142,
+        // SPEC.md §11's rider of 2026-08-21). The claim is a relationship and
+        // not a pixel count: `<= 280` used to stand here, and it was the defect
+        // written down as an assertion — the card drew 240×280 at 1728×1080
+        // with 782px of room above it.
+        //
+        // The one case where the card is allowed past the room is the floor
+        // `ComposerAddress` documents: a room that will not take the fixed parts
+        // and **one** row leaves a card that would otherwise offer nothing, so
+        // it keeps one row and comes down instead. 1280×400, whose reader
+        // scrollport is 187px, is that case — and the test says which case it is
+        // in rather than widening the bound until both pass.
+        const list = await page.locator(LIST).evaluate((element) => ({
+          client: element.clientHeight,
+          // The row's border box: `clientHeight` would drop its 1px border
+          // either side and make a list showing exactly one row look like a
+          // list showing more than one.
+          row: element.children[0]?.getBoundingClientRect().height ?? 0,
+        }));
+        if (card.height > scroll.height)
+          expect(
+            list.client,
+            `the card outgrew its room without being at its floor (${JSON.stringify(card)})`,
+          ).toBeLessThanOrEqual(list.row + 1);
+        else expect(card.height).toBeLessThanOrEqual(scroll.height);
       });
     }
   }
@@ -658,12 +694,23 @@ test.describe("a host the window bounds", () => {
     await expect(page.locator(popOf("compose"))).toBeVisible();
 
     const card = await boxOf(page.locator(popOf("compose")));
-    expect(card.height).toBeLessThanOrEqual(280);
+    // Bounded by the window and by nothing smaller (UI-142): the assertion is
+    // the relationship, because the number it replaced — `<= 280` — was true of
+    // a card that had 502px of room it was not allowed to use.
+    expect(card.height).toBeLessThanOrEqual(page.viewportSize()?.height ?? 0);
     // Never off the top of the window: with no scrollport above it, the window
     // is the ceiling, and a walk that answered `null` where it should not would
     // show up here as a card starting at a negative y.
     expect(card.y).toBeGreaterThanOrEqual(0);
-    await expect(page.locator('[data-address-more="compose"]')).toBeVisible();
+
+    // The cap note is honest either way: it appears exactly when the list
+    // really did run out of room, and never as decoration (UI-130, UI-142).
+    const list = await page
+      .locator(`${picker("compose")} .recipient-lanes`)
+      .evaluate((element) => ({ client: element.clientHeight, scroll: element.scrollHeight }));
+    const note = page.locator('[data-address-more="compose"]');
+    if (list.scroll > list.client + 1) await expect(note).toBeVisible();
+    else await expect(note).toHaveCount(0);
   });
 
   /**
@@ -713,9 +760,17 @@ test.describe("a host the window bounds", () => {
     await expect(page.locator(popOf("comment"))).toBeVisible();
 
     const card = await boxOf(page.locator(popOf("comment")));
-    expect(card.height).toBeLessThanOrEqual(280);
+    // The window is the bound, and the whole of it is available (UI-142). The
+    // `<= 280` this replaced was a constant that fitted no room in particular.
+    expect(card.height).toBeLessThanOrEqual(page.viewportSize()?.height ?? 0);
     expect(card.y).toBeGreaterThanOrEqual(0);
-    await expect(page.locator('[data-address-more="comment"]')).toBeVisible();
+
+    const list = await page
+      .locator(`${picker("comment")} .recipient-lanes`)
+      .evaluate((element) => ({ client: element.clientHeight, scroll: element.scrollHeight }));
+    const note = page.locator('[data-address-more="comment"]');
+    if (list.scroll > list.client + 1) await expect(note).toBeVisible();
+    else await expect(note).toHaveCount(0);
 
     // Its top row is pressable where it is, which is the whole claim.
     const first = page.locator(rowsOf("comment")).first();

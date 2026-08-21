@@ -2,7 +2,15 @@ import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import { readStateOf } from "../thread/threadCollapse";
-import { REVEAL_RETRIES, REVEAL_RETRY_MS, revealItem } from "./reveal";
+import { useToast } from "../shell/Toasts";
+import {
+  revealItem,
+  revealMissNotice,
+  revealPatience,
+  surfaceSettled,
+  surfaceText,
+  type RevealGaveUp,
+} from "./reveal";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
@@ -96,6 +104,9 @@ export function useReaderSurface({
   expand.current = collapse.expand;
   const rows = useRef(reader.threads);
   rows.current = reader.threads;
+  /** Whether that list has answered — read through a ref for the same reason. */
+  const threadsSettled = useRef(reader.threadsSettled);
+  threadsSettled.current = reader.threadsSettled;
   const restore = useRef<RestoreState | null>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -113,6 +124,18 @@ export function useReaderSurface({
    * re-run", StrictMode's replayed effects leave it alone.
    */
   const revealFlash = useRef<{ readonly nav: string; readonly stop: () => void } | null>(null);
+  /**
+   * The reveal still looking for its words, and the navigation that asked for it.
+   *
+   * Held here rather than torn down by the effect's own cleanup, for the reason
+   * the comment on {@link revealedCallback} gives in a smaller way: the search
+   * outlives the render that started it, and an effect that re-runs for a reason
+   * unrelated to the instruction — `hasContent` flickering across a refetch —
+   * would cancel a ladder mid-climb and then take the `revealed` guard's early
+   * return, leaving the instruction pending with nobody left to honour it. Its
+   * lifetime is the navigation's, exactly like {@link revealFlash}'s.
+   */
+  const revealSearch = useRef<{ readonly nav: string; readonly stop: () => void } | null>(null);
   /** Read through a ref so the reveal effect never depends on the token. */
   const navTokenRef = useRef(navToken);
   navTokenRef.current = navToken;
@@ -124,6 +147,17 @@ export function useReaderSurface({
    */
   const revealedCallback = useRef(onRevealed);
   revealedCallback.current = onRevealed;
+  /**
+   * How a reveal that gave up says so (UI-140).
+   *
+   * Read from the shared toast context rather than taken as a prop, because both
+   * hosts of this hook already sit inside `ToastProvider` and neither passes a
+   * notifier down to it. Outside a provider `useToast` is a no-op, so a surface
+   * rendered in isolation reports nothing rather than crashing.
+   */
+  const toast = useToast();
+  const notify = useRef(toast);
+  notify.current = toast;
 
   const hasContent = reader.doc !== undefined || reader.isMissing || reader.error !== null;
 
@@ -191,6 +225,8 @@ export function useReaderSurface({
       if (flashTimer.current !== null) clearTimeout(flashTimer.current);
       revealFlash.current?.stop();
       revealFlash.current = null;
+      revealSearch.current?.stop();
+      revealSearch.current = null;
     },
     [],
   );
@@ -203,12 +239,22 @@ export function useReaderSurface({
    * follow a ref in half of that. What stayed behind was not just a highlight
    * over the wrong document but its tracker, re-searching the newly opened body
    * for the old document's words on every frame.
+   *
+   * The unfinished *search* goes the same way and for the same reason: a reveal
+   * still waiting for one document's words to arrive has no business finding
+   * them in the next one (UI-140).
    */
   useEffect(() => {
     const live = revealFlash.current;
-    if (live === null || live.nav === navToken) return;
-    live.stop();
-    revealFlash.current = null;
+    if (live !== null && live.nav !== navToken) {
+      live.stop();
+      revealFlash.current = null;
+    }
+    const looking = revealSearch.current;
+    if (looking !== null && looking.nav !== navToken) {
+      looking.stop();
+      revealSearch.current = null;
+    }
   }, [navToken]);
 
   const jumpToThread = useCallback((threadId: string) => {
@@ -237,43 +283,138 @@ export function useReaderSurface({
    * survive a remount and the second does not survive React calling the effect
    * twice before the state it sets has landed.
    *
-   * Giving up counts as honouring it. A quote the document no longer contains
-   * (edited between the click and the open, or never rendered because a plugin
-   * `View` shows something else) must not leave a pending instruction behind
-   * for the next navigation to trip over.
+   * **Giving up counts as honouring it, and it is not silent** (UI-140). The
+   * instruction is spent in every terminal case — drawn, or given up on for
+   * either of `revealPatience`'s two reasons — and the reason it is spent even
+   * when nothing was drawn is worth stating, because the alternative looks
+   * kinder than it is. A reveal lives on the navigation entry, in
+   * `localStorage`; leaving one pending makes Back and a reload silently
+   * re-attempt a reveal that has already failed, against a document that has
+   * moved on further, with nothing in between that would make the next attempt
+   * different. So the instruction goes, and what replaces it is an account: a
+   * reveal that drew nothing raises a notice naming the quote it could not find.
+   *
+   * **The search is condition-shaped, not duration-shaped.** It looks once per
+   * animation frame and re-searches only when what it is aimed at changed,
+   * because a surface that has not changed cannot have gained the words. When it
+   * stops is `revealPatience`'s decision, and that comment is where the two
+   * failure modes — "not there" and "not there yet" — are told apart. Each look
+   * reads both halves of that question: the words, and whether what is being
+   * waited on has arrived — `DocView`'s body rather than its `Loading…`, the
+   * conversation list rather than an empty array that has answered nothing.
+   *
+   * **Both destinations climb the same ladder**, which they did not used to. A
+   * thread reveal fired the instant the *document* had content and then spent
+   * the instruction, but `reader.threads` is a second request and arrives on its
+   * own schedule: an empty list reads the same whether the document has no
+   * conversations or the list has not landed (`useReaderDoc`'s
+   * {@link ReaderDoc.threadsSettled} says so in as many words). So a thread
+   * reveal on a cold open silently expanded nothing, at 1 open in 80 measured
+   * under eight Playwright workers — the same defect as the item branch's, one
+   * request over.
    */
   useEffect(() => {
     if (reveal == null || !hasContent || revealed.current === reveal) return undefined;
     revealed.current = reveal;
 
-    if (reveal.kind === "thread") {
-      jumpToThread(reveal.threadId);
-      revealedCallback.current?.();
-      return undefined;
-    }
+    const nav = navTokenRef.current;
+    const started = Date.now();
+    const patience = revealPatience();
+    /*
+     * The frame clock, or `null` where there is none. A host without
+     * `requestAnimationFrame` has no layout either — jsdom without
+     * `pretendToBeVisual`, any non-browser render — so its surface will never
+     * change and there is nothing to wait for: one look, and an answer.
+     *
+     * It falls back to `globalThis` rather than to "no clock" when the container
+     * is not mounted yet, because "the reader has not rendered its scroller" is
+     * the one moment where giving an answer would be most wrong.
+     */
+    const view = scrollRef.current?.ownerDocument.defaultView ?? globalThis;
+    const frames = typeof view.requestAnimationFrame === "function" ? view : null;
+    let handle: number | null = null;
 
-    let attempts = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const attempt = (): void => {
-      attempts += 1;
-      const container = scrollRef.current;
-      const undo = container === null ? null : revealItem(container, reveal);
-      if (undo !== null) {
-        revealFlash.current?.stop();
-        revealFlash.current = { nav: navTokenRef.current, stop: undo };
-      } else if (attempts < REVEAL_RETRIES) {
-        // The body may still be arriving — the editor mounts its own DOM, and a
-        // plugin `View` may be fetching. Retry, then stop asking.
-        timer = setTimeout(attempt, REVEAL_RETRY_MS);
+    const search = {
+      nav,
+      stop: () => {
+        if (handle !== null && frames !== null) frames.cancelAnimationFrame(handle);
+        handle = null;
+      },
+    };
+
+    /**
+     * Where this reveal is aimed: what it can see, and what honouring it there
+     * would take. Two destinations, one ladder — the only thing that differs
+     * between an item and a conversation is which arriving thing they wait on.
+     */
+    const aim =
+      reveal.kind === "thread"
+        ? {
+            // The settled flag belongs in the reading, not beside it: a list
+            // that answers "no conversations at all" leaves `threads` empty and
+            // would otherwise look identical to a list still in flight, so the
+            // one moment that distinguishes them would pass unseen.
+            read: () => ({
+              text: rows.current.map((row) => row.id).join(" "),
+              settled: threadsSettled.current,
+            }),
+            take: () => {
+              if (!rows.current.some((row) => row.id === reveal.threadId)) return false;
+              jumpToThread(reveal.threadId);
+              return true;
+            },
+          }
+        : {
+            read: () => {
+              const container = scrollRef.current;
+              // A reader with no scroller has neither words nor a verdict about
+              // itself: unsettled, which is what keeps it being waited for.
+              return container === null
+                ? { text: "", settled: false }
+                : { text: surfaceText(container), settled: surfaceSettled(container) };
+            },
+            take: () => {
+              const container = scrollRef.current;
+              const undo = container === null ? null : revealItem(container, reveal);
+              if (undo === null) return false;
+              revealFlash.current?.stop();
+              revealFlash.current = { nav, stop: undo };
+              return true;
+            },
+          };
+
+    /** Spends the instruction, and says so when nothing was reached. */
+    const settle = (gaveUp: RevealGaveUp | null): void => {
+      if (revealSearch.current === search) revealSearch.current = null;
+      if (gaveUp !== null) notify.current(revealMissNotice(reveal, gaveUp));
+      revealedCallback.current?.();
+    };
+
+    const look = (): void => {
+      handle = null;
+      const verdict = patience(aim.read(), Date.now() - started);
+      if (verdict.search && aim.take()) {
+        settle(null);
         return;
       }
-      revealedCallback.current?.();
+      if (verdict.giveUp !== null) {
+        settle(verdict.giveUp);
+        return;
+      }
+      if (frames === null) {
+        settle("unresolved");
+        return;
+      }
+      handle = frames.requestAnimationFrame(look);
     };
-    attempt();
 
-    return () => {
-      if (timer !== null) clearTimeout(timer);
-    };
+    revealSearch.current?.stop();
+    revealSearch.current = search;
+    look();
+
+    // No cleanup: the search's lifetime is the navigation's, not this effect's
+    // — see `revealSearch`.
+    return undefined;
   }, [hasContent, jumpToThread, reveal]);
 
   const handleScroll = useCallback(

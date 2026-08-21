@@ -43,7 +43,10 @@ export const docTopic: TopicSpec = {
     "The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the " +
     "collection query behind the board's own columns, filters, Attention and search — expands " +
     "from a document it already holds through `related`, the follow-up move to `corpus search` " +
-    "(SPEC.md §7) — reads documents through `show`, which is also **where a key comes from**: " +
+    "(SPEC.md §7) — reads documents through `show`, whole or one section at a time: " +
+    "`show --headings` prints a document's heading paths and `show --section` prints one " +
+    "section byte for byte, which is what `patch --old` quotes, so a bounded edit never " +
+    "costs a whole read. `show` is also **where a key comes from**: " +
     "replacing a body with `edit` means presenting the key that read handed out, and a write " +
     "without a valid one does not happen (SPEC.md §7). Anchors " +
     "resolve against the current body server-side, so reading the file would answer differently " +

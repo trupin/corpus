@@ -122,6 +122,77 @@ test.describe("the thread card's shipped stylesheet", () => {
     expect(styles[".t-context"]?.["color"]).toBe(LIGHT_INK_3);
   });
 
+  /**
+   * The fold control's hit target and its distance from Resolve (UI-096).
+   *
+   * jsdom has no layout, so this is the only place either can be asserted. What
+   * the defect was: `.t-collapse` was `position: absolute; top: 8px; right: 10px`
+   * with `font-size: 13px; padding: 0 5px; line-height: 1` — a **13 × 15px**
+   * target dropped into the same corner `margin-left: auto` pushes the status
+   * chip and Resolve into. The two were not laid out in relation to each other;
+   * they merely landed in the same place, and the cost of missing was resolving
+   * a conversation you meant to fold.
+   *
+   * It is back in the head's flow, which is where `design/index.html` has always
+   * drawn it (`.t-collapse { margin-left: 4px; … }`) — and being in flow is also
+   * what keeps the spacing when the quote wraps to two lines, since `.t-head`
+   * wraps and a corner control does not move with it.
+   */
+  test("gives the fold control a real target, laid out beside resolve", async ({ page }) => {
+    await page.goto("/");
+    const box = await page.evaluate((markup) => {
+      const host = document.createElement("div");
+      host.innerHTML = markup;
+      document.body.append(host);
+      const rect = (selector: string): DOMRect | null =>
+        host.querySelector(selector)?.getBoundingClientRect() ?? null;
+      const head = rect(".t-head");
+      const collapse = rect(".t-collapse");
+      const resolve = rect(".t-resolve");
+      const style = getComputedStyle(host.querySelector(".t-collapse") as Element);
+      const out =
+        head === null || collapse === null || resolve === null
+          ? null
+          : {
+              width: Math.round(collapse.width),
+              height: Math.round(collapse.height),
+              gap: Math.round(collapse.left - resolve.right),
+              // In flow, not painted over the row.
+              positioned: style.position,
+              // Centred on the row rather than contained by it: the target is
+              // deliberately taller than the head's 18px chips, and the negative
+              // block margin is what stops that height reaching the card.
+              offCentre: Math.abs(
+                (collapse.top + collapse.bottom) / 2 - (head.top + head.bottom) / 2,
+              ),
+              headHeight: Math.round(head.height),
+            };
+      /*
+       * The head's height **without** the control, measured in the same layout —
+       * which is the claim "growing the hit box must not grow the card", stated
+       * as a comparison rather than as a number somebody typed.
+       */
+      host.querySelector(".t-collapse")?.remove();
+      const withoutControl = Math.round(rect(".t-head")?.height ?? -1);
+      host.remove();
+      return out === null ? null : { ...out, withoutControl };
+    }, CARD);
+
+    expect(box).not.toBeNull();
+    // The floor is 24px; the shipped box is 26 × 26.
+    expect(box?.width).toBeGreaterThanOrEqual(24);
+    expect(box?.height).toBeGreaterThanOrEqual(24);
+    // Real separation from the control that resolves the conversation: the
+    // head's own 8px gap plus the control's 4px, as the mockup draws it.
+    expect(box?.gap).toBeGreaterThanOrEqual(10);
+    expect(box?.positioned).toBe("static");
+    expect(box?.offCentre ?? 99).toBeLessThanOrEqual(1);
+    // Growing the target must not grow the card: the negative block margin gives
+    // the extra height back, so the head is the same height with the control and
+    // without it.
+    expect(box?.headHeight).toBe(box?.withoutControl);
+  });
+
   test("separates turns with hairlines and marks the agent in accent", async ({ page }) => {
     await page.goto("/");
     const styles = await measure(page, CARD, [

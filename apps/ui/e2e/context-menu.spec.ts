@@ -1,5 +1,25 @@
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus } from "./stubCorpus";
+
+/**
+ * Walks the arrow keys down to `item` and leaves the focus on it.
+ *
+ * Counting keystrokes to an item was how these tests used to reach one, and it
+ * made them assertions about the **length** of a menu that other issues keep
+ * adding to — UI-067's Comments entry moved every ⋯ item down by one and broke
+ * two of them at once. What the spec claims is that the arrows reach an item and
+ * `↵` runs it, so that is what this walks.
+ */
+async function arrowTo(page: Page, item: Locator): Promise<void> {
+  const focused = (): Promise<boolean> =>
+    item.evaluate((element) => element === document.activeElement);
+  for (let step = 0; step < 12; step += 1) {
+    if (await focused()) return;
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(item).toBeFocused();
+}
 
 /**
  * UI-018 in a real browser: right-clicking an actionable item opens that item's
@@ -612,13 +632,15 @@ test.describe("the context menu", () => {
     const dots = page.locator(".reader [data-doc-menu]");
     await dots.focus();
     /*
-     * Space, not ↵, and deliberately: with no menu open the scope is still the
-     * board's, so `rows.open` matches `↵` on the document listener and
-     * `preventDefault()` cancels the focused button's activation before it can
-     * open anything. Nothing binds Space, so the trigger's own default action
-     * survives. That preemption is the board's, not this sheet's — UI-030 is
-     * about what the keyboard can do *inside* the popover, which is everything
-     * below — and it is reported as its own finding.
+     * Space, and for a while Space only: with no menu open the scope was still
+     * the board's, so `rows.open` matched `↵` on the document listener and
+     * `preventDefault()` cancelled the focused button's activation before it
+     * could open anything. Nothing binds Space, so the trigger's own default
+     * action survived. That preemption was the board's, not this sheet's, and it
+     * was reported as its own finding and fixed in UI-032 — `↵` opens the same
+     * popover now, and the case below is the whole path on that key. Space is
+     * kept here because it is what a keyboard user reaches for second, and
+     * because nothing must ever bind it.
      */
     await page.keyboard.press("Space");
 
@@ -629,7 +651,7 @@ test.describe("the context menu", () => {
 
     // esc first: it closes, runs nothing, and gives the trigger its focus back.
     await page.keyboard.press("ArrowDown");
-    await expect(menu.locator('[data-act="review"]')).toBeFocused();
+    await expect(menu.locator('[role="menuitem"]').first()).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
     await expect(dots).toBeFocused();
@@ -638,9 +660,41 @@ test.describe("the context menu", () => {
     // Then the drill from the issue: open, arrow to Archive, ↵ — it runs.
     await page.keyboard.press("Space");
     await expect(menu).toBeVisible();
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
-    await expect(menu.locator('[data-act="archive"]')).toBeFocused();
+    await arrowTo(page, menu.locator('[data-act="archive"]'));
+    await page.keyboard.press("Enter");
+
+    await expect.poll(async () => (await corpus.doc("doc_note"))?.status).toBe("archived");
+    await expect(menu).toHaveCount(0);
+  });
+
+  /**
+   * UI-032, and the acceptance criterion UI-030 could not meet: the **whole**
+   * no-pointer path on `↵` alone — the key a keyboard user actually presses on a
+   * focused button, and the one the board was cancelling. It reached the ⋯
+   * trigger, the fence copy button and the console's tabs alike, and each was
+   * patched where it was found until `Shortcut.yieldsToFocusedControl` replaced
+   * the patches with one rule.
+   *
+   * Only a real browser runs a default action, so the assertions are that the
+   * popover **opened** and that the act **ran** — a corpus change, not a
+   * keystroke.
+   */
+  test("the ⋯ popover opens and runs an action on ↵ alone", async ({ page }) => {
+    const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await expect(page.locator(".reader")).toBeVisible();
+
+    const dots = page.locator(".reader [data-doc-menu]");
+    await dots.focus();
+    await page.keyboard.press("Enter");
+
+    const menu = page.getByRole("menu", { name: "Document actions" });
+    await expect(menu).toBeVisible();
+    await expect(dots).not.toBeFocused();
+
+    await arrowTo(page, menu.locator('[data-act="archive"]'));
     await page.keyboard.press("Enter");
 
     await expect.poll(async () => (await corpus.doc("doc_note"))?.status).toBe("archived");

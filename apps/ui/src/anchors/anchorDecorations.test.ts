@@ -10,6 +10,7 @@ import { serializeDoc } from "../editor/markdown/serialize.js";
 import {
   anchorDecorationPlugin,
   anchorState,
+  claimProvisionalTransaction,
   innermostAt,
   setAnchorsTransaction,
   setProvisionalTransaction,
@@ -51,6 +52,11 @@ function withAnchors(state: EditorState, anchors: readonly AnchorPlacement[]): E
 /** The open composer's own range, or `null` to put it out. */
 function withProvisional(state: EditorState, range: PmRange | null): EditorState {
   return state.apply(setProvisionalTransaction(state, range));
+}
+
+/** The server accepted the comment: the mark now belongs to `owner` (UI-121). */
+function withClaim(state: EditorState, owner: string): EditorState {
+  return state.apply(claimProvisionalTransaction(state, owner));
 }
 
 /** Every inline decoration's range, in order. */
@@ -235,8 +241,93 @@ describe("the provisional highlight", () => {
 
   it("survives a report about the anchors, which says nothing about it", () => {
     const reported = withAnchors(opened, [placement({ segments: [{ from: 25, to: 30 }] })]);
-    expect(anchorState(reported)?.provisional).toEqual({ from: 5, to: 20 });
+    expect(anchorState(reported)?.provisional).toEqual({ range: { from: 5, to: 20 }, owner: null });
     expect(ranges(reported)).toContainEqual({ from: 5, to: 20 });
+  });
+});
+
+/**
+ * UI-121: sending does not put the mark out — it gives it an owner, and the
+ * mark ends in the transaction that first draws that owner's anchor.
+ *
+ * The point of every test here is the **absence of an intermediate**. The mark
+ * used to be dropped on the mutation's success, a whole document read before
+ * the anchor replacing it existed, and the words went dark for the length of
+ * that round trip.
+ */
+describe("the handover", () => {
+  const opened = withProvisional(stateFor(BODY), { from: 5, to: 20 });
+
+  it("ends the mark in the very transaction that draws its anchor", () => {
+    const claimed = withClaim(opened, "th_1");
+    // Still the only thing on those words: the anchor has not arrived.
+    expect(anchorState(claimed)?.provisional).toEqual({
+      range: { from: 5, to: 20 },
+      owner: "th_1",
+    });
+    expect(ranges(claimed)).toEqual([{ from: 5, to: 20 }]);
+
+    const arrived = withAnchors(claimed, [placement()]);
+    expect(anchorState(arrived)?.provisional).toBeNull();
+    // One mark over the words, and it is the server's. There is no state
+    // between these two, so there is no frame with none and none with two.
+    expect(ranges(arrived)).toEqual([{ from: 5, to: 20 }]);
+    expect(attributes(arrived)[0]).toMatchObject({ "data-thread": "th_1" });
+  });
+
+  it("waits for its own thread's anchor and not for somebody else's", () => {
+    const claimed = withClaim(opened, "th_1");
+    const other = withAnchors(claimed, [
+      placement({ anchorId: "anc_other", threadId: "th_other", segments: [{ from: 25, to: 30 }] }),
+    ]);
+    expect(anchorState(other)?.provisional).toEqual({ range: { from: 5, to: 20 }, owner: "th_1" });
+    expect(ranges(other)).toContainEqual({ from: 5, to: 20 });
+  });
+
+  /**
+   * A retained-and-hidden anchor paints nothing (the rule above), so handing
+   * over to one hands over to nothing — and this mark is still the only thing
+   * on those words.
+   */
+  it("does not hand over to an anchor that has collapsed to nothing", () => {
+    const claimed = withClaim(opened, "th_1");
+    const collapsed = withAnchors(claimed, [placement({ segments: [{ from: 5, to: 5 }] })]);
+    expect(anchorState(collapsed)?.provisional).toEqual({
+      range: { from: 5, to: 20 },
+      owner: "th_1",
+    });
+    expect(ranges(collapsed)).toEqual([{ from: 5, to: 20 }]);
+  });
+
+  it("hands over an owned mark the mapping has moved, not the range it was claimed at", () => {
+    const claimed = withClaim(opened, "th_1");
+    const typedAbove = claimed.apply(claimed.tr.insertText("Note: ", 1));
+    expect(anchorState(typedAbove)?.provisional).toEqual({
+      range: { from: 11, to: 26 },
+      owner: "th_1",
+    });
+    const arrived = withAnchors(typedAbove, [placement({ segments: [{ from: 11, to: 26 }] })]);
+    expect(anchorState(arrived)?.provisional).toBeNull();
+  });
+
+  /** A new selection is a new mark: the previous comment's owner is not its. */
+  it("forgets the owner when the host lights a fresh selection", () => {
+    const claimed = withClaim(opened, "th_1");
+    const reopened = withProvisional(claimed, { from: 25, to: 30 });
+    expect(anchorState(reopened)?.provisional).toEqual({
+      range: { from: 25, to: 30 },
+      owner: null,
+    });
+    // And so it is not swept away by the earlier comment's anchor landing.
+    const arrived = withAnchors(reopened, [placement()]);
+    expect(anchorState(arrived)?.provisional).toEqual({ range: { from: 25, to: 30 }, owner: null });
+  });
+
+  /** A claim with nothing to land on — the words were typed over meanwhile. */
+  it("is a no-op when the mark is already gone", () => {
+    const typedOver = opened.apply(opened.tr.delete(5, 20));
+    const claimed = withClaim(typedOver, "th_1");
+    expect(anchorState(claimed)?.provisional).toBeNull();
   });
 });
 

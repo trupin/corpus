@@ -1,11 +1,13 @@
+import type { Job } from "@corpus/contract";
 import { useHaltQueue, useIndexStatus, useJobs, useQueueStatus, useResumeQueue } from "@corpus/kit";
-import { useState, type ReactElement } from "react";
-import { useToast } from "../shell/Toasts";
+import { useState, type KeyboardEvent, type ReactElement } from "react";
+import { useNotices, useToast } from "../shell/Toasts";
 import { resolveSelectedJob } from "./consoleModel";
 import { ConsoleStrip } from "./ConsoleStrip";
 import { IndexStatusRow } from "./IndexPill";
 import { JobDetail } from "./JobDetail";
 import { JobList } from "./JobList";
+import { Notices } from "./Notices";
 import { Residents } from "./Residents";
 import { CONSOLE_TABS, type ConsoleTab } from "./residentsModel";
 import { MAX_CONSOLE_HEIGHT_RATIO, MIN_CONSOLE_HEIGHT, useConsoleLayout } from "./useConsoleLayout";
@@ -26,9 +28,45 @@ import "./console.css";
  * there is no log query to refetch, so an invalidation for a chatty job costs
  * nothing while nobody is looking.
  */
+interface ConsoleBodyProps {
+  readonly tab: ConsoleTab;
+  readonly jobs: readonly Job[];
+  readonly selectedId: string | null;
+  readonly selected: Job | null;
+  readonly onSelect: (id: string) => void;
+}
+
+/**
+ * Whichever body the selected tab names. Split out of {@link Console} only so
+ * the choice can be a statement rather than a chain of ternaries inside JSX —
+ * three tabs is where that chain stops being readable.
+ */
+function ConsoleBody({
+  tab,
+  jobs,
+  selectedId,
+  selected,
+  onSelect,
+}: ConsoleBodyProps): ReactElement {
+  if (tab === "notices") return <Notices />;
+  if (tab === "residents") return <Residents />;
+  return (
+    <>
+      <JobList jobs={jobs} selectedId={selectedId} onSelect={onSelect} />
+      <JobDetail job={selected} enabled />
+    </>
+  );
+}
+
 export function Console(): ReactElement {
   const layout = useConsoleLayout();
   const notify = useToast();
+  /*
+   * The session's notices (UI-139). The drawer reads the same log the toast
+   * surface writes, which is what makes the tab a record of what was raised
+   * rather than a second, drifting one.
+   */
+  const notices = useNotices();
   const queue = useQueueStatus();
   /*
    * The index pill's data (SPEC.md §11's index-pill rider). One query for the
@@ -60,6 +98,46 @@ export function Console(): ReactElement {
   const rows = jobs.data?.jobs ?? [];
   const selectedId = resolveSelectedJob(rows, chosen);
   const selected = rows.find((job) => job.eventId === selectedId) ?? null;
+
+  /**
+   * The tab strip's own keys — the arrows and `Home`/`End` a `role="tablist"`
+   * owes a keyboard user, and `Enter`/`Space` on the focused tab.
+   *
+   * **`Enter` has to be claimed here, and that is not belt-and-braces.** The
+   * shell binds `Enter` globally to "open the row at the cursor" and calls
+   * `preventDefault()` on it (`useShortcuts`), which cancels the browser's own
+   * activation of *any* focused button in board scope. A React handler runs
+   * before that document listener and marks the event handled, so this is what
+   * makes the tabs pressable by keyboard at all — they were not before, and
+   * neither were Jobs and Residents. The wider defect (every button in board
+   * scope loses `Enter`) is not this issue's to fix and is reported separately.
+   */
+  const onTabsKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const pressed = event.target;
+    if (!(pressed instanceof HTMLElement)) return;
+    const from = CONSOLE_TABS.findIndex((entry) => entry.id === pressed.dataset.tab);
+    if (from === -1) return;
+
+    const last = CONSOLE_TABS.length - 1;
+    const step: Record<string, number> = {
+      ArrowRight: from === last ? 0 : from + 1,
+      ArrowLeft: from === 0 ? last : from - 1,
+      Home: 0,
+      End: last,
+      Enter: from,
+      " ": from,
+    };
+    const to = step[event.key];
+    if (to === undefined) return;
+    const entry = CONSOLE_TABS[to];
+    if (entry === undefined) return;
+
+    event.preventDefault();
+    setTab(entry.id);
+    // Automatic activation: the focus follows the selection, which is the
+    // pattern for tabs whose panels are already mounted and cheap to swap.
+    document.getElementById(`console-tab-${entry.id}`)?.focus();
+  };
 
   const onToggleHalt = (): void => {
     const failed = (error: Error): void => {
@@ -107,6 +185,7 @@ export function Console(): ReactElement {
         open={layout.open}
         status={status}
         index={index.data}
+        unreadNotice={notices.unreadError}
         onToggle={layout.toggle}
         onToggleHalt={onToggleHalt}
       />
@@ -121,21 +200,33 @@ export function Console(): ReactElement {
            */}
           <IndexStatusRow status={index.data} />
           {/*
-           * Two bodies, one drawer (UI-125, asked for by the user): the queue's
-           * jobs, and §7's roster with what each lane owns. Both are the agent's
-           * own machinery, which is what §11 puts in the console — and both are
-           * master-detail, so one console has one shape.
+           * Three bodies, one drawer (UI-125, then UI-139): the queue's jobs,
+           * this session's notices, and §7's roster with what each lane owns.
+           * None of the three is the corpus — each is the running system's own
+           * account of itself, which is what §11 puts in the console.
            */}
-          <div className="console-tabs" role="tablist" aria-label="Console">
+          <div
+            className="console-tabs"
+            role="tablist"
+            aria-label="Console"
+            onKeyDown={onTabsKeyDown}
+          >
             {CONSOLE_TABS.map((entry) => (
               <button
                 key={entry.id}
                 type="button"
                 role="tab"
                 id={`console-tab-${entry.id}`}
+                data-tab={entry.id}
                 className={entry.id === tab ? "console-tab sel" : "console-tab"}
                 aria-selected={entry.id === tab}
                 aria-controls="console-panel"
+                /* The strip's marker again, at the tab it names — the strip is
+                   still on screen with the drawer open, so this repeats it
+                   rather than replacing it. The attribute is on the Notices tab
+                   whether or not it is lit, and `console.css` reserves the dot's
+                   box off that, so lighting it re-widths nothing. */
+                data-unread={entry.id === "notices" ? notices.unreadError : undefined}
                 onClick={() => {
                   setTab(entry.id);
                 }}
@@ -151,14 +242,13 @@ export function Console(): ReactElement {
             aria-labelledby={`console-tab-${tab}`}
             style={{ height: `${String(layout.height)}px` }}
           >
-            {tab === "jobs" ? (
-              <>
-                <JobList jobs={rows} selectedId={selectedId} onSelect={setChosen} />
-                <JobDetail job={selected} enabled />
-              </>
-            ) : (
-              <Residents />
-            )}
+            <ConsoleBody
+              tab={tab}
+              jobs={rows}
+              selectedId={selectedId}
+              selected={selected}
+              onSelect={setChosen}
+            />
           </div>
         </>
       ) : null}

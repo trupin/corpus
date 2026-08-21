@@ -335,6 +335,29 @@ describe("cleaning pasted HTML", () => {
     expect(cleanPastedHtml(fromDocs(html))).toContain("<br>");
   });
 
+  /**
+   * UI-048 item 1. A run of breaks used to keep itself alive: `<br>` is inline in
+   * HTML, so each break in `<p>A</p><br><br><p>B</p>` — an empty paragraph in a
+   * Docs selection — saw the other as content it was separating, and two stray
+   * `\` lines reached the saved markdown.
+   */
+  it("drops a run of <br> between blocks, not just a single one", () => {
+    expect(cleanPastedHtml(fromDocs("<p>A</p><br><br><p>B</p>"))).toBe("<p>A</p><p>B</p>");
+    expect(cleanPastedHtml(fromDocs("<p>A</p><br><br><br><p>B</p>"))).toBe("<p>A</p><p>B</p>");
+  });
+
+  /**
+   * …and the other side of that trade, which is why the rule reads neighbours
+   * rather than counting breaks: a deliberate blank line between two runs of
+   * text is what every mail client writes, and both of its breaks still take
+   * their answer from real content.
+   */
+  it("keeps a deliberate blank line between two runs of text", () => {
+    expect(cleanPastedHtml(fromDocs("<div>one<br><br>two</div>"))).toBe(
+      "<div>one<br><br>two</div>",
+    );
+  });
+
   it("rewrites only the redirects it can read a destination out of", () => {
     expect(
       cleanPastedHtml(

@@ -218,7 +218,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | done | P1 | UI-016 |
 | INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | done | P1 | — |
 | CLI-024 | SIGPIPE guard for piped output (eval finding) | todo | P2 | CLI-001 |
-| UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | todo | P2 | UI-028, UI-030 |
+| UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | done | P2 | UI-028, UI-030 |
 | INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | todo | P2 | INFRA-013 |
 | CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | todo | P2 | CONTRACT-022 |
 | UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | todo | P2 | UI-031 |
@@ -240,7 +240,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-017 | Coverage merge OOMs: every browser dump parsed at once (PR #19 CI blocker) | done | P0 | — |
 | INFRA-018 | Halve the e2e coverage payload at the collector (INFRA-017 follow-up) | todo | P2 | INFRA-017 |
 | UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | done | P2 | — |
-| UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | todo | P2 | — |
+| UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | done | P2 | — |
 | INFRA-019 | A slow pre-push gate outlives the SSH session git opened (141, blocked v0.2.0 + phase 12) | done | P0 | — |
 | SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | todo | P2 | — |
 
@@ -345,7 +345,7 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | UI-054 | Newlines typed into a turn don't render — `a\nb` shows as `a b` (UI-052 finding) | done | P1 | UI-052 |
 | UI-050 | Fenced canvases: wrap long lines, collapse tall blocks (2nd report) | done | P1 | SHARED-009 |
 | PLUGINS-011 | Todos item composer adopts the composer key contract | done | P2 | UI-052 |
-| UI-055 | Design mockup still shows and binds the old composer keys (UI-052 finding) | todo | P2 | UI-052 |
+| UI-055 | Design mockup still shows and binds the old composer keys (UI-052 finding) | done | P2 | UI-052 |
 | UI-056 | E2E stub misrepresents anchor resolution; no threads route (UI-051 finding) | done | P1 | UI-051 |
 | AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | done | P1 | AGENT-010 |
 | UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | done | P2 | — |
@@ -373,9 +373,9 @@ belongs to the same fix wave.
 | --- | --- | --- | --- | --- |
 | SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | done | P1 | — |
 | UI-064 | `<br>` inside a table cell renders as literal text | done | P1 | — |
-| UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | todo | P1 | SHARED-010 |
-| UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
-| UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
+| UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | done | P1 | SHARED-010 |
+| UI-066 | Document body width is resizable, uniformly | done | P1 | SHARED-010 |
+| UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | done | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
 | SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | done | P1 | — |
 | UI-070 | Attachments in every composer, through one kit surface | done | P1 | SHARED-012 |
@@ -434,7 +434,7 @@ belongs to the same fix wave.
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
-| UI-079 | `reveal.spec` waits on a decoration with a finite lifetime (duration-shaped) | todo | P2 | — |
+| UI-079 | `reveal.spec` waits on a decoration with a finite lifetime — **misfiled**, the spec was right; replaced by UI-140 | closed | P2 | — |
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
 | SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
@@ -474,7 +474,7 @@ belongs to the same fix wave.
 | CONTRACT-040 | An open form's count is not on the row, so "more than one" cannot be shown (UI-084 finding) | done | P2 | CONTRACT-038 |
 | SERVER-084 | Count the unanswered forms on a row, from the query that already finds them | done | P1 | CONTRACT-040 |
 | SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | todo | P2 | SERVER-068, CONTRACT-038 |
-| UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | todo | P2 | — |
+| UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | done | P2 | — |
 | UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | done | P1 | UI-062 |
 | SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | done | P1 | — |
 | CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | done | P1 | — |
@@ -515,7 +515,7 @@ cheapest moment for that to happen.
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
 | CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
 | UI-095 | Clicking a comment does not take you to it, opened | done | P1 | — |
-| UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
+| UI-096 | The collapse control is a 13px glyph crowded against resolve | done | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
 | UI-097 | A request nobody has picked up says "agent is working…" | done | P1 | SHARED-033 |
 | CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | done | P1 | SHARED-033 |
@@ -524,7 +524,7 @@ cheapest moment for that to happen.
 | UI-099 | Commenting on a document selection leaves no visible anchor | done | P0 | — |
 | UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | done | P0 | — |
 | UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | done | P1 | UI-103 |
-| UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | todo | P2 | — |
+| UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | done | P2 | — |
 | UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
 | SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc | done | P1 | — |
 | SHARED-034 | Full-screen editing has no persistent formatting toolbar | done | P1 | SHARED-035 |
@@ -720,7 +720,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | CONTRACT-060 | The grace window is derived two different ways, and both tests pass by coincidence | done | P1 | — |
 | UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
 | SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
-| UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | todo | P1 | — |
+| UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | done | P1 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 
@@ -831,7 +831,7 @@ through.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | todo | P1 | — |
+| INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | done | P1 | — |
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | done | P1 | — |
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
 | SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
@@ -1082,7 +1082,7 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
 | UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
 | UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | todo | P2 | — |
-| UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | todo | P1 | — |
+| UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | done | P1 | SHARED-058 |
 | UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
 
 **UI-128's ledger ranks six reachable clusters**, each measured in a real browser
@@ -1140,3 +1140,138 @@ the event type a release travels as, the server and CLI halves of designation
 weight and scope, and the orchestrate skill that turns a weight into a model at
 launch. The decisions each issue was filed on are recorded in the issue under
 *Decided by the orchestrator, 2026-08-19*.
+
+
+## Phase 38 — Comments have a place (2026-08-21, v0.16.0 scope)
+
+**SHARED-010 was signed 2026-08-04 and three of its surfaces were never built.**
+§11 describes a `Document / Comments` switch in the reader header, a list holding
+every thread on the document filtered on two independent axes, a composer for a
+remark that needs no selection, a reply box on each thread in place, and a body
+whose width the person chooses. None of it exists. The spec has been describing
+machinery nobody can run for seventeen days, and every issue filed against §11
+since has been filed against a description rather than a surface.
+
+This phase finishes that rider, plus **UI-139** — folded in on the user's
+instruction of 2026-08-21, with its open design question answered the same day
+(**SHARED-058**, authorized: a refusal's reason becomes durable in the console's
+new **Notices** tab, and the two-line clamp stays).
+
+**Rows for the issues below live in their original phase tables** — UI-063,
+UI-066 and UI-067 in Phase 13, UI-121 and UI-139 in Phase 37 — following the
+Phase 7b precedent. Only genuinely new rows appear here.
+
+**The headline scope**, in the order a person meets it:
+
+- **UI-063** — the comments list: every thread, open/resolved × anchored/unanchored, both hosts _(row in Phase 13)_
+- **UI-067** — comment without selecting, and reply to each thread in place _(row in Phase 13)_
+- **UI-066** — document body width is resizable, uniformly, threads included _(row in Phase 13)_
+- **UI-121** — a highlight blinks out between the optimistic mark and the server's _(row in the Phase 37 tail)_
+- **UI-139** — a refusal a keyboard-only or touch user cannot finish reading _(row in Phase 37)_
+
+**Ride-along debt**, chosen 2026-08-21 on the user's question *"which p2s can we
+fold in?"*. Tier 1 protects this release's own verification — each is a test that
+would otherwise let one of the five above pass while broken. Tier 2 is small work
+in files the release already opens.
+
+**Tier 1.**
+
+- **UI-085** — the e2e stub answers unhandled routes with `{}`, and UI-063/UI-067 add routes to it
+- **UI-079** — `reveal.spec` waits on a decoration with a finite lifetime, which is UI-063's row→anchor path
+- **UI-046** — StrictMode drops thread reveals on cached docs: the same path, in dev
+- **UI-105** — `soft-wrap.spec` pins the caret to a visual line, and UI-066 changes where lines break
+
+**Tier 2.**
+
+- **UI-136** — two of its three surfaces are ours: the reply footer, and the reader column's async width
+- **UI-096** — the collapse glyph crowds resolve, in thread-card chrome UI-067 renders in place
+- **UI-048** — composer draft loss, among PR #19's MINORs, and UI-067 adds two composers
+- **UI-055** — the design mockup still binds the old composer keys, which UI-066/067 read as authoritative
+
+**Two more folded in mid-flight, 2026-08-21**, both already filed and both
+surfaced by UI-139's implementer rather than predicted:
+
+- **INFRA-028** (P1) — the e2e suite proxies to `127.0.0.1:8765` and so runs
+  against the user's live server. It failed a spec on this branch and was written
+  off as environmental, which is precisely the issue's own complaint: *"Two
+  expected failures is how three unexpected ones get through."* Tier 1 by its
+  effect — with three agents landing work here, their local e2e results have to
+  mean something.
+- **UI-032** (P2) — `Enter` activates no focused chrome button anywhere in the
+  app: the board scope binds it globally to `rows.open` and calls
+  `preventDefault()`. Filed 2026-07-31 against the ⋯ trigger, and UI-139's
+  implementer found the blast radius is app-wide — the console's own tabs have
+  been unpressable by keyboard since UI-125. UI-139 repaired it inside its
+  tablist; the general rule is still owed, and without it this release's
+  keyboard-reach claim holds only where someone patched it locally.
+
+**Left out and named**: UI-061 (a selection spanning several turns) is feature
+work needing its own design pass, not debt. CONTRACT-036 (`unread` on the wire)
+would pull contract and server into a UI release. UI-138, UI-100 and UI-080 are
+adjacent but not in these files.
+
+**Filed during the phase and deliberately not in it**: **UI-141** — UI-063
+replaced the reader head's 💬 popover, so `design/index.html` now draws a control
+the app no longer has and no comments list at all. It is the same staleness
+UI-055 was filed for one release earlier, in the same file, and UI-055's scope was
+held to the composer keys ("nothing else in the mockup changes") rather than
+quietly widened. The mockup is authoritative for look and feel, and this release
+had two agents read a stale contract out of it — so it is written down rather than
+left in a report.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-058 | A refusal outlives its toast — the console's Notices tab (AUTHORIZED 2026-08-21, applied) | done | P1 | — |
+| UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | done | P0 | — |
+| UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | todo | P2 | UI-063 |
+| SHARED-060 | The comments switch arrives with the first conversation (SIGNED 2026-08-21, applied) | done | P1 | — |
+| SHARED-061 | A surface is as large as its place allows (SIGNED 2026-08-21, applied) | done | P0 | — |
+| UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
+| UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
+| UI-144 | A deleted document's reveal names the wrong absence, and a ref is written in render (PR #54 re-review NITs) | todo | P3 | — |
+| AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
+| AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
+| CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
+
+
+## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
+
+Seven findings from live use, six of them measured rather than felt.
+
+**In v0.16.0 by the user's decision, 2026-08-21.** The orchestrator filed this
+phase out of the release on the ground that it is a different sentence from the
+comment surface, said so, and the user overruled it. That stands as their call,
+and the release notes state plainly that v0.16.0 has two halves rather than
+pretending they are one idea. The headline names both.
+
+**CLI-058 is unchanged by the fold-in.** It asks for a measurement, the cheap
+half of option 1, and a recommendation — not a session mode. A long-lived
+process introduces a stateful component where the tool is deliberately
+stateless, and §2's "nothing is global" plus workspace resolution both have to
+be answered before anyone builds one. That decision reaches the user with
+numbers attached rather than arriving already built.
+
+**The throughline**: the CLI is the agent's whole surface (SPEC §2, and CLAUDE.md's
+second architecture decision says the agent uses *only* the CLI), and the agent
+pays for it in context and in latency. Two of the seven turn out to be
+spec/code disagreements rather than wishes — CLI-055 because the cheapest read
+path currently goes around the CLI, and SERVER-133 because SPEC §5 calls the
+staleness thresholds "defaults" and nothing can override them.
+
+**The seventh needed no issue.** The report asked whether `corpus skill rollback`
+was planned, dropped, or never existed. It existed and was deliberately removed
+by CLI-040 on 2026-08-12 under SHARED-042. The tool repo is guarded and a
+workspace created today is correct; a workspace created earlier keeps stale
+skills until `corpus upgrade` syncs the template. CLI-059 covers the residue —
+that nothing tells you your skills are stale until the agent tries the verb.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| CLI-055 | `doc show` reads a whole document or nothing, so the cheapest read path bypasses the CLI | done | P0 | — |
+| CLI-056 | Help text costs an agent more to read than the work it describes | todo | P1 | — |
+| CLI-057 | `doc show` takes one id, so reading five documents costs five processes | todo | P2 | — |
+| CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | todo | P1 | — |
+| CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | todo | P2 | — |
+| SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
+| PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | todo | P1 | PLUGINS-016 |
+| CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | todo | P2 | — |

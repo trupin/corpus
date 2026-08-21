@@ -2721,7 +2721,12 @@ describe("orchestrate skill body", () => {
 
     it("launches once per lane per pass, and stops when a launch does not take", () => {
       // Re-designation of a live lane, which arrives whether or not it is needed.
-      expect(routing).toMatch(/\*\*A lane that already has a listener gets nothing\.\*\*/);
+      // AGENT-040 qualified the rule: the decline holds only where no release has
+      // passed through this session for the lane; the exception is pinned in "a
+      // listener launched at its designation's weight".
+      expect(routing).toMatch(
+        /\*\*A lane that already has a listener gets nothing — unless this session has processed a\s+release on that same lane\.\*\*/,
+      );
       expect(routing).toMatch(/re-designating is the only way a person can ask for a listener/);
       expect(routing).toMatch(/Launch nothing, log why, complete/);
       // The roster, not the batch, is what triggers a launch — and the restart
@@ -4299,6 +4304,53 @@ describe("converse skill body", () => {
   });
 
   /**
+   * AGENT-040, the converse half. The orchestrate skill now launches a
+   * successor onto a lane whose release this session processed, while the
+   * outgoing listener may still hold its park — so the successor's own startup
+   * read finds `live`, and the old unconditional branch ("a listener already
+   * holds this lane. Exit") would have the successor kill itself and hand the
+   * lane back to a leaver. Without this branch, the orchestrate fix launches
+   * listeners that immediately stand down, which is the same decorative
+   * instruction AGENT-041 was filed about. The launch prompt is the carrier:
+   * orchestrate says a release-following launch states that it is one, and this
+   * branch reads it.
+   */
+  describe("a launch that follows a release parks through a live row", () => {
+    it("branches the startup live reading on what the launch said", () => {
+      // The exception, and what that `live` is.
+      expect(body).toMatch(/\*\*Where your launch says it follows a\s+release, park anyway\*\*/);
+      expect(body).toMatch(/that `live` is the listener you are replacing/);
+      expect(body).toMatch(
+        /its designation is gone, so it is leaving whether or\s+not it knows yet/,
+      );
+      // Which of the two stays is settled where duplicates are always settled —
+      // the contested claim converse already owns — not by a new mechanism.
+      expect(body).toMatch(
+        /The first contested claim \(\*The loop\*\) is what settles which of you\s+stays/,
+      );
+      // The default is unchanged: no release named, a live lane is answered.
+      expect(body).toMatch(
+        /\*\*Where your launch says nothing\s+about a release, exit without claiming anything and log why\*\*/,
+      );
+    });
+
+    it("tells a sitting resident a successor can arrive, without restating the launch rule", () => {
+      // The old sentence taught the pre-AGENT-040 orchestrator: re-designating
+      // a held lane "launches nothing new". It launches a successor now.
+      expect(body, "the pre-AGENT-040 account is back").not.toMatch(/launches nothing\s+new/);
+      expect(body).toMatch(/\*\*replaces\*\* the designation you were launched for/);
+      expect(body).toMatch(/a new listener may be launched\s+while you still hold your park/);
+      // Single-owner: the launch rule stays orchestrate's; converse carries the
+      // outcome and its own two ways of finding out.
+      expect(body).toMatch(/Whether one is launched is the orchestrate skill's rule/);
+      expect(body).toMatch(
+        /a\s+changed weight on your row \(\*Retirement\*\), or the first contested claim \(\*The loop\*\)/,
+      );
+      expect(body).toMatch(/until then you work on/);
+    });
+  });
+
+  /**
    * AGENT-030 — SERVER-118 changed what a scoped park does, and this text was
    * not swept. It taught that a park on an undesignated lane *"is accepted and
    * parks; it does not error"*, so a resident whose designation ended between
@@ -4800,9 +4852,11 @@ describe("a resident with no persona to bind", () => {
  *   notice, and a listener posts no reply about its own launch.
  * - **A re-designation that changes only the weight emits a pair**, a
  *   `resident.released` with `reason: "replaced"` and the new
- *   `resident.designated`, on one lane in one batch. No order is asserted here:
- *   SERVER-131 sorts a batch by the conversation's order, and the skill is held
- *   to reading the two as one act rather than to which arrives first.
+ *   `resident.designated`, on one lane. No order is asserted here: SERVER-131
+ *   sorts a batch by the conversation's order, and the skill is held to reading
+ *   the two as one act rather than to which arrives first — **when they share a
+ *   batch at all**, which AGENT-040 measured they need not: a claim between the
+ *   two writes splits them, and the split-pair pins below are that issue's.
  */
 describe("a listener launched at its designation's weight", () => {
   const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
@@ -4896,11 +4950,101 @@ describe("a listener launched at its designation's weight", () => {
     expect(worked).toContain('"reason":"released"');
     expect(worked).toMatch(/corpus job log \S+ "[^"]*reason: released"/);
     expect(worked).toMatch(/corpus queue complete/);
-    // `replaced` arrives with its designation, and the pair is one act.
+    // `replaced` arrives with its designation — on one claim, or on two.
     expect(losing).toMatch(/\*\*`replaced` is the one reason that is not an ending\*\*/);
-    expect(losing).toMatch(
-      /the same\s+claim carries the `resident.designated` that took the lane over/,
+  });
+
+  /**
+   * AGENT-040, reported from live use 2026-08-21: the release and its
+   * designation arrived **9 seconds apart on two separate claims**, so the
+   * skill's "it never arrives alone" never fired, the live check declined the
+   * launch, and the lane was left with a leaver and a designation nobody acted
+   * on. Nothing in §7 or the queue pairs the two events: they share a claim
+   * only when both are pending when that claim runs, and a release and the
+   * designation after it are separate writes at separate times. Measured on a
+   * real server (throwaway workspace, port 8899, 2026-08-21), with a scoped
+   * park holding the lane `live` throughout:
+   *
+   * - `thread release` → claim → `thread designate` → claim: the release came
+   *   back on the first claim **alone**, and the designation on the second —
+   *   with the still-held release visible only in `inProgress`. That is the
+   *   reported shape, and the pre-fix live check declines it.
+   * - An **exact-repeat** designation emitted `resident.designated` alone — no
+   *   release — so the decline branch below is precisely the repeat-on-a-live-
+   *   lane case, and the release memory separates the two exactly.
+   * - A weight-changing re-designation emitted the pair, both in one batch when
+   *   both were still pending.
+   * - After the park ended, `corpus agents` still printed `live, parked 19s
+   *   ago` with nobody parked — the grace reading the exception text names.
+   */
+  it("no longer claims the pair shares a claim, and carries a lone release forward", () => {
+    // The false invariant, gone in both of its halves.
+    expect(losing, "the false invariant is back").not.toMatch(/never arrives\s+alone/);
+    expect(losing, "the pairing claim is back").not.toMatch(
+      /the same\s+claim carries the `resident.designated`/,
     );
+    // What replaced it: both shapes are ordinary, and neither is waited on.
+    expect(losing).toMatch(
+      /Events share a claim only when\s+both were pending when that claim ran/,
+    );
+    expect(losing).toMatch(
+      /a release and the designation after it are\s+separate writes at separate moments/,
+    );
+    expect(losing).toMatch(/nine seconds apart being as ordinary as together/);
+    // Paired: one act, in whichever order the batch printed them.
+    expect(losing).toMatch(/read\s+them as one act, in whichever order the batch printed them/);
+    // Split: the release is settled alone and remembered for the rule below.
+    expect(losing).toMatch(/Where the release comes alone, settle it\s+alone/);
+    expect(losing).toMatch(/\*\*carry it forward\*\*/);
+    expect(losing).toMatch(/until a launch follows on that\s+lane/);
+  });
+
+  /**
+   * The second AGENT-040 defect, the one that repeats: `live` on a lane whose
+   * release this session has processed means *someone is leaving* — the
+   * outgoing listener holds its park until it next unparks, and the row keeps
+   * reading `live` for a grace window after any park ends — so the old rule
+   * read a leaver as an answered lane and declined every launch. The fix is the
+   * reporter's own sentence: a live row does not hold back a launch when this
+   * session has already processed a release on that same lane.
+   */
+  it("launches onto a live row when this session has processed that lane's release", () => {
+    expect(occupied, "the occupied-lane bullet is missing").not.toBe("");
+    // The decline branch survives, scoped to the no-release case.
+    expect(occupied).toMatch(
+      /\*\*Where no release has passed through this session for\s+this lane, `live` means the lane is already answered\.\*\*/,
+    );
+    // The exception, as the reporter phrased it.
+    expect(occupied).toMatch(
+      /\*\*A live row does not hold back a launch when this session has already processed a\s+`resident.released` on that same lane with no launch since — there, `live` means someone\s+is leaving\.\*\*/,
+    );
+    expect(occupied).toMatch(/whether the\s+release shared this claim or came two claims ago/);
+    // Why the row reads live while nobody answers: park until unpark, then the
+    // grace window — with no number, which stays the server's.
+    expect(occupied).toMatch(/learns it was replaced only when it next unparks/);
+    expect(occupied).toMatch(/reading `live` for a grace\s+window after any park ends/);
+    // The launch prompt says it follows a release, for the successor's own
+    // startup read — and what it does with that is converse's, not restated.
+    expect(occupied).toMatch(/Say in the launch prompt that this launch\s+follows a release/);
+    expect(occupied).toMatch(/what it does with it is the converse skill's to\s+state/);
+    // Two listeners, briefly, is the acceptable case — for the stated reason.
+    expect(occupied).toMatch(/the one already there is leaving by construction/);
+    // The launch spends the memory and counts as the pass's launch, so neither
+    // a second designation nor the fallback doubles it up.
+    expect(occupied).toMatch(/The launch spends the carried\s+release/);
+    expect(occupied).toMatch(/the pass's one launch for that lane/);
+    expect(occupied).toMatch(/the once-a-pass rule below counts\s+it/);
+    // The following pass does not read a live row as a failed launch.
+    expect(occupied).toMatch(
+      /a row that reads `live` is this launch working, since the new\s+listener parks as the old one leaves/,
+    );
+    // Where the memory lives, and why losing it to a restart needs no repair.
+    expect(occupied).toMatch(/your own session and nothing else/);
+    expect(occupied).toMatch(/there is no store to write\s+it into and none to consult/);
+    expect(occupied).toMatch(
+      /a\s+restart that forgets every release also ends every listener you launched/,
+    );
+    expect(occupied).toMatch(/launches with no memory needed/);
   });
 
   it("reads the weight off the roster row while still inventing no resident", () => {
@@ -4932,24 +5076,90 @@ describe("a listener launched at its designation's weight", () => {
 
   it("states in one reading what a changed weight does to a live lane", () => {
     expect(occupied, "the occupied-lane bullet is missing").not.toBe("");
+    // AGENT-040: a changed weight is the release case — launched now, at the
+    // new weight — not the old wait-for-the-fallback rule, which left the lane
+    // to two grace windows of nobody while the person watched.
     expect(occupied).toMatch(
-      /\*\*A weight that changed is still nothing to launch this pass\.\*\*/,
+      /\*\*A weight that changed is this release case, not a third one\.\*\*/,
     );
+    expect(occupied, "the wait-for-the-fallback rule is back").not.toMatch(/launch nothing now/i);
+    expect(occupied).toMatch(/you launch now, at the new weight/);
     // The invariant this rule rests on, stated as an outcome and pointed home.
     expect(occupied).toMatch(
-      /No\s+running agent becomes another model without discarding the conversation it holds/,
+      /No running agent\s+becomes another model without discarding the conversation it holds/,
     );
     expect(occupied).toMatch(
       /\*\*When it goes, and how it finds out, is the\s+converse skill's to state\.\*\*/,
     );
-    expect(occupied).toMatch(/the row stops reading `live` on\s+some later pass/);
-    // One reading: nothing now, the roster launches it later, at the new weight.
-    expect(occupied).toMatch(/So launch nothing now/);
-    expect(occupied).toMatch(
-      /launches the new\s+listener from the roster, at the weight the row prints by then/,
+    // The old listener is still never stood down by the orchestrator.
+    expect(occupied).toMatch(/Standing it down yourself is still not yours to do/);
+  });
+
+  /**
+   * AGENT-041, reported from live use 2026-08-21: *"there's no way to specify
+   * the model when starting the resident."* The skill said "launch the listener
+   * at that row's model" and never said how — no `model:`, no argument, nothing
+   * — so the only followable instruction was to write the model's name into the
+   * prompt, and the subagent ran on whatever the session inherited. That is the
+   * failure SHARED-055 was signed to end: a choice discarded silently by an
+   * instruction whose failure clause cannot detect its own failure. The gap was
+   * Delegation-wide, not listener-only — ordinary dispatch also named the model
+   * as a prompt field — so the mechanism is pinned where dispatch is owned, and
+   * the launch sites are pinned as consumers of it.
+   */
+  it("chooses the runtime with the Task call's model argument, never with prose", () => {
+    const delegation = body.slice(body.indexOf("## Delegation"), body.indexOf("## Writing a"));
+    // The mechanism, named where every dispatch is owned.
+    expect(delegation).toMatch(
+      /\*\*The call's `model` argument is what chooses the runtime, and the prompt chooses\s+nothing\.\*\*/,
     );
-    // The alternative, named and priced, so it is not re-invented as a courtesy.
-    expect(occupied).toMatch(/Standing the old one down\s+yourself would cut into whatever turn/);
+    expect(delegation).toMatch(/The Task tool takes `model` beside `prompt`/);
+    expect(delegation).toMatch(/set it on \*\*every\*\* launch this skill makes/);
+    // The spelling, so the instruction is executable rather than described.
+    expect(delegation).toMatch(
+      /the model's lowercase family name, so the Sonnet\s+row travels as `sonnet` and the Opus 5 row as `opus`/,
+    );
+    // The failure mode, stated as what it is: silent substitution.
+    expect(delegation).toMatch(/A model named only in the prompt's\s+prose selects nothing/);
+    expect(delegation).toMatch(/nothing anywhere records that a choice was dropped/);
+    // Shown, not described: a call carrying both, in a fence a revert to prose
+    // would have to delete.
+    const calls = fencedBlocks(delegation).filter((fence) => fence.content.includes("Task("));
+    expect(calls.length, "delegation shows no Task call").toBeGreaterThan(0);
+    expect(calls[0]?.content ?? "").toMatch(/model: "sonnet"/);
+    expect(calls[0]?.content ?? "").toMatch(/prompt:/);
+    // The prompt line's one job, said plainly.
+    expect(delegation).toMatch(/that line is written for the subagent, never for the\s+runtime/);
+    expect(delegation).toMatch(/selection already happened in the argument above it/);
+    // A refused value routes into the unmeetable-weight rule, concretely.
+    expect(delegation).toMatch(/the launch call's `model` argument comes back refused/);
+    expect(delegation).toMatch(/make the\s+call again with the value your own judgment picks/);
+    // The tier table's Model column is tied to the argument it fills.
+    expect(delegation).toMatch(/the value the launch call's `model`\s+argument carries/);
+  });
+
+  it("launches the listener through the same model argument, and keeps the prompt a name", () => {
+    // The launch site consumes the mechanism rather than restating it.
+    expect(launch).toMatch(/that row's model goes out as the call's\s+`model` argument/);
+    expect(launch).toMatch(/Delegation\s+states the argument and its spelling/);
+    // The conflation the issue named, unpicked in one sentence.
+    expect(launch).toMatch(
+      /the prompt is how the resident\s+learns its name, and the argument is how the runtime is chosen/,
+    );
+    expect(launch).toMatch(
+      /A model named in the prose\s+alone launches a listener on whatever model this session inherited, silently/,
+    );
+    // A runnable launch, showing the argument beside the /converse prompt.
+    const calls = fencedBlocks(launch).filter((fence) => fence.content.includes("Task("));
+    expect(calls.length, "the launch bullet shows no Task call").toBeGreaterThan(0);
+    expect(calls[0]?.content ?? "").toMatch(/model: "sonnet"/);
+    expect(calls[0]?.content ?? "").toMatch(/\/converse th_\w+/);
+    // The example's argument and its prompt name the same tier, and the tier is
+    // one this workspace's table declares — the AGENT-026 rule, applied here.
+    expect(calls[0]?.content ?? "").toMatch(/running as Sonnet/);
+    expect(declaredModels).toContain("Sonnet");
+    // The roster launch names the same argument rather than acquiring its own.
+    expect(roster).toMatch(/the same\s+`model` argument on the same Task call/);
   });
 
   it("keeps a designation's weight out of everything the resident hands off", () => {

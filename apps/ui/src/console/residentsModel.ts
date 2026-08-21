@@ -7,6 +7,7 @@ import {
   type WeightLevel,
 } from "@corpus/kit";
 import { DESIGNATE_LABEL } from "../thread/residentActions";
+import { NOTICES_TAB_LABEL } from "./noticesModel";
 
 /**
  * The words the console's **Residents** tab says — who is resident, and what
@@ -49,10 +50,16 @@ export const RESIDENTS_TAB_LABEL = "Residents";
 /** …and the console's original body, which keeps its place as the default tab. */
 export const JOBS_TAB_LABEL = "Jobs";
 
-export type ConsoleTab = "jobs" | "residents";
+export type ConsoleTab = "jobs" | "notices" | "residents";
 
+/**
+ * The drawer's tabs, in §11's own order: Jobs, Notices, Residents. None of the
+ * three is the corpus — each is the running system's account of itself, which
+ * is what puts them in the console (rider authorized 2026-08-21).
+ */
 export const CONSOLE_TABS: readonly { readonly id: ConsoleTab; readonly label: string }[] = [
   { id: "jobs", label: JOBS_TAB_LABEL },
+  { id: "notices", label: NOTICES_TAB_LABEL },
   { id: "residents", label: RESIDENTS_TAB_LABEL },
 ];
 

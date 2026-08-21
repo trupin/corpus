@@ -66,36 +66,146 @@ const NOTE = {
   body: BODY,
 };
 
+/**
+ * Resolves once `target`'s box has read the same for three consecutive frames.
+ *
+ * The browser's own answer to "has it stopped", with no invented duration in it
+ * — two frames would accept an animation that happens to hold still for one.
+ * Same routine `anchor-layer.spec.ts` uses, and here for the same reason.
+ */
+async function stoppedMoving(target: Locator): Promise<void> {
+  await target.evaluate(
+    async (element) =>
+      new Promise<void>((resolve) => {
+        let previous = "";
+        let repeats = 0;
+        const tick = (): void => {
+          const box = element.getBoundingClientRect();
+          const current = `${String(box.x)},${String(box.y)},${String(box.width)},${String(box.height)}`;
+          repeats = current === previous ? repeats + 1 : 0;
+          previous = current;
+          if (repeats >= 2) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+}
+
+/**
+ * Opens the note and waits for the reading surface to stop moving.
+ *
+ * **Every claim in this file is geometric, and geometry is only a claim once
+ * the layout has settled.** Opening a document widens its column (UI-113), and
+ * `.col` animates that width over 250ms — so the body starts narrower than the
+ * reading measure and crosses it partway through. The sentence this suite draws
+ * is 51 characters, which is about 367px of the shipped serif, and the body
+ * passes 367px in the middle of that animation: measured mid-flight it is two
+ * line boxes, measured after it is one. That is the column doing exactly what it
+ * is supposed to do, and asserting across it is asserting about a frame nobody
+ * is looking at.
+ */
 async function openNote(page: Page): Promise<StubCorpus> {
   const corpus = await stubCorpus(page, [NOTES_VIEW, NOTE]);
   await page.goto("/");
   await page.locator(".board").waitFor();
   await page.locator('.row[data-row-doc="doc_wrapped"]').click();
   await expect(page.locator(".reader .doc-editor .ProseMirror p").first()).toBeVisible();
+  await stoppedMoving(page.locator(".col.reading"));
   return corpus;
 }
 
 /**
- * Puts the caret in the body and **waits until it is actually there**.
+ * Puts the caret at the **end of a paragraph**, and proves it is there
+ * (UI-105).
  *
+ * **The failure that actually happened was the race, and it is already fixed.**
  * `click()` resolves when the mouse events have been delivered, which is not
  * when the editor has taken focus: ProseMirror sets its selection from the
- * mousedown, but the surface becomes `document.activeElement` a beat later.
- * A caret-movement key that arrives inside that beat goes to a page with no
- * editable focus, where Chrome treats `End` as "scroll", and the *next*
- * keystroke — by then focused — inserts at wherever the mousedown left the
- * caret.
+ * mousedown, but the surface becomes `document.activeElement` a beat later. A
+ * caret-movement key that arrives inside that beat goes to a page with no
+ * editable focus, where Chrome treats it as "scroll", and the *next* keystroke
+ * — by then focused — inserts at wherever the mousedown left the caret. That is
+ * the whole of the `offic!e` failure this suite produced under the pre-push
+ * gate: the caret was mid-word because the key never ran, not because anything
+ * moved under it. `paragraph.click()` lands in the middle of the box, and the
+ * middle of this paragraph is inside "office". Reproduced exactly by blurring
+ * the surface between the click and the key, which writes `offic!e opens
+ * later.` byte for byte. So the wait below is on the condition — this element
+ * has the caret — and never on a duration.
  *
- * That is the whole of the `offic!e` failure this suite produced under the
- * pre-push gate, and it is a race in the test rather than in the product: the
- * caret was mid-word because `End` never ran, not because anything moved under
- * it. Reproduced exactly by blurring the surface between the click and the key,
- * which writes `offic!e opens later.` byte for byte. So the wait is on the
- * condition — this element has the caret — and not on a duration.
+ * **`End` was not the cause, and the measurement says so.** UI-105 read the
+ * symptom as `End` reaching the end of a *visual* line, which would make this
+ * spec depend on where the browser happened to wrap. Probed in Chromium against
+ * this exact document at a measure narrow enough to wrap it — 234px, one
+ * paragraph over two line boxes — with the caret placed after the first
+ * character of the first line: `End` left **nothing** between the caret and the
+ * end of the paragraph. It is a text-block command here, not a visual-line one.
+ *
+ * **What is removed is the unstated dependency, not a defect.** That `End`
+ * crosses a wrap is a fact about ProseMirror's keymap that this spec never
+ * stated and cannot see change. So no key is pressed at all: the click is aimed
+ * at the last character's own box, which the browser is *asked* for rather than
+ * assumed, and lands just past it — the end of whatever line that character
+ * ended up on, which is the end of the paragraph however the text wrapped. It
+ * matters more now than it did, because the reading measure is a person's to
+ * change (UI-066).
+ *
+ * **Aimed at a paragraph that has stopped moving.** A cold open is still laying
+ * out after the body appears — the column widens over 250ms and the chips row
+ * un-wraps, moving the paragraph by about 50px (`reveal.ts` records the same
+ * measurement). A point measured before that and clicked after it lands under
+ * the paragraph rather than in it, and the caret goes to whatever is there
+ * instead — observed, as `outside the paragraph`. {@link openNote} settles the
+ * column and this settles the paragraph itself, because the two move at
+ * different times.
+ *
+ * **And it is checked, not trusted.** A caret one character out writes a
+ * plausible-looking body that fails an assertion pages later, which is how this
+ * suite ate three full runs. The range from the selection to the end of the
+ * paragraph has to be empty before anything is typed, and the failure says how
+ * many characters short it was.
  */
-async function caretIn(page: Page, target: Locator): Promise<void> {
-  await target.click();
+async function caretAtEndOf(page: Page, target: Locator): Promise<void> {
+  await stoppedMoving(target);
+  const point = await target.evaluate((element) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let last: Text | null = null;
+    while (walker.nextNode() !== null) last = walker.currentNode as Text;
+    if (last === null || last.length === 0) return null;
+    const glyph = document.createRange();
+    glyph.setStart(last, last.length - 1);
+    glyph.setEnd(last, last.length);
+    const tail = glyph.getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    // Just past the last character, and never outside the paragraph's own box:
+    // a click one pixel beyond it is a click on something else.
+    return {
+      x: Math.min(tail.right + 2, box.right - 1),
+      y: Math.min(Math.max(tail.top + tail.height / 2, box.top + 1), box.bottom - 1),
+    };
+  });
+  if (point === null) throw new Error("the paragraph has no text to aim the caret at");
+
+  await page.mouse.click(point.x, point.y);
   await expect(page.locator(".reader .doc-editor .ProseMirror")).toBeFocused();
+  await expect
+    .poll(async () =>
+      target.evaluate((element) => {
+        const selection = globalThis.getSelection();
+        if (selection === null || selection.anchorNode === null) return "no selection";
+        if (!selection.isCollapsed) return "a selection, not a caret";
+        if (!element.contains(selection.anchorNode)) return "outside the paragraph";
+        const rest = document.createRange();
+        rest.setStart(selection.anchorNode, selection.anchorOffset);
+        rest.setEnd(element, element.childNodes.length);
+        return rest.toString() === "" ? "at the end" : `${String(rest.toString().length)} short`;
+      }),
+    )
+    .toBe("at the end");
 }
 
 /** The height of one rendered line of the body's own type. */
@@ -196,8 +306,7 @@ test.describe("merely reading the document", () => {
     // with the agent's wrapping, and everything the user did not touch, exactly
     // as they were.
     const corpus = await openNote(page);
-    await caretIn(page, page.locator(".reader .doc-editor .ProseMirror p").first());
-    await page.keyboard.press("End");
+    await caretAtEndOf(page, page.locator(".reader .doc-editor .ProseMirror p").first());
     await page.keyboard.type("!");
 
     await expect.poll(async () => (await corpus.of("PUT")).length).toBeGreaterThan(0);

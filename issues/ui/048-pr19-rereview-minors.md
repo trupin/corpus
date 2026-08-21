@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P2
@@ -79,12 +79,12 @@ toast paints over it. 55 → 36 is strictly better; the list is just incomplete.
 Decide whether a flash should outrank a toast, then complete the comment.
 
 ## Acceptance Criteria
-- [ ] Runs of `<br>` in a Docs payload behave deliberately, with a test
-- [ ] Redirect unwrapping decision made and the JSDoc states the gate's full
+- [x] Runs of `<br>` in a Docs payload behave deliberately, with a test
+- [x] Redirect unwrapping decision made and the JSDoc states the gate's full
       consequence
-- [ ] Composer draft loss on outside click resolved (guarded or documented)
-- [ ] `ty =note` completes to `type=note`, with a test
-- [ ] Layer comment complete and the flash/toast order deliberate
+- [x] Composer draft loss on outside click resolved (guarded or documented)
+- [x] `ty =note` completes to `type=note`, with a test
+- [x] Layer comment complete and the flash/toast order deliberate
 
 ## Technical Design
 ### Files to Create/Modify
@@ -97,14 +97,112 @@ Decide whether a flash should outrank a toast, then complete the comment.
 Unit tests for each; no new e2e expected.
 
 ## E2E Verification Log
-_Filled by the implementing agent; state the model._
+
+**Model: Opus 5 (1M context).** All five items are unit-level, as the Testing
+Strategy says; no new e2e was expected and none was written. The shipped e2e that
+covers the touched code (`clipboard.spec.ts`, `query-editor.spec.ts`,
+`todos.spec.ts`, `todos-menu.spec.ts`, `context-menu.spec.ts`, `reveal.spec.ts`)
+was re-run green.
+
+### 1. Runs of `<br>` — decided: a run collapses
+
+`<br>` is inline in HTML, so in `<p>A</p><br><br><p>B</p>` each break saw the
+**other** as inline content it was separating, and both survived as two stray `\`
+lines in the saved markdown. Nothing was being separated; the two were holding
+each other up. `isInline` now answers `false` for a `<br>`, so a run between
+blocks collapses entirely.
+
+The deliberate blank line still survives, and that is what makes this the right
+side to err on: in `<div>one<br><br>two</div>` the first break has text before it
+and the second has text after it, so both take their answer from real content.
+
+```
+✓ drops a run of <br> between blocks, not just a single one
+✓ keeps a deliberate blank line between two runs of text
+```
+
+Falsified by removing the one line: `✘ drops a run of <br> between blocks`.
+`clipboard.test.ts` 42 tests green after restoring.
+
+### 2. Redirect unwrapping — decided: the gate stays, and the JSDoc now says what it costs
+
+Unwrapping unconditionally was considered and **rejected**, and the reason is not
+doubt about the repair: a link-attribute rewrite cannot weld two lines together,
+but reaching the attribute means the DOMParser round trip, and that round trip is
+what loses ProseMirror's `wrapMap` re-hosting and its `<style>` folding on
+**every** paste in the workspace. Paying a whole-clipboard regression to fix one
+origin's links is the wrong way round.
+
+`cleanPastedHtml`'s docblock now states the consequence in full and by name:
+Gmail message bodies and Google Search results wrap links in the same
+`google.com/url?q=…` hop and carry no `docs-internal-guid`, so copying a linked
+sentence out of Gmail writes the ~200-character redirect into the file — exactly
+as it did before this function existed. It also records what would change the
+trade: a string-level rewrite that never parses, which is its own change with its
+own tests, not a flag flipped here.
+
+### 3. Composer draft loss — resolved, guarded, and the plugin no longer imitates an abandoned behaviour
+
+Core's `CommentPopover` has **no** outside-click dismissal at all — it closes on
+Escape and on submit. `plugins/todos/ui/dismiss.ts` still imitated the behaviour
+core had dropped, which is the drift the item was escalated for.
+
+`useDismissable` now takes an optional `guard`, read **at the moment of the
+click** rather than captured, and `TodoItemComposer` passes the same question its
+send button asks: is there text, or is there an attachment. So a draft survives a
+stray click on the board, an empty composer still closes like the menu beside it
+(it has nothing to lose), and Escape closes it either way — the explicit "put this
+down".
+
+```
+✓ keeps a draft when the click lands outside, and still closes when empty
+✓ still closes a guarded composer on Escape, which is the explicit way out
+```
+
+Falsified by deleting the guard call: `✘ keeps a draft when the click lands
+outside`. `plugins/todos/ui` 191 tests green after restoring.
+
+`PluginMenu` passes no guard and is unchanged — a menu should dismiss.
+
+### 4. `ty =note` — fixed, with the case matrix
+
+`tokenEnd` trims trailing whitespace out of the token, so `text[trigger.end]`
+found the **space** and concluded the field had no `=`. The completion then added
+a second one: `type= =note`, which `parseQueryString` reads as the field `type`
+holding the value ` =note`. `equalsAfter` skips the gap, and the replacement
+swallows it, so the repair does not leave behind the space that hid the operator.
+
+```
+✓ repairs a name across the gap to its own `=` — a space before the operator      ty| =note   → type=note
+✓ repairs a name across the gap to its own `=` — spaces on both sides of it       ty|e = note → type= note
+✓ repairs a name across the gap to its own `=` — a tab before it                  ty|\t=note  → type=note
+✓ still adds the operator where the field genuinely has none
+```
+
+The pre-existing test that pinned the defect (`leaves the spacing a person typed
+around the token alone`, asserting `type= = note`) is replaced by the matrix
+above; `apps/ui/src/board/query` 81 tests green.
+
+### 5. The layer comment — completed, and the order is deliberate
+
+`reveal.css` now names `Toasts.css`'s 30 alongside focus mode's 35, search's 40,
+the toolbar's 50 and the menus' 60, and says why the flash outranks a toast: a
+toast is a notice that will still be there in a moment and can be re-read, while
+the flash is a 1.2 s answer to *where*, drawn over the exact words the reader is
+looking for. Nothing is blocked either way — every box in the layer is
+`pointer-events: none` — so what the stack decides is which of the two is legible
+for a second, and the transient pointer wins. Below 36 it would fade behind a
+toast that happened to overlap the passage.
+
+`Toasts.css` itself was not touched — another agent owns it this release, and
+nothing here needed a change there.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix

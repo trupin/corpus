@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-17T00:00:00Z
+updated: 2026-08-21T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -308,12 +308,29 @@ switch.
 
   **The designation chooses the model, and `weight` is how it says so.** That field sits
   beside the two profile fields and carries a **Key** from the tier table in Delegation below.
-  **Find the row whose Key cell holds it, and launch the listener at that row's model.** Name
+  **Find the row whose Key cell holds it, and launch the listener at that row's model.** The
+  launch is a Task call like any dispatch, and that row's model goes out as the call's
+  `model` argument — the one act that chooses what answers this conversation (Delegation
+  states the argument and its spelling). Name
   that model in the launch prompt too, because a resident is told what it runs at and nothing
-  else tells it. A `null` weight is *you decide*, exactly as a message that states no weight
+  else tells it — and be exact about which line does which: the prompt is how the resident
+  learns its name, and the argument is how the runtime is chosen. A model named in the prose
+  alone launches a listener on whatever model this session inherited, silently, which is the
+  substitution a designation's weight exists to rule out. A `null` weight is *you decide*,
+  exactly as a message that states no weight
   is: judge it the way Delegation says, on a subject that is a whole conversation rather than
   one turn. Either way, log the model you launched at on the designation's own event. A
   listener answers for weeks, and a choice nobody recorded is a choice nobody can review.
+
+  ```
+  Task(
+    model: "sonnet",
+    description: "converse listener on th_4b8e2c",
+    prompt: "/converse th_4b8e2c — you are this conversation's resident. Your designation,
+             exactly as it came: {\"name\":null,\"docId\":null,\"weight\":null}. You are
+             running as Sonnet — judged, difficulty: an open-ended conversation, nothing stated."
+  )
+  ```
 
   **A weight you cannot meet is stated twice, and here the launch prompt is one of the two.**
   Delegation below gives the three causes and the rule, and they bind a launch exactly as they
@@ -356,29 +373,63 @@ switch.
   corpus queue complete evt_5d2a7b
   ```
 
-  **`replaced` is the one reason that is not an ending**, and it never arrives alone: the same
-  claim carries the `resident.designated` that took the lane over, for the same thread. Read
-  the pair as one act — one row names who is going, the other names who is coming — and settle
-  both. Whether anything is launched for it is the rule below.
+  **`replaced` is the one reason that is not an ending**: a `resident.designated` for the
+  same thread follows it, because re-designating a lane is one act the queue writes as two
+  events. **Do not count on the two travelling together.** Events share a claim only when
+  both were pending when that claim ran, and a release and the designation after it are
+  separate writes at separate moments — so the pair lands on one claim, or splits across
+  two, nine seconds apart being as ordinary as together. Where one claim carries both, read
+  them as one act, in whichever order the batch printed them: one row names who is going,
+  the other who is coming, and you settle both. Where the release comes alone, settle it
+  alone — log it, complete it — and **carry it forward**: until a launch follows on that
+  lane, this session knows the lane has a leaver on it, and that knowledge is exactly what
+  the rule below reads when the designation arrives on a later claim.
 
-- **A lane that already has a listener gets nothing.** Read the roster before you launch:
-  `corpus agents` says whether the payload's thread is `live`. A designation arrives whether
-  or not one is needed, because re-designating is the only way a person can ask for a listener
-  that stopped running to be started again — so a `live` row means this is a re-designation of
-  a lane that is already answered. Launch nothing, log why, complete. Two listeners on one
-  conversation is not a correctness failure — the server still never hands one event to two
-  claimants — but it is a conversation answered by two agents that cannot see each other's
-  context, which is the same split story a second orchestrating session would make of yours.
+- **A lane that already has a listener gets nothing — unless this session has processed a
+  release on that same lane.** Read the roster before you launch: `corpus agents` says
+  whether the payload's thread is `live`, and `live` here has two meanings the row cannot
+  tell apart, so this rule has to. **Where no release has passed through this session for
+  this lane, `live` means the lane is already answered.** A designation arrives whether or
+  not one is needed, because re-designating is the only way a person can ask for a listener
+  that stopped running to be started again. Launch nothing, log why, complete. Two listeners
+  on one conversation is not a correctness failure — the server still never hands one event
+  to two claimants — but it is a conversation answered by two agents that cannot see each
+  other's context, which is the same split story a second orchestrating session would make
+  of yours.
 
-  **A weight that changed is still nothing to launch this pass.** A re-designation that only
-  changes the weight reaches you as the pair above, on a lane that may still read `live`. No
-  running agent becomes another model without discarding the conversation it holds, so that
-  listener ends its own run instead of changing. **When it goes, and how it finds out, is the
-  converse skill's to state.** What you rely on is the outcome: the row stops reading `live` on
-  some later pass. So launch nothing now, log that the lane is designated at a new weight and
-  that its launch is waiting, and complete both events. The rule below then launches the new
-  listener from the roster, at the weight the row prints by then. Standing the old one down
-  yourself would cut into whatever turn it is in, and would save one pass at most.
+  **A live row does not hold back a launch when this session has already processed a
+  `resident.released` on that same lane with no launch since — there, `live` means someone
+  is leaving.** The outgoing listener learns it was replaced only when it next unparks, so
+  its park keeps the row reading `live` — and the row goes on reading `live` for a grace
+  window after any park ends — while the designation in your hands is the lane's future that
+  nobody else will act on. So launch, exactly as the launching row above says, whether the
+  release shared this claim or came two claims ago: the carried release from *Losing a
+  listener* is what makes the two shapes one case. Say in the launch prompt that this launch
+  follows a release, because the new listener will read a `live` row at its own startup and
+  needs to know what that reading is — what it does with it is the converse skill's to
+  state. Two listeners, briefly, is acceptable here where this bullet's own warning says it
+  is not, for one reason: the one already there is leaving by construction — its designation
+  has been replaced — so the lane ends with one voice. The launch spends the carried
+  release, and it is the pass's one launch for that lane: the once-a-pass rule below counts
+  it, so nothing doubles up when the row is read again. On the following pass, judge it as
+  you judge any launch — and a row that reads `live` is this launch working, since the new
+  listener parks as the old one leaves and the reading never breaks.
+
+  What carries *this session has processed a release* is your own session and nothing else:
+  the release you logged and completed is work you have seen, and there is no store to write
+  it into and none to consult. Losing it with a restart is covered rather than a gap — a
+  restart that forgets every release also ends every listener you launched, so every
+  designated lane reads not-`live` on your first roster read and the once-a-pass rule below
+  launches with no memory needed.
+
+  **A weight that changed is this release case, not a third one.** A re-designation that
+  only changes the weight reaches you as release and designation — paired or split — on a
+  lane that may still read `live`, and you launch now, at the new weight. No running agent
+  becomes another model without discarding the conversation it holds, so the old listener
+  ends its own run instead of changing. **When it goes, and how it finds out, is the
+  converse skill's to state.** Standing it down yourself is still not yours to do: you
+  launch its successor, log that the lane is designated at a new weight and what went out,
+  and let it leave on its own.
 
 - **A lane with nobody on it gets one, once a pass.** For every roster row that is not the
   orchestrator's and does not read `live`, launch a listener. This covers the two cases no
@@ -406,7 +457,8 @@ switch.
   row prints it after the resident — `a general resident at heavy` — and a **Key** is a token
   the tier table declares rather than a rendering of anybody. It is also not the summary the
   next bullet warns you off, which is a sentence written for a person and promised nothing. So
-  take that word, find its row in the tier table, and launch at that row's model, exactly as
+  take that word, find its row in the tier table, and launch at that row's model — the same
+  `model` argument on the same Task call — exactly as
   you would from a payload. A row that prints nothing after the resident is a designation that
   chose no weight, and you decide as you decide for a `null`. Name the model in the prompt here
   too. A roster launch has no event of its own to log to, so the prompt is the whole record of
@@ -486,7 +538,36 @@ carries everything: the event id and type, the payload's ids (thread, parent, th
 documents named), which skill to apply (the routing row, or the `@<subagent>` persona the
 payload directs to), the model you are launching it at, the anchors it should start from, and
 the binding rules below. Its
-report comes back as the task's final message. You park on `corpus queue idle` — never on a
+report comes back as the task's final message.
+
+**The call's `model` argument is what chooses the runtime, and the prompt chooses
+nothing.** The Task tool takes `model` beside `prompt`, and passing it is the one act that
+makes the work run at the tier you picked — set it on **every** launch this skill makes, a
+per-event dispatch here and a listener launch in *Routing* alike, to the picked row's
+**Model** in the spelling the tool accepts: the model's lowercase family name, so the Sonnet
+row travels as `sonnet` and the Opus 5 row as `opus`. A model named only in the prompt's
+prose selects nothing: that launch runs on whatever model the session would have used
+anyway, no error is raised, and nothing anywhere records that a choice was dropped — which
+is precisely the silent substitution the weight rules below exist to rule out. So every
+launch is one call carrying both:
+
+```
+Task(
+  model: "sonnet",
+  description: "comment-skill subagent for evt_7c1d9a",
+  prompt: "Apply the comment skill to th_4b8e2c (evt_7c1d9a, comment.created). You are
+           running as Sonnet — name what actually ran with --model on every turn you post.
+           …the payload's ids, the anchors as retrieved, the binding rules below…"
+)
+```
+
+The prompt names the model too, and that line is written for the subagent, never for the
+runtime: a subagent is told what it runs at because nothing else tells it, and the turns it
+posts must name what wrote them. Telling it is the whole of what the prompt line does —
+selection already happened in the argument above it. A `model` value the tool refuses is
+the *cannot be honoured* case below, announced at the call instead of discovered never.
+
+You park on `corpus queue idle` — never on a
 subagent — and reports are waiting whenever parking returns: on a new event, or on the
 ~8-minute rearm. On every return, settle what has reported, then claim.
 Settlement never depends on any queue event announcing the subagent; the report itself is
@@ -557,8 +638,9 @@ way, whatever the column padding — and each row below the divider is one level
 - **Key** is the short token that travels with the request. It is what a stated weight
   arrives as, and rewording a **Weight** leaves it untouched, so a choice made yesterday
   still resolves today. Keep it one lowercase word.
-- **Model** is what you launch the subagent at, and **What falls here** is guidance for you.
-  Neither reaches a composer.
+- **Model** is what you launch the subagent at — the value the launch call's `model`
+  argument carries, as the paragraphs above spell it — and **What falls here** is guidance
+  for you. Neither reaches a composer.
 
 Nothing outside this table declares a level. A reader that cannot find those header cells,
 or a row whose **Weight** or **Key** cell is empty, finds **no levels** — and a composer that
@@ -607,8 +689,11 @@ corpus job log evt_7c1d9a "asked before dispatching — the request states the l
 
 **When a stated weight cannot be honoured, the work is still done and the deviation is stated
 twice.** Three things cause that: the installed agent offers no such model, the setup refuses
-it, or the key names a level this table no longer declares. None of the three is a reason to
-drop the work or to fail the event. Dispatch at what the two passes judge best, and state the
+it, or the key names a level this table no longer declares. The first two now have one shape —
+the launch call's `model` argument comes back refused — so *launch anyway* means make the
+call again with the value your own judgment picks, not proceed without one.
+None of the three is a reason to drop the work or to fail the event. Dispatch at what the
+two passes judge best, and state the
 deviation **in the job's log while it runs** and **in the reply the request receives** — both
 naming the same three things: what was asked for, that it could not be met, and what ran
 instead. The log is reaped with its event, so the reply is the durable half: the dispatch

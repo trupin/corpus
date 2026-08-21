@@ -20,6 +20,12 @@ import {
  * What this deliberately does **not** own is `esc`/`⌫`: that chain is
  * `useEscapeLayer`'s, and entries marked `boundBy: "escape-layer"` are skipped
  * here (see `shortcuts.ts`).
+ *
+ * Nor does it own `↵` while a control has focus: pressing that control is what
+ * `↵` means there, and cancelling the key is what stopped every button in the
+ * app from being pressable by keyboard. {@link ownsActivationKeys} is the test,
+ * `Shortcut.yieldsToFocusedControl` marks the entries it applies to, and
+ * `shortcuts.ts` carries the rule and the alternatives rejected (UI-032).
  */
 
 /** The attribute a writing surface sets on its root to opt every key out. */
@@ -43,6 +49,65 @@ export function isWritingSurface(element: Element | null): boolean {
 }
 
 /**
+ * The board's own row control, exempted below **by name**.
+ *
+ * `@corpus/kit`'s `Row` is a `role="button"`, `tabindex="0"` element, and a
+ * plugin `ListItem` may render a real `<button>` — either way it carries these
+ * two attributes, because that pair is what the row cursor already reads
+ * (`useRowCursor.columnRows`). So the exemption is expressed in the same terms
+ * the rest of the board expresses a row in, rather than in a marker a row could
+ * be written without.
+ */
+export const BOARD_ROW = ".row[data-row-doc]";
+
+/**
+ * Controls that press themselves on `↵`: a native default action, or an ARIA
+ * role whose keyboard contract is "`↵` activates it".
+ *
+ * Elements that take *typing* are deliberately absent — an `<input>` or a
+ * `contenteditable` is a writing surface, and {@link isWritingSurface} already
+ * suppresses every binding but ⌘K inside one.
+ *
+ * A few of these roles — `switch`, `checkbox`, `radio` — are Space-first in
+ * ARIA, and are listed anyway. The asymmetry is deliberate: including one that
+ * takes only Space costs a `↵` that does nothing on it, while leaving one out
+ * costs the board acting behind a control the user is looking at, which is the
+ * defect this exists to close.
+ */
+const ACTIVATION_CONTROL = [
+  "button",
+  "summary",
+  "a[href]",
+  "area[href]",
+  '[role="button"]',
+  '[role="link"]',
+  '[role="tab"]',
+  '[role="menuitem"]',
+  '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]',
+  '[role="option"]',
+  '[role="switch"]',
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="treeitem"]',
+].join(", ");
+
+/**
+ * Whether the focused element owns `↵` because pressing it *is* what `↵` does
+ * there — UI-032's rule, stated in full on `Shortcut.yieldsToFocusedControl`.
+ *
+ * **Matched on the element itself, never with `closest`.** Focus lands on the
+ * control, so climbing gains nothing and costs the case that matters: a
+ * quick-action `<button>` *inside* a row would climb to the row, be read as the
+ * board's own control, and lose its `↵` — which is the defect, one level in.
+ */
+export function ownsActivationKeys(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.matches(BOARD_ROW)) return false;
+  return element.matches(ACTIVATION_CONTROL);
+}
+
+/**
  * The scope that owns the keyboard right now, from the DOM rather than from state.
  *
  * An open **menu** counts as one of those surfaces (UI-028). `overlay` is the
@@ -58,12 +123,18 @@ export function currentScope(): ShortcutScope {
 /** The entry a press resolves to, or `null`. Exported so a test can ask without a DOM event loop. */
 export function resolveShortcut(
   event: KeyboardEvent,
-  options: { readonly scope: ShortcutScope; readonly editing: boolean },
+  options: {
+    readonly scope: ShortcutScope;
+    readonly editing: boolean;
+    /** {@link ownsActivationKeys} of `document.activeElement` (UI-032). */
+    readonly controlFocused: boolean;
+  },
 ): Shortcut | null {
   for (const shortcut of SHORTCUTS) {
     if (shortcut.boundBy !== undefined) continue;
     if (shortcut.scope !== "global" && shortcut.scope !== options.scope) continue;
     if (options.editing && shortcut.allowInInput !== true) continue;
+    if (options.controlFocused && shortcut.yieldsToFocusedControl === true) continue;
     if (matchesShortcut(shortcut, event)) return shortcut;
   }
   return null;
@@ -81,9 +152,12 @@ export function useShortcuts(context: ShortcutContext): void {
       if (event.isComposing || event.keyCode === 229) return;
       if (event.defaultPrevented) return;
 
+      // One read of the focus, answering two questions about it.
+      const focused = document.activeElement;
       const shortcut = resolveShortcut(event, {
         scope: currentScope(),
-        editing: isWritingSurface(document.activeElement),
+        editing: isWritingSurface(focused),
+        controlFocused: ownsActivationKeys(focused),
       });
       if (shortcut === null) return;
       event.preventDefault();

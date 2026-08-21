@@ -1,13 +1,15 @@
 import type { RowNotice } from "@corpus/kit";
 import type { RevealTarget } from "@corpus/kit/plugin";
-import { useCallback, useEffect, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import type { NavEntry } from "../board/useBoardLocalState";
+import { useCommentsTab } from "../comments/useCommentsTab";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { ThreadCollapseProvider } from "../thread/ThreadCollapseContext";
 import { columnSurface } from "../thread/threadCollapse";
 import { DocView } from "./DocView";
+import { DocWidthContext, useDocWidthSurface } from "./DocWidthContext";
 import { ReaderHead } from "./ReaderHead";
 import { dropMissing, useNavStack } from "./useNavStack";
 import { useReaderDoc } from "./useReaderDoc";
@@ -103,6 +105,19 @@ function ColumnReader({
 }: ColumnReaderProps): ReactElement | null {
   const docId = stack.docId ?? "";
 
+  /*
+   * The reading measure this column is set to (SPEC.md §11's width rider).
+   *
+   * Per column, on UI-077's own surface key, and for the same reason its folds
+   * and its scroll position are: two columns showing the same document keep
+   * their own. Per **column** and not per document is what makes §11's "the
+   * width persists across navigation" true — navigation is exactly what changes
+   * the document, so a width that belonged to the document would be re-set on
+   * every ref followed.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const docWidth = useDocWidthSurface(columnSurface(columnId), rootRef);
+
   const surface = useReaderSurface({
     reader,
     restoreY: stack.restoreY,
@@ -140,6 +155,11 @@ function ColumnReader({
     onAbandoned: stack.drop,
   });
 
+  // Which half of the reader is showing, and the comments list's two axes
+  // (SPEC.md §11's rider). Per column: two readers on one document each keep
+  // their own, exactly as their folds and their scroll do.
+  const comments = useCommentsTab(docId, surface.jumpToThread);
+
   const contextMenu = useReaderContextMenu({
     doc: reader.doc,
     threadStatus: reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null,
@@ -176,6 +196,7 @@ function ColumnReader({
     <SaveStatusProvider>
       <div
         className="reader"
+        ref={rootRef}
         data-reader-doc={docId}
         data-reader-column={columnId}
         onContextMenu={contextMenu}
@@ -194,7 +215,8 @@ function ColumnReader({
             if (toList) stack.toList();
             else stack.back();
           }}
-          onSelectThread={surface.jumpToThread}
+          tab={comments.tab}
+          onTab={comments.setTab}
           onGone={stack.back}
           onNotify={onNotify}
         />
@@ -205,13 +227,19 @@ function ColumnReader({
             surface.handleScroll(event.currentTarget.scrollTop);
           }}
         >
-          <DocView
-            reader={reader}
-            selectTitle={selectTitle}
-            flashThread={surface.flashThread}
-            onNavigate={navigate}
-            onNotify={onNotify}
-          />
+          <DocWidthContext.Provider value={docWidth}>
+            <DocView
+              reader={reader}
+              selectTitle={selectTitle}
+              flashThread={surface.flashThread}
+              tab={comments.tab}
+              filters={comments.filters}
+              onFilters={comments.setFilters}
+              onReveal={comments.reveal}
+              onNavigate={navigate}
+              onNotify={onNotify}
+            />
+          </DocWidthContext.Provider>
         </div>
       </div>
     </SaveStatusProvider>

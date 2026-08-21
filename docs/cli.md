@@ -429,7 +429,7 @@ corpus db rebuild --json
 
 List, read, check, create, edit, move, archive, unarchive and delete documents.
 
-The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — expands from a document it already holds through `related`, the follow-up move to `corpus search` (SPEC.md §7) — reads documents through `show`, which is also **where a key comes from**: replacing a body with `edit` means presenting the key that read handed out, and a write without a valid one does not happen (SPEC.md §7). Anchors resolve against the current body server-side, so reading the file would answer differently — reads what a user's edit session changed through `diff`, which is where a `doc.edited` event's stats are cashed in for the change itself (SPEC.md §4) — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
+The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — expands from a document it already holds through `related`, the follow-up move to `corpus search` (SPEC.md §7) — reads documents through `show`, whole or one section at a time: `show --headings` prints a document's heading paths and `show --section` prints one section byte for byte, which is what `patch --old` quotes, so a bounded edit never costs a whole read. `show` is also **where a key comes from**: replacing a body with `edit` means presenting the key that read handed out, and a write without a valid one does not happen (SPEC.md §7). Anchors resolve against the current body server-side, so reading the file would answer differently — reads what a user's edit session changed through `diff`, which is where a `doc.edited` event's stats are cashed in for the change itself (SPEC.md §4) — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
 
 ### `corpus doc archive`
 
@@ -1083,11 +1083,17 @@ corpus doc related doc_a1b2c3 --json
 
 ### `corpus doc show`
 
-Read a document — and get the key that lets you write it back.
+Read a document — all of it, its heading paths, or one section byte for byte.
 
 Reads `GET /api/docs/{id}` and prints what the server returned — the CLI never opens the file. That matters for anchors: they are resolved against the _current_ body at read time, so each one is listed with the thread it belongs to, that thread's status, and either the character range it landed on or the fact that it is orphaned (SPEC.md §6). A timestamp the file does not carry renders as “—” rather than as an invented date.
 
 **The third line is the document's `key`** (SPEC.md §7). It names the version this read returned, and `corpus doc edit <id> --key <key>` is how you write a new body back: a write that replaces the body without one is refused, and one presenting a key the document has since moved past is refused with the document as it now stands and a fresh key (exit 9). It is printed whole and is opaque — echo it back exactly, never compute, shorten or compare parts of one. There is nothing to release: reading gives you a key, not a claim.
+
+**Read a section instead of a document.** `--headings` prints one heading path per line and nothing else. `--section '<heading path>'` prints that section's text **byte for byte**: no trimming, no ellipsis, no collapsed newlines, no added newline — which is what makes it paste straight into `corpus doc patch --old`, and a whole-document read unnecessary for a bounded edit. Redirect it to a file and pass `--old-file` when the passage spans lines. The paths are exactly the ones `corpus search --json` reports as `headingPath`, so the three verbs compose: search to find the section, `--section` to read it, `patch` to change it.
+
+A section runs from its own heading line to the line before the next heading that closes it, so the heading is part of what is printed, and the text above the first heading is a section addressed by the document's title. **A `--section` that names nothing is refused** (exit 2), listing the paths that do exist — it never falls back to printing the whole body, because a silent fallback is the cost this flag exists to avoid. A path naming more than one section — a heading repeated under the same parent — is refused the same way, and `--nth` chooses between them in document order.
+
+These two flags narrow **what you read**, not what crosses the wire: the request is the same one, and the saving is in the reader's context.
 
 **When a person has an edit session open**, the read says so on its own line. That is information, not a refusal — nothing is blocked, and a write would land — but the polite move is to leave the document alone and come back, or to park the claimed work with `corpus queue defer <event-id> --blocked-on <id>`, which returns to pending on its own when the session ends.
 
@@ -1103,6 +1109,14 @@ corpus doc show <id> [flags]
 | -------- | -------- | ------------------ |
 | `id`     | yes      | The document's id. |
 
+**Flags**
+
+| Flag                       | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--headings`               | boolean | `false` | Print the document's heading paths, one per line, and nothing else — the addresses `--section` accepts. They are the same strings `corpus search --json` reports as `headingPath`. `--json` adds each section's heading level and character count, which is how you pick the one worth reading.                                                                                                    |
+| `--section <heading-path>` | string  | —       | Print one section's text **byte for byte** instead of the document: exactly the characters the body holds, heading line included, with nothing trimmed, collapsed or appended. That is what `corpus doc patch --old` needs. Matching is exact against the whole path, separator “ › ” included; naming no section, or more than one, is refused (exit 2) rather than answered with the whole body. |
+| `--nth <n>`                | number  | —       | Which section to print when `--section`'s path names more than one, counted from 1 in document order. Only meaningful beside `--section`, and only needed when a heading repeats under the same parent — the refusal that happens then names the count.                                                                                                                                            |
+
 **Examples**
 
 Read a document before editing or commenting on it: header, its `key`, anchored threads, then the body.
@@ -1111,10 +1125,42 @@ Read a document before editing or commenting on it: header, its `key`, anchored 
 corpus doc show doc_a1b2c3
 ```
 
+The document's addresses, one per line — `Mortgage options`, `Mortgage options › Rates`, `Mortgage options › Escrow` — without reading a word of it.
+
+```
+corpus doc show doc_a1b2c3 --headings
+```
+
+The loop this flag exists for: read one section, edit it, patch it back. `--section` is byte-exact and `--old-file` is read byte for byte, so a multi-line passage matches exactly once — which `corpus search`'s ellipsized snippet cannot do.
+
+```
+corpus doc show doc_a1b2c3 --section 'Mortgage options › Escrow' > /tmp/old.md
+corpus doc patch doc_a1b2c3 --from agent --old-file /tmp/old.md --new-file /tmp/new.md
+```
+
+Search addresses a passage, `--section` reads it. The two use the same `headingPath` strings, so a hit's address pastes in unchanged — which is the whole reason the syntax is search's rather than a new one.
+
+```
+corpus search 'escrow reserve' --json > /tmp/hit.json
+corpus doc show "$(jq -r .hits[0].id /tmp/hit.json)" --section "$(jq -r .hits[0].headingPath /tmp/hit.json)"
+```
+
+A path naming nothing is exit **2** and lists the paths that do exist. It never prints the whole body instead — a silent fallback is the cost this flag removes.
+
+```
+corpus doc show doc_a1b2c3 --section 'No such heading' ; echo $?
+```
+
 The key on its own — the value `corpus doc edit <id> --key …` presents back when it replaces the body.
 
 ```
 corpus doc show doc_a1b2c3 --json | jq -r .key
+```
+
+One JSON value: `{"id":"doc_a1b2c3","headingPath":"Mortgage options › Escrow","section":"## Escrow\n\nThe escrow reserve is recalculated annually.\n"}` — the same characters, unprettified.
+
+```
+corpus doc show doc_a1b2c3 --section 'Mortgage options › Escrow' --json
 ```
 
 One JSON value: `{"frontmatter":{"id":"doc_a1b2c3","type":"note","title":"Mortgage options","created":"2026-07-28T10:00:00.000Z","updated":null,…},"body":"30-year fixed at 6.1%.\n","path":"data/docs/finance/mortgage-options.md","key":"3b2ec1f0…","userEditing":false,"anchors":[{"anchorId":"anc_1","threadId":"th_x9y8","threadStatus":"open","range":{"start":12,"end":45},"orphaned":false,…}]}`.

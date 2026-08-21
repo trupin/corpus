@@ -121,11 +121,32 @@ export function applyQueryCompletion(
   // …unless the field already has its `=`, which is the mid-token case: the
   // caret is being used to repair a name that is already followed by a value,
   // and a second operator would break the very query it is fixing.
-  const equipped = trigger.kind === "field" && text[trigger.end] === "=";
+  const operator = trigger.kind === "field" ? equalsAfter(text, trigger.end) : -1;
+  const equipped = operator !== -1;
   const inserted = trigger.kind === "field" && !equipped ? `${value}=` : value;
+  // The replacement swallows the gap between the name and its operator, so a
+  // repair does not leave the space that hid the operator in the first place.
+  const tail = equipped ? operator : trigger.end;
   return {
-    text: `${text.slice(0, trigger.start)}${inserted}${text.slice(trigger.end)}`,
+    text: `${text.slice(0, trigger.start)}${inserted}${text.slice(tail)}`,
     // Past the `=` either way, so typing continues in the value.
     caret: trigger.start + inserted.length + (equipped ? 1 : 0),
   };
+}
+
+/**
+ * Where this field's own `=` sits after the token, or `-1` when it has none.
+ *
+ * **It skips the whitespace {@link tokenEnd} deliberately leaves outside the
+ * token** (UI-048 item 4). `ty =note` is a name, a space and a value; asking
+ * `text[trigger.end] === "="` of it found the space, concluded the field was
+ * unequipped, and wrote `type= =note` — a string with two operators, which
+ * `parseQueryString` reads as the field `type` holding the value ` =note`. The
+ * space is what a person typed and the `=` is still theirs, so the completion
+ * repairs across it rather than around it.
+ */
+function equalsAfter(text: string, from: number): number {
+  let at = from;
+  while (at < text.length && (text[at] === " " || text[at] === "\t")) at += 1;
+  return text[at] === "=" ? at : -1;
 }

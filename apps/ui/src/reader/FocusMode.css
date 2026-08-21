@@ -49,8 +49,19 @@
   border-radius: 99px;
 }
 
+/*
+ * The inner column, and the outer half of UI-066's measure.
+ *
+ * `76ch` here is the app's 13.5px sans while `.focus .doc-body`'s `66ch` is a
+ * 16.5px serif, so the two land within a few pixels of each other and always
+ * have. They take the **same** custom property with their own fallbacks, which
+ * keeps the shipped default exactly as it was and makes a chosen width one
+ * number for both — a wrapper narrower than the body it wraps would cap the
+ * body silently, which is what a `76ch` left alone would have done the moment
+ * anybody dragged past it.
+ */
 .focus-inner {
-  max-width: 76ch;
+  max-width: var(--doc-measure, 76ch);
   margin: 0 auto;
 }
 
@@ -63,7 +74,11 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 30px;
-  max-width: calc(76ch + 330px);
+  /* The body's measure plus the margin column's own 300px and the 30px gap —
+     `MARGIN_COLUMN_RESERVE` in `docWidth.ts` is this 330 and reserves it out of
+     the room a drag may claim, so the pointer and the body's edge stay
+     together. */
+  max-width: calc(var(--doc-measure, 76ch) + 330px);
   align-items: start;
 }
 
@@ -100,13 +115,22 @@
    and focus mode clipped the second line — UI-065's own bug, one surface over. */
 .focus .title-grow {
   font-size: 30px;
-  max-width: 66ch;
+  max-width: var(--doc-measure, 66ch);
 }
 
 .focus .doc-body {
   font-size: 16.5px;
   line-height: 1.7;
-  max-width: 66ch;
+  max-width: var(--doc-measure, 66ch);
+}
+
+/* The width rail measures the body, so it takes the body's type and the body's
+   fallback here too — see the note in `Reader.css`. Getting this wrong does not
+   break the drag; it puts the handle a few pixels off the edge it is supposed
+   to be, at the default width only. */
+.focus .doc-width-rail {
+  font-size: 16.5px;
+  max-width: var(--doc-measure, 66ch);
 }
 
 .focus .turn-markdown {
@@ -122,5 +146,5 @@
 .focus .archived-banner,
 .focus .fm-form,
 .focus .fm-actions {
-  max-width: 66ch;
+  max-width: var(--doc-measure, 66ch);
 }

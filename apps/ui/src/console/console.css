@@ -67,6 +67,33 @@
 }
 
 /*
+ * The unread-notice marker (UI-139; SPEC.md §11 — "an unread notice of error
+ * tone marks the console until the tab has been opened").
+ *
+ * **It is reserved, not conditional.** The strip is a `flex` row with a 12px
+ * gap, so a dot that mounted when a refusal arrived would push the agent pill,
+ * the counts and the index pill right — a line that always renders, moving
+ * because of something that happened elsewhere, which is precisely what §11's
+ * rider forbids. So the span is always in the DOM and always this box, and
+ * `visibility` is the only thing the unread state changes. The negative margin
+ * pulls it back against the word `console` it belongs to, so the reserve costs
+ * the row 7px rather than the full 12px gap.
+ */
+.c-notice-mark {
+  flex: none;
+  width: 7px;
+  margin-left: -6px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--signal);
+  visibility: hidden;
+}
+
+.c-notice-mark[data-unread="true"] {
+  visibility: visible;
+}
+
+/*
  * The health notice, and **only** the health notice.
  *
  * `apps/ui/e2e/smoke.spec.ts` asserts `.console-strip .c-failed` has exactly the
@@ -361,6 +388,30 @@
 .console-tab.sel {
   background: var(--accent-wash);
   color: var(--accent-ink);
+}
+
+/*
+ * The same marker on the tab it names. The drawer can be open on Jobs while a
+ * refusal arrives, and the strip's dot is still on screen above it — so this
+ * repeats the mark at the tab a person has to press, rather than replacing it.
+ *
+ * Reserved for the same reason and by the same means: the attribute is on the
+ * Notices tab in both states, this rule gives it its box unconditionally, and
+ * only `visibility` moves. The tab strip's widths are therefore fixed, so
+ * lighting the dot cannot shift Residents sideways under a pointer already
+ * travelling toward it.
+ */
+.console-tab[data-unread]::after {
+  content: "●";
+  margin-left: 5px;
+  font-size: 8px;
+  vertical-align: middle;
+  color: var(--signal);
+  visibility: hidden;
+}
+
+.console-tab[data-unread="true"]::after {
+  visibility: visible;
 }
 
 .console-body {
@@ -853,6 +904,114 @@
   flex: none;
   padding: 7px 16px;
   border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/*
+ * ── The Notices tab (UI-139) ──
+ *
+ * SPEC.md §11's Notices paragraph, rider authorized 2026-08-21: every warning
+ * and refusal this session raised, newest first, each with its whole text.
+ *
+ * **Nothing here clamps, and that is the point.** A toast is cut to two lines so
+ * the stack cannot move, and it reveals what it cut on a `title` — which no
+ * keyboard-only or touch user can reach. This tab is that reveal, so a clamp
+ * here would put the same defect one surface further in with nowhere left to go.
+ * The message therefore wraps to whatever height it needs.
+ *
+ * That does not fight SHARED-057. The rider's subject is a box changing size
+ * because of what arrives in it, on a surface a person is already pointing at.
+ * This list is a scroll container of fixed height — the drawer's — and a row is
+ * as tall as its notice from the moment it is written, so nothing already drawn
+ * is ever re-measured. What the row cannot do is grow *later*, and nothing about
+ * a notice arrives later: it is a string the client already held when it raised
+ * the toast.
+ *
+ * One pane rather than the master-detail the other two tabs use: a notice has no
+ * detail to select, and a selection between a person and the reason their write
+ * was refused is a click this tab exists to remove.
+ */
+
+.notice-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+/*
+ * The columns are fixed and the message takes the rest: the mark, the time and
+ * the tone are the same width for every notice, so the sentences line up down
+ * the list instead of starting wherever the row before them happened to end.
+ * `1fr` with `min-width: 0` is what lets a long refusal wrap inside its column
+ * rather than widening the grid.
+ */
+.notice {
+  display: grid;
+  grid-template-columns: 12px 62px 52px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.notice:hover {
+  background: var(--surface-2);
+}
+
+.notice-tick {
+  color: var(--good);
+  text-align: center;
+}
+
+/* A refused write must not read as a confirmation — `.toast`'s own deviation
+   from the prototype, at list grain and in the same colour. */
+.notice[data-tone="error"] .notice-tick {
+  color: var(--signal);
+}
+
+.notice-time,
+.notice-tone {
+  color: var(--ink-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The whole notice, at reading width. `--sans` and 12px because this is prose a
+ * person reads rather than a machine value they scan — the same treatment
+ * `.lane-note` gives §7's sentence one pane over.
+ *
+ * `pre-wrap` keeps a server string's own line breaks, and `anywhere` is what
+ * stops a long unbroken token — a path, an id, a URL in a refusal — from
+ * widening the grid and putting a horizontal scrollbar under the drawer.
+ */
+.notice-msg {
+  min-width: 0;
+  max-width: 78ch;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notice-empty {
+  padding: 20px;
+  max-width: 68ch;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* §11 forbids a listing that ends quietly: the bound says what it discarded. */
+.notice-dropped {
+  padding: 10px;
   color: var(--ink-3);
   font-family: var(--mono);
   font-size: 11px;

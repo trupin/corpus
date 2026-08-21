@@ -495,13 +495,35 @@ function renderedItems(page: Page): Locator {
   return page.locator(".reader .ProseMirror li");
 }
 
-/** How far the flash box sits from the rendered line at `at`. */
+/**
+ * How far the flash box sits from the rendered line at `at`, **read in one
+ * frame**.
+ *
+ * The single `evaluate` is the whole of it, and it is not a convenience. This
+ * used to take two boundingBox round trips, and a cold open is still moving
+ * between them: the reveal re-aims the reader through
+ * `REVEAL_SETTLE_FRAMES`, so the scroller travels — measured at 52 px between
+ * the two reads on one run and 584 px on another. Subtracting a `y` read before
+ * that move from a `y` read after it reports a distance neither box was ever
+ * at. It scored 23.06 px on a run where both rectangles, read together, were
+ * 1.00 px apart.
+ *
+ * So the two rectangles are read in the same frame and the tolerance stays
+ * where it was. What is asserted is unchanged — the flash is on its line — and
+ * the measurement is now of one moment rather than of two.
+ */
 async function distanceToItem(page: Page, at: number): Promise<number> {
-  const flash = await page.locator(".reveal-flash").first().boundingBox();
-  const line = await renderedItems(page).nth(at).boundingBox();
-  expect(flash).not.toBeNull();
-  expect(line).not.toBeNull();
-  return Math.abs((flash?.y ?? 0) - (line?.y ?? 0));
+  const gap = await page.evaluate((index) => {
+    const flash = document.querySelector(".reveal-flash");
+    const line = document.querySelectorAll(".reader .ProseMirror li")[index];
+    if (flash === null || line === undefined) return null;
+    return Math.abs(flash.getBoundingClientRect().y - line.getBoundingClientRect().y);
+  }, at);
+  // `null` is the flash already gone or the line never rendered. Failing here
+  // rather than answering a distance keeps a "further than 12 px" assertion
+  // from passing because there was nothing to measure.
+  expect(gap, "there was no flash and line to measure in the same frame").not.toBeNull();
+  return gap ?? Number.MAX_SAFE_INTEGER;
 }
 
 test.describe("a click on a todo item", () => {

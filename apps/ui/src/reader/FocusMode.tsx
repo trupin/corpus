@@ -3,11 +3,13 @@ import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
+import { useCommentsTab } from "../comments/useCommentsTab";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { ThreadCollapseProvider } from "../thread/ThreadCollapseContext";
 import { FOCUS_SURFACE } from "../thread/threadCollapse";
 import { DocView } from "./DocView";
+import { DocWidthContext, useDocWidthSurface } from "./DocWidthContext";
 import { ReaderHead } from "./ReaderHead";
 import { rootEntry, useMemoryNavStack } from "./useNavStack";
 import { useReaderDoc } from "./useReaderDoc";
@@ -77,6 +79,16 @@ function FocusReader({
   const current = stack.docId ?? docId;
   const reader = useReaderDoc(current);
 
+  /*
+   * Focus mode's own reading measure (SPEC.md §11's width rider), on the same
+   * surface key its folds use: one full-screen reader, one width, distinct from
+   * the column it was opened from. A full viewport and a 560px column are not
+   * the same room, so a width chosen in one would be meaningless in the other —
+   * which is exactly why §11 asks for the control in **both**.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const docWidth = useDocWidthSurface(FOCUS_SURFACE, rootRef);
+
   /**
    * The overlay is a live component, not a one-shot (PR #19 review).
    *
@@ -119,6 +131,11 @@ function FocusReader({
     onAbandoned: stack.drop,
   });
 
+  // Focus mode's own switch and its own filters — one full-screen reader, one
+  // answer, distinct from the column it was opened from for the same reason its
+  // folds and its navigation stack are.
+  const comments = useCommentsTab(current, surface.jumpToThread);
+
   const contextMenu = useReaderContextMenu({
     doc: reader.doc,
     threadStatus: reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null,
@@ -145,6 +162,7 @@ function FocusReader({
     <SaveStatusProvider>
       <div
         className="focus open"
+        ref={rootRef}
         role="dialog"
         aria-modal="true"
         aria-label="Full screen reader"
@@ -168,7 +186,8 @@ function FocusReader({
             if (toList) stack.toList();
             else stack.back();
           }}
-          onSelectThread={surface.jumpToThread}
+          tab={comments.tab}
+          onTab={comments.setTab}
           onGone={stack.back}
           onNotify={onNotify}
         />
@@ -180,13 +199,19 @@ function FocusReader({
           }}
         >
           <div className="focus-inner">
-            <DocView
-              reader={reader}
-              selectTitle={false}
-              flashThread={surface.flashThread}
-              onNavigate={navigate}
-              onNotify={onNotify}
-            />
+            <DocWidthContext.Provider value={docWidth}>
+              <DocView
+                reader={reader}
+                selectTitle={false}
+                flashThread={surface.flashThread}
+                tab={comments.tab}
+                filters={comments.filters}
+                onFilters={comments.setFilters}
+                onReveal={comments.reveal}
+                onNavigate={navigate}
+                onNotify={onNotify}
+              />
+            </DocWidthContext.Provider>
           </div>
         </div>
       </div>

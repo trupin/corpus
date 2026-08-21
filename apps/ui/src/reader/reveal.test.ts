@@ -8,8 +8,17 @@ import {
   flashRange,
   indexText,
   REVEAL_FLASH_MS,
+  REVEAL_QUIET_FRAMES,
+  REVEAL_WAIT_MS,
   revealItem,
+  revealMissNotice,
+  revealPatience,
+  REVEAL_SETTLED_ATTRIBUTE,
   scrollRangeIntoView,
+  surfaceSettled,
+  surfaceText,
+  type RevealLook,
+  type RevealSurface,
 } from "./reveal";
 
 /**
@@ -390,5 +399,210 @@ describe("revealItem", () => {
       .firstElementChild as HTMLElement;
     expect(revealItem(container, item("Call the plumber"))).toBeNull();
     expect(document.querySelector("[data-reveal-flash]")).toBeNull();
+  });
+});
+
+/**
+ * UI-140. The old ladder retried five times 80 ms apart and then spent the
+ * navigation instruction whether or not anything had been drawn — so a cold
+ * open whose body took longer than ~320 ms to render opened the document at the
+ * top, drew nothing, and forgot what it was for. Measured at 2.5% of opens.
+ *
+ * What is pinned here is the replacement's one claim: **it never concludes
+ * "absent" from a surface that has told it nothing.**
+ */
+describe("revealPatience", () => {
+  /** A surface still arriving: it has words on it, but no verdict about itself. */
+  function pending(text: string): RevealSurface {
+    return { text, settled: false };
+  }
+
+  /** A surface that says it has arrived at what it is showing. */
+  function arrived(text: string): RevealSurface {
+    return { text, settled: true };
+  }
+
+  /** Feeds `looks` at the same surface, one notional frame apart. */
+  function feed(
+    patience: ReturnType<typeof revealPatience>,
+    surface: RevealSurface,
+    looks: number,
+    from = 0,
+  ): RevealLook {
+    let last = patience(surface, from);
+    for (let index = 1; index < looks; index += 1) last = patience(surface, from + index * 16);
+    return last;
+  }
+
+  it("keeps looking, past any millisecond budget, while the surface has not moved", () => {
+    const patience = revealPatience();
+    // Far more looks than the old five, and the surface has said nothing: this
+    // is the `Loading…` gap, and it is "not there yet", not "not there".
+    const verdict = feed(patience, pending("Loading…"), 100);
+    expect(verdict.giveUp).toBeNull();
+  });
+
+  it("searches only on the looks where the surface changed", () => {
+    const patience = revealPatience();
+    expect(patience(pending("Loading…"), 0).search).toBe(true);
+    expect(patience(pending("Loading…"), 16).search).toBe(false);
+    expect(patience(arrived("Buy milk"), 32).search).toBe(true);
+    expect(patience(arrived("Buy milk"), 48).search).toBe(false);
+  });
+
+  it("searches again when a surface answers without its text changing", () => {
+    const patience = revealPatience();
+    // The conversation list answering "none at all" is the case: the same empty
+    // reading either side of the one moment that makes it conclusive.
+    expect(patience(pending(""), 0).search).toBe(true);
+    expect(patience(pending(""), 16).search).toBe(false);
+    expect(patience(arrived(""), 32).search).toBe(true);
+  });
+
+  it("accepts the words are absent once the surface has arrived and gone quiet", () => {
+    const patience = revealPatience();
+    patience(pending("Loading…"), 0);
+    // The body lands. From here the surface has moved once and is still.
+    expect(patience(arrived("Sell bread"), 16).giveUp).toBeNull();
+    for (let frame = 1; frame < REVEAL_QUIET_FRAMES; frame += 1) {
+      expect(patience(arrived("Sell bread"), 16 + frame * 16).giveUp).toBeNull();
+    }
+    expect(patience(arrived("Sell bread"), 16 + REVEAL_QUIET_FRAMES * 16).giveUp).toBe("absent");
+  });
+
+  /**
+   * The warm open, and the defect this half of the mechanism was added for (PR
+   * #54 review). A cached document renders its body in the same commit that
+   * gives the reader content, so the reveal's *first* look is at a finished
+   * surface that will never change again. Concluding arrival from movement
+   * alone, `absent` is unreachable here: the reveal could only run out the
+   * ceiling and then report a document that loaded perfectly as one that failed
+   * to load, in the tone kept for faults.
+   */
+  it("concludes absence from a first look at a surface that says it has arrived", () => {
+    const patience = revealPatience();
+    // No `Loading…` before it, and nothing after it: one state, forever.
+    for (let frame = 0; frame <= REVEAL_QUIET_FRAMES; frame += 1) {
+      const verdict = patience(arrived("Sell bread"), frame * 16);
+      // Well inside the ceiling — the point is that it never gets there.
+      expect(frame * 16).toBeLessThan(REVEAL_WAIT_MS);
+      if (frame < REVEAL_QUIET_FRAMES) expect(verdict.giveUp).toBeNull();
+      else expect(verdict.giveUp).toBe("absent");
+    }
+  });
+
+  it("does not conclude absence from a still surface that has said nothing", () => {
+    const patience = revealPatience();
+    // The same shape as the warm open above, minus the one claim that makes it
+    // conclusive: this must reach the ceiling rather than the verdict.
+    const verdict = feed(patience, pending("Loading…"), REVEAL_QUIET_FRAMES * 3);
+    expect(verdict.giveUp).toBeNull();
+  });
+
+  it("starts the quiet count again every time the surface moves", () => {
+    const patience = revealPatience();
+    patience(pending("Loading…"), 0);
+    patience(arrived("half a body"), 16);
+    // One frame short of the verdict, and then the renderer moves again.
+    for (let frame = 1; frame < REVEAL_QUIET_FRAMES; frame += 1) {
+      expect(patience(arrived("half a body"), 16 + frame * 16).giveUp).toBeNull();
+    }
+    expect(patience(arrived("a whole body"), 1_000).giveUp).toBeNull();
+    expect(
+      feed(patience, arrived("a whole body"), REVEAL_QUIET_FRAMES - 1, 1_016).giveUp,
+    ).toBeNull();
+  });
+
+  it("stops at the ceiling when the surface never settles", () => {
+    const patience = revealPatience();
+    // A surface that changes on every look never goes quiet, so only the
+    // ceiling can end it — and it must.
+    for (let frame = 0; frame * 16 < REVEAL_WAIT_MS; frame += 1) {
+      expect(patience(pending(`frame ${String(frame)}`), frame * 16).giveUp).toBeNull();
+    }
+    expect(patience(pending("frame last"), REVEAL_WAIT_MS).giveUp).toBe("unresolved");
+  });
+
+  it("waits far longer than the 320 ms budget it replaces", () => {
+    // The measured worst gap between the reader's placeholder and its rendered
+    // body, on a laptop running eight browsers, was 1733 ms.
+    expect(REVEAL_WAIT_MS).toBeGreaterThan(1_733);
+  });
+});
+
+describe("surfaceText", () => {
+  it("reads the whole container, not one renderer's markup", () => {
+    const host = mount("<div><p>Buy <strong>milk</strong></p><li>Sell bread</li></div>");
+    expect(surfaceText(host.firstElementChild as HTMLElement)).toBe("Buy milkSell bread");
+  });
+});
+
+/**
+ * The surface's other answer (PR #54 review): whether it has finished arriving.
+ * Declared by the renderer, and never inferred — a renderer that says nothing is
+ * still arriving, which costs a reveal patience and never costs it a wrong
+ * verdict.
+ */
+describe("surfaceSettled", () => {
+  it("is false for a surface that has not said anything", () => {
+    const host = mount('<div class="scroll"><p>Loading…</p></div>');
+    expect(surfaceSettled(host.firstElementChild as HTMLElement)).toBe(false);
+  });
+
+  it("is true when the renderer marks what it has arrived at", () => {
+    const host = mount(
+      `<div class="scroll"><div ${REVEAL_SETTLED_ATTRIBUTE}><p>Buy milk</p></div></div>`,
+    );
+    expect(surfaceSettled(host.firstElementChild as HTMLElement)).toBe(true);
+  });
+
+  it("is true when the container is itself what arrived", () => {
+    const host = mount(`<div ${REVEAL_SETTLED_ATTRIBUTE}><p>Buy milk</p></div>`);
+    expect(surfaceSettled(host.firstElementChild as HTMLElement)).toBe(true);
+  });
+});
+
+/** Giving up is not silent (UI-140): the reader is told which quote was lost. */
+describe("revealMissNotice", () => {
+  const target: RevealItem = { kind: "item", exact: "Book the passport appointment" };
+
+  it("names the quote, and calls a document that moved on information", () => {
+    const notice = revealMissNotice(target, "absent");
+    expect(notice.tone).toBe("info");
+    expect(notice.message).toContain("Book the passport appointment");
+    expect(notice.message).toContain("no longer on this document");
+  });
+
+  it("calls a document that never rendered a fault", () => {
+    const notice = revealMissNotice(target, "unresolved");
+    expect(notice.tone).toBe("error");
+    expect(notice.message).toContain("did not finish loading");
+  });
+
+  it("cuts a quote too long to be a toast, and marks the cut", () => {
+    const long = "x".repeat(200);
+    const message = revealMissNotice({ kind: "item", exact: long }, "absent").message;
+    expect(message).toContain("…");
+    expect(message.length).toBeLessThan(100);
+  });
+
+  it("collapses a quote captured with the file's line breaks in it", () => {
+    const notice = revealMissNotice({ kind: "item", exact: "Buy\n  milk" }, "absent");
+    expect(notice.message).toContain("Buy milk");
+  });
+
+  /**
+   * A conversation's id is a key, not a name, so quoting it back would tell the
+   * reader nothing they could act on. It is named by what it is instead.
+   */
+  it("names a conversation without misquoting its id", () => {
+    const absent = revealMissNotice({ kind: "thread", threadId: "th_1" }, "absent");
+    expect(absent.tone).toBe("info");
+    expect(absent.message).toBe("That conversation is no longer on this document.");
+    expect(absent.message).not.toContain("th_1");
+
+    const unresolved = revealMissNotice({ kind: "thread", threadId: "th_1" }, "unresolved");
+    expect(unresolved.tone).toBe("error");
+    expect(unresolved.message).toContain("that conversation");
   });
 });

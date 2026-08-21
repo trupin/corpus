@@ -6,7 +6,10 @@ ui
 
 ## Status
 
-todo
+closed — **misfiled**. The spec was not flaky; it was correctly reporting a
+product defect. Diagnosed here, replaced by **UI-140** against
+`apps/ui/src/reader/useReaderSurface.ts` (see the E2E Verification Log for the
+measurement rig, which UI-140 reuses)
 
 ## Priority
 
@@ -106,32 +109,28 @@ drawn, this issue is misfiled and the real one belongs in `reveal.ts`.
 
 ## Acceptance Criteria
 
-- [ ] The failure is **reproduced deliberately** and the two explanations are
+- [x] The failure is **reproduced deliberately** and the two explanations are
       distinguished on evidence: flash drawn-then-expired (test bug) vs. flash
       never drawn (product bug). Record the trace, the worker count, and the run's
-      total duration
-- [ ] If it is a product bug, this issue is closed as misfiled and a `reveal.ts`
+      total duration — **verdict: never drawn. It is the product bug.**
+- [x] If it is a product bug, this issue is closed as misfiled and a `reveal.ts`
       issue is opened in its place — do not paper over a real defect with a
-      sturdier wait
-- [ ] Given a test bug: the test's synchronisation is **condition-shaped** —
-      nothing it needs is read after the thing it needs may have vanished. In
-      particular the `page.evaluate` for `--accent-wash` does not sit between the
-      reveal and the first assertion on the flash
-- [ ] No assertion's `timeout` is raised as the fix. INFRA-020: "Do not fix these
-      by raising timeouts across the board. A suite whose timeouts are all
-      generous stops catching the thing timeouts exist to catch"
-- [ ] `REVEAL_FLASH_MS` is **not** raised, and no test-only lifetime override is
-      introduced — the decoration's duration is product behaviour that other tests
-      (lines 285, 581) assert against
-- [ ] The file's other `.reveal-flash` reads that depend on the element surviving
-      subsequent work are audited and fixed by the same shape: the
-      `boundingBox()` calls at lines 336, 500 and 521, and the in-page read inside
-      `settledGap` (lines 141-163)
-- [ ] `todos-menu.spec.ts:428` is checked for the inverse hazard: it asserts
-      `[data-reveal-flash]` has count 0 with no positive precondition that the
-      reveal mechanism ran at all, so it would pass spuriously if it ran before
-      any flash could be drawn
-- [ ] Verified under deliberate load — a green run on an idle box proves nothing
+      sturdier wait — **the defect is diagnosed below; filing the replacement
+      issue is the orchestrator's, since the fix is in
+      `apps/ui/src/reader/useReaderSurface.ts`**
+- [ ] ~~Given a test bug: the test's synchronisation is **condition-shaped**~~ —
+      **not applicable: it is not a test bug.** No synchronisation was changed
+- [x] No assertion's `timeout` is raised as the fix — **nothing was changed at
+      all**
+- [x] `REVEAL_FLASH_MS` is **not** raised, and no test-only lifetime override is
+      introduced — **unchanged**
+- [ ] ~~The file's other `.reveal-flash` reads … are audited and fixed by the
+      same shape~~ — **conditional on the test-bug branch; not taken.** They are
+      audited below and are not what fails
+- [x] `todos-menu.spec.ts:428` is checked for the inverse hazard — **checked
+      (now line 586); the hazard is real but narrow, and is reported rather than
+      changed. See below**
+- [x] Verified under deliberate load — a green run on an idle box proves nothing
       here, and that is the whole reason this issue exists
 
 ## Technical Design
@@ -216,29 +215,158 @@ under contention.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent as proof-of-work. State which model the
-implementing agent ran on ("implemented on: opus | fable")._
+Implemented on: **opus** — Opus 5 (1M context) (`claude-opus-5[1m]`), ui-dev.
 
-### Reproduction (bugs only)
+**No code was changed. The diagnosis says this issue is misfiled.**
 
-_[Agent fills: exact command, worker count, machine load, failure text, run
-duration, and the trace evidence that distinguishes drawn-then-expired from
-never-drawn. If it cannot be reproduced at all, say so plainly and stop — an
-unreproducible timing fix is a guess, and this issue's first criterion is the
-diagnosis.]_
+Invocation throughout: `CORPUS_UI_PORT=5673
+CORPUS_SERVER_ORIGIN=http://127.0.0.1:8799` (INFRA-028 — a dead origin, so Vite
+cannot proxy to a live workspace server). Port 8765 never touched.
 
-### Post-Implementation Verification
+### Reproduction
 
-_[Agent fills: before/after pass counts under identical load, plus the
-default-worker gate run.]_
+**Run 1 — `reveal.spec.ts --workers=8 --repeat-each=20`, no synthetic load.**
+360 tests, **9 failed, 351 passed, 5m 17s** (`492% cpu`). This is the condition
+the issue reports, and it fires at **2.5%**.
+
+The failures are spread over 7 of the file's 18 tests, and **all 7 are in the
+seeded describes** (`an open that names an item`, `an open that names a
+thread`). Not one of the `a click on a todo item` tests failed:
+
+```
+4 × :329  uses the prefix to pick which of two identical items it meant
+3 × :189  scrolls the item into view and flashes it, over the real text
+2 × :293  takes the instruction off the entry, so a reload does not flash again
+2 × :280  is transient — it takes itself away and leaves the document untouched
+2 × :268  wears the flash treatment the rest of the board's flashes wear
+2 × :245  follows its line when the surface moves under the lit flash
+2 × :224  holds the box on the line after the cold open's layout settles
+```
+
+**Run 2 — the same command with four busy-loop processes pinned to cores.**
+360 tests, **69 failed, 291 passed, 5m 32s**. Every test in the file failed at
+some rate, and `:344` — which asserts an *absence* — failed on a 30 s
+`waitFor` timeout. That load is severe enough to stop the app rendering at all,
+so run 2 is reported for completeness and run 1 is the evidence.
+
+### The two explanations, distinguished
+
+**The flash is never drawn.** Three independent lines say so, and they agree.
+
+**1. A presence assertion failed.** `:189`'s first assertion is a bare
+`expect(page.locator(".reveal-flash")).toHaveCount(1)` — self-synchronising,
+nothing read before it, retrying for 5 s:
+
+```
+Error: expect(locator).toHaveCount(expected) failed
+Locator:  locator('.reveal-flash')
+Expected: 1
+Received: 0
+Timeout:  5000ms
+Call log:
+  - waiting for locator('.reveal-flash')
+    14 × locator resolved to 0 elements
+```
+
+Fourteen polls over five seconds, zero elements every time. A drawn-then-expired
+flash cannot produce that: `openWithReveal` returns when `.reader .ProseMirror`
+exists, which is *before* the reveal fires, so the flash's 1200 ms life cannot
+have started and ended before the first poll.
+
+**2. An in-page probe watched for it and never saw it.** A temporary spec
+(`zz-ui079-probe.spec.ts`, deleted afterwards; nothing of it remains in
+`apps/ui/e2e/`) reproduced the shipped test verbatim with a `requestAnimationFrame`
+sampler counting `[data-reveal-flash]` on every frame, from before navigation.
+At `--workers=8 --repeat-each=30` under load, **7 of 30 failed**, and every
+failure read:
+
+```
+verdict=FAIL drawn=false ticks=535 last=9457 items=3
+             events=[{"t":1,"kind":"gone","boxes":0}] stored=reveal-consumed
+```
+
+`ticks=535 last=9457` — the sampler was alive for 9.4 s and could not have
+missed a 1200 ms element. `items=3` — the list *did* render. And
+`stored=reveal-consumed` — the instruction was taken off the navigation entry
+all the same.
+
+A passing run in the same batch:
+
+```
+verdict=PASS drawn=true events=[…,{"t":4325,"kind":"drawn","boxes":1}]
+```
+
+Drawn at **t = 4325 ms**. Uncontended the same probe draws it at t = 843 ms and
+removes it at ~2000 ms (polled: `1 1 1 1 1 0 0 0 …` at 250 ms intervals). So
+under load the whole sequence stretches, and the ones that fail are the ones
+where it stretched past the budget.
+
+**3. The budget is in the source, and it is ~320 ms.**
+`apps/ui/src/reader/useReaderSurface.ts:255-275`:
+
+```ts
+} else if (attempts < REVEAL_RETRIES) {
+  timer = setTimeout(attempt, REVEAL_RETRY_MS);
+  return;
+}
+revealedCallback.current?.();
+```
+
+`REVEAL_RETRIES = 5`, `REVEAL_RETRY_MS = 80` — five passes, four gaps, ~320 ms
+from the moment `hasContent` goes true. Then `revealedCallback` spends the
+instruction **whether or not anything was drawn**. The comment above it says so
+deliberately — *"Giving up counts as honouring it"* — for a quote the document
+no longer contains. But it does not distinguish **"not there"** from **"not
+there yet"**, and on a cold open the editor is still mounting its own DOM.
+
+### The defect, stated for the replacement issue
+
+> **A reveal on a cold open silently does nothing when the body is slow.**
+> `useReaderSurface`'s reveal effect gives up after ~320 ms
+> (`REVEAL_RETRIES × REVEAL_RETRY_MS`) counted from `hasContent`, and spends the
+> instruction on the navigation entry either way. Under contention the rendered
+> text is not searchable in time, so "open this document **at this**" opens the
+> document at the top, draws no flash, and forgets what it was for — with no
+> signal to the user and nothing left to retry from. Measured at **2.5% of
+> opens** (9 of 360) at 8 Playwright workers on a 2026 laptop, rising to ~19%
+> with four cores otherwise busy. Only the seeded/cold-open path fails; a click
+> on a todo item, which reveals into an already-mounted reader, never did.
+>
+> The fix is in `apps/ui/src/reader/useReaderSurface.ts` and `reveal.ts`'s
+> budget, and belongs to whoever holds `apps/ui/src/reader/**`. Worth
+> considering together: whether the budget should be frames rather than
+> milliseconds (a loaded machine has fewer frames per second, which is exactly
+> when the current budget shortens in real terms), and whether spending the
+> instruction should be conditional on having drawn something.
+
+`reveal.spec.ts` was **not** made sturdier. Doing so would hide a defect that
+fires on one open in forty, which is what this issue's second criterion
+forbids.
+
+### The audit that was owed anyway
+
+Carried out even though the fix branch was not taken, because the reading is
+useful either way:
+
+| Site | Read | Verdict |
+| --- | --- | --- |
+| `reveal.spec.ts:268` | `toHaveCSS` ×2 + `toHaveAttribute`, after a `page.evaluate` for `--accent-wash` | The `page.evaluate` **is** avoidable work in the window and could be hoisted. Left: it is not what fails, and moving it would shrink the failure rate of a test that is currently the surface's only alarm. |
+| `reveal.spec.ts:336, 500, 521` | `boundingBox()` after `toHaveCount(1)` | Each is one call on an element the preceding count assertion has already found. Genuinely inside the lifetime, and no worse than `:268`. |
+| `reveal.spec.ts:141-163` (`settledGap`) | in-page read, three-frame settle then both boxes in **one** evaluate | Already the right shape — one round trip, both boxes in the same frame, and `null` when the flash has gone, which the caller asserts against rather than scoring as a distance. |
+| `todos-menu.spec.ts:586` (was 428) | `expect([data-reveal-flash]).toHaveCount(0)` | **The inverse hazard is real but narrow.** It does carry two positive preconditions — the reader opened at `LIST_ID`, and the thread slot exists — so it is not asserting into an empty page. What it lacks is proof the reveal *mechanism* ran and declined. That cannot be added today: the only positive signal would be the thread's own expansion and flash, which the comment block above that test already reports as broken under StrictMode and referred to the ui domain. Reported, not changed. |
+
+### Post-implementation verification
+
+None: nothing was implemented. The before-numbers above are the whole result,
+and there is no after to compare them with.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing — n/a, no code changed
+- [x] `/lint` passes — n/a, no file touched
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified (see the conditional ones, marked n/a)
 
 ## Completion Checklist (orchestrator)
 

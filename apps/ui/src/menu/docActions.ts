@@ -75,13 +75,22 @@ export interface DocActionOptions {
   readonly onGone?: (() => void) | undefined;
   readonly onOpen?: (() => void) | undefined;
   readonly onOpenFocus?: (() => void) | undefined;
+  /**
+   * Show this document's comments list (SPEC.md §11's rider, UI-063).
+   *
+   * The reader passes it; a row does not, because a row has no reader to switch.
+   * It is the list's second way in and the **only** one on a document with no
+   * conversations yet, where the head's 💬 toggle does not appear — see
+   * `comments/CommentsSwitch` for the measurement behind that.
+   */
+  readonly onComments?: (() => void) | undefined;
 }
 
 export function useDocActions(
   subject: DocActionSubject,
   options: DocActionOptions,
 ): readonly MenuAction[] {
-  const { surface, onNotify, close, onGone, onOpen, onOpenFocus } = options;
+  const { surface, onNotify, close, onGone, onOpen, onOpenFocus, onComments } = options;
   const actions = useRowActions({ id: subject.id, title: subject.title }, { onNotify });
 
   /*
@@ -136,6 +145,17 @@ export function useDocActions(
       label: "Open in focus",
       meta: "full screen (⇧↵)",
       run: onOpenFocus,
+    });
+  }
+
+  // The comments list, first on the reader's menu because it is a place to go
+  // rather than a change to make: everything below it writes something.
+  if (onComments !== undefined) {
+    list.push({
+      id: "comments",
+      label: "Comments",
+      meta: "every conversation on this document — and where a new one starts",
+      run: onComments,
     });
   }
 

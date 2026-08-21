@@ -14,6 +14,7 @@ import {
   type ReaderTransport,
 } from "../testing/readerFixture";
 import { Reader } from "./Reader";
+import { REVEAL_SETTLED_ATTRIBUTE } from "./reveal";
 import type { NavEntry } from "./useNavStack";
 import { resetEscapeLayers } from "./useEscapeStack";
 
@@ -241,6 +242,26 @@ describe("a reader open while plugin discovery is in flight", () => {
     });
     expect(editorFor("doc_pn")).toBeNull();
     expect(document.querySelector("[data-fx-panel]")).toBeNull();
+  });
+
+  /**
+   * The reveal reads this, and the whole "not there" / "not there yet"
+   * distinction rests on it (UI-140, and its PR #54 follow-up). The placeholder
+   * must never claim to have arrived: a reveal that believed it would report a
+   * quote as gone from a document that had not rendered a word yet.
+   */
+  it("claims no arrival while it is a placeholder, and claims one with the body", async () => {
+    setPluginRegistry(EMPTY_REGISTRY, "pending");
+    render(open(PANEL_DOC, wireFor(PANEL_DOC)));
+    await waitFor(() => {
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    });
+    expect(document.querySelector(`[${REVEAL_SETTLED_ATTRIBUTE}]`)).toBeNull();
+
+    setPluginRegistry(fixtureRegistry());
+    await waitFor(() => {
+      expect(document.querySelector(`[${REVEAL_SETTLED_ATTRIBUTE}]`)).not.toBeNull();
+    });
   });
 
   it("brings the panel and the body in together when discovery settles", async () => {

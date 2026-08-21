@@ -242,6 +242,27 @@ test.describe("the reader's thread count", () => {
    * same length: `.reader-id` renders the document id, so ids of unequal length
    * would make the two heads differ for a reason that has nothing to do with a
    * count (measured at 12.6px before they were evened up).
+   *
+   * **Everything else in the head is held equal too, and both halves of that
+   * were learned the hard way.**
+   *
+   * The two columns carry the *same title*. They used to read `Notes 1` and
+   * `Notes 2`, and `.back` renders that title: `1` and `2` are not the same
+   * advance width in `-apple-system`, so the two `.back` boxes differed by
+   * 0.56px intrinsically. `.back` is `flex: 0 4 auto` beside a `.reader-id`
+   * that is `flex: 0 1 auto`, so a head with no slack redistributes that
+   * difference — 0.25px of it landed on the id, and the id is the thing under
+   * test. A confound the fixture introduced is still a confound.
+   *
+   * The heads are also measured **once they have stopped moving**. A column
+   * runs a 250ms `width` transition when a reader opens in it
+   * (`board/Column.css`), and the second reader's head was being read part-way
+   * up that ramp — 347px climbing to 398px, with the id and the back label
+   * shrinking against it the whole way. That is what made this assertion's
+   * failure move between runs (0.75px, 0.94px and 3.9px were all observed on
+   * the same build): it was not measuring a count, it was measuring how far a
+   * transition had got. Hence the head's own width is asserted equal below,
+   * rather than assumed — the assumption is what hid this.
    */
   test("does not re-cut the document id when it crosses into two digits", async ({ page }) => {
     await page.setViewportSize(VIEWPORT);
@@ -261,7 +282,9 @@ test.describe("the reader's thread count", () => {
       {
         id: `doc_view_${subject}`,
         type: "view",
-        title: `Notes ${String(order)}`,
+        // One title for both columns: `.back` renders it, and two titles that
+        // differ by a digit are two different `.back` widths — see above.
+        title: "Notes",
         path: `data/docs/views/${subject}.md`,
         pinned: true,
         order,
@@ -295,7 +318,10 @@ test.describe("the reader's thread count", () => {
     // Two readers, one frame — the same reason the board test above uses two
     // columns: it removes every question about what else settled between two
     // measurements, and both heads are the same width by construction.
-    const head = async (subject: string, count: string): Promise<{ id: Box; button: Box }> => {
+    const head = async (
+      subject: string,
+      count: string,
+    ): Promise<{ head: Box; id: Box; button: Box }> => {
       await page
         .locator(`.col[data-col="doc_view_${subject}"] .row[data-row-doc="doc_${subject}"]`)
         .click();
@@ -303,7 +329,11 @@ test.describe("the reader's thread count", () => {
         `.col[data-col="doc_view_${subject}"] .reader[data-reader-doc="doc_${subject}"] .reader-head`,
       );
       await expect(reader.locator(".comments-count")).toHaveText(count);
+      // The column is still widening at this point — opening a reader in it
+      // starts a 250ms `width` transition — and every item in this head is
+      // sized against that width.
       return {
+        head: await settledBox(reader),
         id: await boxOf(reader.locator(".reader-id")),
         button: await boxOf(reader.locator(".comments-btn")),
       };
@@ -313,22 +343,33 @@ test.describe("the reader's thread count", () => {
     const twelve = await head("bbb", "12");
 
     /*
+     * The precondition, asserted rather than assumed: these two heads are the
+     * same box, so the only thing left that could differ between them is the
+     * count. Every failure this test has ever had was this line's — a head
+     * still growing, or a head whose back label was a different string — and
+     * without it the id's measurement has nothing to mean.
+     */
+    expectSameWidth(twelve.head.width, nine.head.width, "the two heads are not the same box");
+
+    /*
      * **The control's own box is the assertion**, and the id's is the
      * consequence. A control that changes size when its number does is clause 1
      * exactly — and it is the sharper measurement: the button grew 6.6px
      * unfixed, while the id, which cuts at a character boundary, only ever shows
-     * part of that (1.75px, measured). Half a pixel of tolerance on the id,
-     * because a flex row distributes its leftover in sixty-fourths.
+     * part of that (1.75px, measured).
+     *
+     * The id is held to the same twentieth of a pixel as everything else in
+     * this file. It carried its own half-pixel allowance while the two heads
+     * were quietly different sizes, and once they are the same size the two ids
+     * measure identically — 88.734px against 88.734px — so there is nothing for
+     * a wider tolerance to be for.
      */
     expectSameWidth(
       twelve.button.width,
       nine.button.width,
       "the 💬 control resized with its count",
     );
-    expect(
-      Math.abs(twelve.id.width - nine.id.width),
-      `the document id was re-cut (${String(twelve.id.width)} vs ${String(nine.id.width)})`,
-    ).toBeLessThan(0.5);
+    expectSameWidth(twelve.id.width, nine.id.width, "the document id was re-cut");
   });
 });
 

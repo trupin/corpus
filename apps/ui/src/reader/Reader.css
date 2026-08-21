@@ -212,6 +212,92 @@
   border-radius: 99px;
 }
 
+/*
+ * ── The width control (UI-066, SPEC.md §11's rider of 2026-08-04) ─────────
+ *
+ * *"The document body has a comfortable default width, and the reader can
+ * change it — in column view and in full screen… Anchored thread placement
+ * follows the body when it moves, and the control is operable from the keyboard
+ * like every other affordance."*
+ *
+ * **The rail is how the handle knows where the body's edge is.** The measure is
+ * `62ch` (`66ch` in focus mode) and `ch` is font-dependent, so its pixel value
+ * is the browser's to know. Rather than compute it, this empty box carries the
+ * *same* `max-width` and the *same* type the body carries — so its right edge
+ * **is** the body's right edge, by construction, at the default and at every
+ * width somebody drags to. The type declarations below are therefore
+ * load-bearing and must stay in step with `.doc-body` in
+ * `@corpus/kit/markdown.css`; `.title-grow` above sets its own font for exactly
+ * this reason, and the comment there records what happens when it does not.
+ *
+ * **The handle hangs entirely outside the measure.** `right: -12px` with
+ * `width: 12px` puts it in `[measure, measure + 12px]` — in the gutter, never
+ * over a character — because a strip that straddled the edge would swallow the
+ * click that places a caret at the end of a line. It stays inside
+ * `.reader-scroll`'s 22px of right padding, so it adds no horizontal overflow.
+ *
+ * **It is invisible until you reach for it**, exactly like `.col-resizer` in
+ * `Column.css` and `.console-resizer` in `design/index.html` — the mockup draws
+ * no width handle, because the feature is new, but it draws the *treatment*: a
+ * `role="separator"` strip with a resize cursor that washes `--accent-wash` on
+ * hover and while dragging. Two edges in the same app that behave differently is
+ * worse than one nobody notices at rest.
+ *
+ * Nothing here widens the column. A column's width is its view document's
+ * (`board/columnWidth.ts`) — that describes the view and travels with it, while
+ * this describes the viewer and stays in this browser. The column's own edge is
+ * still the way to make the column bigger.
+ */
+.doc-main {
+  /* The rail's containing block, and nothing else: `.doc-main` has no
+     absolutely positioned descendant of its own, and the margin cards are
+     positioned against `.focus-margin`, which is its sibling. */
+  position: relative;
+}
+
+.doc-width-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  /* In step with `.doc-body` — see the note above. */
+  font-family: var(--serif);
+  font-size: 15px;
+  max-width: var(--doc-measure, 62ch);
+  /* The rail is a ruler, not a target: only the handle takes the pointer. */
+  pointer-events: none;
+  /*
+   * Above the editor, and this line is the difference between a handle that
+   * drags and one that does nothing (measured in Chromium, UI-066). `.doc-editor`
+   * is `position: relative` and spans the **whole** of `.doc-main` — only the
+   * `.doc-body` inside it carries the measure — so it is a positioned sibling
+   * later in document order, and it painted over the gutter the handle lives in.
+   * Focus still reached the handle, so the keyboard worked and only the pointer
+   * was dead: a defect a component test cannot see, because hit testing is the
+   * browser's.
+   */
+  z-index: 3;
+}
+
+.doc-width-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -12px;
+  width: 12px;
+  cursor: col-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.doc-width-handle:hover,
+.doc-width-handle:focus-visible,
+.doc-width-handle.resizing {
+  background: var(--accent-wash);
+  outline: none;
+}
+
 /* ── Frontmatter ── */
 .fm-chips {
   display: flex;
@@ -288,7 +374,7 @@
      closer. */
   line-height: 1.25;
   /* After the font, so `ch` is this serif's. */
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
 }
 
 /* The mirror measures right only while it wraps exactly as the field does, so
@@ -335,7 +421,7 @@
   flex-wrap: wrap;
   gap: 10px;
   margin: 8px 0 14px;
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
 }
 
 .fm-field {
@@ -375,7 +461,7 @@
   align-items: center;
   gap: 10px;
   margin: 0 0 14px;
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--sepia-ink);
@@ -408,7 +494,7 @@
   margin-bottom: 14px;
   font-size: 12.5px;
   color: var(--ink-2);
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
 }
 
 .reader-gone {
@@ -416,7 +502,7 @@
   border-radius: 10px;
   background: var(--surface-2);
   padding: 12px 14px;
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
 }
 
 .reader-note {
@@ -426,7 +512,17 @@
   color: var(--ink-3);
 }
 
-/* ── 💬 popover and the ⋯ menu (one anatomy, two contents) ── */
+/*
+ * ── The `Document / Comments` switch (SPEC.md §11's rider, 2026-08-04) ──
+ *
+ * It **is** the 💬 button — the same pill, the same place, the same width —
+ * with a pressed state for the half you are on. That is what the row can hold:
+ * a segmented two-position control was built and measured, and it overflowed
+ * the narrowest column by 29px and truncated the document id at 560px. See
+ * `comments/CommentsSwitch.tsx` for the numbers.
+ *
+ * `flex: none`, by the head's own rule: it is a control, so it never yields.
+ */
 .comments-btn {
   font-family: var(--mono);
   font-size: 11px;
@@ -437,8 +533,20 @@
   flex: none;
 }
 
+/* Showing the list: the same pill, filled. Colour rather than content, so the
+   toggle moves no neighbour when it flips (SHARED-057). */
+.comments-btn.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.comments-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /*
- * The thread count inside 💬, in its own box (SPEC.md §11's rider, 2026-08-20).
+ * The thread count, in its own box (SPEC.md §11's rider, 2026-08-20).
  *
  * The button is `flex: none` — a control that never yields, by the rule above —
  * so a count crossing into two digits widens the *control*, and the head pays
@@ -458,6 +566,8 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── The ⋯ menu's popover (one anatomy, two contents) ── */
 
 .comments-pop {
   position: absolute;
@@ -531,7 +641,7 @@
 /* ── Threads on the document ── */
 .thread-slots {
   margin-top: 18px;
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
 }
 
 .thread-slot {
@@ -582,7 +692,7 @@
   padding: 12px 14px;
   font-family: var(--sans);
   font-size: 12.5px;
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
 }
 
 .thread-card.resolved {
@@ -628,18 +738,85 @@
   margin-bottom: 6px;
 }
 
+/*
+ * Resolve/Reopen — `design/index.html`'s `.t-resolve`, ported (UI-096).
+ *
+ * It had no rule at all in the app, so it drew as an unstyled inline button with
+ * no box of its own. That is half of what made the head's right end read as
+ * crowded: there was nothing there for the fold control to be spaced *from*.
+ * `flex: none` is the mockup's, and it is the same rule the reader head keeps —
+ * a control never yields.
+ */
+.t-resolve {
+  font-family: var(--mono);
+  font-size: 10px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 1.5px 8px;
+  color: var(--good);
+  flex: none;
+}
+
+.t-resolve:hover {
+  background: var(--good-wash);
+}
+
+.t-resolve:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/*
+ * ── The fold control (UI-096) ────────────────────────────────────────────
+ *
+ * **In the head's flow, which is where the mockup has always drawn it.** It was
+ * `position: absolute; top: 8px; right: 10px` here — a ~13×15px glyph dropped
+ * into the same corner `.t-status` and `.t-resolve` are pushed to by
+ * `margin-left: auto`, so the three were not laid out in relation to each other,
+ * they merely landed in the same place. The cost of missing a 13px target next
+ * to Resolve is resolving a conversation you meant to fold.
+ *
+ * Being in flow is also what makes the spacing survive a card whose quote wraps
+ * to two lines: `.t-head` wraps, and an absolutely-positioned corner control
+ * does not move when the row below it does.
+ *
+ * **The target is 26×26 and the card does not grow for it.** The box is the hit
+ * area and the negative block margin gives the extra height back to the head, so
+ * the visual rhythm is the one the mockup drew — a small grey glyph — while the
+ * thing a pointer or a finger has to hit is comfortably over the 24px floor.
+ * `margin-left` adds to `.t-head`'s own 8px gap, so Resolve and the fold sit 12px
+ * apart rather than adjacent.
+ *
+ * Hover and focus paint the whole box, which is what makes the size
+ * discoverable: the rule is that the target's extent is visible, not merely
+ * present.
+ */
 .t-collapse {
-  position: absolute;
-  top: 8px;
-  right: 10px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  /* The head's items are ~18px tall (`.chip`, `.t-resolve`); this keeps the 26px
+     target from adding 8px to every card's head. */
+  margin: -4px 0 -4px 4px;
+  border-radius: 6px;
   color: var(--ink-3);
   font-size: 13px;
-  padding: 0 5px;
   line-height: 1;
 }
 
 .t-collapse:hover {
   color: var(--ink);
+  background: var(--surface);
+}
+
+.t-collapse:focus-visible {
+  color: var(--ink);
+  background: var(--surface);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .turn {
@@ -704,7 +881,7 @@
   padding-top: 12px;
   border-top: 1px solid var(--line);
   font-family: var(--sans);
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
 }
 
 .backlinks h3 {
@@ -739,7 +916,7 @@
   padding-top: 12px;
   border-top: 1px solid var(--line);
   font-family: var(--sans);
-  max-width: 62ch;
+  max-width: var(--doc-measure, 62ch);
 }
 
 /* Stacked directly under backlinks they read as one pair, not two sections. */
@@ -821,4 +998,20 @@
 
 .provenance-resident {
   color: var(--ink-2);
+}
+
+/*
+ * The document half's wrapper (UI-063).
+ *
+ * `display: contents` so it is invisible to layout — the body's measure, the
+ * margin grid and every `.doc-main` rule behave exactly as they did without it —
+ * and `[hidden]` is what takes the half off screen while the comments list is
+ * showing. See `DocView` for why the editor is hidden rather than unmounted.
+ */
+.doc-body-slot {
+  display: contents;
+}
+
+.doc-body-slot[hidden] {
+  display: none;
 }

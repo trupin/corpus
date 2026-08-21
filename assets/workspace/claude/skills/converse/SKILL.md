@@ -5,7 +5,7 @@ id: doc_skillconverse
 type: skill
 title: Converse
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-17T00:00:00Z
+updated: 2026-08-21T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -141,9 +141,15 @@ failures later.
 
    - **No row for your thread** — nothing designated you, or the designation was already
      released. Say so and exit; do not park on a lane nobody assigned you.
-   - **Your row reads `live`** — a listener already holds this lane. Exit without claiming
-     anything and log why. Two of you would split the conversation's story in half, and the
-     one already there has the context.
+   - **Your row reads `live`** — a listener already holds this lane, or held it recently
+     enough that the reading has not yet gone. **Where your launch says it follows a
+     release, park anyway**: that `live` is the listener you are replacing — or the window
+     its last park left behind — and its designation is gone, so it is leaving whether or
+     not it knows yet. The first contested claim (*The loop*) is what settles which of you
+     stays, exactly as it settles every other duplicate. **Where your launch says nothing
+     about a release, exit without claiming anything and log why**: the listener already
+     there is the lane's answer, it has the context, and two of you would
+     split the conversation's story in half.
    - **`waiting for a listener` or `lapsed`** — take the lane, and take two cautions with you.
      `lapsed` means a listener parked here once and has been gone long enough that the
      orchestrator has been covering; `waiting` means the server has observed no park on this
@@ -374,8 +380,13 @@ Two consequences you will actually meet:
   stamped for your lane before a release stay yours to settle.
 - **You never see the designation event.** `resident.designated` goes to the *orchestrator's*
   lane whoever is designated — a resident does not announce itself to itself — so it is not
-  work you will be handed, and re-designating a lane you are already holding launches nothing
-  new. It is how a person asks for a listener that stopped running to be started again.
+  work you will be handed. Re-designating is how a person asks for a listener that stopped
+  running to be started again, and it is also how they hand the lane to a successor: it
+  **replaces** the designation you were launched for, and a new listener may be launched
+  while you still hold your park. Whether one is launched is the orchestrate skill's rule,
+  and none of it is addressed to you. Yours is only how you find out you were succeeded — a
+  changed weight on your row (*Retirement*), or the first contested claim (*The loop*) —
+  and that until then you work on.
 
 **Reason from the lane, never from your own idea of what belongs to you.** The event arrived
 on your lane, so it is yours to work; that is the entire test, and it is the server's

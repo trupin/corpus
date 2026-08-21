@@ -157,14 +157,26 @@ describe("Reader", () => {
     expect(head?.querySelector(".reader-id")?.textContent).toBe("doc_m · git ✓");
     // Present and empty: UI-006's slot.
     expect(head?.querySelector(".save-chip")?.textContent).toBe("");
+    // 💬 is the `Document / Comments` switch now (UI-063): same element, same
+    // place, same width, pressed while the list is showing.
     await waitFor(() => {
       expect(head?.querySelector(".comments-btn")?.textContent).toBe("💬 1");
     });
+    expect(head?.querySelector(".comments-btn")?.getAttribute("aria-pressed")).toBe("false");
+    expect(head?.querySelector(".comments-btn")?.getAttribute("aria-label")).toBe(
+      "Comments — 1 comment on this document",
+    );
     expect(head?.querySelector("[data-doc-menu]")?.className).toBe("expand");
     expect(head?.querySelector("[data-expand]")?.className).toBe("expand");
   });
 
-  it("hides 💬 entirely for a document with no threads", async () => {
+  /**
+   * 💬 keeps its own condition — the head's slack is measured against a head
+   * without it (see `comments/CommentsSwitch`) — so a document with no
+   * conversations reaches the list through the ⋯ menu instead, which costs the
+   * row nothing.
+   */
+  it("leaves 💬 off a document with no threads, and offers Comments on ⋯", async () => {
     const wire = readerTransport({ docs: [MORTGAGE] });
     const { container } = render(<Host wire={wire} />);
     await showsTitle(container, "Mortgage options");
@@ -172,6 +184,18 @@ describe("Reader", () => {
       expect(container.querySelector(".doc-body")).not.toBeNull();
     });
     expect(container.querySelector(".comments-btn")).toBeNull();
+
+    fireEvent.click(container.querySelector("[data-doc-menu]") as HTMLElement);
+    const comments = [...document.querySelectorAll(".cp-item")].find((item) =>
+      item.textContent?.startsWith("Comments"),
+    );
+    expect(comments).toBeDefined();
+    fireEvent.click(comments as HTMLElement);
+    await waitFor(() => {
+      expect(container.querySelector(".comments-tab")).not.toBeNull();
+    });
+    // …and the toggle is there now, which is the way back.
+    expect(container.querySelector(".comments-btn")?.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("renders a ref as the target's current title and follows it in place", async () => {
@@ -525,18 +549,50 @@ describe("Reader", () => {
     });
   });
 
-  it("expands, scrolls to and flashes the thread the 💬 popover chose", async () => {
-    const { container } = render(<Host wire={fullWire()} />);
+  /**
+   * The reveal seam (UI-037), reached from the comments list instead of from the
+   * 💬 popover it replaced: the switch flips back to the document and the same
+   * `jumpToThread` expands, flashes and scrolls to the conversation.
+   */
+  it("expands, scrolls to and flashes the thread revealed from the comments list", async () => {
+    /*
+     * The reveal is offered on an **anchored** row alone, so the document has to
+     * carry the anchor: an orphan and a whole-document remark have nothing in
+     * the body to be revealed at, which is exactly the distinction the tab
+     * draws.
+     */
+    const anchored = docFixture({
+      frontmatter: { id: "doc_m", title: "Mortgage options", tags: ["finance"] },
+      body: MORTGAGE.body,
+      anchors: [
+        {
+          anchorId: "anc_1",
+          threadId: "th_rate",
+          selector: { exact: "Compare", prefix: "", suffix: " against" },
+          threadStatus: "open",
+          range: { start: 0, end: 7 },
+          orphaned: false,
+        },
+      ],
+    });
+    const { container } = render(<Host wire={fullWire({ docs: [anchored, RATES, THREAD_DOC] })} />);
     await waitFor(() => {
       expect(container.querySelector(".comments-btn")).not.toBeNull();
     });
 
     fireEvent.click(container.querySelector(".comments-btn") as HTMLElement);
-    fireEvent.click(container.querySelector(".cp-item") as HTMLElement);
+    const reveal = await waitFor(() => {
+      const button = container.querySelector("[data-reveal-thread]");
+      expect(button).not.toBeNull();
+      return button as HTMLElement;
+    });
+    fireEvent.click(reveal);
 
     await waitFor(() => {
       expect(container.querySelector(".thread-slot.expanded")).not.toBeNull();
     });
+    // Back on the document half, which is what "at its anchor" requires.
+    expect(container.querySelector(".doc-body")).not.toBeNull();
     expect(container.querySelector(".thread-card.flash")).not.toBeNull();
   });
 

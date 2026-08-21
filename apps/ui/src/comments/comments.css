@@ -1,0 +1,186 @@
+/*
+ * The Comments tab (SPEC.md §11's comments-list rider, signed 2026-08-04).
+ *
+ * `design/index.html` has no comments list to port — the mockup's 💬 popover is
+ * what this replaced — so the surface is built out of the treatments the mockup
+ * does define, and nothing new is invented: the filters are the composer
+ * toggle's pill (`--accent-wash` on `--accent-ink` when live), the rows are
+ * `.thread-slot`s exactly as the below-body list draws them, and the composer at
+ * the foot is `.composer`, unchanged.
+ *
+ * **Nothing in here resizes because of what it holds** (SPEC.md §11,
+ * SHARED-057). Two places would have: a filter option carrying a count, and a
+ * row carrying a quote of unknown length. The count sits in a reserved box
+ * (`.cm-count`), and the quote truncates with the whole of it on a `title`.
+ */
+
+.comments-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── The two axes ── */
+
+.cm-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cm-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cm-filter-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  /* The axis names are two fixed words; reserving the wider one keeps the two
+     groups' segments aligned with each other however they are ordered. */
+  min-width: 6ch;
+}
+
+.cm-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 2px 9px;
+  cursor: pointer;
+  /* A control, so it never yields — the segment's width is its label's and the
+     reserved count box's, and neither follows the corpus. */
+  flex: none;
+  white-space: nowrap;
+}
+
+.cm-opt:hover {
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.cm-opt.on {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+  border-color: var(--accent);
+}
+
+/*
+ * The radio itself: invisible, and still focusable.
+ *
+ * `display: none` and `visibility: hidden` both take an input out of the tab
+ * order, which would cost the group the keyboard behaviour it is a native radio
+ * group *for*. It is drawn to zero size instead, and the label around it shows
+ * the focus.
+ */
+.cm-opt-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.cm-opt:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/*
+ * The count's box is **reserved**, not fitted (SHARED-057).
+ *
+ * Two digits is the plausible range for the conversations on one document —
+ * the same reservation `.comments-count` makes in the reader head, and made
+ * here for the same reason: a count that arrives after the control has painted
+ * must not re-cut its neighbours.
+ */
+.cm-count {
+  display: inline-block;
+  min-width: 2ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+.cm-opt.on .cm-count {
+  color: inherit;
+}
+
+/* ── The rows ── */
+
+.cm-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cm-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cm-why {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  /* The row is a fixed box holding a quote of unknown length: the sentence
+     truncates into it and the whole of it is on the `title`. */
+  min-width: 0;
+}
+
+.cm-why-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.cm-row[data-anchor-state="orphaned"] .cm-why-text {
+  color: var(--signal);
+}
+
+/* A control beside variable text: it keeps its size, and the sentence yields. */
+.cm-reveal {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+  border-radius: 99px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.cm-reveal:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.cm-empty {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin: 0;
+  padding: 18px 0;
+}
+
+/* ── The composer at the foot ──
+   `.composer` ships from `thread/thread.css` with the reply box; this only says
+   where the new-thread one sits. */
+.cm-new {
+  margin-top: 4px;
+}

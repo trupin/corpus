@@ -15,6 +15,16 @@
  * *hiding* that document: the search overlay (40, UI-009), the selection
  * toolbar (50) and the menus and popovers (60). It shipped at 55, which painted
  * a fading highlight over the search overlay and over focus mode's own chrome.
+ *
+ * **And above the toasts (30, `shell/Toasts.css`)** — the one layer the list
+ * above omitted (UI-048 item 5). That order is deliberate rather than incidental:
+ * a toast is a notice that will still be there in a moment and can be re-read,
+ * while the flash is a 1.2 s answer to *where*, drawn over the exact words the
+ * reader is looking for. Nothing is blocked either way — every box here is
+ * `pointer-events: none` — so what a stack decides is which of the two is
+ * legible for a second, and the transient pointer is worth more than the notice
+ * beside it. Below 36 and it would fade behind a toast that happens to overlap
+ * the passage; the toast is what should give.
  */
 .reveal-flash-layer {
   position: fixed;

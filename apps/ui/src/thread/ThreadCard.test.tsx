@@ -158,6 +158,32 @@ describe("the head", () => {
     expect(second.container.querySelector(".t-collapse")).toBeNull();
   });
 
+  /**
+   * UI-096. jsdom has no layout, so nothing here can assert a hit box — the
+   * 26×26 target and its separation from Resolve are verified in a real browser
+   * (`e2e/reader-head-geometry.spec.ts`) and against `design/index.html`. What a
+   * unit test *can* pin is the structural half of the fix: the control is in the
+   * head's flow, after Resolve, focusable and named — which is what stopped it
+   * being a corner overlay in the first place.
+   */
+  it("puts the fold control in the head, after resolve, focusable and named", async () => {
+    const { container } = render(<Host transport={wire()} host="slot" onCollapse={vi.fn()} />);
+    await loaded(container);
+    const head = container.querySelector(".t-head");
+    const collapse = head?.querySelector(".t-collapse");
+    expect(collapse).not.toBeNull();
+    expect(collapse?.getAttribute("aria-label")).toBe("Collapse thread");
+    // Its own element in the row, not a box positioned over the row's other
+    // items: the two controls are siblings in the same flow, in this order.
+    const controls = [...(head?.children ?? [])].map((node) => node.className);
+    expect(controls.filter((name) => name === "t-resolve" || name === "t-collapse")).toEqual([
+      "t-resolve",
+      "t-collapse",
+    ]);
+    // A `<button>`, so the keyboard reaches it without a tabindex of its own.
+    expect(collapse?.tagName).toBe("BUTTON");
+  });
+
   it("resolves and reopens through the thread routes", async () => {
     const transport = wire();
     const { container } = render(<Host transport={transport} />);

@@ -109,7 +109,16 @@ export function TodoItemComposer({
   const create = useCreateThread();
   const intake = useAttachmentIntake();
 
-  useDismissable(surface, onClose);
+  /*
+   * An outside click does not throw away a draft (UI-048 item 3). Either half of
+   * a comment is worth keeping — §6 allows a first turn that is a file and no
+   * words — so the guard asks the same question the send button does. An empty
+   * composer still closes on a click away: there is nothing to lose, and a box
+   * that would not go away would be worse. Escape closes it either way.
+   */
+  useDismissable(surface, onClose, {
+    guard: () => text.trim() !== "" || intake.pending.length > 0,
+  });
 
   useEffect(() => {
     input.current?.focus();

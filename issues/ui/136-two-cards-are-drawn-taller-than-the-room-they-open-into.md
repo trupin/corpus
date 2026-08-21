@@ -26,6 +26,49 @@ opus
 
 - SPEC.md **§11** — the search overlay, the composer, and *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
 
+## Reconciled by UI-142 (2026-08-21) — finding 1 is closed, 2 and 3 stand
+
+UI-142 audited SPEC.md §11's rider of 2026-08-21 (SHARED-061) and asked whether
+these three are that same defect seen from the other side. The answer differs
+per finding, and the split is the reason this issue is not simply closed.
+
+**Finding 1 is folded in and done.** It *is* SHARED-061: the card's bound did not
+consult the box that actually bounded it. Both halves are now fixed in
+`packages/kit/src/address/ComposerAddress.tsx`.
+
+- The card's **width** is derived from the row it sits in, clamped by the
+  bounding ancestor's right edge, so inside `.search-panel` it lands 8px inside
+  the panel instead of taking a fixed 240px.
+- The **ceiling walk** (`clipperOf`) now stops at any bounding ancestor rather
+  than only at a scrollport. Its docblock quotes the earlier rejection verbatim
+  and records why the premise expired: bounding to the clip cost three visible
+  rows only because the card was 240px wide, and the width constant is gone.
+
+Measured at 1280×720, the card's top against the panel's (negative = inside):
+
+```
+                            3 lanes         20 lanes
+before UI-142               25px cropped    25px cropped
+after the width fix alone    0px            80px cropped   ← briefly worse
+after the clip walk         6px inside      6px inside
+```
+
+The acceptance criterion this issue set — *"must not squeeze a three-lane list to
+one visible row"* — holds: at 581px of card those three lanes share one row.
+
+**Findings 2 and 3 are deliberately kept apart.** They are not this rule.
+
+- **2, the reader column's async width**, is SHARED-057's first sentence — *a
+  value that arrives later than the box laid out against it*. Nothing about it is
+  a bound chosen too small; the bound is simply not known yet. A different half
+  of §11, and `settledReader()` is still the open question.
+- **3, the reply foot at 336px**, is SHARED-057 clause 2 — *what yields when a
+  row runs out of room*. The room there is the column, and the column's width is
+  the user's own choice, so there is no larger room being refused. SHARED-061
+  does not reach it.
+
+Both keep their acceptance criteria unchanged. Finding 1's may be struck.
+
 ## Summary
 
 Three findings from the v0.15.0 fixes, all **pre-existing**, all left rather than

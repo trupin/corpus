@@ -1,4 +1,6 @@
-import type { RevealItem } from "@corpus/kit/plugin";
+import type { RevealItem, RevealTarget } from "@corpus/kit/plugin";
+import { DISCOVERY_BUDGET_MS } from "../plugins/registry";
+import type { ToastNotice } from "../shell/Toasts";
 import "./reveal.css";
 
 /**
@@ -25,23 +27,64 @@ import "./reveal.css";
 /** How long the reveal box stays lit — the `.thread-card.flash` duration. */
 export const REVEAL_FLASH_MS = 1200;
 
-/** Passes at finding the text before giving up; the body may still be arriving. */
-export const REVEAL_RETRIES = 5;
+/**
+ * Frames the surface must sit **unchanged, once it is known to have arrived**,
+ * before a reveal accepts that the words are not on it (UI-140).
+ *
+ * This is the whole of the "not there" / "not there yet" distinction, and it is
+ * measured against the surface rather than against a clock. A surface that has
+ * arrived and then stopped moving can be searched conclusively, so a search of
+ * it that finds nothing is evidence of absence. A surface that has told the
+ * reveal nothing has told it nothing, and no amount of waiting on a stopwatch
+ * turns silence into evidence — see {@link revealPatience}.
+ *
+ * **Frames, not milliseconds, because the question is "how many chances did the
+ * renderer have to change this?"** — and a frame is exactly one such chance. The
+ * rejected alternative was to keep the old millisecond ladder and lengthen it:
+ * that counts time the renderer may never have been given, and it is weakest on
+ * precisely the machine where the work is slowest.
+ */
+export const REVEAL_QUIET_FRAMES = 20;
+
+/**
+ * The allowance, past discovery, for the renderer to put a body on screen.
+ *
+ * Measured rather than chosen: on a laptop running eight Playwright workers the
+ * gap between the reader's `Loading…` placeholder and the rendered document ran
+ * to 1733 ms (UI-140's probe). Two seconds is comfortably past the worst of
+ * those and is the same order as the promise it is added to.
+ */
+const REVEAL_MOUNT_MS = 2_000;
+
+/**
+ * The longest a reveal waits for a surface that never settles — the ceiling, and
+ * the only duration in the mechanism.
+ *
+ * **Derived, not guessed.** `DocView` shows `Loading…` and no body at all while
+ * plugin discovery is pending, and `DISCOVERY_BUDGET_MS` is the reader's own
+ * promise that the body paints regardless past that point. A reveal that gave up
+ * before then would be answering a question the surface was not yet able to
+ * hear, which is exactly the defect UI-140 was filed for. So the ceiling is that
+ * promise plus {@link REVEAL_MOUNT_MS} for the renderer that follows it.
+ *
+ * It is in milliseconds, deliberately, where {@link REVEAL_QUIET_FRAMES} is in
+ * frames: a ceiling counted in frames would never expire in a tab nobody is
+ * looking at, because a hidden tab paints none. The two units measure two
+ * different things and neither converts into the other.
+ */
+export const REVEAL_WAIT_MS = DISCOVERY_BUDGET_MS + REVEAL_MOUNT_MS;
 
 /**
  * Consecutive frames the tracker may find nothing before it stops following.
  *
- * A different budget from {@link REVEAL_RETRIES}, which counts *openings* of a
- * document spaced {@link REVEAL_RETRY_MS} apart: this one counts animation
- * frames while the flash is already lit, and it is what decides how long a
- * renderer may swap its text nodes out from under a live highlight before the
- * surface accepts the text is gone. They shared one constant, and a change to
- * either budget silently moved the other.
+ * A different budget from {@link REVEAL_QUIET_FRAMES}, which counts frames spent
+ * looking for text that has not been drawn yet: this one counts frames while the
+ * flash is *already lit*, and it is what decides how long a renderer may swap
+ * its text nodes out from under a live highlight before the surface accepts the
+ * text is gone. They shared one constant, and a change to either budget silently
+ * moved the other.
  */
 const REVEAL_MISS_FRAMES = 5;
-
-/** Delay between those passes. */
-export const REVEAL_RETRY_MS = 80;
 
 /**
  * Frames over which the reveal keeps re-aiming the scroll after it first lands.
@@ -441,4 +484,178 @@ export function revealItem(container: HTMLElement, target: RevealItem): (() => v
     untrack();
     flash.stop();
   };
+}
+
+/**
+ * What the surface reads, as one string — the thing a reveal is waiting on.
+ *
+ * Deliberately the *whole* container rather than a marker class: the reveal seam
+ * serves the editor, a `MarkdownView` and a plugin's own `View`, three renderers
+ * with three DOM shapes, and the only fact common to all of them is that text a
+ * reveal can find has to be text somebody can read.
+ */
+export function surfaceText(container: HTMLElement): string {
+  return container.textContent ?? "";
+}
+
+/**
+ * The attribute a renderer puts on what it shows **once it has finished
+ * arriving at it** — its body, or its "this document is gone" note.
+ *
+ * The reveal's other question of the surface, and the one text cannot answer
+ * (UI-140 follow-up, PR #54 review). "Has this surface arrived?" was inferred
+ * from having watched it change, which is true of a cold open and false of a
+ * warm one: a cached document whose body renders in the same commit that gives
+ * the reader content is fully arrived at the *first* look and never changes
+ * again. Inferring from movement alone, that surface can only ever time out —
+ * so a quote edited away from a document that loaded perfectly was reported,
+ * four seconds later, as a document that failed to load.
+ *
+ * **Declared rather than sniffed, and opt-in in the safe direction.** A renderer
+ * that says nothing is treated as still arriving, which is exactly the old
+ * behaviour: a forgotten marker costs a reveal the ceiling, and never causes it
+ * to claim absence it has not earned. `DocView` marks its two terminal renders
+ * and deliberately does not mark `Loading…`, which is the state UI-140 exists
+ * for.
+ *
+ * **What it cannot see**: a placeholder a plugin `View` paints *inside* the
+ * marked body. No shipped plugin registers a `View` (todos deliberately does
+ * not), and {@link REVEAL_QUIET_FRAMES} still has to elapse with the surface
+ * completely still, so a placeholder that swaps within ~330 ms is covered
+ * anyway. A `View` slower than that should mark its own arrival instead of its
+ * host's.
+ */
+export const REVEAL_SETTLED_ATTRIBUTE = "data-reader-settled";
+
+/** Whether the surface has said it finished arriving — see the attribute. */
+export function surfaceSettled(container: HTMLElement): boolean {
+  return (
+    container.hasAttribute(REVEAL_SETTLED_ATTRIBUTE) ||
+    container.querySelector(`[${REVEAL_SETTLED_ATTRIBUTE}]`) !== null
+  );
+}
+
+/** One look at the surface: the words on it, and whether it has finished. */
+export interface RevealSurface {
+  /** What a reveal searches — {@link surfaceText}, or a list's own reading. */
+  readonly text: string;
+  /**
+   * Whether the thing being waited on has arrived: the reader has rendered a
+   * body rather than its placeholder, the conversation list has answered. A
+   * surface that does not know says `false`, which costs patience and never
+   * spends it — see {@link revealPatience}.
+   */
+  readonly settled: boolean;
+}
+
+/** Why a reveal stopped looking. Neither means it found anything. */
+export type RevealGaveUp =
+  /** The surface finished arriving and does not contain the words. */
+  | "absent"
+  /** {@link REVEAL_WAIT_MS} passed and the surface never finished arriving. */
+  | "unresolved";
+
+export interface RevealLook {
+  /** The surface changed since the last look, so searching it again is worth it. */
+  readonly search: boolean;
+  /** Why the reveal has run out of patience, or `null` while it should keep looking. */
+  readonly giveUp: RevealGaveUp | null;
+}
+
+/**
+ * The reveal's patience, as a state machine over successive looks at the surface
+ * (UI-140).
+ *
+ * **The defect this exists for.** The reveal used to retry five times, 80 ms
+ * apart, and then spend the navigation instruction whether or not anything had
+ * been drawn. On a cold open the reader shows `Loading…` and no document at all
+ * while plugin discovery is pending, so those 320 ms were spent searching a
+ * placeholder — measured at 2.5% of opens under eight Playwright workers, and
+ * ~19% with four cores otherwise busy. "Open this document **at this**" then
+ * opened the document at the top and forgot what it was for.
+ *
+ * The fix is not a longer stopwatch. It is refusing to answer a question the
+ * surface has not been asked yet:
+ *
+ * - **The surface has not arrived, however it is asked.** It has said nothing.
+ *   Keep looking, however long that takes — this is the `Loading…` gap, and it
+ *   is `not there yet`.
+ * - **The surface has arrived and has now been still for
+ *   {@link REVEAL_QUIET_FRAMES} frames.** A search of it that found nothing is
+ *   evidence. This is `not there`, and it is how a quote the document genuinely
+ *   no longer contains still stops being asked for.
+ * - **{@link REVEAL_WAIT_MS} passed either way.** The ceiling, so a surface that
+ *   never settles — a plugin `View` that renders something else, a document that
+ *   never arrives — terminates rather than searching forever.
+ *
+ * **Arrival is two questions, and either answer is enough** (PR #54 review). The
+ * original asked only *did I watch it change*, which is evidence on a cold open
+ * and unobtainable on a warm one: a cached body renders in the commit that gives
+ * the reader content, so the first look is also the last, and a quote edited
+ * away from a perfectly-loaded document could only ever reach the ceiling — four
+ * seconds of waiting and then, in the tone kept for failures, the wrong account
+ * of it. So the surface may also *say* it has arrived
+ * ({@link RevealSurface.settled}), and a first look at a surface that says so is
+ * as good as watching one arrive. What has not changed is the rule the whole
+ * mechanism is for: a surface that has neither moved nor said anything is never
+ * concluded absent.
+ *
+ * Searching is driven by the same signal: a surface that has not changed cannot
+ * have gained the words, so re-walking it would be work with a knowable answer.
+ */
+export function revealPatience(): (surface: RevealSurface, elapsedMs: number) => RevealLook {
+  let last: RevealSurface | null = null;
+  let arrived = false;
+  let quiet = 0;
+
+  return (surface, elapsedMs) => {
+    // Settledness is half of the reading, so a list that answers "nothing at
+    // all" — same empty text as a list still in flight — is still a change.
+    const changed = last === null || surface.text !== last.text || surface.settled !== last.settled;
+    // The first look is a change from nothing, which is not the surface moving —
+    // but a first look at a surface that reports itself arrived is evidence.
+    if (surface.settled || (changed && last !== null)) arrived = true;
+    quiet = changed ? 0 : quiet + 1;
+    last = surface;
+
+    if (arrived && quiet >= REVEAL_QUIET_FRAMES) return { search: false, giveUp: "absent" };
+    if (elapsedMs >= REVEAL_WAIT_MS) return { search: false, giveUp: "unresolved" };
+    return { search: changed, giveUp: null };
+  };
+}
+
+/** How much of the quote a notice repeats before it stands for the rest. */
+const NOTICE_QUOTE_MAX = 48;
+
+/**
+ * What the reader is told when a reveal gives up (UI-140).
+ *
+ * **Giving up is not silent.** A person who asked to be taken somewhere and was
+ * not is owed an account of it, and until this existed the only trace was a
+ * document sitting at its top for no stated reason. The two reasons are two
+ * different messages because they are two different facts about the workspace:
+ * `absent` says the document moved on, which is ordinary and is information;
+ * `unresolved` says this session could not render the document in time, which is
+ * a fault and is worth the error tone that marks the console.
+ */
+export function revealMissNotice(target: RevealTarget, reason: RevealGaveUp): ToastNotice {
+  // A conversation has no quote to repeat — its id is a key, not a name — so it is
+  // named by what it is rather than misquoted by what it is called.
+  const what =
+    target.kind === "thread" ? "that conversation" : `“${clipped(collapse(target.exact))}”`;
+  return reason === "absent"
+    ? { tone: "info", message: `${capitalised(what)} is no longer on this document.` }
+    : {
+        tone: "error",
+        message: `Could not show ${what} — the document did not finish loading.`,
+      };
+}
+
+/** A quote too long for a toast, cut where it stops being read anyway. */
+function clipped(quote: string): string {
+  return quote.length > NOTICE_QUOTE_MAX ? `${quote.slice(0, NOTICE_QUOTE_MAX)}…` : quote;
+}
+
+function capitalised(value: string): string {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }

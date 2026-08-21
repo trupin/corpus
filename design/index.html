@@ -317,8 +317,11 @@
   .working { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12px; }
 
   .composer { margin-top: 9px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  .composer input { border: none; background: none; font: inherit; color: var(--ink); width: 100%; }
-  .composer input::placeholder { color: var(--ink-3); }
+  /* A reply is prose, and prose has paragraphs: `↵` inserts a newline, so the
+     field is multi-line (SPEC.md §11's composer key contract, SHARED-009
+     Amendment 1). */
+  .composer textarea { border: none; background: none; font: inherit; color: var(--ink); width: 100%; resize: none; min-height: 2.6em; }
+  .composer textarea::placeholder { color: var(--ink-3); }
   .composer-foot { display: flex; align-items: center; gap: 10px; font-size: 10.5px; font-family: var(--mono); color: var(--ink-3); }
   .composer-foot .toggle { cursor: pointer; }
   .composer-foot .toggle.on { color: var(--accent-ink); }
@@ -553,10 +556,10 @@
     <div class="compose-actions">
       <button class="clip" data-attach="compose" title="Attach files from disk">📎</button>
       <input type="file" multiple hidden data-attach-input="compose"/>
-      <span class="hint">@ agents · / skills · [[ refs · ⇧↵ newline</span>
+      <span class="hint">@ agents · / skills · [[ refs · ↵ newline</span>
       <span class="spacer"></span>
-      <button class="btn-capture" id="btn-capture" title="Save to inbox/ — the agent files it">Capture ⌘↵</button>
-      <button class="btn-ask" id="btn-ask" title="Start a standalone agent thread">Ask ↵</button>
+      <button class="btn-capture" id="btn-capture" title="Save to inbox/ — the agent files it">Capture ⇧⌘↵</button>
+      <button class="btn-ask" id="btn-ask" title="Start a standalone agent thread">Ask ⌘↵</button>
     </div>
   </div>
 </div>
@@ -1026,8 +1029,8 @@ function threadCardHTML(tid, opts = {}) {
     ${formHTML}
     <div class="composer" data-dropzone="${tid}">
       <div class="pending-atts" data-pending="${tid}">${(PENDING_ATT[tid] || []).map((a, i) => attChipHTML(a, tid, i)).join("")}</div>
-      <input placeholder="Reply — @ route · / skill · [[ link · paste or drop files" aria-label="Reply" data-composer="${tid}"/>
-      <div class="composer-foot"><button class="clip" data-attach="${tid}" title="Attach files from disk">📎</button><input type="file" multiple hidden data-attach-input="${tid}"/><span class="toggle on" data-toggle-agent>◉ ask agent</span><span>${resolved ? "reopens on reply" : "thread stays open"}</span><button class="send" data-send="${tid}">Reply ↵</button></div>
+      <textarea rows="2" placeholder="Reply — @ route · / skill · [[ link · paste or drop files" aria-label="Reply" data-composer="${tid}"></textarea>
+      <div class="composer-foot"><button class="clip" data-attach="${tid}" title="Attach files from disk">📎</button><input type="file" multiple hidden data-attach-input="${tid}"/><span class="toggle on" data-toggle-agent>◉ ask agent</span><span>${resolved ? "reopens on reply" : "thread stays open"}</span><button class="send" data-send="${tid}">Reply ⌘↵</button></div>
     </div>
   </div>`;
   if (opts.bare) return card;
@@ -2225,7 +2228,7 @@ function createThreadFromSelection() {
   window.getSelection().removeAllRanges();
   selToolbar.classList.remove("open");
   toast(`Comment created — anchor "${quote.slice(0, 42)}${quote.length > 42 ? "…" : ""}" written to frontmatter.`);
-  document.querySelector(`.thread-card[data-thread="${tid}"] input`)?.focus();
+  document.querySelector(`.thread-card[data-thread="${tid}"] textarea`)?.focus();
 }
 
 /* ── Search overlay ── */
@@ -2319,12 +2322,16 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.getElementById("btn-compose").addEventListener("click", openCompose);
+/* The signed key contract (SPEC.md §11, SHARED-009 Amendment 1): `↵` inserts a
+   newline everywhere, `⌘↵` is the primary action and `⇧⌘↵` the secondary one.
+   The prototype binds it here so the mockup cannot disagree with the app about
+   what a key does, as it did until UI-055. */
 document.getElementById("compose-text").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
-  if (e.shiftKey) return; // ⇧↵ = newline
+  if (!(e.metaKey || e.ctrlKey)) return; // ↵ = newline
   e.preventDefault();
   if (acMenu.classList.contains("open")) { acMenu.classList.remove("open"); return; }
-  document.getElementById(e.metaKey || e.ctrlKey ? "btn-capture" : "btn-ask").click();
+  document.getElementById(e.shiftKey ? "btn-capture" : "btn-ask").click();
 });
 composeOverlay.addEventListener("click", (e) => {
   const attachBtn = e.target.closest("[data-attach]");
@@ -2412,6 +2419,18 @@ document.addEventListener("change", (e) => {
   [...inp.files].forEach(f => addPendingFile(inp.dataset.attachInput, f));
   inp.value = "";
 });
+/* The reply box's keys, delegated because the cards are re-rendered from
+   `threadCardHTML` (SPEC.md §11's composer key contract, SHARED-009 Amendment 1):
+   `↵` inserts a newline, `⌘↵` sends. `#compose-text` has its own handler above,
+   because its two actions need `⇧⌘↵` as well. */
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+  const comp = e.target.closest && e.target.closest(".composer [data-composer]");
+  if (!comp) return;
+  e.preventDefault();
+  if (acMenu.classList.contains("open")) { acMenu.classList.remove("open"); return; }
+  comp.closest(".composer").querySelector("[data-send]")?.click();
+});
 document.addEventListener("paste", (e) => {
   const comp = e.target.closest && e.target.closest("[data-composer]");
   if (!comp) return;
@@ -2466,10 +2485,10 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "r" && !overlaysOpen && state.open[activeColId]) {
-    let input = [...$col.querySelectorAll(".reader input[data-composer]")].find(i => i.offsetParent);
+    let input = [...$col.querySelectorAll(".reader textarea[data-composer]")].find(i => i.offsetParent);
     if (!input) {
       const slot = $col.querySelector(".reader .thread-slot");
-      if (slot) { slot.classList.add("expanded"); markSeen([slot.dataset.slotThread]); input = slot.querySelector("input[data-composer]"); }
+      if (slot) { slot.classList.add("expanded"); markSeen([slot.dataset.slotThread]); input = slot.querySelector("textarea[data-composer]"); }
     }
     if (input) { e.preventDefault(); input.focus(); }
     return;
