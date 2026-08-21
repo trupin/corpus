@@ -831,7 +831,7 @@ through.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | todo | P1 | — |
+| INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | done | P1 | — |
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | done | P1 | — |
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
 | SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
@@ -1082,7 +1082,7 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
 | UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
 | UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | todo | P2 | — |
-| UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | todo | P1 | — |
+| UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | done | P1 | SHARED-058 |
 | UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
 
 **UI-128's ledger ranks six reachable clusters**, each measured in a real browser
@@ -1187,6 +1187,23 @@ in files the release already opens.
 - **UI-096** — the collapse glyph crowds resolve, in thread-card chrome UI-067 renders in place
 - **UI-048** — composer draft loss, among PR #19's MINORs, and UI-067 adds two composers
 - **UI-055** — the design mockup still binds the old composer keys, which UI-066/067 read as authoritative
+
+**Two more folded in mid-flight, 2026-08-21**, both already filed and both
+surfaced by UI-139's implementer rather than predicted:
+
+- **INFRA-028** (P1) — the e2e suite proxies to `127.0.0.1:8765` and so runs
+  against the user's live server. It failed a spec on this branch and was written
+  off as environmental, which is precisely the issue's own complaint: *"Two
+  expected failures is how three unexpected ones get through."* Tier 1 by its
+  effect — with three agents landing work here, their local e2e results have to
+  mean something.
+- **UI-032** (P2) — `Enter` activates no focused chrome button anywhere in the
+  app: the board scope binds it globally to `rows.open` and calls
+  `preventDefault()`. Filed 2026-07-31 against the ⋯ trigger, and UI-139's
+  implementer found the blast radius is app-wide — the console's own tabs have
+  been unpressable by keyboard since UI-125. UI-139 repaired it inside its
+  tablist; the general rule is still owed, and without it this release's
+  keyboard-reach claim holds only where someone patched it locally.
 
 **Left out and named**: UI-061 (a selection spanning several turns) is feature
 work needing its own design pass, not debt. CONTRACT-036 (`unread` on the wire)

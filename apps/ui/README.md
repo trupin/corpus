@@ -17,9 +17,15 @@ npm run dev -w apps/ui
 ```
 
 Vite serves on `5173` and proxies `/api`, `/attachments` and `/events` to
-`127.0.0.1:8765`, the workspace server's documented default. Point it at another
-workspace with `CORPUS_SERVER_ORIGIN`; override the UI port when something else
-holds `5173`:
+`127.0.0.1:8765`, the workspace server's documented default. **That default
+belongs to the `dev` script, not to the Vite config**: `vite.config.ts` proxies
+nothing unless `CORPUS_SERVER_ORIGIN` names a target, so no other entry point can
+reach a workspace server by accident (INFRA-028). `npm run dev:isolated` is the
+same dev server with nothing behind it — every workspace path answers `500`, and
+the console strip says "server unreachable". That is what the e2e suite runs.
+
+Point the dev server at another workspace with `CORPUS_SERVER_ORIGIN`; override
+the UI port when something else holds `5173`:
 
 ```sh
 npm run dev -w apps/ui -- --port 5273 --strictPort
@@ -77,7 +83,8 @@ so `npm test -w apps/ui` fails.
 
 - `npx vitest run apps/ui` (or `npm test` for the whole repo) — Vitest, jsdom per
   file via a `@vitest-environment` docblock.
-- `npm run e2e` — Playwright against the real dev server. Set
+- `npm run e2e` — Playwright against the real dev server, started with no proxy
+  target, so a workspace server running on `8765` changes nothing. Set
   `CORPUS_UI_PORT=5273` if `5173` is taken.
 
 Two environment quirks the suites work around, both documented at their

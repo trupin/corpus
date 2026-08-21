@@ -4,7 +4,8 @@
   "version": "0.15.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "CORPUS_SERVER_ORIGIN=\"${CORPUS_SERVER_ORIGIN:-http://127.0.0.1:8765}\" vite",
+    "dev:isolated": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
