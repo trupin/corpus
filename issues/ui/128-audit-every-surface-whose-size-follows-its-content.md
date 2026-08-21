@@ -301,7 +301,7 @@ promise cannot happen.
 
 | # | File + element | What drives the size | What moves | Person engaged? | Verified |
 | --- | --- | --- | --- | --- | --- |
-| A8 | **`font-variant-numeric: tabular-nums` appears nowhere in the repository.** `/usr/bin/grep -rn "tabular-nums\|font-variant-numeric" --include='*.css' apps/ui/src packages/kit/src plugins` returns nothing | Every count, age, duration and elapsed timer in the product | Whatever sits beside them, on every digit-count crossing | Sometimes — see below | **measured** (the absence; the amplitude is per-site) |
+| A8 | **`font-variant-numeric: tabular-nums` appears nowhere in the repository.** A repo-wide search for `tabular-nums` and for `font-variant-numeric` across every stylesheet returns nothing | Every count, age, duration and elapsed timer in the product | Whatever sits beside them, on every digit-count crossing | Sometimes — see below | **measured** (the absence; the amplitude is per-site) |
 
 The affected spans, all of which change while a person watches:
 `.col-count` (`Column.css:135`), `💬 {n}` (`ReaderHead.tsx:125`), `.cp-meta`
@@ -356,7 +356,7 @@ looked closest to the line.
 | L28 | `apps/ui/src/console/console.css:670-677` `.lane-note` inside `.lane-scope` (**no `min-height: 0`, no `overflow`**) inside `.console-body` (**no `overflow`**) | `scopeFailure` splices an arbitrary server message into a ~190ch note, which can paint past the bottom of the drawer | Nothing moves — but the text is lost, which is its own clause-2 failure | yes |
 | L29 | `apps/ui/src/console/console.css:679-686` `.scope-bound` | A content-sized band in a fixed-height column steals from `.scope-list`; at `MIN_CONSOLE_HEIGHT` 120px it leaves ~30px of list | Arrives with the members, so no post-paint jump | no |
 | L30 | `apps/ui/src/dev/DataProbe.css:17` `.probe-table` — auto layout, no column widths | `pending` → `ok`, `0 rows` → `128 rows` re-measures every column | Dev-only and unlinked; `DataProbe.tsx:18-21` says so | no |
-| L31 | `plugins/todos/ui/todos.css:397-401` `.todos-bar { justify-content: flex-end }` | **Compliant by accident**: `Show completed` and `Hide completed` are both 14 characters in `--mono`, so the button's left edge does not move under the pointer that just clicked it. There is no `min-width` holding that | no, but fragile |
+| L31 | `plugins/todos/ui/todos.css:397-401` `.todos-bar { justify-content: flex-end }` | **Compliant by accident**: `Show completed` and `Hide completed` are both 14 characters in `--mono`, so the button's left edge does not move under the pointer that just clicked it. There is no `min-width` holding that | no, but fragile | **latent** |
 
 ### Two composers judged against clause 4, deliberately
 

@@ -122,6 +122,50 @@ button.address-line:focus-visible {
 
 /* ── The popover ── */
 
+/*
+ * The card has a ceiling, and the lane list is what gives way (UI-130).
+ *
+ * It is `bottom`-anchored and grows **upward** out of a composer that sits
+ * inside `.reader-scroll` — a scrollport, not the window. With no ceiling it
+ * simply kept growing: measured at 1280×720 with twenty lanes the card was
+ * 667px tall and its top reached **y=−248**, while the reader's scrollport
+ * starts at y=159. Twelve of the twenty rows were off-screen entirely and five
+ * more were behind the top bar, the column head and `.reader-head`, which took
+ * the pointer events aimed at them (`document.elementFromPoint` answered
+ * `DIV.reader-head` at three of the row centres). Those lanes could not be
+ * chosen at all.
+ *
+ * **Two numbers and a clamp:**
+ *
+ * - `--address-pop-cap: 280px` — the ceiling, and it is measured rather than
+ *   round: **the ordinary roster fits whole under it**. The orchestrator plus
+ *   two conversation lanes, with the four-line statement reserve and a
+ *   resident's weight sentence, is a 256px card, so nothing about the ordinary
+ *   case scrolls. The fourth lane is where the list starts to scroll — and says
+ *   so. It is the same register `design/index.html` uses for a popover list
+ *   (`.ac-menu` caps at 200px).
+ * - **The room above the line** — how much space there actually is inside the
+ *   nearest scrollport, which is the one thing CSS cannot ask. It arrives as
+ *   `--address-pop-max`, written by `ComposerAddress.tsx` when the card opens.
+ *   Measured at 1280×720 above a reply composer on a one-turn conversation:
+ *   **254px**; at 1280×400, 102px. It is the room and not the cap that makes the
+ *   guarantee, because the room is what shrinks when the window does — and it
+ *   is why a composer scrolled up near the top of its reader is bounded too,
+ *   which no constant could have done.
+ * - **One row is the floor**, and it is measured rather than declared, because
+ *   the parts above and below the list are not all the same height (a resident's
+ *   weight sentence is three lines where a level row is one). A card squeezed
+ *   until the list was 0px high would clear the head and offer nothing, which is
+ *   the defect wearing different clothes — so where the room will not take the
+ *   fixed parts and one row, `--address-pop-shift` moves the card *down* until
+ *   its top is 6px inside the scrollport. It is a clamp and never a flip: the
+ *   card stays where a person looks for it, above the line, and in the one
+ *   viewport where it cannot fit at all (1280×400, whose reader scrollport is
+ *   187px) it covers its own composer rather than the head.
+ *
+ * Only the lane list scrolls. The statement and the weight section are the
+ * parts UI-127 stabilised, and a scroll offset must never be able to move them.
+ */
 .address-pop {
   position: absolute;
   bottom: calc(100% + 6px);
@@ -137,17 +181,55 @@ button.address-line:focus-visible {
   border-radius: 9px;
   box-shadow: var(--shadow);
   padding: 9px 10px;
+
+  --address-pop-cap: 280px;
+  /* `--address-pop-max` is the fitted bound `ComposerAddress.tsx` writes when
+     the card opens; the cap is what stands until it does, and what bounds it
+     afterwards. */
+  max-height: var(--address-pop-max, var(--address-pop-cap));
+  transform: translateY(var(--address-pop-shift, 0px));
 }
 
 .address-section {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Every section keeps its size; the lane list's is the one that gives. */
+  flex: none;
+}
+
+/* The section the ceiling is paid out of: it takes the slack and passes it to
+   the list, which is the only child here allowed to scroll. */
+.address-recipient {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The lead and, when the list is capped, what says so — one line either way, so
+   the note costs the card no height (SPEC.md §11's rider, 2026-08-20). */
+.address-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex: none;
 }
 
 .address-lead {
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  flex: none;
+}
+
+/*
+ * A capped list that looked complete would be a silent cap, which is the one
+ * thing a bounded listing must not be. So the card says the count out loud, and
+ * the scrollbar below corroborates it.
+ */
+.address-more {
+  flex: none;
+  color: var(--ink-3);
+  white-space: nowrap;
 }
 
 .recipient-lanes,
@@ -156,6 +238,31 @@ button.address-line:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
+}
+
+.recipient-lanes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* A wrap container given a height distributes its lines by default; the rows
+     belong at the top of the list, not spread down it. */
+  align-content: flex-start;
+  /* Reserved always, so the roster that grows past the ceiling does not re-wrap
+     the rows that were already there. */
+  scrollbar-gutter: stable;
+}
+
+/* The board's own scrollbar vocabulary (`design/index.html`: `.col-list`,
+   `.reader-scroll`). Styling it also takes the list off macOS's overlay
+   scrollbars, which are invisible until you already scrolled — exactly the
+   affordance a capped list cannot afford to hide. */
+.recipient-lanes::-webkit-scrollbar {
+  width: 8px;
+}
+
+.recipient-lanes::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 99px;
 }
 
 /* ── Row anatomy, shared by both sections ── */
@@ -302,4 +409,6 @@ button.address-line:focus-visible {
   max-width: 300px;
   color: var(--ink-3);
   line-height: 1.5;
+  /* Outside the ceiling's give, like every section but the list. */
+  flex: none;
 }

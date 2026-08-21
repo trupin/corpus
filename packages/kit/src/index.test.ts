@@ -206,6 +206,9 @@ const RUNTIME_SURFACE = [
   "answeringRow",
   "residentWeightSentence",
   "weightLabel",
+  // What a lane list says when it reached the card's ceiling (UI-130): a capped
+  // list that looked complete would be a silent cap.
+  "lanesCappedNote",
   "ADDRESS_OPEN_TITLE",
   "ADDRESS_FLOOR_TITLE",
   "ADDRESSED_TO",

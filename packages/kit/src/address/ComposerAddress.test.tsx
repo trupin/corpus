@@ -8,7 +8,7 @@ import { DEFAULT_ROW_NOTE } from "../recipient/statement.js";
 import type { ComposerRecipient } from "../recipient/useComposerRecipient.js";
 import type { ComposerWeight } from "../weight/weightChoice.js";
 import { composerAddress, residentWeightSentence, NOBODY_ASKED } from "./addressModel.js";
-import { ComposerAddress, WEIGHT_GROUP_LABEL } from "./ComposerAddress.js";
+import { ComposerAddress, lanesCappedNote, WEIGHT_GROUP_LABEL } from "./ComposerAddress.js";
 
 /**
  * The control (UI-126): the line, the popover, and what the popover refuses to
@@ -310,5 +310,30 @@ describe("the statement", () => {
 
     fireEvent.blur(row("th_a"));
     expect(statement().title).toBe(atRest);
+  });
+});
+
+/**
+ * The half of UI-130 that does not need layout. **The geometry is
+ * `apps/ui/e2e/address-geometry.spec.ts`'s** — jsdom reports every box as
+ * `0×0`, so a bound, a scroll and an overlap are all invisible here, and a unit
+ * test that asserted them would be asserting nothing.
+ *
+ * What is left is worth pinning anyway: the words, and that the fitting effect
+ * runs at all without a layout under it. A `useLayoutEffect` that threw on a
+ * `null` box would take every composer down with it.
+ */
+describe("the capped lane list", () => {
+  it("says the count and how to reach the rest", () => {
+    expect(lanesCappedNote(20)).toBe("20 lanes · scroll for the rest");
+  });
+
+  it("opens without a layout under it, and offers no note when nothing is capped", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(screen.getByRole("button", { name: /answer/i }));
+    // jsdom measures every box as zero, so the list can never be short of its
+    // content — the note is absent, and nothing threw on the way there.
+    expect(document.querySelector("[data-address-more]")).toBeNull();
+    expect(document.querySelector(".recipient-lanes")).not.toBeNull();
   });
 });
