@@ -6,12 +6,15 @@ import { unknownRecipient } from "../apps/server/src/errors.js";
 import { DOCUMENT_ROOTS, SKILL_FILENAME } from "../apps/server/src/projection/index.js";
 import {
   MENTION_TYPE,
+  NO_MENTIONS,
   invocableName as serverInvocableName,
   resolveMentionTarget,
 } from "../apps/server/src/threads/mentions.js";
+import { decideParticipation } from "../apps/server/src/threads/participation.js";
 import {
   ANCHOR_PARITY_CASES,
   invocableAgentName,
+  nextThreadStatus,
   parseThreadTurns,
   renderTurn,
   resolveAgentDefName,
@@ -107,6 +110,61 @@ describe("the e2e stub's thread turn parsing", () => {
     const body = turns.map((turn) => renderTurn(turn)).join("\n");
     expect(parseThreadBody(body).turns).toEqual(turns);
     expect(parseThreadBody(body).preamble).toBe("");
+  });
+});
+
+/**
+ * §8's reopen, in both implementations (UI-085).
+ *
+ * The stub answers `POST /api/threads/{id}/turns` and therefore has to decide
+ * what the turn leaves the thread's `status` as. The server decides it inside
+ * `decideParticipation`, where it is deliberately a fact about the **author**
+ * and nothing else, so the matrix below varies the two inputs the stub's copy
+ * takes and the two it does not — an explicit `requestsAgent` either way, and
+ * the thread's `agent` state — and asserts both sides agree on every cell.
+ *
+ * The cell that matters is the agent's turn on a resolved thread: a copy that
+ * reopened unconditionally passes every user-authored case and silently makes
+ * "a conversation the agent closes stays closed" untestable from the board.
+ */
+describe("the e2e stub's copy of §8's reopen", () => {
+  const authors = ["user", "agent"] as const;
+  const statuses = ["open", "resolved"] as const;
+  const agents = ["none", "requested", "engaged"] as const;
+  const asks = [undefined, true, false];
+
+  const cells = statuses.flatMap((status) =>
+    authors.flatMap((author) =>
+      agents.flatMap((agent) =>
+        asks.map((requestsAgent) => ({ status, author, agent, requestsAgent })),
+      ),
+    ),
+  );
+
+  it.each(
+    cells.map(
+      (cell) =>
+        [
+          `${cell.author} turn on a ${cell.status}/${cell.agent} thread, requestsAgent=${String(cell.requestsAgent)}`,
+          cell,
+        ] as const,
+    ),
+  )("agrees with the server — %s", (_name, cell) => {
+    const server = decideParticipation({
+      requestsAgent: cell.requestsAgent,
+      author: cell.author,
+      // No mentions: the sentence under test is about the author, and a parsed
+      // `@agent` would only move the *enqueue* half of the decision.
+      parsed: NO_MENTIONS,
+      thread: { agent: cell.agent, status: cell.status },
+    });
+    expect(nextThreadStatus(cell.status, cell.author)).toBe(server.status);
+  });
+
+  it("covers both outcomes, so a copy that never reopened would fail", () => {
+    expect(nextThreadStatus("resolved", "user")).toBe("open");
+    expect(nextThreadStatus("resolved", "agent")).toBe("resolved");
+    expect(nextThreadStatus("open", "user")).toBe("open");
   });
 });
 

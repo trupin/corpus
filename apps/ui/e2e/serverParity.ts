@@ -40,6 +40,13 @@
  *   here because here is where {@link resolveAgentDefName} can be pinned against
  *   the original.
  *
+ * - **Whether a turn reopens the conversation** (SPEC.md §8). A person's turn on
+ *   a resolved thread sets it back to `open` and the agent's does not, which is
+ *   a fact about the author alone. Ported as {@link nextThreadStatus} because
+ *   the append route reports the status the turn leaves behind, and a stub that
+ *   answered `resolved` there would let a spec certify a conversation that is
+ *   still closed on the server (UI-085).
+ *
  * **What the pin is for.** It is not a comment asking to be believed:
  * `scripts/stub-server-parity.test.ts` runs {@link ANCHOR_PARITY_CASES},
  * {@link TURN_PARITY_BODIES} and a seeded workspace of personas through **both**
@@ -60,7 +67,7 @@
  * business needing DOM types, Playwright, or anything else.
  */
 
-import { TURN_SEPARATOR, turnHeadings, type Turn } from "@corpus/contract";
+import { TURN_SEPARATOR, turnHeadings, type ThreadStatus, type Turn } from "@corpus/contract";
 
 /** A §6 text-quote selector, in the shape a request or a frontmatter entry has. */
 export interface StubSelector {
@@ -170,6 +177,27 @@ export function parseThreadTurns(body: string): readonly StubTurn[] {
 /** One turn's source text, heading included, without a trailing blank line. */
 export function renderTurn(turn: StubTurn): string {
   return `## ${turn.author} ${TURN_SEPARATOR} ${turn.ts}\n${turn.body === "" ? "" : `${turn.body}\n`}`;
+}
+
+/**
+ * §8's reopen (SHARED-019 Amendment 1), restated for the stub: "a turn written
+ * by a person on a `resolved` thread sets the thread back to `open`", and "a
+ * turn written by the **agent** never reopens a thread".
+ *
+ * The status a turn **leaves** the thread in, which is the value the append
+ * route reports and the value the board's cache then holds. It is a fact about
+ * the author and about nothing else — not about `requestsAgent`, not about
+ * whether the turn enqueues — so it takes those two and no more.
+ *
+ * The server's copy is `nextStatus` inside `decideParticipation`
+ * (`apps/server/src/threads/participation.ts`), and
+ * `scripts/stub-server-parity.test.ts` runs both over the same matrix. Kept here
+ * rather than in the stub for the reason the anchor resolver is: a rule the stub
+ * gets wrong makes every spec that exercises it an assertion about the stub, and
+ * "replying reopens the conversation" is exactly such a spec (UI-085).
+ */
+export function nextThreadStatus(status: ThreadStatus, author: StubTurn["author"]): ThreadStatus {
+  return status === "resolved" && author === "user" ? "open" : status;
 }
 
 /**

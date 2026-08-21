@@ -15,6 +15,7 @@ import {
   type ConflictError,
   type CreateThreadResponse,
   type DeleteDocResult,
+  type DeleteTurnResult,
   type Doc,
   type DocList,
   type DocMutationResponse,
@@ -24,6 +25,8 @@ import {
   type Health,
   type Form,
   type IndexStatus,
+  type InternalError,
+  type JobLog,
   type FormAnswerRequest,
   type FormAnswerResponse,
   type AgentLane,
@@ -61,6 +64,7 @@ import { Buffer } from "node:buffer";
 import * as YAML from "yaml";
 import {
   canonicalInstant,
+  nextThreadStatus,
   parseThreadTurns,
   renderTurn,
   resolveAgentDefName,
@@ -110,9 +114,10 @@ import { unknownRecipientBody } from "../src/testing/serverRefusals";
  * `satisfies` is for.
  *
  * A spec that genuinely wants bytes the contract forbids stays possible — the
- * stub answers at the transport boundary and always will — but it now costs an
- * explicit cast, which is a place to write down *why*. See the two in this file:
- * the unhandled-route fallback (UI-085) is the only one shipped.
+ * stub answers at the transport boundary and always will — but it costs an
+ * explicit cast, which is a place to write down *why*. **There are none left**:
+ * the unhandled-route fallback was the last one, and since UI-085 it refuses
+ * with the contract's own error shape instead of casting `{}` into a success.
  */
 type StubPayload =
   | AgentRoster
@@ -121,6 +126,7 @@ type StubPayload =
   | ConflictError
   | CreateThreadResponse
   | DeleteDocResult
+  | DeleteTurnResult
   | Doc
   | DocList
   | DocMutationResponse
@@ -128,7 +134,10 @@ type StubPayload =
   | FormAnswerResponse
   | Health
   | IndexStatus
+  | InternalError
+  | Job
   | JobList
+  | JobLog
   | MarkSeenResult
   | NotFoundError
   | QueueStatus
@@ -553,6 +562,16 @@ export interface StubCorpus {
   /** Every `/api` request the page made, in order. */
   readonly requests: () => Promise<readonly StubRequest[]>;
   readonly of: (method: string, path?: string) => Promise<readonly StubRequest[]>;
+  /**
+   * Every request this stub **refused** because no handler claimed it, as
+   * `"<METHOD> <path>"` (UI-085).
+   *
+   * The refusal is already loud — a `501` naming the route, and a line on the
+   * runner's stderr — so nothing has to read this to be told. It exists for the
+   * spec that wants to assert the refusal itself, and for one that wants to say
+   * "and nothing else fell through" at the end of a flow.
+   */
+  readonly unhandled: () => Promise<readonly string[]>;
   /** The stored document, or `undefined` once it has been deleted. */
   readonly doc: (id: string) => Promise<StoredDoc | undefined>;
   readonly ids: () => Promise<readonly string[]>;
@@ -822,8 +841,18 @@ export async function stubCorpus(
   // and the page's copy of it is what it last read.
   const lanes: AgentLane[] = [...(options.lanes ?? [])];
   const requests: StubRequest[] = [];
+  /** `"<METHOD> <path>"` for every request no handler claimed — see {@link StubCorpus.unhandled}. */
+  const unhandled: string[] = [];
   let created = 0;
   let appended = 0;
+  /*
+   * Whether the queue is halted (SPEC.md §7). Mutable because `POST
+   * /api/queue/halt` and `/resume` are the two routes whose whole observable
+   * effect is this flag: a stub that answered them without moving it would let
+   * the strip's HALT button look correct while the state it reports never
+   * changed.
+   */
+  let halted = false;
 
   /*
    * The roster **is** the set of designations, as it is on the server (SPEC.md
@@ -883,6 +912,18 @@ export async function stubCorpus(
       contentType: "application/json",
       body: JSON.stringify(payload),
     });
+  };
+
+  /**
+   * A `204`, for the routes whose contract says the success carries no body.
+   *
+   * Separate from {@link json} rather than `json(route, {})` with a status: the
+   * client reads those two differently — `flushEditSession` checks
+   * `response.ok` precisely because a `204` leaves `data` undefined — and a stub
+   * that sent `200 {}` there would be answering a shape the route does not have.
+   */
+  const noContent = async (route: Route): Promise<void> => {
+    await route.fulfill({ status: 204, body: "" });
   };
 
   /**
@@ -1214,6 +1255,71 @@ export async function stubCorpus(
           : matching;
       return json(route, { jobs: answer.map(asJob) } satisfies JobList);
     }
+
+    /*
+     * `GET /api/jobs/{id}/log` — the console row's expanded log (SPEC.md §7).
+     *
+     * A seeded job carries a `lastLine` and nothing more, so that is the whole
+     * log this stub can honestly report: one line where there is one, none where
+     * there is not. `nextCursor` is the total line count, as the contract says,
+     * and `cursor` is honoured so an incremental refetch answers empty rather
+     * than repeating what the caller already holds — a stub that re-sent every
+     * line on each poll would make a duplicated log look like correct streaming.
+     */
+    const jobLog = /^\/api\/jobs\/([^/]+)\/log$/.exec(url.pathname);
+    if (jobLog !== null && method === "GET") {
+      const eventId = decodeURIComponent(jobLog[1] ?? "");
+      const job = jobs.find((row) => row.eventId === eventId);
+      if (job === undefined) {
+        return json(
+          route,
+          { code: "not_found", message: `no job ${eventId}` } satisfies NotFoundError,
+          404,
+        );
+      }
+      const lines =
+        job.lastLine === undefined || job.lastLine === null
+          ? []
+          : [{ ts: job.updated ?? job.started, line: job.lastLine }];
+      const cursor = Number(url.searchParams.get("cursor") ?? "0");
+      const from = Number.isFinite(cursor) && cursor > 0 ? cursor : 0;
+      return json(route, {
+        lines: lines.slice(from),
+        nextCursor: lines.length,
+      } satisfies JobLog);
+    }
+
+    /*
+     * `POST /api/jobs/{id}/retry` and `/abandon` — the console row's two acts
+     * (SPEC.md §7).
+     *
+     * They move the seeded job rather than merely acknowledging: retry returns a
+     * failed event to `pending`, abandon takes it to `abandoned`, and both answer
+     * the job **as it now stands**, which is what the console's cache replaces
+     * its row with. A stub that answered the row unchanged would let a spec
+     * assert a menu action the queue never performed.
+     *
+     * Neither is offered on a job the queue does not hold: `JobService.retry`
+     * throws `notFound` for an id the queue has no row for, so this answers the
+     * same `404` rather than inventing a refusal of its own.
+     */
+    const jobAct = /^\/api\/jobs\/([^/]+)\/(retry|abandon)$/.exec(url.pathname);
+    if (jobAct !== null && method === "POST") {
+      const eventId = decodeURIComponent(jobAct[1] ?? "");
+      const at = jobs.findIndex((row) => row.eventId === eventId);
+      const job = jobs[at];
+      if (job === undefined) {
+        return json(
+          route,
+          { code: "not_found", message: `no job ${eventId}` } satisfies NotFoundError,
+          404,
+        );
+      }
+      const moved: StubJob = { ...job, status: jobAct[2] === "retry" ? "pending" : "abandoned" };
+      jobs[at] = moved;
+      return json(route, asJob(moved));
+    }
+
     if (url.pathname === "/api/tree") return json(route, { folders: [] } satisfies FolderTree);
     /*
      * `GET /api/index/status` — the strip's index pill (SPEC.md §11's
@@ -1289,21 +1395,43 @@ export async function stubCorpus(
       return json(route, unknownRecipientBody(lane) satisfies UnknownRecipientError, 422);
     };
 
-    if (url.pathname === "/api/queue/status") {
-      return json(route, {
-        // `agent` is required since CONTRACT-045 and it is read by §8's pending
-        // row, so it is seeded rather than invented here: the default says
-        // nobody is parked, which is true of every spec that does not say
-        // otherwise.
-        agent: options.agent ?? { live: false, since: null },
-        pending: jobs.filter((job) => job.status === "pending").length,
-        inProgress: jobs.filter((job) => job.status === "in-progress").length,
-        deferred: jobs.filter((job) => job.status === "deferred").length,
-        failed: 0,
-        processed: 0,
-        abandoned: 0,
-        halted: false,
-      } satisfies QueueStatus);
+    const queueStatus = (): QueueStatus => ({
+      // `agent` is required since CONTRACT-045 and it is read by §8's pending
+      // row, so it is seeded rather than invented here: the default says
+      // nobody is parked, which is true of every spec that does not say
+      // otherwise.
+      agent: options.agent ?? { live: false, since: null },
+      pending: jobs.filter((job) => job.status === "pending").length,
+      inProgress: jobs.filter((job) => job.status === "in-progress").length,
+      deferred: jobs.filter((job) => job.status === "deferred").length,
+      // Fixed at zero, as they have always been: the terminal counts are a
+      // separate infidelity from UI-085's, and several specs measure the strip's
+      // width against exactly these digits. `halted` is the one value here that
+      // now moves, because two routes exist whose only effect is to move it.
+      failed: 0,
+      processed: 0,
+      abandoned: 0,
+      halted,
+    });
+
+    if (url.pathname === "/api/queue/status") return json(route, queueStatus());
+
+    /*
+     * `POST /api/queue/halt` and `/api/queue/resume` — the strip's HALT control
+     * (SPEC.md §7).
+     *
+     * Both answer the **status after the flip**, which is what the client caches
+     * in place of a refetch, so a stub that answered the status before it would
+     * make the button appear to do nothing. Halting is idempotent here as it is
+     * on the server: asking for the state that already holds is a `200`.
+     */
+    if (url.pathname === "/api/queue/halt" && method === "POST") {
+      halted = true;
+      return json(route, queueStatus());
+    }
+    if (url.pathname === "/api/queue/resume" && method === "POST") {
+      halted = false;
+      return json(route, queueStatus());
     }
 
     /*
@@ -1540,6 +1668,25 @@ export async function stubCorpus(
       };
       doc.body = `${doc.body.trimEnd()}\n\n${renderTurn(turn)}`;
       const turns = parseThreadTurns(doc.body);
+      /*
+       * §8's reopen (SHARED-019 Amendment 1), through the parity function rather
+       * than inline: a person's turn on a resolved conversation sets it back to
+       * `open`, in the same write as the turn. Every turn the page can post is a
+       * person's, so the author is `user` here — the rule still takes it, because
+       * the half that matters is the half it refuses, and a stub whose reopen was
+       * unconditional would be a stub the agent's turn also reopened.
+       *
+       * The document's `status` moves too, not only the reported thread status:
+       * `GET /api/docs` reads it, so a thread that reopened on the wire and stayed
+       * `resolved` in the store would light the board's row one way and the
+       * conversation the other.
+       */
+      const status = nextThreadStatus(threadStatusOf(doc), turn.author);
+      // Guarded rather than assigned: an *archived* document reports `open` to
+      // the thread surfaces (see `threadStatusOf`), so writing the reported
+      // status straight back would quietly unarchive it. `resolved → open` is
+      // the only transition a turn makes.
+      if (doc.status === "resolved" && status === "open") doc.status = "open";
       // §8's tri-state, read exactly as `POST /api/threads` reads it: the stub
       // parses no mentions, so an omitted flag enqueues nothing.
       const requestsAgent = input["requestsAgent"] === true;
@@ -1563,7 +1710,7 @@ export async function stubCorpus(
             created: SEEDED_AT,
             updated: doc.updated,
             turnCount: turns.length,
-            lastAuthor: "user",
+            lastAuthor: turn.author,
             lastTs: turn.ts,
           },
           turn,
@@ -1572,6 +1719,58 @@ export async function stubCorpus(
         } satisfies AppendTurnResponse,
         201,
       );
+    }
+
+    /*
+     * `DELETE /api/threads/{id}/turns/{ts}` — deleting a turn (SPEC.md §6).
+     *
+     * It rewrites the thread's body from the turns that remain, for
+     * {@link commitAnswerTurn}'s reason: the turns a thread reports are parsed
+     * back out of these bytes, so a stub that answered `200` and left the body
+     * alone would show the deleted turn on the next read.
+     *
+     * The cascade is modelled because the response names it: the thread's last
+     * turn takes the thread with it, and a thread that goes takes its parent's
+     * anchor entry with it. `removedAnchor` is `null` on every other path, never
+     * absent.
+     */
+    const deleteTurn = /^\/api\/threads\/([^/]+)\/turns\/([^/]+)$/.exec(url.pathname);
+    if (deleteTurn !== null && method === "DELETE") {
+      const id = decodeURIComponent(deleteTurn[1] ?? "");
+      const doc = store.get(id);
+      if (doc === undefined || doc.type !== "thread") {
+        return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
+      }
+      const at = canonicalInstant(decodeURIComponent(deleteTurn[2] ?? ""));
+      const turns = parseThreadTurns(doc.body);
+      if (!turns.some((turn) => canonicalInstant(turn.ts) === at)) {
+        return json(route, { code: "not_found", message: at } satisfies NotFoundError, 404);
+      }
+      const kept = turns.filter((turn) => canonicalInstant(turn.ts) !== at);
+      const parent = doc.parent === null ? undefined : store.get(doc.parent);
+      const anchorAt = parent?.anchors.findIndex((entry) => entry.threadId === doc.id) ?? -1;
+      const deletedThread = kept.length === 0;
+      // Read before the splice, not after it: the entry is gone by then, and a
+      // response that reported `null` here would tell the board to keep drawing
+      // a highlight the corpus no longer holds.
+      const removedAnchor =
+        deletedThread && parent !== undefined && anchorAt !== -1
+          ? (parent.anchors[anchorAt]?.anchorId ?? null)
+          : null;
+      if (deletedThread) {
+        store.delete(doc.id);
+        if (parent !== undefined && anchorAt !== -1) parent.anchors.splice(anchorAt, 1);
+      } else {
+        doc.body = kept.map(renderTurn).join("\n\n");
+        stampUpdated(doc);
+      }
+      return json(route, {
+        deletedTurn: true,
+        deletedThread,
+        removedAnchor,
+        parentId: doc.parent,
+        warnings: [],
+      } satisfies DeleteTurnResult);
     }
 
     /*
@@ -2099,6 +2298,35 @@ export async function stubCorpus(
       } satisfies RelatedDocs);
     }
 
+    /*
+     * `POST /api/docs/{id}/edit-session/flush` — the reader closing ends the
+     * sitting (SPEC.md §4's edit acknowledgment).
+     *
+     * Matched **before** the `/api/docs/` block below, which would otherwise read
+     * `"<id>/edit-session/flush"` as a document id and answer `404`. That is what
+     * it did: the flush every closing reader sends was refused on every stubbed
+     * page, and `edit-session-close.spec.ts` counted the requests rather than
+     * their answers, so nothing noticed.
+     *
+     * `204`, because that is what the route returns and because the client reads
+     * this one off the response rather than off a body.
+     */
+    const flush = /^\/api\/docs\/([^/]+)\/edit-session\/flush$/.exec(url.pathname);
+    if (flush !== null && method === "POST") {
+      const subject = store.get(decodeURIComponent(flush[1] ?? ""));
+      if (subject === undefined) {
+        return json(
+          route,
+          { code: "not_found", message: url.pathname } satisfies NotFoundError,
+          404,
+        );
+      }
+      // Nothing is written: a flush closes the *session*, which is a queue-side
+      // fact this stub holds nothing of. The honest answer is the acknowledgment
+      // and no change to the document.
+      return noContent(route);
+    }
+
     if (url.pathname.startsWith("/api/docs/")) {
       const rest = url.pathname.slice("/api/docs/".length);
       /*
@@ -2185,19 +2413,57 @@ export async function stubCorpus(
     }
 
     /*
-     * The unhandled-route fallback, and **the one cast in this file** — the
-     * single place the stub deliberately puts bytes on the wire that no contract
-     * response describes.
+     * `/api/x/**` — the plugin namespace, and the one place this stub still
+     * answers an empty body deliberately (UI-085).
      *
-     * `{}` is not any response shape, which is precisely UI-085's complaint: a
-     * route nobody taught the stub answers `200 {}`, and the caller fails
-     * somewhere downstream reading a field off an empty object rather than at
-     * the request that was never handled. Fixing that is UI-085's; what this
-     * cast does is stop it hiding among twenty untyped payloads. Everything
-     * above is checked, so this is the whole of the stub's dishonesty and it is
-     * written down.
+     * A plugin's routes are not in the generated contract, so nothing here can
+     * know their shapes and nothing here should invent them: the core stub is a
+     * stand-in for the **core** server. Every plugin spec registers its own
+     * handler after this one — Playwright matches most-recent-first, so theirs
+     * wins — and this is what a plugin surface meets when its spec has not.
+     *
+     * `{}` rather than the refusal below, and the difference is not politeness:
+     * a plugin client **validates** its responses (`plugins/todos` parses with
+     * Zod), so the empty body is refused at that boundary and the column draws
+     * its error card. The silence UI-085 is about is the silence of a body that
+     * *passes* unnoticed, which this one cannot do.
      */
-    return json(route, {} as StubPayload);
+    if (url.pathname.startsWith("/api/x/")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      return;
+    }
+
+    /*
+     * The unhandled-route refusal (UI-085).
+     *
+     * This used to be `json(route, {} as StubPayload)` — a `200` with an empty
+     * body for any route nobody had taught the stub. It made every omission
+     * silent and general: the caller failed somewhere downstream reading a field
+     * off an empty object, or did not fail at all, and the request that was never
+     * handled was nowhere in the report. Four core routes had been living here
+     * unnoticed (the queue's halt and resume, a job's retry and abandon), plus a
+     * job's log and a turn deletion, and `POST …/turns` before UI-116.
+     *
+     * So it refuses instead, and says exactly what it refused:
+     *
+     *   - a `501` carrying the contract's own error shape, whose `message` names
+     *     the method and the path — the client throws that sentence, so it
+     *     reaches the assertion that provoked it rather than being swallowed;
+     *   - a line on the runner's stderr, for the request nothing was awaiting;
+     *   - a record in {@link StubCorpus.unhandled}, for a spec that wants to
+     *     assert over it.
+     *
+     * Adding a route to the app therefore means adding a handler here, which is
+     * the whole point: a stub that answers a route it does not implement is
+     * testing itself.
+     */
+    const refusal =
+      `stubCorpus has no handler for ${method} ${url.pathname} — refused rather than ` +
+      `answered, because a stub that invents an empty success lets a spec assert ` +
+      `behaviour nobody implemented (UI-085). Add a handler in apps/ui/e2e/stubCorpus.ts.`;
+    unhandled.push(`${method} ${url.pathname}`);
+    console.error(`[stubCorpus] ${refusal}`);
+    return json(route, { code: "internal_error", message: refusal } satisfies InternalError, 501);
   });
 
   return {
@@ -2208,6 +2474,7 @@ export async function stubCorpus(
           (entry) => entry.method === method && (path === undefined || entry.path === path),
         ),
       ),
+    unhandled: () => Promise.resolve([...unhandled]),
     doc: (id) => Promise.resolve(store.get(id)),
     ids: () => Promise.resolve([...store.keys()]),
     answerForm: (threadId, ts, answer) => {
