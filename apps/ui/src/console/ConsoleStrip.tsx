@@ -5,6 +5,7 @@ import { usePluginRegistry } from "../plugins/registry";
 import { AgentPill } from "./AgentPill";
 import { UNKNOWN_QUEUE_STATUS, consoleCounts } from "./consoleModel";
 import { IndexPill } from "./IndexPill";
+import { NOTICES_UNREAD_HINT } from "./noticesModel";
 
 /**
  * The collapsed one-line strip (SPEC.md §11): caret, the word `console`, the
@@ -113,6 +114,16 @@ export interface ConsoleStripProps {
    * the reachability notice two spans to the right is the fact that is true.
    */
   readonly index: IndexStatus | undefined;
+  /**
+   * Whether an error notice has arrived that the Notices tab has not been
+   * opened since (UI-139).
+   *
+   * The marker is drawn either way and only *lit* by this flag — see
+   * `.c-notice-mark` in `console.css`. A mark that appeared would re-width the
+   * line it appeared on, which is exactly what §11's rider forbids, and it would
+   * do it on the one row that always renders.
+   */
+  readonly unreadNotice: boolean;
   readonly onToggle: () => void;
   readonly onToggleHalt: () => void;
 }
@@ -121,6 +132,7 @@ export function ConsoleStrip({
   open,
   status,
   index,
+  unreadNotice,
   onToggle,
   onToggleHalt,
 }: ConsoleStripProps): ReactElement {
@@ -146,6 +158,26 @@ export function ConsoleStrip({
         ▴
       </span>
       <span>console</span>
+      {/*
+       * The attention marker (SHARED-058, call 5): "there is a refusal in here
+       * you have not been shown". Error tone only — a dot that lit for every
+       * saved document is noise, and noise is how a marker stops being read.
+       *
+       * Always rendered, never conditionally, so its arrival moves nothing. It
+       * is `aria-hidden` and carries only a tooltip: the strip is a
+       * `role="button"` with its own `aria-label`, so nothing inside it is
+       * announced anyway — and a screen-reader user has already had the whole
+       * notice read out of the toast's live region, which is the group this
+       * marker was never for.
+       */}
+      <span
+        className="c-notice-mark"
+        data-unread={unreadNotice}
+        aria-hidden="true"
+        title={unreadNotice ? NOTICES_UNREAD_HINT : undefined}
+      >
+        ●
+      </span>
       <AgentPill status={status} />
       <ConsoleCounts status={counts} />
       {/*

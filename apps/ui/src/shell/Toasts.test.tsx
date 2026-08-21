@@ -2,7 +2,18 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_TOASTS, TOAST_DURATION_MS, ToastProvider, useToast } from "./Toasts";
+import {
+  appendNotice,
+  EMPTY_NOTICE_LOG,
+  MAX_NOTICES,
+  MAX_TOASTS,
+  TOAST_DURATION_MS,
+  ToastProvider,
+  useNotices,
+  useToast,
+  type Notice,
+  type NoticeLog,
+} from "./Toasts";
 
 afterEach(() => {
   cleanup();
@@ -316,6 +327,124 @@ describe("ToastProvider", () => {
   });
 
   /**
+   * UI-139: the session's notice log, the stack's longer-lived sibling. The
+   * claims here are the ones the console's tab depends on — every toast becomes
+   * a notice, a notice outlives the toast, and only the error tone marks the
+   * console.
+   */
+  describe("the session's notices", () => {
+    function Reader(): React.ReactElement {
+      const { notices, dropped, unreadError, markNoticesRead } = useNotices();
+      return (
+        <>
+          <ul data-testid="log">
+            {notices.map((notice) => (
+              <li key={notice.id} data-tone={notice.tone}>
+                {notice.message}
+              </li>
+            ))}
+          </ul>
+          <span data-testid="dropped">{dropped}</span>
+          <span data-testid="unread">{String(unreadError)}</span>
+          <button type="button" onClick={markNoticesRead}>
+            read
+          </button>
+        </>
+      );
+    }
+
+    function mount(): void {
+      render(
+        <ToastProvider>
+          <Narrator />
+          <Reader />
+        </ToastProvider>,
+      );
+    }
+
+    const logged = (): string[] =>
+      [...screen.getByTestId("log").querySelectorAll("li")].map((item) => item.textContent ?? "");
+
+    it("keeps a notice after its toast has expired", () => {
+      mount();
+      fireEvent.click(screen.getByText("fail"));
+      expect(logged()).toEqual(["Reorder failed — locked"]);
+
+      act(() => {
+        vi.advanceTimersByTime(TOAST_DURATION_MS + 1);
+      });
+      // The toast is gone and the reason is not: this is the whole point of the
+      // tab, and it is why the log cannot live in the toast array.
+      expect(document.querySelectorAll(".toast")).toHaveLength(0);
+      expect(logged()).toEqual(["Reorder failed — locked"]);
+    });
+
+    it("records every toast, including ones the cap displaced from the stack", () => {
+      mount();
+      for (let index = 0; index < 5; index++) {
+        fireEvent.click(screen.getByText("say"));
+        act(() => {
+          vi.advanceTimersByTime(2);
+        });
+      }
+      expect(document.querySelectorAll(".toast")).toHaveLength(MAX_TOASTS);
+      expect(logged()).toHaveLength(5);
+    });
+
+    it("records the identical message twice, as two notices", () => {
+      mount();
+      fireEvent.click(screen.getByText("fail"));
+      fireEvent.click(screen.getByText("fail"));
+      expect(logged()).toEqual(["Reorder failed — locked", "Reorder failed — locked"]);
+    });
+
+    it("reads newest first", () => {
+      mount();
+      fireEvent.click(screen.getByText("say"));
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      fireEvent.click(screen.getByText("fail"));
+      expect(logged()[0]).toBe("Reorder failed — locked");
+    });
+
+    it("is marked by an error and not by a confirmation", () => {
+      mount();
+      fireEvent.click(screen.getByText("say"));
+      expect(screen.getByTestId("unread").textContent).toBe("false");
+
+      fireEvent.click(screen.getByText("fail"));
+      expect(screen.getByTestId("unread").textContent).toBe("true");
+    });
+
+    it("clears the mark when the tab reports it was shown, and not before", () => {
+      mount();
+      fireEvent.click(screen.getByText("fail"));
+      act(() => {
+        vi.advanceTimersByTime(TOAST_DURATION_MS + 1);
+      });
+      // The toast expiring is not being read.
+      expect(screen.getByTestId("unread").textContent).toBe("true");
+
+      fireEvent.click(screen.getByText("read"));
+      expect(screen.getByTestId("unread").textContent).toBe("false");
+
+      // …and a later refusal marks it again.
+      fireEvent.click(screen.getByText("fail"));
+      expect(screen.getByTestId("unread").textContent).toBe("true");
+    });
+
+    it("is empty outside a provider rather than a crash", () => {
+      render(<Reader />);
+      expect(logged()).toEqual([]);
+      expect(screen.getByTestId("unread").textContent).toBe("false");
+      expect(() => {
+        fireEvent.click(screen.getByText("read"));
+      }).not.toThrow();
+    });
+  });
+
+  /**
    * sprint-010 FIND-4. What the finding counted was `.toast-wrap` and its one
    * `.toast` child — a `[class*="toast"]` probe matches both, and their text is
    * identical because the wrapper holds exactly one item. The assertions below
@@ -363,5 +492,49 @@ describe("ToastProvider", () => {
       // Additive, not re-read in full every time a toast joins the stack.
       expect(regions[0]?.getAttribute("aria-atomic")).toBe("false");
     });
+  });
+});
+
+/**
+ * The bound, at the grain the store enforces it. A render-level test would need
+ * fifty-one clicks to reach it; the reducer is pure, so the cap and the count it
+ * has to report are both reachable directly.
+ */
+describe("appendNotice", () => {
+  const at = Date.UTC(2026, 7, 21, 9, 0, 0);
+  const notice = (id: number): Notice => ({ id, at, tone: "info", message: `note ${String(id)}` });
+
+  function fill(count: number): NoticeLog {
+    let log = EMPTY_NOTICE_LOG;
+    for (let index = 0; index < count; index++) log = appendNotice(log, notice(index));
+    return log;
+  }
+
+  it("prepends, so the log reads newest first", () => {
+    const log = fill(3);
+    expect(log.notices.map((entry) => entry.id)).toEqual([2, 1, 0]);
+    expect(log.dropped).toBe(0);
+  });
+
+  it("keeps the newest MAX_NOTICES and counts what it discarded", () => {
+    const log = fill(MAX_NOTICES + 4);
+    expect(log.notices).toHaveLength(MAX_NOTICES);
+    expect(log.dropped).toBe(4);
+    // The four it lost are the four oldest, not the four newest.
+    expect(log.notices[0]?.id).toBe(MAX_NOTICES + 3);
+    expect(log.notices.at(-1)?.id).toBe(4);
+  });
+
+  it("never unmarks the console on its own", () => {
+    const marked = appendNotice(EMPTY_NOTICE_LOG, { ...notice(0), tone: "error" });
+    expect(marked.unreadError).toBe(true);
+    // A confirmation arriving afterwards does not stand in for having read it.
+    expect(appendNotice(marked, notice(1)).unreadError).toBe(true);
+  });
+
+  it("leaves the log it was given alone", () => {
+    const first = fill(1);
+    appendNotice(first, notice(9));
+    expect(first.notices).toHaveLength(1);
   });
 });
