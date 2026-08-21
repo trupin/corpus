@@ -1,4 +1,4 @@
-# [UI-136] Two surfaces are drawn taller than the room they open into
+# [UI-136] Three surfaces are drawn larger than the room they open into
 
 ## Domain
 
@@ -28,7 +28,7 @@ opus
 
 ## Summary
 
-Two findings from the v0.15.0 fixes, both **pre-existing**, both left rather than
+Three findings from the v0.15.0 fixes, all **pre-existing**, all left rather than
 folded into a P0 or a P1 whose scope they are not.
 
 **1. The search panel clips the global composer's address card.** Found by
@@ -44,6 +44,13 @@ stabilising a spec: a column measured **345px at first paint and 558px settled**
 Everything laid out against that width moves when it lands. That agent worked
 around it in the test with a `settledReader()` helper that waits for two
 identical readings — a test-side repair for a product-side fact.
+
+**3. The reply composer's foot is over-full at the default column width.** Found
+by UI-137. At 336px — the default, not the 560px reading width its slot was
+measured against — `Reply ⌘↵` clips, before that change and after it. UI-137's
+slot makes it worse in no case and better at 560px, but the foot's composition is
+a question about what that row should drop first, which is `apps/ui`'s and not
+the kit's.
 
 The second is the same class as three of the audit's six clusters: **a value that
 arrives later than the box laid out against it** (SHARED-057 names it in its
@@ -67,6 +74,9 @@ solving either probably teaches the other.
 - [ ] `settledReader()` in the e2e helpers is no longer needed to hide a product
       fact — either it is deleted, or its docblock says which product behaviour it
       still legitimately waits for
+- [ ] The reply composer's foot fits at the **default** 336px column width, with
+      a stated rule for what yields first — the audit's rubric is that controls
+      keep their size and variable text truncates (SHARED-057 clause 2)
 - [ ] A browser test measures each, falsified by reverting
 
 ## Technical Design
