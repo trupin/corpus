@@ -76,6 +76,55 @@ export interface Shortcut {
   readonly allowInInput?: boolean;
   /** Declared here, dispatched by UI-005's `useEscapeLayer`. See the module note. */
   readonly boundBy?: "escape-layer";
+  /**
+   * **This entry's key is one a focused control presses itself with, so a
+   * focused control gets it instead** (UI-032).
+   *
+   * A `<button>` — or anything wearing a button-like ARIA role — activates on
+   * `↵` through its **default action**, which the browser runs after every
+   * listener and only if nothing cancelled the event. The dispatcher's
+   * `preventDefault()` cancels it. So for as long as `rows.open` matched `↵`
+   * unconditionally, *no* focused control anywhere in board scope could be
+   * pressed by keyboard: the reader's ⋯ (UI-030), the fence copy button
+   * (UI-041) and the console's own tabs (UI-139, unnoticed for weeks) were the
+   * three that got found, each patched where it was found. This flag is the one
+   * mechanism that replaces those patches.
+   *
+   * **The rule**: a shortcut marked here does not fire while
+   * {@link useShortcuts.ownsActivationKeys} holds of `document.activeElement` —
+   * that is, while focus sits on a control whose own activation key this is.
+   * Everything else about the press is unchanged, so the shortcut still fires
+   * when focus is on the body, on the board, or on anything inert.
+   *
+   * **The trap, and why the rule is not "skip when a button has focus".** The
+   * board's own row *is* a control — `role="button"`, `tabindex="0"`
+   * (`@corpus/kit`'s `Row`) — and `↵` on the highlighted row is SPEC.md §11's
+   * binding. So `ownsActivationKeys` exempts the row, by name, and the exemption
+   * is pinned by a test on both sides. Nothing else is exempt: a quick-action
+   * `<button>` *inside* a row is a control like any other and keeps its own `↵`.
+   *
+   * **Why a flag per entry rather than a rule over the whole scope.** The
+   * conflict is between one key and one default action, not between a control
+   * and the keyboard. `j`, `c`, `f` and `e` are not keys a button presses itself
+   * with, and a focused ⋯ has no claim on them — taking the whole scope away
+   * would silently make the board's keys stop working next to any control that
+   * happened to have focus. Declaring it here also puts it where the registry
+   * already puts everything else about a binding, and lets the registry test
+   * assert that *every* board-scope `↵` carries it, so the next `↵` binding
+   * cannot re-open the defect by forgetting.
+   *
+   * Alternatives rejected, recorded so they are not re-proposed:
+   * - **`event.stopPropagation()` in each control's own keydown** — what UI-041
+   *   and UI-139 did. It works, and every new control has to remember it.
+   * - **A `data-board-shortcut-exempt` marker on chrome controls** — same
+   *   opt-in failure mode, plus a private attribute where ARIA already says it.
+   * - **A `control` scope that suspends every board key while a control has
+   *   focus** — too wide, per the paragraph above.
+   * - **Extending the rule to the arrow keys a roving widget owns** — a real
+   *   gap (a `role="tablist"` still has to handle its own arrows), but that is
+   *   a different key, a different default, and a different issue.
+   */
+  readonly yieldsToFocusedControl?: boolean;
   /** Ordering band for the cheat sheet; never rendered as a heading (the panel is one flat grid). */
   readonly group: string;
   readonly description: string;
@@ -150,6 +199,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     id: "rows.open",
     chords: [{ keys: ["Enter"], shift: false, label: "↵" }],
     scope: "board",
+    yieldsToFocusedControl: true,
     group: "rows",
     description: "open document",
     run: (context) => {
@@ -160,6 +210,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
     id: "rows.openFullScreen",
     chords: [{ keys: ["Enter"], shift: true, label: "⇧↵" }],
     scope: "board",
+    /** A button activates on `↵` whatever `shift` is doing, so this yields too. */
+    yieldsToFocusedControl: true,
     group: "rows",
     description: "open in full screen",
     run: (context) => {

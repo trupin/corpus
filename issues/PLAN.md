@@ -218,7 +218,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | done | P1 | UI-016 |
 | INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | done | P1 | — |
 | CLI-024 | SIGPIPE guard for piped output (eval finding) | todo | P2 | CLI-001 |
-| UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | todo | P2 | UI-028, UI-030 |
+| UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | done | P2 | UI-028, UI-030 |
 | INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | todo | P2 | INFRA-013 |
 | CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | todo | P2 | CONTRACT-022 |
 | UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | todo | P2 | UI-031 |

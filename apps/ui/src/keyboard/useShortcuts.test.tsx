@@ -5,7 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { EscapeLayerPriority, resetEscapeLayers, useEscapeLayer } from "../reader/useEscapeStack";
 import type { BoardCommands } from "./boardCommands";
 import type { ShortcutContext } from "./shortcuts";
-import { currentScope, isWritingSurface, resolveShortcut, useShortcuts } from "./useShortcuts";
+import {
+  currentScope,
+  isWritingSurface,
+  ownsActivationKeys,
+  resolveShortcut,
+  useShortcuts,
+} from "./useShortcuts";
 
 afterEach(() => {
   cleanup();
@@ -156,6 +162,7 @@ describe("useShortcuts", () => {
         resolveShortcut(key({ key: "c" }), {
           scope: "board",
           editing: isWritingSurface(document.activeElement),
+          controlFocused: ownsActivationKeys(document.activeElement),
         }),
       ).toBeNull();
     });
@@ -186,18 +193,30 @@ describe("useShortcuts", () => {
     it("refuses board bindings while an overlay is up, and keeps the global ones", () => {
       for (const pressed of ["c", "e", "f", "r", "j", "ArrowDown", "Enter"]) {
         expect(
-          resolveShortcut(key({ key: pressed }), { scope: "overlay", editing: false }),
+          resolveShortcut(key({ key: pressed }), {
+            scope: "overlay",
+            editing: false,
+            controlFocused: false,
+          }),
           pressed,
         ).toBeNull();
       }
       expect(
-        resolveShortcut(key({ key: "k", metaKey: true }), { scope: "overlay", editing: false })?.id,
+        resolveShortcut(key({ key: "k", metaKey: true }), {
+          scope: "overlay",
+          editing: false,
+          controlFocused: false,
+        })?.id,
       ).toBe("search.open");
       // `?` reaches the shell even over an overlay, because the sheet has to be
       // able to close itself; whether it *replaces* one is the shell's ruling.
-      expect(resolveShortcut(key({ key: "?" }), { scope: "overlay", editing: false })?.id).toBe(
-        "cheatSheet.toggle",
-      );
+      expect(
+        resolveShortcut(key({ key: "?" }), {
+          scope: "overlay",
+          editing: false,
+          controlFocused: false,
+        })?.id,
+      ).toBe("cheatSheet.toggle");
     });
 
     /**
@@ -261,13 +280,147 @@ describe("useShortcuts", () => {
     });
 
     it("stops at the first match rather than running two handlers", () => {
-      expect(resolveShortcut(key({ key: "Enter" }), { scope: "board", editing: false })?.id).toBe(
-        "rows.open",
-      );
       expect(
-        resolveShortcut(key({ key: "Enter", shiftKey: true }), { scope: "board", editing: false })
-          ?.id,
+        resolveShortcut(key({ key: "Enter" }), {
+          scope: "board",
+          editing: false,
+          controlFocused: false,
+        })?.id,
+      ).toBe("rows.open");
+      expect(
+        resolveShortcut(key({ key: "Enter", shiftKey: true }), {
+          scope: "board",
+          editing: false,
+          controlFocused: false,
+        })?.id,
       ).toBe("rows.openFullScreen");
+    });
+  });
+
+  /**
+   * UI-032. `↵` on a focused control presses that control, through the default
+   * action the dispatcher's `preventDefault()` was cancelling — so no button in
+   * board scope could be pressed by keyboard at all, and three separate controls
+   * were patched locally before the cause was fixed once. The rule and the
+   * alternatives rejected are on `Shortcut.yieldsToFocusedControl`.
+   */
+  describe("a focused control", () => {
+    const focus = (html: string): HTMLElement => {
+      document.body.innerHTML = html;
+      const element = document.body.firstElementChild;
+      if (!(element instanceof HTMLElement)) throw new Error("no element");
+      element.tabIndex = element.tabIndex < 0 ? 0 : element.tabIndex;
+      element.focus();
+      return element;
+    };
+
+    it("owns ↵ wherever pressing it is what ↵ means there", () => {
+      for (const html of [
+        "<button>x</button>",
+        '<a href="#x">x</a>',
+        "<summary>x</summary>",
+        '<div role="button">x</div>',
+        '<div role="tab">x</div>',
+        '<div role="menuitem">x</div>',
+        '<div role="switch">x</div>',
+        '<div role="option">x</div>',
+      ]) {
+        expect(ownsActivationKeys(focus(html)), html).toBe(true);
+      }
+    });
+
+    it("is not claimed by anything inert, by an anchor without an href, or by nothing", () => {
+      for (const html of ["<div>x</div>", "<span>x</span>", "<a>x</a>", "<p>x</p>"]) {
+        expect(ownsActivationKeys(focus(html)), html).toBe(false);
+      }
+      expect(ownsActivationKeys(document.body)).toBe(false);
+      expect(ownsActivationKeys(null)).toBe(false);
+    });
+
+    /**
+     * The trap: the board's row is a control too, and `↵` on the highlighted row
+     * is the scheme's own binding (SPEC.md §11). A rule phrased as "skip when a
+     * button has focus" would have taken it away.
+     */
+    it("exempts the board's row, which is a control bound to ↵ on purpose", () => {
+      expect(
+        ownsActivationKeys(focus('<div class="row" data-row-doc="doc_a" role="button">x</div>')),
+      ).toBe(false);
+      expect(ownsActivationKeys(focus('<button class="row" data-row-doc="doc_a">x</button>'))).toBe(
+        false,
+      );
+      // A `.row` that is not a board row — no document on it — is just a control.
+      expect(ownsActivationKeys(focus('<div class="row" role="button">x</div>'))).toBe(true);
+    });
+
+    /** Which is why the match is on the element, not on its ancestors. */
+    it("leaves a quick action inside a row a control of its own", () => {
+      document.body.innerHTML =
+        '<div class="row" data-row-doc="doc_a" role="button" tabindex="0">' +
+        '<button id="act">Review</button></div>';
+      const action = document.getElementById("act");
+      action?.focus();
+      expect(ownsActivationKeys(action)).toBe(true);
+    });
+
+    it("takes ↵ and ⇧↵ out of the scheme, and nothing else", () => {
+      const focused = { scope: "board", editing: false, controlFocused: true } as const;
+      expect(resolveShortcut(key({ key: "Enter" }), focused)).toBeNull();
+      expect(resolveShortcut(key({ key: "Enter", shiftKey: true }), focused)).toBeNull();
+
+      // Keys a button does not press itself with keep acting on the board.
+      for (const pressed of ["j", "k", "c", "e", "f", "r", "ArrowDown", "ArrowRight", "["]) {
+        expect(resolveShortcut(key({ key: pressed }), focused), pressed).not.toBeNull();
+      }
+      expect(resolveShortcut(key({ key: "k", metaKey: true }), focused)?.id).toBe("search.open");
+      expect(resolveShortcut(key({ key: "F10", shiftKey: true }), focused)?.id).toBe("menu.open");
+    });
+
+    it("lets the press reach the control's own default action", () => {
+      const board = boardSpy();
+      mount({
+        openCompose: vi.fn(),
+        openSearch: vi.fn(),
+        toggleCheatSheet: vi.fn(),
+        board,
+      });
+      const trigger = document.createElement("button");
+      document.body.append(trigger);
+      trigger.focus();
+
+      for (const code of ["Enter", "NumpadEnter"]) {
+        const event = new KeyboardEvent("keydown", { key: "Enter", code, bubbles: true });
+        trigger.dispatchEvent(event);
+        expect(event.defaultPrevented, code).toBe(false);
+      }
+      expect(board.calls).toEqual([]);
+    });
+
+    it("still opens the highlighted row when the focus is the board's own row", () => {
+      const board = boardSpy();
+      mount({
+        openCompose: vi.fn(),
+        openSearch: vi.fn(),
+        toggleCheatSheet: vi.fn(),
+        board,
+      });
+      focus('<div class="row" data-row-doc="doc_a" role="button">x</div>');
+
+      fireEvent.keyDown(document, { key: "Enter" });
+      fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
+      expect(board.calls).toEqual(["openRowAtCursor:false", "openRowAtCursor:true"]);
+    });
+
+    it("still opens the highlighted row when nothing focusable holds focus", () => {
+      const board = boardSpy();
+      mount({
+        openCompose: vi.fn(),
+        openSearch: vi.fn(),
+        toggleCheatSheet: vi.fn(),
+        board,
+      });
+      fireEvent.keyDown(document, { key: "Enter" });
+      expect(board.calls).toEqual(["openRowAtCursor:false"]);
     });
   });
 

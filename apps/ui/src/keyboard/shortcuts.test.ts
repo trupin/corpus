@@ -148,6 +148,37 @@ describe("the shortcut registry", () => {
     ]);
   });
 
+  /**
+   * UI-032's guard, and the reason the rule is declared in the registry rather
+   * than written into the dispatcher: a binding is checked because it exists,
+   * not because someone remembered to check it. Every `↵` on the board is a key
+   * a focused control presses itself with, so every one of them must yield —
+   * an entry that forgets re-opens the defect for every button in the app.
+   */
+  it("makes every board ↵ yield to a focused control", () => {
+    const enter = SHORTCUTS.filter(
+      (shortcut) =>
+        shortcut.scope === "board" && shortcut.chords.some((chord) => chord.keys.includes("Enter")),
+    );
+    expect(enter.map((shortcut) => shortcut.id)).toEqual(["rows.open", "rows.openFullScreen"]);
+    for (const shortcut of enter) {
+      expect(shortcut.yieldsToFocusedControl, shortcut.id).toBe(true);
+    }
+  });
+
+  /**
+   * The other half of a control's activation contract. `Space` works on every
+   * trigger in the app **because nothing here claims it** — that is what UI-030
+   * and UI-041 fell back on while `↵` was being stolen. Binding it would take
+   * the second key away too, silently.
+   */
+  it("leaves Space unbound", () => {
+    const claimed = SHORTCUTS.filter((shortcut) =>
+      shortcut.chords.some((chord) => chord.keys.includes(" ") || chord.keys.includes("Spacebar")),
+    );
+    expect(claimed.map((shortcut) => shortcut.id)).toEqual([]);
+  });
+
   it("only ⌘K survives a writing surface", () => {
     const permitted = SHORTCUTS.filter((shortcut) => shortcut.allowInInput === true);
     expect(permitted.map((shortcut) => shortcut.id)).toEqual(["search.open"]);
