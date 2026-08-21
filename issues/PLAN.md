@@ -1078,8 +1078,31 @@ rule produces taste, and an audit with one produces findings a person can check.
 | --- | --- | --- | --- | --- |
 | SHARED-057 | Nothing resizes because of what it holds (SIGNED 2026-08-20) | done | P0 | — |
 | UI-127 | The recipient picker oscillates under the pointer | todo | P0 | SHARED-057 |
-| UI-128 | Audit: every surface whose size follows its content | todo | P0 | SHARED-057 |
+| UI-128 | Audit: every surface whose size follows its content | done | P0 | SHARED-057 |
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | todo | P1 | — |
+
+**UI-128's ledger ranks six reachable clusters**, each measured in a real browser
+and each filed below in the order a person hits them. The audit also found that
+UI-127's hover shape occurs in **exactly one place** — the class behind it is the
+late-arriving value, which is three of these six.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| UI-129 | An image reserves no box until it decodes (rank 1) | todo | P0 | UI-128 |
+| UI-135 | The reader head's controls leave the column after a save (rank 2) | todo | P0 | UI-128 |
+| UI-131 | A label that arrives late reflows the row it lands in (rank 3) | todo | P0 | UI-128 |
+| UI-132 | The toast stack collapses toward its anchor (rank 4) | todo | P1 | UI-128 |
+| UI-133 | The console strip's height is its text, and the board pays (rank 5) | todo | P1 | UI-128 |
+| UI-134 | Counts and durations are not digit-stable (rank 6) | todo | P2 | UI-128 |
+
+**Two things UI-128 escalated rather than filed.** `.title-grow`
+(`Reader.css:168-215`) makes the title box's height its text **on purpose** —
+UI-065 argued for it and SHARED-057 was signed after, so it is a spec
+adjudication, not a defect. And eight latent sites look reachable on reading and
+lack only a browser measurement (`RefNodeView`, `ScopeProvenance`, the anchor
+chips, the search filter chips, the todo item preview, `useAnchorLayer`'s
+margin-mode guard, the todo comment popover's guessed size, and the autocomplete's
+stale `top`) — a second sweep should measure those eight first.
 
 **The riders v0.14.0 carried forward are signed and applied in this phase**:
 SHARED-049, -052, -053, -056 as drafted, plus SHARED-054's code half and

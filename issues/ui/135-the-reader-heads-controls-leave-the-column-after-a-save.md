@@ -1,4 +1,4 @@
-# [UI-130] The reader head's controls leave the column after a save
+# [UI-135] The reader head's controls leave the column after a save
 
 ## Domain
 
@@ -180,4 +180,4 @@ _[Agent fills]_
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[UI-130]` prefix
+- [ ] Committed with `[UI-135]` prefix
