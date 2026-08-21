@@ -374,7 +374,7 @@ belongs to the same fix wave.
 | SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | done | P1 | — |
 | UI-064 | `<br>` inside a table cell renders as literal text | done | P1 | — |
 | UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | done | P1 | SHARED-010 |
-| UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
+| UI-066 | Document body width is resizable, uniformly | done | P1 | SHARED-010 |
 | UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | done | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
 | SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | done | P1 | — |
@@ -524,7 +524,7 @@ cheapest moment for that to happen.
 | UI-099 | Commenting on a document selection leaves no visible anchor | done | P0 | — |
 | UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | done | P0 | — |
 | UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | done | P1 | UI-103 |
-| UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | todo | P2 | — |
+| UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | done | P2 | — |
 | UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
 | SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc | done | P1 | — |
 | SHARED-034 | Full-screen editing has no persistent formatting toolbar | done | P1 | SHARED-035 |
@@ -1222,11 +1222,12 @@ left in a report.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-058 | A refusal outlives its toast — the console's Notices tab (AUTHORIZED 2026-08-21, applied) | done | P1 | — |
-| UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | todo | P0 | — |
+| UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | done | P0 | — |
 | UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | todo | P2 | UI-063 |
 | SHARED-060 | §11 puts the comments switch in the header unconditionally, and the header cannot hold it — **DRAFTED, UNSIGNED** | todo | P1 | — |
 | SHARED-061 | A surface is as large as its place allows (AUTHORIZED 2026-08-21, applied) | done | P0 | — |
-| UI-142 | Audit: every surface drawn smaller than the room it has | todo | P0 | SHARED-061 |
+| UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
+| UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 
 
 ## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
