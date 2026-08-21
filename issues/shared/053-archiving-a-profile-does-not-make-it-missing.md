@@ -6,8 +6,7 @@ shared
 
 ## Status
 
-todo — **NEEDS USER SIGN-OFF.** Drafted 2026-08-18, not applied. SPEC.md changes
-are the user's.
+done — signed by the user 2026-08-20 (as drafted, in the v0.15.0 go-ahead). SPEC.md text applied 2026-08-20; any downstream code half is tracked by its own issue.
 
 ## Priority
 

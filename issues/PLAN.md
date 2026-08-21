@@ -938,13 +938,13 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | AGENT-036 | A transcript line the CLI cannot print; SERVER-125 made the other finding true | done | P2 | — |
 | AGENT-035 | A `$` in a quoted argument is eaten by the shell, and no skill says so (AGENT-033 finding) | done | P1 | — |
 | INFRA-029 | Nothing checks that a SPEC cross-reference names a real section (PR #49 review) | done | P1 | — |
-| SHARED-049 | SPEC enumerates two product skills and the workspace ships four (PR #49 review, NEEDS SIGN-OFF) | todo | P2 | — |
+| SHARED-049 | SPEC enumerates two product skills and the workspace ships four (SIGNED 2026-08-20) | done | P2 | — |
 | UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | done | P0 | SERVER-125 |
 | CONTRACT-064 | The designate schema still states the pre-SERVER-125 resolution rule (PR #50 review sweep) | done | P1 | SERVER-125 |
 | SERVER-127 | A bare .claude/skills/SKILL.md is addressable and loaded by nothing (UI-123 derived fixture) | done | P1 | SERVER-125 |
 | SHARED-051 | A persona is addressable by where it lives, and §11 said otherwise (SIGNED 2026-08-19) | done | P0 | SERVER-125 |
-| SHARED-052 | A check can report what a save accepts, and §14 says it cannot (PR #50 review 2, NEEDS SIGN-OFF) | todo | P1 | SERVER-124 |
-| SHARED-053 | §7 says a renamed or archived profile goes missing; archiving does not (PR #50 review 3, NEEDS SIGN-OFF) | todo | P1 | — |
+| SHARED-052 | A check can report what a save accepts, and §14 says it cannot (SIGNED 2026-08-20) | done | P1 | SERVER-124 |
+| SHARED-053 | §7 says a renamed or archived profile goes missing; archiving does not (SIGNED 2026-08-20) | done | P1 | — |
 
 **v0.12.0** is the `done` rows above: *everything the profile release left
 half-true*. One story, one tag. The controlled-language work below is a second
@@ -1059,7 +1059,7 @@ not a behaviour change.
 | CLI-054 | `corpus thread scope` lists what a resident owns | done | P1 | CONTRACT-068, SERVER-130 |
 | AGENT-039 | A listener is launched at the designation's weight | done | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
 | SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | done | P0 | — |
-| SHARED-056 | §7 enumerates the core events, §9.2 the routes, §11 the console — Phase 36 added one of each (NEEDS SIGN-OFF) | todo | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
+| SHARED-056 | §7 enumerates the core events, §9.2 the routes, §11 the console (SIGNED 2026-08-20) | done | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
 | SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | todo | P2 | SERVER-129 |
 
 ## Phase 37 — Nothing moves under your cursor (2026-08-20, user report)
