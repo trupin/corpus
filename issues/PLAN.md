@@ -1082,11 +1082,11 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
 | UI-129 | An image reserves no box until it decodes | done | P0 | SHARED-057 |
 | UI-131 | A label that arrives late reflows the row it lands in | done | P0 | SHARED-057 |
-| UI-132 | The toast stack collapses toward its anchor | todo | P0 | SHARED-057 |
-| UI-133 | The console strip's height is its text, and the board pays | todo | P1 | SHARED-057 |
-| UI-134 | Counts and durations are not digit-stable | todo | P1 | SHARED-057 |
+| UI-132 | The toast stack collapses toward its anchor | done | P0 | SHARED-057 |
+| UI-133 | The console strip's height is its text, and the board pays | done | P1 | SHARED-057 |
+| UI-134 | Counts and durations are not digit-stable | done | P1 | SHARED-057 |
 | UI-135 | The reader head's controls leave the column after a save | done | P0 | SHARED-057 |
-| UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | todo | P0 | SHARED-057 |
+| UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
 | UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
 
 **UI-128's ledger ranks six reachable clusters**, each measured in a real browser
@@ -1099,9 +1099,9 @@ late-arriving value, which is three of these six.
 | UI-129 | An image reserves no box until it decodes (rank 1) | todo | P0 | UI-128 |
 | UI-135 | The reader head's controls leave the column after a save (rank 2) | todo | P0 | UI-128 |
 | UI-131 | A label that arrives late reflows the row it lands in (rank 3) | todo | P0 | UI-128 |
-| UI-132 | The toast stack collapses toward its anchor (rank 4) | todo | P1 | UI-128 |
-| UI-133 | The console strip's height is its text, and the board pays (rank 5) | todo | P1 | UI-128 |
-| UI-134 | Counts and durations are not digit-stable (rank 6) | todo | P2 | UI-128 |
+| UI-132 | The toast stack collapses toward its anchor (rank 4) | done | P1 | UI-128 |
+| UI-133 | The console strip's height is its text, and the board pays (rank 5) | done | P1 | UI-128 |
+| UI-134 | Counts and durations are not digit-stable (rank 6) | done | P2 | UI-128 |
 
 **Two things UI-128 escalated rather than filed.** `.title-grow`
 (`Reader.css:168-215`) makes the title box's height its text **on purpose** —
@@ -1113,8 +1113,18 @@ margin-mode guard, the todo comment popover's guessed size, and the autocomplete
 stale `top`) — a second sweep should measure those eight first.
 
 **The riders v0.14.0 carried forward are signed and applied in this phase**:
-SHARED-049, -052, -053, -056 as drafted, plus SHARED-054's code half and
-SERVER-132 behind -052.
+SHARED-049, -052, -053, -056 as drafted. SHARED-053's two stale quotations were
+corrected with it.
+
+**The audit ran against the signed rule and found 12 reachable sites in 6
+clusters, 31 latent, 58 compliant.** All six reachable clusters were built, plus
+three more the fixes themselves surfaced: the popover's missing ceiling (UI-130),
+the address line pushing Send (UI-137), and the reader head's overflow (UI-135).
+`.title-grow` was adjudicated compliant under SHARED-057's stated exception.
+
+**Left filed, and named rather than omitted**: UI-136 (three surfaces drawn
+larger than the room they open into), SHARED-054's code half, SERVER-132, and the
+31 latent sites — eight of which the ledger flags as promotion candidates.
 
 **Phase 36 landed 2026-08-19/20**, and is the scope agreed for v0.14.0 — a release is a separate, deliberate act and is not in the phase's PR. Fourteen issues: the seven filed
 from the user's reports, six filed to make them usable end to end, and one
