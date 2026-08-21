@@ -144,14 +144,21 @@ const ANCHOR_WORD: Record<AnchorFilter, string> = {
 /**
  * What an empty list says.
  *
- * Two different emptinesses, and telling them apart is the acceptance criterion:
- * a document with no comments is invited to start one, while a list emptied by a
- * filter **names the filter and says how many rows it is hiding**. A blank panel
- * says neither, and the second one silently looks like the first.
+ * **Two different emptinesses, and telling them apart is the acceptance
+ * criterion.** A list emptied by a filter names the filter and says how many rows
+ * it is hiding. A document with **no comments at all** gets its own sentence, and
+ * that is not a nicety: since the head's toggle only appears once a document has
+ * conversations (see `CommentsSwitch`), a person arrives at this state
+ * deliberately, through the ⋯ menu, in order to write the first comment. The
+ * sentence therefore names the act rather than the absence, and says the one
+ * thing that is not obvious — that nothing has to be selected first.
+ *
+ * A blank panel says neither, and the second emptiness silently looks like the
+ * first.
  */
 export function emptyCommentsNotice(counts: CommentCounts, filters: CommentFilters): string {
   if (counts.all === 0) {
-    return "No comments on this document yet. The composer below starts one — no selection needed.";
+    return "No comments on this document yet. Write the first one below — no text selection needed.";
   }
   const words = [STATUS_WORD[filters.status], ANCHOR_WORD[filters.anchor]].filter(
     (word) => word !== "",

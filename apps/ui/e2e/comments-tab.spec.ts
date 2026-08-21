@@ -144,10 +144,13 @@ test.describe("the Document / Comments switch", () => {
   });
 
   /**
-   * 💬 keeps its own condition, because the head's slack was measured against a
-   * head without it (`comments/CommentsSwitch`). A document with no
+   * 💬 keeps its own condition, and that is a **measured** deviation from §11's
+   * unconditional wording rather than a preference: at 560px with a parent title
+   * at its cap the row has 13px of slack and the toggle needs 61px
+   * (`comments/CommentsSwitch` carries the numbers). A document with no
    * conversations reaches the list through the ⋯ menu — which is also where
-   * UI-067's "comment without selecting" starts on such a document.
+   * UI-067's "comment without selecting" starts on such a document, so this test
+   * walks that whole path.
    */
   test("is absent on a document with no comments, which reaches the list on ⋯", async ({
     page,
@@ -159,7 +162,23 @@ test.describe("the Document / Comments switch", () => {
     await page.locator(`${reader} [data-doc-menu]`).click();
     await page.locator(`${reader} .comments-pop .cp-item`, { hasText: "Comments" }).first().click();
     await expect(page.locator(`${reader} .comments-tab`)).toBeVisible();
-    // The way back appears with the list.
+
+    /*
+     * The state a person arrives at **deliberately**, to write the first comment
+     * on a document. It gets its own sentence — not the filter one — and it names
+     * the act rather than the absence, with the composer right under it.
+     */
+    await expect(page.locator(`${reader} .cm-empty`)).toHaveText(
+      "No comments on this document yet. Write the first one below — no text selection needed.",
+    );
+    const field = page.locator(`${reader} [data-new-comment] textarea`);
+    await expect(field).toBeVisible();
+    await field.fill("The first thing anybody has said about this.");
+    await field.press("Meta+Enter");
+    await expect(page.locator(`${reader} [data-comment-row]`)).toHaveCount(1);
+    await expect(page.locator(`${reader} .cm-empty`)).toHaveCount(0);
+
+    // The way back appears with the list, and stays once the document has one.
     await expect(page.locator(`${reader} .comments-btn`)).toHaveAttribute("aria-pressed", "true");
   });
 });

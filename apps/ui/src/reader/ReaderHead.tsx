@@ -151,10 +151,12 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
         {readerIdText(props.docId)}
       </span>
       <SaveChip />
-      {/* Under 💬's own condition, plus one: whenever the list is showing, so
-          the way back is never missing. A document with no comments reaches the
-          list through the ⋯ menu — see `CommentsSwitch` for why the head cannot
-          simply carry it unconditionally. */}
+      {/* §11's rider puts the switch in the header unconditionally, and it is
+          **measured as not fitting** on one head — see `CommentsSwitch`, which
+          carries the numbers and the deviation. So it renders under 💬's own
+          condition, plus one: whenever the list is showing, so the way back is
+          never missing. The empty case §11 cares about most is reached from the
+          ⋯ menu, which costs the row nothing. */}
       {threads.length === 0 && props.tab !== "comments" ? null : (
         <CommentsSwitch tab={props.tab} count={threads.length} onTab={props.onTab} />
       )}

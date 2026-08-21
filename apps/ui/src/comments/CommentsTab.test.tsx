@@ -178,7 +178,7 @@ describe("the comments list", () => {
   it("says so when the document has no comments at all", () => {
     const { container } = render(<Host threads={[]} anchors={[]} />);
     expect(container.querySelector(".cm-empty")?.textContent).toBe(
-      "No comments on this document yet. The composer below starts one — no selection needed.",
+      "No comments on this document yet. Write the first one below — no text selection needed.",
     );
     // …and the composer is still there, which is what that sentence points at.
     expect(container.querySelector("[data-new-comment]")).not.toBeNull();

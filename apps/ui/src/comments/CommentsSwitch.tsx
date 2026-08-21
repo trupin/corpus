@@ -21,13 +21,40 @@ import type { ReactElement } from "react";
  * — the exact defect v0.15.0 was named for. One toggle costs exactly what 💬
  * cost, which is the only budget available.
  *
- * **It renders under 💬's own condition, plus one.** 💬 appeared only on a
- * document that had conversations, and the head's slack is measured against a
- * head without it; making it unconditional is the change that does not fit. So
- * the toggle appears when there is something to list, **and** whenever the list
- * is showing, so the way back is never missing. A document with no comments
+ * **It renders under 💬's own condition, plus one — and that is a deviation from
+ * §11, recorded here rather than hidden.** The rider says the list is *"reached
+ * by a Document / Comments switch in the reader's header"*, with no clause about
+ * the document already having conversations. Unconditional was built and
+ * measured, and the head has no room for it at one width.
+ *
+ * The measurement, at a 560px column (534px of content) showing a document
+ * reached from a long-titled parent, so `.back` sits at its own `max-width: 40%`
+ * cap — `natural` is what each item would take if the row had the room:
+ *
+ * ```
+ * .back        214 (cap)   .reader-id  101   .save-chip  120
+ * .comments-btn 52         ⋯            28   ⤢            22     gaps 5 × 9 = 45
+ *
+ * natural total 582        content 534       deficit 48px
+ * without the switch 521   content 534       slack   13px
+ * ```
+ *
+ * So the row has **13px of slack** in that configuration and the toggle needs
+ * **61px** (52 plus its gap). It is not a padding-shaving problem: no control of
+ * any width fits, and the two items that would pay are the ones UI-135's log
+ * records as the rejected trade — *"the back label squeezed below its own cap
+ * and the document id truncating on a head where nothing unusual was
+ * happening."* Drawn, the id lost 16px of 101 and the chip 19px of its
+ * reservation. Every other head measured has room: the same column with an
+ * ordinary back label has **114px of slack**, and both 240px cases pass.
+ *
+ * So the toggle appears when there is something to list, **and** whenever the
+ * list is showing, so the way back is never missing. A document with no comments
  * reaches the list through the reader's ⋯ menu, where the document's own actions
- * already live — which costs the row nothing.
+ * already live — which costs the row nothing. Restoring §11's unconditional
+ * reading needs room the head does not have: a shorter `.reader-id`, a smaller
+ * `.back` cap, or a narrower save-chip reservation — each of them somebody
+ * else's signed tuning.
  *
  * **Nothing here resizes because of what it holds** (SHARED-057): the count sits
  * in the reserved two-character box UI-134 gave it, and the pressed state changes

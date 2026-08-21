@@ -141,7 +141,7 @@ describe("the two axes", () => {
 describe("what an empty list says", () => {
   it("invites the first comment when there are none at all", () => {
     expect(emptyCommentsNotice(countComments([]), ALL_COMMENTS)).toBe(
-      "No comments on this document yet. The composer below starts one — no selection needed.",
+      "No comments on this document yet. Write the first one below — no text selection needed.",
     );
   });
 
