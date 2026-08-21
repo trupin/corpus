@@ -131,11 +131,13 @@
   color: var(--signal);
 }
 
-button.save-chip {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  white-space: nowrap;
-  flex: none;
+/* The retry, when a failure offers one. It sits *inside* the chip rather than
+   replacing it — see `SaveChip`'s note: a Chromium `<button>` will not shrink
+   below its own content, so a chip that swapped its element for a button was a
+   different width in that one state. Everything else about it is the chip's,
+   inherited: the mono face, the size, `--signal`, and the box
+   `.save-chip-text` puts it in (`reader/Reader.css`). */
+.save-chip-retry {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -298,7 +300,16 @@ button.save-chip {
   display: inline;
 }
 
-.doc-body .doc-image .md-img {
+/*
+ * Restated for the node view's three states, not just its picture (UI-129).
+ * `CorpusImage` draws a pending chip and a broken chip as well, and the reserved
+ * box those now share is only worth having if all three sit at the same height
+ * in the line — see the argument beside the box in `@corpus/kit/markdown.css`,
+ * which states this same value. Changing one is changing both.
+ */
+.doc-body .doc-image .md-img,
+.doc-body .doc-image .md-img-pending,
+.doc-body .doc-image .md-img-broken {
   vertical-align: text-bottom;
 }
 

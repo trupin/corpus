@@ -308,11 +308,14 @@ test.describe("the composer's shipped stylesheet", () => {
     await page.goto("/");
     const styles = await measure(
       page,
-      `${COMPOSER}<img class="turn-att-img" alt=""/><span class="att-file">📄 policy.pdf</span>`,
+      // `md-img turn-att-img` is what `CorpusImage` composes, and since UI-129
+      // it is the kit's class that carries the mockup's box — a probe on the
+      // host class alone would be measuring half the element the app renders.
+      `${COMPOSER}<img class="md-img turn-att-img" alt=""/><span class="att-file">📄 policy.pdf</span>`,
       [
         [".att-chip", ["border-radius", "font-size", "background-color"]],
         [".att-chip img", ["height"]],
-        [".turn-att-img", ["max-width", "max-height", "border-radius", "border-top-width"]],
+        [".turn-att-img", ["width", "height", "border-radius", "border-top-width"]],
         [".att-file", ["border-radius", "font-size", "background-color"]],
       ],
     );
@@ -320,8 +323,14 @@ test.describe("the composer's shipped stylesheet", () => {
     expect(styles[".att-chip"]?.["font-size"]).toBe("11px");
     expect(styles[".att-chip"]?.["background-color"]).toBe(LIGHT_SURFACE_2);
     expect(styles[".att-chip img"]?.["height"]).toBe("34px");
-    expect(styles[".turn-att-img"]?.["max-width"]).toBe("240px");
-    expect(styles[".turn-att-img"]?.["max-height"]).toBe("180px");
+    /*
+     * `design/index.html`'s 240×180, now **stated** rather than capped
+     * (UI-129). A `max-` pair says nothing about an image that has not decoded
+     * yet, which is the whole of what that issue fixed: the box has to be the
+     * same before the bytes, during them and after them.
+     */
+    expect(styles[".turn-att-img"]?.["width"]).toBe("240px");
+    expect(styles[".turn-att-img"]?.["height"]).toBe("180px");
     expect(styles[".turn-att-img"]?.["border-radius"]).toBe("8px");
     expect(styles[".att-file"]?.["border-radius"]).toBe("7px");
     expect(styles[".att-file"]?.["background-color"]).toBe(LIGHT_SURFACE_2);

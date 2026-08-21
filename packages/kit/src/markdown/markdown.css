@@ -143,6 +143,89 @@
   cursor: zoom-in;
 }
 
+/*
+ * ── The reserved box (UI-129) ────────────────────────────────────────
+ *
+ * SPEC.md §11, rider signed 2026-08-20: "a value that arrives later than the
+ * box holding it" must move nothing else on the screen. An `<img>` with no
+ * stated size is that rule's purest counter-example. It occupies **0×0** until
+ * the bytes decode and then takes its natural box, so every line beneath it
+ * drops at the moment a person has already started reading. UI-128 measured it
+ * in a real browser: `0x0 → 48x36` on the smallest PNG in this repository moved
+ * the paragraph below by **13px**, a turn attachment displaces up to **180px**,
+ * and a tall screenshot in a document body displaces an unbounded amount — once
+ * per image, at a different moment each.
+ *
+ * **The box is stated, not derived.** Nothing on the wire carries an
+ * attachment's dimensions: `packages/contract/src/schemas/attachment.ts` says
+ * so in as many words — there is no `AttachmentRef` resource, because the
+ * projection's `turns` table carries only `body_md`, so no endpoint could
+ * produce one. The right box therefore cannot be known before the bytes, and
+ * the only honest alternative is a box that is the same before them, during
+ * them and after them. A wrong-but-stable box beats a box that changes after
+ * the reader's eye has settled on what is under it.
+ *
+ * **240×180**, because `design/index.html` already states that box and nothing
+ * else: `.turn-att-img` is the one image size the mockup draws, and a
+ * screenshot — which fills a 4:3 box or is capped by it — is what people
+ * actually attach. That is the rider's own test, "the box is sized for the text
+ * people actually have, measured against real content rather than a
+ * placeholder". Retune it per surface by setting `--md-img-box-w` /
+ * `--md-img-box-h` on any ancestor.
+ *
+ * **All three states share the box** — the pending chip, the broken chip and
+ * the picture — because one renderer draws all three, and a box that changed
+ * between them would be the same jump one step later.
+ */
+.md-img,
+.md-img-pending,
+.md-img-broken {
+  box-sizing: border-box;
+  width: var(--md-img-box-w, 240px);
+  max-width: 100%;
+  height: var(--md-img-box-h, 180px);
+  /*
+   * Stated for the three of them together, and load-bearing. An `<img>` and an
+   * `inline-flex` chip are both atomic inline-level boxes, but they take their
+   * baseline from different places — a replaced element from its bottom margin
+   * edge, a flex container from its first item's text. Left to default
+   * `baseline` alignment, a chip and a picture of *identical* size still sit at
+   * different heights in the line, so the line box changes when one replaces
+   * the other and the reservation buys nothing. `text-bottom` is a property of
+   * the line, not of the content, so both land in the same place. It is also
+   * the value the editor already picked for a mid-sentence image
+   * (`apps/ui/src/editor/editor.css`), so the two surfaces stay one look.
+   */
+  vertical-align: text-bottom;
+}
+
+/*
+ * `scale-down`, never `contain`: `contain` would blow a 48×36 icon up to fill a
+ * box it never asked for, so anything larger than the box is fitted into it and
+ * anything smaller is left at its own size. `object-position` sits the picture
+ * against the left edge, where the prose starts, rather than floating it in the
+ * middle of the reservation.
+ *
+ * This is also what keeps a **broken** image from collapsing: an `<img>` whose
+ * bytes never arrive still has a CSS box, so the remote URL that never answers
+ * holds its place instead of vanishing and pulling the page up — the same jump
+ * in the other direction.
+ */
+.md-img {
+  /*
+   * `inline-block` rather than the default, and it is the broken case that
+   * needs it. An `<img>` whose bytes never arrive stops being replaced content
+   * in Chromium — it renders its `alt` as ordinary inline text, and `width` and
+   * `height` do not apply to a non-replaced inline box, so the reservation was
+   * silently dropped at exactly the moment it mattered. Measured: the remote
+   * URL that never answers collapsed from 240×180 to 63×24. An explicit
+   * `inline-block` keeps the box whichever way the load goes.
+   */
+  display: inline-block;
+  object-fit: scale-down;
+  object-position: left center;
+}
+
 .md-img[role="button"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -155,11 +238,20 @@
  * tells the reader nothing. Shaped like the thread's own `.att-file` chip,
  * which is the treatment `design/index.html` gives an attachment with no
  * preview.
+ *
+ * Both fill the reserved box above rather than hugging their label (UI-129).
+ * They are what is on screen *before* the picture, so a chip sized to its own
+ * text would put the jump back exactly where the reservation took it from: the
+ * reader would see a 22px chip become a 180px picture. `overflow: hidden` is
+ * the same argument one level down — a long filename must not push the box out
+ * either.
  */
 .md-img-pending,
 .md-img-broken {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  overflow: hidden;
   gap: 6px;
   border: 1px solid var(--line);
   border-radius: 7px;

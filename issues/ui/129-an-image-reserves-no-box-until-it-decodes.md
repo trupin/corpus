@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -58,21 +58,21 @@ four times, at four different moments.
 
 ## Acceptance Criteria
 
-- [ ] An image occupies its final box **before** the bytes arrive. The `<img>`
+- [x] An image occupies its final box **before** the bytes arrive. The `<img>`
       never measures `0x0`
-- [ ] **Measure the box, change the content, measure again, assert unchanged**: a
+- [x] **Measure the box, change the content, measure again, assert unchanged**: a
       Playwright spec holds the attachment response open, records the bounding
       box of a sentinel paragraph below the image, releases the response, waits
       for `naturalWidth > 0`, and asserts the sentinel's `y` **did not change**
-- [ ] The same assertion holds in all three surfaces the one renderer serves: a
+- [x] The same assertion holds in all three surfaces the one renderer serves: a
       document body (`.doc-body img`), a turn attachment (`.turn-att-img`), and
       the editor
-- [ ] A **broken** image — the remote URL that never answers, already covered by
+- [x] A **broken** image — the remote URL that never answers, already covered by
       `apps/ui/e2e/images.spec.ts` — leaves the reserved box and does not collapse
       it, or collapses it before first paint. It must not collapse *later*
-- [ ] The existing `images.spec.ts` assertions on `naturalWidth` and on the
+- [x] The existing `images.spec.ts` assertions on `naturalWidth` and on the
       unauthenticated 401 path stay green
-- [ ] **Falsification**: revert the reservation, rebuild `packages/kit`'s `dist/`,
+- [x] **Falsification**: revert the reservation, rebuild `packages/kit`'s `dist/`,
       and watch the new spec fail. A source-only revert in kit cannot falsify
       anything a consumer runs — see the ui-dev domain note of 2026-08-16
 
@@ -156,15 +156,156 @@ no layout and would pass against the current code.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+Implemented on: **opus**. Real Chromium through Playwright, real Vite dev server
+on `5286`, `CORPUS_SERVER_ORIGIN=http://127.0.0.1:8896`. Every measurement below
+comes from `Element.getBoundingClientRect()` through Playwright's `boundingBox()`,
+rounded to whole pixels.
+
+### Decision taken: the wire carries no dimensions, so the box is stated
+
+Checked first, as instructed. **`packages/contract` publishes no attachment
+dimensions**, and says so deliberately —
+`packages/contract/src/schemas/attachment.ts` states: *"There is deliberately no
+`AttachmentRef` resource here: the projection's `turns` table carries only
+`body_md` (SPEC.md §9.1), so no endpoint can produce a structured attachment
+list."* The contract publishes `AttachmentFileSchema`, `AttachmentFilesSchema`
+and `AttachmentPathSchema` — a path, a name and bytes, no width and no height.
+Nothing was added to the contract.
+
+Decision **2** was therefore taken: a stated placeholder box, the same before the
+bytes, during them and after them.
+
+**The ratio is 4:3, and the box is 240×180.** Not chosen freshly —
+`design/index.html` line 468 already states `.turn-att-img { max-width: 240px;
+max-height: 180px }`, which is the one image box the mockup draws anywhere. That
+also answers the rider's own test, *"the box is sized for the text people
+actually have, measured against real content rather than a placeholder"*: what a
+person attaches to a turn is a screenshot, which fills a 4:3 box or is capped by
+it. The picture is placed with `object-fit: scale-down`, so anything larger is
+contained and anything smaller is left at its own size rather than blown up.
+`--md-img-box-w` / `--md-img-box-h` retune it per surface.
+
+**Known tradeoff, stated rather than hidden.** A *small* image — the 48×36 test
+fixture, an inline badge — now sits inside a 240×180 reservation with visible
+slack around it. That is decision 2 working as specified ("a wrong-but-stable box
+beats a box that changes"), and it is the cost of a box that cannot be derived
+before the bytes. If the contract later carries dimensions, option 1 replaces
+this and the slack disappears.
+
+### The fixtures
+
+Two sizes, because the issue says so itself — the 48×36 PNG "is the floor, not
+the case a person has". The mid-prose reference and the document body use it; the
+turn's trailing attachment is a generated solid **900×600** PNG, the size of a
+pasted screenshot. That covers both halves of `object-fit: scale-down` and both
+ends of the displacement.
+
+### Reproduction (pre-fix, and again as the falsification)
+
+The defect is layout, so the reproduction and the falsification are the same
+experiment. `GET /attachments/*` is held open by a Playwright route, a sentinel
+paragraph beneath the image is measured, the response is released, and the
+sentinel is measured again. With the reservation removed from
+`packages/kit/src/markdown/markdown.css` and **`npm run build -w packages/kit`
+re-run** (per the ui-dev note of 2026-08-16). Two consecutive runs, identical:
+
+```
+SENTINEL[turn body, 48x36]        y=411 -> y=421   delta= +10px
+SENTINEL[turn attachment, 900x600] y=540 -> y=829   delta=+289px
+SENTINEL[editor body, 48x36]       y=310 -> y=320   delta= +10px
+SENTINEL[under remote, broken]     y=388 -> y=391   delta=  +3px
+picture (turn attachment)          y=478 -> y=488   delta= +10px
+picture (remote, on failure)       y=376 -> y=354   delta= -22px
+```
+
+and the boxes themselves, while held open:
+
+```
+pending placeholder   84x26   (a chip hugging its label)
+remote image loading   0x0    (UI-128's exact measurement, reproduced)
+```
+
+**289px** is a real screenshot in a real conversation, and it is the number that
+matters: everything below that turn drops by more than a screenful the moment
+the bytes land. It exceeds UI-128's stated 180px ceiling because the falsified
+build has neither the reservation nor the old `max-height` cap — with the cap
+alone the displacement was up to 180px.
+
+### After the fix
+
+Reservation restored, `npm run build -w packages/kit` re-run, same experiment,
+same fixtures. Two consecutive runs, identical:
+
+```
+SENTINEL[turn body]                y=565 -> y=565   delta=0
+SENTINEL[turn attachment]          y=849 -> y=849   delta=0
+SENTINEL[editor body]              y=464 -> y=464   delta=0
+SENTINEL[under remote, broken]     y=690 -> y=690   delta=0
+picture (turn attachment)          y=632 -> y=632   delta=0
+picture (editor body)              y=271 -> y=271   delta=0
+picture (remote, on failure)       y=498 -> y=498   delta=0
+```
+
+Every box measures **240×180** in all three states — pending chip, decoded
+picture, failed remote image — on all three surfaces, and the 900×600 screenshot
+is contained into the same box rather than sizing it.
+
+Five consecutive runs of the shipped spec, green.
+
+### One thing the spec had to learn not to blame on images
+
+The first version of the geometry spec was flaky about one run in three, and the
+cause was not an image. **A reader column resolves its width asynchronously**:
+measured 345px at the first paint and 558px once settled, in which the document
+title and several paragraphs wrap differently. A `before` measurement taken
+inside that window makes the sentinel appear to move 28px for a reason that has
+nothing to do with a picture. `settledReader()` waits for two identical
+consecutive width readings, so the spec measures the image and only the image.
+The instability is the column's, not this issue's, and it is documented in the
+spec rather than smoothed over.
+
+### Two defects the first browser run exposed, both fixed
+
+1. **A broken `<img>` ignored the reservation.** Chromium stops treating an image
+   whose load failed as replaced content and renders its `alt` as inline text,
+   and `width`/`height` do not apply to a non-replaced inline box. Measured
+   collapse: **240×180 → 63×24**. Fixed with an explicit `display: inline-block`
+   on `.md-img`, and pinned by the third spec.
+2. **The turn attachment strip still moved 3px.** `CorpusImage` puts the host's
+   class on the *picture* only, so `.turn-att-img`'s `display: block` and
+   `margin-top: 6px` reached one of the three states and not the other two. The
+   stacking and the gap moved up to `.turn-atts`, which cannot tell the three
+   apart — which is what makes it the right place for them.
+
+### Regression runs
+
+- `e2e/images.spec.ts` — 6 passed. `naturalWidth`, the `blob:` source, the 401
+  path and the full-screen viewer are all unchanged.
+- `e2e/thread.spec.ts` — 20 passed. Its mockup-parity probe was updated: it
+  measured `max-width`/`max-height` on a bare `.turn-att-img`, and now measures
+  `width`/`height` on the `md-img turn-att-img` pair `CorpusImage` actually
+  composes. The mockup's 240×180 is still the number asserted.
+- `e2e/attachments.spec.ts`, `e2e/compose-keyboard.spec.ts`,
+  `e2e/todos-menu.spec.ts`, `e2e/editor.spec.ts`, `e2e/turn-comment.spec.ts` —
+  all passing. `.att-chip img { height: 34px }` is untouched: a composer chip is
+  a plain `<img>`, never a `.md-img`.
+- `packages/kit` + `apps/ui/src` unit suites — 4079 passed. Four failures are
+  **not this issue's**: `packages/kit/src/index.test.ts` reports an undeclared
+  `lanesCappedNote` export (UI-130, in flight), and
+  `apps/ui/src/editor/markdown/corpus.test.ts` round-trips `issues/ui/128-…md`'s
+  own table. Both were failing before this change.
+- `tsc --noEmit` clean in `packages/kit` and `apps/ui`. ESLint clean. Prettier
+  clean.
+
+Nothing about how images are stored, fetched or authorised was touched.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in, reproduction first
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in, reproduction first
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

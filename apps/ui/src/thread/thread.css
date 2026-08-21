@@ -255,19 +255,42 @@
  * and the reply box's drop highlight (`.composer.dropping`, above), which is
  * per-surface by design.
  */
-.turn-att-img {
-  max-width: 240px;
-  max-height: 180px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  display: block;
+/*
+ * The mockup's 240×180 preview cap is no longer stated here (UI-129): it is now
+ * the *reserved* box every image in the product gets, declared once on `.md-img`
+ * in `@corpus/kit/markdown.css` and honoured before the bytes arrive as well as
+ * after. Restating it as a `max-` pair here would be a second set of numbers
+ * saying the same thing, and — worse — a cap says nothing about an image that
+ * has not decoded, which is the whole of what UI-129 is about. Retuning this
+ * surface alone means setting `--md-img-box-w` / `--md-img-box-h` on `.turn-atts`.
+ *
+ * The **stacking and the gap** moved up to the strip for the same issue's
+ * reason. An attachment is three different elements over its life — a pending
+ * chip, then either the picture or a broken chip — and `CorpusImage` puts the
+ * host's class on the picture alone. A `display` and a `margin-top` declared
+ * here therefore applied to only one of the three, and the strip shifted by 3px
+ * at the moment the bytes landed. The container's rule cannot tell the three
+ * apart, which is exactly what makes it the right place for it.
+ *
+ * What stays here is what is the thread's alone: the frame.
+ */
+.turn-atts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   margin-top: 6px;
 }
 
+.turn-att-img {
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+/* The gap is `.turn-atts`'s now — see the note above `.turn-att-img` (UI-129). */
 .att-file {
   display: inline-flex;
   gap: 6px;
-  margin-top: 6px;
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 3px 9px;
