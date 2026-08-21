@@ -83,6 +83,12 @@ Added by the orchestrator's brief, and met:
 - [x] A focused toast is not dismissed out from under the focus ring, and focus
       never jumps to another toast because one below it left
 
+Added by PR #53's review, and met:
+
+- [x] The two-line clamp has a **reveal**: every toast carries its whole message
+      on a `title`, so an error toast's reason — a server string that exists on
+      no other surface — is not cut away with no path back to it
+
 ## Technical Design
 
 ### Files to Create/Modify
@@ -260,6 +266,80 @@ and both consequences of the rider:
 - Inside a stack of more than one, the newest is now at the top rather than the
   bottom. Nothing else preserves both "the lone toast is at the corner" and
   "an arrival moves nothing" — see the Self-review note below.
+
+### Follow-up: PR #53's MAJOR — the clamp had no reveal (2026-08-20, opus)
+
+**The finding.** `Toasts.css:81-87` clamped `.toast .msg` to two lines and added
+no `title`. Before this issue a toast had no height and wrapped, so the whole
+message was always readable. The clamp cut it with **no reveal path**, which is
+SHARED-057 clause 2 — and the CSS docblock's defense ("it narrates an act whose
+result is on the surface that raised it") holds for a confirmation and not for an
+**error** toast, whose reason is a server string of no bounded length that
+appears on no other surface. The old spec asserted the clip and asserted the full
+refusal was in `textContent`: reachable to assistive tech, unreadable to a
+sighted person.
+
+**The change.** Three files, no change to the geometry, the dwell, any message
+text, or which acts raise a toast:
+
+- `Toasts.tsx` — `<span className="msg" title={toast.message}>`, unconditionally,
+  the same pattern as `.recipient-says`, `.col-title`, `.reader-id`,
+  `.lane-weight` and `.index-detail` in this release.
+- `Toasts.css` — the docblock's defense replaced with the reason it fails for a
+  refusal, and with what makes the tooltip reachable.
+- `Toasts.test.tsx` — a unit test that the title carries the whole notice.
+- `toast-stack.spec.ts` — a ninth spec, below.
+
+**Why the tooltip is reachable here.** A `title` needs a steady pointer, and a
+six-second toast would ordinarily be a poor host for one. UI-132's hold is what
+changes that: a toast the pointer is on is marked overdue rather than dropped, so
+it outlives its dwell for as long as the pointer stays. The reveal and the hold
+are the same mechanism read twice.
+
+**New e2e spec — "reveals on a title what the clamp cuts, and stays up long
+enough to read"**, real Chromium, real Vite on `127.0.0.1:5292` (proxy target
+`127.0.0.1:8902`, deliberately unbound):
+
+1. `e` raises the ordinary confirmation: its `.msg` `title` equals its text, so
+   the reveal is unconditional and not an error-only special case.
+2. A refused pin through the real ghost-column path, `409` carrying
+   `LONG_REFUSAL` (a 195-character reason, past the two-line reserve).
+3. `scrollHeight > clientHeight` on `.msg` — the box really does cut this one.
+4. `title` contains the whole `LONG_REFUSAL` and equals the message's
+   `textContent`, so the tooltip is the full string and not the cut copy.
+5. The pointer parks on the error toast, the clock runs **12 s** (two whole
+   dwells), the toast is still visible and its `title` unchanged — the reveal is
+   reachable, not theoretical.
+
+**Falsification.** `title={toast.message}` removed from `Toasts.tsx`, both
+suites re-run:
+
+- `toast-stack.spec.ts`: **1 failed, 8 passed** — only the new spec, at
+  `expected null to be …`. The eight geometry specs stayed green, which is the
+  control: the reveal is a separate claim from the no-movement guarantee.
+- `Toasts.test.tsx`: **1 failed, 16 passed** — `expected null to be 'Reorder
+  failed — locked'`.
+
+Restored: `toast-stack.spec.ts` **9 passed**, `Toasts.test.tsx` **17 passed**.
+
+**Regression sweep.** `apps/ui/src/shell` unit suite: **117 passed, 6 files.**
+Every e2e spec that reads a toast — `toast-stack`, `board`, `console`,
+`attachments`, `forms`, `recipient`, `resident`, `smoke`: **83 passed, 0
+failed.** `eslint` and `prettier --check` clean on all four touched files.
+`tsc --noEmit` in `apps/ui`: **exit 0** — the two pre-existing `stubCorpus.ts`
+errors reported above are gone from this branch.
+
+**Judgment: is a `title` sufficient for an error toast's reason?** It is the
+right floor and it is not a complete answer. What it covers: a sighted mouse
+user, who now has a path to the whole string, and the hold gives them the time
+to use it. What it does not cover: a sighted **keyboard-only** user, for whom a
+`title` on a non-focusable `<span>` produces no tooltip in any browser, and
+touch, where there is no hover at all. Those people can dismiss the toast but
+cannot read past line two of the reason. The stronger option — an error toast
+that is not dismissed on its dwell until it is acknowledged — would close that
+gap, and it changes toast behaviour, so it is **not shipped here**. Recommended
+as a separate issue rather than folded into this one, because it is a product
+decision about how a refusal ends and not a fix to a clamp.
 
 ## Self-review
 
