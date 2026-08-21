@@ -1140,3 +1140,59 @@ the event type a release travels as, the server and CLI halves of designation
 weight and scope, and the orchestrate skill that turns a weight into a model at
 launch. The decisions each issue was filed on are recorded in the issue under
 *Decided by the orchestrator, 2026-08-19*.
+
+
+## Phase 38 — Comments have a place (2026-08-21, v0.16.0 scope)
+
+**SHARED-010 was signed 2026-08-04 and three of its surfaces were never built.**
+§11 describes a `Document / Comments` switch in the reader header, a list holding
+every thread on the document filtered on two independent axes, a composer for a
+remark that needs no selection, a reply box on each thread in place, and a body
+whose width the person chooses. None of it exists. The spec has been describing
+machinery nobody can run for seventeen days, and every issue filed against §11
+since has been filed against a description rather than a surface.
+
+This phase finishes that rider, plus **UI-139** — folded in on the user's
+instruction of 2026-08-21, with its open design question answered the same day
+(**SHARED-058**, authorized: a refusal's reason becomes durable in the console's
+new **Notices** tab, and the two-line clamp stays).
+
+**Rows for the issues below live in their original phase tables** — UI-063,
+UI-066 and UI-067 in Phase 13, UI-121 and UI-139 in Phase 37 — following the
+Phase 7b precedent. Only genuinely new rows appear here.
+
+**The headline scope**, in the order a person meets it:
+
+- **UI-063** — the comments list: every thread, open/resolved × anchored/unanchored, both hosts _(row in Phase 13)_
+- **UI-067** — comment without selecting, and reply to each thread in place _(row in Phase 13)_
+- **UI-066** — document body width is resizable, uniformly, threads included _(row in Phase 13)_
+- **UI-121** — a highlight blinks out between the optimistic mark and the server's _(row in the Phase 37 tail)_
+- **UI-139** — a refusal a keyboard-only or touch user cannot finish reading _(row in Phase 37)_
+
+**Ride-along debt**, chosen 2026-08-21 on the user's question *"which p2s can we
+fold in?"*. Tier 1 protects this release's own verification — each is a test that
+would otherwise let one of the five above pass while broken. Tier 2 is small work
+in files the release already opens.
+
+**Tier 1.**
+
+- **UI-085** — the e2e stub answers unhandled routes with `{}`, and UI-063/UI-067 add routes to it
+- **UI-079** — `reveal.spec` waits on a decoration with a finite lifetime, which is UI-063's row→anchor path
+- **UI-046** — StrictMode drops thread reveals on cached docs: the same path, in dev
+- **UI-105** — `soft-wrap.spec` pins the caret to a visual line, and UI-066 changes where lines break
+
+**Tier 2.**
+
+- **UI-136** — two of its three surfaces are ours: the reply footer, and the reader column's async width
+- **UI-096** — the collapse glyph crowds resolve, in thread-card chrome UI-067 renders in place
+- **UI-048** — composer draft loss, among PR #19's MINORs, and UI-067 adds two composers
+- **UI-055** — the design mockup still binds the old composer keys, which UI-066/067 read as authoritative
+
+**Left out and named**: UI-061 (a selection spanning several turns) is feature
+work needing its own design pass, not debt. CONTRACT-036 (`unread` on the wire)
+would pull contract and server into a UI release. UI-138, UI-100 and UI-080 are
+adjacent but not in these files.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-058 | A refusal outlives its toast — the console's Notices tab (AUTHORIZED 2026-08-21, applied) | done | P1 | — |
