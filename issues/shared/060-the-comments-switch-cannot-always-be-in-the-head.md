@@ -4,7 +4,10 @@
 shared (orchestrator)
 
 ## Status
-todo — **DRAFTED, UNSIGNED**, awaiting the user's signature. Nothing is applied to SPEC.md.
+done — **SIGNED by the user 2026-08-21**, option 1 (ratify what shipped), applied
+to SPEC.md §11 the same day. The switch arrives with the first conversation and
+the ⋯ path is the guarantee. UI-063's recorded deviation is now a recorded
+design.
 
 ## Priority
 P1

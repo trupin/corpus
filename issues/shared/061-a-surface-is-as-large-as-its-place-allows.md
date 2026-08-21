@@ -4,20 +4,21 @@
 shared (orchestrator)
 
 ## Status
-todo — **DRAFTED, UNSIGNED.** Nothing is applied to SPEC.md.
+done — **SIGNED by the user 2026-08-21**, applied to SPEC.md §11 the same day.
 
-**Reverted 2026-08-21 on the pr-reviewer's MAJOR finding, and the finding was
-right.** The orchestrator applied this text to §11 on the strength of *"Do an
-audit for these kinds of issues around element size and fix them."* Those words
-authorize an audit and fixes. They do not mention SPEC.md, and this paragraph
-adds four normative rules — bounds derived from room, a pixel constant is not a
-bound, scrolling is for what cannot fit, and a stated cap where the two rules
-meet. That is spec text, and spec text needs sign-off. A previous PR breached
-the same constraint, which is exactly why the reviewer was asked to check it.
+**The route here is worth keeping, because it is the one that nearly went
+wrong.** The orchestrator applied this text once already, on the strength of
+*"Do an audit for these kinds of issues around element size and fix them."* PR
+#54's cold reviewer returned MAJOR: those words authorize an audit and fixes,
+they do not mention SPEC.md, and this paragraph adds four normative rules. The
+edit was reverted. The user was then shown the drafted text in full, alongside
+what it would cost not to sign it, and signed it.
 
-**The audit and its fixes stand and are unaffected.** UI-142 measured real
-defects and repaired them, and none of that needed a spec paragraph to be
-legitimate. What is withdrawn is only the claim that §11 now says this.
+The rule is identical either way. What changed is that it is the user's rule
+rather than the orchestrator's, which is the whole point of the constraint.
+
+UI-142's audit and its fixes shipped ahead of the signature and never depended
+on it.
 
 ## Priority
 P0
@@ -124,6 +125,6 @@ can check against a paragraph. UI-128 was the model and it worked — it produce
 findings against the orchestrator three times.
 
 ## Acceptance
-Nothing until signed. UI-142's fixes have already shipped and do not depend on
-it; signing makes the rule they were built against normative, so the next audit
-enforces something the user agreed to rather than something one reviewer thought.
+Signed and applied to SPEC.md §11 on 2026-08-21. UI-142's fixes shipped ahead of
+it and did not depend on it; the signature makes the rule they were built against
+normative, so the next audit enforces something the user agreed to.
