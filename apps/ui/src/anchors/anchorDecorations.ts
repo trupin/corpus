@@ -58,6 +58,29 @@ import type { PmRange } from "./offsetMap";
  * zero-width mark asserting that the selection survives its own deletion would
  * be the worse failure — the highlight going out is the surface's only honest
  * signal that the quote being composed no longer matches the document.
+ *
+ * ## The handover (UI-121)
+ *
+ * A provisional mark that the server has accepted is not replaced by the
+ * anchor it becomes — it **acquires an owner**. `claimProvisionalTransaction`
+ * writes the thread id the server assigned onto the mark that is already up,
+ * and from then on {@link handOver} ends the mark in the very transaction that
+ * first draws that thread's anchor.
+ *
+ * Both halves of that follow from the same premise, and neither works alone.
+ * Ending it any *earlier* — which is what dropping it in the mutation's
+ * `onSuccess` did — leaves the words dark for a whole round trip, because the
+ * server's ranges arrive only with the invalidated document read: measured at
+ * 244 ms against a real server one 250 ms round trip away. Ending it any
+ * *later* would paint the same words twice. The two events being one
+ * transaction is what makes "one mark throughout" true by construction rather
+ * than by two clocks agreeing.
+ *
+ * The owner is matched by **thread id, not by range**. The server's anchor is
+ * frequently not the same shape as the selection it came from — a quote
+ * crossing `**` splits into two segments where the selection was one — so
+ * comparing ranges would fail exactly where the split makes the mark most
+ * visible.
  */
 
 export interface AnchorPlacement {
@@ -71,19 +94,36 @@ export interface AnchorPlacement {
   readonly segments: readonly PmRange[];
 }
 
+/**
+ * The words a comment is being written about — and, once the server has
+ * accepted it, the conversation that now owns them.
+ */
+export interface ProvisionalMark {
+  readonly range: PmRange;
+  /**
+   * The thread the server assigned, or `null` while nothing has been sent.
+   *
+   * An owned mark is one waiting to be handed over: the comment exists, its
+   * anchor is on its way with the next document read, and until it is drawn
+   * this mark is the only thing saying so.
+   */
+  readonly owner: string | null;
+}
+
 export interface AnchorPluginState {
   readonly anchors: readonly AnchorPlacement[];
   /** The words an open composer is about, before the server has seen them. */
-  readonly provisional: PmRange | null;
+  readonly provisional: ProvisionalMark | null;
   readonly set: DecorationSet;
 }
 
 export const anchorPluginKey = new PluginKey<AnchorPluginState>("corpusAnchors");
 
-/** What a host dispatches: the server's answer, or the composer's own range. */
+/** What a host dispatches: the server's answer, the composer's own range, or its new owner. */
 type AnchorMeta =
   | { readonly kind: "anchors"; readonly anchors: readonly AnchorPlacement[] }
-  | { readonly kind: "provisional"; readonly range: PmRange | null };
+  | { readonly kind: "provisional"; readonly range: PmRange | null }
+  | { readonly kind: "claim"; readonly owner: string };
 
 export function anchorState(state: EditorState): AnchorPluginState | undefined {
   return anchorPluginKey.getState(state);
@@ -102,9 +142,26 @@ export function setAnchorsTransaction(
   return metaTransaction(state, { kind: "anchors", anchors });
 }
 
-/** The transaction that lights (or puts out) the open composer's selection. */
+/**
+ * The transaction that lights (or puts out) the open composer's selection.
+ *
+ * A range always arrives unowned: this is a *new* mark, and the previous one's
+ * owner has nothing to do with it.
+ */
 export function setProvisionalTransaction(state: EditorState, range: PmRange | null): Transaction {
   return metaTransaction(state, { kind: "provisional", range });
+}
+
+/**
+ * The transaction that names the thread the mark now belongs to (UI-121).
+ *
+ * Deliberately separate from {@link setProvisionalTransaction}: the mark's
+ * range has been mapped through every keystroke since the composer opened, and
+ * the host's copy of it is stale from the first one. A claim says who owns the
+ * mark and touches nothing else.
+ */
+export function claimProvisionalTransaction(state: EditorState, owner: string): Transaction {
+  return metaTransaction(state, { kind: "claim", owner });
 }
 
 /** The pip: a widget, so it is drawn beside the text without ever being in it. */
@@ -143,11 +200,11 @@ export function buildDecorations(
   doc: PmDocument,
   anchors: readonly AnchorPlacement[],
   hosts: DecorationHosts = {},
-  provisional: PmRange | null = null,
+  provisional: ProvisionalMark | null = null,
 ): Decoration[] {
   const decorations: Decoration[] = [];
   if (provisional !== null) {
-    const [only] = visibleSegments([provisional], doc.content.size);
+    const [only] = visibleSegments([provisional.range], doc.content.size);
     if (only !== undefined) {
       decorations.push(
         Decoration.inline(
@@ -244,11 +301,40 @@ export function mapAnchors(
  * outcome: after a replacement these offsets describe a document that is no
  * longer on screen, and there is no server anchor to repair them from.
  */
-export function mapProvisional(range: PmRange | null, transaction: Transaction): PmRange | null {
-  if (range === null) return null;
-  const from = transaction.mapping.map(range.from, 1);
-  const to = transaction.mapping.map(range.to, -1);
-  return to > from ? { from, to } : null;
+export function mapProvisional(
+  mark: ProvisionalMark | null,
+  transaction: Transaction,
+): ProvisionalMark | null {
+  if (mark === null) return null;
+  const from = transaction.mapping.map(mark.range.from, 1);
+  const to = transaction.mapping.map(mark.range.to, -1);
+  return to > from ? { ...mark, range: { from, to } } : null;
+}
+
+/**
+ * The handover: an owned mark ends the moment its thread's anchor can be drawn
+ * (UI-121).
+ *
+ * Called on every transaction rather than only on an `anchors` meta, because
+ * the anchor can also become drawable through the mapping — the same rule
+ * either way, and the mark comes down in the transaction that puts the anchor
+ * up, never one after it.
+ *
+ * A segment that has collapsed to nothing does not count: a retained-and-hidden
+ * anchor (the rule above) paints no highlight, so handing over to it is handing
+ * over to nothing, and this mark is still the only thing on those words.
+ */
+export function handOver(
+  mark: ProvisionalMark | null,
+  anchors: readonly AnchorPlacement[],
+): ProvisionalMark | null {
+  if (mark === null || mark.owner === null) return mark;
+  const owner = mark.owner;
+  const drawn = anchors.some(
+    (anchor) =>
+      anchor.threadId === owner && anchor.segments.some((segment) => segment.to > segment.from),
+  );
+  return drawn ? null : mark;
 }
 
 /** The anchor whose range is shortest among those covering `position`. */
@@ -272,6 +358,20 @@ export function innermostAt(
   return best;
 }
 
+/** What a meta says about the mark, before this transaction's mapping. */
+function provisionalAfter(
+  current: ProvisionalMark | null,
+  meta: AnchorMeta | undefined,
+): ProvisionalMark | null {
+  if (meta?.kind === "provisional") {
+    return meta.range === null ? null : { range: meta.range, owner: null };
+  }
+  // A claim with no mark to land on is a comment whose highlight has already
+  // gone — typed over, or lost to a wholesale replacement. Nothing to own.
+  if (meta?.kind === "claim" && current !== null) return { ...current, owner: meta.owner };
+  return current;
+}
+
 export interface AnchorPluginOptions {
   /** Clicking a highlight opens its thread. Read through a ref so it can change. */
   readonly onActivate: { current: ((threadId: string) => void) | undefined };
@@ -289,11 +389,14 @@ export function anchorDecorationPlugin({ onActivate, slotFor }: AnchorPluginOpti
         const meta = transaction.getMeta(anchorPluginKey) as AnchorMeta | undefined;
         if (meta === undefined && !transaction.docChanged) return value;
         let anchors = meta?.kind === "anchors" ? meta.anchors : value.anchors;
-        let provisional = meta?.kind === "provisional" ? meta.range : value.provisional;
+        let provisional = provisionalAfter(value.provisional, meta);
         if (transaction.docChanged) {
           anchors = mapAnchors(anchors, transaction);
           provisional = mapProvisional(provisional, transaction);
         }
+        // Last, and after the mapping: the anchors this transaction leaves
+        // behind are the ones a mark can hand over to.
+        provisional = handOver(provisional, anchors);
         return {
           anchors,
           provisional,

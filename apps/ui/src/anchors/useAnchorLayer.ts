@@ -19,6 +19,8 @@ import { restoredRecipient, type CommentRestore } from "./CommentPopover";
 import {
   anchorDecorationPlugin,
   anchorPluginKey,
+  anchorState,
+  claimProvisionalTransaction,
   setAnchorsTransaction,
   setProvisionalTransaction,
   type AnchorPlacement,
@@ -128,6 +130,20 @@ function quotableSource(body: string, file: DocumentTrace, live: DocumentTrace):
 
 /** How long the layer waits after a document change before re-checking the anchors. */
 export const REAPPLY_DEBOUNCE_MS = 120;
+
+/**
+ * How long an accepted comment's mark waits for the anchor that is coming to
+ * take it over, before it gives up and goes out (UI-121).
+ *
+ * The handover itself needs no clock — the plugin ends the mark in the same
+ * transaction that draws the anchor. This is the other branch: a document read
+ * that fails, or an anchor the server could not place, would otherwise leave a
+ * highlight up over words nothing owns, and there is no later event that would
+ * ever take it down. Generous, because the only cost of waiting is a mark that
+ * is still telling the truth, and the cost of being early is the blink this
+ * issue exists to remove.
+ */
+export const HANDOVER_TIMEOUT_MS = 10_000;
 
 export interface AnchorLayerOptions {
   readonly docId: string;
@@ -284,6 +300,23 @@ interface Provisional {
   readonly range: PmRange;
 }
 
+/**
+ * The server accepted a comment, and named the conversation that now owns the
+ * words its mark is on (UI-121).
+ *
+ * Held as state of its own rather than folded into {@link Provisional} because
+ * the range in that state is stale from the composer's first keystroke — the
+ * live one is the plugin's, mapped through every transaction since. Changing
+ * `provisional` re-dispatches the range, which would drag the mark back onto
+ * the offsets the words used to occupy, so what a claim changes must be a
+ * different piece of state.
+ */
+interface Claim {
+  /** The {@link Provisional.key} this is an answer about. */
+  readonly key: string;
+  readonly owner: string;
+}
+
 export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const {
     docId,
@@ -307,6 +340,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const [marginMode, setMarginMode] = useState(false);
   const [draft, setDraft] = useState<CommentDraft | null>(null);
   const [provisional, setProvisional] = useState<Provisional | null>(null);
+  const [claim, setClaim] = useState<Claim | null>(null);
   const [report, setReport] = useState<ReportedAgainst | null>(null);
   /** Distinct per opening, and never two the same within one millisecond. */
   const drafts = useRef(0);
@@ -487,6 +521,42 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     if (editor === null || editor.isDestroyed) return;
     editor.view.dispatch(setProvisionalTransaction(editor.state, provisional?.range ?? null));
   }, [editor, provisional]);
+
+  /**
+   * The handover, and the deadline on it (UI-121).
+   *
+   * Sending does not put the mark out. The server answers with the thread it
+   * created, that name is written onto the mark that is already up, and the
+   * plugin ends the mark in the very transaction that first draws that
+   * thread's anchor — so the words are never unlit and never lit twice.
+   * Dropping the mark in the mutation's `onSuccess` instead, which is what this
+   * replaces, left them dark for the whole of the document read that carries
+   * the anchor: 244 ms measured against a real server one 250 ms round trip
+   * away, and longer the further away the server is.
+   *
+   * The claim always lands before the anchors it is about. It is dispatched
+   * from a state update enqueued in `onSuccess`, and the anchors cannot arrive
+   * before the read that `onSuccess` invalidated has come back over the
+   * network — a render is always cheaper than a round trip.
+   *
+   * The timer is the other branch, and the only one that needs a clock: a read
+   * that never resolves, or an anchor the server could not place, produces no
+   * transaction to hand over in. Guarded on the plugin still holding a mark,
+   * so a completed handover costs nothing.
+   */
+  useEffect(() => {
+    if (editor === null || editor.isDestroyed) return undefined;
+    if (claim === null || provisional === null || provisional.key !== claim.key) return undefined;
+    editor.view.dispatch(claimProvisionalTransaction(editor.state, claim.owner));
+    const timer = setTimeout(() => {
+      if (editor.isDestroyed) return;
+      if (anchorState(editor.state)?.provisional == null) return;
+      setProvisional((current) => (current?.key === claim.key ? null : current));
+    }, HANDOVER_TIMEOUT_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [claim, editor, provisional]);
 
   // Chip mode puts a widget between blocks, so the set has to be rebuilt when
   // the mode flips as well as when the anchors change.
@@ -767,19 +837,6 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const post = useCallback(
     (input: CommentPost, source: CommentDraft, key: string | null) => {
       const anchor = source.selection;
-      // The provisional highlight goes **only on success**, where the server's
-      // own anchor arrives with the refetched document and takes its place. A
-      // refusal re-opens the composer on the same words, and a composer whose
-      // subject is unlit is the bug UI-112 is about — so on that path the mark
-      // stays exactly where it is.
-      //
-      // Per-call on purpose: a highlight in a reader that has closed is not
-      // something anyone can see, and clearing it there would be a state update
-      // on a dead layer (UI-015). The notices ride on the hook above, which is
-      // what makes skipping this one safe.
-      const forget = (): void => {
-        setProvisional((current) => (current?.key === key ? null : current));
-      };
       createThread.mutate(
         {
           parent: docId,
@@ -795,8 +852,19 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
           ...(input.files.length === 0 ? {} : { files: input.files.map((held) => held.file) }),
         },
         {
-          onSuccess: () => {
-            forget();
+          onSuccess: (result) => {
+            // The mark is **not** put out here — it changes hands (UI-121).
+            // Naming its owner is what lets the plugin end it in the same
+            // transaction that draws the server's anchor, instead of leaving
+            // the words dark for the read that carries one.
+            //
+            // Per-call on purpose: a highlight in a reader that has closed is
+            // not something anyone can see, and this would be a state update on
+            // a dead layer (UI-015). The notices ride on the hook above, which
+            // is what makes skipping this one safe. A refusal claims nothing —
+            // the composer re-opens on the same words, still lit, which is
+            // UI-112's rule and is unchanged.
+            if (key !== null) setClaim({ key, owner: result.thread.id });
             releaseAttachments(input.files);
           },
           onError: (error) => {

@@ -24,6 +24,7 @@ import { anchorState } from "./anchorDecorations.js";
 import { mdRangeToPm } from "./offsetMap.js";
 import { resetTraceCache, traceOfBody } from "./traceCache.js";
 import {
+  HANDOVER_TIMEOUT_MS,
   REAPPLY_DEBOUNCE_MS,
   REFUSAL_NOTICE,
   useAnchorLayer,
@@ -48,9 +49,40 @@ afterEach(() => {
   resetEditingRegistry();
 });
 
+/** How many highlights of each generation a state draws. */
+interface Population {
+  readonly provisional: number;
+  readonly owned: number;
+}
+
+function population(state: EditorState): Population {
+  const decorations = anchorState(state)?.set.find() ?? [];
+  const attrsOf = (decoration: (typeof decorations)[number]): Record<string, string> =>
+    (decoration as unknown as { type: { attrs?: Record<string, string> } }).type.attrs ?? {};
+  const highlights = decorations.filter((decoration) =>
+    (attrsOf(decoration)["class"] ?? "").split(" ").includes("anchor-hl"),
+  );
+  return {
+    provisional: highlights.filter((d) => attrsOf(d)["data-provisional"] === "true").length,
+    owned: highlights.filter((d) => attrsOf(d)["data-thread"] !== undefined).length,
+  };
+}
+
 interface FakeEditor {
   readonly editor: Editor;
   state: () => EditorState;
+  /**
+   * Every state this editor has ever been in, as its highlight population.
+   *
+   * The recorder exists because UI-121's defect is a **transient**: the words
+   * were lit before a send and lit after it, and dark in between. Reading the
+   * state at two instants cannot see that, and asserting at two instants is the
+   * mistake UI-117 found in a spec covering this same handover. A ProseMirror
+   * state is only ever reached by applying a transaction, so this list is every
+   * intermediate the surface actually passed through — the unit-test equivalent
+   * of a per-frame probe, and exact rather than sampled.
+   */
+  history: () => readonly Population[];
   /** Replaces the whole document, carrying no meta of its own. */
   replace: (markdown: string) => void;
   /** One ordinary edit: what typing into the body dispatches. */
@@ -74,6 +106,11 @@ function editorDocument(markdown: string): PmModelNode {
 
 function fakeEditor(markdown: string): FakeEditor {
   let state = EditorState.create({ doc: editorDocument(markdown) });
+  const seen: Population[] = [];
+  const commit = (next: EditorState): void => {
+    state = next;
+    seen.push(population(state));
+  };
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
   const emit = (event: string, payload: unknown): void => {
     for (const listener of listeners.get(event) ?? []) listener(payload);
@@ -87,12 +124,12 @@ function fakeEditor(markdown: string): FakeEditor {
     },
     view: {
       dispatch: (transaction: ReturnType<EditorState["tr"]["setMeta"]>) => {
-        state = state.apply(transaction);
+        commit(state.apply(transaction));
       },
       coordsAtPos: () => ({ top: 100, bottom: 118, left: 40, right: 90 }),
     },
     registerPlugin: (plugin: Plugin) => {
-      state = state.reconfigure({ plugins: [...state.plugins, plugin] });
+      commit(state.reconfigure({ plugins: [...state.plugins, plugin] }));
     },
     unregisterPlugin: () => undefined,
     on: (event: string, listener: (payload: unknown) => void) => {
@@ -105,13 +142,14 @@ function fakeEditor(markdown: string): FakeEditor {
     },
   } as unknown as Editor;
   const dispatch = (transaction: ReturnType<EditorState["tr"]["setMeta"]>): void => {
-    state = state.apply(transaction);
+    commit(state.apply(transaction));
     emit("transaction", { editor, transaction });
   };
   (editor as unknown as { view: { dispatch: typeof dispatch } }).view.dispatch = dispatch;
   return {
     editor,
     state: () => state,
+    history: () => seen,
     replace: (next: string) => {
       const replacement = editorDocument(next);
       dispatch(state.tr.replaceWith(0, state.doc.content.size, replacement.content));
@@ -195,6 +233,8 @@ interface Mounted {
   readonly layer: () => AnchorLayer;
   readonly notices: RowNotice[];
   readonly editorState: () => EditorState;
+  /** Every intermediate state the editor passed through — see {@link FakeEditor.history}. */
+  readonly history: () => readonly Population[];
   readonly replaceDocument: (markdown: string) => void;
   readonly adoptDocument: (markdown: string) => void;
   /** Types into the body, the way a person does. */
@@ -237,6 +277,7 @@ function mount(
     wire,
     notices,
     editorState: fake.state,
+    history: fake.history,
     replaceDocument: fake.replace,
     adoptDocument: fake.adopt,
     typeInto: fake.insert,
@@ -284,6 +325,23 @@ function provisional(app: Mounted): { from: number; to: number } | null {
   );
   const only = decorations[0];
   return only === undefined ? null : { from: only.from, to: only.to };
+}
+
+/**
+ * The states, from the first one that lit anything, in which the words carried
+ * **no** highlight at all (UI-121's defect) — and the ones carrying two.
+ *
+ * Both are read over {@link Mounted.history} rather than at an instant, because
+ * both failures are transients that a before/after pair cannot see.
+ */
+function handoverFaults(app: Mounted): { readonly dark: number; readonly double: number } {
+  const seen = app.history();
+  const lit = seen.findIndex((state) => state.provisional + state.owned > 0);
+  const since = lit === -1 ? [] : seen.slice(lit);
+  return {
+    dark: since.filter((state) => state.provisional + state.owned === 0).length,
+    double: since.filter((state) => state.provisional > 0 && state.owned > 0).length,
+  };
 }
 
 /* `6.1%` is markdown offset 22–26, which is ProseMirror 23–27. */
@@ -564,19 +622,105 @@ describe("commenting on a selection", () => {
     expect(provisional(app)).toEqual({ from, to: from + 4 });
   });
 
-  it("paints the highlight before the response lands, and clears it after", async () => {
+  /**
+   * UI-121. The mark used to be dropped in the mutation's `onSuccess`, and the
+   * server's anchor arrives only with the document read that `onSuccess`
+   * invalidated — so the passage someone had just commented on went dark for a
+   * whole round trip, at the moment their comment landed.
+   *
+   * The assertion is over **every state the editor passed through**, not over a
+   * before and an after: the defect is a transient, and a pair of instants is
+   * exactly what failed to see it.
+   */
+  it("never leaves the words unlit across a send, and never lights them twice", async () => {
     const app = mount();
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
       app.layer().submitComment("A note.", false, {});
     });
-    // The decoration is there while the request is in flight — the same one the
-    // composer put up on open, now waiting for the server's anchor.
     expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
 
     await waitFor(() => {
-      expect(provisional(app)).toBeNull();
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
     });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // The response has settled and the read it invalidated has not come back:
+    // this is the window, and the mark is still on its words.
+    expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
+
+    // The read lands, carrying the server's own anchor over the same words.
+    app.serveDocument({ body: BODY, anchors: [anchorFixture({ threadId: "th_child0" })] });
+
+    expect(provisional(app)).toBeNull();
+    expect(population(app.editorState())).toEqual({ provisional: 0, owned: 1 });
+    expect(handoverFaults(app)).toEqual({ dark: 0, double: 0 });
+  });
+
+  /**
+   * The mark is the *conversation's* now, so only that conversation's anchor
+   * ends it. Matching by thread id and not by range is what makes this true
+   * where it matters most: the server's anchor is often not the shape of the
+   * selection it came from — a quote crossing `**` arrives in two segments
+   * where the selection was one.
+   */
+  it("is not handed over to some other thread's anchor arriving first", async () => {
+    const app = mount();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("A note.", false, {});
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    app.serveDocument({ body: BODY, anchors: [anchorFixture({ threadId: "th_other" })] });
+    expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
+
+    app.serveDocument({
+      body: BODY,
+      anchors: [anchorFixture({ threadId: "th_other" }), anchorFixture({ threadId: "th_child0" })],
+    });
+    expect(provisional(app)).toBeNull();
+  });
+
+  /**
+   * The other branch of the handover, and the only one that needs a clock: a
+   * document read that fails, or an anchor the server could not place, produces
+   * no transaction to hand over in. Without the deadline the mark would sit on
+   * those words for as long as the reader stayed open — a highlight over a
+   * passage nothing owns, which is the failure "hold it until the anchor
+   * arrives" invites.
+   */
+  it("gives the mark up when the anchor it is waiting for never arrives", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const app = mount();
+      selectQuote(app.layer(), RATE_FROM, RATE_TO);
+      act(() => {
+        app.layer().submitComment("A note.", false, {});
+      });
+      await waitFor(() => {
+        expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HANDOVER_TIMEOUT_MS);
+      });
+      expect(provisional(app)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /**
@@ -967,11 +1111,13 @@ describe("a comment whose reader closed before it settled", () => {
   });
 
   /**
-   * The other half of the split: the optimistic chip is local state, so clearing
-   * it after the layer has gone is meaningless work on a dead component. It
-   * stays on `mutate`, where being skipped is the correct outcome — and the
-   * decoration the layer painted is therefore still exactly where teardown left
-   * it, untouched by the response.
+   * The other half of the split: what the response does to the *mark* is local
+   * state, so doing it after the layer has gone is meaningless work on a dead
+   * component. It stays on `mutate`, where being skipped is the correct outcome
+   * — and the decoration the layer painted is therefore still exactly where
+   * teardown left it, untouched by the response. (Since UI-121 the skipped work
+   * is naming the mark's new owner rather than putting the mark out; the reason
+   * it may be skipped is the same, and so is the observable outcome.)
    */
   it("attempts no cleanup on the layer it no longer has", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -995,19 +1141,24 @@ describe("a comment whose reader closed before it settled", () => {
 
   /**
    * The mounted control for the pair above: nothing about the normal path
-   * moved. One request, the chip clears, and a successful comment with no
-   * warnings says nothing at all.
+   * moved. One request, the mark still on its words waiting for the anchor
+   * that will take it over (UI-121), and a successful comment with no warnings
+   * says nothing at all.
    */
-  it("still clears the chip and stays silent while the reader is open", async () => {
+  it("still holds the mark and stays silent while the reader is open", async () => {
     const app = mount();
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
       app.layer().submitComment("A note.", false, {});
     });
     await waitFor(() => {
-      expect(provisional(app)).toBeNull();
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
     });
-    expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
     expect(app.notices).toEqual([]);
   });
 
@@ -1034,7 +1185,9 @@ describe("a comment whose reader closed before it settled", () => {
     expect(app.notices).toEqual([
       { tone: "error", message: "unresolved_ref — [[missing]] names no document" },
     ]);
-    expect(provisional(app)).toBeNull();
+    // A warning is not a refusal: the comment landed, so the mark is waiting
+    // for its anchor rather than gone (UI-121).
+    expect(provisional(app)).toEqual({ from: RATE_FROM, to: RATE_TO });
   });
 });
 

@@ -505,20 +505,23 @@ test.describe("a comment captured on a file the editor prints differently", () =
      * spelling out, because this line used to fail on it (UI-117):
      *
      * `.anchor-hl` has **two generations** across a send, and the count is 2 in
-     * both. `useAnchorLayer`'s `post` forgets the provisional range in the
-     * mutation's `onSuccess`; the server's anchors land only once the
-     * invalidated document read resolves and `applyAnchors` runs. Sampling the
-     * selector every frame through this flow, with the refetch slowed, gives
-     * `0 → 2 (provisional) → 0 → 2 (server)`.
+     * both. Sampling the selector every frame through this flow, with the
+     * refetch slowed, used to give `0 → 2 (provisional) → 0 → 2 (server)` —
+     * `useAnchorLayer`'s `post` forgot the provisional range in the mutation's
+     * `onSuccess`, and the server's anchors land only once the invalidated
+     * document read resolves. UI-121 closed that hole: the mark now changes
+     * hands in the transaction that draws the anchor, so the sequence is
+     * `0 → 2 (provisional) → 2 (server)` and the describe below asserts it per
+     * frame. The two generations still exist, though, and the read below still
+     * has to say which one it means.
      *
      * So `toHaveCount(2)` on the *unscoped* selector could be satisfied by the
      * provisional pair and return — a count assertion says two nodes matched at
      * some instant, and nothing about which generation they belonged to or
-     * whether they are still there. A read taken after it could then land in
-     * the empty window. `allInnerTexts()` and `allTextContents()` are both
-     * `$$eval`: one atomic page evaluation with **no waiting at all**, and `[]`
-     * when nothing matches — and `[].join("")` is `""`, which is exactly the
-     * value a loaded full-suite run failed with here.
+     * whether they are still there. `allInnerTexts()` and `allTextContents()`
+     * are both `$$eval`: one atomic page evaluation with **no waiting at all**,
+     * and `[]` when nothing matches — and `[].join("")` is `""`, which is
+     * exactly the value a loaded full-suite run failed with here.
      *
      * `innerText` is the more fragile of the two reads on principle — it is
      * defined over *rendered* text, so it answers for layout and computed
@@ -619,5 +622,133 @@ test.describe("commenting on a selection, on a file the printer restructures", (
     await expect(page.locator(".reader .anchor-slot [data-thread-panel]")).toHaveCount(1);
     await expect(page.locator(".reader .anchor-pip")).toHaveText("1");
     await expect(page.locator('[data-thread-section="unplaced"]')).toHaveCount(0);
+  });
+});
+
+/**
+ * UI-121, in the browser: the passage a comment is about does not go dark at
+ * the moment the comment lands.
+ *
+ * The mark the composer put up and the anchor the server answers with are two
+ * generations of the same highlight, and there used to be a hole between them:
+ * the provisional was dropped in the mutation's `onSuccess`, while the server's
+ * ranges arrive only with the document read that `onSuccess` invalidated. On
+ * this stub that hole is a millisecond or two. Against a real server it is a
+ * round trip — measured at 244 ms of unlit text with 250 ms of emulated latency
+ * — and it is the thing a person is looking at.
+ *
+ * **The assertion is over samples, not over two instants.** A defect that is a
+ * transient is invisible to a before/after pair, and asserting at two instants
+ * is exactly the mistake UI-117 found in the spec above.
+ */
+test.describe("the handover from the composer's mark to the server's anchor", () => {
+  /** One sample of the highlight population, taken once per animation frame. */
+  interface Sample {
+    readonly all: number;
+    readonly provisional: number;
+    readonly owned: number;
+  }
+
+  /**
+   * How many frames must be sampled inside the window before it is closed.
+   *
+   * The apparatus is a **held response**, not a sleep: the document read that
+   * carries the anchor is not answered until this many frames have gone by with
+   * it outstanding, so the window is a condition and never a duration
+   * (INFRA-020). Its only job is to make the window wide enough that a hole in
+   * it could not fall between two samples.
+   */
+  const FRAMES_IN_FLIGHT = 20;
+
+  /** Where the probe leaves its samples, on the page's own `window`. */
+  interface Probed {
+    __ui121: Sample[];
+  }
+
+  async function startProbe(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      const samples: Sample[] = [];
+      (window as unknown as Probed).__ui121 = samples;
+      const tick = (): void => {
+        const body = document.querySelector(".reader .doc-body");
+        samples.push({
+          all: (body?.querySelectorAll(".anchor-hl") ?? []).length,
+          provisional: (body?.querySelectorAll('.anchor-hl[data-provisional="true"]') ?? []).length,
+          owned: (body?.querySelectorAll(".anchor-hl[data-thread]") ?? []).length,
+        });
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  const readProbe = (page: Page): Promise<Sample[]> =>
+    page.evaluate(() => (window as unknown as Probed).__ui121);
+
+  test("never leaves the words unlit, and never lights them twice", async ({ page }) => {
+    const STANDUP: StubRow = {
+      id: "doc_note",
+      title: "Standup",
+      body: "Moushmi Verma wrote it up on Monday.\n",
+    };
+    await stubCorpus(page, [VIEW, STANDUP]);
+
+    // The read that will carry the anchor is held until the test lets it go.
+    let holding = false;
+    let release = (): void => undefined;
+    let held = Promise.resolve();
+    await page.route("**/api/docs/doc_note", async (route) => {
+      if (holding) await held;
+      await route.fallback();
+    });
+
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await page.locator(".reader .ProseMirror").waitFor();
+    await startProbe(page);
+
+    const paragraph = page.locator(".reader .doc-body[contenteditable] > p").first();
+    await paragraph.selectText();
+    await paragraph.click({ button: "right" });
+    await page.getByRole("menu").locator('[data-act="comment"]').click();
+    const composer = page.getByRole("dialog", { name: "New comment" });
+    await composer.getByLabel("Comment").fill("Who is Mesbah?");
+    await expect(page.locator('.reader .doc-body .anchor-hl[data-provisional="true"]')).toHaveCount(
+      1,
+    );
+
+    held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    holding = true;
+    await composer.locator("[data-comment-send]").click();
+
+    // The window: the comment has been accepted and the read carrying its
+    // anchor has not been answered. This is where the words used to be dark.
+    const before = (await readProbe(page)).length;
+    await expect
+      .poll(async () => (await readProbe(page)).length - before)
+      .toBeGreaterThanOrEqual(FRAMES_IN_FLIGHT);
+    release();
+
+    const anchored = page.locator(".reader .doc-body .anchor-hl[data-thread]");
+    await expect(anchored).toHaveCount(1);
+    await expect
+      .poll(async () => (await anchored.allTextContents()).join(""))
+      .toBe("Moushmi Verma wrote it up on Monday.");
+
+    const samples = await readProbe(page);
+    const lit = samples.findIndex((sample) => sample.all > 0);
+    expect(lit).toBeGreaterThanOrEqual(0);
+    const since = samples.slice(lit);
+    // Wide enough that a hole could not have fallen between two samples.
+    expect(since.filter((sample) => sample.owned === 0).length).toBeGreaterThanOrEqual(
+      FRAMES_IN_FLIGHT,
+    );
+    // The defect, per frame.
+    expect(since.filter((sample) => sample.all === 0)).toEqual([]);
+    // And its opposite: one mark over those words throughout, never two.
+    expect(since.filter((sample) => sample.provisional > 0 && sample.owned > 0)).toEqual([]);
   });
 });
