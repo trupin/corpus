@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done — fixed 2026-08-20 during Phase 37, after it failed PR #53's first CI run.
 
 ## Priority
 P2
