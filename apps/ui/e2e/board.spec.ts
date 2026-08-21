@@ -1,4 +1,5 @@
 import { expect, test } from "./coverage";
+import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-003's board suite, in a real browser.
@@ -84,6 +85,70 @@ test.describe("the board", () => {
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
     expect(box.y).toBeGreaterThanOrEqual(0);
   });
+
+  /**
+   * **The picker is as tall as the room below it** — SPEC.md §11's rider
+   * authorized 2026-08-21 (SHARED-061), measured in a real browser (UI-142).
+   *
+   * It is the second surface that audit found bounded well below its room, and
+   * arguably the first a person meets: the ghost column is what an empty board
+   * offers, and this menu is what it opens. `.ac-menu`'s shared 200px ceiling
+   * is the right register for a completion list — corpus-driven, filtered by
+   * typing — and the wrong one here, where the items are the workspace's own
+   * folders, the presets and the registered plugin columns. Measured before the
+   * fix, seven items and nothing unusual:
+   *
+   *     1280×720    menu 272×200   219px of items in a 198px box   361px of room below
+   *     1728×1080   menu 272×200   219px of items in a 198px box   541px of room below
+   *
+   * The same clipped box in a window twice the size, an item cut in half at the
+   * fold, and the rest behind a scrollbar.
+   *
+   * Nothing here names a size, deliberately: a pixel count true in one machine's
+   * fonts is false in another's, and v0.15.0 lost a CI cycle to exactly that.
+   */
+  const FOLDERS: readonly StubRow[] = Array.from({ length: 6 }, (_unused, index) => ({
+    id: `doc_note_${String(index)}`,
+    title: `Note ${String(index)}`,
+    path: `data/docs/folder-${String(index)}/note.md`,
+  }));
+
+  for (const size of [
+    { width: 1280, height: 720 },
+    { width: 1728, height: 1080 },
+  ] as const) {
+    test(`the new-list picker takes the room below it at ${String(size.width)}×${String(size.height)}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await stubCorpus(page, [...FOLDERS]);
+      await page.goto("/");
+      await page.locator(".ghost-col").click();
+      const menu = page.locator(".ac-menu.open");
+      await expect(menu).toBeVisible();
+
+      const room = await menu.evaluate((node) => ({
+        client: node.clientHeight,
+        scroll: node.scrollHeight,
+        below: window.innerHeight - node.getBoundingClientRect().top,
+        bottom: node.getBoundingClientRect().bottom,
+        viewport: window.innerHeight,
+      }));
+
+      // Ordinary content, read rather than scrolled: the whole menu fits, and
+      // it fits because it was given the room it had, not because the list
+      // happens to be short today.
+      expect(
+        room.scroll,
+        `${String(room.scroll)}px of items in a ${String(room.client)}px menu, ` +
+          `with ${String(Math.round(room.below))}px of room below it`,
+      ).toBeLessThanOrEqual(room.client + 1);
+
+      // …and the bound really is the room: the menu never leaves the window,
+      // which is what makes taking the whole of it safe (UI-136's direction).
+      expect(room.bottom).toBeLessThanOrEqual(room.viewport);
+    });
+  }
 
   test("the picker closes on Escape and on a click outside", async ({ page }) => {
     await page.goto("/");

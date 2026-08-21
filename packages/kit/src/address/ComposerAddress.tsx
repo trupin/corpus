@@ -43,12 +43,17 @@ import {
  * - **A line with nothing behind it does not pretend to open.** When there is
  *   neither a lane to choose nor a level to state, the line renders as plain
  *   text — the §11 recipient statement, still true, still there.
- * - **The card has a ceiling, and the lane list is what gives way** (UI-130).
- *   It grows upward out of a composer that sits inside a scrollport, so a long
- *   roster used to push its top rows behind the reader's head, which then took
- *   the pointer events aimed at them. The list scrolls inside the bound instead,
- *   the statement and the weight section stay outside it, and a list that
- *   reached the bound says so — see {@link lanesCappedNote} and `address.css`.
+ * - **The card is as large as its place allows** (UI-130, then UI-142). It grows
+ *   upward out of a composer that sits inside a scrollport, so a long roster
+ *   used to push its top rows behind the reader's head, which then took the
+ *   pointer events aimed at them. It is bounded by the **room** — the space
+ *   above the line and the width of the row the line sits in — and by nothing
+ *   else: the `280px` ceiling and the unreachable `330px` measure that stood
+ *   beside it drew the same 240×280 card at 1280×720 and at 1728×1080, which
+ *   put an ordinary nine-lane roster behind a scrollbar with 502px of window
+ *   above it. Where the roster really does outrun the room the list scrolls and
+ *   says so — see {@link lanesCappedNote} and `address.css`, which carries the
+ *   measurements.
  *
  * ## Keys
  *
@@ -79,11 +84,18 @@ export const WEIGHT_LEAD = "weight";
 export const WEIGHT_UNKNOWN_TITLE =
   "This workspace's guidance no longer declares this level. It is still what the request will state.";
 
-/** How far inside its scrollport a clamped card's top edge lands, in px. */
+/**
+ * How far inside the room a clamped card's edge lands, in px.
+ *
+ * One number for both axes deliberately: it is the card's own offset from the
+ * line (`bottom: calc(100% + 6px)` in `address.css`) read back as a margin, so
+ * a card pressed against the top or the right of its room sits the same
+ * hairline inside it that it sits above its own anchor.
+ */
 const POP_MARGIN = 6;
 
 /**
- * What a lane list says when it has reached its ceiling (UI-130).
+ * What a lane list says when the room ran out before the roster did (UI-130).
  *
  * A capped list that looked complete would be a **silent** cap, and a person
  * choosing a recipient from what they can see would be choosing from a list
@@ -91,6 +103,11 @@ const POP_MARGIN = 6;
  * on the one line the lead already occupies — the note therefore costs the card
  * no height, which is what keeps it inside SPEC.md §11's rider rather than an
  * exception to it.
+ *
+ * Since UI-142 it is also the *rare* case rather than the fourth-lane case:
+ * the bound is the room now, so this sentence appears only where the surface
+ * genuinely cannot be given what its content needs — which is the state
+ * SHARED-061 asks a surface to state rather than hide.
  */
 export function lanesCappedNote(count: number): string {
   return `${String(count)} lanes · scroll for the rest`;
@@ -118,19 +135,7 @@ function lineTitle(line: string, live: boolean): string {
 }
 
 /**
- * The card's declared ceiling, in px — `--address-pop-cap` in `address.css`,
- * which is where the number is measured and written down. Read rather than
- * duplicated: a constant kept in both places is a constant that drifts.
- */
-function capOf(card: HTMLElement): number {
-  const declared = Number.parseFloat(
-    window.getComputedStyle(card).getPropertyValue("--address-pop-cap"),
-  );
-  return Number.isFinite(declared) ? declared : Number.POSITIVE_INFINITY;
-}
-
-/**
- * The nearest **scrollport** above the card, or `null` for a card the window
+ * The nearest ancestor that **bounds** the card, or `null` for one the window
  * itself bounds.
  *
  * The composers this control ships in do not agree about which that is, and the
@@ -140,25 +145,94 @@ function capOf(card: HTMLElement): number {
  * genuinely has the window. Asking the layout rather than naming a host is what
  * makes one rule serve both — and any composer a plugin contributes.
  *
- * **A scrollport, and not every box that clips.** `overflow: hidden` clips just
- * as hard, and the global composer's panel (`.search-panel`) is one — measured,
- * its card is 157px against 132px of panel above the line, so it has always lost
- * its top padding and lead to that edge. Bounding to it would trade a clipped
- * edge for a three-lane list showing one row at a time, which is a worse control
- * than the one being repaired. A scrollport is different in kind: what leaves it
- * is not merely cropped but **unreachable**, because the chrome outside takes
- * the pointer events aimed at it — `elementFromPoint` answered `DIV.reader-head`
- * at the centre of three rows. That is the defect this measures, so that is the
- * box it measures against, and the panel's clipped edge stays what it was.
+ * ## Why this walk stops at a clip and not only at a scrollport
+ *
+ * **It used to stop only at a scrollport, and UI-142 changed that.** The reason
+ * it did is recorded here rather than deleted, because the reasoning was sound
+ * and it is the *premise* that expired:
+ *
+ * > `overflow: hidden` clips just as hard, and the global composer's panel
+ * > (`.search-panel`) is one — measured, its card is 157px against 132px of
+ * > panel above the line, so it has always lost its top padding and lead to that
+ * > edge. Bounding to it would trade a clipped edge for a three-lane list
+ * > showing one row at a time, which is a worse control than the one being
+ * > repaired.
+ *
+ * That trade was real while the card was **240px wide at every host**, because a
+ * 218px measure fits one lane per line and a bound that took 80px of height took
+ * three rows with it. The card takes its width from the room now, so inside that
+ * panel it is 588px and three lanes share a single row: the same 80px of height
+ * costs nothing. The rejection was a consequence of the width constant, and the
+ * width constant is what UI-142 removed.
+ *
+ * Leaving the walk alone was not neutral either. The card is bounded by the room
+ * above it and that room got larger, so a nineteen-lane roster in the global
+ * composer drew a 212px card into 186px of panel — **80px cropped**, against the
+ * 25px the old constant produced. A fix that made an existing defect worse is
+ * not a fix, and clipping and scrolling are the same fact for a bound: SHARED-061
+ * says a surface is bounded against *what is actually available*, and what a clip
+ * cuts off was never available.
+ *
+ * What a scrollport still adds is the *severity* — what leaves it is not merely
+ * cropped but **unreachable**, because the chrome outside takes the pointer
+ * events aimed at it (`elementFromPoint` answered `DIV.reader-head` at the
+ * centre of three rows). That is why the walk was written for UI-130 at all, and
+ * it is unchanged: `.reader-scroll` is still the first box this finds from a
+ * reply composer, because the walk goes outward and the scrollport is inside
+ * `.col`.
+ *
+ * `overflow: clip` is included for the same reason `hidden` is, and neither
+ * `visible` nor an unset value stops the walk.
  */
 function clipperOf(node: HTMLElement): HTMLElement | null {
   let parent = node.parentElement;
   while (parent !== null) {
     const overflow = window.getComputedStyle(parent).overflowY;
-    if (overflow === "auto" || overflow === "scroll" || overflow === "overlay") return parent;
+    if (overflow !== "visible") return parent;
     parent = parent.parentElement;
   }
   return null;
+}
+
+/**
+ * The room the card has, in both axes — SPEC.md §11's rider of 2026-08-21
+ * (SHARED-061): *"a bound is derived from the room, not chosen as a number."*
+ *
+ * Two readings, and each answers a different question the layout asks.
+ *
+ * **`ceiling` — how high the card may reach.** The top of the nearest box that
+ * bounds it — a scrollport or a clip — or the top of the window where there is
+ * none. See {@link clipperOf}, which records why the walk stops at both.
+ *
+ * **`right` — how wide it may be drawn.** The trailing edge of `host`, which is
+ * the element the address line was placed in: a composer foot, the global
+ * panel's action bar, the comment popover's foot. That row **is** the card's
+ * place, in the sense §11 gives the word — a property of the layout, never of
+ * the roster — so a card as wide as its row is as wide as the surface it
+ * belongs to, and a column dragged wider or a window that narrows the panel
+ * moves it. It is clamped by the room's own right edge so a host wider than the
+ * box that bounds it cannot push the card under a scrollbar or past a clip.
+ *
+ * `clientWidth` rather than the border-box right, because a scrollport's
+ * scrollbar is room the card does not have.
+ */
+function roomFor(card: HTMLElement, host: HTMLElement | null): { ceiling: number; right: number } {
+  const clip = clipperOf(card);
+  if (clip === null) {
+    const width = document.documentElement.clientWidth;
+    return {
+      ceiling: 0,
+      right: Math.min(host?.getBoundingClientRect().right ?? width, width - POP_MARGIN),
+    };
+  }
+  const box = clip.getBoundingClientRect();
+  return {
+    ceiling: Math.max(box.top, 0),
+    right: Math.min(
+      host?.getBoundingClientRect().right ?? box.left + clip.clientWidth,
+      box.left + clip.clientWidth - POP_MARGIN,
+    ),
+  };
 }
 
 export function ComposerAddress({ address, surface }: ComposerAddressProps): ReactElement {
@@ -238,19 +312,34 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
     if (!open || card === null) return undefined;
     const list = lanes.current;
     const clip = clipperOf(card);
+    // The row the address line was placed in — a composer foot, an action bar.
+    // Read from the control's own parent rather than from a class name: the kit
+    // ships this to hosts it does not know, plugins included (SPEC.md §10).
+    const host = box.current?.parentElement ?? null;
 
     const fit = (): void => {
       // Measured unbounded and unshifted, so no previous fit can bias this one.
       card.style.setProperty("--address-pop-shift", "0px");
       card.style.setProperty("--address-pop-max", "none");
+
+      // **The width first**, because the height depends on it: a wider card
+      // re-wraps the lane list and changes what the room has to hold. Its left
+      // edge is `left: 0` against the line and does not move with the width, so
+      // reading it before setting the width is safe and not circular.
+      const room = roomFor(card, host);
+      const width = Math.max(0, room.right - card.getBoundingClientRect().left);
+      card.style.setProperty("--address-pop-w", `${String(Math.round(width))}px`);
+
       const free = card.getBoundingClientRect();
       const listFull = list?.scrollHeight ?? 0;
       const row = list?.firstElementChild?.getBoundingClientRect().height ?? 0;
 
       // The card's bottom edge is `calc(100% + 6px)` above the line and never
-      // moves. Everything above it, down to the scrollport's top, is the room.
-      const ceiling = clip === null ? 0 : Math.max(clip.getBoundingClientRect().top, 0);
-      const room = Math.max(0, free.bottom - ceiling - POP_MARGIN);
+      // moves. Everything above it, up to the top of the box that bounds it, is
+      // the room — and since UI-142 that is the *only* ceiling. A constant below
+      // it is what put an ordinary roster behind a scrollbar with the window
+      // half empty.
+      const headroom = Math.max(0, free.bottom - room.ceiling - POP_MARGIN);
       // **One row is the floor**, and it is measured rather than declared: the
       // parts that cannot shrink are not all the same height — a resident's
       // weight sentence is three lines where a level row is one — so the
@@ -258,12 +347,12 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       // until its list was 0px high would clear the head and offer nothing,
       // which is this defect wearing different clothes.
       const floor = free.height - listFull + row;
-      const height = Math.max(floor, Math.min(capOf(card), room));
+      const height = Math.max(floor, headroom);
       card.style.setProperty("--address-pop-max", `${String(Math.round(height))}px`);
 
       // Whatever the floor took beyond the room, the card gives back by coming
       // down — so its top lands inside the scrollport instead of behind the head.
-      const over = card.getBoundingClientRect().height - room;
+      const over = card.getBoundingClientRect().height - headroom;
       card.style.setProperty("--address-pop-shift", `${String(Math.max(0, Math.round(over)))}px`);
       if (list !== null) setCapped(list.scrollHeight > list.clientHeight + 1);
     };

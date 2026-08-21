@@ -1,5 +1,5 @@
 import { useTree } from "@corpus/kit";
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactElement } from "react";
 import { usePluginRegistry } from "../plugins/registry";
 import {
   folderChoices,
@@ -61,6 +61,14 @@ function ChoiceItem({
   );
 }
 
+/**
+ * How far above the bottom of the window the menu's own bottom edge stops, in
+ * px — the offset it already keeps from the control that opened it
+ * (`.ghost-col`'s placement), read back as a margin so the menu does not sit
+ * flush against the edge of the screen.
+ */
+const MENU_MARGIN = 8;
+
 export function NewListPicker({
   position,
   searchQuery,
@@ -69,6 +77,51 @@ export function NewListPicker({
 }: NewListPickerProps): ReactElement {
   const tree = useTree();
   const menu = useRef<HTMLDivElement>(null);
+
+  /**
+   * **The menu is as tall as the room below it** — SPEC.md §11's rider
+   * authorized 2026-08-21 (SHARED-061), *"a bound is derived from the room, not
+   * chosen as a number"* (UI-142).
+   *
+   * `.ac-menu` caps every positioned menu at 200px, which is the right register
+   * for a **completion** list — a corpus-driven list nobody scrolls, they type
+   * to filter it. This menu is not one. Its items are the workspace's folders,
+   * the presets and the registered plugin columns: a short, bounded list, and
+   * the one a person meets first, because the ghost column is what an empty
+   * board offers. Measured before this fix, with seven items and nothing
+   * unusual:
+   *
+   *     1280×720    menu 272×200   219px of items in a 198px box   361px of room below
+   *     1728×1080   menu 272×200   219px of items in a 198px box   541px of room below
+   *
+   * The same clipped box at both, with the window half empty, and an item cut in
+   * half at the fold — SHARED-061's second question answered yes.
+   *
+   * The room is the distance from the menu's own top edge to the bottom of the
+   * window, which CSS cannot ask because the top is an inline style the board
+   * computes from the pointer. So it is measured here and handed back as
+   * `--newlist-room-h`. `position: fixed` makes `getBoundingClientRect().top`
+   * viewport-relative whatever ancestor it resolves against, so this reading is
+   * right even where a transformed ancestor is in the way.
+   *
+   * It cannot make the menu overflow: the bound **is** the room, so the menu can
+   * only grow into space that is already on screen. Where the room is smaller
+   * than the list it still scrolls, and that is the honest case.
+   */
+  useLayoutEffect(() => {
+    const node = menu.current;
+    if (node === null) return undefined;
+    const fit = (): void => {
+      const top = node.getBoundingClientRect().top;
+      const room = Math.max(0, window.innerHeight - top - MENU_MARGIN);
+      node.style.setProperty("--newlist-room-h", `${String(Math.round(room))}px`);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => {
+      window.removeEventListener("resize", fit);
+    };
+  }, [position.top, position.left]);
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent): void => {
@@ -105,7 +158,7 @@ export function NewListPicker({
   return (
     <div
       ref={menu}
-      className="ac-menu open"
+      className="ac-menu open new-list"
       role="menu"
       aria-label="New list"
       style={{ left: `${String(position.left)}px`, top: `${String(position.top)}px` }}

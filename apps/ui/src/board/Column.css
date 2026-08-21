@@ -356,6 +356,32 @@
    prototype's `.ac-menu` / `.ac-item`, which lives in `@corpus/kit`'s
    `autocomplete.css` beside the component that also emits it. */
 
+/*
+ * The new-list picker's ceiling is **the room below it**, and not `.ac-menu`'s
+ * 200px (UI-142, SPEC.md §11's rider of 2026-08-21).
+ *
+ * Doubled selector on purpose, for `queryEditor.css`'s reason: same specificity
+ * would leave the winner to import order, and import order is not a thing this
+ * file should depend on.
+ *
+ * The 200px it overrides is the right register for a **completion** list, whose
+ * items come from the corpus and which a person filters by typing rather than
+ * scrolling. This menu's items are the workspace's folders, the presets and the
+ * registered plugin columns — a short bounded list, and the first menu an empty
+ * board offers. At seven items it showed 198px of 219 at 1280×720 **and** at
+ * 1728×1080, with 361px and 541px of room below it respectively: the same
+ * clipped box in a window twice the size.
+ *
+ * `--newlist-room-h` is that room, measured by `NewListPicker.tsx` when the menu
+ * opens and on every resize, because the menu's own `top` is an inline style the
+ * board computes from the pointer and CSS cannot read it back. `none` stands for
+ * the one frame before the layout effect runs — never a number, because a number
+ * is what this rule removes.
+ */
+.ac-menu.new-list {
+  max-height: var(--newlist-room-h, none);
+}
+
 /* ── Reader scaffolding (UI-005 replaces this) ── */
 .col .reader {
   flex: 1;
