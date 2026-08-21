@@ -1081,11 +1081,12 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-128 | Audit: every surface whose size follows its content | done | P0 | SHARED-057 |
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
 | UI-129 | An image reserves no box until it decodes | done | P0 | SHARED-057 |
-| UI-131 | A label that arrives late reflows the row it lands in | todo | P0 | SHARED-057 |
+| UI-131 | A label that arrives late reflows the row it lands in | done | P0 | SHARED-057 |
 | UI-132 | The toast stack collapses toward its anchor | todo | P0 | SHARED-057 |
 | UI-133 | The console strip's height is its text, and the board pays | todo | P1 | SHARED-057 |
 | UI-134 | Counts and durations are not digit-stable | todo | P1 | SHARED-057 |
 | UI-135 | The reader head's controls leave the column after a save | done | P0 | SHARED-057 |
+| UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | todo | P0 | SHARED-057 |
 | UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
 
 **UI-128's ledger ranks six reachable clusters**, each measured in a real browser
