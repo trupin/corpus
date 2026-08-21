@@ -96,8 +96,19 @@
   max-width: 24ch;
 }
 
+/*
+ * `N running · N queued · N done · N failed`, on ordinary queue traffic
+ * (SPEC.md §11's rider, 2026-08-20).
+ *
+ * **Tabular figures and no reservation**, deliberately. The span's *segments*
+ * come and go — `queued` and `deferred` are omitted at zero — so a `min-width`
+ * would be a box sized for a string rather than for a digit count, which is the
+ * reservation the rider warns against. What it does need is for `9 done` →
+ * `10 done` to stop nudging the strip's spacer on every job that finishes.
+ */
 .c-counts {
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -266,10 +277,22 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * Chunks that will not drain by themselves, climbing while indexing runs.
+ *
+ * `margin-left: auto` puts it against `.index-detail`, which truncates, so its
+ * width is taken out of the server's sentence. Tabular figures hold it steady
+ * inside a digit count, and `9ch` — the width of `147 failed` — holds it across
+ * the crossing. One character of slack beside `9 failed` is the whole cost
+ * (SPEC.md §11's rider, 2026-08-20).
+ */
 .index-failed {
   color: var(--signal);
   white-space: nowrap;
   margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  min-width: 9ch;
+  text-align: right;
 }
 
 .halt-btn {
@@ -738,10 +761,24 @@
   white-space: nowrap;
 }
 
+/*
+ * `12 members listed` / `1 member in scope`.
+ *
+ * **Tabular figures only.** Two of the three things that change here are not
+ * digits: the plural on `member`, and the suffix, which flips on the server's
+ * `truncated` flag. A `min-width` big enough to hold all of that would be a box
+ * sized for the longest *string* rather than for a count, and it would take
+ * those characters permanently out of `.lane-statement` beside it — the opposite
+ * of the rider's "sized for the text people actually have". The count also
+ * changes only when somebody selects another lane, which is a gesture, not a
+ * clock. UI-131's note above already lists this span as wanting its own
+ * measurement before it gets a fixed box; this rule does not pre-empt that.
+ */
 .scope-count {
   color: var(--ink-3);
   margin-left: auto;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .scope-list {

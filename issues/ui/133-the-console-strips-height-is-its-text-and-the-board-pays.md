@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -61,24 +61,24 @@ which pushes the counts right on the first frame after the answer arrives.
 
 ## Acceptance Criteria
 
-- [ ] **Measure the box, change the content, measure again, assert unchanged**: a
+- [x] **Measure the box, change the content, measure again, assert unchanged**: a
       Playwright spec records `.board`'s bounding box, drives the strip through
       its states — no index status, an index status with a long detail sentence, a
       failed count, a skipped plugin warning, a server that never answers — and
       asserts **the board's box is identical in every one**
-- [ ] `.console-strip` has a fixed height, and the spec asserts
+- [x] `.console-strip` has a fixed height, and the spec asserts
       `strip.scrollHeight <= strip.clientHeight` in every one of those states, so
       nothing is silently clipped either
-- [ ] Every strip child that can carry server text truncates in place and reveals
+- [x] Every strip child that can carry server text truncates in place and reveals
       the whole of it — the strip already uses `title=` at `ConsoleStrip.tsx:54`
       and `:156`, so extending that is the cheap answer
-- [ ] `.c-plugin-warn` gets a CSS rule. A class with no rule is how this got in
-- [ ] The index pill does not push `.c-counts` when it materialises: either its
+- [x] `.c-plugin-warn` gets a CSS rule. A class with no rule is how this got in
+- [x] The index pill does not push `.c-counts` when it materialises: either its
       slot is reserved, or it sits after the `.spacer` where nothing follows it
-- [ ] The strip stays **honest** under UI-098's rule. Reserving a slot must not
+- [x] The strip stays **honest** under UI-098's rule. Reserving a slot must not
       turn an unanswered query into a claim: the agent pill's fifth word,
       `unknown`, and the counts' honest zeroes both survive
-- [ ] **Falsification**: remove the fixed height and watch the board-geometry
+- [x] **Falsification**: remove the fixed height and watch the board-geometry
       assertion fail
 
 ## Technical Design
@@ -160,15 +160,88 @@ both `stubCorpus` and `boardFixture` have been wrong this way before.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+Implemented on: **opus**. Real Chromium via Playwright against the real Vite dev
+server (`CORPUS_UI_PORT=5289`, `CORPUS_SERVER_ORIGIN=http://127.0.0.1:8899`, a
+port with nothing behind it). Viewport pinned at 1000×720.
+
+### Reproduction, before any change
+
+An exploratory spec measured `.board` and `.console-strip` across strip states.
+The audit's numbers came back, on the nose:
+
+```
+rest                 strip_h=39.94  board_h=622.50  board_bottom=679.06
+one skipped plugin   strip_h=45.88  board_h=616.56  board_bottom=673.13
+drawer, "no model"      row_h=28.94  board_h=348.63
+drawer, long sentence   row_h=44.88  board_h=332.69
+```
+
+The same run turned up a second fault the issue's Testing Strategy warned about:
+**`stubCorpus` had no handler for `/api/index/status` or `/api/health`**, so the
+`{}` fallback answered both and the strip read
+
+```
+"▴ console  agent: disconnected · queue 0  index: undefined · undefined/NaN  0 running · 0 done · 0 failed  corpus  HALT ○"
+```
+
+in every stubCorpus spec. `index: undefined · undefined/NaN` is wider than any
+real pill, and every strip measurement in the suite was taken against it.
+
+### After the change
+
+`apps/ui/e2e/console-strip-geometry.spec.ts`, 7 tests, all passing. The board's
+box is byte-identical across five states — no index status, an index status with
+a long `detail`, `147 failed`, a skipped plugin, and a server that never answers
+— and `strip.scrollHeight <= strip.clientHeight` holds in each. The drawer's
+index row holds at 28.94px whether its sentence is `no model` or 190 characters,
+and the board holds with it.
+
+### Falsification, three separate reverts
+
+1. **The whole CSS fix reverted** (strip height, `.c-plugin-warn`'s rule, the
+   index row's height, `.index-detail` back to `overflow-wrap: anywhere`):
+
+   ```
+   the board's box is identical in every strip state  ✘
+     a skipped plugin moved the board: height 622.5 → 600.625
+   the strip is one line …                            ✘  height 40px → 61.8125px
+   the drawer's index row …                           ✘  row 28.9375 → 44.875
+   ```
+
+   40 → 62 on the strip and 623 → 601 on the board, which is UI-128's
+   measurement reproduced to the pixel.
+
+2. **The strip's `height` alone removed**, child rules kept: the board assertion
+   still passed and only the `40px` assertion failed (received `39.9375px`).
+   Recorded because it is the honest reading of the fix — the child rules are
+   the mechanism and the fixed height is the backstop that stops the *next*
+   wrappable child taking a line off the board.
+
+3. **The index pill moved back before `.c-counts`**: the counts jumped
+   `x=335.05 → x=568.48` on the frame `GET /api/index/status` answered — the
+   +233px the issue estimated at ~210px.
+
+Every revert was restored from a byte copy and the suite re-run green.
+
+### Regression sweep
+
+`console.spec.ts`, `console-index.spec.ts`, `smoke.spec.ts`, `search.spec.ts`,
+`reader.spec.ts` — 74 passed. `apps/ui/src/console` unit suite — 154 passed.
+`tsc --noEmit`, `eslint`, `prettier --check` clean.
+
+### Not done, and why
+
+`.c-plugin-warn` keeps its inherited `--ink-2`. Whether a skipped plugin should
+be `--sepia` or `--signal` in the strip is a look decision `design/index.html`
+does not answer, and it is outside this issue.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in, reproduction first
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in, reproduction first
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
