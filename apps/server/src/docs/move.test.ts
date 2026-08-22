@@ -200,7 +200,7 @@ describe("nothing else can move a document whose id is derived from its path", (
       const path = `${root.path}/${root.shape === "skill-tree" ? "demo/SKILL.md" : "demo.md"}`;
       expect(() =>
         assertMovable({
-          row: { id: "doc_x", type: "skill", path, status: "open", title: "Demo" },
+          row: { id: "doc_x", type: "skill", path, status: "open", title: "Demo", due: null },
           path,
           absPath: path,
           text: "",

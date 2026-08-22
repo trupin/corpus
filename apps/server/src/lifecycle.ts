@@ -8,10 +8,10 @@ import { loadServerConfig, type ServerConfig } from "./config.js";
 import { CorpusError, describeThrown } from "./errors.js";
 import { createLogger, type Logger } from "./logger.js";
 import {
-  createDerivedStatusRegistry,
+  createDerivedFieldsRegistry,
   discoverPlugins,
   resolvePluginsRoot,
-  type DerivedStatusRegistry,
+  type DerivedFieldsRegistry,
   type DiscoveredPlugin,
 } from "./plugins/index.js";
 import {
@@ -118,13 +118,13 @@ export interface RunServerOptions {
    * `projection` dep it becomes. Injected so a test driving the lifecycle with a
    * stand-in server does not need a real workspace on disk.
    *
-   * Takes the derived-status registry discovery built (SERVER-085) because the
+   * Takes the derived-field registry discovery built (SERVER-085, SERVER-134) because the
    * boot scan happens inside this call — see `openWorkspaceProjection`.
    */
   readonly openProjectionFn?: (
     config: ServerConfig,
     logger: Logger,
-    derivedStatus: DerivedStatusRegistry,
+    derivedFields: DerivedFieldsRegistry,
   ) => ProjectionDb | undefined;
   /**
    * Discovers `plugins/*` (PLUGINS-001). Runs before `createServer` — dynamic
@@ -207,7 +207,7 @@ export async function runServerProcess(
     projection = (options.openProjectionFn ?? openWorkspaceProjection)(
       config,
       logger,
-      createDerivedStatusRegistry(plugins, logger),
+      createDerivedFieldsRegistry(plugins, logger),
     );
     server = (options.createServerFn ?? createServer)(config, { projection, plugins });
     (options.attachProjectionFn ?? attachProjection)(server);

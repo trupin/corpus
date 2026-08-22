@@ -388,7 +388,7 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         logger,
         // §12's derived status rides the reconciliation's own rewrite
         // (SERVER-085); it never opens one of its own.
-        derivedStatus: db.derivedStatus,
+        derivedFields: db.derivedFields,
         ...(options.readHead === undefined ? {} : { readHead: options.readHead }),
       });
       if (reconciled.kind === "reconciled") {

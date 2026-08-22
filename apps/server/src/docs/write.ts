@@ -73,7 +73,7 @@ import {
 } from "../projection/index.js";
 import type { DocumentRoot, ProjectionDb } from "../projection/index.js";
 import type { SelfWriteRegistry } from "../watcher/index.js";
-import { convergeDocumentText } from "./derived-status.js";
+import { convergeDocumentText } from "./derived-fields.js";
 import { anchorClaimantIds, isIdTaken } from "./read.js";
 import { folderTreeSignature } from "./tree.js";
 
@@ -1270,8 +1270,11 @@ export function runInLanes<T>(
 
 /**
  * **The file never disagrees with what is shown** (SPEC.md §12, rider signed
- * 2026-08-12; SERVER-085): a document whose type derives its own `status` gets
- * the derived value written into its frontmatter by every server write of it.
+ * 2026-08-12; SERVER-085 for `status`, SERVER-134 for `due`): a document whose
+ * type derives its own core fields gets the derived values written into its
+ * frontmatter by every server write of it, **all of them in one patch** — so a
+ * save that resolves a list and clears its deadline is one write, one commit and
+ * one `updated` stamp, not one per field.
  *
  * Here, and not in each verb, for the reason the pipeline exists at all. §12
  * says "whenever the server writes the document", and the writes are a create, a
@@ -1309,13 +1312,13 @@ export function runInLanes<T>(
  *
  * A `renameFile` operation is deliberately left alone: it moves bytes without
  * rewriting them (its `content` is only what an undo would restore), and a move
- * changes neither a body nor a status.
+ * changes neither a body nor anything read out of one.
  */
-function convergeDerivedStatus(
+function convergeDerivedFields(
   workspace: DocsWorkspace,
   operations: readonly FileOperation[],
 ): readonly FileOperation[] {
-  const registry = workspace.projection.derivedStatus;
+  const registry = workspace.projection.derivedFields;
   if (registry.types.size === 0) return operations;
 
   let converged: FileOperation[] | null = null;
@@ -1323,7 +1326,7 @@ function convergeDerivedStatus(
     if (operation.kind !== "write") return;
     const content = convergeDocumentText(operation.path, operation.content, registry);
     if (content === null) return;
-    workspace.logger.debug("converged a derived status into the document being written", {
+    workspace.logger.debug("converged the derived fields into the document being written", {
       path: operation.path,
     });
     converged ??= [...operations];
@@ -1357,12 +1360,12 @@ export function applyOperations(
     }
   }
 
-  // §12's derived status, converged into the bytes about to land — see
-  // {@link convergeDerivedStatus}. Before `registerSelfWrites`, necessarily:
+  // §12's derived fields, converged into the bytes about to land — see
+  // {@link convergeDerivedFields}. Before `registerSelfWrites`, necessarily:
   // the watcher decides a write is the server's own by comparing content, so
   // text converged after that comparison was recorded would come back as an
   // out-of-band edit and be reconciled and committed as the user's.
-  const operations = convergeDerivedStatus(workspace, planned);
+  const operations = convergeDerivedFields(workspace, planned);
 
   // A group that touches more than one path is all-or-nothing. Anchored thread
   // creation writes the parent's frontmatter *and* the new thread file

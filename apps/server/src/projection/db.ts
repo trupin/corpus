@@ -14,7 +14,7 @@ import { silentLogger, type Logger } from "../logger.js";
 // The leaf module rather than `../plugins/index.js`: discovery imports the
 // document write path, which imports this file, and a barrel import would make
 // that a runtime cycle. This one imports nothing but the contract and the logger.
-import { EMPTY_DERIVED_STATUS, type DerivedStatusRegistry } from "../plugins/derived-status.js";
+import { EMPTY_DERIVED_FIELDS, type DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { populateFromFiles } from "./populate.js";
 import { META_SCHEMA_VERSION, PROJECTION_DDL, SCHEMA_VERSION } from "./schema.js";
 
@@ -59,11 +59,11 @@ export interface ProjectionDb {
    * this object and nothing else — `projectDocument(db, path)` is the whole
    * signature, and the boot scan, the watcher, `db rebuild` and every write's
    * re-projection all reach it through the same handle, so a rebuild that swaps
-   * the connection cannot lose it. {@link EMPTY_DERIVED_STATUS} when no plugin
+   * the connection cannot lose it. {@link EMPTY_DERIVED_FIELDS} when no plugin
    * declares one, which is every test that does not care and every workspace
    * whose `plugins/` directory is gone (§15 M6).
    */
-  readonly derivedStatus: DerivedStatusRegistry;
+  readonly derivedFields: DerivedFieldsRegistry;
   prepare(sql: string): SqliteStatement;
   /** Runs `fn` inside a transaction, nesting safely via savepoints. */
   transaction<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R;
@@ -358,7 +358,7 @@ export function createProjectionDb(
   path: string,
   logger: Logger = silentLogger,
   reopen: () => SqliteDatabase = () => openProjectionDatabase(path, logger),
-  derivedStatus: DerivedStatusRegistry = EMPTY_DERIVED_STATUS,
+  derivedFields: DerivedFieldsRegistry = EMPTY_DERIVED_FIELDS,
 ): ProjectionDb {
   const statements = new Map<string, SqliteStatement>();
   // Mutable, and read through a getter, so a subsystem that captured this handle
@@ -377,7 +377,7 @@ export function createProjectionDb(
     config,
     path,
     logger,
-    derivedStatus,
+    derivedFields,
     prepare(sql) {
       const cached = statements.get(sql);
       if (cached !== undefined) return cached;
@@ -414,7 +414,7 @@ export interface OpenProjectionOptions {
    * afterwards would have already projected every todo document under the
    * status its file happens to state.
    */
-  readonly derivedStatus?: DerivedStatusRegistry;
+  readonly derivedFields?: DerivedFieldsRegistry;
 }
 
 /**
@@ -439,7 +439,7 @@ export function openProjection(
     path,
     logger,
     () => openProjectionDatabase(path, logger),
-    options.derivedStatus,
+    options.derivedFields,
   );
   if (options.populate !== false) populateFromFiles(db);
   return db;

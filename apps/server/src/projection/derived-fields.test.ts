@@ -1,24 +1,28 @@
-// SPEC.md §12 (rider signed 2026-08-12) at the projection: a doc type that
-// derives its own status is projected under the derived value, and every type
-// that does not keeps the one its file states (SERVER-085).
+// SPEC.md §12 at the projection: a doc type that derives its own core fields is
+// projected under the derived values, and every type that does not keeps the
+// ones its file states (SERVER-085 for `status`, SERVER-134 for `due`).
 //
-// The derivation used here is a stand-in, not the todos plugin's: `apps/server`
+// The derivations used here are stand-ins, not the todos plugin's: `apps/server`
 // may not import `plugins/*` (CLAUDE.md's dependency direction), and what is
 // under test is the plumbing — which document a derivation is asked about, what
-// it is handed, and what is done with its answer. The plugin's own rule is
-// tested where it lives (`plugins/todos/items.test.ts`).
+// it is handed, and what is done with its answer. The plugin's own rules are
+// tested where they live (`plugins/todos/items.test.ts`).
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createDerivedStatusRegistry, type DeriveStatusInput } from "../plugins/derived-status.js";
+import {
+  createDerivedFieldsRegistry,
+  type DeriveInput,
+  type DerivedDocDue,
+} from "../plugins/derived-fields.js";
 import { openProjection, type ProjectionDb } from "./db.js";
 import { projectDocument } from "./project-document.js";
 
 /** The rider's rule, as a stand-in: items and no open items resolves, else open. */
-const asked: DeriveStatusInput[] = [];
-function todoStatus(input: DeriveStatusInput): "open" | "resolved" | null {
+const asked: DeriveInput[] = [];
+function todoStatus(input: DeriveInput): "open" | "resolved" | null {
   asked.push(input);
   if (input.status === "archived") return null;
   if (input.extra?.["items"] === "unreadable") return null;
@@ -26,8 +30,25 @@ function todoStatus(input: DeriveStatusInput): "open" | "resolved" | null {
   return items.length > 0 && items.every((item) => item === "- [x]") ? "resolved" : "open";
 }
 
-const registry = createDerivedStatusRegistry([
-  { dir: "todos", types: [{ type: "todo", derivedStatus: true }], deriveStatus: todoStatus },
+/** PLUGINS-018's rule, as a stand-in: the earliest **open** item's deadline. */
+const askedDue: DeriveInput[] = [];
+function todoDue(input: DeriveInput): DerivedDocDue | null {
+  askedDue.push(input);
+  if (input.status === "archived") return null;
+  if (input.extra?.["items"] === "unreadable") return null;
+  const dates = [...input.body.matchAll(/^- \[ \] .*\(due: (\d{4}-\d{2}-\d{2})\)\s*$/gm)].map(
+    (match) => match[1] ?? "",
+  );
+  return { due: dates.length === 0 ? null : (dates.sort()[0] ?? null) };
+}
+
+const registry = createDerivedFieldsRegistry([
+  {
+    dir: "todos",
+    types: [{ type: "todo", derivedStatus: true, derivedDue: true }],
+    deriveStatus: todoStatus,
+    deriveDue: todoDue,
+  },
 ]);
 
 let root: string;
@@ -36,12 +57,13 @@ let db: ProjectionDb;
 
 beforeEach(() => {
   asked.length = 0;
+  askedDue.length = 0;
   root = mkdtempSync(join(tmpdir(), "corpus-s040-derived-"));
   ws = join(root, "ws");
   mkdirSync(join(ws, "data", "docs"), { recursive: true });
   db = openProjection(
     { workspaceRoot: ws, corpusDir: join(ws, ".corpus") },
-    { derivedStatus: registry },
+    { derivedFields: registry },
   );
 });
 
@@ -62,6 +84,7 @@ const doc = (options: {
   id: string;
   type?: string;
   status?: string;
+  due?: string;
   body?: string;
   extra?: string;
 }): string =>
@@ -71,6 +94,7 @@ const doc = (options: {
     `type: ${options.type ?? "todo"}`,
     "title: Errands",
     `status: ${options.status ?? "open"}`,
+    ...(options.due === undefined ? [] : [`due: ${options.due}`]),
     ...(options.extra === undefined ? [] : [options.extra]),
     "---",
     "",
@@ -82,6 +106,12 @@ const statusOf = (id: string): unknown =>
     db.prepare("SELECT status FROM documents WHERE id = ?").get(id) as
       { status: string } | undefined
   )?.status;
+
+const dueOf = (id: string): unknown =>
+  (
+    db.prepare("SELECT due FROM documents WHERE id = ?").get(id) as
+      { due: string | null } | undefined
+  )?.due;
 
 describe("the projection derives a status its type answers for (SPEC.md §12)", () => {
   it("resolves a list whose every item is checked, whatever the file says", () => {
@@ -135,6 +165,7 @@ describe("the projection derives a status its type answers for (SPEC.md §12)", 
     project("data/docs/g.md", doc({ id: "doc_gg77", type: "note", body: "- [x] one\n" }));
     expect(statusOf("doc_gg77")).toBe("open");
     expect(asked).toEqual([]);
+    expect(askedDue).toEqual([]);
   });
 
   it("keeps the stored status when no plugin is present at all (§15 M6)", () => {
@@ -166,5 +197,110 @@ describe("the projection derives a status its type answers for (SPEC.md §12)", 
       { status: string } | undefined;
     expect(row?.status).toBe("archived");
     expect(asked).toEqual([]);
+    expect(askedDue).toEqual([]);
+  });
+});
+
+describe("the projection derives a due date its type answers for (PLUGINS-018, SERVER-134)", () => {
+  it("stores the earliest open item's date, whatever the file says", () => {
+    project(
+      "data/docs/due-a.md",
+      doc({
+        id: "doc_du01",
+        due: "2027-12-31",
+        body: "- [ ] call the dentist (due: 2026-08-04)\n- [ ] renew the passport (due: 2026-09-30)\n",
+      }),
+    );
+    expect(dueOf("doc_du01")).toBe("2026-08-04");
+  });
+
+  it("clears the column when the derivation says there is no deadline", () => {
+    // `{ due: null }` — the third answer, and the one a bare `string | null`
+    // cannot say. The stored date is a shadow of a reading that no longer holds,
+    // so it must not survive as the row's answer.
+    project(
+      "data/docs/due-b.md",
+      doc({
+        id: "doc_du02",
+        due: "2026-08-04",
+        body: "- [x] call the dentist (due: 2026-08-04)\n",
+      }),
+    );
+    expect(dueOf("doc_du02")).toBeNull();
+  });
+
+  it("stores NULL for a list whose open items carry no date", () => {
+    // Not "due today": absent, exactly as an undated document of any other type.
+    project("data/docs/due-c.md", doc({ id: "doc_du03", body: "- [ ] buy milk\n" }));
+    expect(dueOf("doc_du03")).toBeNull();
+  });
+
+  it("keeps an archived list's stored deadline, and returns to the items on unarchive", () => {
+    project(
+      "data/docs/due-d.md",
+      doc({
+        id: "doc_du04",
+        status: "archived",
+        due: "2026-08-04",
+        body: "- [x] call the dentist (due: 2026-08-04)\n",
+      }),
+    );
+    expect(dueOf("doc_du04")).toBe("2026-08-04");
+
+    project(
+      "data/docs/due-d.md",
+      doc({
+        id: "doc_du04",
+        due: "2026-08-04",
+        body: "- [ ] call the dentist (due: 2026-11-11)\n",
+      }),
+    );
+    expect(dueOf("doc_du04")).toBe("2026-11-11");
+  });
+
+  it("falls back to the stored date when the items cannot be read", () => {
+    project(
+      "data/docs/due-e.md",
+      doc({
+        id: "doc_du05",
+        due: "2026-08-04",
+        body: "- [ ] one (due: 2027-01-01)\n",
+        extra: "items: unreadable",
+      }),
+    );
+    expect(dueOf("doc_du05")).toBe("2026-08-04");
+  });
+
+  it("keeps the stored date for a type no plugin declares", () => {
+    project(
+      "data/docs/due-f.md",
+      doc({
+        id: "doc_du06",
+        type: "note",
+        due: "2026-08-04",
+        body: "- [ ] one (due: 2027-01-01)\n",
+      }),
+    );
+    expect(dueOf("doc_du06")).toBe("2026-08-04");
+    expect(askedDue).toEqual([]);
+  });
+
+  it("is asked the same input the status derivation is asked", () => {
+    project(
+      "data/docs/due-g.md",
+      doc({ id: "doc_du07", body: "- [ ] one\n", extra: "colour: blue" }),
+    );
+    expect(askedDue.at(-1)).toEqual(asked.at(-1));
+  });
+
+  it("reads no clock: two projections of one file give one answer", () => {
+    const body = "- [ ] call the dentist (due: 1999-01-01)\n";
+    project("data/docs/due-h.md", doc({ id: "doc_du08", body }));
+    const first = dueOf("doc_du08");
+    project("data/docs/due-h.md", doc({ id: "doc_du08", body }));
+    expect(dueOf("doc_du08")).toBe(first);
+    // Long past, and still stored as the date rather than as a verdict: whether
+    // it is overdue is the query's comparison, never the row's.
+    expect(first).toBe("1999-01-01");
   });
 });

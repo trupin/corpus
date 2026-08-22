@@ -8,7 +8,7 @@
 import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { silentLogger, type Logger } from "../logger.js";
-import type { DerivedStatusRegistry } from "../plugins/derived-status.js";
+import type { DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import {
   cacheDbPath,
   carryOverEmbeddings,
@@ -40,7 +40,7 @@ export interface RebuildOptions {
    * todo status with whatever its file happens to state, which is the one call
    * an operator makes when the board already looks wrong.
    */
-  readonly derivedStatus?: DerivedStatusRegistry;
+  readonly derivedFields?: DerivedFieldsRegistry;
 }
 
 export type RebuildReport = PopulateReport & {
@@ -85,7 +85,7 @@ export function rebuild(config: ProjectionConfig, options: RebuildOptions = {}):
     target,
     logger,
     () => openProjectionDatabase(target, logger),
-    options.derivedStatus,
+    options.derivedFields,
   );
   try {
     report = populateFromFiles(db);

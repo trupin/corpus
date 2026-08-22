@@ -22,7 +22,7 @@ import {
   populateFromFiles,
   type ProjectionDb,
 } from "../projection/index.js";
-import type { DerivedStatusRegistry } from "../plugins/derived-status.js";
+import type { DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { documentKey } from "./key.js";
 
 export const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
@@ -79,11 +79,11 @@ export interface WriteWorkspaceOptions {
    */
   readonly editAckIdleMs?: number | undefined;
   /**
-   * §12's derived statuses (SERVER-085), as plugin discovery would have found
-   * them. Omitted, the workspace has no plugins at all — which is what every
-   * other suite wants, and is also §15 M6's subtractive state.
+   * §12's derived fields (SERVER-085, SERVER-134), as plugin discovery would
+   * have found them. Omitted, the workspace has no plugins at all — which is
+   * what every other suite wants, and is also §15 M6's subtractive state.
    */
-  readonly derivedStatus?: DerivedStatusRegistry | undefined;
+  readonly derivedFields?: DerivedFieldsRegistry | undefined;
 }
 
 const serverConfig = (
@@ -155,7 +155,7 @@ export function createWriteWorkspace(
   );
   const db = openProjection(config, {
     populate: false,
-    ...(options.derivedStatus === undefined ? {} : { derivedStatus: options.derivedStatus }),
+    ...(options.derivedFields === undefined ? {} : { derivedFields: options.derivedFields }),
   });
 
   const state = { clock: FIXTURE_NOW };

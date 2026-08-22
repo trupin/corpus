@@ -32,9 +32,9 @@ import {
   serializeDocument,
   setFrontmatterFields,
 } from "../core/index.js";
-import { convergeDocumentStatus } from "../docs/derived-status.js";
+import { convergeDocumentFields } from "../docs/derived-fields.js";
 import { silentLogger, type Logger } from "../logger.js";
-import { EMPTY_DERIVED_STATUS, type DerivedStatusRegistry } from "../plugins/derived-status.js";
+import { EMPTY_DERIVED_FIELDS, type DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { readHeadVersion, type ReadHeadVersion } from "./git-head.js";
 import type { SelfWriteRegistry } from "./self-writes.js";
 
@@ -68,7 +68,7 @@ export interface ReconcileOutOfBandOptions {
    * the derived value like every other server write. Optional: a caller with no
    * plugins converges nothing, which is the same as passing an empty registry.
    */
-  readonly derivedStatus?: DerivedStatusRegistry | undefined;
+  readonly derivedFields?: DerivedFieldsRegistry | undefined;
 }
 
 /** Writes `text` atomically, so a reader never sees a half-written document. */
@@ -142,7 +142,7 @@ export function reconcileOutOfBandEdit(options: ReconcileOutOfBandOptions): OutO
   if (next === parsed) return { kind: "unchanged", report: result.report };
 
   // §12's derived status rides this write and never opens one (SERVER-085).
-  // The rule the write pipeline applies — every server write of a derived-status
+  // The rule the write pipeline applies — every server write of a derived-field
   // document carries the derived value — is the same rule here, because this is
   // a server write of the document: the reconciliation has already decided to
   // rewrite the file, so the convergence costs one line of YAML and lands in the
@@ -155,10 +155,10 @@ export function reconcileOutOfBandEdit(options: ReconcileOutOfBandOptions): OutO
   // accepts that risk because §6's guarantee cannot be deferred; a stored status
   // can be, because every surface that *reports* a status — the row, the wire
   // document, every filter — is already reading the derived value.
-  const converged = convergeDocumentStatus(
+  const converged = convergeDocumentFields(
     options.relativePath,
     next,
-    options.derivedStatus ?? EMPTY_DERIVED_STATUS,
+    options.derivedFields ?? EMPTY_DERIVED_FIELDS,
   );
   writeAtomically(options.absPath, serializeDocument(converged), options.selfWrites);
   logger.info("reconciled anchors after an out-of-band edit", {

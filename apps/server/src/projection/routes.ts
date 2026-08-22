@@ -142,7 +142,7 @@ export function mountDbRoutes(app: OpenAPIHono, deps: DbRoutesDeps): void {
       // scan did, or it would answer this call by making them stale.
       rebuild(deps.config, {
         logger: deps.logger,
-        derivedStatus: deps.projection.derivedStatus,
+        derivedFields: deps.projection.derivedFields,
       }),
     );
 

@@ -24,7 +24,7 @@ import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/
 import { readThreadForms } from "../core/form.js";
 import { documentTitle } from "../core/title.js";
 import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
-import { EMPTY_DERIVED_STATUS, type DerivedStatusRegistry } from "../plugins/derived-status.js";
+import { EMPTY_DERIVED_FIELDS, type DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { turnModelsOf } from "../core/turn-model.js";
@@ -157,7 +157,7 @@ function readDocumentFields(
   root: DocumentRoot,
   relativePath: string,
   parsed: ParsedDocument,
-  derivedStatus: DerivedStatusRegistry = EMPTY_DERIVED_STATUS,
+  derivedFields: DerivedFieldsRegistry = EMPTY_DERIVED_FIELDS,
 ): DocumentFields | null {
   const data = parsed.data;
   const declaredId = asString(data["id"]);
@@ -172,23 +172,27 @@ function readDocumentFields(
   const tags = TagsSchema.safeParse(data["tags"]);
   const type = resolveDocumentType(root, data);
   const view = readViewFrontmatter(data);
+  // One input, one per derived field: the two ladders ask the same question of
+  // the same document, so a row cannot report a status derived from one reading
+  // and a deadline derived from another.
+  const fieldInput: DocumentFieldInput = {
+    root,
+    type,
+    data,
+    body: parsed.body,
+    extra: view.extra,
+    derivedFields,
+  };
 
   return {
     id,
     type,
     title: documentTitle(data, titleFromPath(root, relativePath)),
-    status: resolveDocumentStatus({
-      root,
-      type,
-      data,
-      body: parsed.body,
-      extra: view.extra,
-      derivedStatus,
-    }),
+    status: resolveDocumentStatus(fieldInput),
     tags: tags.success ? tags.data : [],
     created: asInstant(data["created"]),
     updated: asInstant(data["updated"]),
-    due: asCalendarDate(data["due"]),
+    due: resolveDocumentDue(fieldInput),
     reviewed: asInstant(data["reviewed"]),
     evergreen: data["evergreen"] === true,
     origin: originOrNull(data["origin"]),
@@ -211,13 +215,35 @@ export function resolveDocumentType(
   return root.type ?? asString(data["type"]) ?? "note";
 }
 
-export interface DocumentStatusInput {
+/**
+ * What either derived-field ladder needs: the document, and the registry to ask.
+ * One input type rather than one per field, because a `status` and a `due`
+ * resolved from different readings of one file would be two answers about one
+ * document.
+ */
+export interface DocumentFieldInput {
   readonly root: DocumentRoot;
   readonly type: string;
   readonly data: Readonly<Record<string, unknown>>;
   readonly body: string;
   readonly extra: Readonly<Record<string, unknown>>;
-  readonly derivedStatus: DerivedStatusRegistry;
+  readonly derivedFields: DerivedFieldsRegistry;
+}
+
+/**
+ * The status a derivation is *told* about — never the one it answers.
+ *
+ * It is the field's own carve-out (§12): a document that is `archived` says
+ * where it is kept rather than what is left to do, so every derivation of every
+ * field declines for one. The root outranks the file here for the same reason it
+ * does in {@link resolveDocumentStatus} — an archived skill is archived because
+ * of where it sits — so a root that fixes a status hands the derivations that
+ * one.
+ */
+function storedStatusOf(input: DocumentFieldInput): DocStatus {
+  if (input.root.status !== null) return input.root.status;
+  const parsed = DocStatusSchema.safeParse(input.data["status"]);
+  return parsed.success ? parsed.data : "open";
 }
 
 /**
@@ -240,18 +266,51 @@ export interface DocumentStatusInput {
  * row's status for the wire document, so a single-document read, a collection
  * query, a saved view and the board all get this one answer and cannot differ.
  *
- * **The write path calls this too** (`docs/derived-status.ts`), which is what
+ * **The write path calls this too** (`docs/derived-fields.ts`), which is what
  * makes "the file never disagrees with what is shown" a property rather than a
  * coincidence: the status converged into a document's frontmatter and the status
  * projected into its row are the same function's answer, so the only way they
  * could differ is if the bytes differed.
  */
-export function resolveDocumentStatus(input: DocumentStatusInput): DocStatus {
-  const { root, type, data, body, extra, derivedStatus } = input;
+export function resolveDocumentStatus(input: DocumentFieldInput): DocStatus {
+  const { root, type, body, extra, derivedFields } = input;
+  const stored = storedStatusOf(input);
   if (root.status !== null) return root.status;
-  const parsed = DocStatusSchema.safeParse(data["status"]);
-  const stored: DocStatus = parsed.success ? parsed.data : "open";
-  return derivedStatus.derive({ type, status: stored, body, extra }) ?? stored;
+  return derivedFields.status.derive({ type, status: stored, body, extra }) ?? stored;
+}
+
+/**
+ * §5's `due` — the optional deadline Attention, `--due overdue`, `--needs due`
+ * and `--needs me` all read — from the two things that can answer for it.
+ *
+ * 1. **The type**, when §12 makes the deadline the document's own answer rather
+ *    than anyone's to set: a todo list's deadline is its earliest open item's
+ *    (PLUGINS-018). The derivation owns its carve-outs and declines for them.
+ * 2. **The file**, which is the answer for every other document, and the
+ *    fallback when the derivation declines.
+ *
+ * **Three answers, and the middle one is why this is not `?? stored`.** A
+ * derivation that answers `{ due: null }` says *this document has no deadline*,
+ * which is a different statement from *I have nothing to say*, and composing it
+ * with `??` would collapse the two: a list whose last dated item was just
+ * checked would keep the deadline it no longer has, forever. So the outer answer
+ * is tested for `null`, and the inner value is taken exactly as given.
+ *
+ * The clock is deliberately not an input. The derivation answers the *earliest*
+ * deadline and never whether it has passed — a projection that read the time of
+ * day would give two answers for one document in one day, and `overdue` is the
+ * query's comparison to make, not the row's.
+ */
+export function resolveDocumentDue(input: DocumentFieldInput): string | null {
+  const { type, data, body, extra, derivedFields } = input;
+  const stored = asCalendarDate(data["due"]);
+  const derived = derivedFields.due.derive({
+    type,
+    status: storedStatusOf(input),
+    body,
+    extra,
+  });
+  return derived === null ? stored : derived.due;
 }
 
 /**
@@ -633,7 +692,7 @@ export function projectDocument(db: ProjectionDb, absPath: string): ProjectionOu
     throw error;
   }
 
-  const fields = readDocumentFields(root, relativePath, parsed, db.derivedStatus);
+  const fields = readDocumentFields(root, relativePath, parsed, db.derivedFields);
   if (fields === null) {
     return { kind: "skipped", path: relativePath, reason: noIdReason(relativePath) };
   }

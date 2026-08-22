@@ -151,12 +151,12 @@ describe("runServerProcess — boot", () => {
     }
   });
 
-  it("discovers plugins before the projection, so the boot scan derives §12's statuses", async () => {
-    // SERVER-085. The scan runs inside `openWorkspaceProjection`, so a registry
-    // that arrived afterwards would leave every derived-status document on the
-    // board under the status its file happens to state until something edited
-    // it. Asserted here rather than assumed: the two calls are one line apart
-    // and nothing else would notice if they swapped.
+  it("discovers plugins before the projection, so the boot scan derives §12's fields", async () => {
+    // SERVER-085, SERVER-134. The scan runs inside `openWorkspaceProjection`, so
+    // a registry that arrived afterwards would leave every derived-field
+    // document on the board under the values its file happens to state until
+    // something edited it. Asserted here rather than assumed: the two calls are
+    // one line apart and nothing else would notice if they swapped.
     const workspace = makeWorkspace("ordering");
     mkdirSync(join(workspace, "data", "docs"), { recursive: true });
     writeFileSync(
@@ -167,9 +167,10 @@ describe("runServerProcess — boot", () => {
         "type: derivedbyplugin",
         "title: Errands",
         "status: open",
+        "due: null",
         "---",
         "",
-        "- [x] renew the passport",
+        "- [x] renew the passport (due: 2026-07-09)",
         "",
       ].join("\n"),
       "utf8",
@@ -189,7 +190,15 @@ describe("runServerProcess — boot", () => {
             root: join(workspace, "plugins", "stand-in"),
             routes: null,
             deriveStatus: () => "resolved",
-            types: [{ type: "derivedbyplugin", label: "Derived", derivedStatus: true as const }],
+            deriveDue: () => ({ due: "2026-07-09" }),
+            types: [
+              {
+                type: "derivedbyplugin",
+                label: "Derived",
+                derivedStatus: true as const,
+                derivedDue: true as const,
+              },
+            ],
             warnings: [],
           },
         ]),
@@ -197,9 +206,11 @@ describe("runServerProcess — boot", () => {
 
     try {
       const row = server?.projection
-        ?.prepare("SELECT status FROM documents WHERE id = ?")
-        .get("doc_ordering1") as { status: string } | undefined;
+        ?.prepare("SELECT status, due FROM documents WHERE id = ?")
+        .get("doc_ordering1") as { status: string; due: string | null } | undefined;
       expect(row?.status).toBe("resolved");
+      // Both members of the seam, from one registry built at one moment.
+      expect(row?.due).toBe("2026-07-09");
     } finally {
       await server?.close();
     }

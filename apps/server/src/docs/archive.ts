@@ -327,7 +327,7 @@ function ownedFields(
  * deliberately does not get one (SERVER-085). This writes `resolved`, which is
  * simply "no longer archived" as far as a derived type is concerned; the write
  * pipeline then converges the file to whatever the document's own content says,
- * in the same write and the same commit (`docs/derived-status.ts`). Branching
+ * in the same write and the same commit (`docs/derived-fields.ts`). Branching
  * here as well would be the rule in two places, and the second copy would be the
  * one that forgets that unarchiving is not the only verb this has to hold for.
  */

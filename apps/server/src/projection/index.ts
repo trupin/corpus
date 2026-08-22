@@ -56,14 +56,15 @@ export {
   projectDocument,
   readDocumentIdentity,
   removeDocument,
+  resolveDocumentDue,
   resolveDocumentStatus,
   resolveDocumentType,
   syntheticDocumentId,
 } from "./project-document.js";
 export type {
   DocumentCounts,
+  DocumentFieldInput,
   DocumentIdentity,
-  DocumentStatusInput,
   ProjectionOutcome,
 } from "./project-document.js";
 export {

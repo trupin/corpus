@@ -15,7 +15,7 @@ import { computeContext } from "../anchors/index.js";
 import { parseDocument } from "../core/index.js";
 import { disableAutoMaintenance } from "../git/index.js";
 import { createLogger, silentLogger, type LogSink } from "../logger.js";
-import { createDerivedStatusRegistry } from "../plugins/derived-status.js";
+import { createDerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { reconcileOutOfBandEdit } from "./reconcile-out-of-band.js";
 import { createSelfWriteRegistry } from "./self-writes.js";
 
@@ -358,13 +358,16 @@ describe("reconcileOutOfBandEdit", () => {
 // shadow field — the rewrite `writeAtomically` performs renames bytes read a
 // moment ago, so a save landing in that window is overwritten, and the anchor
 // pass takes that risk only because §6's guarantee cannot be deferred.
-describe("reconcileOutOfBandEdit and a derived status", () => {
-  const derivedStatus = createDerivedStatusRegistry([
+describe("reconcileOutOfBandEdit and a document's derived fields", () => {
+  const derivedFields = createDerivedFieldsRegistry([
     {
       dir: "todos",
-      types: [{ type: "todo", derivedStatus: true }],
+      types: [{ type: "todo", derivedStatus: true, derivedDue: true }],
       deriveStatus: (input) =>
         input.body.includes("- [ ]") || !input.body.includes("- [x]") ? "open" : "resolved",
+      deriveDue: (input) => ({
+        due: /^- \[ \] .*\(due: (\d{4}-\d{2}-\d{2})\)/m.exec(input.body)?.[1] ?? null,
+      }),
     },
   ]);
 
@@ -375,6 +378,7 @@ describe("reconcileOutOfBandEdit and a derived status", () => {
       "type: todo",
       "title: Errands",
       "status: open",
+      "due: 2026-07-09",
       anchors,
       "---",
       body,
@@ -384,8 +388,9 @@ describe("reconcileOutOfBandEdit and a derived status", () => {
   const TODO_ANCHORS = anchorsBlock(TODO_BODY, "renew the passport");
 
   const statusOnDisk = (): unknown => parseDocument(readFileSync(absPath, "utf8")).data["status"];
+  const dueOnDisk = (): unknown => parseDocument(readFileSync(absPath, "utf8")).data["due"];
 
-  it("converges the status in the rewrite the reconciliation already performs", () => {
+  it("converges every derived field in the rewrite the reconciliation already performs", () => {
     writeFileSync(absPath, todoWith(TODO_BODY, TODO_ANCHORS), "utf8");
     const edited = TODO_BODY.replace(
       "- [ ] renew the passport",
@@ -400,16 +405,19 @@ describe("reconcileOutOfBandEdit and a derived status", () => {
       content: readFileSync(absPath, "utf8"),
       selfWrites: createSelfWriteRegistry(),
       readHead: () => todoWith(TODO_BODY, TODO_ANCHORS),
-      derivedStatus,
+      derivedFields,
     });
 
     expect(outcome.kind).toBe("reconciled");
     expect(statusOnDisk()).toBe("resolved");
+    // The deadline rides the same rewrite: every open dated item is gone, so
+    // the document has none, and the file says so the way core spells it.
+    expect(dueOnDisk()).toBeNull();
   });
 
   it("opens no write of its own when the anchors still describe the body", () => {
     // The selector still resolves, so the reconciliation writes nothing — and
-    // neither does the convergence, though the stored status is stale.
+    // neither does the convergence, though both stored values are stale.
     const edited = `${TODO_BODY}A closing note.\n`.replace("- [ ] renew", "- [x] renew");
     writeFileSync(absPath, todoWith(edited, anchorsBlock(edited, "renew the passport")), "utf8");
     const bytes = readFileSync(absPath, "utf8");
@@ -421,11 +429,12 @@ describe("reconcileOutOfBandEdit and a derived status", () => {
       content: bytes,
       selfWrites: createSelfWriteRegistry(),
       readHead: () => todoWith(TODO_BODY, anchorsBlock(TODO_BODY, "renew the passport")),
-      derivedStatus,
+      derivedFields,
     });
 
     expect(outcome.kind).toBe("unchanged");
     expect(readFileSync(absPath, "utf8")).toBe(bytes);
     expect(statusOnDisk()).toBe("open");
+    expect(dueOnDisk()).toBe("2026-07-09");
   });
 });
