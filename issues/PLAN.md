@@ -1271,7 +1271,7 @@ was written for.
 | CONTRACT-074 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-060 |
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
-| SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | todo | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |
+| SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |
 | AGENT-043 | Does a workspace skill covering a domain oblige the comment loop to apply it? | todo | P2 | SHARED-064 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
