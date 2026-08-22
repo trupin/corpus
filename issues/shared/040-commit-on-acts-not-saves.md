@@ -42,8 +42,8 @@ fable
 - SPEC.md §9.2 line 383 — `GET /api/docs/:id/diff`, the read behind
   `corpus doc diff`
 - SPEC.md §9.1 line 362 — chokidar, out-of-band edits
-- SPEC.md §11 line 457 — staged bulk Save
-- SPEC.md §14 — a mutation stands even when the commit does not
+- SPEC.md §10 line 457 — staged bulk Save
+- SPEC.md §11 — a mutation stands even when the commit does not
 
 ## Summary
 
@@ -113,7 +113,7 @@ Folded In" below) and are already folded into the text; it is final as written.
 > - a document archived, restored, moved, renamed, or marked still current (§5);
 > - a queue event finished, however it finished — completed, failed, deferred
 >   (§7) or abandoned;
-> - a document deleted, or a staged bulk Save applied (§11) — these two close the
+> - a document deleted, or a staged bulk Save applied (§10) — these two close the
 >   window and then commit **separately**, below;
 > - the other party writing;
 > - an edit session ending (the edit acknowledgment above) — its event names a
@@ -134,7 +134,7 @@ Folded In" below) and are already folded into the text; it is final as written.
 > documents it holds.
 >
 > **What does not close a window.** An ordinary save of a document body — the
-> autosave §11 describes — never closes one, whichever document it is to. Nor
+> autosave §10 describes — never closes one, whichever document it is to. Nor
 > does opening or closing a reader, acquiring, renewing or releasing an edit
 > lock, a projection or index pass, a job-log line, a read-state mark, or any
 > read that does not touch git history. These are exactly the changes a window
@@ -192,7 +192,7 @@ Folded In" below) and are already folded into the text; it is final as written.
 > that carries no acting party: §7's rule that every change does holds everywhere
 > else, and this single exception is deliberate, because the alternative is a
 > commit that names a party the server is guessing at. A start with nothing to recover commits
-> nothing and says nothing. A window commit git itself refuses (§14) discards no
+> nothing and says nothing. A window commit git itself refuses (§11) discards no
 > work either: the changes stay on disk and are gathered into the next window
 > that closes.
 >
@@ -329,7 +329,7 @@ after this rider, the rider's paragraph is the target state either way.
 ### Edge Cases
 
 - A window open when the party changes, where the second party's write then
-  fails validation (§14): the flush already happened; the failed write adds
+  fails validation (§11): the flush already happened; the failed write adds
   nothing. Acceptable — one extra commit, never a wrong one.
 - A deletion with no window open: no flush commit, just the deletion.
 - A recovery commit racing an operator's own `git commit` at boot: recovery is
@@ -413,9 +413,9 @@ from scratch.
    operation that names, reads or reverts a commit closes the open window before
    it runs"), so it is stated where it is caused. No §9.2 change.
 
-7. **§14 — "the file mutation stands" when a commit fails.** _Clear._ The rider's
+7. **§11 — "the file mutation stands" when a commit fails.** _Clear._ The rider's
    "A window commit git itself refuses discards no work either: the changes stay
-   on disk and are gathered into the next window that closes" is §14's rule
+   on disk and are gathered into the next window that closes" is §11's rule
    applied to windows, not an exception to it.
 
 8. **§2.2 rule 4 — bootstrap-class operations write with the server stopped.**

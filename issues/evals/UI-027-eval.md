@@ -35,7 +35,7 @@ built the failing shape from scratch (below) and the fixed build renders it.
 | #   | Criterion                                                                        | Result | Notes                                                                                              |
 | --- | -------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------- |
 | 1   | Commenting paints the highlight in both hosts, immediately and after reload       | PASS   | Real mouse-drag selection → 💬 Comment → send; highlight present at once and after a full reload.   |
-| 2   | Clicking a highlight opens/expands its thread (§11)                              | PASS   | `.thread-slot.expanded` 0 → 1, `data-slot-thread="th_i4ynuerw"`.                                    |
+| 2   | Clicking a highlight opens/expands its thread (§10)                              | PASS   | `.thread-slot.expanded` 0 → 1, `data-slot-thread="th_i4ynuerw"`.                                    |
 | 3   | Margin cards align to anchors; narrow columns keep chips at the anchor            | PASS   | Focus mode: card viewport top **172px** == highlight viewport top **172px**; connector 23×1px.      |
 | 4   | Orphaned anchors render per spec (no phantom highlight)                          | PASS   | 2 orphans on one doc → 0 highlights; threads under `[data-thread-section="detached"]`.              |
 | 5   | e2e coverage for highlight presence                                              | PASS   | `apps/ui/e2e/anchor-layer.spec.ts` present on the branch (6.5K).                                    |

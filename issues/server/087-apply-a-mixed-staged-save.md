@@ -25,8 +25,8 @@ opus
 
 - SPEC.md **§4** — "A Save carrying a mix of verbs is still one act and still one
   commit … anything else would make the history disagree with the single report
-  §11 requires"
-- SPEC.md **§11** — bulk mode, per-row staged actions, Save
+  §10 requires"
+- SPEC.md **§10** — bulk mode, per-row staged actions, Save
 
 ## Summary
 
@@ -112,7 +112,7 @@ union.
    `compileFilters`/`whereClause` `GET /api/docs` runs, in the COUNT statement's
    shape (no page, no row joins), ordered by id. A second filter grammar would
    let a Save write a set the board could never show. `limit`, `offset` and
-   `sort` are accepted and ignored: §11's second selection act covers "all 412
+   `sort` are accepted and ignored: §10's second selection act covers "all 412
    matching", not the fifty on screen, and refusing them would refuse the
    board's own stored queries. An unrecognised key is a `400` naming it
    (`DocsQuerySchema` *strips* unknown keys, so the check is against its shape
@@ -248,7 +248,7 @@ Every refusal names **which act** it was refusing, which is the only way a mixed
 report reads without the request beside it. The single-verb subject is
 unchanged.
 
-**4. §11's whole-result-set entry, beside a hand-staged row.** `alpha` staged by
+**4. §10's whole-result-set entry, beside a hand-staged row.** `alpha` staged by
 hand as `tag`, the entry carrying `unarchive` for everything matching
 `{tag: finance, status: archived}`:
 
@@ -317,7 +317,7 @@ $ VITEST_MAX_THREADS=4 vitest run apps/server
 suite (nine cases — the five-row mixed commit, the subject, a locked row beside
 an unknown id, the agent's delete inside a mix, both planners' carried documents
 in one lane union, the tree gate in both directions, two folders in one Save, a
-bad folder beside good rows) and a new "§11's whole-result-set entry" suite
+bad folder beside good rows) and a new "§10's whole-result-set entry" suite
 (nine cases), plus `selection.test.ts` (five). Every commit assertion reads real
 `git show --name-only` output.
 

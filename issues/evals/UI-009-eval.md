@@ -105,7 +105,7 @@ As in UI-005 — every toast appears twice in the DOM.
 28 of 28 criteria met (TEST-59 and TEST-67 accepted as unit/source-level). The whole feature is one
 endpoint composed correctly: one debounced request per burst, results partitioned from that single
 response, highlights rendered from `{text, match}` segments with no HTML injection path anywhere in
-`apps/ui/src`, and the two SPEC.md §15 M3 checks — save-as-view producing a real committed pinned
+`apps/ui/src`, and the two SPEC.md §12 M3 checks — save-as-view producing a real committed pinned
 view document and omnibox create landing in `inbox/` with the title *selected* — both hold against a
 real workspace. The two criteria UI-009's own log deferred (the archived chip's effect and `↵` into
 a real reader) now pass in full. **PASS.**

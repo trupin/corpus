@@ -23,7 +23,7 @@ opus — a gating change with a spec-clarification rider.
 
 ## Spec References
 
-- SPEC.md §11 — the always-editable document editor
+- SPEC.md §10 — the always-editable document editor
 - SPEC.md §10 — deletion safety: a removed plugin's documents "render as plain markdown"
 - issues/evals/PLUGINS-001-eval.md — adjudication request 1 (2026-07-28)
 - issues/sprints/sprint-011.md — adjudication "editor owns doc bodies always"
@@ -33,13 +33,13 @@ opus — a gating change with a spec-clarification rider.
 Found by the sprint-012 evaluator: `editorHandlesType` has gated on `CORE_DOC_TYPES` since Phase 3,
 so a document whose type is not core — including a plugin-owned type without a `View`, and any doc
 after its plugin is deleted — renders through the static `MarkdownView`, not the always-editable
-`DocEditor`. Sprint-011's adjudication ("the editor owns doc bodies always") and §11's
+`DocEditor`. Sprint-011's adjudication ("the editor owns doc bodies always") and §10's
 always-editable principle suggest the editor should own **every** markdown body that no plugin
 `View` claims; §10's "renders as plain markdown" concerns the absence of plugin chrome, not
 read-only-ness.
 
 Extend the gate: any doc type without a registered plugin `View` renders in the standard editable
-document view. A plugin `View` still wins for types that declare one. Includes a one-line §11
+document view. A plugin `View` still wins for types that declare one. Includes a one-line §10
 clarification (spec-writer, user sign-off at the phase PR) stating the rule.
 
 ## Acceptance Criteria
@@ -49,11 +49,11 @@ clarification (spec-writer, user sign-off at the phase PR) stating the rule.
 - [x] Deleting a plugin flips its typed docs from plugin `View` to the editable editor, not to a
       static render.
 - [x] Plugin `View`s still take precedence; `DocPanel` slot unaffected.
-- [x] §11 clarification drafted and held for user sign-off.
+- [x] §10 clarification drafted and held for user sign-off.
 
-## Drafted §11 clarification — for spec-writer, held for user sign-off
+## Drafted §10 clarification — for spec-writer, held for user sign-off
 
-**Do not apply to SPEC.md from this issue.** One line, for §11's always-editable document view:
+**Do not apply to SPEC.md from this issue.** One line, for §10's always-editable document view:
 
 > Every document whose body is markdown renders in the editable document view — core type, plugin
 > type or a type nothing recognises — unless a plugin registers a `View` for that type, which
@@ -62,7 +62,7 @@ clarification (spec-writer, user sign-off at the phase PR) stating the rule.
 
 Rationale, for the sign-off conversation: §10's "a removed plugin's documents render as plain
 markdown" reads naturally as *the plugin's chrome is gone, the markdown is what is left* — not as
-*the body becomes read-only*. Read the second way it contradicts §11's "no edit mode" for exactly
+*the body becomes read-only*. Read the second way it contradicts §10's "no edit mode" for exactly
 the documents a user most needs to repair, and it makes deleting a plugin a partly destructive act.
 Sprint-011's adjudication ("the editor owns doc bodies always") is the same reading.
 
@@ -127,7 +127,7 @@ typing into it wrote: ["/api/docs/doc_6jvfnwr4"]
 save chip           : "committed · git ✓"
 ```
 
-The document is **editable**, not a static render, and the edit committed. §15 M6's "renders as
+The document is **editable**, not a static render, and the edit committed. §12 M6's "renders as
 plain markdown" is satisfied — the body shown is plain markdown, with the plugin's chrome gone.
 
 ### …and restoring it flips them back

@@ -84,7 +84,7 @@ fixed build (green).
 has been since SERVER-002, and `resolveAnchor` composes the whole ladder.
 `reconcileAnchors` already calls it — `reconcile.ts:134` locates every selector
 in `oldBody` with the **full** ladder. What stopped at rungs 1–2 was every
-*reader*: `docs/read.ts`, `projection/project-document.ts` and §14's `checkSeams`.
+*reader*: `docs/read.ts`, `projection/project-document.ts` and §11's `checkSeams`.
 
 That was not an oversight. **Sprint-003 Adjudication 1** chose exact-only
 explicitly, on a premise stated in the contract itself: "reconciliation runs on
@@ -173,7 +173,7 @@ returns the **anchored** shape, not `orphaned-anchor`:
 ```
 
 `corpus doc check` on the same workspace warns `anchor-unresolved` for exactly
-the two genuinely-gone anchors and for none of the 400 fuzzy-resolved ones — §14
+the two genuinely-gone anchors and for none of the 400 fuzzy-resolved ones — §11
 now means by "orphaned" what the reader means.
 
 ### The perf objection sprint-003 raised, measured
@@ -384,7 +384,7 @@ classifications, which only exist where there is a diff.
 - Live workspace afterwards: `db doctor` → `projection is clean — 33 documents
   from 33 files (6ms)`; `schema_version` = **11**; 12 anchors, 5 NULL, matching
   `corpus doc check`'s five `anchor-unresolved` warnings exactly — the reader,
-  the projection column and §14 give one answer.
+  the projection column and §11 give one answer.
 - Server on 8793 stopped, port verified free, scratch workspaces removed, no
   vitest workers left. 8765 and 5173 untouched.
 

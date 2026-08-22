@@ -6,7 +6,7 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-done — **SIGNED 2026-08-12 and applied to SPEC.md §11**
+done — **SIGNED 2026-08-12 and applied to SPEC.md §10**
 
 All three open questions were settled at sign-off. **Column readers are excluded**
 as drafted — a persistent bar costs vertical space a column cannot spare.
@@ -35,12 +35,12 @@ fable
 
 ## Spec References
 
-- SPEC.md §11 — "**Document view — always editable, Google-Docs-like.** There is
+- SPEC.md §10 — "**Document view — always editable, Google-Docs-like.** There is
   no edit mode … Markdown shortcuts apply as you type … **the editor serializes
   to clean markdown**"
-- SPEC.md §11 — "**Commenting**: selecting text pops a floating toolbar
+- SPEC.md §10 — "**Commenting**: selecting text pops a floating toolbar
   (formatting + **Comment**)"
-- SPEC.md §11 — focus mode: "a full-viewport reading/editing surface with margin
+- SPEC.md §10 — focus mode: "a full-viewport reading/editing surface with margin
   threads"
 - `design/index.html` — authoritative for look & feel
 
@@ -53,13 +53,13 @@ directly. Today the only formatting surface is the **selection** toolbar
 vanishes — so formatting is discoverable only by people who already know it is
 there, and applying a heading means selecting text first.
 
-§11 already calls the document view "Google-Docs-like" and already has a floating
+§10 already calls the document view "Google-Docs-like" and already has a floating
 toolbar; it has never said whether a **persistent** one exists. This rider settles
 that.
 
 ## The constraint that shapes the whole thing
 
-**§11 requires the editor to serialize to clean markdown.** Roughly half the
+**§10 requires the editor to serialize to clean markdown.** Roughly half the
 controls on the Google Docs toolbar have no markdown representation, and putting
 them on screen would promise formatting the file cannot hold. From the reference
 screenshot, sorted against what `apps/ui/src/editor/markdown/schema.ts` actually
@@ -89,7 +89,7 @@ presentation-soup, with no Corpus form.
 
 ## Drafted rider text
 
-To be added to §11's document-view paragraph:
+To be added to §10's document-view paragraph:
 
 > **A persistent formatting toolbar in focus mode.** The full-viewport surface
 > carries a formatting toolbar that is always present, above the document — the
@@ -142,8 +142,8 @@ To be added to §11's document-view paragraph:
       not-expressible split above — the split is the substance of the decision
 - [ ] The four open questions answered in the sign-off conversation
 - [ ] User signs off, or amends
-- [ ] Applied to SPEC.md §11 with a `_(Rider signed YYYY-MM-DD.)_` marker
-- [ ] Contradiction sweep recorded here against §11's existing floating-toolbar
+- [ ] Applied to SPEC.md §10 with a `_(Rider signed YYYY-MM-DD.)_` marker
+- [ ] Contradiction sweep recorded here against §10's existing floating-toolbar
       sentence and the "no edit mode" rule — a toolbar must not read as a mode
 - [ ] `design/index.html` updated, or a decision recorded that it follows
       implementation

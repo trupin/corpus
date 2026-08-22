@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 thread view copyable canvases (rider signed 2026-08-02)
+- SPEC.md §10 thread view copyable canvases (rider signed 2026-08-02)
 
 ## Summary
 Companion to UI-041. The product agent's skills instruct it: any text the user

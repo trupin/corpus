@@ -24,7 +24,7 @@ opus
 ## Spec References
 
 - SPEC.md **§7** line 397 — `.claude/agents/*.md` as `type: agent-def`
-- SPEC.md **§11** line 539 — *"Creating a new skill or subagent document
+- SPEC.md **§10** line 539 — *"Creating a new skill or subagent document
   instantly makes it autocompletable — there is no separate registry."*
 - SPEC.md **§7** — the SHARED-048 rider: a profile is how a conversation gets an
   agent that behaves differently from the default

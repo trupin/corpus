@@ -18,14 +18,14 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-025 (the §5/§7/§11 rider — **must be signed before this lands**)
+- Depends on: SHARED-025 (the §5/§7/§10 rider — **must be signed before this lands**)
 - Blocks: UI-089
 
 ## Spec References
 
 - SPEC.md **§7** — stewardship: what the agent does when it notices a change
 - SPEC.md **§5** — the document model (where a changelog section lives)
-- SPEC.md **§11** — collapse: "anything that can be shown can be collapsed"
+- SPEC.md **§10** — collapse: "anything that can be shown can be collapsed"
 
 ## Summary
 
@@ -96,7 +96,7 @@ is a shape this project has been burned by more than once.
       the value, since git already holds the diff. An entry that only restates
       the diff is worse than no entry
 - [x] Older entries **fold** rather than disappear; the fold says how many are
-      inside, the way §11 requires every collapse to report its whole size —
+      inside, the way §10 requires every collapse to report its whole size —
       _the skill's half only_: it is told never to prune, and that the reader
       clips past a threshold and says how many are behind the control. Rendering
       the clip is UI-089, which this issue blocks

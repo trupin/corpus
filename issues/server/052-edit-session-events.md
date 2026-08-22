@@ -259,7 +259,7 @@ after:  truncated true  diff.length 15899  totalChars 64281  stats identical
         starts with a diff header: true    ends on a line boundary: true
 ```
 
-**8. Server log** (§14's third surface) carried one line per acknowledgment:
+**8. Server log** (§11's third surface) carried one line per acknowledgment:
 `{"level":"info","msg":"user edit session acknowledged","docId":…,"sessionId":…,"endedBy":…,"eventId":…}`
 — seven of them across the run, matching the seven events on disk.
 `GET /api/queue/status` reported them as ordinary `pending` work.

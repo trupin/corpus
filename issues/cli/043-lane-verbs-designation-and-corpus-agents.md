@@ -410,7 +410,7 @@ $ corpus doc archive doc_lt77w6hd && corpus thread designate th_2xamtqep --agent
 `warnings` is empty. The only way for the CLI to warn would be a second `GET /api/docs/{docId}` —
 re-deriving something the server chose not to publish, and making the CLI a second source of
 truth about the persona's state. **Not implemented; escalated.** The fix, if wanted, is a
-contract + server change (a §14 warning on the designation, or a status on `Resident`), owned by
+contract + server change (a §11 warning on the designation, or a status on `Resident`), owned by
 contract-dev / server-dev.
 
 **Separate, pre-existing, and out of scope here**: `corpus queue status` never renders

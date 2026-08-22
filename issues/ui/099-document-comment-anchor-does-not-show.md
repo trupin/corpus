@@ -26,11 +26,11 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — "**Commenting**: selecting text pops a floating toolbar
+- SPEC.md §10 — "**Commenting**: selecting text pops a floating toolbar
   (formatting + **Comment**); commenting captures the text-quote selector and
   opens a thread composer"
-- SPEC.md §11 — "Clicking an anchored highlight opens its thread"
-- SPEC.md §15 M4 — the Playwright check: "select text → comment ('note only') →
+- SPEC.md §10 — "Clicking an anchored highlight opens its thread"
+- SPEC.md §12 M4 — the Playwright check: "select text → comment ('note only') →
   **highlight + chip appear without reload**"
 - SPEC.md §6 — anchors are text-quote selectors
 
@@ -40,7 +40,7 @@ User report (2026-08-08): selecting text in a **document** and leaving a comment
 produces no visible anchor — no highlight on the quoted passage. The same gesture
 in a **thread** works.
 
-This is P0: it is a §15 M4 milestone check (*"highlight + chip appear without
+This is P0: it is a §12 M4 milestone check (*"highlight + chip appear without
 reload"*), and without a visible anchor the passage no longer says it has been
 discussed, which is the core of the product's anchoring model.
 
@@ -89,12 +89,12 @@ Record the answer before writing code.
 - [x] Reproduction recorded, naming which stage fails — stage 4, and it is two
       stacked causes; see the E2E log
 - [x] Selecting text in a document and commenting produces a **visible highlight
-      on the quoted passage, without a reload** (§15 M4) — real browser + new
+      on the quoted passage, without a reload** (§12 M4) — real browser + new
       Playwright check
 - [x] The chip / margin card appears at the anchor, per the adaptive placement
       rule — chip asserted in the new check and in the browser run; the margin
       half is `anchor-layer.spec.ts`'s focus-mode alignment test, still passing
-- [x] Clicking the highlight opens its thread (§11) — `anchor-layer.spec.ts`,
+- [x] Clicking the highlight opens its thread (§10) — `anchor-layer.spec.ts`,
       unchanged and passing
 - [x] The anchor survives a reload (`anchor-layer.spec.ts`). Editing elsewhere in
       the body is covered by the existing layer tests for deferred application
@@ -149,7 +149,7 @@ where to look.
 - A selection spanning a formatting boundary (bold, a link, an inline code span)
 - A selection whose exact text appears more than once in the body
 - A selection made immediately after typing, before autosave has written —
-  §11 requires the selector to quote the document **as saved**
+  §10 requires the selector to quote the document **as saved**
 - A document whose type a plugin claims with a `View` — `anchorsHost` is false by
   design there, and the todos manifest documents this as the reason it registers
   no `View`. If the reported document is such a type, that is the answer and the
@@ -159,7 +159,7 @@ where to look.
 ## Testing Strategy
 
 Vitest for each stage the reproduction implicates. **A Playwright spec is
-required regardless**: §15 M4 already specifies this exact flow as a milestone
+required regardless**: §12 M4 already specifies this exact flow as a milestone
 check, and a bug that reached a user through a specified check means the check is
 missing or not asserting the highlight. Add or repair it so this cannot regress
 silently.
@@ -417,7 +417,7 @@ segments before and **1** after. That is the reported comment, and it now draws.
   construct (`anchorPlacement.test.ts`), and the layer drawing it end to end
   (`useAnchorLayer.test.tsx`).
 - `apps/ui/src` + `packages/kit/src` — **3,264 pass**, no regressions.
-- Playwright: the new §15 M4 check in `anchor-layer.spec.ts` — "select text →
+- Playwright: the new §12 M4 check in `anchor-layer.spec.ts` — "select text →
   comment (note only) → highlight + chip appear **without reload**". Confirmed to
   be a real regression test rather than a passing bystander: reverting **either**
   fix alone makes it fail. 49 anchoring-related e2e specs pass (`anchor-layer`,
@@ -435,7 +435,7 @@ segments before and **1** after. That is the reported comment, and it now draws.
   and running the spec in Playwright (the chip was at `:558` before the comment
   added below moved it down).
 
-  Worth recording plainly, because it changes what the check is worth: §15 M4's
+  Worth recording plainly, because it changes what the check is worth: §12 M4's
   "highlight" half is satisfiable **with no server-derived placement at all**.
   `useAnchorLayer` paints an optimistic `.anchor-hl` from the range the composer
   was opened on (`setOptimistic` in `submitComment`), and it stands until the

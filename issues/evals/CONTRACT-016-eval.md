@@ -32,7 +32,7 @@ artifacts.
 
 | #   | Criterion (from the issue file)                                                                                              | Result | Notes                                                                                                                                                                                                       |
 | --- | ---------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC1 | `commit` is `string \| null` with the semantics documented; artifacts regenerated; drift green twice; client round-trips both | PASS   | Committed `openapi.json`: `SkillRollbackResult.properties.commit` = `{"type":["string","null"],"pattern":"^[0-9a-f]{7,64}$", "description": …}` and `commit` is still in `required` — **present-and-null, never absent**. The description publishes the semantics (`null` ⇔ restored but not committed; the write stands per §14; the reason is in `warnings`). Generated client type is `commit: string | null`. `check-generated-artifacts.ts` run twice by the evaluator → exit 0 both times. |
+| AC1 | `commit` is `string \| null` with the semantics documented; artifacts regenerated; drift green twice; client round-trips both | PASS   | Committed `openapi.json`: `SkillRollbackResult.properties.commit` = `{"type":["string","null"],"pattern":"^[0-9a-f]{7,64}$", "description": …}` and `commit` is still in `required` — **present-and-null, never absent**. The description publishes the semantics (`null` ⇔ restored but not committed; the write stands per §11; the reason is in `warnings`). Generated client type is `commit: string | null`. `check-generated-artifacts.ts` run twice by the evaluator → exit 0 both times. |
 | AC2 | No other route or schema changes; no consumer files touched                                                                  | PASS   | `git show --stat 81023e1`: `packages/contract/{openapi.json, src/client/schema.generated.ts, src/openapi.test.ts, src/routes/skills.ts, src/schemas/skill.test.ts, src/schemas/skill.ts}` + PLAN.md + the issue file. Nothing outside `packages/contract`. The rollback route still declares exactly `200, 400, 401, 404` — no new status, no new shape. |
 
 ### Standing contract invariants applied
@@ -59,7 +59,7 @@ it, both ways, against a real workspace and a real git repository:
    ```
    `commit === null` verified programmatically — not `""`, not a foreign sha.
 
-2. **`commit_failed` — §14's headline case, which is why the rider exists.** With a workspace
+2. **`commit_failed` — §11's headline case, which is why the rider exists.** With a workspace
    `pre-commit` hook that rejects every commit:
    ```
    POST /api/skills/orchestrate/rollback {}                   → 200
@@ -71,7 +71,7 @@ it, both ways, against a real workspace and a real git repository:
    `git status --porcelain`. This is exactly *"the server never rolls back a file write because a
    commit failed"* — expressible on the wire only because of this rider. Option (y) from Open
    Conflict 4 (echo the pre-existing HEAD) would have put a commit that is not this restoration into
-   the field the audit trail reads; option (z) (5xx) would have contradicted §14 and the route's
+   the field the audit trail reads; option (z) (5xx) would have contradicted §11 and the route's
    declared statuses. Neither was taken.
 
 ## Honesty Audit (claims re-derived by the evaluator)
@@ -107,5 +107,5 @@ strengthened by three assertions rather than relaxed.
 
 Most importantly, the value it exists for is now demonstrable end to end against the real server:
 a workspace git hook that rejects the rollback commit yields `200` + `commit: null` +
-`commit_failed`, with the restored file standing on disk — §14's rule, expressible on the wire.
+`commit_failed`, with the restored file standing on disk — §11's rule, expressible on the wire.
 **PASS.**

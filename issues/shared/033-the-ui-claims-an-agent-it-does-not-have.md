@@ -25,7 +25,7 @@ fable
 
 - SPEC.md §8 line 340 — "The UI shows an **honest**, time-aware pending indicator
   while an agent response is outstanding … **No fake progress**"
-- SPEC.md §11 line 469 — "a one-line strip (agent-status pill with
+- SPEC.md §10 line 469 — "a one-line strip (agent-status pill with
   **working/idle/halted** dot · queue depth · …)"
 - SPEC.md §7 — the queue's long-poll idle endpoint
 
@@ -81,7 +81,7 @@ Amending §8's pending-indicator sentence (line 340):
 
 ## Drafted rider text — part 2 of 2
 
-Amending §11's console strip (line 469), replacing "agent-status pill with
+Amending §10's console strip (line 469), replacing "agent-status pill with
 working/idle/halted dot":
 
 > agent-status pill with a **working / idle / disconnected / halted** dot. The
@@ -101,11 +101,11 @@ working/idle/halted dot":
 
 - [ ] Both parts read aloud to the user, as two quoted blocks, on their own
 - [ ] User signs off, or amends
-- [ ] Applied to SPEC.md §8 and §11 with `_(Rider signed YYYY-MM-DD.)_` markers
+- [ ] Applied to SPEC.md §8 and §10 with `_(Rider signed YYYY-MM-DD.)_` markers
 - [ ] Contradiction sweep recorded here:
       - §7 — does anything else promise `idle` means "nothing to do"?
-      - §11 Attention — an outstanding-agent-reply reason that assumes "working"
-      - §15 M5's check — "the pending indicator shows meanwhile" — confirm the
+      - §10 Attention — an outstanding-agent-reply reason that assumes "working"
+      - §12 M5's check — "the pending indicator shows meanwhile" — confirm the
         milestone check still describes the behaviour after the change
 - [ ] The four implementing issues reference the signed date
 
@@ -148,6 +148,6 @@ _N/A — spec rider._
 - [ ] Both parts read aloud verbatim, separately from the other held riders
 - [ ] The "agent claimed it then died" edge case decided, not deferred silently
 - [ ] Signed by user
-- [ ] Applied to SPEC.md §8 and §11 with signature markers
+- [ ] Applied to SPEC.md §8 and §10 with signature markers
 - [ ] Contradiction sweep recorded here
 - [ ] Committed with `[SHARED-033]` prefix

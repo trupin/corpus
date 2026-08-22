@@ -26,7 +26,7 @@ opus
 - SPEC.md **§7** line 397 — *"The projection and watcher cover
   `.claude/skills/**/SKILL.md` (as `type: skill`) and `.claude/agents/*.md` (as
   `type: agent-def`) as **additional document roots** alongside `data/`"*
-- SPEC.md **§11** line 539 — *"Creating a new skill or subagent document
+- SPEC.md **§10** line 539 — *"Creating a new skill or subagent document
   instantly makes it autocompletable — there is no separate registry."*
 
 ## Summary
@@ -306,7 +306,7 @@ POST /api/threads/th_nav4lv77/turns {"body":"Please look at this, @archivist."}
 
    > Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the
    > full prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first
-   > (SPEC.md §11) — **except for a type that SPEC.md §7 gives its own document root**,
+   > (SPEC.md §10) — **except for a type that SPEC.md §7 gives its own document root**,
    > which is where an omitted `folder` files it: a `type: agent-def` document lands in
    > `.claude/agents/`. Such a root may also be named outright, by its exact declared
    > path (`.claude/agents`), and a root named that way must match the type it holds.

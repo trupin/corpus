@@ -100,7 +100,7 @@ control confirms the types really bind — substituting `sort:"last-activity"` y
    self-consistent; remove the thread and it is exactly `count:1 totalCount:4`. Both readings were
    verified. The server picked the one that satisfies TEST-52 and matches "threads are documents too".
 3. **The `due` Attention reason is broader than the `due=overdue` keyword.** A document due *today*
-   carries the `due` reason but is not returned by `?due=overdue`. SPEC §11 says Attention covers
+   carries the `due` reason but is not returned by `?due=overdue`. SPEC §10 says Attention covers
    "due/overdue", so this is by design — but the two thresholds differ and that is worth knowing
    before UI-003 renders both.
 4. **Due keywords resolve in UTC, not local time.** Defensible ("the workspace's clock"), but a user in

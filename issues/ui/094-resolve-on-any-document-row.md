@@ -24,8 +24,8 @@ opus
 ## Spec References
 
 - SPEC.md §5 — as amended by SHARED-031: one status vocabulary for every type
-- SPEC.md §11 — the reader ⋯ menu and the row context menu
-- SPEC.md §11 — the bulk-selection rider's Resolve clause, as corrected by
+- SPEC.md §10 — the reader ⋯ menu and the row context menu
+- SPEC.md §10 — the bulk-selection rider's Resolve clause, as corrected by
   SHARED-031
 
 ## Summary
@@ -90,7 +90,7 @@ built from `useDocActions`:
 | thread | open · open-focus · **resolve** · archive · delete | comments · review · **resolve** · archive · delete |
 | archived note | open · open-focus · unarchive · delete | — |
 
-So SPEC.md §11's *"exactly that item's existing actions — the same set its ⋯ /
+So SPEC.md §10's *"exactly that item's existing actions — the same set its ⋯ /
 header menu offers"* is **already satisfied between the two menus**. The
 divergence is between **both menus** and the **frontmatter form's status
 control**, which since UI-093 is live on every document: on a `type: note` the
@@ -100,7 +100,7 @@ SHARED-031 settles which half is wrong: `status` is one vocabulary, every
 document has a `resolved` state, and the write path gates only on leaving
 `archived`. **The form is right and both menus are wrong.** The fix therefore
 belongs in `useDocActions` alone, and both surfaces move in the same commit —
-fixing either separately would create the divergence §11 forbids, which does not
+fixing either separately would create the divergence §10 forbids, which does not
 exist today.
 
 ## Decision — a document whose type derives its status
@@ -108,7 +108,7 @@ exist today.
 **Chosen: omit the Resolve item entirely.** No item, no disabled item, no
 explanatory meta line.
 
-The reason is signed spec text. SHARED-031 part 2, applied to §11: *"A type whose
+The reason is signed spec text. SHARED-031 part 2, applied to §10: *"A type whose
 status is **derived** rather than set (§12) is such a case: it offers no Resolve,
 because there is nothing there for anyone to set."* "Offers no Resolve" is a
 statement about the menu, not about the form. It also matches what the menu
@@ -124,7 +124,7 @@ user nothing. Rejected because:
    frontmatter form's `<select>`. That is where UI-092 renders the value and names
    its source, and that is where a user who asks "why can I not change this?"
    already gets an answer. The menu does not need to answer it twice.
-2. §11's context-menu rule is *"exactly that item's existing actions"*. A
+2. §10's context-menu rule is *"exactly that item's existing actions"*. A
    permanently inert row is not an action, it is a caption wearing an action's
    clothes.
 3. The menu already scrolls (see the height finding below). Every item that is

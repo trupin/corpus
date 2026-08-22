@@ -23,7 +23,7 @@ fable
 
 ## Spec References
 
-- SPEC.md §6, §11
+- SPEC.md §6, §10
 
 ## Summary
 

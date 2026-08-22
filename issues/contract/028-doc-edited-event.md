@@ -78,7 +78,7 @@ inferred. Where a session's first commit has no parent, `from` is
 `EMPTY_TREE_OBJECT_ID` (git's universal empty-tree object, published as a
 contract constant) rather than `null`: that keeps the event's range **passable
 verbatim** to the diff route, which is the property that makes a frugal event
-usable at all. A session whose auto-commits were all rejected or skipped (§14)
+usable at all. A session whose auto-commits were all rejected or skipped (§11)
 has no range and emits **no event** — there is no null-range `doc.edited`.
 
 ### 4. Idempotence: `sessionId` is the dedupe key
@@ -116,7 +116,7 @@ a future server regresses on the emit side.
   well-formed sha the repository does not contain is *also* a `400` naming the
   parameter, never a `404`: `404` on this route means the **document** is
   unknown.
-- **No committed history** (never-committed file, or no git — §14): `200` with
+- **No committed history** (never-committed file, or no git — §11): `200` with
   `from`/`to` null, empty diff, zero stats. An answer, not an error.
 
 ### 7. No flush route declared

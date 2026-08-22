@@ -53,7 +53,7 @@ real Claude Code session and a real browser do the right thing. That inverts the
 | --------------- | ----------------------------------- |
 | **AGENT-003**   | A **real `corpus init` workspace on `9132`**, a **real server**, the **real board in a real browser**, and a **live `claude` session** running `/orchestrate` against it. Not a simulation: the loop AGENT-002 shipped drives every step. Every claim is checked against the file on disk, `git log` in the workspace, `GET /api/tree`, and the SSE stream. The session transcript is captured with `--output-format stream-json` and **retained in the scratch directory** (agent-runtime-dev Domain Knowledge, 2026-07-28) — TEST-206 through TEST-215 are not re-derivable without it. |
 | **AGENT-004**   | The **same session and workspace** as AGENT-003 (`9132`), continued. The proof is a real agent turn, posted by the live session through `corpus thread reply --from agent`, that the **shipped UI** renders as a `.turn-trace` element — read out of the real browser, not out of a Vitest DOM. |
-| **PLUGINS-002** | A **real workspace on `9142`** with the plugin discovered from the repo-root `plugins/`, a **real server**, the **real Vite dev UI on `5285`**, the **real `corpus` binary from source**, and a **real packed tarball** for the two INFRA riders (`npm pack -w apps/cli` → install into a scratch prefix). The §15 M6 subtractive check (`rm -rf plugins/todos`, restart) runs against the real running system, twice. |
+| **PLUGINS-002** | A **real workspace on `9142`** with the plugin discovered from the repo-root `plugins/`, a **real server**, the **real Vite dev UI on `5285`**, the **real `corpus` binary from source**, and a **real packed tarball** for the two INFRA riders (`npm pack -w apps/cli` → install into a scratch prefix). The §12 M6 subtractive check (`rm -rf plugins/todos`, restart) runs against the real running system, twice. |
 
 ### Port allocation
 
@@ -1132,14 +1132,14 @@ TEST-280: Creating a todo from the picker produces a valid document
   Then: It lands in `data/docs/` with `type: todo`, opens title-selected, and the View renders it
   without error — including its `items` state, whatever Open Conflict 9 rules.
 
-TEST-281: §15 M6 — deleting the plugin leaves the core fully functional
+TEST-281: §12 M6 — deleting the plugin leaves the core fully functional
   Given: A running system with todo documents and a Todos column
   When: `rm -rf plugins/todos` and the whole system restarts
   Then: The app **boots**; existing todo documents render as **plain markdown** (data intact, nothing
   lost); the Todos column shows a **"plugin missing"** card while every other column works;
   `/api/x/todos/*` **404s**; `corpus todos` is gone from `--help`.
 
-TEST-282: §15 M6 — restoring brings everything back
+TEST-282: §12 M6 — restoring brings everything back
   Given: The directory restored and the system restarted
   When: Inspected
   Then: The custom renderer, the DocPanel, and the Todos column all return, with the todo documents'
@@ -1587,7 +1587,7 @@ depended on commenting.
 The issue requires: *"a `type: template` document with `for: todo` ships as a seed document … so
 creating a todo from the picker or a column's ＋ starts with valid empty `items: []` frontmatter."*
 
-Template pre-fill is **body-only**. SPEC §11: *"Template pre-fill is body-only: the new document's
+Template pre-fill is **body-only**. SPEC §10: *"Template pre-fill is body-only: the new document's
 frontmatter comes from the create request (§9.2), never from the template — a template's own
 housekeeping fields … do not bleed into documents created from it."* That is the SERVER-005
 template-bleed fix, and the PLUGINS-001 evaluator confirmed `seedTemplate` is *"documented as
@@ -1613,12 +1613,12 @@ as a valid empty todo list"*, and TEST-254's "or the key absent" clause is what 
 
 ### 10. Both AGENT-003 and PLUGINS-002 cite the wrong milestone (**trivial, bookkeeping**)
 
-AGENT-003's Spec References cite *"SPEC.md §15 M4 — the executable check the loop plus this skill must
+AGENT-003's Spec References cite *"SPEC.md §12 M4 — the executable check the loop plus this skill must
 satisfy"*, but M4 is **UI core**; the agent loop and skills-as-documents are **M5**. PLUGINS-002 cites
-*"SPEC.md §15 M5 — plugin system + todos plugin"* and says its E2E *"runs its check verbatim"*, but the
+*"SPEC.md §12 M5 — plugin system + todos plugin"* and says its E2E *"runs its check verbatim"*, but the
 plugin milestone is **M6**. Both issue files were written before the milestone list settled.
 
-Every M-reference in PLUGINS-002's E2E plan (steps 8–11, labelled "§15 M5") is really M6, and this
+Every M-reference in PLUGINS-002's E2E plan (steps 8–11, labelled "§12 M5") is really M6, and this
 contract's TEST-281/TEST-282 are written against M6's actual text.
 
 **Options**: (a) Correct both issue files' Spec References and E2E headings to M5 and M6 respectively.
@@ -1736,8 +1736,8 @@ above.)_
     the three directly-caused `apps/cli` test inversions (`init/index.test.ts`, two in
     `upgrade.test.ts`) are in the same commit — a cli-dev rider for three mechanical lines is
     overhead. pr-reviewer sees it in the phase diff.
-15. **Conflict 10 → issue files corrected** (milestone citations: AGENT-003 → §15 M5,
-    PLUGINS-002 → §15 M6) by the orchestrator before the agents read them.
+15. **Conflict 10 → issue files corrected** (milestone citations: AGENT-003 → §12 M5,
+    PLUGINS-002 → §12 M6) by the orchestrator before the agents read them.
 
 ### Ruled before stage B (orchestrator, 2026-07-28)
 

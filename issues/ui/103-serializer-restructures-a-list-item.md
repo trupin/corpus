@@ -25,7 +25,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — "the editor serializes to clean markdown", and **autosave,
+- SPEC.md **§10** — "the editor serializes to clean markdown", and **autosave,
   no save button**: every keystroke eventually writes the file
 - SPEC.md **§5** — files on disk are the source of truth
 - SPEC.md **§1** — the corpus is the user's own documents; the tool stewards
@@ -55,7 +55,7 @@ paragraph as a continuation of the **nested** item and indents it 2 → 4 spaces
 So the construct is not a fixed point: `canonicalize(canonicalize(x)) ≠
 canonicalize(x)`.
 
-Because §11 gives the editor **autosave and no save button**, opening such a
+Because §10 gives the editor **autosave and no save button**, opening such a
 document and typing a single character anywhere in it writes the restructured
 form to disk. A paragraph that belonged to an outer list item silently becomes
 part of a nested one — in the user's own file, with no action that asked for it,

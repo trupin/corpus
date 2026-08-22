@@ -65,7 +65,7 @@ Real `corpus init` workspace at `/tmp/corpus-s017-ws`, real server (`tsx apps/se
 
 **1. Reopen proof — inode + immediate query.** Baseline `cache.db` inode `64561290`; live server answered `['doc_alpha01','doc_beta002','doc_seed*','doc_skill*']`. After `POST /api/db/rebuild` the inode was `64561435` (the rename is the commit point) and the *immediate* next `GET /api/docs` on the same process answered `['doc_alpha01','doc_gamma03',…]` — `doc_beta002` gone, `doc_gamma03` present. A server still on the old inode could not have produced either change.
 
-**2. Doctor, clean.** `{"ok":true,"drift":[],"stats":{"files":8,"documents":8,"hashed":0,"parsed":0,"durationMs":3}}` — `hashed: 0` on a warm workspace, as §14's pre-commit budget requires.
+**2. Doctor, clean.** `{"ok":true,"drift":[],"stats":{"files":8,"documents":8,"hashed":0,"parsed":0,"durationMs":3}}` — `hashed: 0` on a warm workspace, as §11's pre-commit budget requires.
 
 **3. Doctor, dirty (hand-induced drift in the derived state, which the watcher cannot heal).** Deleting `doc_alpha01`'s row + hash directly out of `cache.db` produced `missing_row` for `data/docs/notes/alpha.md`. Inserting a row for a nonexistent `data/docs/notes/ghost.md` and emptying `events` while a queue file existed produced, in one report:
 

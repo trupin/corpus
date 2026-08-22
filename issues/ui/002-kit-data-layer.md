@@ -14,7 +14,7 @@ P0
 
 ## Model
 
-opus — contract shapes are pinned by `packages/contract`, the invalidation pattern is specified in SPEC.md §2/§11, and the query-key scheme is prescribed below; this is careful plumbing, not architecture.
+opus — contract shapes are pinned by `packages/contract`, the invalidation pattern is specified in SPEC.md §2/§10, and the query-key scheme is prescribed below; this is careful plumbing, not architecture.
 
 ## Dependencies
 
@@ -26,7 +26,7 @@ opus — contract shapes are pinned by `packages/contract`, the invalidation pat
 - SPEC.md §2 — "Architecture overview", rules 2 and 3 (the UI never talks to the agent directly; the server never pushes data over SSE — only `invalidate` events carrying query keys; the UI refetches over plain HTTP)
 - SPEC.md §9.2 — "HTTP API" (the endpoints these hooks wrap, notably the single `GET /api/docs` collection query)
 - SPEC.md §10 — "Plugin system" ("The UI contract is `@corpus/kit`"; plugin query keys namespaced `x/<plugin>/…`)
-- SPEC.md §11 — "UI — the board", live updates bullet (single resilient SSE connection; `invalidate` → TanStack Query key invalidation; optimistic append of the user's own turn, reconciled on refetch)
+- SPEC.md §10 — "UI — the board", live updates bullet (single resilient SSE connection; `invalidate` → TanStack Query key invalidation; optimistic append of the user's own turn, reconciled on refetch)
 - `design/index.html` — **authoritative look & feel** (this issue ships no chrome, but any dev/debug surface it adds must use kit tokens and the prototype's visual language)
 
 ## Summary
@@ -90,7 +90,7 @@ Prefix matching is the whole point: an `invalidate` naming `["docs"]` must inval
 
 **Reconnect + missed invalidations.** `EventSource` retries on its own, but its schedule is not ours: manage reconnection explicitly (close on `error`, reconnect after `min(cap, base * 2^n)` with jitter). On every **successful (re)connect after a drop**, call `queryClient.refetchQueries({ type: "active" })` — while disconnected we cannot know which keys changed, so the only correct recovery is to refetch what is on screen. Do **not** do this on the very first connect (nothing is stale yet). Expose the state so the console can show a "reconnecting" indicator instead of silently serving stale data.
 
-**Optimistic turn append (SPEC.md §11).** `useAppendTurn` writes a provisional turn into the `["threads", id]` cache immediately with a client-side marker (e.g. `pending: true`), fires the POST, and on success invalidates the thread key. Reconciliation must be by **turn timestamp** — the CLI guarantees unique monotonic turn timestamps within a thread (SPEC.md §6), so the server's turn replaces the provisional one rather than appearing beside it. On error, restore the pre-mutation snapshot and surface the error to the caller.
+**Optimistic turn append (SPEC.md §10).** `useAppendTurn` writes a provisional turn into the `["threads", id]` cache immediately with a client-side marker (e.g. `pending: true`), fires the POST, and on success invalidates the thread key. Reconciliation must be by **turn timestamp** — the CLI guarantees unique monotonic turn timestamps within a thread (SPEC.md §6), so the server's turn replaces the provisional one rather than appearing beside it. On error, restore the pre-mutation snapshot and surface the error to the caller.
 
 **The boundary rule.** `packages/kit/src/index.ts` is the plugin contract. Everything UI-003 and later consume goes through it; a component reaching past the kit into the generated client is a review-blocking defect (and, per SPEC.md §10, lint-forbidden for plugins). Keep the export surface deliberate — export hooks, the provider, the key builders, and types; do not re-export the raw client's internals.
 
@@ -123,7 +123,7 @@ Vitest in `packages/kit` (jsdom, React Testing Library where hooks need a render
 
 ## E2E Verification Plan
 
-Against the **real running application** — real server, real files, real SSE. Per SPEC.md §15 M2/M3 the live-update loop is the thing being proven.
+Against the **real running application** — real server, real files, real SSE. Per SPEC.md §12 M2/M3 the live-update loop is the thing being proven.
 
 ### Verification Steps
 

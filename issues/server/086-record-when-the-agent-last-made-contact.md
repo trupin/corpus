@@ -24,7 +24,7 @@ opus
 ## Spec References
 
 - SPEC.md §7 — the queue, and the long-poll idle endpoint
-- SPEC.md §11 line 469 — the agent pill, as amended by SHARED-033
+- SPEC.md §10 line 469 — the agent pill, as amended by SHARED-033
 - SPEC.md §9.2 — queue status
 
 ## Summary

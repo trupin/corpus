@@ -280,7 +280,7 @@ copy of that check is the gate (INFRA-025 moved it out of pre-push).
 Three repo-wide sweeps had to be told about the new surface, each of which would
 otherwise have caught it — which is the point of them:
 
-- `openapi.test.ts` §14 carriers: `ReattachThreadResponse` added, because a
+- `openapi.test.ts` §11 carriers: `ReattachThreadResponse` added, because a
   re-attach rewrites the parent's frontmatter and auto-commits it, so a rejected
   hook is exactly as reachable here as on a create
 - the request-body census: 16 → **17**, and the mandatory/omittable partition

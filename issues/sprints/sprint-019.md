@@ -148,7 +148,7 @@ ids that 404.
 thread's own document id. Related sets will contain threads. The issue never says what should happen
 to them (TEST-691).
 
-There is also **no existing backlinks module** to model on: the §11 panel is the general collection
+There is also **no existing backlinks module** to model on: the §10 panel is the general collection
 query's `references=` filter (`query.ts:207-211`, consumed at
 `apps/ui/src/reader/Backlinks.tsx:1-16`). Forward links have no query filter at all today.
 
@@ -893,7 +893,7 @@ TEST-732: The wave's one seam, demonstrated end to end by the evaluator
   adopting `/api/search` are CONTRACT-024, SERVER-047, CLI-021, AGENT-009, UI-025, UI-026. Edit 4's
   spec text describes context packs; **no code in this wave implements them.**
 - **Any UI change.** `apps/ui` and `packages/kit` are untouched. The overlay keeps querying
-  `GET /api/docs` (§11 is unamended in Phase A by design — Edit 11 is Phase C).
+  `GET /api/docs` (§10 is unamended in Phase A by design — Edit 11 is Phase C).
 - **Making saved views or board columns ranked.** The signed drafting decision keeps them filtered
   lists on `GET /api/docs`; relevance ranking is a property of interactive search.
 - **Multi-hop graph expansion.** SERVER-041 is one hop through `links` — outgoing, incoming, mutual.

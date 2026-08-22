@@ -31,7 +31,7 @@ Same real-app rig as UI-022/UI-023: workspace `/Users/theophanerupin/.claude/job
 | 2 | Right-click on a row while any selection exists (incl. the auto-selected word under the cursor): the row's Corpus menu opens — reproduce report 2's case and prove it fixed | PASS | FACT-4 |
 | 3 | Right-click in the editor with no selection: native menu (spellcheck) — unchanged | PASS | FACT-5 |
 | 4 | Right-click on empty/non-item space: native menu — unchanged | PASS | FACT-5 |
-| 5 | Title field, inputs, plugin surfaces: native behavior unchanged | PASS (plugin surfaces N/A) | FACT-5; plugin-rendered surfaces are explicitly out of scope in v1 per SPEC §11 and were not exercised |
+| 5 | Title field, inputs, plugin surfaces: native behavior unchanged | PASS (plugin surfaces N/A) | FACT-5; plugin-rendered surfaces are explicitly out of scope in v1 per SPEC §10 and were not exercised |
 
 ### FACT-1 — the selection menu, item set and order
 
@@ -128,7 +128,7 @@ A live selection never suppresses an item's menu — rows, column headers and jo
 | Ghost column / board background | `BUTTON.col ghost-col` | **0** |
 | Empty space inside an open reader | `DIV.reader-scroll` | 1 — `Actions for Mortgage options` `[Still current, Archive, Delete…]` |
 
-The last row is correct, not a violation: SPEC §11 lists "the open reader (its ⋯ menu set)" among the actionable items, so the reader surface *is* a Corpus item. Truly non-item space (ghost column, board background) yields the native menu, and the editor with nothing selected keeps spellcheck's home.
+The last row is correct, not a violation: SPEC §10 lists "the open reader (its ⋯ menu set)" among the actionable items, so the reader surface *is* a Corpus item. Truly non-item space (ghost column, board background) yields the native menu, and the editor with nothing selected keeps spellcheck's home.
 
 Negative claims above were re-derived with `/usr/bin/grep` over a saved DOM dump where applicable (see LEDGER-1).
 
@@ -155,11 +155,11 @@ Re-derived per the negative-evidence rule against a saved DOM dump (`…/tmp/eva
 /usr/bin/grep -o  'data-anchor[a-z-]*="[^"]*"'       → 1 × data-anchor-margin="true"
 ```
 
-So the CSS ships and nothing uses it. Because the floating-toolbar path behaves identically, UI-024 did not cause this — but it contradicts SPEC §11 ("threads sit Docs-style in the right margin, **aligned to their anchors with connectors**"; "Clicking an anchored **highlight** opens its thread") and it means the log's claim was not verified as written. Worth its own issue against the anchor layer.
+So the CSS ships and nothing uses it. Because the floating-toolbar path behaves identically, UI-024 did not cause this — but it contradicts SPEC §10 ("threads sit Docs-style in the right margin, **aligned to their anchors with connectors**"; "Clicking an anchored **highlight** opens its thread") and it means the log's claim was not verified as written. Worth its own issue against the anchor layer.
 
 ### LEDGER-2: `↵` does not activate a context-menu item (any Corpus menu, pre-existing)
 
-SPEC §11: "The menu follows the app's existing menu conventions — `esc` dismisses, arrows navigate, `↵` activates."
+SPEC §10: "The menu follows the app's existing menu conventions — `esc` dismisses, arrows navigate, `↵` activates."
 
 ```
 row menu, ArrowDown → focused item data-act="open"
@@ -175,7 +175,7 @@ selection menu, ArrowDown ×2 → focused data-act="copy"
 
 ### LEDGER-3: a thread conversation yields the reader's item menu, not the native menu
 
-The issue's "As built" note says that where the selection menu could offer nothing but Copy — "a thread's conversation, a `view`, a foreign lock" — "it declines and **the native menu appears**". Observed: selecting `ARM on the table` inside a thread turn and right-clicking gives `Actions for Re: "15-year fixed and a 7/1 ARM"` `[Still current, Resolve, Archive, Delete…]` — the reader's item menu, no native menu. That is the correct outcome under SPEC §11 (the open reader is an item), so the behavior is right and the note's prose is what is inaccurate. Recorded so the issue text is not taken as the contract later.
+The issue's "As built" note says that where the selection menu could offer nothing but Copy — "a thread's conversation, a `view`, a foreign lock" — "it declines and **the native menu appears**". Observed: selecting `ARM on the table` inside a thread turn and right-clicking gives `Actions for Re: "15-year fixed and a 7/1 ARM"` `[Still current, Resolve, Archive, Delete…]` — the reader's item menu, no native menu. That is the correct outcome under SPEC §10 (the open reader is an item), so the behavior is right and the note's prose is what is inaccurate. Recorded so the issue text is not taken as the contract later.
 
 ## Summary
 

@@ -4,7 +4,7 @@
 shared (orchestrator)
 
 ## Status
-done — AUTHORIZED by the user 2026-08-21, applied to SPEC.md §11 the same day
+done — AUTHORIZED by the user 2026-08-21, applied to SPEC.md §10 the same day
 
 ## Priority
 P1
@@ -29,7 +29,7 @@ is quoted in full in the release report so the user reads what they signed.
 
 ## What the rider says
 
-§11's console paragraph gains a third tab. The applied text:
+§10's console paragraph gains a third tab. The applied text:
 
 > The expanded drawer holds **three tabs**, and none of them is the corpus —
 > each is the running system's own account of itself, which is what puts them
@@ -54,7 +54,7 @@ is quoted in full in the release report so the user reads what they signed.
 > Error toasts are unchanged in how they end: they expire on their dwell like
 > any other, because a toast that waits to be acknowledged accumulates on the
 > board, and the durable copy here is what makes expiry safe. This is also the
-> surface §14 already assumes when it says a failed workspace hook gets "console
+> surface §11 already assumes when it says a failed workspace hook gets "console
 > visibility". _(Rider authorized 2026-08-21.)_
 
 ## The calls this made, and what they rejected
@@ -66,7 +66,7 @@ appending refusals to the **Jobs** list. A refusal of a person's own write is
 not a job, it would move the job counts on the strip, and the detail pane below
 Jobs is a log stream a notice has nothing to put in.
 
-**2. The tabs' shared justification had to be rewritten, not extended.** §11
+**2. The tabs' shared justification had to be rewritten, not extended.** §10
 said both tabs "are the agent's own machinery rather than the corpus". A
 refusal of a person's write is not agent machinery, so a third tab under that
 sentence would have made it false. The claim is now that none of the three is
@@ -98,7 +98,7 @@ the stack does not move, and it does not depend on how the full text is reached.
 
 ## Consequences elsewhere
 
-- **§14 gets no edit and needs none.** Its hook-failure bullet already promises
+- **§11 gets no edit and needs none.** Its hook-failure bullet already promises
   "a warning on the API response, a server log entry, and console visibility".
   No console surface delivered the third. This rider makes an existing sentence
   true rather than adding a claim.
@@ -106,4 +106,4 @@ the stack does not move, and it does not depend on how the full text is reached.
   the fastest path for the pointer user and costs nothing.
 
 ## Acceptance
-Applied to SPEC.md §11 on 2026-08-21. UI-139 implements it.
+Applied to SPEC.md §10 on 2026-08-21. UI-139 implements it.

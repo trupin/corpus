@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — the board is operable from the keyboard; a menu reachable by
+- SPEC.md **§10** — the board is operable from the keyboard; a menu reachable by
   pointer is reachable by key
 
 ## Summary

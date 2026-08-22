@@ -26,7 +26,7 @@ source (`apps/cli/src/bin/corpus.ts` via tsx) with cwd inside the workspace. Por
 The log **corrects its own issue's premise** — the acceptance criterion said a
 not-found quote should surface "the server's error", and the log explains that §6
 makes an unresolvable anchor a normal state, so the server answers `201` plus a
-`§14 orphaned_anchor` warning instead. I verified that reading against the running
+`§11 orphaned_anchor` warning instead. I verified that reading against the running
 server and it is correct; the criterion, not the implementation, was wrong.
 
 ## Criteria Results
@@ -132,7 +132,7 @@ not only the one this call made. After two deliberately-orphaned creates on the 
 parent, the second call's `--json` returned two `orphaned_anchor` entries, and a
 third returned the human line `— 2 warnings: orphaned_anchor, orphaned_anchor`.
 
-This follows from §14 validation being run over the whole rewritten frontmatter, and
+This follows from §11 validation being run over the whole rewritten frontmatter, and
 the human single-warning line does name the right anchor. But a caller reading the
 plural line cannot tell which warning is about the anchor it just created. Worth a
 sentence in the verb's help, or scoping the printed list to the new anchor id.

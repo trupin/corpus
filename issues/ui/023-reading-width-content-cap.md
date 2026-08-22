@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — column widens while reading; per-view width in the view doc's frontmatter
+- SPEC.md §10 — column widens while reading; per-view width in the view doc's frontmatter
 
 ## Summary
 User report (2026-07-30, screenshot): resize a column wider, open a thread, and the

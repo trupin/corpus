@@ -53,7 +53,7 @@ stays the default, unchanged.
    written for prose may not be a good gloss. A second field per flag is
    honest and can rot. Choose, and say what keeps the two in step.
 2. **Whether `docs/cli.md` gains the brief form too.** It is generated and
-   drift-checked (§2.3, §14), so anything added here must survive that check.
+   drift-checked (§2.3, §11), so anything added here must survive that check.
 3. **Whether the agent's own skills should be taught to use it.** A brief mode
    nothing invokes has saved nothing — this may want an `agent-runtime` issue
    behind it, and if so, file it rather than assuming.

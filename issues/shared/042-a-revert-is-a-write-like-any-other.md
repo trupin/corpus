@@ -25,7 +25,7 @@ fable
 ## Spec References
 
 - SPEC.md **§7** "Loop safety" — replaced
-- SPEC.md **§2.4** (twice), **§4** (twice), **§15** M5 — references removed
+- SPEC.md **§2.4** (twice), **§4** (twice), **§12** M5 — references removed
 - SPEC.md **§9.1** — the watcher and out-of-band edits
 
 ## Summary
@@ -45,7 +45,7 @@ did not do.
 Following that through led somewhere simpler still. **A revert is a write whose
 content came from history.** It needs no verb and no revert engine:
 
-- through the ordinary write path it reconciles anchors (§6), validates (§14),
+- through the ordinary write path it reconciles anchors (§6), validates (§11),
   commits under the acting party (§4), re-projects, and is protected by §7's key
 - a dedicated server-side verb has to reimplement all four, and replaces a whole
   file rather than reverting a path — which is exactly how the data loss happened
@@ -73,7 +73,7 @@ That is a promotion, not a discovery: SERVER-090 was filed as P1 tidiness on
 
 §7's "Loop safety" bullet replaced in full; five other references removed —
 §2.4's two "covers/undoes a bad upgrade", §4's read-back sentence and "One
-action, one commit", and §15's M5 check.
+action, one commit", and §12's M5 check.
 
 ## Acceptance Criteria
 

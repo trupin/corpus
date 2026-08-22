@@ -98,7 +98,7 @@ id: doc_unaavdq2   type: todo   title: Groceries   status: open   …
 ## Notes
 ```
 
-Pre-filled from the installed template, per §11 — the end-to-end proof that the install landed
+Pre-filled from the installed template, per §10 — the end-to-end proof that the install landed
 somewhere the system actually looks.
 
 ### TEST-520 · the manifest records the provenance the upgrade needs

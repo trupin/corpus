@@ -16,7 +16,7 @@ P2 (nice-to-have)
 
 ## Model
 
-opus — once the question below is answered. The **question itself** is a §14
+opus — once the question below is answered. The **question itself** is a §11
 semantics change and is orchestrator work (CLAUDE.md: preparing SPEC.md changes
 for user sign-off is never delegated). If the answer is "no", this issue closes
 with no code at all.
@@ -26,17 +26,17 @@ with no code at all.
 - Depends on: SERVER-066 (which introduced the first non-blocking error code and
   then, in review, closed the log half of this issue)
 - Blocks: —
-- Related: any future §14 rule that is an **error** the write path does not
+- Related: any future §11 rule that is an **error** the write path does not
   refuse. Today there is exactly one (`unterminated-fence`); this issue is about
   whether the second one has anywhere to go on the wire.
 
 ## Spec References
 
-- SPEC.md **§14** — "Validation, drift checks, and hooks": "Every server mutation
+- SPEC.md **§11** — "Validation, drift checks, and hooks": "Every server mutation
   validates before writing", and the warning family it carves out by name —
   "Unresolvable-but-well-formed anchors (orphaned threads) and unresolved
   `[[refs]]` are warnings, not failures"
-- SPEC.md **§14** — the auto-commit half: a failure "surfaces loudly — a warning
+- SPEC.md **§11** — the auto-commit half: a failure "surfaces loudly — a warning
   on the API response, a server log entry, and console visibility"
 - SPEC.md **§6** — the `## <author> · <ts>` turn format, which an unterminated
   fence destroys silently
@@ -44,7 +44,7 @@ with no code at all.
 
 ## Summary
 
-`checkSave` ran §14's validator over the bytes of every save and then returned
+`checkSave` ran §11's validator over the bytes of every save and then returned
 `findings: report.warnings` — so a finding that was an **error** but not a
 *blocking* error was computed on every write and thrown away. It reached no
 response, no log, and no console. The one rule in that shape,
@@ -64,26 +64,26 @@ the file and the finding, while the write is still not refused.
 
 **What is left is one question, and it is not a coding question.** Putting the
 same finding on the mutation **response** — where the console and the UI would
-see it — requires a third `WarningCode`. §14's wire warning family is a closed
+see it — requires a third `WarningCode`. §11's wire warning family is a closed
 two-member set (`CHECK_WARNING_CODES` = `anchor-unresolved`, `ref-unresolved`),
 and both members are *normal outcomes of using the system as designed*, which is
 the whole reason they are warnings. `unterminated-fence` is not that; it is an
 **error** severity finding. Reporting it as a warning would put an
-error-severity §14 finding into the wire's warning channel — a change to what
-§14's severity partition *means*, not a transcription of it. `codes.test.ts`
+error-severity §11 finding into the wire's warning channel — a change to what
+§11's severity partition *means*, not a transcription of it. `codes.test.ts`
 asserts behaviourally that no code appears on both sides of that partition, and
 `isSkillFrontmatterException` already refuses to re-grade a finding for exactly
 this reason. So the honest options are: leave the response alone (the log is the
 operator channel, and `corpus doc check` is the on-demand one), widen the warning
 family and accept that "warning" no longer implies "not an error", or introduce a
-separate response-side channel for non-blocking errors. All three are §14
+separate response-side channel for non-blocking errors. All three are §11
 decisions and belong with the user.
 
 ## Acceptance Criteria
 
 ### Already met (SERVER-066 review round — recorded here, not re-done)
 
-- [x] A save carrying a non-blocking §14 **error** is no longer discarded:
+- [x] A save carrying a non-blocking §11 **error** is no longer discarded:
       `SaveCheck.findings` carries the tolerated errors as well as the warnings
 - [x] `validateBeforeWrite` logs the two families **apart**, errors at
       `logger.error` (ungated) and warnings at `logger.info`
@@ -98,13 +98,13 @@ decisions and belong with the user.
 
 ### What this issue is now
 
-- [ ] The question is put to the user, stated as a §14 semantics change and not
+- [ ] The question is put to the user, stated as a §11 semantics change and not
       as a bug: **should a non-blocking error appear on the mutation response,
       and if so under what?** With the three options above and their costs.
 - [ ] If the answer is **no**: this issue closes with a recorded decision and no
       code. The docblock on `SaveCheck.warnings` already states the rationale;
       it is updated to cite the decision rather than the open question.
-- [ ] If the answer is **yes**: a SPEC.md §14 rider is drafted and signed
+- [ ] If the answer is **yes**: a SPEC.md §11 rider is drafted and signed
       *first*, then a contract issue transcribes the new code (with its own
       severity story), then the server maps `REPORTED_CHECK_CODES` onto it. That
       is three issues, filed in that order — not this one growing.
@@ -121,7 +121,7 @@ decisions and belong with the user.
 
 ### Files a "yes" answer would touch
 
-- `SPEC.md` §14 — the rider, first and separately
+- `SPEC.md` §11 — the rider, first and separately
 - `packages/contract/src/schemas/warning.ts` — `WARNING_CODES` is the closed
   four-member response family (`commit_failed`, `commit_skipped`,
   `orphaned_anchor`, `unresolved_ref`); a third *validation* member lands here
@@ -156,7 +156,7 @@ no such blind spot, stays the place a genuinely dangling anchor is reported.
 
 ### Edge cases
 
-- A save producing **both** a tolerated error and a §14 warning — the two
+- A save producing **both** a tolerated error and a §11 warning — the two
   families stay separate at every surface they reach; neither is folded into the
   other's count.
 - A workspace with no git: `commit_skipped` is a *response* warning about the
@@ -225,7 +225,7 @@ verification is already recorded in SERVER-066 and is not re-run here.]_
 
 ## Completion Checklist (orchestrator)
 
-- [ ] The §14 question put to the user and the answer recorded here
+- [ ] The §11 question put to the user and the answer recorded here
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[SERVER-067]` prefix

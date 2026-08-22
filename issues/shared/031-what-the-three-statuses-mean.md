@@ -25,10 +25,10 @@ fable
 
 - SPEC.md §5 line 157 — `status: open | resolved | archived (meaning per type;
   threads use it heavily)` — the clause this rider replaces
-- SPEC.md §11 — the bulk-selection rider signed 2026-08-05, whose Resolve
+- SPEC.md §10 — the bulk-selection rider signed 2026-08-05, whose Resolve
   example this rider corrects
 - SPEC.md §9 — deletion is user-only, git is its only recovery
-- SPEC.md §11 — "include archived" lifts the default exclusion
+- SPEC.md §10 — "include archived" lifts the default exclusion
 
 ## Summary
 
@@ -65,7 +65,7 @@ Replacing §5's parenthetical on the `status` line:
 >   unrelated thing: it is `resolved` plus hidden, so archiving settles a document
 >   and puts it away in one act, and **there is no such state as an archived
 >   document with work outstanding**. It is excluded by default from lists and
->   views (§11) and remains fully indexed, searchable and valid — archiving says
+>   views (§10) and remains fully indexed, searchable and valid — archiving says
 >   where a document is kept, never what it is worth. It is reversible, and
 >   **search is how it is reversed**: the "include archived" chip brings archived
 >   documents back alongside everything else, and unarchiving happens from there,
@@ -92,7 +92,7 @@ Replacing §5's parenthetical on the `status` line:
 
 ## Drafted rider text — part 2 of 2
 
-Replacing the Resolve clause in §11's bulk-selection rider (signed 2026-08-05).
+Replacing the Resolve clause in §10's bulk-selection rider (signed 2026-08-05).
 Current text:
 
 > An action is offered only when it applies to **every** selected item, so a
@@ -115,20 +115,20 @@ mismatch exists. Replacement:
       they are one decision expressed in two places, and part 2 is meaningless
       without part 1. Still separate from SHARED-036 / SHARED-030.
 - [ ] User signs off, or amends
-- [ ] Applied to SPEC.md §5 and §11 with `_(Rider signed YYYY-MM-DD.)_` markers;
+- [ ] Applied to SPEC.md §5 and §10 with `_(Rider signed YYYY-MM-DD.)_` markers;
       the 2026-08-05 rider's own signature line is preserved and annotated as
       corrected rather than replaced wholesale
 - [ ] Contradiction sweep recorded here, specifically:
       - §6 — "a resolved thread is collapsed by default". Collapse is explicitly
         **not** hidden ("Collapsed is never hidden"), so this is consistent —
         confirm and record it rather than assuming
-      - §11 Attention — resolving removes a row from Attention. Consistent with
+      - §10 Attention — resolving removes a row from Attention. Consistent with
         "no further action required"; confirm
       - §5 staleness ramp — the rider now says resolving stops it. Check §5's
         own text and the Attention "stale-for-review" reason agree, and that
         nothing else promises a resolved document will still be offered "still
         current"
-      - §9.1 / §14 — **checked 2026-08-08 and it holds**: deletion purges the
+      - §9.1 / §11 — **checked 2026-08-08 and it holds**: deletion purges the
         semantic index (`apps/server/src/projection/semantic-integrity.ts:83`,
         "Deleting a document deletes its chunks in the same statement sequence").
         No issue needed
@@ -149,7 +149,7 @@ None — spec text. Implementation is UI-094 plus whatever the §9.1 sweep turns
   rendering rule about conversations, not a visibility rule, and must not be
   read as an exception to "stays exactly as visible as it was".
 - **Archiving an `open` document** settles it in the same act, per the ladder.
-  Confirm nothing in §5 or §11 describes archiving as leaving status untouched.
+  Confirm nothing in §5 or §10 describes archiving as leaving status untouched.
 - **Unarchiving lands on `resolved`.** Every surface offering Unarchive must say
   so, or the user learns it by surprise — including the bulk path (SHARED-032).
 - **A resolved document that would otherwise be stale** no longer climbs the
@@ -173,7 +173,7 @@ _N/A — spec rider._
 
 - [ ] Both parts read aloud verbatim, separately from the other held riders
 - [ ] Signed by user
-- [ ] Applied to SPEC.md §5 and §11 with signature markers
-- [ ] Contradiction sweep across §6, §9, §9.1, §11, §14 recorded here
+- [ ] Applied to SPEC.md §5 and §10 with signature markers
+- [ ] Contradiction sweep across §6, §9, §9.1, §10, §11 recorded here
 - [ ] SHARED-036 re-based on this rider
 - [ ] Committed with `[SHARED-031]` prefix

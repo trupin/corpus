@@ -23,8 +23,8 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — focus mode (⤢), "a full-viewport reading/editing surface"
-- SPEC.md §11 — "**Navigation history**: each reader keeps its own stack …
+- SPEC.md §10 — focus mode (⤢), "a full-viewport reading/editing surface"
+- SPEC.md §10 — "**Navigation history**: each reader keeps its own stack …
   Back pops with scroll position restored; the reader exits to its list only when
   the stack empties"
 - `design/index.html` — authoritative for look & feel
@@ -71,7 +71,7 @@ Either:
 **Do not skip this step.** (a) is fixed in the nav stack; (b) is fixed in the
 header's affordances, and removing the back button outright — the literal request
 — would in case (b) delete the only way to walk back through an excursion without
-leaving focus mode, which §11's navigation-history rule requires.
+leaving focus mode, which §10's navigation-history rule requires.
 
 Report which it is before changing anything, and say so to the orchestrator if it
 turns out to be (b), because the resolution is then a design call rather than a
@@ -83,7 +83,7 @@ bug fix.
 - [ ] Focus mode never shows a back control that names the document already open
 - [ ] Focus mode never shows two controls that perform the same navigation
 - [ ] Where the stack **has** depth, Back still works and still names where it
-      goes — §11's per-reader navigation stack is not weakened
+      goes — §10's per-reader navigation stack is not weakened
 - [ ] `esc` behaviour is unchanged: at depth 0 it closes, with depth it pops
       (`FocusMode.tsx:141`)
 - [ ] Shift-click / ⇧esc "straight to list" still works where it applies

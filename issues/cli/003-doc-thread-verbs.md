@@ -19,7 +19,7 @@ opus — thin mappings onto endpoints already pinned by the contract and the spe
 ## Spec References
 - SPEC.md §7 (agent stewardship — `doc create|edit|move|archive`, deletion is user-only; skills as documents, `corpus skill rollback` loop safety)
 - SPEC.md §9.2 (HTTP API — the endpoints these verbs call)
-- SPEC.md §14 (validation and git hooks — `doc check --staged`, `db doctor` in pre-commit)
+- SPEC.md §11 (validation and git hooks — `doc check --staged`, `db doctor` in pre-commit)
 - CLAUDE.md — Architecture Decision 2 (server is the sole writer; CLI is a thin HTTP client)
 
 ## Summary
@@ -104,7 +104,7 @@ Vitest in `apps/cli`, colocated, with a **real** `node:http` stub server mounted
 - **Open Conflict 1 / 3 — `doc check`, `skill rollback`: `STRUCK`.** No validation or
   targeted-revert route exists in `packages/contract`. ACs 5 and 8 and TEST-107…112 are not
   implemented here; they move to CONTRACT-008 → SERVER-019 → CLI-006. Nothing in this change
-  validates locally: §14's one-validator rule is respected.
+  validates locally: §11's one-validator rule is respected.
 - **Open Conflict 2 — `.githooks/pre-commit`: `STRUCK`.** Untouched, per the orchestrator's
   instruction. The tool repository is not a workspace.
 - **Open Conflict 4 — the default actor is `user`.** Resolved once in the dispatcher

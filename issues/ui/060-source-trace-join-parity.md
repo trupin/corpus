@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Thread view, "Commenting on a selection" (SHARED-009 Amendment 2)
+- SPEC.md §10 Thread view, "Commenting on a selection" (SHARED-009 Amendment 2)
 
 ## Summary
 Found by the Fable review of PR #20, fixed there only to the extent of making it

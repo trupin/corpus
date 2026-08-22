@@ -23,7 +23,7 @@ opus
 ## Spec References
 
 - SPEC.md **§7** — both writers participate
-- SPEC.md **§11** — "The board is **never read-only**", and "Autosave, no save
+- SPEC.md **§10** — "The board is **never read-only**", and "Autosave, no save
   button"
 
 ## Summary

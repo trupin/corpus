@@ -24,7 +24,7 @@ opus
 ## Spec References
 
 - SPEC.md §6 — thread turn format (`## <author> · <ISO timestamp>` delimiters)
-- SPEC.md §11 — Thread view, copyable canvases (rider signed 2026-08-02)
+- SPEC.md §10 — Thread view, copyable canvases (rider signed 2026-08-02)
 
 ## Summary
 

@@ -55,7 +55,7 @@ lands, the repo-wide gate cannot go green.
 
 Kit's public surface shrank by eight exports and gained **`staleKeyDoc`**, which
 is the cross-domain event this plugin should consume instead. The lock chip has
-no replacement and should not get one: §11 says the board is never read-only, and
+no replacement and should not get one: §10 says the board is never read-only, and
 a chip announcing that someone else holds a document is the read-only banner in
 miniature.
 
@@ -75,7 +75,7 @@ miniature.
       fix the one call site that failed a test — swept, see log
 - [x] `useDocLock` and `LockChip` are gone from `plugins/todos/ui/`, and nothing
       seeds `/api/locks` in its fixtures. **Do not reintroduce a chip** that says
-      another writer holds the document — §11 is explicit that the board is never
+      another writer holds the document — §10 is explicit that the board is never
       read-only, and that chip is the banner in miniature — no replacement chip;
       the row's test now asserts the *inverse*
 - [x] `npm run build` passes repo-wide, and the 35 plugin e2e specs run again

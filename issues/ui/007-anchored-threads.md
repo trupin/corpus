@@ -24,11 +24,11 @@ fable — mapping anchor character offsets through ProseMirror positions (and ke
 ## Spec References
 
 - SPEC.md §6 — "Threads and anchors" → text-quote selectors in the parent's frontmatter, the four-step **resolution** ladder, **orphaned** threads, **anchor reconciliation** on every save
-- SPEC.md §11 — _Document view_ → **Commenting** (selection → floating toolbar → thread composer with "ask agent" toggle), **Adaptive thread placement** (margin cards in focus/wide, chips in narrow columns), clicking a highlight opens its thread, typing inside one just edits, whole-document + orphaned threads listed below the body
+- SPEC.md §10 — _Document view_ → **Commenting** (selection → floating toolbar → thread composer with "ask agent" toggle), **Adaptive thread placement** (margin cards in focus/wide, chips in narrow columns), clicking a highlight opens its thread, typing inside one just edits, whole-document + orphaned threads listed below the body
 - SPEC.md §8 — agent participation: the composer's toggle translates to the agent flag on the POST
 - SPEC.md §9.2 — `GET /api/docs/:id` (anchors with resolved range or orphaned), `POST /api/threads` (selector + first turn + agent flag), `PUT /api/docs/:id` (response reports remapped and orphaned anchors)
-- SPEC.md §15 M3 — Playwright check: "select text → comment ('note only') → highlight + chip appear without reload"; "type (file updates via autosave; **anchors survive**)"
-- SPEC.md §15 M1 — the reconciliation semantics the UI must visibly honor: edits before/after an anchored range keep it resolved; edits inside update `exact`; deleting the range orphans the thread
+- SPEC.md §12 M3 — Playwright check: "select text → comment ('note only') → highlight + chip appear without reload"; "type (file updates via autosave; **anchors survive**)"
+- SPEC.md §12 M1 — the reconciliation semantics the UI must visibly honor: edits before/after an anchored range keep it resolved; edits inside update `exact`; deleting the range orphans the thread
 - `design/index.html` — **authoritative look & feel** (`.anchor-hl`, `.anchor-hl.resolved`, `.anchor-pip`, `.thread-slot`/`.t-chip`/`.t-collapse`, `.thread-card` + `.resolved`, `.focus-inner.with-margin`, `.focus-margin` + its `::before` connector, `.comments-btn`/`.comments-pop`, `.sel-toolbar .comment-btn`; and the `layoutMargin()` measure-sort-cascade routine)
 
 ## Summary
@@ -140,15 +140,15 @@ Vitest in `apps/ui`:
 ### Verification Steps
 
 1. Start the real stack (`npm run watch`) against a `corpus init` workspace with a seeded multi-paragraph document.
-2. **§15 M3 gold path**: open the document in a column, select a phrase, click **💬 Comment**, type a comment, set the toggle to `○ note only`, submit. Expect: the highlight and its `💬 1 · user` chip appear **without a page reload**; the thread appears in an Open-threads column; `cat` the parent file and confirm an `anchors:` entry with matching `exact`/`prefix`/`suffix`; confirm the thread file exists under `data/threads/` with `parent` and `anchor` set; confirm **no** queue event was enqueued (`ls .corpus/queue/pending/` empty) since it was note-only.
+2. **§12 M3 gold path**: open the document in a column, select a phrase, click **💬 Comment**, type a comment, set the toggle to `○ note only`, submit. Expect: the highlight and its `💬 1 · user` chip appear **without a page reload**; the thread appears in an Open-threads column; `cat` the parent file and confirm an `anchors:` entry with matching `exact`/`prefix`/`suffix`; confirm the thread file exists under `data/threads/` with `parent` and `anchor` set; confirm **no** queue event was enqueued (`ls .corpus/queue/pending/` empty) since it was note-only.
 3. Repeat with `◉ ask agent` and confirm a `comment.created` event lands in `.corpus/queue/pending/`.
-4. **Anchor survival (§15 M1 semantics through the UI)**: type a new sentence **before** the anchored range → after autosave, the highlight is still on the same words; `git diff` shows the anchor's `prefix` refreshed and `exact` unchanged. Repeat with an edit **after** the range. Then edit **inside** the range and confirm `exact` updated and the highlight followed. Then delete the whole range and confirm the thread moves to the detached section with no highlight.
+4. **Anchor survival (§12 M1 semantics through the UI)**: type a new sentence **before** the anchored range → after autosave, the highlight is still on the same words; `git diff` shows the anchor's `prefix` refreshed and `exact` unchanged. Repeat with an edit **after** the range. Then edit **inside** the range and confirm `exact` updated and the highlight followed. Then delete the whole range and confirm the thread moves to the detached section with no highlight.
 5. **Serialization purity**: after all of the above, `git diff` on the document shows no stray markup (no `<span>`, no marker characters) anywhere in the body.
 6. **Adaptive placement**: with the reader narrow, confirm chips at the anchor blocks. Press `f` (or ⤢) for focus mode — confirm the layout switches to margin cards with connectors, sorted by anchor position and non-overlapping. Add a reply to the top card and confirm the cards below re-cascade. Resize the window and confirm recompute.
 7. Click a highlight → its thread opens/expands and its unread badge clears (verify against the Attention column / row badge).
 8. Resolve the thread → chip and card take the resolved styling and the highlight goes dotted-grey.
 9. Delete the thread (`corpus doc delete <threadId>` or the ⋯ menu) → the highlight disappears live via SSE and the parent's frontmatter `anchors` entry is gone.
-10. Playwright: `apps/ui/e2e/anchors.spec.ts` automating steps 2, 4 (before/after edits), and 6 against the real app — this is the §15 M3 anchor check.
+10. Playwright: `apps/ui/e2e/anchors.spec.ts` automating steps 2, 4 (before/after edits), and 6 against the real app — this is the §12 M3 anchor check.
 
 ## E2E Verification Log
 
@@ -183,7 +183,7 @@ The browser is Chromium, driven by Playwright scripts under
 `/tmp/corpus-s011-ui007-e2e/` against `http://localhost:5280`. Every document is
 opened the way a person opens one: ⌘K omnibox → the result row.
 
-**1. §15 M3's gold path — select, comment, note only (TEST-101…104)**
+**1. §12 M3's gold path — select, comment, note only (TEST-101…104)**
 
 Selected `6.1%` in the first paragraph. The `.sel-toolbar` opened with
 `💬 Comment` **enabled**; the popover opened carrying the markdown quote:
@@ -250,7 +250,7 @@ character. Only the frontmatter map changed. The unit assertion is the byte one
 (`anchorDecorations.test.ts` → "serializes byte-identically with every highlight
 rendered").
 
-**4. §15 M1's reconciliation semantics, through the UI (TEST-110).** Typed in the
+**4. §12 M1's reconciliation semantics, through the UI (TEST-110).** Typed in the
 live editor, each step waited past the 700 ms autosave and its `PUT -> 200`:
 
 | sequence | on screen | in the parent's frontmatter |

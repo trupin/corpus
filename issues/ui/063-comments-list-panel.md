@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §6 Anchoring (orphaned anchors), §11 Document view (today: "Whole-
+- SPEC.md §6 Anchoring (orphaned anchors), §10 Document view (today: "Whole-
   document comments and orphaned threads listed below the body")
 
 ## Summary
@@ -28,7 +28,7 @@ there, and I want to be able to filter based on anchored / unanchored state as
 well. That list of comments should be available in full screen and in column
 view."_
 
-**What exists today.** §11 already says orphaned threads and whole-document
+**What exists today.** §10 already says orphaned threads and whole-document
 comments are "listed below the body". So there is a place unanchored comments go
 — but it is a passive tail of the document, not a surface you can work: no
 filters, no anchored comments in it, and nothing that answers "what is
@@ -52,7 +52,7 @@ hardest state to find.
   SHARED-010 Amendment 1; the below-the-body listing stays.
 - **SETTLED: the below-the-body listing is deliberately KEPT, and the 💬 popover
   is what the tab subsumes.** Two different things were in question here. The
-  below-body listing is not a design choice open to this issue — §11's signed
+  below-body listing is not a design choice open to this issue — §10's signed
   rider says in the same breath as the list itself that *"whole-document comments
   and orphaned threads remain listed below the body"*, so removing it would need
   a new signature. It also answers a different question: the body's list says
@@ -74,7 +74,7 @@ hardest state to find.
   *all*, which hides nothing. A filter that survived a reload would hide comments
   from someone who has forgotten they set it, and a list silently missing rows is
   the failure this surface exists to cure. They are a question being asked now,
-  not a place being returned to — which is what §11's stickiness is about. The
+  not a place being returned to — which is what §10's stickiness is about. The
   **tab** resets to Document on every navigation, for the same class of reason:
   arriving at a `[[ref]]` on the Comments tab would hide the body you followed
   the link to reach.
@@ -115,7 +115,7 @@ resolves. A list keyed on it files every orphan under *anchored*, which is
 exactly the row the live report asked for. `Doc.anchors[].orphaned` is the
 server's verdict about the body as it now stands, and that is what the axis
 reads. `commentRows()` turns it into three states under two labels — `anchored`,
-`orphaned`, `unanchored` — because §11 also requires the row to **say why** it
+`orphaned`, `unanchored` — because §10 also requires the row to **say why** it
 has no anchor, and "detached" and "never had one" are different sentences: one
 reports a loss and the other does not.
 
@@ -202,9 +202,9 @@ same one.
 After that change, all 8 head-geometry tests pass, including the two above and
 `still fits when the document carries conversations, at that same width`.
 
-### The deviation from §11, measured — the switch is NOT unconditional
+### The deviation from §10, measured — the switch is NOT unconditional
 
-§11's rider reads *"reached by a Document / Comments switch in the reader's
+§10's rider reads *"reached by a Document / Comments switch in the reader's
 header"*, with no clause about the document already having conversations. It was
 built that way and **measured**. It does not fit on one head, and not by a
 margin that padding could close.
@@ -248,7 +248,7 @@ the list through the reader's ⋯ menu**, which costs the row nothing, and
 `comments-tab.spec.ts` walks that whole path — ⋯ → Comments → the empty
 sentence → type → send → one row, no toggle before and a pressed toggle after.
 
-Restoring §11's unconditional reading needs room the head does not have: a
+Restoring §10's unconditional reading needs room the head does not have: a
 shorter `.reader-id`, a smaller `.back` cap, or a narrower save-chip reservation
 — each of them somebody else's signed tuning. Reported to the orchestrator as a
 deviation to be recorded rather than a defect to be hidden.

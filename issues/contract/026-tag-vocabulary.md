@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 search overlay (filter chips)
+- SPEC.md §10 search overlay (filter chips)
 
 ## Summary
 UI-026 finding (2026-08-02): the overlay's `tag:` chip offered options derived from
@@ -35,7 +35,7 @@ in the same decision — the frugal hit dropped the result-type glyphs too
 chosen; weigh payload cost vs the two affordances.
 
 ## Acceptance Criteria
-- [ ] Chosen source specced (one-bullet §9.2/§11 rider if a new route — user sign-off per house rules), implemented, and the chip offers options again on the hybrid path
+- [ ] Chosen source specced (one-bullet §9.2/§10 rider if a new route — user sign-off per house rules), implemented, and the chip offers options again on the hybrid path
 - [ ] No per-hit payload growth unless explicitly chosen
 
 ## Technical Design

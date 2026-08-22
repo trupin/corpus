@@ -31,7 +31,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 board, §12 plugins (discovery)
+- SPEC.md §10 board, §12 plugins (discovery)
 
 ## Summary
 Escalated by UI-073, which fixed the reader and scoped itself there deliberately.

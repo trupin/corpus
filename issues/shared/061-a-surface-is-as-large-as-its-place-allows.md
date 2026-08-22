@@ -4,7 +4,7 @@
 shared (orchestrator)
 
 ## Status
-done — **SIGNED by the user 2026-08-21**, applied to SPEC.md §11 the same day.
+done — **SIGNED by the user 2026-08-21**, applied to SPEC.md §10 the same day.
 
 **The route here is worth keeping, because it is the one that nearly went
 wrong.** The orchestrator applied this text once already, on the strength of
@@ -71,7 +71,7 @@ That was a reasonable local decision under a rule that only pointed one way.
 
 ## What the rule now says
 
-Applied to §11, immediately after SHARED-057's text:
+Applied to §10, immediately after SHARED-057's text:
 
 > **And a surface is as large as its place allows.** The rule above is a ceiling
 > on what content may do to a box; it is not a licence to draw the box small. A
@@ -88,7 +88,7 @@ Applied to §11, immediately after SHARED-057's text:
 > not given room.** A surface whose ordinary content needs a scrollbar at a
 > comfortable window size is under-sized, and the fix is the size rather than
 > the scrollbar. Where a floor and a ceiling meet — a box that cannot be given
-> the room its content needs — the surface says so, in the terms §11 already
+> the room its content needs — the surface says so, in the terms §10 already
 > uses for a listing that reached its bound. _(Rider authorized 2026-08-21.)_
 
 ## The calls, and what they rejected
@@ -113,7 +113,7 @@ the input; the content is not.
 
 **4. The unsatisfiable case gets a sentence rather than silence.** Where a
 surface genuinely cannot be given the room it needs, it says so. That is the
-same stated-cap principle §11 already applies to a listing that hit its bound,
+same stated-cap principle §10 already applies to a listing that hit its bound,
 and it is the honest end of the rule — some boxes really are too small, and a
 person should learn that from the surface rather than from a scrollbar.
 
@@ -125,6 +125,6 @@ can check against a paragraph. UI-128 was the model and it worked — it produce
 findings against the orchestrator three times.
 
 ## Acceptance
-Signed and applied to SPEC.md §11 on 2026-08-21. UI-142's fixes shipped ahead of
+Signed and applied to SPEC.md §10 on 2026-08-21. UI-142's fixes shipped ahead of
 it and did not depend on it; the signature makes the rule they were built against
 normative, so the next audit enforces something the user agreed to.

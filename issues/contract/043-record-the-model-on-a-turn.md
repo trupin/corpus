@@ -23,7 +23,7 @@ fable
 
 ## Spec References
 
-- SPEC.md **§11** Thread view — "An agent turn says which model wrote it"
+- SPEC.md **§10** Thread view — "An agent turn says which model wrote it"
   (rider signed 2026-08-07)
 - SPEC.md **§7** — the console's dispatch line, amended by the same rider
 - SPEC.md **§6** — the turn format
@@ -193,12 +193,12 @@ it.
 Proposed addition to §6, as a new paragraph after **Turn format**:
 
 > **Which model wrote a turn is recorded outside the turn.** A thread document's
-> frontmatter records, per turn timestamp, the model that wrote that turn (§11);
+> frontmatter records, per turn timestamp, the model that wrote that turn (§10);
 > the turn's own text carries none of it and the turn heading never grows a field
 > for it. This is the same trade anchoring makes below — the body stays plain
 > markdown, and what a turn's text says can never be mistaken for a record of who
 > wrote it. A turn nobody recorded a model for simply has no entry, which is the
-> "nothing rather than a guess" §11 requires; a person's turn never has one. The
+> "nothing rather than a guess" §10 requires; a person's turn never has one. The
 > server is the only writer of the record, and it removes a turn's entry when the
 > turn is deleted, so an entry never outlives the turn it describes.
 

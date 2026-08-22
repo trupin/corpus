@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — "Columns are pinned view documents" bullet, amended and signed off 2026-07-30 (SHARED-004): per-view edge-drag resize (console-height pattern), width stored in the view doc's frontmatter like `order` (synced, idle-squashed auto-commit, agent-stewardable, server stays sole writer), snap scrolling unchanged, **no settings panel introduced**.
+- SPEC.md §10 — "Columns are pinned view documents" bullet, amended and signed off 2026-07-30 (SHARED-004): per-view edge-drag resize (console-height pattern), width stored in the view doc's frontmatter like `order` (synced, idle-squashed auto-commit, agent-stewardable, server stays sole writer), snap scrolling unchanged, **no settings panel introduced**.
 
 ## Summary
 User request (2026-07-29, follow-up phase after PR #11): views are too narrow, and the
@@ -158,7 +158,7 @@ shipped CLI in the drill workspace:
 **Finding for a follow-up issue** (CLI, and possibly CONTRACT if a narrower verb is
 preferred over a general one): *give the CLI a way to write an arbitrary `extra`
 frontmatter key on a document* — e.g. `corpus doc edit <id> --extra width=520` or a
-`corpus doc set` verb — so §11's stewardability sentence becomes true. Nothing in `apps/ui`
+`corpus doc set` verb — so §10's stewardability sentence becomes true. Nothing in `apps/ui`
 blocks it: the UI already reads `extra.width` from the projection row, so an agent write
 would appear on the board over SSE with no further change.
 
@@ -185,7 +185,7 @@ Whole workspace: **98 files, 1446 tests, all passing.** No new coverage exemptio
 mechanism by construction (TEST-453) — the width path lives in `Column`, above the
 core/plugin body dispatch, and is conditioned on nothing about the column's type.
 
-### Shipped spec pin reconciled to the amended §11
+### Shipped spec pin reconciled to the amended §10
 
 `apps/ui/e2e/reader.spec.ts`'s "gives the column reader the prototype's measure" read the
 560 px straight out of `.col.reading`. UI-019 deleted that constant on purpose — the

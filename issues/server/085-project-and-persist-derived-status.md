@@ -26,7 +26,7 @@ opus
 - SPEC.md §12 — as amended by SHARED-036, including "the file never disagrees
   with what is shown"
 - SPEC.md §9.1 — `documents` projection row carries `status`
-- SPEC.md §14 — validation and `db doctor`
+- SPEC.md §11 — validation and `db doctor`
 
 ## Summary
 
@@ -96,7 +96,7 @@ the case a later reader will mistake for a bug.
 
 ### Edge Cases
 
-- A todo document written while the plugin is **absent** (the §15 M6 subtractive
+- A todo document written while the plugin is **absent** (the §12 M6 subtractive
   check) — no declaration, so no derivation and no write-back. The stored value
   stands and nothing errors.
 - An archived todo document that gets an item checked — stays `archived`; the

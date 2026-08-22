@@ -69,7 +69,7 @@ packages/kit` is empty (TEST-571).
   / `Reopen failed — …`.
 - **`apps/ui/src/testing/readerFixture.ts`** — extended **additively** with `holdWrites` (UI-012's
   gate: every non-`GET` awaits it, recorded *before* it waits so a held write is observable on the
-  wire) and `threadWarnings` (so `POST /api/threads` can answer with real §14 warnings). No existing
+  wire) and `threadWarnings` (so `POST /api/threads` can answer with real §11 warnings). No existing
   option or behaviour changed.
 
 ### Ports — a deviation, stated
@@ -178,7 +178,7 @@ warnings: []   thread: th_7bvv7dou
 ```
 
 so there is no user-reachable way to make a *successful* thread creation carry one today. Substitute
-evidence: (a) the unit test pins it directly against a transport that answers with two real §14
+evidence: (a) the unit test pins it directly against a transport that answers with two real §11
 warnings, asserting both toasts in order after unmount; (b) the *same* hook-level `onSuccess`/
 `onError` pair is what produced the observed `Comment failed` toast above, so the delivery path is
 demonstrated in a real browser even though this particular payload is not. Not a code gap — a gap in

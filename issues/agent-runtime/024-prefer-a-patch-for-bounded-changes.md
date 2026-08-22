@@ -31,7 +31,7 @@ opus
 - SPEC.md **§7** — "What needs a key": _"An anchored patch (§9.2) needs no key
   either: it names the text it expects to find, which is the same check by
   another route"_
-- SPEC.md **§6** (anchor reconciliation), **§14** (validation), **§4** (one
+- SPEC.md **§6** (anchor reconciliation), **§11** (validation), **§4** (one
   attributed commit) — a patch is an ordinary write once applied
 
 ## Summary

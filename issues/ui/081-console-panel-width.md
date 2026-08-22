@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 Console — the bottom drawer, "job list + selected job's log detail"
+- SPEC.md §10 Console — the bottom drawer, "job list + selected job's log detail"
 
 ## Summary
 
@@ -36,7 +36,7 @@ The console is a master-detail: the job list on the left, the selected job's log
 on the right. The split is fixed. A long `originTitle` or a wide log line has no
 give in either direction.
 
-**Two precedents already exist, and this is the odd one out.** SPEC §11 makes the
+**Two precedents already exist, and this is the odd one out.** SPEC §10 makes the
 console's own **height** resizable and sticky — *"the drawer height persists after
 drag-resize"* — and column widths resizable *"within sane min/max bounds"*. The
 console's internal split is the one dimension of the board that cannot be
@@ -46,7 +46,7 @@ adjusted.
 
 The console bullet describes the drawer's contents but not this split, so
 building it would be behaviour ahead of spec — the defect review has raised on
-this branch twice. APPEND to §11's **Console** bullet:
+this branch twice. APPEND to §10's **Console** bullet:
 
 > The split between the job list and the log detail is **draggable**, within sane
 > min/max bounds, and the chosen width persists the way the drawer's height and
@@ -60,7 +60,7 @@ the two behaviours that already exist rather than inventing a third rule.
 - [ ] The split between the job list and the log detail can be dragged
 - [ ] Bounded at both ends — neither pane can be driven to nothing
 - [ ] The chosen width persists across reload, the way the drawer's height does
-- [ ] Operable from the keyboard (§11 adds no exclusive-pointer capability), the
+- [ ] Operable from the keyboard (§10 adds no exclusive-pointer capability), the
       same requirement UI-066 carries
 - [ ] Consistent with UI-066: **one way to hold a chosen width in this app**, not
       two conventions in adjacent components

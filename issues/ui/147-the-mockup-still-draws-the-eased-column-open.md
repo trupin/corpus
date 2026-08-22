@@ -18,7 +18,7 @@ opus
 
 ## Spec References
 - `design/index.html` — authoritative for look and feel (CLAUDE.md)
-- SPEC.md **§11**
+- SPEC.md **§10**
 
 ## Summary
 

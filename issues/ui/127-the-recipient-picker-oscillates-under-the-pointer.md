@@ -24,8 +24,8 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
-- SPEC.md **§11** — the composer's recipient statement
+- SPEC.md **§10** — *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
+- SPEC.md **§10** — the composer's recipient statement
 
 ## Summary
 
@@ -71,7 +71,7 @@ scroll — a fix aimed only at the statement will look right and leave the blink
 - [x] A browser test asserts the geometry: measure a row's bounding box, hover a
       different row, measure again, assert it did not move. **Falsify it** by
       restoring the growing statement and watching it fail
-- [x] §11's composer key contract is untouched, and the existing pins stay green
+- [x] §10's composer key contract is untouched, and the existing pins stay green
 
 ## Technical Design
 
@@ -308,7 +308,7 @@ Restored, rebuilt, green.
 #### 4. Neighbouring pins, unchanged
 
 `recipient.spec.ts`, `weight.spec.ts`, `compose-keyboard.spec.ts`,
-`resident.spec.ts`, `residents-tab.spec.ts` — **46 passed**. §11's composer key
+`resident.spec.ts`, `residents-tab.spec.ts` — **46 passed**. §10's composer key
 contract is untouched: nothing here binds a key, and `composerReach.ts` was read
 and not modified.
 

@@ -32,7 +32,7 @@ opus
   whether the change ripples into other documents; updates those documents, or
   records what it noticed in **their** changelogs"
 - SPEC.md **§8** — what wakes the agent
-- SPEC.md **§11** — the board, and the autosave
+- SPEC.md **§10** — the board, and the autosave
 
 ## Summary
 

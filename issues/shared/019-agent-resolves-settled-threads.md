@@ -36,7 +36,7 @@ fable
   change leaves a visible trace"); Read state; Attention
 - §8 Agent participation semantics — **owns** the re-trigger rule this rider
   amends
-- §11 UI — Attention seed view; the thread card's resolve/reopen control
+- §10 UI — Attention seed view; the thread card's resolve/reopen control
 
 ---
 

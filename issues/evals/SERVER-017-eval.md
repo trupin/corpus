@@ -12,7 +12,7 @@ lifecycle verb (`node --import tsx apps/cli/src/bin/corpus.ts server start --wor
 **8960**, pid **21566**. Every request below is real `curl` against `http://127.0.0.1:8960` carrying
 the workspace bearer token from `.corpus/config.json`. No source file under `apps/server/` was read.
 Contract shapes were read from `packages/contract/src/{routes,schemas}/db.ts` and the committed
-`packages/contract/openapi.json`; spec from `SPEC.md` §9.1/§9.2/§14. Server stopped by recorded pid;
+`packages/contract/openapi.json`; spec from `SPEC.md` §9.1/§9.2/§11. Server stopped by recorded pid;
 ports 8960–8969 verified free at exit.
 
 ---

@@ -23,8 +23,8 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 line 469 — the console strip's agent pill, as amended by SHARED-033
-- SPEC.md §11 — "All agent/system status lives in the console strip"
+- SPEC.md §10 line 469 — the console strip's agent pill, as amended by SHARED-033
+- SPEC.md §10 — "All agent/system status lives in the console strip"
 
 ## Summary
 

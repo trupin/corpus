@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§14** — warnings are the non-fatal channel
+- SPEC.md **§11** — warnings are the non-fatal channel
 - SPEC.md **§7** — a skill folder move is ordinary, specified behaviour
 
 ## Summary

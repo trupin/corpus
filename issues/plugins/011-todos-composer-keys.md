@@ -18,7 +18,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Global composer, as replaced by SHARED-009 Amendment 1: the
+- SPEC.md §10 Global composer, as replaced by SHARED-009 Amendment 1: the
   contract binds "any composer a plugin contributes"
 
 ## Summary

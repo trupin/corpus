@@ -26,7 +26,7 @@ opus
 
 - SPEC.md **§6** — a fenced block closes only on a line holding nothing but its
   run; a turn that leaves one open swallows the turns after it
-- SPEC.md **§14** — the validator reports an unterminated fence
+- SPEC.md **§11** — the validator reports an unterminated fence
 
 ## Summary
 
@@ -53,7 +53,7 @@ this, but it runs **only on the form-answer route**. The ordinary reply path
 no-ops for a non-agent actor. So the one path a person uses most is the one path
 unguarded.
 
-**Why this is P0 and not a footnote**: §11's snippet feature exists to paste
+**Why this is P0 and not a footnote**: §10's snippet feature exists to paste
 fenced content into composers, so producing an unterminated fence is a mainline
 action, not a corner case. SERVER-066 made `doc check` *report* the condition
 after the fact; nothing stops it being written, and by then the turns are

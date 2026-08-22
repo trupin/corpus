@@ -8,9 +8,9 @@ done — **SIGNED by the user 2026-08-22** (as the `/goal` opening Phase 41), ap
 to SPEC.md the same day.
 
 **The renumber was the expensive half, and it carried a hazard the checker cannot
-see.** Deleting §10, §12 and §13 moved UI from §11 to §10, Validation from §14 to
-§11, and Milestones from §15 to §12. A citation to a section that no longer
-exists is caught by `spec:check`. A citation to §11 meaning *UI* that now lands
+see.** Deleting §10, §12 and §13 moved UI from §10 to §10, Validation from §11 to
+§10, and Milestones from §12 to §12. A citation to a section that no longer
+exists is caught by `spec:check`. A citation to §10 meaning *UI* that now lands
 on *Validation* is not — it resolves, and it is wrong. So the sweep was done in a
 single pass with placeholders rather than three passes: **1,574 citations across
 596 files**, with no window in which two numbers meant the same thing.
@@ -44,7 +44,7 @@ a goal:
 > agents, …) is a **plugin**.
 
 That sentence is why §5's `type` is an open string, why §9 has an `/api/x/`
-route space, why `packages/kit` exists in the shape it does, and why §15's M6 is
+route space, why `packages/kit` exists in the shape it does, and why §12's M6 is
 a milestone. Deleting §10, §12 and §13 without answering §1 would leave the spec
 asserting an architecture the code no longer has.
 
@@ -100,7 +100,7 @@ as opaque passthrough the server never interprets.
 **11. §13 — delete the section entirely** (Publish plugin). It describes the
 first plugin after todos, which will now never exist.
 
-**12. §15 — milestones.** M6 (*plugin system + todos plugin*) is struck and the
+**12. §12 — milestones.** M6 (*plugin system + todos plugin*) is struck and the
 remaining milestones renumber. Its subtractive check — *delete `plugins/todos` →
 app still boots and todo docs render* — is **kept in substance** as a check on
 §5's open type: a document whose `type:` the core does not know still opens,

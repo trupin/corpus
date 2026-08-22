@@ -24,7 +24,7 @@ fable — subtle diff-range mapping algorithm; correctness judgment beyond a rub
 ## Spec References
 
 - SPEC.md §6 — "Threads and anchors" (text-quote selectors, resolution ladder, automatic reconciliation)
-- SPEC.md §15 — M1 check (the anchor reconciliation test matrix)
+- SPEC.md §12 — M1 check (the anchor reconciliation test matrix)
 - CLAUDE.md — Architecture Decision 2 (reconciliation is a guarantee of the server's write path, not of `cli/lib/anchors.mjs`)
 
 ## Summary
@@ -41,7 +41,7 @@ Implement the anchor engine as pure functions in `apps/server/src/anchors/` — 
 - [x] Range entirely deleted → the selector is left exactly as it was (history value, §6) and the anchor is reported orphaned.
 - [x] Context windows are ~32 characters on each side, clipped at body boundaries and never splitting a surrogate pair.
 - [x] The module is pure: no imports of `node:fs`, `node:child_process`, `better-sqlite3`, or anything in `apps/server/src/{core,projection,docs}` beyond types.
-- [x] Unit tests cover the full §15 M1 matrix — edits **before** and **after** an anchored range keep it resolved with the same `exact`; edits **inside** the range update `exact`; **deleting** the range orphans the thread; changes to surrounding context **refresh** `prefix`/`suffix` — plus unicode, repeated identical text, and adjacent/overlapping anchors.
+- [x] Unit tests cover the full §12 M1 matrix — edits **before** and **after** an anchored range keep it resolved with the same `exact`; edits **inside** the range update `exact`; **deleting** the range orphans the thread; changes to surrounding context **refresh** `prefix`/`suffix` — plus unicode, repeated identical text, and adjacent/overlapping anchors.
 
 ## Technical Design
 
@@ -124,7 +124,7 @@ Return a **new** anchors map — never mutate the input — plus the report. The
 
 Vitest, colocated `*.test.ts`.
 
-- **§15 M1 matrix (table-driven, the acceptance suite)**: for one fixture body with a known anchored sentence — edit before the range, edit after the range, edit inside the range, delete the range, change only the surrounding context — each asserting the resulting selector fields and the report bucket.
+- **§12 M1 matrix (table-driven, the acceptance suite)**: for one fixture body with a known anchored sentence — edit before the range, edit after the range, edit inside the range, delete the range, change only the surrounding context — each asserting the resulting selector fields and the report bucket.
 - **Resolution ladder**: one test per rung, plus a test proving each rung is only reached when the previous one fails (e.g. a body where bare `exact` is ambiguous but contextual match succeeds).
 - **Fuzzy**: a typo'd body (a few characters changed) resolves; an unrelated body does not; the threshold is respected at both sides of the boundary.
 - **Determinism**: run `reconcileAnchors` 100× on the same inputs, assert byte-identical JSON output.

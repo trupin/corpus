@@ -340,7 +340,7 @@ Then: The document is returned (`remove_diacritics 2` is in effect).
 
 #### Rebuild
 
-TEST-25: Rebuild is idempotent (§15 M1)
+TEST-25: Rebuild is idempotent (§12 M1)
 Given: A populated workspace.
 When: `rebuild(config, { into: A })` and `rebuild(config, { into: B })` run back to back,
 and both databases are dumped with deterministically ordered `select *` queries over every
@@ -1004,7 +1004,7 @@ NULL` unconditionally, or (b) re-resolve **exact-only** via `resolveAnchorExact`
   `reconcileAnchors`' `orphaned` list is a per-save *report*, not persisted state. To make
   orphanhood sticky, the projection would have to remember it in SQLite, which contradicts
   SERVER-004's own stated invariant ("nothing durable may ever live only in SQLite") and
-  breaks rebuild-from-files-alone (§15 M1, TEST-21). Option (a) is only viable if
+  breaks rebuild-from-files-alone (§12 M1, TEST-21). Option (a) is only viable if
   orphanhood is first persisted **in the file** — a frontmatter/contract change owned by
   CONTRACT and SERVER-005, which is out of scope for this batch.
 - **The exactness tier is exactly the right strength.** `resolveAnchorExact` implements §6

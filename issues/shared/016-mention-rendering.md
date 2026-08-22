@@ -22,7 +22,7 @@ fable
 - Blocks: the UI chain this rider implies (not yet filed) — and, if the composer
   half is signed, whatever it takes for a composer to know what a body resolves
   to, which is a contract question, not a UI one
-- Ordering: **SHARED-020 appends after the same §11 Thread view sentence** as
+- Ordering: **SHARED-020 appends after the same §10 Thread view sentence** as
   Amendment 1. Neither is signed; whichever lands second re-reads the bullet
 
 ## Spec References
@@ -35,7 +35,7 @@ fable
 - §8 Agent participation semantics — **owns** what mention tokens do; this rider
   does not touch it
 - §9.1 Projection — the `links` table, backlinks, the `references:` filter
-- §11 UI — the board → "Smart input everywhere", Thread view, Document view,
+- §10 UI — the board → "Smart input everywhere", Thread view, Document view,
   Navigation history
 
 ---
@@ -92,8 +92,8 @@ rendering is missing.
   and `.claude/agents/` a root (`type: agent-def`); both types are core document
   types. A mention therefore resolves to a real document with a real id, and
   following it can push onto the reader's navigation stack exactly the way a
-  `[[ref]]` does (§11, "Navigation history").
-- **The composers already resolve these tokens.** §11's "Smart input everywhere"
+  `[[ref]]` does (§10, "Navigation history").
+- **The composers already resolve these tokens.** §10's "Smart input everywhere"
   gives every composer and the editor three autocompletes: `@` → agent +
   subagents, `/` → skills, `[[` → documents. The completion menu already knows
   what exists; nothing on screen says what will happen after the menu closes.
@@ -114,7 +114,7 @@ rendering is missing.
   reference used everywhere"; "**Inline references** are id-based:
   `[[doc_a1b2c3]]` … in any body"; a ref "renders as a link showing the target's
   **current** title (rename/move-proof)"; refs "are extracted into the
-  projection's `links` table at projection time, powering backlinks (§9, §11)";
+  projection's `links` table at projection time, powering backlinks (§9, §10)";
   and "an unresolved ref renders visibly broken". So handle-rendering, title
   substitution and rename-proofness are all specified behaviour **for the
   bracketed form** — the bare id is the same target reached without the brackets.
@@ -131,7 +131,7 @@ rendering is missing.
 
 So both gaps are rendering gaps, in two places:
 
-- **§8 says what mention tokens mean; §11 never says how they look.**
+- **§8 says what mention tokens mean; §10 never says how they look.**
 - **§5 says what a bracketed ref renders as; nothing says what a bare id
   renders as** — even though it names the same document by the same id, and even
   though the agent, the CLI's output and anyone pasting a URL or a log line
@@ -202,12 +202,12 @@ occurrences would show a live invocation on a page that invokes nothing.
 skills, and in a **body** these tokens have no effect at all — marking them there
 would assert liveness that does not exist, the opposite error from the one this
 rider fixes. A document that wants to point at a skill already has `[[ref]]`,
-which links. This also keeps the always-editable document view (§11) out of
+which links. This also keeps the always-editable document view (§10) out of
 scope, which matters independently: it is a live editing surface where caret,
 selection and markdown serialization constrain what decoration can do, and it is
 not the surface the user was looking at.
 
-**The composer states, it does not restyle.** §11's own newline rider notes a
+**The composer states, it does not restyle.** §10's own newline rider notes a
 composer "offers no other way to write" a line break — the composers are plain
 text inputs. Inline decoration *inside* them would mean a rich editor in every
 composer, which is a large change the user did not ask for. A statement in the
@@ -239,7 +239,7 @@ contradiction.
 
 **Archived third state: carries over unchanged.** An id resolving to an archived
 document renders as a handle, links like any other, and carries the same archived
-marking archived documents carry everywhere else. Nothing new: §11's board
+marking archived documents carry everywhere else. Nothing new: §10's board
 already shows archived documents alongside everything else when asked, and
 archiving is organisational, not deletion.
 
@@ -275,14 +275,14 @@ contract.
 
 ## Proposed SPEC.md amendments — verbatim, for sign-off
 
-> **Ordering hazard.** SHARED-020 (also unsigned) appends after the **same** §11
+> **Ordering hazard.** SHARED-020 (also unsigned) appends after the **same** §10
 > Thread view sentence Amendment 1 does. Whoever applies second must **re-read
 > the bullet** and append after whatever is then last — pattern-matching on the
 > quoted anchor will silently interleave the two riders' text.
 
-### Amendment 1 — §11 Thread view, APPEND after the newlines sentence
+### Amendment 1 — §10 Thread view, APPEND after the newlines sentence
 
-APPEND immediately after, in §11's **Thread view** bullet, exactly this existing
+APPEND immediately after, in §10's **Thread view** bullet, exactly this existing
 text:
 
 > **Newlines in a turn written by a person render as line breaks** — a textarea
@@ -319,9 +319,9 @@ the following:
 > to point at a skill or subagent uses a `[[ref]]` (§5), which already links to
 > it. _(Rider signed 2026-08-05.)_
 
-### Amendment 2 — §11 "Smart input everywhere", APPEND at the end of the bullet
+### Amendment 2 — §10 "Smart input everywhere", APPEND at the end of the bullet
 
-APPEND immediately after, in §11's **Smart input everywhere** bullet, exactly
+APPEND immediately after, in §10's **Smart input everywhere** bullet, exactly
 this existing text:
 
 > This holds wherever a completion menu appears — the three composer triggers,
@@ -360,7 +360,7 @@ the following bullet:
 >   body text — `doc_a1b2c3`, `th_x9y8`, and the ids of skills and subagent
 >   definitions — renders as that document's **handle**: its current title, as a
 >   link, following the same rename-proof rule the bracketed form follows and
->   opening the target in the reader by pushing onto its navigation stack (§11).
+>   opening the target in the reader by pushing onto its navigation stack (§10).
 >   This holds **wherever body text is rendered** — a turn and a document body
 >   alike — because an id is a reference and a reference reads the same
 >   everywhere; where the body is editable, the handle stays editable: putting
@@ -460,7 +460,7 @@ reference" — which converts it in place, on purpose, by a person. That is a
 follow-up rider, not a line in this one.
 
 **Q6 — Does the always-editable document view really get handle substitution?**
-As drafted, yes: the id half applies wherever body text renders, and §11 gives
+As drafted, yes: the id half applies wherever body text renders, and §10 gives
 documents no read-only mode, so excluding the editor would mean excluding
 document bodies entirely and answering the user's request only for turns. The
 draft therefore states the editing rule — the caret reveals the id — which is a
@@ -506,9 +506,9 @@ into SPEC.
 - [ ] User signs off, or answers Q1–Q6 and the text is adjusted
 - [ ] All three amendments applied to SPEC.md verbatim at phase kickoff, by the
       orchestrator, each appended after the quoted existing text rather than
-      replacing it — nothing in §5 or §11 is deleted by this rider
+      replacing it — nothing in §5 or §10 is deleted by this rider
 - [ ] **Amendment 1's anchor is re-read, not pattern-matched**: SHARED-020
-      appends after the same §11 Thread view sentence, so whichever applies
+      appends after the same §10 Thread view sentence, so whichever applies
       second appends after whatever is last in the bullet at that moment
 - [ ] Amendment 3 lands as a **new bullet** in §5, leaving the existing
       inline-references bullet — including "an unresolved ref renders visibly
@@ -525,7 +525,7 @@ into SPEC.
 
 ### Files to Create/Modify
 
-- `SPEC.md` §11 (two appends) and §5 (one new bullet)
+- `SPEC.md` §10 (two appends) and §5 (one new bullet)
 
 ## Testing Strategy
 

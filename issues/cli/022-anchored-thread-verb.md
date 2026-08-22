@@ -59,7 +59,7 @@ no contract edit; `TextQuoteSelectorRequestSchema` accepts a bare `{exact}`.
 **A quote the parent does not contain is not a server _error_.** `apps/server/src/threads/create.ts`
 is explicit: "Resolution is not a write-time gate … §6 resolves anchors at projection/render time
 and calls an unresolvable one _orphaned_, which is a normal state of a living corpus, not a
-rejected request." What the server does surface is §14's **`orphaned_anchor` warning** on the
+rejected request." What the server does surface is §11's **`orphaned_anchor` warning** on the
 `201` (the parent's new frontmatter goes through `validateBeforeWrite`, whose
 `anchorUnresolved` finding maps to that code). The verb surfaces it through the existing
 `warningSuffix` convention — no client-side resolution, no client-side selector construction.

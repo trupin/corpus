@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 line 469 — the console strip's agent pill, as amended by SHARED-033
+- SPEC.md §10 line 469 — the console strip's agent pill, as amended by SHARED-033
 - SPEC.md §7 — the queue's long-poll idle endpoint
 - SPEC.md §9.2 — the queue status resource
 
@@ -152,7 +152,7 @@ rules, one question. So the server answers `live` (grace already applied, as
 SERVER-112's tracker is specified to do) and `since` is the evidence. A client
 may re-apply the **same** exported window to the **same** instant, which can only
 ever *withdraw* a stale `live` and never manufacture one — a second application
-of one rule, not a second rule. That is what makes §11's "the pill flips on its
+of one rule, not a second rule. That is what makes §10's "the pill flips on its
 own" reachable without a refetch.
 
 **Decision 3 — the contract exports both the predicate and the four-state
@@ -161,7 +161,7 @@ function.** `isAgentPresent(presence, now)` and
 precedence `halted > disconnected > working > idle` is the one judgement call
 here: **`disconnected` outranks `working`**, which SHARED-033 listed as an open
 edge case and its signed text did not settle (see "unresolved", below). It
-follows from §11's own principle — `inProgress > 0` is a fact about events, not
+follows from §10's own principle — `inProgress > 0` is a fact about events, not
 about anyone holding them, and `working` about an agent that claimed work and
 died is exactly as unevidenced as `idle` about an empty machine.
 

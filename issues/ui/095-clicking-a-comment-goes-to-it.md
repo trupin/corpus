@@ -23,11 +23,11 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — "Selecting an anchored row reveals it at its anchor in the
+- SPEC.md §10 — "Selecting an anchored row reveals it at its anchor in the
   document; an unanchored row opens its thread and says why it has no anchor"
   _(rider signed 2026-08-04)_
-- SPEC.md §11 — "Clicking an anchored highlight opens its thread"
-- SPEC.md §11 — the collapse rider _(signed 2026-08-05)_: "**Every collapse
+- SPEC.md §10 — "Clicking an anchored highlight opens its thread"
+- SPEC.md §10 — the collapse rider _(signed 2026-08-05)_: "**Every collapse
   expands again in place**, where it stands, without navigating anywhere"
 
 ## Summary
@@ -98,7 +98,7 @@ fix that lands on those alone leaves the same complaint waiting on a third.
       collapse still sticks — verified through a reload
 - [~] Works in both the column reader and focus mode — column reader fully;
       focus mode expands and flashes but does not scroll (log point 2)
-- [x] Keyboard-reachable, per §11's "adds no exclusive-pointer capability" — a
+- [x] Keyboard-reachable, per §10's "adds no exclusive-pointer capability" — a
       real `<button>`, focusable, activated by Space. `Enter` does not activate
       **any** button in the app, including ones this change never touches; filed
       as log point 3
@@ -207,7 +207,7 @@ and what it did before any change:
 | a **threads column** row / a search hit | click | opens the *thread document*, which is what a list of documents should do; the way from there to the passage is the context link above, so it is the same defect one step removed |
 | below-body thread list, margin cards | — | these **are** the conversations, rendered in place; there is nothing to navigate to |
 | backlinks, Related | — | list documents, not comments |
-| the §11 **comments list** (Document/Comments switch) | — | **does not exist yet** — UI-063 is `todo`, pending SPEC sign-off. The 2026-08-04 rider's "selecting an anchored row" has no surface to be true or false on today |
+| the §10 **comments list** (Document/Comments switch) | — | **does not exist yet** — UI-063 is `todo`, pending SPEC sign-off. The 2026-08-04 rider's "selecting an anchored row" has no surface to be true or false on today |
 
 **The broken one, measured.** Same thread, same document, same browser, two
 routes to it:
@@ -344,7 +344,7 @@ buttons.** Pressing `Enter` on the focused `.t-context .ref` fires `keydown` wit
 `defaultPrevented=false` at the button and **no `click`**; `Space` works. The
 same is true of the reader head's `💬 .comments-btn`, which this change never
 touches — so it is app-wide, not a property of this link, and a candidate for its
-own issue. §11's "adds no exclusive-pointer capability" is still satisfied
+own issue. §10's "adds no exclusive-pointer capability" is still satisfied
 (the control is focusable and Space activates it), but half the keyboard
 convention for a button is missing.
 

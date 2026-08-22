@@ -29,7 +29,7 @@ opus
   (the two checkable lists), and "Three acts commit alone"
 - SPEC.md **§4** — "One action, one commit"
 - SPEC.md **§7** — a queue event finishing, however it finished; force unlock
-- SPEC.md **§11** — the staged bulk Save
+- SPEC.md **§10** — the staged bulk Save
 
 ## Summary
 
@@ -180,7 +180,7 @@ commits the deletion by itself."
 - **An act by the party that does not own the open window.** The party-change
   flush (SERVER-091) fires first and closes it; the act then opens and closes its
   own. One extra commit, correct authorship. No special handling.
-- **An act whose commit is skipped or fails** (§14). The window still closes —
+- **An act whose commit is skipped or fails** (§11). The window still closes —
   the act happened. Do not make the close conditional on the commit landing.
 - **A bulk Save with one entry.** Still an act, still commits alone. §4's signal
   is the field's presence, not its length; SERVER-077 already settled this.

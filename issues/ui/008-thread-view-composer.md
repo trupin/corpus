@@ -26,7 +26,7 @@ opus — dense surface, but every behavior is pinned by §6/§8 and the prototyp
 - SPEC.md §6 — **Turn format** (`## <author> · <ISO ts>`, timestamps are turn identity, user-only turn deletion with inline confirm, cascade), **Forms in turns** (fenced ```` ```form ```` YAML → live controls → structured answer turn + `form.respond`), **Attachments** (📎 picker + paste + drag-drop with dropzone highlight, removable chip previews with thumbnails, attachment-only turns, posted turns render images inline / files as chips), **Recursion** (commenting a turn creates a child thread; ≥2 levels), **Standalone threads**
 - SPEC.md §8 — agent participation: `@agent`/`@<subagent>`/`/<skill>`/composer toggle request the agent; every later turn in an `engaged` thread re-triggers unless resolved or "note only"; **honest time-escalating pending indicator** (45 s / 3 m / 15 m), no fake progress
 - SPEC.md §7 — **Read state**: unread = last turn newer than last-seen mark; **displayed content only** counts as read; badges clear everywhere via SSE
-- SPEC.md §11 — **Thread view** (turns markdown-rendered, attachments, forms, composer with ask-agent toggle, resolve/reopen, anchor quote pinned at top linking back to the parent at the anchor position, opening marks seen, child threads per-turn), **Smart input everywhere** (`@` / `/` / `[[` autocompletes all via `GET /api/docs`), reader **⋯ menu** Resolve/Reopen, optimistic append of the user's own turn reconciled on refetch
+- SPEC.md §10 — **Thread view** (turns markdown-rendered, attachments, forms, composer with ask-agent toggle, resolve/reopen, anchor quote pinned at top linking back to the parent at the anchor position, opening marks seen, child threads per-turn), **Smart input everywhere** (`@` / `/` / `[[` autocompletes all via `GET /api/docs`), reader **⋯ menu** Resolve/Reopen, optimistic append of the user's own turn reconciled on refetch
 - SPEC.md §9.2 — `GET /api/threads/:id`, `POST /api/threads/:id/turns` (multipart), `/resolve`, `/reopen`, `/seen`, `DELETE /api/threads/:id/turns/:ts`, `GET /attachments/...`
 - `design/index.html` — **authoritative look & feel** (`.thread-card`, `.t-head`/`.t-quote`/`.t-status`/`.t-resolve`/`.t-collapse`, `.t-context`, `.turn`/`.turn-who`/`.who.agent`/`.turn-body`/`.turn-trace`/`.turn-del` + `.armed`, `.working` + `.working-dot`, `.composer` + `.composer-foot` + `.dropping`, `.pending-atts`/`.att-chip`/`.clip`, `.turn-att-img`/`.att-file`, `.form-comment`/`.form-opt`/`.picked`/`.form-submit`, `.ac-menu`/`.ac-item`, `.unread`)
 
@@ -141,7 +141,7 @@ Vitest + Testing Library in `apps/ui` and `packages/kit`:
 9. Turn deletion: hover a user turn → `✕`; click → `delete?`; click again → the turn disappears and is gone from the file, but `git log -p` still shows it. Delete the thread's last remaining turn → the whole thread is removed and its highlight/entry disappears live.
 10. Child thread: comment on a turn → a child thread renders nested under it; comment on a turn of the child → level-2 nesting renders without breaking the composer.
 11. Resolve from the card head, then reopen from the reader ⋯ menu; confirm status and styling update live and the thread leaves/returns to the Attention column.
-12. Playwright: `apps/ui/e2e/thread.spec.ts` covering steps 2–4, 7(b), and 9 against the real app (§15 M3 read-state and comment-flow checks).
+12. Playwright: `apps/ui/e2e/thread.spec.ts` covering steps 2–4, 7(b), and 9 against the real app (§12 M3 read-state and comment-flow checks).
 
 ## E2E Verification Log
 

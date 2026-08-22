@@ -62,7 +62,7 @@ sentence nobody has signed.
 2. **Is it optional?** Omitting it should mean what it means today — the resident
    runs at whatever the operator started it as — so an existing designation stays
    valid and this is not a breaking change
-3. **Does `Resident` report it back?** A surface that shows who is resident (§11,
+3. **Does `Resident` report it back?** A surface that shows who is resident (§10,
    UI-125) needs to show what it runs at, or the choice is write-only
 4. **What happens when the named level no longer exists?** §7 already answers
    this for a stated weight — do the work, say so twice — and the same answer may

@@ -14,7 +14,7 @@ P1
 
 ## Model
 
-opus — built entirely from primitives that already exist (composer, attachments, columns, readers); the keyboard scheme is enumerated exhaustively in §11.
+opus — built entirely from primitives that already exist (composer, attachments, columns, readers); the keyboard scheme is enumerated exhaustively in §10.
 
 ## Dependencies
 
@@ -23,8 +23,8 @@ opus — built entirely from primitives that already exist (composer, attachment
 
 ## Spec References
 
-- SPEC.md §11 — **Global composer: Ask / Capture** (Ask → standalone thread `parent: null`, agent-requested, first turn is the text, "the conversation is the document"; Capture → small document in `data/docs/inbox/` plus an agent-requested whole-document filing thread; both appear on the board immediately with a pending-agent indicator; `c` opens, `↵` = Ask, `⌘↵` = Capture, `⇧↵` = newline)
-- SPEC.md §11 — **Keyboard scheme (v1)**, verbatim: ⌘K search · `c` compose · `↑`/`↓` (or `j`/`k`) rows · `↵` open in column · `⇧↵` open directly in full screen · `esc`/`⌫` close/back (overlays and focus mode take precedence, then the column reader) · `←`/`→` (or `[` `]`) switch active column · `⇧←`/`⇧→` move the active column (writes the view doc's `order`) · `f` focus mode · `e` archive the open (or highlighted) document · `r` focus the reply composer of the open document's visible thread · `?` toggles the keyboard cheat-sheet overlay; **the active column follows focus/hover with a visible cue**
+- SPEC.md §10 — **Global composer: Ask / Capture** (Ask → standalone thread `parent: null`, agent-requested, first turn is the text, "the conversation is the document"; Capture → small document in `data/docs/inbox/` plus an agent-requested whole-document filing thread; both appear on the board immediately with a pending-agent indicator; `c` opens, `↵` = Ask, `⌘↵` = Capture, `⇧↵` = newline)
+- SPEC.md §10 — **Keyboard scheme (v1)**, verbatim: ⌘K search · `c` compose · `↑`/`↓` (or `j`/`k`) rows · `↵` open in column · `⇧↵` open directly in full screen · `esc`/`⌫` close/back (overlays and focus mode take precedence, then the column reader) · `←`/`→` (or `[` `]`) switch active column · `⇧←`/`⇧→` move the active column (writes the view doc's `order`) · `f` focus mode · `e` archive the open (or highlighted) document · `r` focus the reply composer of the open document's visible thread · `?` toggles the keyboard cheat-sheet overlay; **the active column follows focus/hover with a visible cue**
 - SPEC.md §6 — **Attachments**: three ways into any composer, **including the global Ask/Capture composer**; composer attachments land on the created thread's first turn (Ask) or the capture's filing thread (Capture)
 - SPEC.md §8 — agent participation (both actions are agent-requested; honest pending indicator)
 - SPEC.md §9.2 — `POST /api/threads` (standalone: no parent), `POST /api/capture` (inbox doc + filing thread in one call)
@@ -32,7 +32,7 @@ opus — built entirely from primitives that already exist (composer, attachment
 
 ## Summary
 
-Add the two remaining global surfaces: the **Ask/Capture composer** — a 640px overlay with a serif textarea (`Ask the agent anything, or capture a thought…`), full attachment support, an outlined `Capture ⌘↵` and a filled accent `Ask ↵` — and the **complete keyboard scheme** from §11, driven by a **central shortcut registry** so the `?` cheat-sheet is generated from the same source that binds the handlers and can never drift.
+Add the two remaining global surfaces: the **Ask/Capture composer** — a 640px overlay with a serif textarea (`Ask the agent anything, or capture a thought…`), full attachment support, an outlined `Capture ⌘↵` and a filled accent `Ask ↵` — and the **complete keyboard scheme** from §10, driven by a **central shortcut registry** so the `?` cheat-sheet is generated from the same source that binds the handlers and can never drift.
 
 Both composer actions are pure compositions of existing primitives: Ask is `POST /api/threads` with no parent, Capture is `POST /api/capture`. Both results land on the board immediately with a pending-agent indicator.
 
@@ -82,7 +82,7 @@ Both composer actions are pure compositions of existing primitives: Ask is `POST
 
 **Esc precedence** falls out of the scope stack: overlays push `overlay`, focus mode pushes `focus`, an open reader pushes `reader`. `esc`/`⌫` is registered once per scope with the scope-appropriate action; the topmost registration wins. `⌫` must be suppressed in inputs (it deletes) — same guard as everything else.
 
-**Compose submit routing.** One `submit(mode)` function; `mode` comes from the pressed key or the clicked button. Ask → `useCreateStandaloneThread` (text as first turn, `agent: requested`, attachments multipart on the first turn). Capture → `useCapture` (text + attachments; the server composes doc + filing thread). Both: close the overlay on success, toast what happened ("Asked the agent — standalone thread created" / "Captured to inbox/ — the agent will file it"), and rely on SSE invalidation to bring the new row onto the board. Optimistically insert the row into the matching columns so it appears **immediately** per §11, reconciled on refetch.
+**Compose submit routing.** One `submit(mode)` function; `mode` comes from the pressed key or the clicked button. Ask → `useCreateStandaloneThread` (text as first turn, `agent: requested`, attachments multipart on the first turn). Capture → `useCapture` (text + attachments; the server composes doc + filing thread). Both: close the overlay on success, toast what happened ("Asked the agent — standalone thread created" / "Captured to inbox/ — the agent will file it"), and rely on SSE invalidation to bring the new row onto the board. Optimistically insert the row into the matching columns so it appears **immediately** per §10, reconciled on refetch.
 
 **Pending indicator** on the resulting row/thread is UI-008's component — both flows create agent-requested threads, so it appears for free; verify it does.
 
@@ -138,7 +138,7 @@ Vitest + Testing Library in `apps/ui`:
 8. `⇧→` on a column → the board reorders **and** `cat` the affected view documents shows updated `order` frontmatter with an auto-commit; reload the browser and confirm the new order persists.
 9. `esc` precedence: with a reader open, enter focus mode, then open search. `esc` closes search → `esc` exits focus → `esc` pops the reader stack → `esc` returns to the list. Confirm each layer consumes exactly one press.
 10. Click into the TipTap editor and type `c e f r j k ?` → all characters appear in the document; no shortcut fires. Repeat in the thread composer and the search input.
-11. Press `?` on the board → the cheat-sheet renders every binding in a two-column grid; cross-check the list against §11's enumeration item by item. `esc` closes it.
+11. Press `?` on the board → the cheat-sheet renders every binding in a two-column grid; cross-check the list against §10's enumeration item by item. `esc` closes it.
 12. Playwright: `apps/ui/e2e/compose-keyboard.spec.ts` automating steps 2, 3, 7 (subset), 8, and 10 against the real app.
 
 ## E2E Verification Log
@@ -303,7 +303,7 @@ FIXTURE entry into the registry via `vi.mock` and asserts it renders — with no
 component. `shortcuts.test.ts` generates a probe event per declared key and proves unique ids, no
 two entries answering the same key in a scope, and a non-empty `description`/`group` on every entry.
 
-**The cheat sheet is the prototype's panel (AC 9, TEST-142) and covers §11 item by item (TEST-143).**
+**The cheat sheet is the prototype's panel (AC 9, TEST-142) and covers §10 item by item (TEST-143).**
 
 Rendered in the real browser:
 
@@ -319,7 +319,7 @@ Rendered in the real browser:
 [E2E] ? toggled the sheet shut
 ```
 
-Cross-checked against SPEC.md §11's enumeration and the prototype's twelve rows: **exact match,
+Cross-checked against SPEC.md §10's enumeration and the prototype's twelve rows: **exact match,
 twelve for twelve, in the same order. Nothing present in one and absent from the other.** The
 generated legend and the registered keys agree by construction — the rendered `esc` row and the
 `useEscapeLayer` binding are the same declaration (`boundBy: "escape-layer"`).
@@ -495,7 +495,7 @@ $ curl -X POST .../api/threads -d '{"parent":null,"selector":null,"body":"A note
 ```
 
 An explicit `false` enqueues nothing and writes `agent: none`. The global composer itself always
-sends `true` — SPEC.md §11 says both of its actions are agent-requested — and never omits the flag,
+sends `true` — SPEC.md §10 says both of its actions are agent-requested — and never omits the flag,
 because omitted means "enqueue if engaged", which for a thread that does not exist yet means "no".
 
 **Very long text posts fine (TEST-139).** The textarea is `resize: vertical` (measured) and the body

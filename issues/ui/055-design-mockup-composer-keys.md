@@ -17,13 +17,13 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 composer key contract (SHARED-009 Amendment 1, signed 2026-08-03)
+- SPEC.md §10 composer key contract (SHARED-009 Amendment 1, signed 2026-08-03)
 
 ## Summary
 Noted by UI-052 and deliberately left alone: `design/index.html` — the living UI
 mockup, authoritative for look and feel — still shows `Reply ↵`, `Ask ↵`,
 `Capture ⌘↵` and `⇧↵ newline`, and its prototype JavaScript still binds those
-keys. The amended §11 supersedes it, so the app is right and the mockup is stale.
+keys. The amended §10 supersedes it, so the app is right and the mockup is stale.
 
 Left out of UI-052 because several agents were working in the tree and rebinding
 prototype JS is an unrelated chore. It matters because the mockup is what gets

@@ -16,7 +16,7 @@ opus
 - Related: UI-093 (which introduced it), SHARED-057, SHARED-061, UI-113, UI-073
 
 ## Spec References
-- SPEC.md **§11** — *"Nothing resizes because of what it holds"* (SHARED-057) and *"a surface is as large as its place allows"* (SHARED-061)
+- SPEC.md **§10** — *"Nothing resizes because of what it holds"* (SHARED-057) and *"a surface is as large as its place allows"* (SHARED-061)
 
 ## Summary
 
@@ -107,7 +107,7 @@ stop exactly this class of movement.
    complaint in the other direction.
 3. **The column does not animate when a reader opens inside it.** The smallest
    change and it touches UI-113's signed resize behaviour.
-4. **Accept it and say so in §11**, as the stated exception for a container the
+4. **Accept it and say so in §10**, as the stated exception for a container the
    person just opened. Cheapest, and it needs a rider.
 
 **Do not pick by cost.** Measure what a person actually sees at each, on a real
@@ -157,7 +157,7 @@ price of ~250ms of empty reader on every open — and it removes nothing that
 option 3 does not also remove, while adding a wait. Rejected: a delay is a cost
 paid on every open, and the movement it prevents can be prevented for free.
 
-**Option 4 (accept and amend §11) was rejected on the measurement above.** The
+**Option 4 (accept and amend §10) was rejected on the measurement above.** The
 right-click case is not a coordinate artifact — the document travels a quarter
 of the viewport at the instant a person opens a context menu on a word. That is
 the movement v0.15.0 was named for ruling out, on the ordinary path.
@@ -186,8 +186,8 @@ select-then-right-click with no settle between the steps.
   `app/global.css` carries it — an instant open is what every reduced-motion
   user has always seen. Option 3 gives everyone the reduced-motion appearance
   for the one case where the motion moves prose. This is a deliberate departure
-  from the mockup's eased open, on §11's own terms: the mockup is authoritative
-  for look and feel, and §11's rider is authoritative for what may move.
+  from the mockup's eased open, on §10's own terms: the mockup is authoritative
+  for look and feel, and §10's rider is authoritative for what may move.
 
 ## Acceptance Criteria
 - [x] A decision, with the rejected options and their costs, recorded here

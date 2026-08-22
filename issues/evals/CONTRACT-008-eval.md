@@ -97,7 +97,7 @@ union failure, a field-level issue for a bad id) reproduced exactly.
 | 57 | Empty collections are legal                     | PASS   | `{ids: []}` and `{documents: []}` both → 200 `{"ok":true,"errors":[],"warnings":[]}`, and the artifact documents "An empty array checks nothing and returns an empty report". Matches CLI-006's exit-0-silent. |
 | 58 | Response separates errors from warnings, reusing `CheckReport` | PASS | `{ok, errors: CheckFinding[], warnings: CheckFinding[]}`; `Finding = {code, severity, docId: string\|null, path, detail}` — `CheckFinding`'s names verbatim. `ok` documented as "True exactly when `errors` is empty… (0, or 6 for a check-style failure)". |
 | 59 | Code vocabulary matches exhaustively            | PASS   | I extracted both lists and compared: **13 members, identical, same order**. The description names the two warning codes and states "the other eleven are errors, `anchor-unused` among them". The contract cannot import the server's enum (dependency direction), so the transcription is pinned by a literal test — and the agent recommended the reciprocal assertion for SERVER-019, which **Adjudication 23** adopted. |
-| 60 | Validation is read-only and says so             | PASS   | `parameters` is `null` — no actor header at all. Description: runs "the same validator every server mutation runs before writing — hooks and API share one implementation" (§14). |
+| 60 | Validation is read-only and says so             | PASS   | `parameters` is `null` — no actor header at all. Description: runs "the same validator every server mutation runs before writing — hooks and API share one implementation" (§11). |
 
 ### Skill-rollback route
 
@@ -126,7 +126,7 @@ union failure, a field-level issue for a bad id) reproduced exactly.
 | -- | ---------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | 72 | No consumer changed                | PASS   | The commit touches `packages/contract/**` and the issue file only. Zero files under `apps/server`, `apps/cli`, `apps/ui`, `packages/kit`. **Adjudication 2 held.** `apps/server/src/core/check.ts` was read, never touched. |
 | 73 | The server does not serve them yet | PASS   | **Reproduced on my own server (9080)**: `POST /api/check` → 404, `POST /api/skills/orchestrate/rollback` → 404, while `GET /api/health` and `GET /api/docs` → 200 with the same bearer token. Unambiguously "not mounted", not "not authorised". SERVER-019's before-state is on the record. |
-| 74 | SPEC amendment drafted, not smuggled | PASS  | `SPEC.md` untouched by this commit; §9.2 names neither route (`grep` → 0). The amendment is drafted verbatim in the log for the phase PR, and `inventory.ts`'s docblock records that these two entries come from §14 and §7 rather than §9.2 with the amendment pending — so the gap is documented at the one place that would otherwise read as an unexplained extra. |
+| 74 | SPEC amendment drafted, not smuggled | PASS  | `SPEC.md` untouched by this commit; §9.2 names neither route (`grep` → 0). The amendment is drafted verbatim in the log for the phase PR, and `inventory.ts`'s docblock records that these two entries come from §11 and §7 rather than §9.2 with the amendment pending — so the gap is documented at the one place that would otherwise read as an unexplained extra. |
 
 ---
 
@@ -149,7 +149,7 @@ None.
 
 Existing contract invariants were **extended rather than weakened**, each with its reason recorded:
 `/api/check` exempted from the mutating-actor-header rule via a named `READ_ONLY_POSTS` set (with
-TEST-60 asserting the absence positively); `SkillRollbackResult` added to the §14 warning
+TEST-60 asserting the absence positively); `SkillRollbackResult` added to the §11 warning
 `CARRIERS` while `CheckReport` joins a new `FOREIGN_WARNINGS` set with a positive test that its
 `warnings` is a `CheckFinding[]`; and "uses no branching schema" became "names every branching
 request body", pinned to exactly `POST /api/check: anyOf`. I checked each of these survives — the

@@ -35,7 +35,7 @@ opus
   done with the answers, and do **not** put open-ended conversation into a form
 - SPEC.md **§6**, "Forms in turns" — the three field kinds, required by default,
   at most one form per turn, answered once as a whole, only the person answers
-- SPEC.md **§11**, Attention — the unanswered form is the row that survives being
+- SPEC.md **§10**, Attention — the unanswered form is the row that survives being
   read
 
 ## Summary
@@ -60,7 +60,7 @@ The batching half is where the user's second motivation is actually served. A
 form asked one question at a time puts the agent straight back to reading a
 paragraph and working out which sentence answered which question, and whether the
 two sentences it got covered all three asks. And the reason to prefer a form over
-prose at all is §11's asymmetry: a question asked in prose leaves no trace that
+prose at all is §10's asymmetry: a question asked in prose leaves no trace that
 anyone is waiting once the thread has been read, while an unanswered form's
 Attention row survives being read and clears only by acting.
 

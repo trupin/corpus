@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 console index pill (rider signed 2026-08-02)
+- SPEC.md §10 console index pill (rider signed 2026-08-02)
 
 ## Summary
 User request (2026-08-02): surface background indexing in the UI like the

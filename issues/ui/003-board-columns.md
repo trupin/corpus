@@ -23,13 +23,13 @@ opus — the model is pinned ("columns ARE documents"), the chrome is pinned by 
 
 ## Spec References
 
-- SPEC.md §11 — "The board" (horizontally scrolling strip of columns, snap scrolling, trailing ghost column)
-- SPEC.md §11 — "Columns are pinned view documents" (a column IS a `type: view` document with `pinned: true`; frontmatter holds the query and `order`; only browser-local state stays local)
-- SPEC.md §11 — "Folder scoping" (folder columns scope by directory; threads inherit their parent's folder)
-- SPEC.md §11 — "Creating documents — zero-form, inbox-first" (＋ on non-folder columns creates into `data/docs/inbox/`; a folder column's ＋ creates into its folder; the new document opens immediately, title selected)
+- SPEC.md §10 — "The board" (horizontally scrolling strip of columns, snap scrolling, trailing ghost column)
+- SPEC.md §10 — "Columns are pinned view documents" (a column IS a `type: view` document with `pinned: true`; frontmatter holds the query and `order`; only browser-local state stays local)
+- SPEC.md §10 — "Folder scoping" (folder columns scope by directory; threads inherit their parent's folder)
+- SPEC.md §10 — "Creating documents — zero-form, inbox-first" (＋ on non-folder columns creates into `data/docs/inbox/`; a folder column's ＋ creates into its folder; the new document opens immediately, title selected)
 - SPEC.md §9.2 — `GET /api/docs`, `GET /api/tree`, `POST /api/docs`, `PUT /api/docs/:id`
 - SPEC.md §10 — plugin column types (`column: "<plugin>/<type>"` in a view document's frontmatter)
-- SPEC.md §15 M3 — the board's executable check (drag a column → its `order` frontmatter updates)
+- SPEC.md §12 M3 — the board's executable check (drag a column → its `order` frontmatter updates)
 - `design/index.html` — **authoritative look & feel** (`.board`, `.col`, `.col-head`, `.chips`, `.sort`, `.ghost-col`, drag states)
 
 ## Summary
@@ -48,7 +48,7 @@ Render the board: columns come from `type: view, pinned: true` documents sorted 
 - [x] `⇧←` / `⇧→` move the active column one position left/right and persist `order` identically — keyboard drag is not a second, weaker code path.
 - [x] A trailing `.ghost-col` ("＋ New list — a folder, a view, or any filter", dashed, `220px`) opens a picker positioned at the click point offering: **a folder** (options from `GET /api/tree`, with doc counts), **a library/preset view**, **a plugin column type** (from discovered manifests), and **from current search** (when a search query is active).
 - [x] Every picker choice creates a **pinned view document** via `POST /api/docs` with the appropriate query frontmatter (`folder:` for folders, filters for presets, `column: "<plugin>/<type>"` for plugin columns) and `order` set to last; the new column appears and is scrolled into view.
-- [x] Folder columns scope by directory **and include threads whose parent lives in that folder** (threads inherit their parent's folder per SPEC.md §11).
+- [x] Folder columns scope by directory **and include threads whose parent lives in that folder** (threads inherit their parent's folder per SPEC.md §10).
 - [x] `＋` on a **folder** column creates a document into that folder; `＋` on any other column creates into `data/docs/inbox/`; the new document opens immediately in that column with its title selected for typing.
 - [x] The column `⋯` menu (a stub in the prototype — implement it) offers **Rename**, **Edit query**, and **Unpin**; rename and edit-query `PUT` the view document, unpin **archives** it (`status: archived`) rather than deleting it.
 - [x] Browser-local state — per-column scroll position and which document each column has open — persists in `localStorage` under a namespaced key; **no query, order, or column identity is ever stored locally**.
@@ -90,7 +90,7 @@ query: # the GET /api/docs filter set
 
 An unparseable view document must render an error card naming the document (with a link to open it) — never crash the board, and never silently drop the column.
 
-**Order values.** Use sparse integers (e.g. multiples of 10) so a single insert usually rewrites one document. On drop, compute the target index, then write the minimum set of `order` values that realizes it; if the gap is exhausted, renumber the whole board in one pass. Every write is a `PUT /api/docs/:id` — the server auto-commits, so this is a visible, agent-stewardable act (SPEC.md §11).
+**Order values.** Use sparse integers (e.g. multiples of 10) so a single insert usually rewrites one document. On drop, compute the target index, then write the minimum set of `order` values that realizes it; if the gap is exhausted, renumber the whole board in one pass. Every write is a `PUT /api/docs/:id` — the server auto-commits, so this is a visible, agent-stewardable act (SPEC.md §10).
 
 **Drag.** Follow the prototype exactly: the header is the drag handle (`cursor: grab` / `grabbing`); `mousedown` on the header (but not on a button) sets `draggable` on the column and `mouseup` clears it, so buttons stay clickable. `dragover` finds the first non-dragging column whose midpoint is right of the pointer and inserts before it (or before the ghost column). Persist on `dragend`, not on every `dragover`.
 
@@ -100,7 +100,7 @@ An unparseable view document must render an error card naming the document (with
 
 **Creation semantics (＋).** Resolve from the column's view document: a `folder:` query ⇒ create into that folder; a plugin `column:` ⇒ create that plugin's doc type; everything else ⇒ `data/docs/inbox/`. After creation, open the new document in that column with the title focused and selected. UI-009's omnibox creates the same way — factor the creation call into `useCreateInColumn` so both paths share it, and note in code that the final creation UX is settled with UI-009.
 
-**Local vs. corpus state.** The dividing line is explicit in SPEC.md §11 and is a review-blocking correctness rule: **corpus** = which columns exist, their queries, their order, their titles; **local** = scroll positions, which reader is open, per-reader nav stacks (UI-005). Namespace the localStorage key (e.g. `corpus.board`) and version it so a schema change degrades to defaults rather than throwing.
+**Local vs. corpus state.** The dividing line is explicit in SPEC.md §10 and is a review-blocking correctness rule: **corpus** = which columns exist, their queries, their order, their titles; **local** = scroll positions, which reader is open, per-reader nav stacks (UI-005). Namespace the localStorage key (e.g. `corpus.board`) and version it so a schema change degrades to defaults rather than throwing.
 
 **Toasts.** Reorder, pin, and unpin narrate themselves per the prototype's convention (bottom-right, max 3, 6 s) — e.g. "Pinned — a view document was created for "Finance" (pinned: true, order: last)." Use the shared toast surface; if it does not exist yet, add a minimal one in `apps/ui/src/shell/` styled per `.toast-wrap`/`.toast` and let UI-011 take it over.
 
@@ -111,7 +111,7 @@ An unparseable view document must render an error card naming the document (with
 - **A view document archived or deleted out-of-band** (the agent stewarding the board) — the column disappears live via SSE; if it had a reader open, close it gracefully and drop its local entry.
 - **Drag interrupted** (dropped outside the board, `Esc`) — restore the pre-drag order; persist nothing.
 - **Concurrent reorder** (the agent rewrites `order` while the user drags) — last write wins; the board re-renders from the refetched documents, so the user sees the reconciled order rather than a phantom.
-- **Plugin column type not installed** (a view doc references `column: "todos/board"` with the plugin removed) — render a "plugin missing" card per SPEC.md §15 M5, keeping the column in place.
+- **Plugin column type not installed** (a view doc references `column: "todos/board"` with the plugin removed) — render a "plugin missing" card per SPEC.md §12 M5, keeping the column in place.
 - **Folder column and thread inheritance** — verify a thread whose parent is in `finance/` shows in the `finance/` column even though thread files live in `data/threads/`.
 - **Very long column titles / many filter chips** — the header must not push the count, ＋, or ⋯ out of the card; truncate the title with ellipsis and wrap the chip row.
 - **`⇧←`/`⇧→` at the ends** — no-op silently; do not wrap around and do not write.
@@ -133,7 +133,7 @@ Vitest + React Testing Library in `apps/ui` (kit hooks stubbed at the client bou
 
 ## E2E Verification Plan
 
-Against the **real running application**, exercising SPEC.md §15 M3's board checks. Assert both the UI state **and** the on-disk view document.
+Against the **real running application**, exercising SPEC.md §12 M3's board checks. Assert both the UI state **and** the on-disk view document.
 
 ### Verification Steps
 
@@ -358,7 +358,7 @@ column "finance": count 4, chips "folder: finance/", rows:
 ```
 
 Thread files live in `data/threads/` and still appear in the `finance/` column,
-per SPEC.md §11.
+per SPEC.md §10.
 
 #### 9. ＋ semantics
 
@@ -543,7 +543,7 @@ await create(INBOX_TARGET, "Whatever the user typed");   // → new document id
   `searchQuery` prop; the board passes `""`, so the entry is correctly absent.
 - **`DEFERRED → UI-005`** — the reader. `apps/ui/src/board/ColumnReaderScaffold.tsx`
   is **scaffolding** and is labelled as such in its own docblock: it exists only
-  to keep SPEC.md §11's creation promise ("opens immediately, title selected").
+  to keep SPEC.md §10's creation promise ("opens immediately, title selected").
 - **`STRUCK → sprint-009 Open Conflict 12`** — the server-backed Playwright spec.
   `playwright.config.ts` starts one Vite whose proxy target is fixed at
   `CORPUS_SERVER_ORIGIN ?? 127.0.0.1:8765`, and `smoke.spec.ts` asserts the

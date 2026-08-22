@@ -26,7 +26,7 @@ opus
 
 - SPEC.md **§7** line 399 — `.claude/agents/*.md` as the agent-def root
 - SPEC.md **§8** — `@<subagent-name>` is a directive routed to that persona
-- SPEC.md **§11** line 539 — the `@` autocomplete, backed by `GET /api/docs`
+- SPEC.md **§10** line 539 — the `@` autocomplete, backed by `GET /api/docs`
 
 ## Summary
 
@@ -321,7 +321,7 @@ Why *stop being wrong* rather than *distinguish* — recorded in full in the
   of them apart the menu would have to carry the rows `agentDefRows` discarded
   and a reason each — and UI-122's whole lesson is that this item is *news beside
   an offer that works*, not a diagnostics panel.
-- **The board already says it better**, and §11 is where "what does this
+- **The board already says it better**, and §10 is where "what does this
   workspace hold" belongs: the dropped document is listed, with its folder on the
   row and its path in the reader, one column away.
 

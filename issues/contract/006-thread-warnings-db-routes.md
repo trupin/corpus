@@ -23,7 +23,7 @@ opus — a ~5-line rider plus two small routes; every shape is pinned by shipped
 
 ## Spec References
 
-- SPEC.md §14 — warnings on API responses; §2.2 — `corpus db rebuild` / `db doctor`
+- SPEC.md §11 — warnings on API responses; §2.2 — `corpus db rebuild` / `db doctor`
 - `issues/sprints/sprint-006.md` — Open Conflict 2 (rationale; the anchored-creation hook-rejection case)
 
 ## Summary

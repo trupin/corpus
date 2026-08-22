@@ -17,14 +17,14 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 context menu: "`esc` dismisses, arrows navigate, `↵` activates"
+- SPEC.md §10 context menu: "`esc` dismisses, arrows navigate, `↵` activates"
 
 ## Summary
 Evaluator finding (2026-07-30, LEDGER-2 — pre-existing since UI-018; TEST-439 only
 ever exercised ArrowDown): with roving focus correctly on a menu item, `Enter` and
 `NumpadEnter` do nothing — the menu stays open, the action never runs; only `Space`
 activates. True of every Corpus menu (row, header, reader, job, selection). Direct
-§11 violation. Likely a keydown handler consuming/ignoring Enter on the focused
+§10 violation. Likely a keydown handler consuming/ignoring Enter on the focused
 button (buttons natively activate on Enter — something intercepts). Fix in the shared
 menu component, add both Enter variants to its tests, and extend the e2e keyboard
 case to actually press `↵`.

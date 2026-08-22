@@ -50,7 +50,7 @@ claim is now true; it was premature rather than fabricated.
 | 9  | Serializer written, not borrowed           | PASS     | No `turndown`/`rehype-remark`/`node-html-markdown`/`showdown` in either `package.json`; exactly one `export function serialize` in `apps/ui/src` + `packages/kit/src` |
 | 10 | Empty document serializes to empty         | PASS     | Frontmatter-only doc shows exactly one empty `P`; type-then-delete produced **0** PUTs |
 | 11 | Ref serializes from attributes             | PASS     | `[[doc_mbc52nvo]]` and `[[doc_mbc52nvo\|the rate assumption]]` render as "Rates"/"the rate assumption" and serialize back to the bracket form byte-identically |
-| 12 | §11 input shortcuts                        | PASS     | `## `,`### `,`#### `,`- `,`1. `,`> `,`**b**`,`*i*`,`_i_`,`` `c` `` → `H2,H3,H4,UL,OL,BLOCKQUOTE,P`; wire body is canonical markdown |
+| 12 | §10 input shortcuts                        | PASS     | `## `,`### `,`#### `,`- `,`1. `,`> `,`**b**`,`*i*`,`_i_`,`` `c` `` → `H2,H3,H4,UL,OL,BLOCKQUOTE,P`; wire body is canonical markdown |
 | 13 | Shortcuts inert inside a fence             | PASS     | Node types unchanged after typing `## `,`- `,`**x**` inside a fence; disk holds them verbatim inside ``` |
 | 14 | Paste parses / literal in fence            | PASS (log) | Not independently re-run; log is specific and consistent with the fence behavior I did verify |
 | 15 | N rapid edits = one PUT                    | PASS     | 15 chars in 431 ms → **0** PUTs during typing, **exactly 1** after the debounce, carrying the full serialized body |

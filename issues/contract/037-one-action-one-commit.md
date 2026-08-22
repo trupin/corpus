@@ -14,7 +14,7 @@ P2 (nice-to-have)
 
 ## Model
 
-opus — the rider settled the behaviour and §11 spells the result vocabulary. The
+opus — the rider settled the behaviour and §10 spells the result vocabulary. The
 open shape decisions are named under "Decisions this issue must make"; escalate
 rather than invent.
 
@@ -33,13 +33,13 @@ rather than invent.
   contains "exactly the documents the action **changed**", "never folds into a
   preceding editing session's squashed commit, and no later save folds into it",
   and its message "names the action and the documents it changed"
-- SPEC.md **§11**, "Selecting rows, and acting on the selection" — the actions, the
+- SPEC.md **§10**, "Selecting rows, and acting on the selection" — the actions, the
   three-part result, and "the history agrees with it (§4)"
 - SPEC.md **§9.2** — the document mutation routes as they stand today; the acting
   party on every mutating request; deletion user-only
 - SPEC.md **§7** — document locks: write paths refuse edits to a document locked
   by the other party, identifying the holder
-- SPEC.md **§14** — every mutation validates before writing; a mutation may
+- SPEC.md **§11** — every mutation validates before writing; a mutation may
   succeed and still carry warnings
 
 ## Summary
@@ -74,7 +74,7 @@ the commits land the way the spec says is the shape SHARED-017 explicitly refuse
 to accept. This is why UI-083 depends on this issue rather than the other way
 round.
 
-The second half is the result. §11 requires a bulk action to apply to what it can
+The second half is the result. §10 requires a bulk action to apply to what it can
 and report what it could not, **in three parts** — changed, already in that state,
 and, listed apart from both, did not change and why. That vocabulary has to exist
 on the wire before the board can render it: "already archived" is a no-op and not
@@ -105,7 +105,7 @@ success for work that did not happen.
       their schemas and their status codes, and stay the path for the reader's ⋯
       menu and the per-row quick actions
 - [x] `openapi.json` and the typed client regenerate cleanly and are committed;
-      the §14 drift check passes
+      the §11 drift check passes
 - [x] The contract states, in the route's own description, that the act is **one
       commit** — so a server implementation that loops the single-document path
       is visibly wrong rather than merely slower
@@ -145,7 +145,7 @@ where the requirement is stated so the server issue cannot miss it.
 **The commit contains exactly what changed.** A document the action could not
 change leaves nothing in it, and a document that was already in the target state
 contributes nothing either. So the three-part result and the commit's file list
-are the same set computed once, not two answers that might disagree. §11 puts it
+are the same set computed once, not two answers that might disagree. §10 puts it
 as "the history agrees with it (§4)"; concretely it means the response's
 `changed` list and `git show --name-only` must match.
 
@@ -159,19 +159,19 @@ twenty files is a guarantee the write path cannot actually give without either
 checking everything first and racing anyone who edits one in between, or writing
 some and rolling them back — a rollback that itself commits.
 
-**Which acts.** §11 offers Archive, Unarchive, Resolve/Reopen, Move to a folder,
+**Which acts.** §10 offers Archive, Unarchive, Resolve/Reopen, Move to a folder,
 add or remove tags, mark still current, Delete, and "Ask the agent about these".
 The last one needs **nothing here** — it creates one standalone thread whose
 first turn references every selected document, through the existing
-`POST /api/threads`, and it changes none of them (which is why §11 keeps it
+`POST /api/threads`, and it changes none of them (which is why §10 keeps it
 available when some are locked). Note that "mark still current" and "add/remove
 tags" have no dedicated single-document route today either: both are keys of
 `UpdateDocRequestSchema` on `PUT /api/docs/{id}`. **Tagging is add-or-remove, never
-replace** — §11 is explicit — so the batch shape must express a delta and must not
+replace** — §10 is explicit — so the batch shape must express a delta and must not
 be a "set the tags to this" that quietly flattens twenty different tag sets.
 
 **Resolve/Reopen acts on threads**, whose routes live on `/api/threads/:id`
-rather than `/api/docs/:id`. §11 offers an action only when it applies to every
+rather than `/api/docs/:id`. §10 offers an action only when it applies to every
 selected item, so a selection is homogeneous by the time Resolve is offered — but
 the route must still decide whether it covers thread status or whether threads get
 their own batch path. Prefer one route over two if the act can be named uniformly;
@@ -179,12 +179,12 @@ say which, and why, in the description.
 
 ### Decisions this issue must make (escalate if genuinely ambiguous)
 
-1. **Ids only, or a query too?** §11's "Selecting a whole result set is two
+1. **Ids only, or a query too?** §10's "Selecting a whole result set is two
    distinct acts" lets a selection extend to *everything the column's query
    matches*, with "the count re-evaluated when the action runs". That could be a
    filter-shaped request body, or the UI could resolve the query to ids and send
    those. _Recommendation: **ids only** for v1._ A filter-shaped mutation is a far
-   larger promise (the server acting on a set nobody enumerated), §11 already
+   larger promise (the server acting on a set nobody enumerated), §10 already
    forbids bulk delete on a whole-result-set selection for exactly that reason,
    and "the result reports the documents actually changed — saying so when that
    differs from the number shown" is satisfiable by the UI comparing its own
@@ -214,10 +214,10 @@ say which, and why, in the description.
 - **Every document refused** — still `200` with an empty `changed` list; the
   board reduces the selection to all of them and the user retries.
 - **Mixed lock holders** — each named individually with its own holder.
-- A document that fails **§14** validation — refused with its reason, in the same
-  part as a lock refusal but with a different reason, per §11.
+- A document that fails **§11** validation — refused with its reason, in the same
+  part as a lock refusal but with a different reason, per §10.
 - **Bulk delete's orphaned threads** — `DeleteDocResult` already reports the
-  threads a single delete orphans; the batch result must total them, because §11's
+  threads a single delete orphans; the batch result must total them, because §10's
   confirm has to say "how many threads will be left as orphaned records" *before*
   the act.
 
@@ -276,7 +276,7 @@ express it and cannot express the wrong thing.
 ### Verification Steps
 
 1. `corpus init` a scratch workspace on a non-default port; start the real
-   server; `npm run build` and confirm the §14 drift check passes on the
+   server; `npm run build` and confirm the §11 drift check passes on the
    regenerated `openapi.json`.
 2. Confirm the generated typed client exposes the new operation and that the
    three-part result is typed — the drift between server and clients being a type
@@ -288,17 +288,17 @@ express it and cannot express the wrong thing.
 ## Decisions taken (answering "Decisions this issue must make")
 
 1. **Ids only** — the recommendation, taken. The request carries
-   `ids: DocumentId[]` (min 1) and no filter. §11's whole-result-set selection is
-   resolved to ids by the caller, and §11's "the result reports the documents
+   `ids: DocumentId[]` (min 1) and no filter. §10's whole-result-set selection is
+   resolved to ids by the caller, and §10's "the result reports the documents
    actually changed — saying so when that differs from the number shown" is the
    caller comparing its own count against the response, which is where that
    comparison belongs: only the caller knows what number it showed. The array is
    deliberately **uncapped** — a column's query legitimately matches thousands,
-   and a limit the spec does not state would refuse a selection §11 allows the
+   and a limit the spec does not state would refuse a selection §10 allows the
    board to offer. Recorded at the point of definition in `schemas/bulk.ts`.
 2. **One route with an act discriminator.** The value of this surface is
    concentrated in two rules identical for every act — one commit containing
-   exactly what changed, and §11's three parts. Per-act routes restate both eight
+   exactly what changed, and §10's three parts. Per-act routes restate both eight
    times, which is eight opportunities to drift, and would leave a server free to
    implement one of them by looping the single-document path with no declaration
    contradicting it. **Threads ride the same route** rather than getting a second
@@ -319,7 +319,7 @@ express it and cannot express the wrong thing.
 > one verb over many ids — which SHARED-032 (signed 2026-08-09) made unable to
 > express a Save. §4 now says plainly that "a Save carrying a mix of verbs is
 > still one act and still one commit", and CONTRACT-048 replaced the request with
-> a staged set of `{id, action}` pairs plus §11's single whole-result-set entry.
+> a staged set of `{id, action}` pairs plus §10's single whole-result-set entry.
 > The live draft, redrafted against the shipped shape, is in
 > `issues/contract/048-bulk-carries-per-row-actions.md` under "Held for sign-off".
 > The text below is kept only as the record of what was proposed on 2026-08-08.
@@ -333,14 +333,14 @@ before `GET /api/threads/:id`:
 >   single act, which is what makes §4's "One action, one commit" something a
 >   client can ask for: the board makes one request per action, never one per
 >   document. The body carries the ids — never a filter, since a whole-result-set
->   selection (§11) is resolved to ids by the caller — and the act: archive,
+>   selection (§10) is resolved to ids by the caller — and the act: archive,
 >   unarchive, resolve, reopen, move, tag (a delta of added and removed tags,
->   never a replacement, §11), mark still current, or delete. It **applies to what
->   it can and reports what it could not** (§11): the result names individually
+>   never a replacement, §10), mark still current, or delete. It **applies to what
+>   it can and reports what it could not** (§10): the result names individually
 >   what **changed**, what was **already in that state** (a no-op, not a failure),
 >   and what **did not change and why** — a document locked by the other party
 >   refused with its holder named (§7), one failing validation refused with its
->   reason (§14), an unknown id reported as such. Partial application is a `200`;
+>   reason (§11), an unknown id reported as such. Partial application is a `200`;
 >   there is no `423` and no `404`, because a lock and an unknown id are
 >   per-document outcomes here rather than verdicts on the request. It lands as
 >   the **single** auto-commit §4 requires, authored by the acting party and
@@ -492,7 +492,7 @@ New tests: 35 cases in `schemas/bulk.test.ts`, 18 blocks in `openapi.test.ts`'s
 `routes/index.test.ts` (mounted, real requests through a stub handler registered
 against the route definition), 5 in `client/index.test.ts`. Updated pins:
 the request-body count 17 → 18, the mandatory/omittable partition, the user-only
-`403` list, and the §14 warning-carrier list.
+`403` list, and the §11 warning-carrier list.
 
 **Not verified here, by design.** The behavioural run — twenty documents, three
 locked, one commit, seventeen files in `git show --name-only` — belongs to the

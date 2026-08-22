@@ -231,7 +231,7 @@ TEST-4: An explicit body wins over the template, and an absent template is not a
 Given: The TEST-3 workspace, plus no template whose `for` is `view`.
 When: (a) `POST` a `note` **with** a `body`; (b) `POST` a `view` with no body.
 Then: (a) is `201` and the file holds exactly the supplied body — no template text. (b) is
-`201` with an empty body — a missing template is the documented "none → empty" case (§11), not
+`201` with an empty body — a missing template is the documented "none → empty" case (§10), not
 a `400` and not a `500`.
 
 TEST-5: Template selection is deterministic and self-referential loops are refused
@@ -402,7 +402,7 @@ When: `POST /api/docs/<id>/archive`, then `GET /api/docs?status=archived`, then
 `GET /api/docs` with no `status`.
 Then: The archive call is **200** with `status: archived` in the returned `Doc`; the on-disk
 frontmatter says `archived`; the `status=archived` query lists it; the default query does
-**not** (SPEC §11 — archived drops out of the default result set). Unarchiving reverses all
+**not** (SPEC §10 — archived drops out of the default result set). Unarchiving reverses all
 three observations.
 
 TEST-26: Archiving a `type: skill` document moves its whole folder
@@ -577,7 +577,7 @@ the orchestrator takes the rider, the body carries a `warnings` entry with a `co
 code and the first lines of the hook output, and this test asserts it. If the orchestrator
 defers, this test asserts the body is exactly the declared shape with **no undeclared field**,
 and the E2E log records `DEFERRED → <contract issue>` with the log line as substitute evidence
-plus an explicit note that SPEC §14's "a warning on the API response" is not yet met. Emitting
+plus an explicit note that SPEC §11's "a warning on the API response" is not yet met. Emitting
 an undeclared `warnings` field fails this test under either adjudication.
 
 TEST-46: A workspace that is not a git repository stays fully usable
@@ -1069,10 +1069,10 @@ comment says "`fresh` is the absence of a tier", so the field is either nullable
 gains `fresh`. Whichever is chosen is documented in the schema description, and the same value
 is what `stale=` filters against. `evergreen: true` documents always render as fresh/absent.
 
-TEST-106: Thread rows carry the §11 affordances; non-thread rows carry them as null
+TEST-106: Thread rows carry the §10 affordances; non-thread rows carry them as null
 Given: The regenerated `DocRowSchema`.
 When: A thread row and a note row are each round-tripped.
-Then: The thread row carries the thread affordances SPEC §11 renders — agent participation
+Then: The thread row carries the thread affordances SPEC §10 renders — agent participation
 state, the anchor quote, a last-turn preview, unread/awaiting indicators, and the parent id —
 and the note row carries the same keys with `null` values. **Nullable, not optional**
 (Open Conflict 9): a row always has the key, and `null` means "not a thread", consistent with
@@ -1354,7 +1354,7 @@ failing an issue for lacking one is wrong.
 
 **1. CONTRACT-005 → SERVER-005 (only if Open Conflict 1's rider is taken).**
 CONTRACT-005 would produce a `warnings` array on the document mutation responses; SERVER-005
-consumes it to satisfy SPEC §14's "a warning on the API response". **This is the only hard
+consumes it to satisfy SPEC §11's "a warning on the API response". **This is the only hard
 compile-time dependency between the two domains in this sprint**, and it inverts the merge
 order — CONTRACT-005 would have to land first. If the orchestrator defers the warning envelope
 instead, the two are independent and can merge in either order.
@@ -1431,8 +1431,8 @@ in rough order of blast radius. Each carries a recommendation; the orchestrator 
 **before** the domain agents start, and each adjudication is written back into the affected
 issue file(s).
 
-**1. SPEC §14 requires a warning on the API response, and the contract has nowhere to put it.**
-§14 is unambiguous: when a hook fails during auto-commit, "the failure surfaces loudly — **a
+**1. SPEC §11 requires a warning on the API response, and the contract has nowhere to put it.**
+§11 is unambiguous: when a hook fails during auto-commit, "the failure surfaces loudly — **a
 warning on the API response**, a server log entry, and console visibility". SERVER-005 has two
 ACs and two edge cases built on it (`commit_failed`, `commit_skipped`). But there is **no
 `warnings` field anywhere in `packages/contract`** (grepped: zero hits): `UpdateDocResponse` is
@@ -1451,7 +1451,7 @@ blocking** for SERVER-005 and inverts the merge order.
 
 The coherent alternative is to **defer**: SERVER-005 logs loudly, the mutation stands, the
 response stays exactly the declared shape, and the E2E log records `DEFERRED → CONTRACT-006`
-with an explicit note that §14's response-warning half is unmet. That keeps the two domains
+with an explicit note that §11's response-warning half is unmet. That keeps the two domains
 independent and keeps SERVER-005 — already the largest issue in the phase — from growing a
 contract dependency. **It must be decided either way**, because TEST-45 is written from the
 adjudication and SERVER-005 cannot invent the field.
@@ -1609,7 +1609,7 @@ alone.
 **10. CONTRACT-005's illustrative key list is not the emitted vocabulary, and nothing re-points
 the server.**
 The AC lists `["docs"]`, `["docs", {filter-hash}]`, `["doc", id]`, `["thread", id]`, `["tree"]`,
-`["queue"]`, `["jobs"]`, `["job-log", id]` and says to "derive the actual set from SPEC §11's
+`["queue"]`, `["jobs"]`, `["job-log", id]` and says to "derive the actual set from SPEC §10's
 refetch surfaces and SERVER-007's emitter". SERVER-007's emitter and its E2E log record a
 different set: `["docs"]`, `["docs","<docId|threadId>"]`, `["tree"]`, `["threads","<threadId>"]`,
 `["queue"]`, `["jobs"]`, `["jobs","<eventId>"]`, `["locks"]`, `["locks","<docId>"]`. There is no

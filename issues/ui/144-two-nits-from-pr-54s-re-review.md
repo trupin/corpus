@@ -28,7 +28,7 @@ opus
 - Related: UI-140 (whose fix raised both), UI-048
 
 ## Spec References
-- SPEC.md **§11** — the reveal, and how a surface accounts for a miss
+- SPEC.md **§10** — the reveal, and how a surface accounts for a miss
 
 ## Summary
 

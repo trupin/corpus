@@ -27,7 +27,7 @@ opus
 
 - SPEC.md **§5** — `updated` is part of a document's frontmatter
 - SPEC.md **§9.2** — `GET /api/docs` is "newest-updated first by default"
-- SPEC.md **§11** — the board, and the column a view document backs
+- SPEC.md **§10** — the board, and the column a view document backs
 
 ## Summary
 

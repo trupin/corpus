@@ -1,4 +1,4 @@
-# [SHARED-052] `corpus doc check` can report what a save accepts, and §14 says it cannot
+# [SHARED-052] `corpus doc check` can report what a save accepts, and §11 says it cannot
 
 ## Domain
 
@@ -24,7 +24,7 @@ fable
 
 ## Spec References
 
-- SPEC.md **§14** line 594 — *"Every server mutation validates before writing.
+- SPEC.md **§11** line 594 — *"Every server mutation validates before writing.
   **The same validator behind `corpus doc check` runs on every save** …
   Unresolvable-but-well-formed anchors (orphaned threads) and unresolved
   `[[refs]]` are warnings, not failures."* _(Rider signed 2026-08-07.)_
@@ -35,7 +35,7 @@ Found by PR #50's second review, and it is the finding that would otherwise have
 shipped unnoticed — the orchestrator believed SHARED-049, -050 and -051 were the
 whole spec debt of this release.
 
-§14:594 makes two claims. The validator behind `corpus doc check` is the **same**
+§11:594 makes two claims. The validator behind `corpus doc check` is the **same**
 one that runs on every save, and the things that are *warning rather than
 failure* are **two**: orphaned anchors, and unresolved `[[refs]]`. The list reads
 as exhaustive.
@@ -49,7 +49,7 @@ and `POST /api/check` → `errors: ["frontmatter-invalid"]` on one document.
 
 **The class pre-exists this release.** `REPORTED_CHECK_CODES`
 (`apps/server/src/docs/write.ts:126`) already held `unterminated-fence`, which
-§14:594 names in its own list of what the validator checks and which also does
+§11:594 names in its own list of what the validator checks and which also does
 not block a save. So the spec was already inaccurate; SERVER-123 and SERVER-124
 widened it.
 
@@ -75,7 +75,7 @@ is missing is that the spec says it is impossible.
 
 ## The drafted text — read this back verbatim before applying
 
-Insert into **§14**, immediately after the sentence ending *"are warnings, not
+Insert into **§11**, immediately after the sentence ending *"are warnings, not
 failures"* in the first bullet at line 594:
 
 > **A finding may be reported without refusing the write.** The validator is one,
@@ -108,7 +108,7 @@ failures"* in the first bullet at line 594:
 ## Acceptance Criteria
 
 - [x] The user has signed the drafted text, verbatim, on its own
-- [x] SPEC.md §14 states that a finding may be reported without refusing the write
+- [x] SPEC.md §11 states that a finding may be reported without refusing the write
 - [x] `corpus doc check`'s CLI help says the same, in one sentence, and
       `docs/cli.md` is **regenerated** rather than hand-edited
 - [x] The release notes for the version that ships SERVER-124 state the exit-code
@@ -117,13 +117,13 @@ failures"* in the first bullet at line 594:
       this rider was signed and its notes could not have stated a rule that did
       not yet exist
 - [x] `npm run spec:check` passes
-- [x] No other §14 bullet is reworded to agree with it
+- [x] No other §11 bullet is reworded to agree with it
 
 ## Technical Design
 
 ### Files to Create/Modify
 
-- `SPEC.md` — §14, the first bullet only
+- `SPEC.md` — §11, the first bullet only
 - `apps/cli/src/commands/doc/check.ts` — the help text
 - `docs/cli.md` — regenerated
 

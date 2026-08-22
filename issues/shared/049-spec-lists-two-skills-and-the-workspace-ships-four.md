@@ -60,7 +60,7 @@ harder problem and is not filed).
 four directories plus any plugin's.
 
 Found by PR #49's review. **The mechanism each skill uses is spec'd** — §7 line
-399 declares the document roots, §11 line 539 says creating a subagent document
+399 declares the document roots, §10 line 539 says creating a subagent document
 makes it addressable with no separate registry — so this is not a capability
 shipping unspecified. It is an enumeration that has stopped enumerating.
 
@@ -79,7 +79,7 @@ will not learn that it can write a persona for them.
 There is a second question underneath, and it is the one worth the user's
 attention: **should §7 enumerate skills at all?** Every enumeration in this
 document has gone stale at least once, and the alternative — describing what a
-skill *is* and letting the installed set answer for itself — is what §11 already
+skill *is* and letting the installed set answer for itself — is what §10 already
 does for plugin skills. Naming them has value (a reader wants to know what they
 get) and cost (this issue). The amendment should decide that, not just append two
 names.
@@ -123,7 +123,7 @@ at line 339:
 
 | Question | Answer | Rejected, and why it lost |
 | --- | --- | --- |
-| 1. Enumerate or describe? | **Describe** | Enumerating is what created this issue. §11 already describes rather than lists for plugin skills, so describing is the established pattern rather than a new one |
+| 1. Enumerate or describe? | **Describe** | Enumerating is what created this issue. §10 already describes rather than lists for plugin skills, so describing is the established pattern rather than a new one |
 | 2. Who maintains the list? | **Nobody — there is no list** | "Name an owner" was the obvious repair. It lost because the rule that aged had an implicit owner too. A rule needing a person to remember it is the failure, not the fix |
 | 3. Sentences for `converse` and `profile`? | **No** | They earn no mention, because no rule in the spec depends on either in particular. `orchestrate` and `asd-ste100` do, and both keep theirs |
 

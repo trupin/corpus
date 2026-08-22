@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §7 (archived skills "restorable"), §11 (reader ⋯ menu)
+- SPEC.md §7 (archived skills "restorable"), §10 (reader ⋯ menu)
 
 ## Summary
 Wave-3 audit SPEC 34: the reader menu offers Archive with no inverse — unarchiving is
@@ -383,7 +383,7 @@ the top of this log.
 - Scratch confined to `/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s018-ui/020-eytUKW`; nothing
   glob-deleted.
 - Every `corpus init` passed `--port` explicitly.
-- `git diff SPEC.md` and `git diff packages/contract` empty. §11's ⋯-menu sentence enumerates
+- `git diff SPEC.md` and `git diff packages/contract` empty. §10's ⋯-menu sentence enumerates
   "Archive, Delete, and Resolve/Reopen" and does not name Unarchive — **not patched in passing**
   (TEST-647); routed to the orchestrator as a spec rider for the phase PR.
 

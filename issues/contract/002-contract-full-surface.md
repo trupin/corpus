@@ -20,7 +20,7 @@ opus — the endpoint list is pinned by SPEC.md §9.2; the work is enumerating a
 - SPEC.md §9.2 (HTTP API) — the authoritative endpoint list this issue must cover in full
 - SPEC.md §7 (Event queue and agent loop) — queue contract, event object, document locks, job logs, read state
 - SPEC.md §6 (Threads and anchors) — turn format, turn deletion + cascade, attachments
-- SPEC.md §11 (UI — the board) — search filter surface, Attention (`needs=me`), console, SSE invalidation
+- SPEC.md §10 (UI — the board) — search filter surface, Attention (`needs=me`), console, SSE invalidation
 - SPEC.md §5 (The document model) — doc types, staleness tiers, `[[refs]]`/`references:` filter
 - CLAUDE.md — Architecture Decision 3 (contract-first via code), 4 (queue parking over HTTP), 5 (bearer auth)
 
@@ -106,7 +106,7 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 **`GET /api/docs` parameter grammar.**
 
 - `q` — free-text FTS across titles, bodies and turn bodies.
-- `type`, `status`, `tag` — comma-separated lists; values OR within a parameter, AND across parameters. `type` is `z.string()` (core values enumerated in the description — `note`, `thread`, `view`, `template`, `skill`, `agent-def` — but open, because plugins define their own types per §5); `status` is a strict enum `open | resolved | archived`. Document that the default result set **excludes `status: archived`** (§11 "Default state excludes `status: archived`") and that passing `status` explicitly overrides that default.
+- `type`, `status`, `tag` — comma-separated lists; values OR within a parameter, AND across parameters. `type` is `z.string()` (core values enumerated in the description — `note`, `thread`, `view`, `template`, `skill`, `agent-def` — but open, because plugins define their own types per §5); `status` is a strict enum `open | resolved | archived`. Document that the default result set **excludes `status: archived`** (§10 "Default state excludes `status: archived`") and that passing `status` explicitly overrides that default.
 - `folder` — path prefix relative to `data/docs/`.
 - `parent` — document id; thread-only filter.
 - `references` — document id; matches documents whose body contains `[[<id>]]` (the `links` table, §9.1).
@@ -126,7 +126,7 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 
 **`GET /api/tree`.** Returns `{ folders: FolderNode[] }` where `FolderNode = { path, name, count, totalCount, children: FolderNode[] }` — `count` is documents directly in the folder, `totalCount` includes descendants. Powers folder pickers and filter chips (§9.2).
 
-**`POST /api/capture`.** `multipart/form-data`: `text` (required), `files` (repeated, optional). Creates the inbox document plus its agent-requested whole-document filing thread (§11 Capture) and returns `{ docId, threadId, eventId }` — `eventId` is the enqueued `comment.created` event, so the UI can immediately show the pending-agent indicator and the console can link the job back.
+**`POST /api/capture`.** `multipart/form-data`: `text` (required), `files` (repeated, optional). Creates the inbox document plus its agent-requested whole-document filing thread (§10 Capture) and returns `{ docId, threadId, eventId }` — `eventId` is the enqueued `comment.created` event, so the UI can immediately show the pending-agent indicator and the console can link the job back.
 
 **Thread verbs.**
 
@@ -157,7 +157,7 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 
 **Jobs** (§7 job logs).
 
-- `Job = { eventId, status, started, updated, lastLine, originId }` — `originId` is the originating document/thread id so the console detail header can link through (§11 console).
+- `Job = { eventId, status, started, updated, lastLine, originId }` — `originId` is the originating document/thread id so the console detail header can link through (§10 console).
 - `GET /api/jobs?recent=<n>` — console rows, most recent first.
 - `GET /api/jobs/:id/log` — the full log as `{ lines: JobLogLine[] }` with `JobLogLine = { ts, line }`, parsed from `.corpus/jobs/<eventId>.jsonl`.
 - `POST /api/jobs/:id/log` — body `{ line: string }`. Description states it is **localhost-only** (the Claude Code `PostToolUse` hook ingest path) and appends to the same file `corpus job log` writes.
@@ -169,7 +169,7 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 - `GET /attachments/{path}` is documented with a `path`-style parameter and a binary `200` response (`application/octet-stream`, actual content type varies). No client fetch wrapper — attachment URLs are used directly in `<img src>` / download links.
 - `src/client/upload.ts` exposes a small helper that builds the `FormData` and injects auth + the author header, since `openapi-fetch` handles multipart awkwardly (the edge case CONTRACT-001 flagged).
 
-**SSE** (§9.1, §11). `GET /events` is declared in the OpenAPI document with a `text/event-stream` response and a description covering the 25 s heartbeat and dead-subscriber pruning. Per CONTRACT-001's stated approach the client does **not** expose it as a fetch call: `src/client/events.ts` exports a typed helper (e.g. `createEventStream({ baseUrl, token })`) wrapping `EventSource` and yielding parsed, typed events. `InvalidatePayload = { keys: QueryKey[] }` where `QueryKey = Array<string | number | Record<string, unknown>>` — TanStack Query key arrays, so UI-002 maps an `invalidate` event straight onto `queryClient.invalidateQueries`. Because `EventSource` cannot set an `Authorization` header, the helper passes the bearer token as a `token` query parameter; document that on the route and note that it is acceptable under the localhost-bind model (Architecture Decision 5).
+**SSE** (§9.1, §10). `GET /events` is declared in the OpenAPI document with a `text/event-stream` response and a description covering the 25 s heartbeat and dead-subscriber pruning. Per CONTRACT-001's stated approach the client does **not** expose it as a fetch call: `src/client/events.ts` exports a typed helper (e.g. `createEventStream({ baseUrl, token })`) wrapping `EventSource` and yielding parsed, typed events. `InvalidatePayload = { keys: QueryKey[] }` where `QueryKey = Array<string | number | Record<string, unknown>>` — TanStack Query key arrays, so UI-002 maps an `invalidate` event straight onto `queryClient.invalidateQueries`. Because `EventSource` cannot set an `Authorization` header, the helper passes the bearer token as a `token` query parameter; document that on the route and note that it is acceptable under the localhost-bind model (Architecture Decision 5).
 
 **Errors.** Extend CONTRACT-001's union with `ValidationError` (400, carrying field-level issues), `ForbiddenError` (403, used by every user-only route), `NotFoundError` (404), `ConflictError` (409), and `LockedError` (423, carrying the blocking `Lock`). Each route declares only the codes it can actually return — a blanket "all errors on every route" defeats the point of a typed union.
 

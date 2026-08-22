@@ -30,7 +30,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11**, "Smart input everywhere" — "**Every composer can choose how
+- SPEC.md **§10**, "Smart input everywhere" — "**Every composer can choose how
   much thought the work gets.**" through "_(Rider signed 2026-08-06.)_": the
   surfaces, the unset default, the per-conversation starting point, the liveness
   coupling, and "claims **no key of its own**"
@@ -68,11 +68,11 @@ The skill is already reachable: `.claude/skills` is watched and projected
 (`apps/server/src/watcher/paths.ts:22`) and `skill` is a core document type
 (`packages/contract/src/schemas/doc.ts:14`), so the orchestrate skill is a
 document the UI can already fetch through `GET /api/docs` — the same projection
-the composers' three autocompletes already read (§11).
+the composers' three autocompletes already read (§10).
 
 ## Where the choice must be offered
 
-§11 enumerates, and SHARED-012's lesson is that per-surface phrasing is exactly
+§10 enumerates, and SHARED-012's lesson is that per-surface phrasing is exactly
 how three of five composers ended up without attachments (UI-070). Enumerate in
 the tests, not only in the spec:
 
@@ -110,7 +110,7 @@ implementation:
   wrong design and SHARED-022's Decision 3 rejects it by name.
 - **Liveness is a presentation rule only.** The control is live exactly when the
   composer says sending **will** reach the agent, and "shows as having nothing to
-  act on" when it says it will not. §11 is explicit: "a presentation rule only:
+  act on" when it says it will not. §10 is explicit: "a presentation rule only:
   §8 alone decides what reaches the agent, and choosing a weight neither asks the
   agent nor stops it being asked." So the control must not enable/disable the
   ask-agent toggle, and must not be wired into the send decision.
@@ -133,7 +133,7 @@ Consequences, stated so the scope is a decision and not a discovery:
    declares. Whether the parse belongs in the UI, in `@corpus/kit`, or on the
    server is a real design question — put it to the orchestrator rather than
    settling it inside a UI issue.
-2. **Transporting the choice** is not. §11 says the choice "**rides with the
+2. **Transporting the choice** is not. §10 says the choice "**rides with the
    request to whatever does the work** (§7)", and there is no field on any post,
    no field on the queue event, and nothing in the dispatch to carry it. The UI
    alone cannot satisfy that sentence.
@@ -208,7 +208,7 @@ real state, not a hypothetical.
       what reaches the agent
 - [x] The composer key contract is unchanged and the control claims **no key**;
       it is nonetheless operable from the keyboard like every other affordance
-      (§11 adds no pointer-exclusive capability)
+      (§10 adds no pointer-exclusive capability)
 - [x] Sending is never blocked and typed text is never rewritten
 - [x] A note-only turn with a level chosen enqueues nothing, produces no job and
       no dispatch line — and the composer said so before sending
@@ -255,14 +255,14 @@ memory, and must produce a request that carries *nothing* rather than a null the
 server has to interpret. Model it as absence.
 
 **The per-conversation memory is browser-local state with an existing precedent.**
-§11 puts it in the same class as reader width and collapse state; look at how
+§10 puts it in the same class as reader width and collapse state; look at how
 `threadCollapse.ts` / `ThreadCollapseContext.tsx` scope and persist per-thread
 browser-local state and follow that shape rather than inventing storage. Note the
 scope is "the same conversation" — the global composer's Ask is not a
 conversation, so decide and document what its scope is (SHARED-022 does not say;
 this is a genuine gap worth raising rather than guessing silently).
 
-**Liveness couples to a statement that does not exist yet.** §11's "A composer
+**Liveness couples to a statement that does not exist yet.** §10's "A composer
 says who it will reach, before you send" rider is signed (2026-08-05, SHARED-016)
 but a grep of `apps/ui/src` finds no implementation of it, and no UI issue is
 filed for it. So the coupling this issue's liveness rule depends on has no
@@ -281,7 +281,7 @@ same question.
 - **Two columns showing the same thread.** The per-conversation starting point is
   one value for one conversation; both should reflect it, exactly as collapse
   state does.
-- **A capture** — §11 names Capture explicitly. It is a request, and a request is a
+- **A capture** — §10 names Capture explicitly. It is a request, and a request is a
   request wherever it starts.
 - **A composer whose ask-agent toggle is flipped after a level is chosen.** The
   choice survives; only its liveness presentation changes. It is not cleared —

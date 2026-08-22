@@ -24,10 +24,10 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — the persistent toolbar, as added by SHARED-034
-- SPEC.md §11 — "the editor serializes to clean markdown"
-- SPEC.md §11 — the existing selection toolbar (formatting + Comment)
-- SPEC.md §11 — "§11 adds no exclusive-pointer capability"
+- SPEC.md §10 — the persistent toolbar, as added by SHARED-034
+- SPEC.md §10 — "the editor serializes to clean markdown"
+- SPEC.md §10 — the existing selection toolbar (formatting + Comment)
+- SPEC.md §10 — "§10 adds no exclusive-pointer capability"
 - `design/index.html` — authoritative for look & feel
 
 ## Summary

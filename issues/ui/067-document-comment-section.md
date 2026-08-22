@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §6 (`anchor: null` = whole-document comment), §11 Document view
+- SPEC.md §6 (`anchor: null` = whole-document comment), §10 Document view
 
 ## Summary
 Live report 2026-08-04: _"I want be able to leave a comment on a document without
@@ -62,7 +62,7 @@ one-line change here and the user should say so.
 
 ## Acceptance Criteria
 - [x] A comment composer is available on every document without selecting text,
-      findable at the bottom of the **comments list** — which is where §11's
+      findable at the bottom of the **comments list** — which is where §10's
       signed rider puts it: *"the comments list carries a composer"*. That
       supersedes this issue's own draft wording ("at the bottom of the
       document"), which was written before the placement was signed
@@ -98,11 +98,11 @@ one-line change here and the user should say so.
 
 ### SETTLED: a reply here is a TURN on the thread, flat — never a child thread
 
-§11 says *"every thread in the list can be replied to **in place**, without
+§10 says *"every thread in the list can be replied to **in place**, without
 leaving the document: the section reads as a set of conversations, each
 continuing where it began."* A reply that opened a **child thread** would not
 continue the conversation, it would start a second one hanging off a turn of it —
-which is what the ⤷ affordance inside a rendered turn is already for (§11's
+which is what the ⤷ affordance inside a rendered turn is already for (§10's
 turn-comment rider), and which resolves separately, carries its own status and
 appears in this very list as another row. Two different acts; keeping them
 distinct is the point.

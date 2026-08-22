@@ -47,7 +47,7 @@ app.openapi(contractRoutes.flushEditSession, …)
       structurally (it deletes before it emits); add the test that proves the
       route inherits it
 - [x] A flush that ends a session with an empty path-scoped range, or whose
-      commits were all rejected under §14, correctly emits **nothing** — and
+      commits were all rejected under §11, correctly emits **nothing** — and
       still answers `204`, because emission is decided after the response
 - [x] No acting party: the route is in the unattributed set, makes no commit, and
       declares no `x-corpus-author`

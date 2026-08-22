@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — the board
+- SPEC.md **§10** — the board
 
 ## Summary
 

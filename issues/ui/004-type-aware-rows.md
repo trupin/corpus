@@ -24,8 +24,8 @@ opus — the visual system is fully specified by the prototype (exact opacities,
 ## Spec References
 
 - SPEC.md §5 — "The document model", staleness ("age runs from `max(updated, reviewed)` against global thresholds — defaults 30/90/180 days; the UI renders this as a gradual ramp; **Still current** sets `reviewed: <now>`; `evergreen: true` opts out entirely")
-- SPEC.md §11 — "Type-aware rows" (thread rows show anchor quote, last-turn preview, unread and pending-agent indicators; plugin doc types render via their registered `ListItem`; the staleness ramp renders per row)
-- SPEC.md §11 — "Attention" (each row carries a reason chip; handling the reason clears the row live via SSE)
+- SPEC.md §10 — "Type-aware rows" (thread rows show anchor quote, last-turn preview, unread and pending-agent indicators; plugin doc types render via their registered `ListItem`; the staleness ramp renders per row)
+- SPEC.md §10 — "Attention" (each row carries a reason chip; handling the reason clears the row live via SSE)
 - SPEC.md §7 — "Document locks" (a locked document renders read-only with a banner; lock state is projected and broadcast over SSE)
 - SPEC.md §8 — pending-agent indicator ("no fake progress, no token streaming")
 - SPEC.md §9.2 — `needs=me` as the Attention union; `PUT /api/docs/:id`; `POST /api/threads`
@@ -116,7 +116,7 @@ Vitest + React Testing Library in `packages/kit`:
 
 ## E2E Verification Plan
 
-Against the **real running application** with a workspace containing documents of varied ages (per SPEC.md §15 M3, rows are what the board's checks observe).
+Against the **real running application** with a workspace containing documents of varied ages (per SPEC.md §12 M3, rows are what the board's checks observe).
 
 ### Verification Steps
 

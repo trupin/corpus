@@ -24,12 +24,12 @@ opus — assembly of finished pieces; the packaging shape is already fixed by Ar
 ## Spec References
 
 - CLAUDE.md — Architecture Decision 1 (tool/workspace split: the tool is installed via npm, `corpus` bin = server + CLI + pre-built UI served statically; `corpus init` creates the workspace), Decision 6 (npm-installed CLI for v1; self-contained binary is a later INFRA issue)
-- SPEC.md §15 (Milestones and verification) — definition of done for v1: "README documents the operator loop (start server, start `claude`, `/orchestrate`) and the one-time `npm run setup-hooks`"
+- SPEC.md §12 (Milestones and verification) — definition of done for v1: "README documents the operator loop (start server, start `claude`, `/orchestrate`) and the one-time `npm run setup-hooks`"
 - SPEC.md §4 (Repository layout)
 
 ## Summary
 
-Turn the monorepo into a thing a stranger can install. Today Corpus only runs from a clone: nothing is published, `apps/*` are all `private: true` with version `0.0.0`, there is no `README.md` at all, and the only GitHub Action is `CI / validate`. This issue produces a single published npm package that exposes the `corpus` bin, carries the server, and ships `apps/ui/dist` inside the tarball so the server can serve the board statically per Decision 1 — no separate UI install, no CDN, no build step on the user's machine. It adds a tag-triggered release workflow that builds everything and publishes with provenance, audits the tarball contents so no dev files or workspace data leak, unifies versioning across the repo, and writes the operator-facing README that SPEC.md §15 makes a condition of v1 being done. The acceptance test is deliberately brutal: install the tarball into a temp directory with no access to the repo and run the whole loop.
+Turn the monorepo into a thing a stranger can install. Today Corpus only runs from a clone: nothing is published, `apps/*` are all `private: true` with version `0.0.0`, there is no `README.md` at all, and the only GitHub Action is `CI / validate`. This issue produces a single published npm package that exposes the `corpus` bin, carries the server, and ships `apps/ui/dist` inside the tarball so the server can serve the board statically per Decision 1 — no separate UI install, no CDN, no build step on the user's machine. It adds a tag-triggered release workflow that builds everything and publishes with provenance, audits the tarball contents so no dev files or workspace data leak, unifies versioning across the repo, and writes the operator-facing README that SPEC.md §12 makes a condition of v1 being done. The acceptance test is deliberately brutal: install the tarball into a temp directory with no access to the repo and run the whole loop.
 
 ## Acceptance Criteria
 
@@ -136,7 +136,7 @@ something a packaging issue mints unilaterally.
 
 **Pack audit.** `npm pack --dry-run --json` yields the exact file list. Assert positively (the bin, `dist/**`, the UI build, `README.md`, `LICENSE`) and negatively (tests, `issues/`, `.claude/`, `.githooks/`, `design/`, `data/`, `.corpus/`, `*.env`, source maps if undesired). A negative-only check silently passes when the tarball is empty — assert both directions.
 
-**README.** Operator-first: what Corpus is in two sentences, install, `corpus init`, `corpus server start`, open the board, start `claude`, `/orchestrate`. Then a Contributing section: clone, `npm install`, `npm run setup-hooks`, `npm run build`, `npm test`, and the PR/squash-merge policy. It is a spec deliverable (§15), not decoration.
+**README.** Operator-first: what Corpus is in two sentences, install, `corpus init`, `corpus server start`, open the board, start `claude`, `/orchestrate`. Then a Contributing section: clone, `npm install`, `npm run setup-hooks`, `npm run build`, `npm test`, and the PR/squash-merge policy. It is a spec deliverable (§12), not decoration.
 
 **License.** Corpus is open source; if no `LICENSE` file exists yet, this issue is where it arrives, and the `license` field must match it. Confirm the license choice with the user rather than guessing.
 
@@ -561,7 +561,7 @@ the operator loop end to end — install, `corpus init`, `corpus server start`, 
 conflict and the fallback (run from a clone). Per Adjudication 9 the name decision is surfaced at the
 phase PR; it is not a silent placeholder.
 **TEST-83** the Contributing section is clone → `npm install` → **`npm run setup-hooks`** (called out as
-the required one-time step, §15) → `npm run build` → `npm test`, then the script table, the
+the required one-time step, §12) → `npm run build` → `npm test`, then the script table, the
 per-phase-PR + green-CI + **squash-only** policy, and the release procedure.
 **TEST-85** `CLAUDE.md` → Build & Dev Commands documents `version:check`, `package:build`, `pack:check`
 and `publish:dry-run` in the same style as `coverage`/`coverage:merge`, and `clean` now names

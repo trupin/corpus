@@ -33,7 +33,7 @@ opus
 
 ## Spec References
 - SPEC.md **§9** — the server's error shape
-- SPEC.md **§14** — refusals
+- SPEC.md **§11** — refusals
 
 ## Summary
 

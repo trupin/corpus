@@ -76,7 +76,7 @@ holds the rest for triage into domain issues — do not let them silently expire
 ## Findings to triage
 
 **MINOR**
-- ~~(5, infra) `scripts/pack-audit.ts:40` — no positive `REQUIRED_PACK_ENTRIES` entry for the todos plugin; if `npm run build` stops invoking `build-plugins.ts`, the tarball ships without the §15 reference plugin while `pack:check` stays green.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: there is no reference plugin to ship, and INFRA-031 deletes `build-plugins.ts` with the workspace. The *general* rule this instance illustrated — every artifact the installed tool resolves needs a positive `REQUIRED_PACK_ENTRIES` entry — is already `scripts/pack-audit.ts`'s stated contract and needs no ledger item.
+- ~~(5, infra) `scripts/pack-audit.ts:40` — no positive `REQUIRED_PACK_ENTRIES` entry for the todos plugin; if `npm run build` stops invoking `build-plugins.ts`, the tarball ships without the §12 reference plugin while `pack:check` stays green.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: there is no reference plugin to ship, and INFRA-031 deletes `build-plugins.ts` with the workspace. The *general* rule this instance illustrated — every artifact the installed tool resolves needs a positive `REQUIRED_PACK_ENTRIES` entry — is already `scripts/pack-audit.ts`'s stated contract and needs no ledger item.
 - ~~(6, infra) `.github/workflows/release.yml:78-82` — only the absent `NPM_TOKEN` bars a `v*` tag from publishing; an `environment:` with required reviewers would make the no-publish decision structural. (User decision on record: no publish, ever — consider deleting the publish job instead.)~~ **CLOSED by INFRA-014** (sprint-020 Adjudication 1): the `publish` job is repurposed into a `release` job — `npm publish` and `id-token: write` are gone, and the tag flow now attaches the tarball to a GitHub Release. Nothing in `.github/` can publish.
 - ~~(7, infra) `eslint.config.js:116-120` — core→plugin import ban enumerates only relative depths 3–5; shallower/deeper files slip through; boundary test probes depth 3 only.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: INFRA-031 deletes the core→plugin ban and its boundary test. A rule with nothing to ban cannot be under-enforced.
 - ~~(8, kit) `packages/kit/src/client/createCorpusClient.ts:655-660` — `pluginRequest` claims plugin-namespace-only but only strips leading slashes; `../../` escapes with the bearer token attached. Reject dot segments or soften the claim.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: `pluginRequest` is deleted; it survives only in stale `apps/ui/dist` build output. **Verified this is not a live traversal hole elsewhere** — the finding was specific to the `/api/x/` path builder, and there is no `/api/x/` route space any more (SHARED-064 amendment 8).
@@ -198,8 +198,8 @@ and 3 are unaffected by Phase 41.
 
 ## Polish-eval ledger additions (2026-07-30, evaluator pass on UI-022/023/024)
 
-Promoted to issues (not ledgered): anchor highlights never render (UI-027, §11
-violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
+Promoted to issues (not ledgered): anchor highlights never render (UI-027, §10
+violation); ↵ never activates any Corpus menu item (UI-028, §10 violation).
 
 - **Reading-width ceiling is a constant while `62ch` is font-dependent** (UI-023
   eval note 4): 560px carries ~13px slack over the strictly-measured 547.2px on the
@@ -209,15 +209,15 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - ~~esc dead after focus close~~ — **RULED 2026-07-31 (user): ignore the pointer
   until it moves.** Filed as UI-031.
 - **UI-024 issue prose corrected in place** (eval LEDGER-3): a selection in a thread
-  turn opens the reader's item menu (correct per §11), it does not fall through to
+  turn opens the reader's item menu (correct per §10), it does not fall through to
   the native menu as the "As built" note claimed; behavior right, text fixed.
-- ~~§14 doctor report-only warnings rider~~ — **SIGNED AND APPLIED 2026-07-31**
-  (user sign-off round; SPEC.md §14 updated).
+- ~~§11 doctor report-only warnings rider~~ — **SIGNED AND APPLIED 2026-07-31**
+  (user sign-off round; SPEC.md §11 updated).
 
 ## Wave-1 harvest ledger additions (2026-07-31, sprint-018)
 
-- ~~§11 ⋯-menu Unarchive rider~~ — **SIGNED AND APPLIED 2026-07-31** (user sign-off
-  round; SPEC.md §11 updated).
+- ~~§10 ⋯-menu Unarchive rider~~ — **SIGNED AND APPLIED 2026-07-31** (user sign-off
+  round; SPEC.md §10 updated).
 - **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
   deliberate deferral; independently confirmed as PR #14 review MINOR 1,
   Board.tsx:598-604): never a skill, no folder move, so harmless — but it is now the
@@ -235,7 +235,7 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - **Thread-create warnings are document-scoped, not call-scoped** (Phase 6 eval
   LEDGER-P6-2): a create response carries every unresolved anchor on the parent, so
   the CLI's warning suffix can list other threads' orphans. Either scope the printed
-  list to the new anchor id or document the semantics in the verb help. (§14
+  list to the new anchor id or document the semantics in the verb help. (§11
   validates the whole rewritten frontmatter — server behavior is by design.)
 - **UI-021 eval methodology caveat** (recorded, not waived): pre-fix reproduction was
   unit-level (pure function), live leg post-fix only — fine here, not precedent for
@@ -247,7 +247,7 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
   under CONTRACT-025's open kind space; publishing it in `DOCTOR_WARNING_KINDS` is an
   optional CONTRACT rider at triage.
 - **In-column margin mode: RULED 2026-07-31 (user)** — focus-only is the intended
-  reading of §11; no numbers change. Remaining triage item: remove or annotate the
+  reading of §10; no numbers change. Remaining triage item: remove or annotate the
   unreachable `.reader-scroll.with-margin` in-column CSS path.
 - **SERVER-033 honest-scope note**: the @hono/node-server advisory was Windows-only
   and 1.19.17 already carried the identical traversal regex — the bump closes the
@@ -309,7 +309,7 @@ _n/a until triage._
   text sanitization).
 - Finding 4: fork PRs' read-only GITHUB_TOKEN makes the sticky comment fail red
   (non-required job) — revisit if/when outside contributions start.
-- Finding 5 (spec, needs user sign-off): one-sentence §11 rider making UI-031's
+- Finding 5 (spec, needs user sign-off): one-sentence §10 rider making UI-031's
   signed pointer rule spec text ("the active column ignores a stationary pointer
   across programmatic closes; hover re-adopts on real movement") — queue for the
   next sign-off round.
@@ -362,7 +362,7 @@ _n/a until triage._
   server-side cosmetic (UI-026 observation); strip heading markers at snippet
   composition at triage.
 - **Blank-query chips search nothing** on the hybrid overlay ("Type to search…") —
-  ACCEPTED as correct per the signed §11 amendment (q required for ranked search;
+  ACCEPTED as correct per the signed §10 amendment (q required for ranked search;
   chips-only browsing is saved views' job). Recorded so it isn't re-litigated.
 - TEST-1032 naming deviation (searchCorpus/useCorpusSearch vs "one search method") —
   orchestrator-directed, flag to the evaluator.
@@ -437,7 +437,7 @@ _n/a until triage._
   again. Revisit if the editor ever gains grammar of its own.
   **Note (SHARED-065, Phase 41, 2026-08-22)**: one of the four cited precedents,
   plugin-contributed menus, no longer exists — SHARED-064 removed it along with
-  the §11 sentence it added. **The ruling is unaffected and stays as written.**
+  the §10 sentence it added. **The ruling is unaffected and stays as written.**
   It turns on what UI-039 did, not on what the four comparators were, and the
   four are named as history rather than as live examples.
 - ~~Kit CSS placement deviation (2026-08-03, PR #19 review MINOR): sprint-023's

@@ -27,7 +27,7 @@ collection query. Verified by reading the `app.openapi(contractRoutes.…)` moun
 
 **Three of the four issue files describe mechanisms the shipped contract deliberately replaced.**
 UI-011's Technical Design says the log pane "appends lines arriving over SSE"; SPEC.md §2.2 rule 3,
-§7, §11 and §15 M5 all say the opposite, `JobSchema`'s own docblock says the opposite, and
+§7, §10 and §12 M5 all say the opposite, `JobSchema`'s own docblock says the opposite, and
 `jobs/service.ts` says *"The append deliberately broadcasts **nothing**"*. UI-009's criteria demand
 `<mark>`-allowlist sanitization of server snippet HTML; `SnippetSchema` ships structured
 `{text, match}` segments precisely *"so the UI renders highlights without `dangerouslySetInnerHTML`
@@ -409,7 +409,7 @@ TEST-2: Two columns read independently
   Given: Two columns with different documents open
   When:  One reader is scrolled and one document is edited
   Then:  Both readers render their own document, scrolling one does not move the other, and their
-         nav stacks are separate. This is SPEC.md §11's wide-screen workflow and it is the reason
+         nav stacks are separate. This is SPEC.md §10's wide-screen workflow and it is the reason
          the reader is per-column rather than a route
 
 TEST-3: The reader head is the prototype's, element for element
@@ -599,7 +599,7 @@ TEST-30: Readers, stacks and scroll positions survive a reload
   Then:  Both readers, both stacks and both scroll positions are restored. `BOARD_STATE_VERSION` is
          bumped and the stored blob still contains NO query, NO order, NO column identity and NO
          document content — only scroll and open/stack state (Open Conflict 8; the localStorage rule
-         of SPEC.md §11 is review-blocking)
+         of SPEC.md §10 is review-blocking)
 
 TEST-31: A stack entry pointing at a deleted document is skipped, not rendered
   Given: A restored stack whose middle entry names a document deleted meanwhile
@@ -630,7 +630,7 @@ TEST-34: Focus mode keeps its own stack
 TEST-35: Escape precedence is a registry, not a chain of ifs
   Given: A column reader, focus mode over it, and a ⋯ menu open inside focus
   When:  Escape is pressed three times
-  Then:  The menu closes, then focus, then the column reader — matching SPEC.md §11 ("overlays and
+  Then:  The menu closes, then focus, then the column reader — matching SPEC.md §10 ("overlays and
          focus mode take precedence, then the column reader"). The implementation is a layer
          registry each surface registers into on mount; UI-009's overlay and UI-010's composer must
          be able to join it without editing a conditional. The prototype's hard-coded chain
@@ -812,11 +812,11 @@ TEST-60: Save as view creates a real, committed, pinned view document
          frontmatter, and `order` placing it last; the overlay closes; the new column appears and is
          scrolled to. On disk: the file exists, `cat` shows `type: view`, `pinned: true`, the query
          fields and an `order`; `git log -1` shows the auto-commit. Reload and open a SECOND browser
-         context: the column is there in both. This is SPEC.md §15 M3's save-as-view check
+         context: the column is there in both. This is SPEC.md §12 M3's save-as-view check
 
 TEST-61: ⇧↵ is the same code path as the chip
   Then:  `⇧↵` inside the overlay produces an identical `POST /api/docs` body to the chip's (quote
-         both). Note the chord means something else on the BOARD (SPEC.md §11: open in full screen) —
+         both). Note the chord means something else on the BOARD (SPEC.md §10: open in full screen) —
          the overlay's scope is what makes both true; state the precedence
 
 TEST-62: A duplicate view is created, with a warning
@@ -849,9 +849,9 @@ TEST-66: Creating lands in inbox and opens ready to type
   Then:  `POST /api/docs` with `{type, title: <query>, folder: "inbox"}`; the overlay closes; the
          Inbox column scrolls into view and flashes; the document opens in that column with its
          title field focused **and its text selected** (assert the SELECTION, not just the focus —
-         SPEC.md §11 says "ready to type"). Type immediately: the typed text REPLACES the title. On
+         SPEC.md §10 says "ready to type"). Type immediately: the typed text REPLACES the title. On
          disk the file is under `data/docs/inbox/` and `git log -1` shows the auto-commit. This is
-         SPEC.md §15 M3's omnibox-create check
+         SPEC.md §12 M3's omnibox-create check
 
 TEST-67: Creation reuses UI-003's unit
   Then:  The create path calls the same named unit as the column `＋` (`useCreateInColumn` or the
@@ -949,7 +949,7 @@ TEST-81: The cost is measured on a real corpus, not asserted
          a measurement
 
 TEST-82: `db rebuild && db doctor` stays clean
-  Then:  The standing §14 invariant holds after the change — this is a query-time aggregate, so the
+  Then:  The standing §11 invariant holds after the change — this is a query-time aggregate, so the
          projection schema and `SCHEMA_VERSION` must be UNCHANGED. A projected column here would be
          derived state that can drift; say so in the log
 
@@ -1002,7 +1002,7 @@ TEST-88: The agent pill is derived, not polled
          `idle` otherwise; the text reads `agent: working · queue 2`. It comes from the SAME
          `GET /api/queue/status` + `GET /api/jobs` data as the counts — a separate poller or a new
          endpoint is a fail. This is the ONLY place agent/system status appears; nothing is added to
-         the top bar (SPEC.md §11)
+         the top bar (SPEC.md §10)
 
 TEST-89: HALT is server state, both ways
   When:  `HALT ○` is clicked
@@ -1032,7 +1032,7 @@ TEST-91: Drag resize clamps at both ends and the clamp survives a window resize
 
 TEST-92: Expanded state and height are sticky and isolated
   When:  The drawer is expanded, dragged to a height, and the browser reloaded
-  Then:  It is still expanded at that height — SPEC.md §15 M3's "drawer height persists after
+  Then:  It is still expanded at that height — SPEC.md §12 M3's "drawer height persists after
          drag-resize" check. State lives under its own key (`corpus.console`), NOT inside
          `corpus.board`, is read once on mount behind a schema guard, and a corrupted value falls
          back to defaults instead of throwing. With `throwingStorage()` the drawer still works from
@@ -1083,13 +1083,13 @@ TEST-98: With no jobs, the detail pane says so
 
 ```
 TEST-99: The log is fetched over HTTP and refetched on invalidation — never streamed
-  Given: SPEC.md §2.2 rule 3, §7, §11 and §15 M5, `JobSchema`'s docblock, and `jobs/service.ts`'s
+  Given: SPEC.md §2.2 rule 3, §7, §10 and §12 M5, `JobSchema`'s docblock, and `jobs/service.ts`'s
          "The append deliberately broadcasts nothing" (Open Conflict 1)
   When:  `corpus job log <eventId> "reading thread context"` is run from a terminal
   Then:  The line appears in the selected job's pane within ~a second. The mechanism is verified,
          not just the outcome: a parallel `curl -N /events` capture shows ONLY `invalidate` frames
          carrying keys — grep the capture for the log line's text and quote the empty result — and
-         the network panel shows a `GET /api/jobs/{id}/log?cursor=<n>` refetch. This is SPEC.md §15
+         the network panel shows a `GET /api/jobs/{id}/log?cursor=<n>` refetch. This is SPEC.md §12
          M4's console check
 
 TEST-100: The cursor is what prevents duplicates
@@ -1186,7 +1186,7 @@ TEST-114: One escape chain, three registrants, no conditionals
   Given: The console expanded, a document open in a reader, focus mode over it, the search overlay
          over that, and a ⋯ menu open
   When:  Escape is pressed repeatedly
-  Then:  Layers close in SPEC.md §11's order — overlay, then focus, then the column reader — with
+  Then:  Layers close in SPEC.md §10's order — overlay, then focus, then the column reader — with
          menus and popovers closing before their host. Every layer registered into one registry
          (TEST-35); grep for a hard-coded `if (overlayOpen) … else if (focusOpen) …` and quote the
          empty result
@@ -1441,7 +1441,7 @@ arriving over SSE"*. Four independent sources say otherwise:
   SSE only announces that a job's log grew."*
 - **SPEC.md §7**: *"The server tails these files and broadcasts **invalidations only** (§2 rule 3) —
   the console fetches and refetches the log content over HTTP."*
-- **SPEC.md §11 and §15 M5**: *"fetched over HTTP and refetched on SSE invalidation"* /
+- **SPEC.md §10 and §12 M5**: *"fetched over HTTP and refetched on SSE invalidation"* /
   *"lines emitted via `corpus job log` appear in the console row for that job (fetched over HTTP on
   invalidation)"*.
 - **The shipped code**: `JobSchema`'s docblock (*"fetched over HTTP — SSE only announces that the log
@@ -1456,7 +1456,7 @@ correct mechanism and TEST-120 polices it.
 
 ### 2. `Job` carries no event type, and both the prototype and SPEC.md ask for one (**P1, blocks TEST-94**)
 
-The prototype's job row is `<event type> · <title>` and SPEC.md §11 describes the job list as
+The prototype's job row is `<event type> · <title>` and SPEC.md §10 describes the job list as
 *"status dot, event, one-line state"*. The wire carries
 `{eventId, status, started, updated, lastLine, originId, originTitle}` — **no event type**, and no
 `payload` to derive one from. The queue's own event files have `type` (`comment.created`,
@@ -1477,7 +1477,7 @@ of which were resolved by option 1.
 
 ### 3. "Include archived" cannot be expressed, and the chip's label promises a union (**P0 for UI-009's TEST-52**)
 
-SPEC.md §11: *"Default state excludes `status: archived`; an 'archived' chip brings them back."*
+SPEC.md §10: *"Default state excludes `status: archived`; an 'archived' chip brings them back."*
 The prototype's chip reads **`include archived`** (`.chip.warn`), which reads as a union.
 
 The contract and server implement a narrowing, not a union.
@@ -1490,11 +1490,11 @@ archived".
 Options:
 
 1. **Relabel the chip to what it does** — `archived only` — and note the divergence from the
-   prototype's copy. Zero code, honest, but it is not what §11's sentence describes.
+   prototype's copy. Zero code, honest, but it is not what §10's sentence describes.
 2. **File a CONTRACT rider** widening `status` (a repeatable parameter, or an explicit
    `includeArchived` boolean). This is what makes the prototype's chip true and is a one-parameter
    change with no new route.
-3. Issue two requests and merge client-side. **Forbidden** — TEST-47/48 and SPEC.md §11's "all
+3. Issue two requests and merge client-side. **Forbidden** — TEST-47/48 and SPEC.md §10's "all
    through the single `GET /api/docs` endpoint".
 
 Whatever is chosen, TEST-52 requires the chip's LABEL and its BEHAVIOUR to agree. Note this also
@@ -1523,7 +1523,7 @@ UI-011's counts add a second `.c-failed` span to the same strip for the failed-j
 strict mode will fail on two matches — in an e2e run, not in a unit test, after the implementation
 looks finished.
 
-There is also a design question underneath it: **SPEC.md §11 says the console strip is the single
+There is also a design question underneath it: **SPEC.md §10 says the console strip is the single
 home of agent/system status.** Once UI-011 owns the strip, is "server unreachable" a third thing the
 strip says, or does it become the agent pill's `unreachable` state?
 
@@ -1578,7 +1578,7 @@ and no document content in that blob.
 ### 9. One chord, two meanings, and a keyboard scheme that arrives in UI-010
 
 `⇧↵` means **"new list from search"** inside the overlay (the prototype's footer legend, UI-009's
-TEST-61) and **"open the highlighted document directly in full screen"** on the board (SPEC.md §11's
+TEST-61) and **"open the highlighted document directly in full screen"** on the board (SPEC.md §10's
 keyboard scheme, UI-010's). Both are correct in their own scope, but only if overlay scope strictly
 precedes board scope — which is TEST-58's "while the overlay is open it owns the keyboard".
 
@@ -1642,10 +1642,10 @@ This sprint is complete when:
 - **Search is one endpoint, composed** (TEST-47, TEST-48), snippets render without any HTML injection
   path (TEST-49, TEST-50), save-as-view produces a real committed view document a second browser
   agrees with (TEST-60), and omnibox create lands in `inbox/` and opens title-SELECTED (TEST-66) —
-  SPEC.md §15 M3's two named checks.
+  SPEC.md §12 M3's two named checks.
 - **The console pushes, persists and streams honestly**: the board is pushed not overlaid (TEST-90),
-  the dragged height survives a reload (TEST-92 — §15 M3's named check), log lines arrive over HTTP
-  on invalidation with the cursor preventing duplicates (TEST-99, TEST-100 — §15 M4's named check),
+  the dragged height survives a reload (TEST-92 — §12 M3's named check), log lines arrive over HTTP
+  on invalidation with the cursor preventing duplicates (TEST-99, TEST-100 — §12 M4's named check),
   and HALT is server state in both directions (TEST-89).
 - **No shipped e2e assertion is broken or left dishonest** (TEST-46, TEST-85, TEST-124).
 - **`unreadThreads` lands as one commit that is green at that commit** (TEST-84), agrees with
@@ -1669,7 +1669,7 @@ This sprint is complete when:
   user input and is the omnibox creation path).
 - **Any user-observable behavior change carries its SPEC.md amendment**, drafted by spec-writer and
   held for user sign-off at the phase PR — SHARED-002's adopted process rule. In this batch the
-  candidates are Conflict 3's archived-chip semantics (§11's sentence is what is ambiguous) and, if
+  candidates are Conflict 3's archived-chip semantics (§10's sentence is what is ambiguous) and, if
   adjudicated that way, Conflict 7's plugin-menu placement.
 - **pr-reviewer verdict APPROVE** on the phase PR, with CRITICAL and MAJOR findings fixed or
   explicitly waived by the user.
@@ -1690,7 +1690,7 @@ Rulings on the Open Conflicts above — these are binding for implementing agent
 3. **Conflict 3 ("include archived" inexpressible): CONTRACT-012 gains a rider adding
    `includeArchived` (stringbool, `pinned` precedent) to `DocsQuerySchema`**, lifting the default
    archived exclusion — a union, per the prototype's chip label; `status=archived` alone keeps
-   meaning "archived only". SERVER-027 implements it. SPEC §11's ambiguous sentence goes to the
+   meaning "archived only". SERVER-027 implements it. SPEC §10's ambiguous sentence goes to the
    phase-end spec pass for user sign-off.
 4. **Conflict 4 (UI-009 `<mark>` sanitization): struck.** `SnippetSchema`'s `{text, match}` segments
    exist precisely so highlights never touch `dangerouslySetInnerHTML`; the criteria about

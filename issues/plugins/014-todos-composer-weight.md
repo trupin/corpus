@@ -36,7 +36,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11, "Smart input everywhere" — the weight rider binds **"any composer
+- SPEC.md §10, "Smart input everywhere" — the weight rider binds **"any composer
   a plugin contributes"**
 - SPEC.md §12 — the todos plugin ships in v1, so its composer is not a sample
 
@@ -46,7 +46,7 @@ Found by the pr-reviewer on PR #35. `plugins/todos/ui/TodoItemComposer.tsx:79`
 sends `requestsAgent` with `asking` defaulting to `true` — it is a composer that
 reaches the agent — and it offers no weight control.
 
-This is a **gap in coverage, not a defect in UI-082.** §11 enumerates plugin
+This is a **gap in coverage, not a defect in UI-082.** §10 enumerates plugin
 composers, and UI-082's own surface table delegates that row to "via
 `@corpus/kit`", which UI-082 delivered: the control and the level parser are
 published from the kit with a `RUNTIME_SURFACE` entry, so this is one import and

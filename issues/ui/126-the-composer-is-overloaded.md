@@ -25,7 +25,7 @@ fable
 
 ## Spec References
 
-- SPEC.md **§11** — the composer, its key contract, the recipient statement, and
+- SPEC.md **§10** — the composer, its key contract, the recipient statement, and
   the weight control
 - SPEC.md **§7** — the resident rider
 
@@ -62,7 +62,7 @@ let them choose.
 
 1. **What replaces two inline pickers.** A dropdown each is the user's
    suggestion. Consider also: one control that shows the *outcome* — who answers,
-   at what weight — and opens to change either. §11 already requires the composer
+   at what weight — and opens to change either. §10 already requires the composer
    to state who it will reach before sending, and a grep finds that unimplemented
 2. **What the weight control shows for a resident.** SHARED-055's draft says it
    goes not-live and **names the resident's weight**, so a person who reached for
@@ -71,7 +71,7 @@ let them choose.
 3. **How little can be shown by default.** The honest floor is: nothing, until
    the composer would do something non-obvious. A composer in a thread with no
    agent engaged, sending a note, needs neither control
-4. **The key contract is untouched.** §11 is explicit and repeated: `↵` inserts a
+4. **The key contract is untouched.** §10 is explicit and repeated: `↵` inserts a
    newline, `⌘↵` submits, and no control claims a key of its own. Whatever this
    becomes obeys that
 
@@ -82,11 +82,11 @@ let them choose.
 - [x] Recipient and weight are each reachable in one gesture
 - [x] **No control is offered whose choice will be discarded.** For a resident
       recipient the weight control is not live and says why, per SHARED-055
-- [x] §11's composer key contract is unchanged, and a test pins that
-- [x] An IME composition commit still never submits — §11, and it is the kind of
+- [x] §10's composer key contract is unchanged, and a test pins that
+- [x] An IME composition commit still never submits — §10, and it is the kind of
       thing a control rewrite breaks silently
 - [x] Every composer follows: global, thread reply, comment popover, comment on a
-      turn or a selection, and a plugin's. §11 lists them for a reason
+      turn or a selection, and a plugin's. §10 lists them for a reason
 
 ## Technical Design
 
@@ -142,9 +142,9 @@ The key contract needs an e2e, not a unit test: `↵`, `⌘↵`, and an IME comm
 
 **implemented on: fable** — the implementing agent was killed by a session limit after writing the code and its tests, while driving the real UI for screenshots. The orchestrator ran the verification below and wrote it.
 
-**What a person sees by default, and why that is the floor.** The two always-expanded pickers are gone. Every composer now renders one line stating the outcome — who answers, and at what weight — and that line is a button opening a popover holding the recipient rows and, where there is something to weigh, the weight rows. The floor is the line alone, because §11 already requires a composer to say who it will reach before sending, so the sentence is not new furniture — it is the requirement, now carrying the control instead of sitting beside it. A composer whose send would reach nobody says `Nobody is asked` and offers no weight section at all: there is nothing to weigh, and an offered control with nothing behind it is the defect this issue exists to remove.
+**What a person sees by default, and why that is the floor.** The two always-expanded pickers are gone. Every composer now renders one line stating the outcome — who answers, and at what weight — and that line is a button opening a popover holding the recipient rows and, where there is something to weigh, the weight rows. The floor is the line alone, because §10 already requires a composer to say who it will reach before sending, so the sentence is not new furniture — it is the requirement, now carrying the control instead of sitting beside it. A composer whose send would reach nobody says `Nobody is asked` and offers no weight section at all: there is nothing to weigh, and an offered control with nothing behind it is the defect this issue exists to remove.
 
-**The resident rule, in the real browser.** `apps/ui/e2e/resident.spec.ts:427` now designates a general resident, opens the address line, and asserts two things: the popover states `works at the weight chosen at launch`, and it offers **zero** `[data-weight-key]` rows. That is SPEC.md §11's rider signed 2026-08-19, checked where the person's complaint lived rather than only in a unit test.
+**The resident rule, in the real browser.** `apps/ui/e2e/resident.spec.ts:427` now designates a general resident, opens the address line, and asserts two things: the popover states `works at the weight chosen at launch`, and it offers **zero** `[data-weight-key]` rows. That is SPEC.md §10's rider signed 2026-08-19, checked where the person's complaint lived rather than only in a unit test.
 
 **Falsified twice.**
 

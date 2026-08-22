@@ -4,8 +4,8 @@
 plugins
 
 ## Status
-done — the SPEC §11 amendment was SIGNED 2026-08-02 (sprint-023 OC2 resolved:
-"Amend — plugin menus in"); the amended §11 text allows plugin-rendered
+done — the SPEC §10 amendment was SIGNED 2026-08-02 (sprint-023 OC2 resolved:
+"Amend — plugin menus in"); the amended §10 text allows plugin-rendered
 surfaces to contribute context menus through the kit. UI-037 shipped, so the
 "open thread" payload is the reveal seam.
 
@@ -17,11 +17,11 @@ opus
 
 ## Dependencies
 - Depends on: PLUGINS-005, PLUGINS-003, UI-037 (reveal payload for "open
-  thread"), SPEC §11 amendment sign-off
+  thread"), SPEC §10 amendment sign-off
 - Blocks: —
 
 ## Spec References
-- SPEC.md §12 todos; §11 context menus (UI-024 pattern)
+- SPEC.md §12 todos; §10 context menus (UI-024 pattern)
 
 ## Summary
 Live dogfood report (2026-08-02): right-clicking a todo item row in the todos
@@ -207,7 +207,7 @@ suppressions added; `prettier --check` clean; `tsc --noEmit` clean in both
 
 ### The kit-export gap (raise before the next plugin wants a menu)
 
-SPEC.md §11 now says a plugin contributes a menu *"through the plugin kit"*, and
+SPEC.md §10 now says a plugin contributes a menu *"through the plugin kit"*, and
 there is no such kit surface. Four things had to be written plugin-side that
 core already owns and does not publish:
 
@@ -242,7 +242,7 @@ matched on quote text alone (`!orphaned && selector.exact === text`), so with
 `Call the plumber` at index 0 (has a thread) and index 2 (has none), the second
 row was offered "Open existing thread" and navigated to the **first** item's
 conversation. The acceptance criterion above says the action is shown "only when
-the item has one"; SPEC.md §11 says "exactly that item's existing actions,
+the item has one"; SPEC.md §10 says "exactly that item's existing actions,
 nothing invented". Both were unmet, and the inconsistency was internal:
 `itemSelector` already refused a stale index by comparing `expectedText`, and
 `reveal.ts` already framed duplicates by their neighbours.

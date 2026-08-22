@@ -17,17 +17,17 @@ opus
 - Blocks: SERVER-038
 
 ## Spec References
-- SPEC.md §14 doctor bullet; SERVER-038's report-only recovery pass (sprint-018 Open Conflict 1 adjudication, 2026-07-30)
+- SPEC.md §11 doctor bullet; SERVER-038's report-only recovery pass (sprint-018 Open Conflict 1 adjudication, 2026-07-30)
 
 ## Summary
 `GET /api/db/doctor`'s response deliberately carries failures only (`DRIFT_KINDS` is
 a closed enum; `routes/db.ts` records that `warnings` is absent by design). SERVER-038
 needs a home for report-only findings — files the projection will never index, named
-with their creating commit — that must NOT fail doctor (§14's `rebuild && doctor`
+with their creating commit — that must NOT fail doctor (§11's `rebuild && doctor`
 clean invariant). Add an optional `warnings` array to the doctor response: each entry
 a warning kind (its own open-ended literal set, separate from `DRIFT_KINDS`), path,
 human message, and optional commit. Additive only; existing clients unaffected.
-Note for the ledger: a one-line §14 mention ("doctor may carry report-only warnings")
+Note for the ledger: a one-line §11 mention ("doctor may carry report-only warnings")
 goes into the next spec sign-off round — this rider implements an already-planned
 issue, it does not change pass/fail semantics.
 
@@ -215,14 +215,14 @@ fails the moment a new component grows a `warnings` key that is not `Warning[]`.
 working: `DoctorReport` was added to `FOREIGN_WARNINGS` **with** its rationale, beside
 `CheckReport`'s, so the exception is declared rather than absorbed. The route docblock in
 `routes/db.ts` that recorded `warnings` as deliberately absent was rewritten rather than deleted —
-its original claim (doctor performs no write, so it can produce no §14 commit warning) is still
-true and still pinned by a test; what was wrong was reading "no §14 warnings" as "no findings beyond
+its original claim (doctor performs no write, so it can produce no §11 commit warning) is still
+true and still pinned by a test; what was wrong was reading "no §11 warnings" as "no findings beyond
 drift".
 
 ### Held for the next spec sign-off round — NOT applied
 
 Per the issue's ledger note, and following CONTRACT-014's precedent, SPEC.md was **not** edited.
-Drafted line for §14, for the orchestrator to carry into the user sign-off round:
+Drafted line for §11, for the orchestrator to carry into the user sign-off round:
 
 > `corpus db doctor` may also carry report-only warnings — findings worth a person's attention that
 > are not drift. They never affect its verdict or its exit code.

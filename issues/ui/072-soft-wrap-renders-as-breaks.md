@@ -17,9 +17,9 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Document view (TipTap over markdown, autosave, "serializes to clean
+- SPEC.md §10 Document view (TipTap over markdown, autosave, "serializes to clean
   markdown")
-- SPEC.md §11 thread view, as amended by SHARED-009 Amendment 7 (newlines render
+- SPEC.md §10 thread view, as amended by SHARED-009 Amendment 7 (newlines render
   by author) — the read surface's answer to the same question
 
 ## Summary
@@ -48,7 +48,7 @@ is a break. Every hard-wrapped document — most of what the agent writes — re
 ragged.
 
 ## The constraint that makes this non-trivial
-**A fix must not silently rewrite the file.** The editor autosaves (§11), so
+**A fix must not silently rewrite the file.** The editor autosaves (§10), so
 whatever the parse does, the serializer round-trips it back to disk on the next
 keystroke. Normalising newlines to spaces at parse time would re-flow every
 agent-written paragraph the moment the user opens the document — a whole-file

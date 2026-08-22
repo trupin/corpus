@@ -117,7 +117,7 @@ ticked:
   validate the job without stamping, since they create no document.
 - **A corpus that predates the field became unwritable.** `origin` was a legal
   `extra` key before it was reserved, so a document carrying an unrelated
-  `origin:` failed §14 validation on every save, including the reader's
+  `origin:` failed §11 validation on every save, including the reader's
   autosave. The parse, the read path and the projection now read anything that
   is not a thread id as `null`.
 

@@ -22,7 +22,7 @@ matcher so an external producer could not restate the rule wrongly again. There
 is no external producer.
 
 The spec sentence this issue was raised against — *"menus come through the plugin
-kit"*, signed 2026-08-02 into what was then §11 — went with the plugin sections.
+kit"*, signed 2026-08-02 into what was then §10 — went with the plugin sections.
 The Spec References below keep the pre-renumber section numbers, as every issue
 filed before 2026-08-22 does. Kept as a record rather than deleted.
 
@@ -37,7 +37,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 plugin-surface menus amendment (signed 2026-08-02): menus come
+- SPEC.md §10 plugin-surface menus amendment (signed 2026-08-02): menus come
   "through the plugin kit" — the kit publishes no such surface yet
 
 ## Summary

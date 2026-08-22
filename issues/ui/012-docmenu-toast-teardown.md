@@ -23,7 +23,7 @@ opus — a menu-close timing change with a known mechanism; care, not judgment.
 
 ## Spec References
 
-- SPEC.md §11 (reader/menu affordances)
+- SPEC.md §10 (reader/menu affordances)
 - `apps/ui/src/shell/Toasts.tsx` docblock (no silent committed writes)
 
 ## Summary

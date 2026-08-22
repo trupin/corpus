@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 clipboard-fidelity rider (signed 2026-08-02)
+- SPEC.md §10 clipboard-fidelity rider (signed 2026-08-02)
 
 ## Summary
 Five MINOR findings from the second Fable review of PR #19 (merged as `c7725a6`,

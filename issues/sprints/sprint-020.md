@@ -1192,7 +1192,7 @@ TEST-822: Every agent recorded the model it ran on
   `RefAutocomplete.tsx:62`, `useConsoleLayout.ts:203`, kit `useAutocomplete.ts:213`. UI-030 unifies
   the three **menu** surfaces (context menu, ⋯, 💬). The autocompletes and the console are different
   interaction models and a different issue.
-- **Changing hover-follows-active generally.** UI-031 is a one-shot latch on programmatic close. §11's
+- **Changing hover-follows-active generally.** UI-031 is a one-shot latch on programmatic close. §10's
   rule is unchanged.
 - **Everything Phase 7/8/9 (retrieval).** Sprint-019's chain is a separate branch.
 

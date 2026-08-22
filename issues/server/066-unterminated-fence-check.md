@@ -44,7 +44,7 @@ Measured against the real `parseTurns`: the reported shape parses as **1** turn
 where the corrected shape gives **2**, with the person's entire reply swallowed
 into the agent's turn body. Nothing anywhere reported an error.
 
-This issue makes §14's validator report it: a new `unterminated-fence` finding
+This issue makes §11's validator report it: a new `unterminated-fence` finding
 naming the line the fence *opened* on, surfaced by `corpus doc check` and
 `POST /api/check`.
 
@@ -97,7 +97,7 @@ warning/error partition there is **by code**, and `codes.test.ts` asserts a code
 never appears on both sides. So: one code, and the `detail` string names the
 thread consequence when the document is a thread.
 
-**Severity: error.** §14's warning family is the two states it carves out
+**Severity: error.** §11's warning family is the two states it carves out
 explicitly — an anchor that no longer resolves, and a `[[ref]]` whose target does
 not exist yet. Both are *normal outcomes of using the system as designed*, which
 is why punishing them would be wrong. An unterminated fence is never that; it is
@@ -120,7 +120,7 @@ check is exactly what a check's verdict is for.
    the silent swallow it was meant to prevent.
 3. Refusing an agent's turn mid-loop converts a cosmetic mistake into a stalled
    loop. AGENT-016 is the right place to stop the bad shape being produced;
-   §14's job here is to make it findable afterwards.
+   §11's job here is to make it findable afterwards.
 
 So the code stays out of `LOCAL_CHECK_CODES` — the same shape `anchor-unused`
 already has: an error that `corpus doc check` fails on and no save is refused
@@ -464,13 +464,13 @@ set, and `validateBeforeWrite` logs the two families apart —
 `logger.info(… warnings …)`.
 
 **Log, not response — and the response half is a genuine contract question, not a
-shortcut.** §14's wire warning family is a closed two-member set (the contract's
+shortcut.** §11's wire warning family is a closed two-member set (the contract's
 `CHECK_WARNING_CODES`; `check/codes.test.ts` asserts behaviourally that no code
 appears on both sides of the severity partition, and `isSkillFrontmatterException`
 already refuses to re-grade a finding for exactly this reason). Putting
 `unterminated-fence` on a mutation response would need a third `WarningCode`,
-which puts an **error**-severity §14 finding into the wire's *warning* channel —
-a §14 semantics change, not a transcription. That belongs with the two SPEC-level
+which puts an **error**-severity §11 finding into the wire's *warning* channel —
+a §11 semantics change, not a transcription. That belongs with the two SPEC-level
 findings already going to the user, and SERVER-067's remaining scope is now
 exactly that one question (the orchestrator should re-scope and re-rate it; this
 round closed the silent half). `logger.error` was chosen over `logger.info`

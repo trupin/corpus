@@ -32,7 +32,7 @@ fable
 - SPEC.md §9.2 — the API surface (documents `PUT /api/docs/:id` whole-body
   replacement only)
 - SPEC.md §6 — anchors reconciled on every write; §4 — attribution and commit
-  granularity; §14 — validation before writing
+  granularity; §11 — validation before writing
 - Precedent: the reattach route (CONTRACT-041) reached §9.2 through a signed
   rider before implementation
 
@@ -60,7 +60,7 @@ To be added to §9.2's route list, after `PUT /api/docs/:id`:
 >   `all`, which replaces every occurrence left-to-right without overlap.
 >   Matching is byte-exact against the body as stored: no normalisation, no
 >   trimming, so what a caller read is what a caller quotes. A patch is an
->   **ordinary write once applied** — validated before writing (§14), anchors
+>   **ordinary write once applied** — validated before writing (§11), anchors
 >   reconciled with remaps and orphans reported (§6), one attributed commit
 >   (§4), locks respected (§7) — and a patch whose result is the unchanged
 >   body is a no-op that writes nothing. The operation exists because the

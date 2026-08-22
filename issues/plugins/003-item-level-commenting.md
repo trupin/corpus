@@ -25,7 +25,7 @@ fable — requires a design for anchoring outside the body-range model.
 
 - issues/sprints/sprint-014.md — Open Conflict 8 + Adjudication 16 (2026-07-28)
 - issues/sprints/sprint-016.md — PLUGINS-003 (TEST-456–464), Open Conflict 3, Adjudications 14/24
-- SPEC.md §6 (threads and anchors), §10 (plugin system), §11 (document view), §12 (todos), §15 M6
+- SPEC.md §6 (threads and anchors), §10 (plugin system), §10 (document view), §12 (todos), §12 M6
 
 ## Summary
 
@@ -177,7 +177,7 @@ excludes only `thread` and `view` — `DocEditor.tsx:45`), and the todo document
 `@tiptap/extension-task-list` + `@tiptap/extension-task-item` are configured in
 `apps/ui/src/editor/markdown/schema.ts:78-79`, parsed at `parse.ts:166`, serialized at
 `serialize.ts:231`, and rendered by the kit's `MarkdownView` (`markdown.css:103-104`) when the
-plugin is absent. So the user gets checkboxes **and** the entire §11 document surface on the same
+plugin is absent. So the user gets checkboxes **and** the entire §10 document surface on the same
 screen: select an item → the floating toolbar's **Comment** → an anchored thread, with the highlight,
 the chip or margin card, and the detached-threads region, all of it existing code.
 
@@ -189,10 +189,10 @@ response is not to rebuild the editor inside the plugin, it is to stop claiming 
 
 Three further consequences, all in the design's favour:
 
-- **Templates start working for todos.** SPEC §11 makes template pre-fill body-only, which is why
+- **Templates start working for todos.** SPEC §10 makes template pre-fill body-only, which is why
   `items.ts:27-31` has to argue that "absent `items` is an empty list" — no seed can supply items
   today. Under body storage, `plugins/todos/seeds/todo-template.md` can seed real starter items.
-- **The §15 M6 drill gets *more* honest.** Delete `plugins/todos` → the document still renders as
+- **The §12 M6 drill gets *more* honest.** Delete `plugins/todos` → the document still renders as
   plain markdown **with working-looking checkboxes**, exactly as §10's degradation promise says;
   restore → the DocPanel, the `ListItem` and the Todos column return.
 - **`plugins/todos/imports.test.ts`'s ban stays green, untouched** (Adjudication 14): the plugin
@@ -233,7 +233,7 @@ surface the editor already gives for free — and it would force the anchoring b
 4. **Two signed SPEC §12 clauses stop being true**: "Renderer: checkbox list view" and "toggling a
    box PUTs through a plugin route" (the UI toggle becomes an ordinary body edit through autosave;
    the plugin route stays the CLI/agent path, which is where format ownership actually matters). Plus
-   §15 M6's "restore → custom renderer, DocPanel, and Todos column return". **Open questions 2 and
+   §12 M6's "restore → custom renderer, DocPanel, and Todos column return". **Open questions 2 and
    3** — spec-writer rider, never patched in passing (TEST-459/465, Adjudication 24).
 5. **The `View` extension point loses its shipped consumer.** The `docTypes` slot is still exercised
    by the reference plugin through `ListItem`, `DocPanel` and `validate`; `View` remains contracted
@@ -285,7 +285,7 @@ SHARED-005 ──▶ PLUGINS-005 ──┬──▶ PLUGINS-006 ──┐
 - **SHARED-005 — spec rider: todos storage branch, renderer/toggle clauses, and the `[TBD]`**
   (spec-writer, **fable**, user sign-off). Retire §12's `[TBD: PLUGINS-003]`; select §12's
   body-checkbox branch; restate "Renderer: checkbox list view" and "toggling a box PUTs through a
-  plugin route"; restate §15 M6's "custom renderer" clause; record the per-item `due` decision
+  plugin route"; restate §12 M6's "custom renderer" clause; record the per-item `due` decision
   (open question 1). Bundled with Open Conflict 2's sentences in one sign-off round
   (Adjudication 24). **Blocks everything below.**
 - **PLUGINS-005 — todo items move into the document body as GFM task-list lines** (plugins-dev,
@@ -319,7 +319,7 @@ SHARED-005 ──▶ PLUGINS-005 ──┬──▶ PLUGINS-006 ──┐
 2. **§12 "toggling a box PUTs through a plugin route" (user + spec-writer).** Under the
    recommendation the UI toggle is an ordinary body edit through core autosave; the plugin route
    remains the CLI/agent write path and the format owner. Confirm the restatement.
-3. **§12/§15 "Renderer" (user).** The reference plugin stops registering a `View`. Confirm that the
+3. **§12/§12 "Renderer" (user).** The reference plugin stops registering a `View`. Confirm that the
    `docTypes` extension point is adequately proved by `ListItem` + `DocPanel` + `validate` (plus the
    fixture plugin and, later, §13's publish plugin), or state that a shipped `View` consumer is
    required — in which case Candidate 3b's cost has to be re-opened.

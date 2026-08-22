@@ -36,7 +36,7 @@ is the same observation behind CLI-058, measured from the other end.
    punishes the four that were fine. Reporting per id is friendlier and needs an
    exit code that says "partial" honestly rather than 0.
 3. **Whether a bound is needed**, and if so, whether exceeding it truncates or
-   refuses. §11's stated-cap rule says a listing that reached its bound must say
+   refuses. §10's stated-cap rule says a listing that reached its bound must say
    so rather than ending quietly, and the same principle applies here.
 4. **Whether the same shape belongs on `thread show`.** Do not build it here
    without at least saying why the other verb is different.

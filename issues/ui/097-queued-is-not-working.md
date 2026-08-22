@@ -73,7 +73,7 @@ for any outstanding request, on a clock measured from the requesting turn.
       queue full of unclaimed work must not spin a dot on every row
 - [x] Applies everywhere an outstanding request is indicated: thread cards, board
       rows, Attention, and the Ask/Capture "appears immediately with a
-      pending-agent indicator" path (§11)
+      pending-agent indicator" path (§10)
 
 ## Technical Design
 

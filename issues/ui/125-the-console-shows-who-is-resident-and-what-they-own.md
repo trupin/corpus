@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — the board and the console
+- SPEC.md **§10** — the board and the console
 - SPEC.md **§7** — designation, lanes, scope
 
 ## Summary
@@ -53,7 +53,7 @@ rather than merely unstarted.
 ## What to decide
 
 1. **A console tab, or a board surface?** The user asked for a console tab. Worth
-   confirming against §11's split: the console is the agent's own machinery — jobs
+   confirming against §10's split: the console is the agent's own machinery — jobs
    and logs — and the board is the corpus. A roster of agents is arguably the
    former; their scope is arguably the latter
 2. **How much scope to show before it is an enumeration.** §7 forbids the agent

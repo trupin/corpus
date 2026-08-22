@@ -6,13 +6,13 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-done — **SIGNED 2026-08-12 and applied to SPEC.md §11**
+done — **SIGNED 2026-08-12 and applied to SPEC.md §10**
 
 **One clause dropped on application**, for the same reason SHARED-037 lost one:
 the drafted text said "the only read-only state is the one that makes every
 surface read-only: a lock held by the other party (§7), which freezes these
 controls and the body alike and names the holder." Locks were replaced by keys on
-2026-08-11 (SHARED-041), and §11 now says the board is **never** read-only. The
+2026-08-11 (SHARED-041), and §10 now says the board is **never** read-only. The
 sentence would have reintroduced a state the product no longer has. Everything
 else is applied verbatim. Drafted 2026-08-08, before the lock was replaced.
 
@@ -31,7 +31,7 @@ fable
 
 ## Spec References
 
-- SPEC.md §11 line 467 — "Document view — always editable, Google-Docs-like",
+- SPEC.md §10 line 467 — "Document view — always editable, Google-Docs-like",
   "There is no edit mode", "**Autosave, no save button**", and the clause this
   rider amends: "Frontmatter editable as a small form (title, tags, status, due)"
 - SPEC.md §4 — autosave and commit granularity (idle squashing)
@@ -39,7 +39,7 @@ fable
 
 ## Summary
 
-§11 opens by abolishing edit mode for the document view and closes the same
+§10 opens by abolishing edit mode for the document view and closes the same
 sentence group with "Autosave, no save button". Then it says frontmatter is
 "editable as a small form" and stops — silent on whether the form obeys the rule
 that governs everything around it. The implementation filled that silence with
@@ -54,7 +54,7 @@ for every editable surface added later.
 
 ## Drafted rider text
 
-Replacing §11's "Frontmatter editable as a small form (title, tags, status,
+Replacing §10's "Frontmatter editable as a small form (title, tags, status,
 due)." with:
 
 > Frontmatter editable as a small form (title, tags, status, due) — **under the
@@ -77,12 +77,12 @@ due)." with:
 
 - [ ] Read aloud to the user **on its own**, separately from SHARED-036
 - [ ] User signs off, or amends
-- [ ] Applied to SPEC.md §11 with the `_(Rider signed YYYY-MM-DD.)_` marker
+- [ ] Applied to SPEC.md §10 with the `_(Rider signed YYYY-MM-DD.)_` marker
 - [ ] Contradiction sweep recorded here, specifically against:
       - §4 — does per-change autosave change what one idle commit contains?
       - §7 — the lock freeze is the *only* surviving read-only state; confirm no
         other spec text asserts a second one
-      - §11's own "empty document does not survive leaving it" rule — a
+      - §10's own "empty document does not survive leaving it" rule — a
         title cleared to empty must still behave as it does today
 - [ ] PLAN.md row for UI-093 references the signed date
 
@@ -122,5 +122,5 @@ _N/A — spec rider._
 - [ ] Rider read aloud one at a time, verbatim
 - [ ] Signed by user
 - [ ] Applied to SPEC.md with signature marker
-- [ ] Contradiction sweep across §4, §7, §11 done and recorded here
+- [ ] Contradiction sweep across §4, §7, §10 done and recorded here
 - [ ] Committed with `[SHARED-030]` prefix

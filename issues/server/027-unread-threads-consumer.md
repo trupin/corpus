@@ -297,7 +297,7 @@ Consume both CONTRACT-012 riders in the same coupled commit:
 `UNREAD_THREADS_SQL` carried no lifecycle predicate, so the aggregate counted **archived** child
 threads. The contract states this field equals the item count of
 `?parent=<id>&type=thread&unread=true` (`packages/contract/src/schemas/query.ts:352`), and that
-query carries §11's default archived exclusion — so the two disagreed the moment a thread was
+query carries §10's default archived exclusion — so the two disagreed the moment a thread was
 archived. Symptom: archive a thread holding an unread reply and the parent keeps a pill that
 nothing visible on the board explains or clears. The property test at `query.test.ts` was vacuous
 on this: the fixture had no archived thread.
@@ -334,7 +334,7 @@ seeks `threads_parent_id` and never scans `t`) instead of a hand-copied twin tha
 
 - Fixture gains three archived-unread cases: `th_archived` (a fifth child of `doc_hub`),
   `th_onlyarchived` (sole child of a new `doc_archivedonly`), and `th_archiving` (live at seeding).
-- New `does not count archived threads, which the default set excludes (§11)`: asserts the archived
+- New `does not count archived threads, which the default set excludes (§10)`: asserts the archived
   threads *are* unread (`?status=archived&type=thread&unread=true` returns them), that `doc_hub`
   still reports 3 of its 5 children, and that `doc_archivedonly` reports 0 on both sides.
 - New `drops the pill when the unread thread behind it is archived`: 1 → archive → 0, aggregate and

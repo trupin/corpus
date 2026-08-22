@@ -19,7 +19,7 @@ opus
   composer), UI-053 (autocomplete claims `↵` while its menu is open)
 
 ## Spec References
-- SPEC.md §11 Global composer, as replaced by SHARED-009 Amendment 1
+- SPEC.md §10 Global composer, as replaced by SHARED-009 Amendment 1
 
 ## Summary
 Live report 2026-08-03: _"I don't want the 'enter' key to send comments. Let's
@@ -175,7 +175,7 @@ not this issue's scope, and it lives in `packages/kit/src/markdown/`, which
 UI-049 is editing. Worth an issue.
 
 `design/index.html` still shows `Reply ↵` / `Ask ↵` / `Capture ⌘↵` / `⇧↵ newline`
-and its prototype JS still binds them. Left alone: SPEC.md §11's amendment
+and its prototype JS still binds them. Left alone: SPEC.md §10's amendment
 supersedes the mockup on this point, and rebinding the prototype's own key
 handling is a separate chore on a file other agents are editing.
 

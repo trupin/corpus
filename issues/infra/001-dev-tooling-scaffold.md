@@ -19,7 +19,7 @@ P0
 
 ## Spec References
 
-- SPEC.md §14 (validation and git hooks) — mechanism adopted; commands adapted to the TS monorepo
+- SPEC.md §11 (validation and git hooks) — mechanism adopted; commands adapted to the TS monorepo
 - CLAUDE.md — Build & Dev Commands, Architecture Decision 7 (Vitest)
 
 ## Summary

@@ -163,7 +163,7 @@ template file removed, create issued before the watcher re-projects:
                             201  body ''   warnings []
 ```
 
-Not a 500 and not a refusal — the shipped "none → empty" outcome (SPEC.md §11), silent, matching the existing `DocumentParseError` behaviour. TEST-115's body-only rule is unchanged and still covered by the four shipped pre-fill tests.
+Not a 500 and not a refusal — the shipped "none → empty" outcome (SPEC.md §10), silent, matching the existing `DocumentParseError` behaviour. TEST-115's body-only rule is unchanged and still covered by the four shipped pre-fill tests.
 
 ### Finding 7 — a lease acquired while the write is queued (real HTTP)
 

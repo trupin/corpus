@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — right-click context menu bullet (amended 2026-07-30, both riders); document view "Commenting" (floating toolbar)
+- SPEC.md §10 — right-click context menu bullet (amended 2026-07-30, both riders); document view "Commenting" (floating toolbar)
 - SPEC.md §6 — text-quote anchors
 
 ## Summary
@@ -29,7 +29,7 @@ Two user reports (2026-07-30, screenshots), one root cause: `nativeMenu.ts`'s
    (exactly the floating toolbar's Comment — capture the text-quote selector, open the
    thread composer with ask-agent toggle), then clipboard basics: Copy always; Cut and
    Paste when the selection is in editable content. Losing native Look Up/Translate on
-   selections is an accepted trade (user decision recorded in §11).
+   selections is an accepted trade (user decision recorded in §10).
 2. **Item menus win over stray selections.** Right-clicking a non-open document row
    "sometimes" shows the native menu — whenever a selection exists anywhere, including
    the word macOS auto-selects under the right-click itself. A selection must never
@@ -80,7 +80,7 @@ answers (the editor's body, unlocked, with quotable text); Cut and Paste where
 `captureReplace()` answers (editable content). The first pass declined when only Copy
 was left, reasoning that the browser's menu was richer — but declining drops the event
 on the reader's handler, so a selection in a thread's conversation opened the
-**document's item menu**: neither Copy nor the native menu, and against the signed §11
+**document's item menu**: neither Copy nor the native menu, and against the signed §10
 ("Copy always"). Two configurations are reachable, and both are pinned by tests:
 `[comment, copy, cut, paste]` in the editor's body, and `[copy]` alone in a thread's
 conversation, a `view`, or a document under a foreign lock. Nothing in between is

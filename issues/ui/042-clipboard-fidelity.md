@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 clipboard fidelity rider (signed 2026-08-02)
+- SPEC.md §10 clipboard fidelity rider (signed 2026-08-02)
 
 ## Summary
 User report (2026-08-02): copying from the document view into Google Docs
@@ -201,7 +201,7 @@ flavor was never suppressed: `text/html` is present and structural. Three real d
 
 ### 2. Pre-fix reproduction of the user's actual path (root cause of "ALL formatting")
 
-⌘C is not the only copy in the document body. SPEC.md §11 gives a text selection a
+⌘C is not the only copy in the document body. SPEC.md §10 gives a text selection a
 Corpus context menu whose first clipboard item is **Copy**. Reproduced: `⌘A` in the
 body → right-click the heading → menu `Actions for the selection` → `[data-act="copy"]`
 → read the clipboard.

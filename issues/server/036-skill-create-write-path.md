@@ -17,7 +17,7 @@ opus
 - Blocks: CLI-011 (skill-create half)
 
 ## Spec References
-- SPEC.md §7 — skill genesis; §9.2 — write paths; §14 — validation
+- SPEC.md §7 — skill genesis; §9.2 — write paths; §11 — validation
 
 ## Summary
 Sprint-015 Open Conflict 1, server half: implement `POST /api/skills` — create
@@ -61,7 +61,7 @@ Real server + scratch workspace (subshell-cd init pattern): create → file on d
   frontmatter, `validateBeforeWrite`, then one `runMutation` (atomic write → stage → auto-commit
   `skill create: <name> (<id>) by <actor>` → synchronous re-projection → invalidate
   `[["docs"], ["docs", id]]`). `mayChangeTree` deliberately unset — skills are outside `data/docs/`.
-- `apps/server/src/skills/routes.ts` — mounts `contractRoutes.createSkill`, returning §14's mutation
+- `apps/server/src/skills/routes.ts` — mounts `contractRoutes.createSkill`, returning §11's mutation
   envelope `{ doc, warnings }` with `201`, identical to `POST /api/docs`.
 - `apps/server/src/skills/create.test.ts` — 25 cases against a real workspace + real git.
 
@@ -115,7 +115,7 @@ skills into `.claude/skills/`) and by a **broken** symlink — hence `lstatSync`
   `updated`, `tags`, `status`, `anchors`. `due`/`reviewed`/`evergreen` are omitted rather than
   written as nulls: the file-level schema defaults all three, and a skill's block stays readable to
   whoever edits it. `title` defaults to `name`; an omitted `body` pre-fills from the workspace's
-  `for: skill` template when one exists (`docs/templates.ts`, §11's "none → empty" otherwise).
+  `for: skill` template when one exists (`docs/templates.ts`, §10's "none → empty" otherwise).
 
 ### E2E — real server, real workspace, real git
 
@@ -190,7 +190,7 @@ green after its `skillDocumentPath` import moved to `./paths.js`). New cases cov
 frontmatter block, the minted-id shape, commit author + subject + staged path, the invalidation
 frame (and the *absence* of `["tree"]`), read-your-write projection, `?type=skill` discoverability,
 `POST /api/check` cleanliness, explicit title/tags/body, template pre-fill, empty-body default, a
-§14 `unresolved_ref` warning that does not fail the write, the three `409` classes (installed,
+§11 `unresolved_ref` warning that does not fail the write, the three `409` classes (installed,
 archived, symlink), nine `400` name refusals, the direct-call defence-in-depth guard, a two-create
 race resolving `201`/`409` with exactly one commit, and rollback composition.
 

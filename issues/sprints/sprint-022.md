@@ -1128,7 +1128,7 @@ TEST-1039: Phase A and Phase B are byte-stable through the real bin
 
 TEST-1040: The generated artifacts drift checks are green
   Then: `node --import tsx scripts/check-generated-artifacts.ts` passes — `openapi.json` and
-  `docs/cli.md` both regenerate with no diff. Both are §14 obligations and both are touched here.
+  `docs/cli.md` both regenerate with no diff. Both are §11 obligations and both are touched here.
 
 TEST-1041: `SPEC.md` is unchanged
   Then: `git diff SPEC.md` is empty. Every Phase C behaviour in this batch is already signed text
@@ -1468,7 +1468,7 @@ This sprint is complete when:
   doctrine across both skills
 - **TEST-1022, TEST-1023 and TEST-1024 pass** — `toApiParams`/`toViewFrontmatter`/`fromViewFrontmatter`
   are unchanged, the round-trip test is untouched, and a view saved after the change is byte-identical
-  to one saved before. §11's signed ranked-search-vs-lists rule is the one thing a plausible-looking
+  to one saved before. §10's signed ranked-search-vs-lists rule is the one thing a plausible-looking
   UI-026 breaks by accident
 - **TEST-1010 and TEST-1044 pass** — the new panel's cache key is invalidated by the frames the
   server already sends, and the nine-name vocabulary did not widen

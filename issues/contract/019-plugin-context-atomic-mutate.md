@@ -17,7 +17,7 @@ opus
 - Blocks: SERVER-034, PLUGINS-004
 
 ## Spec References
-- SPEC.md §15 — plugins; server remains the sole writer
+- SPEC.md §12 — plugins; server remains the sole writer
 - SPEC.md §9.2 — write-path semantics (single-writer, per-document serialization)
 
 ## Summary

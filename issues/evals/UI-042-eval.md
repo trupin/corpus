@@ -187,7 +187,7 @@ None.
 
 - **The markdown flavor emits `[[id|Title]]`, not bare title text.** A person
   pasting into a plain-text target does see `doc_wqmewqgt`. I probed whether
-  this is a rider violation and concluded it is not: SPEC §11's rider governs
+  this is a rider violation and concluded it is not: SPEC §10's rider governs
   what "external rich-text editors receive", and the `text/html` flavor — the
   one those editors read — carries title-only. The id in the markdown flavor is
   the round-trip carrier (the round trip above normalises `[[id|Title]]` back to

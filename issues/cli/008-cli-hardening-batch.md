@@ -321,7 +321,7 @@ mitigation is documentation, which is what shipped.
 (`issues/contract/009-thread-multipart-rider.md`, Open Conflict 6) delegated one item to CLI-008:
 `POST /api/threads/{id}/resolve|reopen` now answer with the `ThreadMutationResponse` envelope
 `{thread, warnings}` (`apps/server/src/threads/routes.ts:111,119`), so the CLI had to render the
-§14 warnings and correct its `--json` help. It shipped in neither issue; PR #10's review caught it
+§11 warnings and correct its `--json` help. It shipped in neither issue; PR #10's review caught it
 as **MAJOR Finding 5**. Fixed here.
 
 **implemented on: opus** (claude-opus-5, 1M context), in worktree `.claude/worktrees/fix-cli`.
@@ -329,13 +329,13 @@ Port `9050` only; scratch `/tmp/corpus-fix-cli-ws`; `8765` never bound.
 
 | Part of the finding | Fix |
 | ------------------- | --- |
-| §14 warnings silently dropped from human output | `apps/cli/src/commands/thread/status.ts` now imports `warningSuffix` from `../../input.js` and appends it to both branches of the printed line, exactly as `doc archive` does. The local `summary` binding is renamed `response`, because it is the envelope and not a summary. |
-| `--json` help promised "the thread summary" | Both examples now read ``One JSON value — `{"thread":{…},"warnings":[]}` — …``; both descriptions state that a real flip commits and that any §14 warning is appended to the printed line. Module header documents the envelope and why the routes carry warnings at all. |
+| §11 warnings silently dropped from human output | `apps/cli/src/commands/thread/status.ts` now imports `warningSuffix` from `../../input.js` and appends it to both branches of the printed line, exactly as `doc archive` does. The local `summary` binding is renamed `response`, because it is the envelope and not a summary. |
+| `--json` help promised "the thread summary" | Both examples now read ``One JSON value — `{"thread":{…},"warnings":[]}` — …``; both descriptions state that a real flip commits and that any §11 warning is appended to the printed line. Module header documents the envelope and why the routes carry warnings at all. |
 | `docs/cli.md` stale | Regenerated with `npm run docs:cli -w apps/cli`; three consecutive regenerations produce a byte-identical file (`md5 f18557bbf36979b99913eac91be1dd9e`). |
 
 **Tests** — `apps/cli/src/commands/thread/status.test.ts`: the stub now answers the flip with
 `{thread, warnings}` (it previously returned a bare summary the server no longer sends); new cases
-"appends a §14 warning raised by the auto-commit to the printed line" for **both** `resolve` and
+"appends a §11 warning raised by the auto-commit to the printed line" for **both** `resolve` and
 `reopen`, "summarises several warnings by code", and the `--json` case now pins the whole envelope
 including a non-empty `warnings`. `apps/cli`: **51 files, 533 tests, all passing**
 (`VITEST_MAX_THREADS=4 vitest run apps/cli`); `tsc --noEmit -p apps/cli` exit 0; eslint + prettier

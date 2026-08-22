@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 context menus (core actions on documents); SHARED-004 item 4
+- SPEC.md §10 context menus (core actions on documents); SHARED-004 item 4
   (plugin-rendered surfaces out of scope — which these rows are NOT)
 
 ## Summary

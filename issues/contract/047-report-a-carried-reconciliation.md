@@ -176,9 +176,9 @@ Where the server computes them, in `apps/server/src/docs/archive.ts`:
    rare. One code for both would leave the console unable to tell the routine one
    from the one worth stopping at.
 
-## SIGNED 2026-08-10 and applied — SPEC.md §14 bullet (the warnings channel reports effects on documents the request never named)
+## SIGNED 2026-08-10 and applied — SPEC.md §11 bullet (the warnings channel reports effects on documents the request never named)
 
-**Signed by the user on 2026-08-10 and applied verbatim** to §14, after "Every
+**Signed by the user on 2026-08-10 and applied verbatim** to §11, after "Every
 server mutation validates before writing", carrying its own signed marker. The
 user weighed it against splitting the channel later (a purpose-built field beside
 `warnings`) and against declining the widening, and chose to sign as drafted —
@@ -187,18 +187,18 @@ which is the cost of one channel carrying two kinds of thing.
 
 **Distinct from the other held drafts**: CONTRACT-048's §9.2 bulk-result draft
 and CONTRACT-037's (now void) §9.2 draft are about the bulk act's shape; this one
-is a **§14** bullet about what the warnings channel is for. (That last sentence
+is a **§11** bullet about what the warnings channel is for. (That last sentence
 read "Nothing was edited in SPEC.md" while the draft was held; it was signed and
 applied on 2026-08-10, and SPEC.md moves exactly one line for it.)
 
-Rationale for needing a line at all: §14 introduces warnings as things that
+Rationale for needing a line at all: §11 introduces warnings as things that
 "went wrong" and names two families. A carried effect is neither — the act was
 correct and so was the effect — so publishing it on the same channel widens what
 the channel means. §7 already requires the effect and §4 already requires the
 honesty about it, so the bullet ratifies rather than authorises; it is held
-because widening a §14 definition is the user's call.
+because widening a §11 definition is the user's call.
 
-Proposed addition to §14, as a new bullet after "Every server mutation validates
+Proposed addition to §11, as a new bullet after "Every server mutation validates
 before writing":
 
 > - **A response's warnings also carry effects on documents the request never

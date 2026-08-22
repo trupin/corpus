@@ -59,7 +59,7 @@ Two directions, and they are not equally bad:
    rather than by flipping a row.
 
    **Settled 2026-08-13: applied, never recorded.** All five amendments are in
-   SPEC.md §11 — the composer key contract, commenting on a selection, images
+   SPEC.md §10 — the composer key contract, commenting on a selection, images
    opening full-size, the one autocomplete keyboard contract, and fenced canvases
    wrapping — each carrying its own signed marker. `SHARED-008` resolved the same
    way (its text is in §4, tagged `_(Rider signed 2026-08-02.)_`). Both status

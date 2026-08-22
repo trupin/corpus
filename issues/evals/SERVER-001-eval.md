@@ -49,7 +49,7 @@ resolved escalation as open; a stale note, not a fabrication.
 | TEST-12  | Collision predicate honored, gives up loudly         | PASS     | First-three-taken → id after 4 probes; always-taken → `IdGenerationError: … after 5 attempts`.                                                  |
 | TEST-13  | Ref extraction ignores code, aliases, offsets        | PASS     | 4 refs in source order with correct aliases; offsets slice back exactly; fenced/inline-code refs and `[[unclosed` produce nothing, no throw.    |
 | TEST-14  | Path conventions and containment                     | PASS     | Thread flat regardless of folder hint; slug lowercased/hyphenated/capped at 60; no folder → `data/docs/inbox/`; all 4 traversal inputs → `null`. |
-| TEST-15  | An error for each §14 hard-failure rule              | PASS     | All 12 rules fire with an identifying code and a payload naming the document; the clean control yields 0 errors / 0 warnings. Note: a `doc_*` id on `type: thread` surfaces as `frontmatter-invalid` naming the id pattern rather than `id-prefix-mismatch` (the reverse direction emits the dedicated code) — still an error, still identified. |
+| TEST-15  | An error for each §11 hard-failure rule              | PASS     | All 12 rules fire with an identifying code and a payload naming the document; the clean control yields 0 errors / 0 warnings. Note: a `doc_*` id on `type: thread` surfaces as `frontmatter-invalid` naming the id pattern rather than `id-prefix-mismatch` (the reverse direction emits the dedicated code) — still an error, still identified. |
 | TEST-16  | Orphaned anchors / unresolved refs are warnings      | PASS     | All three produce warnings with an empty error list; dropping the resolver removes exactly the resolution-dependent warning.                    |
 | TEST-17  | Reading does not materialize defaults into the file  | PASS     | `due: null` file byte-identical after read+write; defaults-omitting file's diff contains only the mutated field's line; the thread that omits `agent` gains no `agent:` line. |
 | TEST-63  | File shape agrees with the wire contract             | PASS     | Defaulted minimal frontmatter passes `DocFrontmatterSchema` unmodified.                                                                         |
@@ -121,7 +121,7 @@ auto-commit.
 
 16 of 17 SERVER-001 acceptance tests pass, plus the three cross-issue tests it owns a side of
 (TEST-61, TEST-62, TEST-63). The parse/serialize/validate/check core is solid under
-adversarial input — BOM, CRLF, astral unicode, YAML aliases, `---` in the body, every §14
+adversarial input — BOM, CRLF, astral unicode, YAML aliases, `---` in the body, every §11
 rule. The single failure is real and load-bearing: byte stability holds for pure reads but
 not for the mutation path the whole write layer will use.
 
@@ -177,7 +177,7 @@ entirely, still carrying literal `due: null`; the thread that omits `agent` → 
 | TEST-4 malformed inputs                                          | PASS — unchanged messages, path + line, no unhandled throw                                |
 | TEST-5 / TEST-63 contract agreement                              | PASS — defaulted minimal still accepted by `DocFrontmatterSchema`                          |
 | TEST-11/12 ids, TEST-13 refs, TEST-14 paths + traversal          | PASS — identical results to round 1                                                        |
-| TEST-15 §14 rule matrix (12 rules + clean control)               | PASS — identical codes, identical clean control (0 errors / 0 warnings)                    |
+| TEST-15 §11 rule matrix (12 rules + clean control)               | PASS — identical codes, identical clean control (0 errors / 0 warnings)                    |
 | TEST-16 warning/error split, with and without resolver           | PASS — identical                                                                           |
 | TEST-7/8/9/10 turns                                              | PASS — identical                                                                           |
 | TEST-61 seed corpus through the checker                          | PASS — 0 errors, 0 warnings                                                                |

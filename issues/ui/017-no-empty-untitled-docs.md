@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — "Creating documents" bullet, amended and signed off 2026-07-30 (SHARED-004), user's rule verbatim-in-substance: **any document with no title and no content is auto-deleted on exit, whatever the exit route — including typed-then-erased**. The mechanism (defer-creation vs create-then-delete) is deliberately out of spec; the observable guarantee (board/search/disk/threads/locks clean) is what tests assert.
+- SPEC.md §10 — "Creating documents" bullet, amended and signed off 2026-07-30 (SHARED-004), user's rule verbatim-in-substance: **any document with no title and no content is auto-deleted on exit, whatever the exit route — including typed-then-erased**. The mechanism (defer-creation vs create-then-delete) is deliberately out of spec; the observable guarantee (board/search/disk/threads/locks clean) is what tests assert.
 
 ## Summary
 User request (2026-07-29, follow-up phase after PR #11): creating a document in the UI
@@ -84,7 +84,7 @@ lands on a tombstone — it reaches the entry below, or the list.
 
 ### Two defects the real app found that no unit test could
 
-1. **Templates.** `corpus init` seeds a `note` template (SPEC.md §11 — "Templates are
+1. **Templates.** `corpus init` seeds a `note` template (SPEC.md §10 — "Templates are
    documents"), so a `＋` document is born holding `## Context / ## Notes / ## Open
    questions`. The first drill run therefore deleted nothing on the untouched path: the
    body was not blank. Fixed by recording the body a document was *born* with

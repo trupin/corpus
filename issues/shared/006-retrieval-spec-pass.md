@@ -17,7 +17,7 @@ fable
 - Blocks: all retrieval-track issues (Phases A/B/C of the retrieval plan)
 
 ## Spec References
-- SPEC.md §2.2 (projection, rebuild/doctor), §7 (agent behavior), §9.2 (endpoints), §11 (search overlay), §14 (validation) — amendment targets
+- SPEC.md §2.2 (projection, rebuild/doctor), §7 (agent behavior), §9.2 (endpoints), §10 (search overlay), §11 (validation) — amendment targets
 
 ## Summary
 User-approved direction (2026-07-30): as the corpus grows, the agent must stay
@@ -86,7 +86,7 @@ text it inserts after or replaces; insertion/replacement text is ready to paste.
 - **Doctor: drift vs. staleness.** Async embedding means content can legitimately
   await indexing. Doctor fails on drift (stale chunk content, mixed model
   identity) but treats pending indexing as staleness — reported by
-  `corpus index status`, never a doctor failure — so §14's `rebuild && doctor`
+  `corpus index status`, never a doctor failure — so §11's `rebuild && doctor`
   clean invariant stays immediately achievable.
 
 ---
@@ -162,7 +162,7 @@ The rules (they live in the orchestrate/comment skills, and bind the orchestrato
 double-broadcasting."), before the "### 9.2 HTTP API" heading:
 
 ```markdown
-**Semantic index** _(Retrieval Phase B)_. The third derived search structure, beside the full-text index and the links graph — same home (inside the projection database under `.corpus/`, gitignored, never in git), same lifecycle (rebuildable and doctor-covered, §2.2 rule 1, §14), same sole writer (the server). It powers the semantic half of ranked search (`GET /api/search`, §9.2) and of related-document expansion.
+**Semantic index** _(Retrieval Phase B)_. The third derived search structure, beside the full-text index and the links graph — same home (inside the projection database under `.corpus/`, gitignored, never in git), same lifecycle (rebuildable and doctor-covered, §2.2 rule 1, §11), same sole writer (the server). It powers the semantic half of ranked search (`GET /api/search`, §9.2) and of related-document expansion.
 
 - **Deterministic chunking, content-addressed identity.** Document and turn bodies are split into chunks along the markdown heading structure — each chunk is a section addressed by its heading path, split further when it exceeds a bounded size budget. A chunk's identity derives from its document id, heading path, and content: the same content always yields the same chunks. The observable consequence: **re-indexing is proportional to the edit.** Saving a small change to a large document recomputes only the edited sections' chunks; untouched sections are never recomputed; moving or renaming a file (path is presentation, id is identity, §5) re-indexes nothing.
 - **Asynchronous, never blocking.** Semantic indexing runs inside the server, in the background, after the write path completes: **no save — UI, CLI, or out-of-band — ever waits on indexing.** Watcher-detected out-of-band edits queue re-indexing exactly like server saves. Staleness is visible, not hidden: `corpus index status` reports how much content awaits indexing, and search stays honest meanwhile — lexical ranking is always current, and a search response says when semantic ranking is not yet caught up.
@@ -177,7 +177,7 @@ double-broadcasting."), before the "### 9.2 HTTP API" heading:
 single collection query endpoint** behind every list…" (ends "…∪ failed jobs."):
 
 ```markdown
-- `GET /api/search?q=&type=&status=&includeArchived=&tag=&folder=&parent=&references=&agent=&author=&since=&due=&stale=&unread=&needs=&limit=` _(Retrieval Phase A)_ — **ranked retrieval** over documents, threads, and turns. `q` is required; the structured filters are the same set, with the same semantics (including the archived default), as `GET /api/docs`. Results come back relevance-ranked: each hit carries the document id, title, the heading path of the best-matching passage (for a hit in a thread turn, the turn's heading), and a one-line snippet — **never a body**. Phase A ranks lexically; from Phase B, ranking combines lexical and semantic relevance in one list with the same response shape, and the response flags when the semantic index is not fully caught up (§9.1). Lists stay on `GET /api/docs` (§11 columns and saved views are filtered lists); `/api/search` is what `corpus search` — and, from Phase C, the ⌘K overlay — consume. Read-only; no acting party.
+- `GET /api/search?q=&type=&status=&includeArchived=&tag=&folder=&parent=&references=&agent=&author=&since=&due=&stale=&unread=&needs=&limit=` _(Retrieval Phase A)_ — **ranked retrieval** over documents, threads, and turns. `q` is required; the structured filters are the same set, with the same semantics (including the archived default), as `GET /api/docs`. Results come back relevance-ranked: each hit carries the document id, title, the heading path of the best-matching passage (for a hit in a thread turn, the turn's heading), and a one-line snippet — **never a body**. Phase A ranks lexically; from Phase B, ranking combines lexical and semantic relevance in one list with the same response shape, and the response flags when the semantic index is not fully caught up (§9.1). Lists stay on `GET /api/docs` (§10 columns and saved views are filtered lists); `/api/search` is what `corpus search` — and, from Phase C, the ⌘K overlay — consume. Read-only; no acting party.
 ```
 
 ### Edit 8 — §9.2: `GET /api/docs/:id/related` _(Phase A; semantic rows join in Phase B)_
@@ -208,7 +208,7 @@ single collection query endpoint** behind every list…" (ends "…∪ failed jo
 - `GET /api/index/status` _(Retrieval Phase B)_ — semantic-index health: indexed vs. pending counts, the recorded provider/model identity, and whether a full rebuild is in progress (§9.1) · `POST /api/index/rebuild` — discards and asynchronously rebuilds the semantic index (§9.1): returns immediately, progress observable via status. Both touch only derived runtime state — no workspace file changes, no git commit, no acting party.
 ```
 
-### Edit 11 — §11 search overlay: adopt unified search _(Phase C)_
+### Edit 11 — §10 search overlay: adopt unified search _(Phase C)_
 
 **Replace** (at the end of the "**Search overlay.**" bullet):
 
@@ -220,7 +220,7 @@ single collection query endpoint** behind every list…" (ends "…∪ failed jo
 **"Save as view"** pins the current query as a new board column. Until Retrieval Phase C the overlay queries the single `GET /api/docs` endpoint (`q` + filters); _(Retrieval Phase C)_ its ranked result list is served by `GET /api/search` (combined lexical+semantic ranking, same filter chips and archived semantics), while saved views and board columns remain filtered lists served by `GET /api/docs` — relevance ranking is a property of interactive search, not of persisted views.
 ```
 
-### Edit 12 — §11 document view: related-documents panel _(Phase C)_
+### Edit 12 — §10 document view: related-documents panel _(Phase C)_
 
 **Replace** (inside the "**Document view — always editable, Google-Docs-like.**" bullet):
 
@@ -232,7 +232,7 @@ single collection query endpoint** behind every list…" (ends "…∪ failed jo
 along with a **backlinks panel** ("referenced by", via the `links` table) and — _(Retrieval Phase C)_ — a **related-documents panel**: the same ranked related set as `GET /api/docs/:id/related` (linked and, with Phase B, semantically similar documents, each row saying why it is related), where clicking a row pushes onto the reader's navigation stack like following any ref
 ```
 
-### Edit 13 — §14: doctor covers the semantic index _(Phase B)_
+### Edit 13 — §11: doctor covers the semantic index _(Phase B)_
 
 **Replace** the bullet:
 
@@ -254,6 +254,6 @@ classification. Scheduling decision, same round: **retrieval Phases A/B/C slot a
 the existing Phase 6 backlog** (the 7 ready issues land first).
 
 **Applied 2026-07-31 on `phase-7-retrieval-a`** — all 13 edits transcribed verbatim into
-SPEC.md (§1, §2.2 rule 1, §7, §9.1, §9.2, §11, §14). Edit 13's replacement retains the
+SPEC.md (§1, §2.2 rule 1, §7, §9.1, §9.2, §10, §11). Edit 13's replacement retains the
 later-added report-only-warnings sentence as its final sentence. The applied text matches
 the draft; this issue is closed.

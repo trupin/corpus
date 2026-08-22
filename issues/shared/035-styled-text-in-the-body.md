@@ -6,7 +6,7 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-done — **SIGNED 2026-08-12 and applied to SPEC.md §5 and §11**
+done — **SIGNED 2026-08-12 and applied to SPEC.md §5 and §10**
 
 Two of the four open questions were answered by the user at sign-off and are
 folded into the applied text: the colour roles are **`accent`, `warning`,
@@ -37,7 +37,7 @@ fable
 ## Spec References
 
 - SPEC.md §5 — documents are markdown with YAML frontmatter
-- SPEC.md §11 — "the editor serializes to clean markdown"
+- SPEC.md §10 — "the editor serializes to clean markdown"
 - SPEC.md §13 — the publish `style map`: "per-element font family/size/weight,
   spacing, colors. All targets render markdown through it. One layout
   definition, N destinations."
@@ -98,12 +98,12 @@ The decisions, made in this session:
 > markers preserves them; one that was shown a stripped body would wipe every
 > style with its first whole-body write.
 
-## Drafted rider text — part 2 of 3 (§11, the editor)
+## Drafted rider text — part 2 of 3 (§10, the editor)
 
 > The editor renders styled text as styled text — underline, highlight, colour,
 > alignment and indent display as what they are, never as their markers — and
 > serializes back to the same markers, character for character. "Clean markdown"
-> (§11) means **Corpus markdown as §5 defines it**: the three styling forms
+> (§10) means **Corpus markdown as §5 defines it**: the three styling forms
 > round-trip; arbitrary HTML still does not. Pasting rich text maps what has a
 > Corpus form onto it and drops what does not, exactly as paste already
 > normalises to the schema.
@@ -142,11 +142,11 @@ The decisions, made in this session:
 - [ ] All three parts read aloud, as quoted blocks, on their own; the four open
       questions answered in that conversation
 - [ ] User signs off, or amends
-- [ ] Applied to SPEC.md (§5, §11, §13) with `_(Rider signed YYYY-MM-DD.)_`
+- [ ] Applied to SPEC.md (§5, §10, §13) with `_(Rider signed YYYY-MM-DD.)_`
       markers
-- [ ] Contradiction sweep recorded here: §11's "clean markdown" and clipboard
+- [ ] Contradiction sweep recorded here: §10's "clean markdown" and clipboard
       fidelity clauses; §9.1 (chunk identity hashes text — stripping changes the
-      hashed text, which may re-chunk the corpus once); §14 (`doc check` must
+      hashed text, which may re-chunk the corpus once); §11 (`doc check` must
       not flag markers); §13 (style map ownership)
 - [ ] **Decomposed after signing** — expected shape: editor marks + serializer
       (UI), strip transform + retrieval surfaces + index (SERVER, and the

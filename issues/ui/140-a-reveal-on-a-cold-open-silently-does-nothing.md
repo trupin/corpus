@@ -25,7 +25,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — *"Selecting an anchored row reveals it at its anchor in the
+- SPEC.md **§10** — *"Selecting an anchored row reveals it at its anchor in the
   document"*, and the reveal-on-open behaviour UI-037 built
 
 ## Summary

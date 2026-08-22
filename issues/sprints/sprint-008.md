@@ -57,7 +57,7 @@ amendment**, drafted by spec-writer and held for user sign-off at the phase PR.
 
 | Issue                          | The real application in this sprint |
 | ------------------------------ | ----------------------------------- |
-| **UI-002**                     | Vitest + jsdom in `packages/kit` for the units, and a **real browser against a real server** for the loop. The E2E half needs three real things at once: a **real `corpus init` workspace**, a **real server process** on port `8905`, and the **real Vite dev server** on `CORPUS_UI_PORT=5273` proxying `/api` and `/events` to it. A live-update claim verified with a fake `EventSource` is **not** verified — the invalidate → refetch → repaint loop is the thing being proven (SPEC.md §15 M2/M3). Conversely, **no unit test may open a real `EventSource`**: see "Runtime gotchas". |
+| **UI-002**                     | Vitest + jsdom in `packages/kit` for the units, and a **real browser against a real server** for the loop. The E2E half needs three real things at once: a **real `corpus init` workspace**, a **real server process** on port `8905`, and the **real Vite dev server** on `CORPUS_UI_PORT=5273` proxying `/api` and `/events` to it. A live-update claim verified with a fake `EventSource` is **not** verified — the invalidate → refetch → repaint loop is the thing being proven (SPEC.md §12 M2/M3). Conversely, **no unit test may open a real `EventSource`**: see "Runtime gotchas". |
 | **CONTRACT-007 / CONTRACT-009** | The **generated artifacts**, and a **server actually mounting the routes**. `openapi.json` and `src/client/schema.generated.ts` regenerated from the route definitions with `node --import tsx scripts/check-generated-artifacts.ts` green **twice in a row**; the typed client exercised against the contract's routes mounted on a real app (the existing `routes/index.test.ts` harness); and, for anything a server handler must produce, a **real server on `8915`** answering **real HTTP** (`curl -sD-`). A shape asserted only in a schema round-trip is a contract claim, not a behavior claim. |
 | **SERVER-014**                 | The engine as a **library through its public API** (`reconcileAnchors`, `resolveAnchor` from `@corpus/server`), which is how SERVER-002/012/013 and their evaluators verified it, **plus** one pass through a **real `corpus init` workspace** on port `8925` where the same edit is made via `PUT /api/docs/{id}` and the resulting `anchors:` map is read **off disk** and out of `git diff`. **No port need be bound if the disk pass is driven by `corpus doc edit` against a server the issue starts and stops** — but the on-disk read-back is mandatory either way. |
 | **SERVER-020**                 | A **real server process** on port `8935` with a **real `curl -N /events`** subscriber attached across the whole sequence, and **real out-of-band edits** (`printf >>`, `sed -i`, `cp`, `rm` on real files — never an API call, that is the mutation path this issue is not about). `GET /api/tree` read over real HTTP immediately before and immediately after every edit. |
@@ -994,7 +994,7 @@ TEST-59: An answered form leaves Attention; an unanswered one is in it
          the pinned fence grammar, that is a SERVER change — named, not made here (Integration
          Points)
 
-TEST-60: `resolve` and `reopen` return their §14 warnings
+TEST-60: `resolve` and `reopen` return their §11 warnings
   Given: Both return a bare `ThreadSummarySchema` today, while
          `apps/server/src/threads/routes.ts` computes warnings and only logs them
   When:  The rider lands
@@ -1423,7 +1423,7 @@ TEST-108: A resolved thread leaves Attention
   Given: The detector's missing `t.status = 'open'` guard
   When:  A thread with an unanswered form is resolved and `GET /api/docs?needs=form` and
          `?needs=me` are queried
-  Then:  It appears in neither. SPEC.md §11 — handling the reason clears the row
+  Then:  It appears in neither. SPEC.md §10 — handling the reason clears the row
 
 TEST-109: `needs=me` still contains the union it promises
   Given: `needs=me` is the union of unread-reply ∪ form ∪ due ∪ stale ∪ failed-job (SPEC.md §9.2
@@ -1483,7 +1483,7 @@ TEST-114: A template deleted from under the projection does not fail the create
          warning or is silent per the shipped convention — but it is not a 500 and not a refusal
 
 TEST-115: Pre-fill still works, and is still body-only
-  Given: SPEC.md §11 as amended by SHARED-002 — "Template pre-fill is body-only: the new
+  Given: SPEC.md §10 as amended by SHARED-002 — "Template pre-fill is body-only: the new
          document's frontmatter comes from the create request, never from the template"
   When:  A `note` is created with the template present and no body given
   Then:  The body is the template's, and none of `type: template`, `for`, or the template's

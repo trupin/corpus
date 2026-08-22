@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — focus mode (⤢ / full screen), esc/⌫ close-back precedence
+- SPEC.md §10 — focus mode (⤢ / full screen), esc/⌫ close-back precedence
 
 ## Summary
 User report (2026-07-30, screenshot): the full-screen head renders

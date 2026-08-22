@@ -19,7 +19,7 @@ opus — reference implementation over a finished extension surface; PLUGINS-001
 ## Spec References
 - SPEC.md §12 — "Reference plugin: todos (part of v1)"
 - SPEC.md §10 — "Plugin system" (the extension points this plugin exercises; kit-only UI contract)
-- SPEC.md §15 M6 — "plugin system + todos plugin" (the executable check; this issue's E2E plan runs it verbatim; renumbered per sprint-014 Adjudication 15)
+- SPEC.md §12 M6 — "plugin system + todos plugin" (the executable check; this issue's E2E plan runs it verbatim; renumbered per sprint-014 Adjudication 15)
 - SPEC.md §6 — "Threads and anchors" (item-level commenting uses the core anchor mechanism, unchanged)
 
 ## Summary
@@ -45,9 +45,9 @@ Field semantics: `text` (string, required, non-empty), `done` (boolean, required
 - [ ] **CLI**: `corpus todos add <doc> <text>`, `corpus todos check <doc> <index-or-text>`, and `corpus todos list [<doc>]` work as thin HTTP clients over the plugin routes, support `--json`, appear in all three `--help` levels and in the generated `docs/cli.md`, and each carries ≥1 example (CLI-001 registry validation).
 - [ ] **Skill**: `plugins/todos/skills/todos/SKILL.md` lets the agent create and manage todo documents when asked in a thread (e.g. "add a todo to follow up on X"), using only `corpus todos` verbs and core doc verbs. It is loaded into `<workspace>/.claude/skills/` by `corpus init`, and orchestrate routes `todos.*` events to it by convention with no todos-specific text in the orchestrate skill.
 - [ ] **Column**: a "Todos" column type aggregating **open** items across all `todo` documents, grouped by source document, each row linking to its document (opening it in the column reader). Implemented **exclusively** on `@corpus/kit` — `useDocs` for the query, kit components for rows/layout/tokens; zero imports from `apps/ui/src` (lint-enforced) and zero hard-coded colors.
-- [ ] **Seed template**: a `type: template` document with `for: todo` ships as a seed document (per SPEC.md §11, templates are documents) so creating a todo from the picker or a column's ＋ starts with valid empty `items: []` frontmatter.
+- [ ] **Seed template**: a `type: template` document with `for: todo` ships as a seed document (per SPEC.md §10, templates are documents) so creating a todo from the picker or a column's ＋ starts with valid empty `items: []` frontmatter.
 - [ ] **`validate`**: the manifest's `validate?` rejects malformed `items` (non-array, missing `text`/`done`/`ts`, wrong types) with a readable message, and the View degrades gracefully rather than crashing on a document that fails it.
-- [ ] **§15 M6 passes**: deleting `plugins/todos` leaves the app booting, todo documents rendering as plain markdown, and the Todos column showing a "plugin missing" card; restoring returns the renderer, DocPanel, and column.
+- [ ] **§12 M6 passes**: deleting `plugins/todos` leaves the app booting, todo documents rendering as plain markdown, and the Todos column showing a "plugin missing" card; restoring returns the renderer, DocPanel, and column.
 
 ## Technical Design
 
@@ -114,7 +114,7 @@ Vitest, colocated in `plugins/todos`.
 - Seed template test — the shipped template parses as a valid `type: template`, `for: todo` document with `items: []`.
 
 ## E2E Verification Plan
-Real running application only — real server, real UI build, real `corpus` binary, real workspace on disk, Playwright for browser steps. **SPEC.md §15 M5 is the gold standard; steps 8–11 below run its check verbatim.**
+Real running application only — real server, real UI build, real `corpus` binary, real workspace on disk, Playwright for browser steps. **SPEC.md §12 M5 is the gold standard; steps 8–11 below run its check verbatim.**
 
 ### Verification Steps
 1. **Boot** — `npm run watch`; server log lists `todos` discovered and mounted at `/api/x/todos`; `corpus todos --help` lists `add`, `check`, `list`.
@@ -124,10 +124,10 @@ Real running application only — real server, real UI build, real `corpus` bina
 5. **Item comment** — select an item's text in the rendered todo view, comment ("note only"); confirm an anchored highlight + thread chip appear without reload, the thread shows in an Open-threads column, and `git show` reveals the anchor entry written by core (not by the plugin).
 6. **ListItem + column** — confirm the todo document's row shows first items and the due count; add the "Todos" column from "＋ New list"; confirm its pinned view document exists on disk with `column: "todos/todos"`, it aggregates open items across multiple todo documents, clicking a row opens the source document, and checking an item elsewhere removes it from the column live.
 7. **Skill** — `corpus init` a temp workspace; confirm `<workspace>/.claude/skills/todos/SKILL.md` exists. Post an `@agent` comment in a thread ("add a todo to follow up on X"), run the orchestrator (or `corpus thread reply --from agent` per M4's pattern); confirm the agent creates/updates a todo document through `corpus todos` and replies in the thread.
-8. **§15 M5 — delete** — `rm -rf plugins/todos`, restart the whole system. Confirm: the app **boots**; existing todo documents render as **plain markdown**; the Todos column shows a **"plugin missing"** card while every other column works; `/api/x/todos/*` 404s; `corpus todos` is gone from `--help`.
-9. **§15 M5 — restore** — restore the directory, restart. Confirm the custom renderer, the DocPanel, and the Todos column all return, with the todo documents' data intact.
-10. **§15 M5 — lint rule** — add a direct `apps/ui/src` import to `plugins/todos/ui/TodosColumn.tsx`; `npm run lint` **fails** naming the kit-only rule. Revert; lint passes.
-11. **§15 M5 — error boundary** — make `TodosColumn` throw deliberately on render; reload: an **error card** appears in that column, **the rest of the board keeps working** (other columns render, scroll, and open readers). Revert and confirm recovery.
+8. **§12 M5 — delete** — `rm -rf plugins/todos`, restart the whole system. Confirm: the app **boots**; existing todo documents render as **plain markdown**; the Todos column shows a **"plugin missing"** card while every other column works; `/api/x/todos/*` 404s; `corpus todos` is gone from `--help`.
+9. **§12 M5 — restore** — restore the directory, restart. Confirm the custom renderer, the DocPanel, and the Todos column all return, with the todo documents' data intact.
+10. **§12 M5 — lint rule** — add a direct `apps/ui/src` import to `plugins/todos/ui/TodosColumn.tsx`; `npm run lint` **fails** naming the kit-only rule. Revert; lint passes.
+11. **§12 M5 — error boundary** — make `TodosColumn` throw deliberately on render; reload: an **error card** appears in that column, **the rest of the board keeps working** (other columns render, scroll, and open readers). Revert and confirm recovery.
 12. **Cleanliness** — `corpus db rebuild && corpus db doctor` clean after all of the above; `grep -r` over `plugins/todos` shows no imports outside `@corpus/kit` / `@corpus/contract`.
 13. Capture commands, outputs, SSE frames, `git log` excerpts, and screenshots for the log.
 
@@ -321,7 +321,7 @@ renders under the plugin View as `💬 1 · user | new` with the View still the 
 behaves like any other thread: `corpus thread reply --from agent`, engagement flipped by
 the server (`agent engaged`), `corpus thread resolve`. `corpus doc check` → *no findings*.
 
-#### F. §15 M6 — the subtractive check (TEST-281–TEST-283)
+#### F. §12 M6 — the subtractive check (TEST-281–TEST-283)
 
 `rm`'d `plugins/todos` (moved to the scratch dir), restarted server **and** dev UI:
 

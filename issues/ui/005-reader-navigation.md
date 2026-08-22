@@ -14,7 +14,7 @@ P0
 
 ## Model
 
-opus — the interaction model is pinned by the prototype and SPEC.md §11 (per-column reader, nav stack semantics, menu contents, lock banner); the open questions are all answered, leaving careful implementation.
+opus — the interaction model is pinned by the prototype and SPEC.md §10 (per-column reader, nav stack semantics, menu contents, lock banner); the open questions are all answered, leaving careful implementation.
 
 ## Dependencies
 
@@ -23,13 +23,13 @@ opus — the interaction model is pinned by the prototype and SPEC.md §11 (per-
 
 ## Spec References
 
-- SPEC.md §11 — "Per-column reader" (clicking a row opens the document _in that column_; the column widens; each reader keeps its own navigation stack and offers focus mode)
-- SPEC.md §11 — "Document view" (frontmatter editable as a small form; `[[refs]]` render the target's current title; backlinks panel "referenced by"; ⋯ menu with Archive, Delete (user-only, explicit confirm), Resolve/Reopen for threads; locked documents render read-only with a banner and Force unlock)
-- SPEC.md §11 — "Navigation history" (following refs, backlinks, or thread-context links pushes; Back pops with scroll position restored; the reader exits to its list only when the stack empties, with a shortcut to jump straight back)
+- SPEC.md §10 — "Per-column reader" (clicking a row opens the document _in that column_; the column widens; each reader keeps its own navigation stack and offers focus mode)
+- SPEC.md §10 — "Document view" (frontmatter editable as a small form; `[[refs]]` render the target's current title; backlinks panel "referenced by"; ⋯ menu with Archive, Delete (user-only, explicit confirm), Resolve/Reopen for threads; locked documents render read-only with a banner and Force unlock)
+- SPEC.md §10 — "Navigation history" (following refs, backlinks, or thread-context links pushes; Back pops with scroll position restored; the reader exits to its list only when the stack empties, with a shortcut to jump straight back)
 - SPEC.md §5 — inline references (`[[id]]`, alias form `[[id|as text]]`, unresolved refs render visibly broken)
 - SPEC.md §7 — "Document locks" (agent-held lock ⇒ read-only + banner naming the holder; Force unlock breaks it, is recorded in the audit trail, and re-queues the agent's deferred edit; lock state is projected and broadcast over SSE)
 - SPEC.md §9.2 — `GET /api/docs/:id`, `PUT /api/docs/:id`, `DELETE /api/docs/:id` (user-only), `POST /api/threads/:id/resolve|reopen`, lock-break endpoint
-- SPEC.md §15 M3/M4 — the reader's executable checks (⋯ menu, `[[` refs render as titles and backlinks list the referrer; agent-held lock renders read-only, force unlock breaks it)
+- SPEC.md §12 M3/M4 — the reader's executable checks (⋯ menu, `[[` refs render as titles and backlinks list the referrer; agent-held lock renders read-only, force unlock breaks it)
 - `design/index.html` — **authoritative look & feel** (`.col.reading`, `.reader`, `.reader-head`, `.back`, `.reader-id`, `.comments-btn`, `.comments-pop`, `.cp-item`, `.expand`, `.fm-chips`, `.doc-title`, `.doc-body`, `.ref`, `.backlinks`, `.lock-banner`, `.focus`, `.focus-head`, `.focus-inner`)
 
 ## Summary
@@ -39,7 +39,7 @@ Make columns readable. Clicking a row opens the document **in that column** — 
 ## Acceptance Criteria
 
 - [x] Clicking a row opens that document in **its own column**: the column gets the `.reading` state (width `560px` with the `0.25s` width transition), the list and the header chip row hide, and the reader shows.
-- [x] Multiple columns can have different documents open simultaneously and independently (the wide-screen workflow in SPEC.md §11).
+- [x] Multiple columns can have different documents open simultaneously and independently (the wide-screen workflow in SPEC.md §10).
 - [x] Reader head matches the prototype: `.back` accent button, `.reader-id` mono `<docId> · git ✓` pushed right, a `.save-chip` slot (empty here; wired by UI-006), a `.comments-btn` (`💬 n`, hidden when the doc has no threads), a `⋯` document-menu button, and a `⤢` focus button.
 - [x] The back button is labeled with the **previous document's title** when the nav stack has depth (`‹ Mortgage options`) and with the **column's title** when it does not (`‹ Finance`); its `title` attribute documents the shift-click behavior.
 - [x] Shift-clicking Back (and the documented keyboard shortcut) clears the stack and returns straight to the list.
@@ -52,7 +52,7 @@ Make columns readable. Clicking a row opens the document **in that column** — 
 - [x] Each column keeps its own navigation stack of `{ docId, scrollY }`: following a `[[ref]]`, a backlink, or a thread-context link **pushes**; Back **pops** and restores the previous scroll position exactly; popping the last entry exits to the list.
 - [x] Nav stacks and open readers persist in browser-local state (the localStorage owned by UI-003) and are restored on reload — including scroll positions.
 - [x] Focus mode (`⤢`) opens a full-viewport overlay with its own head (back/close, an "esc closes" mono hint, doc id, save chip, 💬, ⋯), a 66–76ch measure (`.focus-inner` max 76ch, `.focus .doc-body` max 66ch at 16.5px/1.7), and **its own navigation stack** independent of the column's.
-- [x] Escape precedence is explicit and correct: an open popover/menu closes first, then focus mode, then the column reader — matching SPEC.md §11's keyboard scheme.
+- [x] Escape precedence is explicit and correct: an open popover/menu closes first, then focus mode, then the column reader — matching SPEC.md §10's keyboard scheme.
 - [x] Thread-type documents render their conversation as the document body (turns with author/timestamp), so a thread opened from a column is readable; the full thread UI (composer, forms, attachments, per-turn actions) is UI-008's.
 - [x] A locked document renders the sepia `.lock-banner` — pulsing sepia dot, "**agent is editing** — `<note>` · document is read-only", and a **Force unlock** button — and its editable surfaces (title, frontmatter form) are disabled while locked.
 - [x] Force unlock calls the server's lock-break endpoint; on success the banner clears, the document becomes editable, and a toast states the break was recorded in the audit trail and the agent's deferred edit was re-queued.
@@ -80,7 +80,7 @@ Make columns readable. Clicking a row opens the document **in that column** — 
 
 ### Key Implementation Details
 
-**One reader, two hosts.** `DocView` renders the document; the column reader and focus mode are two hosts that differ only in chrome and measure. Do **not** fork the rendering logic — SPEC.md §11 requires them to behave identically (same menu, same 💬, same refs), and UI-006 will replace the body renderer in exactly one place.
+**One reader, two hosts.** `DocView` renders the document; the column reader and focus mode are two hosts that differ only in chrome and measure. Do **not** fork the rendering logic — SPEC.md §10 requires them to behave identically (same menu, same 💬, same refs), and UI-006 will replace the body renderer in exactly one place.
 
 **Nav stack.** `useNavStack(surfaceKey)` mirrors the prototype's `state.nav`: an array of `{ docId, scrollY }`. On navigating away, write the current scroll into the top entry, then push. On Back, pop and re-render with `restore: true` so the scroll is applied after content mounts (a layout effect, not a timeout — the content is available synchronously from the query cache in the common case; when it is not, restore once the query resolves). Focus mode holds a **separate** stack (the prototype's `state.focusNav`), because entering focus from a column and navigating there must not rewrite the column's history.
 
@@ -133,7 +133,7 @@ Vitest + React Testing Library in `apps/ui` and `packages/kit`:
 
 ## E2E Verification Plan
 
-Against the **real running application** — this covers several of SPEC.md §15 M3's and M4's checks.
+Against the **real running application** — this covers several of SPEC.md §12 M3's and M4's checks.
 
 ### Verification Steps
 
@@ -152,13 +152,13 @@ Against the **real running application** — this covers several of SPEC.md §15
 13. Edit the frontmatter form (title, a tag, due): assert the file's frontmatter changes on disk and the change is auto-committed.
 14. ⤢ focus mode: assert the overlay covers the viewport, the measure is 66–76ch, the head shows the esc hint, and navigating a ref inside focus does **not** alter the underlying column's stack. Press Escape: assert focus closes and the column reader is unchanged.
 15. Escape precedence: open the ⋯ menu inside focus mode; first Escape closes the menu, second closes focus, third closes the column reader.
-16. Locks (SPEC.md §15 M4): acquire an agent lock on the open document out-of-band (`corpus lock` / an agent edit). Assert the sepia banner appears **live** with the lock's note, the title/frontmatter form become non-editable, and the same banner appears in a second column showing that document. Click **Force unlock**: assert the lock file is gone, the banner clears live, editing is re-enabled, the toast reports the break, and the break is visible in the audit trail (`git log`) and console.
+16. Locks (SPEC.md §12 M4): acquire an agent lock on the open document out-of-band (`corpus lock` / an agent edit). Assert the sepia banner appears **live** with the lock's note, the title/frontmatter form become non-editable, and the same banner appears in a second column showing that document. Click **Force unlock**: assert the lock file is gone, the banner clears live, editing is re-enabled, the toast reports the break, and the break is visible in the audit trail (`git log`) and console.
 17. Open an unread thread from a column: assert the thread's turns render as the body and the unread badge clears; then confirm that opening a **parent document** with unseen threads does not clear their unread state.
 
 ## E2E Verification Log
 
 **Implemented on: opus.** Model recommendation confirmed correct — the open
-questions were all answered by SPEC.md §11, `design/index.html` and sprint-010's
+questions were all answered by SPEC.md §10, `design/index.html` and sprint-010's
 Orchestrator Adjudications; the two judgement calls that came up (a `Lock.note`
 field that does not exist on the wire, and the reader's own ⇧esc binding) are
 recorded below as escalations rather than guessed at.

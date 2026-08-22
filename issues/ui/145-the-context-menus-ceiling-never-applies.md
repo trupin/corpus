@@ -17,8 +17,8 @@ opus
 - Related: UI-142 (which recorded the wrong number as latent), UI-143, UI-094 (which measured it)
 
 ## Spec References
-- SPEC.md **§11** — *"a surface is as large as its place allows"* and *"a bound is derived from the room, not chosen as a number"* (SHARED-061, signed 2026-08-21)
-- SPEC.md **§11** — the right-click context menu
+- SPEC.md **§10** — *"a surface is as large as its place allows"* and *"a bound is derived from the room, not chosen as a number"* (SHARED-061, signed 2026-08-21)
+- SPEC.md **§10** — the right-click context menu
 
 ## Summary
 

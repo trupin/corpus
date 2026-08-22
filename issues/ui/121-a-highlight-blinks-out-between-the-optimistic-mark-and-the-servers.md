@@ -24,7 +24,7 @@ opus
 ## Spec References
 
 - SPEC.md **§6** — anchors and how a highlight is painted
-- SPEC.md **§11** — *"the selection… **is highlighted in the turn** the way an
+- SPEC.md **§10** — *"the selection… **is highlighted in the turn** the way an
   anchor is highlighted in a document"*
 
 ## Summary

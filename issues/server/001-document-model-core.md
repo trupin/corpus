@@ -25,12 +25,12 @@ opus — well-specified formats; the spec pins every field.
 
 - SPEC.md §5 — "The document model" (canonical frontmatter, ids, inline refs, staleness fields)
 - SPEC.md §6 — "Threads and anchors" (thread fields, turn format, anchor entries)
-- SPEC.md §14 — "Validation and git hooks" (`doc check` rules: what fails vs. what warns)
+- SPEC.md §11 — "Validation and git hooks" (`doc check` rules: what fails vs. what warns)
 - CLAUDE.md — Architecture Decision 2 (server is the sole writer; formats are parsed/serialized in exactly one place, now server-side rather than in `cli/lib/*`)
 
 ## Summary
 
-Build the core document library in `apps/server/src/core/` — the single place in the system where Corpus's on-disk formats are parsed and serialized. It covers markdown + YAML frontmatter round-tripping, the canonical frontmatter shape (§5) and thread extension (§6), the turn format with monotonic-unique timestamps as turn identity, id generation, `[[ref]]` extraction, path↔id conventions, and the `doc check` validator whose rules §14 pins. Every later write path (SERVER-005), the projection (SERVER-004), and the validation surface build on this library and never re-implement a parser. The hard guarantee is byte-stability: parsing a document and serializing it back without touching anything must reproduce the original bytes exactly.
+Build the core document library in `apps/server/src/core/` — the single place in the system where Corpus's on-disk formats are parsed and serialized. It covers markdown + YAML frontmatter round-tripping, the canonical frontmatter shape (§5) and thread extension (§6), the turn format with monotonic-unique timestamps as turn identity, id generation, `[[ref]]` extraction, path↔id conventions, and the `doc check` validator whose rules §11 pins. Every later write path (SERVER-005), the projection (SERVER-004), and the validation surface build on this library and never re-implement a parser. The hard guarantee is byte-stability: parsing a document and serializing it back without touching anything must reproduce the original bytes exactly.
 
 ## Acceptance Criteria
 
@@ -40,7 +40,7 @@ Build the core document library in `apps/server/src/core/` — the single place 
 - [x] `parseTurns(body)` splits a thread body on `## <author> · <ISO ts>` headings; `appendTurn(body, turn)` appends a turn and guarantees the new timestamp is strictly greater than every existing turn timestamp in that thread; `deleteTurn(body, ts)` removes a turn by its timestamp identity.
 - [x] `newId(prefix, isTaken?)` generates collision-safe `doc_`, `th_`, `anc_`, `evt_` ids and retries against the supplied predicate.
 - [x] `extractRefs(text)` returns `[[id]]` and `[[id|alias]]` occurrences with their offsets, ignoring refs inside fenced and inline code.
-- [x] `checkCorpus(documents, options)` implements §14's rules: hard failures for unparseable frontmatter, missing required fields, duplicate ids, malformed anchor entries, duplicate anchor ids within a document, and threads whose `parent`/`anchor` do not resolve; **warnings** (never failures) for well-formed-but-unresolvable anchors and unresolved `[[refs]]`.
+- [x] `checkCorpus(documents, options)` implements §11's rules: hard failures for unparseable frontmatter, missing required fields, duplicate ids, malformed anchor entries, duplicate anchor ids within a document, and threads whose `parent`/`anchor` do not resolve; **warnings** (never failures) for well-formed-but-unresolvable anchors and unresolved `[[refs]]`.
 - [x] `documentPathFor()` / `parseDocumentPath()` encode the path convention: threads are flat at `data/threads/<thread-id>.md`, docs nest freely under `data/docs/`; path is presentation, id is identity.
 - [x] Unit tests cover the round-trip matrix, the turn format, the id generator, ref extraction, and every check rule (each with a passing and a failing fixture).
 
@@ -109,11 +109,11 @@ type ParsedDocument = {
 
 **Paths (§4/§5).** `documentPathFor(frontmatter, opts)` → workspace-relative path: `type: thread` ⇒ `data/threads/<id>.md` (flat, always); everything else ⇒ `<folder ?? "data/docs/inbox">/<slugifyTitle(title)>.md`. `slugifyTitle` lowercases, transliterates to ASCII where trivial, replaces runs of non-alphanumerics with `-`, trims to 60 characters, and falls back to the id when the result is empty. `parseDocumentPath(relPath)` returns `{ root: "docs" | "threads", folder, filename }` or `null` for paths outside the document roots. A containment guard rejects absolute paths, `..` segments, and anything resolving outside the workspace — every caller passing user- or agent-supplied path input goes through it.
 
-**`doc check` (§14).** `checkCorpus(docs, { resolveAnchor? })` takes the already-parsed documents (the caller does the I/O; this library stays I/O-free) and returns `{ errors: CheckFinding[], warnings: CheckFinding[] }` where a finding is `{ code, severity, docId, path, detail }`. Rules:
+**`doc check` (§11).** `checkCorpus(docs, { resolveAnchor? })` takes the already-parsed documents (the caller does the I/O; this library stays I/O-free) and returns `{ errors: CheckFinding[], warnings: CheckFinding[] }` where a finding is `{ code, severity, docId, path, detail }`. Rules:
 
 _Errors_ — frontmatter fails to parse; a required field is missing or ill-typed; `id` prefix disagrees with `type`; two documents share an `id`; an anchor entry is malformed (key not `anc_*`, missing/empty `exact`, non-string `prefix`/`suffix`); duplicate anchor ids within a document; a thread's `parent` names a document that does not exist; a thread's `anchor` names an anchor entry that does not exist in its parent; two threads claim the same anchor (one anchor per thread, §6); duplicate turn timestamps within a thread.
 
-_Warnings_ — a well-formed anchor whose selector does not resolve in the current body (an orphaned thread is legitimate, §6/§14); an anchor entry with no thread referencing it; an unresolved `[[ref]]` (referencing a not-yet-created document is legitimate, §5).
+_Warnings_ — a well-formed anchor whose selector does not resolve in the current body (an orphaned thread is legitimate, §6/§11); an anchor entry with no thread referencing it; an unresolved `[[ref]]` (referencing a not-yet-created document is legitimate, §5).
 
 Resolution is **injected**: `options.resolveAnchor` is supplied by SERVER-002's resolver. When it is absent, resolution-dependent warnings are simply not produced — that keeps this library free of a dependency on the anchor engine and lets both issues land independently.
 
@@ -223,7 +223,7 @@ $ python3 -c "...count ': ' in line 3..."
 .claude/agents/ui-dev.md     colon-space occurrences in description: 1
 ```
 
-Rejecting these is the §14 "frontmatter fails to parse" rule working as
+Rejecting these is the §11 "frontmatter fails to parse" rule working as
 specified, and §5 mandates a real YAML library. ~~Escalated to the orchestrator:
 these are dev-harness files outside this agent's domain and need their
 descriptions quoted.~~ PASS for the library; two harness files flagged.
@@ -407,7 +407,7 @@ no folder:   data/docs/inbox/mortgage-options-2026.md
 
 PASS.
 
-**TEST-15 — an error for each §14 hard-failure rule.** Thirteen corpora were
+**TEST-15 — an error for each §11 hard-failure rule.** Thirteen corpora were
 written to disk under `/tmp/corpus-e2e-rules/`, each violating exactly one rule,
 plus a clean control assembled from the same fixtures.
 
@@ -672,7 +672,7 @@ serializer alone (`apps/server/src/core/document.ts`):
 
 `DocumentSource.frontmatterDirty` became `frontmatterRewritten`, and
 `frontmatterText` now holds the current text rather than only the original;
-`serializeDocument` no longer consults the AST at all. §14 validation behavior and
+`serializeDocument` no longer consults the AST at all. §11 validation behavior and
 the structural byte-stability of pure round-trips are untouched.
 
 #### Post-fix verification
@@ -794,10 +794,10 @@ the splice guards.
 Two review findings on PR #8, both adjudicated by the orchestrator and fixed in
 `apps/server/src/core/`. SPEC.md was **not** changed.
 
-#### 1. MAJOR (spec drift) — `anchor-unused` was a warning; §14 makes it a failure
+#### 1. MAJOR (spec drift) — `anchor-unused` was a warning; §11 makes it a failure
 
 **Reviewer finding.** The checker reported `anchor-unused` (an anchor entry with
-no thread referencing it) as a warning. §14's warning carve-out names exactly two
+no thread referencing it) as a warning. §11's warning carve-out names exactly two
 categories — "Unresolvable-but-well-formed anchors (orphaned threads) and
 unresolved `[[refs]]` are warnings, not failures" — and the immediately preceding
 failure list contains "**every anchor belongs to an existing thread**". §6 states
@@ -855,16 +855,16 @@ errors: 2
                                                      # no anchor-unused, no thread cascade
 ```
 
-The clean control still reports zero findings, the §14 failure fires when the
+The clean control still reports zero findings, the §11 failure fires when the
 highlight is genuinely dangling, and neither an invalid thread nor an invalid
 parent produces a cascaded accusation.
 
 **Tests.** `core/check.test.ts` — the old `warns on an anchor entry no thread
-references` case moved to `§14 hard failures` and now asserts
+references` case moved to `§11 hard failures` and now asserts
 `errors == [anchor-unused]`, `severity == "error"` and an empty warning list; two
 new cases cover the unused-*and*-unresolved document (one error + one warning, the
 two codes staying independent) and the invalid-claiming-thread cascade. The
-`§14 warnings` suite is now exactly the two carve-outs. `check-with-anchors.test.ts`
+`§11 warnings` suite is now exactly the two carve-outs. `check-with-anchors.test.ts`
 (TEST-62) needed no behavioral change — both its anchors are claimed — only a
 comment correction. 35 tests in `check.test.ts`, all green.
 
@@ -913,7 +913,7 @@ exit=1
 ```
 
 Refused in 5.65 ms instead of 2 s, reported as `frontmatter-unparseable` through
-the normal §14 path, and the other two documents in the corpus are still checked —
+the normal §11 path, and the other two documents in the corpus are still checked —
 one hostile file does not abort the run.
 
 **Tests.** `core/document.test.ts` gains a `parseDocument alias amplification`

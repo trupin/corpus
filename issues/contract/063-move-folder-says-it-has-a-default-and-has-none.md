@@ -24,12 +24,12 @@ same over-broad folder sentence shipped three times in one phase)
 
 ## Spec References
 
-- SPEC.md **§11** — creation is inbox-first
+- SPEC.md **§10** — creation is inbox-first
 
 ## Summary
 
 `MoveDocRequest.folder` is a **required** field, so it has no default — but its
-description says *"Defaults to `inbox` — creation is inbox-first (SPEC.md §11),
+description says *"Defaults to `inbox` — creation is inbox-first (SPEC.md §10),
 and the agent files inbox arrivals per its skill."*
 
 That sentence is dead text on this route. It reads as move's default because it

@@ -23,13 +23,13 @@ fable — the open-vs-closed frontmatter surface is an architectural call with p
 
 ## Spec References
 
-- SPEC.md §11 — columns are pinned `type: view` documents (`pinned`, `order`, `query`, `column` frontmatter)
+- SPEC.md §10 — columns are pinned `type: view` documents (`pinned`, `order`, `query`, `column` frontmatter)
 - SPEC.md §12 — plugin doc types carry their own frontmatter (`todo.items`)
 - `issues/sprints/sprint-009.md` — Open Conflict 1 (discovery: no wire path for any view key; ~13 of UI-003's 16 ACs blocked)
 
 ## Summary
 
-Sprint-009's planner found §11's view-document model has no HTTP surface: `docRowBaseShape`, `DocFrontmatterSchema`, `CreateDocRequestSchema`, `UpdateDocRequestSchema` are closed sets omitting `pinned`/`order`/`query`/`column`; no `pinned` query param; no `order` in `DOC_SORTS`. Adjudicated design (orchestrator, 2026-07-27): a **namespaced open extra-frontmatter object** carried on doc rows, create and update requests — serving §11's view keys now and §12's plugin keys (`todo.items`) without reopening the contract per doc type. Core keys stay closed and validated; the extra object is the explicit escape hatch, passed through byte-preserving (the server's YAML-splice machinery already does this on disk).
+Sprint-009's planner found §10's view-document model has no HTTP surface: `docRowBaseShape`, `DocFrontmatterSchema`, `CreateDocRequestSchema`, `UpdateDocRequestSchema` are closed sets omitting `pinned`/`order`/`query`/`column`; no `pinned` query param; no `order` in `DOC_SORTS`. Adjudicated design (orchestrator, 2026-07-27): a **namespaced open extra-frontmatter object** carried on doc rows, create and update requests — serving §10's view keys now and §12's plugin keys (`todo.items`) without reopening the contract per doc type. Core keys stay closed and validated; the extra object is the explicit escape hatch, passed through byte-preserving (the server's YAML-splice machinery already does this on disk).
 
 Riders: a `pinned` filter param and `order` sort on `GET /api/docs`; `DocRow.parentTitle` (nullable, required — mirrors `Job.originTitle`; UI-004's "show the parent's title" has no data source today).
 
@@ -44,12 +44,12 @@ Riders: a `pinned` filter param and `order` sort on `GET /api/docs`; `DocRow.par
 
 **As implemented (design decisions of record, 2026-07-27):**
 
-1. **The split: view keys first-class, plugin keys in `extra`.** §11's four view keys (`pinned`,
+1. **The split: view keys first-class, plugin keys in `extra`.** §10's four view keys (`pinned`,
    `order`, `query`, `column`) graduated to first-class optional core fields on
    `DocFrontmatter`/`DocRow`/create/update — NOT into the extra object. Rationale (recorded in
    `doc.ts`): (a) `pinned` is a filter and `order` a sort — a key the server filters and sorts on
    is by definition not opaque passthrough, and routing them through `extra` would force the
-   server to reach into a blob it promises never to read; (b) §11 is core product, and `query`'s
+   server to reach into a blob it promises never to read; (b) §10 is core product, and `query`'s
    flat-map shape and `column`'s `<plugin>/<type>` format deserve 400s at the write boundary,
    which `extra` deliberately never provides; (c) it keeps `extra`'s contract absolute — nothing
    in it is ever interpreted by the server, no asterisk.
@@ -62,7 +62,7 @@ Riders: a `pinned` filter param and `order` sort on `GET /api/docs`; `DocRow.par
    merge patch** (RFC 7386 at the top level): named key replaced wholesale, `null` removes it,
    unnamed keys byte-untouched — key-granular, so two plugins writing different keys never race.
 3. **Collision rule (shadowing impossible).** `RESERVED_FRONTMATTER_KEYS` (18 keys: §5 base ×11,
-   §6 thread ×3, §11 view ×4) rejected inside `extra` with 400, exact and case-sensitive (YAML
+   §6 thread ×3, §10 view ×4) rejected inside `extra` with 400, exact and case-sensitive (YAML
    keys are); enforced by the shared schema on requests *and* responses, so a client can never
    receive an `extra.title` disagreeing with `title`. Drift-pinned against the real schemas in
    `extra.test.ts`. `extra` itself is not reserved — it is a wire envelope, not a disk key.

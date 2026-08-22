@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 reader/editor rendering; §12 todos body checkboxes
+- SPEC.md §10 reader/editor rendering; §12 todos body checkboxes
 
 ## Summary
 Live dogfood report (2026-08-02, v0.1.0, post-migration): a todo document's
@@ -97,7 +97,7 @@ text — exactly the dogfood report. `/tmp/ui034-unfixed.png`.
 | Full-screen focus (`[data-expand]`) | `/tmp/ui034-focus.png` — same relations at the wider 66ch measure, item wrapping at a different word |
 | `MarkdownView` shape | `/tmp/ui034-md.png` — real `mdast-util-to-hast` markup mounted into the live page |
 
-Editing is the reader (SPEC.md §11: no edit mode) — the screenshotted surface
+Editing is the reader (SPEC.md §10: no edit mode) — the screenshotted surface
 *is* the contenteditable, so "identical while editing" is the same evidence.
 
 Measured numbers off the live column reader (`getBoundingClientRect` /
@@ -170,7 +170,7 @@ li.task-list-item`) stays in the kit — that *is* what the kit renders, so a pl
 importing `@corpus/kit/markdown.css` needs it. The TipTap node-view shape moved to
 `apps/ui/src/editor/editor.css`, beside the editor that builds it. Both files state the
 shared measurements (13px box, 8px gap, text at 21px) and say in so many words that
-changing one is changing both — §11's "there is no edit mode" is a visual promise, and the
+changing one is changing both — §10's "there is no edit mode" is a visual promise, and the
 two renderers must draw one document the same way.
 
 Verified in a real browser, both shapes, unchanged: Playwright `todos.spec.ts` →

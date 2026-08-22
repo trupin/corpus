@@ -42,7 +42,7 @@ rather than accepting them. **Every one reproduced**, several near-exactly:
 | Template pre-fill is body-only after the fix                | `evergreen:false, tags:[], status:open, due:null` with the template body present  |
 | `%an` is a clean audit column                               | 50 `user <user@corpus.local>` + 2 `agent <agent@corpus.local>`; committer is the process identity |
 
-The log's self-corrections are honest and unusually good: the struck "§11 carry-over rule"
+The log's self-corrections are honest and unusually good: the struck "§10 carry-over rule"
 sentence, the superseded `Corpus User`/`Corpus Agent` naming, and the volunteered
 "Observed, not a regression" paragraph about a stale `anchors.orphaned` report all describe real
 behaviour I confirmed. **Nothing in this log was found to be overstated or fabricated.** The
@@ -58,7 +58,7 @@ window.
 | TEST-1 | Minimal create lands in inbox, frontmatter stamped  | PASS   | 201; `data/docs/inbox/mortgage-options.md`; `id doc_*`, `type note`, `created == updated`, `tags: []`, `status: open`, `anchors: {}`, `due: null`, `reviewed: null`, `evergreen: false`. Response validates as `Doc`. |
 | TEST-2 | Default folder `inbox`; both folder spellings       | PASS   | No folder → `inbox/`; `"finance"` and `"data/docs/finance"` both → `data/docs/finance/`. All three 201.                                                                  |
 | TEST-3 | Body pre-filled from the matching template          | PASS   | Seeded `templates/note.md` body (`## Context / ## Notes / ## Open questions`) appears verbatim; `id`/`type`/`created`/`updated` are the server's.                        |
-| TEST-4 | Explicit body wins; absent template is not an error | PASS   | Explicit body → exactly `"Only my words."`, no template text. `type: view` with no template → **201 with `body: ""`** (the §11 "none → empty" case), not 400, not 500.  |
+| TEST-4 | Explicit body wins; absent template is not an error | PASS   | Explicit body → exactly `"Only my words."`, no template text. `type: view` with no template → **201 with `body: ""`** (the §10 "none → empty" case), not 400, not 500.  |
 | TEST-5 | Template selection deterministic; loops refused     | PASS   | With four competing templates, three consecutive creates all picked **the same first-by-path open one**; the `status: archived` template (which sorts first) was never picked; a `type: template` create did **not** pre-fill from the `for: template` document (`body: ""`) and did not hang or recurse. |
 | TEST-6 | Slug collisions dedupe rather than overwrite        | PASS   | `dupe-title.md`, `dupe-title-2.md`, `dupe-title-3.md`, distinct ids, original untouched; `select count(*) … title='Dupe title'` → **3**.                                 |
 | TEST-7 | Ids unique; pathological titles still produce files | PASS   | Emoji, 400 chars, pure punctuation and combining diacritics all 201. Filenames non-empty and distinct; the 400-char title truncated to **60** chars (`slugifyTitle`'s cap); emoji/punctuation fall back to the id. 49 rows / 49 distinct ids. |
@@ -139,7 +139,7 @@ window.
 | #       | Criterion                                         | Result | Notes                                                                                                                                                             |
 | ------- | ------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TEST-44 | A failing pre-commit hook does not roll back the file | PASS | Response **200** (not 500); the file **holds the edit**; `git status` shows it uncommitted; `HEAD` unchanged; the server log carries a loud entry containing the hook's own three stderr lines; the projection updated and an `invalidate` frame still fired. Removing the hook → a normal commit. |
-| TEST-45 | The response surfaces the failure as far as the contract allows | PASS | The CONTRACT-005 rider landed, so the stronger branch applies: the body validates **and** carries `{"code":"commit_failed","detail":"git commit failed: <the hook's own output>"}`. No undeclared field. SPEC §14's "a warning on the API response" is met on every mutation verb, alongside the log line. |
+| TEST-45 | The response surfaces the failure as far as the contract allows | PASS | The CONTRACT-005 rider landed, so the stronger branch applies: the body validates **and** carries `{"code":"commit_failed","detail":"git commit failed: <the hook's own output>"}`. No undeclared field. SPEC §11's "a warning on the API response" is met on every mutation verb, alongside the log line. |
 | TEST-46 | A workspace that is not a git repository stays usable | PASS | Both variants. `.git` moved aside: create/edit/move/archive/unarchive/delete all succeeded, files landed, immediate GETs reflected every change, `commit_skipped` — `"the workspace is not a git repository"`. **No `git` on `PATH`** (a `PATH` containing only `node` and `sh` symlinks): the same full set succeeded with `commit_skipped` — `"git is not available on PATH"`. No 500, no hang. |
 
 ### Pipeline invariants
@@ -369,7 +369,7 @@ fixture plus the two intentionally hook-rejected mutations; no `*.tmp` anywhere.
    resolves. The selector is preserved byte-for-byte, so nothing is lost. Pre-existing
    SERVER-002/013 behaviour, correctly identified as out of scope here.
 
-4. **SPEC §11 vs §9.2 on template pre-fill.** The implementer flagged that §11 line 376 says
+4. **SPEC §10 vs §9.2 on template pre-fill.** The implementer flagged that §10 line 376 says
    "frontmatter/body" while §9.2 says body only, implemented per §9.2 and the orchestrator's
    directive, and did not silently re-widen. That is the right call and the right escalation; the
    spec text still needs reconciling.

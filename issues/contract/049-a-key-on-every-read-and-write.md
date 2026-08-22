@@ -155,7 +155,7 @@ Rejected, each against a constraint rather than on taste:
 | Rejected | Fails |
 | --- | --- |
 | mtime / size | (1) both ways: two writes in one timestamp tick are identical; a restore moves the timestamp without moving a byte |
-| git blob hash of `HEAD` | (1) and (4): the working tree legitimately differs from `HEAD` when a hook rejects the auto-commit (§14), so the version you read may have no blob at all; and it puts a git call on the hottest read |
+| git blob hash of `HEAD` | (1) and (4): the working tree legitimately differs from `HEAD` when a hook rejects the auto-commit (§11), so the version you read may have no blob at all; and it puts a git call on the hottest read |
 | a version counter / ETag registry / any issued token | (2), and the property SHARED-041 fixed: it is state to persist, migrate and invalidate, and an out-of-band edit would **not** invalidate it — the case with no other guard |
 | frontmatter `updated` | (1) and (5): one-second granularity, unchanged by a hand edit that does not touch it, and predictable — a key a writer can forge is not evidence |
 | hashing the body alone | (1) for §7's second keyed write: a whole-frontmatter rewrite would not move the key |
@@ -315,11 +315,11 @@ all of it is the removal landing.**
   `markdown/MarkdownView.test.tsx:11`, todos `server/routes.test.ts:96`,
   `ui/testing.tsx:45`.
 - Feature half: `editor/useUserLock.ts` goes entirely; the board **never renders
-  read-only** and `LockBanner`/force-unlock go with it (§11, rider edit 9); the
+  read-only** and `LockBanner`/force-unlock go with it (§10, rider edit 9); the
   editor presents the key and adopts-then-retries on `409`, reusing the
   external-change handling it already has (decision 2). SHARED-041's one open
   question — what a bulk Save presents — is still open and is UI-107's to settle;
-  the contract declares the `stale` refusal class because §11's sentence requires
+  the contract declares the `stale` refusal class because §10's sentence requires
   the report to be able to say it, not because an implementation must produce it.
 
 **`apps/server` — 48 errors (SERVER-098/099)**, concentrated in
@@ -333,7 +333,7 @@ longer contains `locks`, so the projection's table list and `DbStats` follow
 ### Judgement calls worth a reviewer's eye
 
 - **`BulkActionRefusal` lost its `lock` field and its `locked` reason; `stale`
-  replaced it**, transcribing §11's rewritten sentence ("a document whose content
+  replaced it**, transcribing §10's rewritten sentence ("a document whose content
   moved under the staged Save is refused exactly as a single edit to it would be,
   saying so (§7)"). The alternative — dropping the class to four reasons — would
   have left that sentence with no code to carry it.

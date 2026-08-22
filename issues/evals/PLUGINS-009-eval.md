@@ -176,7 +176,7 @@ None.
 - **The "Mark as open" branch is not reachable from this column.** SPEC §12
   defines the Todos column as "aggregating **open items**", so a checked item
   never renders a row there and only the done direction can be exercised. The
-  un-check stays reachable in the reader, which is what the §11 amendment
+  un-check stays reachable in the reader, which is what the §10 amendment
   requires ("every action a plugin row's menu offers must stay reachable without
   a pointer through the item's document surfaces"). Correct by spec, but the
   label's other half is untested in the real app and should be read as such.

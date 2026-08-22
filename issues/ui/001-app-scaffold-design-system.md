@@ -24,9 +24,9 @@ opus — porting an existing authoritative design; the token system, shell marku
 ## Spec References
 
 - SPEC.md §3 — "Tech stack (fixed)" (Vite, React 18, TS strict, TanStack Query v5, React Router v6, vanilla CSS tokens, dev server on `:5173` proxying `/api` and `/events`)
-- SPEC.md §11 — "UI — the board" (Shell: top bar · board · console drawer; no sidebar; vanilla CSS tokens, light/dark)
+- SPEC.md §10 — "UI — the board" (Shell: top bar · board · console drawer; no sidebar; vanilla CSS tokens, light/dark)
 - CLAUDE.md — Architecture Decisions 1–3 (tool/workspace split, server is the sole writer, contract-first)
-- `design/index.html` — **authoritative look & feel** (living interactive mockup; SPEC.md §11 defines the structural contract, the mockup defines the visual one)
+- `design/index.html` — **authoritative look & feel** (living interactive mockup; SPEC.md §10 defines the structural contract, the mockup defines the visual one)
 
 ## Summary
 
@@ -90,7 +90,7 @@ Turn `apps/ui` from a placeholder workspace into a running Vite + React 18 appli
 
 **Vite proxy.** `/api` → `http://127.0.0.1:8765`, `changeOrigin: false`. `/events` must proxy **without buffering** so SSE streams through: configure it as its own proxy entry and, if the default agent buffers, set `configure` to disable compression/timeouts for that path. UI-002 depends on this working.
 
-**Shell layout.** `.app { display:flex; flex-direction:column; height:100vh }`; topbar `flex: none`; board `flex: 1`; console `flex: none`. The console is a sibling in the column — never `position: fixed` — because SPEC.md §11 requires it to push the board when expanded.
+**Shell layout.** `.app { display:flex; flex-direction:column; height:100vh }`; topbar `flex: none`; board `flex: 1`; console `flex: none`. The console is a sibling in the column — never `position: fixed` — because SPEC.md §10 requires it to push the board when expanded.
 
 **Query client defaults.** With SSE-driven invalidation (SPEC.md §2 rule 3), background polling is wrong: set `refetchOnWindowFocus: false`, a generous `staleTime`, and `retry` low. Document the reasoning in a comment; UI-002 owns the invalidation wiring.
 

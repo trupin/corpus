@@ -28,7 +28,7 @@ opus
 
 - SPEC.md §12 — "**Column**: a 'Todos' column type aggregating open items across
   all `todo` documents"
-- SPEC.md §11 — "§11 adds no exclusive-pointer capability" (everything reachable
+- SPEC.md §10 — "§10 adds no exclusive-pointer capability" (everything reachable
   from the keyboard)
 
 ## Summary
@@ -230,12 +230,12 @@ The box is left in its true state because nothing is optimistic: the row leaves
 the column only when the shared aggregate has been re-read.
 
 **On the lock criterion.** There is no lock to take — SPEC.md §7 replaced the
-per-document lock with a key and §11 says the board is never read-only, which
+per-document lock with a key and §10 says the board is never read-only, which
 `TodoListItem`'s docblock already states. The refusal that actually exists on
 this path is the stale-key / stale-`expectedText` 409 above, and it is what was
 verified. Written down here rather than silently skipped.
 
-**SPEC §15 / M5 drill.** `plugins/todos` moved aside → the board still booted, 5
+**SPEC §12 / M5 drill.** `plugins/todos` moved aside → the board still booted, 5
 columns rendered, the Todos column showed *"Plugin missing — This column renders
 todos's todos view, which is not installed"*, **zero page errors**. Restored →
 the column returned with its 4 open items. No discovery seam was touched by this

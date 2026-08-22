@@ -11,7 +11,7 @@ id. The work landed; this file was never ticked.
 P0
 
 ## Model
-opus — a single endpoint with an enumerated filter surface; the semantics are spelled out in §9.2 and §11.
+opus — a single endpoint with an enumerated filter surface; the semantics are spelled out in §9.2 and §10.
 
 ## Dependencies
 - Depends on: SERVER-004
@@ -19,7 +19,7 @@ opus — a single endpoint with an enumerated filter surface; the semantics are 
 
 ## Spec References
 - SPEC.md §9.2 — `GET /api/docs` (the single collection query endpoint), `GET /api/tree`
-- SPEC.md §11 — "Attention" (`needs=me` union with reason chips), "Search overlay" (FTS + filter chips, archived excluded by default), "Folder scoping"
+- SPEC.md §10 — "Attention" (`needs=me` union with reason chips), "Search overlay" (FTS + filter chips, archived excluded by default), "Folder scoping"
 - SPEC.md §5 — staleness (`max(updated, reviewed)` against 30/90/180-day thresholds, `evergreen` exemption)
 - SPEC.md §9.1 — projection tables backing every filter
 
@@ -31,7 +31,7 @@ Build `GET /api/docs` — the one collection endpoint behind every list in the p
 - [x] `q` runs FTS5 across document titles, bodies, and turn bodies; matches on a thread's turns attribute to the thread, and each hit carries a highlighted `snippet`. _(Adjudication 1i: structured `snippets[]`, never `<mark>`.)_
 - [x] Thread-specific filters (`parent`, `agent`, `unread`, awaiting-reply) **no-op** for non-thread types rather than emptying the result. _(Awaiting-reply is `needs=form`, Adjudication 1e.)_
 - [x] Results exclude `status: archived` by default; an explicit `status` including `archived` brings them back. _(Adjudication 1a: `status` is a single enum, so `status=archived`.)_
-- [x] `folder` scopes to a directory under `data/docs/` **and** includes threads whose parent document lives in that folder (§11 folder scoping).
+- [x] `folder` scopes to a directory under `data/docs/` **and** includes threads whose parent document lives in that folder (§10 folder scoping).
 - [x] `references=<id>` returns documents whose bodies/turns link to that id (via the `links` table).
 - [x] `stale` filters by tier computed from `max(updated, reviewed)` against the 30/90/180-day thresholds; `evergreen: true` documents are never anything but fresh. _(Adjudication 1c: one tier, at-or-beyond.)_
 - [ ] Every row carries its staleness tier so the UI can render the ramp without recomputing. — **`DEFERRED → CONTRACT-005`** (Adjudication 2: `DocRow` declares no such field; emitting one would defeat §9.3).

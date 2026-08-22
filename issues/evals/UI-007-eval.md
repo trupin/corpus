@@ -19,7 +19,7 @@ Orchestrator Adjudications and the Wave-B Addendum treated as binding.
 | Actual model recorded (implemented on:) | PASS   | "Implemented on: opus." |
 | Reproduction logged before fix (bugs)   | N/A    | Feature issue; the two mid-pass bugs are disclosed with their fixes |
 
-**Honesty audit — no contradictions.** I re-derived the log's §15 M3 gold-path claim end to end on
+**Honesty audit — no contradictions.** I re-derived the log's §12 M3 gold-path claim end to end on
 my own workspace and got structurally identical results: the same POST body shape (`parent`,
 `selector{exact,prefix,suffix}`, `body`, `requestsAgent:false`), the same one-commit-two-files
 `git show --stat`, the same empty queue for note-only, the same frontmatter anchor layout, and the
@@ -47,13 +47,13 @@ accurate, including the declined-range honesty note.
 | 101 | Comment popover is a composer            | PASS   | `.comment-pop open` carrying the markdown quote, a textarea placeholdered `Comment — @ route · / skill · [[ link`, a `◉ ask agent`/`○ note only` toggle, and `Comment ↵`. Registers at Popover priority — esc closed it without closing the reader |
 | 102 | Selector computed against the MARKDOWN   | PASS   | Wire body: `{"parent":"doc_bcy35lzp","selector":{"exact":"Final paragraph fo","prefix":"aft], https://example.com\n\n---\n\n","suffix":"r anchoring purposes.\n"},"body":"Is this final?","requestsAgent":false}`. The prefix contains `\n\n---\n\n` — **markdown source, not DOM text** — and is untrimmed. Field names match `CreateThreadRequestSchema` |
 | 103 | Empty selection cannot create a thread   | PASS   | With no selection the comment affordance is unavailable; with a selection `disabled` is `false` |
-| 104 | Disk proof — §15 M3's gold path          | PASS   | Without a reload: highlight + `💬 1 · user` chip. On disk: parent frontmatter gained `anc_dbc5016a` with `exact`/`prefix`/`suffix` matching the wire; `data/threads/th_gzbc6a4x.md` with `parent: doc_bcy35lzp`, `anchor: anc_dbc5016a`, `agent: none`; **one** commit carrying both files (`comment: new thread on doc_bcy35lzp (th_gzbc6a4x) by user`, 2 files changed); `.corpus/queue/pending/` empty |
+| 104 | Disk proof — §12 M3's gold path          | PASS   | Without a reload: highlight + `💬 1 · user` chip. On disk: parent frontmatter gained `anc_dbc5016a` with `exact`/`prefix`/`suffix` matching the wire; `data/threads/th_gzbc6a4x.md` with `parent: doc_bcy35lzp`, `anchor: anc_dbc5016a`, `agent: none`; **one** commit carrying both files (`comment: new thread on doc_bcy35lzp (th_gzbc6a4x) by user`, 2 files changed); `.corpus/queue/pending/` empty |
 | 105 | Ask-agent creates the event              | PASS   | Same flow with `◉ ask agent` → `comment.created` naming the new thread: `{"threadId":"th_fbr7ffcy","parentId":"doc_bcy35lzp","turnTs":"2026-07-28T19:14:26Z",…}` |
 | 106 | Optimistic highlight paints, rolls back  | PASS   | Sampled 150 ms after submit — the highlight was already painted under the client id; after the response, exactly **one** highlight remained (no flicker, no duplicate) |
 | 107 | Comment mid-save queued behind the PUT   | PASS (log) | |
 | 108 | Typing near a highlight just edits       | PASS   | Typing before an anchored range: highlights stayed present at 0.2/0.5/1.0/1.5/2.5/4.0/6.0 s — through the local mapping and across the server round trip. No mode, no dialog |
 | 109 | Server's report authoritative            | PASS   | Post-PUT decorations match the server's re-resolved ranges |
-| 110 | §15 M1's reconciliation semantics        | PASS   | (a) insert before → highlight unchanged, `exact` unchanged (`ntro paragraph`), `prefix` refreshed to `PREFIXED. I` on disk. (b)/(c) analogous. (d) deleting the whole range → **orphans**: server reports `range: null, orphaned: true`, selector preserved byte-for-byte |
+| 110 | §12 M1's reconciliation semantics        | PASS   | (a) insert before → highlight unchanged, `exact` unchanged (`ntro paragraph`), `prefix` refreshed to `PREFIXED. I` on disk. (b)/(c) analogous. (d) deleting the whole range → **orphans**: server reports `range: null, orphaned: true`, selector preserved byte-for-byte |
 | 111 | Delete-then-retype doesn't flicker       | PASS (log) | |
 | 112 | Orphaned anchor moves, live, no reload   | PASS   | Deleting the anchored paragraph: the highlight disappeared, **no reload**, and the thread moved into a `Detached threads` section below the body. Chip still functional; stored quote still readable |
 | 113 | Deleted thread takes its highlight       | PASS (log) | |

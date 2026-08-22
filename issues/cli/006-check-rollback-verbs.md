@@ -23,7 +23,7 @@ opus — thin mappings onto CONTRACT-008 routes; the `--staged` collection is re
 
 ## Spec References
 
-- SPEC.md §14 — `doc check --staged`, exit-6 gating; §7 — skill rollback
+- SPEC.md §11 — `doc check --staged`, exit-6 gating; §7 — skill rollback
 - `issues/cli/003-doc-thread-verbs.md` — the deferred ACs and technical design (staged collection via `git diff --cached --name-only --diff-filter=ACMR -z` + `git show :<path>`, posted as `(path, content)` pairs)
 
 ## Summary

@@ -36,7 +36,7 @@ opus
 - SPEC.md **§9.2** — "`needs=stale` answers for `open` documents only — a
   `resolved` or `archived` document does not age (§5), so it is not stale and
   **never enters the union on that reason**"
-- SPEC.md **§11** — the staleness ramp (age rail → dimming → age chip →
+- SPEC.md **§10** — the staleness ramp (age rail → dimming → age chip →
   archive-or-act), rendered per row from `DocRow.stale`
 
 ## Summary
@@ -92,7 +92,7 @@ genuinely wants re-reading is never re-offered — was accepted deliberately.
       `includeArchived=true` too — widening the archived default must not widen
       the ramp
 - [x] `DocRow.stale` reads `null` for a `resolved` or `archived` row whatever its
-      dates say — the §11 ramp is rendered from that column, so the chip and the
+      dates say — the §10 ramp is rendered from that column, so the chip and the
       filter have to agree
 - [x] Resolving a document that was already stale **removes** it from the stale
       set on the next read (§5: "leaves the stale set if it was already in it")
@@ -190,7 +190,7 @@ doc_oldres01 | resolved | very-stale
 (columns: `id | status | DocRow.stale | attention`)
 
 All four surfaces wrong at once, in both the filter and the reported tier — the
-row §9.2 and §11 promise cannot appear, appearing on every one of them.
+row §9.2 and §10 promise cannot appear, appearing on every one of them.
 
 ### Post-fix
 
@@ -215,7 +215,7 @@ the fix is in the running process, then the same four queries:
 
 The archived row's absence is the ramp's doing and not the default result set's:
 it is absent from `includeArchived=true` too, and present in the last listing —
-where it reads `stale=null` with no reason. §11's chip and §9.2's filter agree,
+where it reads `stale=null` with no reason. §10's chip and §9.2's filter agree,
 because they are the same fragment.
 
 ### Leaving and re-entering the stale set

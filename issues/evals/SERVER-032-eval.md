@@ -75,7 +75,7 @@ $ corpus db doctor   → projection is clean — 10 documents from 10 files (1ms
 ```
 
 The new column is reconstructed **from the thread files alone** — the rebuild is what produced the two
-`form_answered = 1` rows. `SPEC.md` §14's standing `rebuild && doctor` invariant holds. No workspace
+`form_answered = 1` rows. `SPEC.md` §11's standing `rebuild && doctor` invariant holds. No workspace
 needs manual repair.
 
 This also independently corroborates TEST-548: those two form turns at `20:39:22Z` / `20:39:23Z` are

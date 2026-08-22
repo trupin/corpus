@@ -24,7 +24,7 @@ fable
 - Blocks: the agent-runtime chain (the orchestrate skill's routing table becomes
   the thing the picker reads), the contract/server chain (a choice must travel
   from a composer to the dispatch), and the UI chain — none filed
-- **Ordering hazard**: Amendment 3 appends at the end of §11's **Smart input
+- **Ordering hazard**: Amendment 3 appends at the end of §10's **Smart input
   everywhere** bullet. Any other unsigned rider targeting that bullet must
   **re-read** it before applying rather than pattern-matching the anchor
 
@@ -34,7 +34,7 @@ fable
   contains the rule this rider overrides**; the console bullet; job logs
 - §8 Agent participation semantics — "a directive, not a hint", and the
   deviation-with-disclosure rule this rider borrows wholesale
-- §11 UI — "Smart input everywhere" (composer statements), the global Ask /
+- §10 UI — "Smart input everywhere" (composer statements), the global Ask /
   Capture composer, Thread view
 - §2.4 Upgrading — workspaces take template changes on their own schedule
 - §6 — turn format on disk; forms
@@ -135,12 +135,12 @@ The other three facts in the brief check out and are recorded below.
 - **Every event is delegated.** SKILL.md:152 — "You never work a job inline — not
   a one-line answer, not a 'quick' edit, **no exception for small work**." So a
   choice that did not reach the subagent would govern nothing (Decision 5).
-- **The composer already makes pre-send statements.** §11's Smart input bullet,
+- **The composer already makes pre-send statements.** §10's Smart input bullet,
   as signed 2026-08-05: "**A composer says who it will reach, before you send**
   … whether sending will ask the agent and which targets it named." The model
   choice belongs beside that sentence, not in a new bullet — and it is only
   meaningful when that statement says the agent will be reached at all.
-- **"Every composer, stated once" is the established form** (§11 Thread view):
+- **"Every composer, stated once" is the established form** (§10 Thread view):
   "**Every composer takes attachments.** … A comment is a comment wherever it
   starts; which surface it was written in decides nothing about what it can
   carry," and the same construction for snippets. Amendment 3 follows it.
@@ -191,7 +191,7 @@ level gets a fourth option with no code change.
 
 ### Decision 2 — Every composer, stated once. With one asymmetry named.
 
-Following §11's attachments and snippets precedent, and for the reason SHARED-012
+Following §10's attachments and snippets precedent, and for the reason SHARED-012
 established: per-surface phrasing is how three of five composers ended up without
 attachments. The user's "sending a message, doing an ask/capture request, etc..."
 plainly means *at least* Ask, Capture and thread replies, and the "etc..." is the
@@ -201,7 +201,7 @@ tell that they are not enumerating.
 is *content* — it is carried whether or not the agent is asked. A model choice is
 an *instruction about work*, so it is inert on a turn that enqueues nothing: a
 note-only comment reaches no one, and a model choice on it governs nothing. The
-draft handles this by binding the choice to the statement §11 already makes: the
+draft handles this by binding the choice to the statement §10 already makes: the
 composer that says "sending will ask the agent" is the composer where the choice
 is live, and the same composer saying it will not reach the agent shows the choice
 as having nothing to act on. This is a presentation rule, not a second trigger
@@ -221,7 +221,7 @@ than the friction it removes, and it is the failure mode the brief names.
 
 **But re-picking every reply is real friction**, so the composer **starts from
 the last choice made in that conversation** — browser-local, like collapse state,
-reader width and selection (§11's established class of state), and **visible in
+reader width and selection (§10's established class of state), and **visible in
 the composer before you send**, which is what makes it safe: a starting point you
 can see and change in one gesture is a convenience; one you cannot see is sticky
 state wearing a disguise. It does not travel to another browser, does not touch
@@ -385,9 +385,9 @@ the following:
 > its event (below), so the durable account of a weight that could not be honoured
 > is the one the reply carries (§7 above). _(Rider signed <DATE>.)_
 
-### Amendment 3 — §11 "Smart input everywhere", APPEND at the end of the bullet
+### Amendment 3 — §10 "Smart input everywhere", APPEND at the end of the bullet
 
-APPEND immediately after, in §11's **Smart input everywhere** bullet, exactly this
+APPEND immediately after, in §10's **Smart input everywhere** bullet, exactly this
 existing text — currently the bullet's last sentence (verified unique):
 
 > The statement never blocks sending, never rewrites what was typed, and claims no
@@ -516,7 +516,7 @@ that it should not be in the guidance.
 - **No silent substitution, in either direction.** Not a weaker model, and not a
   stronger one.
 - **No new turn format.** Nothing here adds a field to a turn on disk (Q2).
-- **No new key binding.** §11's composer key contract is untouched; the control
+- **No new key binding.** §10's composer key contract is untouched; the control
   claims no key.
 - **No CLI flag** (Q5).
 - **Not a budget, quota, or cost feature.** Nothing here counts, caps, reports, or
@@ -538,7 +538,7 @@ that it should not be in the guidance.
       work, never the contract around it:") and its bullet list are left untouched
 - [ ] Amendments 2 and 3 **append** and delete nothing
 - [ ] **Amendment 3's anchor is re-read, not pattern-matched** — any other
-      unsigned rider targeting §11's Smart input bullet may have landed first
+      unsigned rider targeting §10's Smart input bullet may have landed first
 - [ ] **§8 is not edited**, and §6's turn format is not edited
 - [ ] The implementing chain does not start before the text is in place
 - [ ] Before the agent-runtime issue is filed, the orchestrate skill's weight
@@ -549,7 +549,7 @@ that it should not be in the guidance.
 
 ### Files to Create/Modify
 
-- `SPEC.md` §7 (one replacement, one append) and §11 (one append)
+- `SPEC.md` §7 (one replacement, one append) and §10 (one append)
 
 ### Chain this implies (not filed — for `/decompose` after sign-off)
 
@@ -609,5 +609,5 @@ _N/A — spec draft._
 ## Completion Checklist (orchestrator)
 
 - [ ] Sign-off recorded
-- [ ] SPEC.md updated (§7 ×2, §11 ×1)
+- [ ] SPEC.md updated (§7 ×2, §10 ×1)
 - [ ] Committed with `[SHARED-022]` prefix

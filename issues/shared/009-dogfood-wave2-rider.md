@@ -5,7 +5,7 @@ shared
 
 ## Status
 done — signed by the user 2026-08-03 and **applied**. Verified 2026-08-13: all
-five amendments are in SPEC.md §11 (the composer key contract, commenting on a
+five amendments are in SPEC.md §10 (the composer key contract, commenting on a
 selection, images opening full-size, the one autocomplete keyboard contract, and
 fenced canvases wrapping), each carrying its own signed marker. The status line
 read `todo — apply at phase kickoff` until 2026-08-13 because it was never
@@ -22,7 +22,7 @@ fable
 - Blocks: UI-049, UI-050, UI-051, UI-052, UI-053, PLUGINS-011
 
 ## Spec References
-- §6 (anchors, recursion, attachments), §11 (composer, thread view, smart input,
+- §6 (anchors, recursion, attachments), §10 (composer, thread view, smart input,
   right-click menu, keyboard scheme)
 
 ## Summary
@@ -31,7 +31,7 @@ each was established by survey before drafting — cited inline.
 
 ---
 
-### Amendment 1 — the composer key contract (§11 "Global composer", last line)
+### Amendment 1 — the composer key contract (§10 "Global composer", last line)
 
 **User answer, verbatim:** _"Every composer, but let's use cmd+enter for
 send/ask as well, as well as for comment composers. I want consistency."_
@@ -67,7 +67,7 @@ full screen"), which is a row binding, not a composer one.
 
 ---
 
-### Amendment 2 — commenting on a selection inside a turn (§11 "Thread view")
+### Amendment 2 — commenting on a selection inside a turn (§10 "Thread view")
 
 **User:** _"In a thread, or any document for that matter. I want to be able to
 select some text and comment on it. When in a thread though, I want the selected
@@ -92,7 +92,7 @@ APPEND to the Thread view bullet, after "Child threads shown per-turn.":
 
 ---
 
-### Amendment 3 — images open full-size (§11 "Thread view" + §6 attachments)
+### Amendment 3 — images open full-size (§10 "Thread view" + §6 attachments)
 
 **User:** _"Images should be clickable. When clicking, it opens it in full screen
 so I can see the detail."_
@@ -118,7 +118,7 @@ APPEND to the Thread view bullet:
 
 ---
 
-### Amendment 4 — one keyboard contract for every autocomplete (§11 "Smart input everywhere")
+### Amendment 4 — one keyboard contract for every autocomplete (§10 "Smart input everywhere")
 
 **User:** _"When autocomplete shows, I want to be able to navigate the results
 with the top and bottom arrows. I also want to be able to select one with tab.
@@ -143,7 +143,7 @@ first and only while it is open.
 
 ---
 
-### Amendment 5 — fenced canvases wrap (§11 "Thread view", canvas sentence)
+### Amendment 5 — fenced canvases wrap (§10 "Thread view", canvas sentence)
 
 **User:** _"Snippets should show in canvas, but the content should be wrapped
 rather than linear. Right now it shows the content as a horizontal scroll where
@@ -186,7 +186,7 @@ were affected, since `↵` submitted before UI-052). The acceptance was recorded
 in the issue and in the commit — and never reached SPEC.md, which is the only
 place that makes it a rule rather than an implementation detail.
 
-Both are applied to the §11 thread-view canvas/turn sentences, replacing
+Both are applied to the §10 thread-view canvas/turn sentences, replacing
 Amendment 5's standalone wrap clause:
 
 > Long lines **wrap** inside the canvas rather than scrolling horizontally, so
@@ -210,7 +210,7 @@ Amendment 5's standalone wrap clause:
 
 ## Technical Design
 ### Files to Create/Modify
-- `SPEC.md` §6, §11
+- `SPEC.md` §6, §10
 
 ## Testing Strategy
 None — spec text. The domain issues carry the tests.

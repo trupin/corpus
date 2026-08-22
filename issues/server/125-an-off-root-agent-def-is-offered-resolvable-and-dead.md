@@ -27,7 +27,7 @@ fable
 - SPEC.md **§7** line 399 — `.claude/agents/*.md` as the agent-def root, and
   *"`corpus doc check` validates both sets"*
 - SPEC.md **§8** — `@<subagent-name>` is a directive routed to that persona
-- SPEC.md **§11** line 539 — the `@` autocomplete, backed by `GET /api/docs`
+- SPEC.md **§10** line 539 — the `@` autocomplete, backed by `GET /api/docs`
 
 ## Summary
 
@@ -155,7 +155,7 @@ ignored it, and route 1 would be reporting as an error a document class the
 codebase blesses on the create path.
 
 **2. A `doc check` finding here is an exit-6 error on a legitimate document,
-forever, with no repair.** §14's warning family is closed to two states by name
+forever, with no repair.** §11's warning family is closed to two states by name
 (`core/check.ts`, and the contract's `CHECK_WARNING_CODES`), so a new finding is
 an **error**, and `corpus doc check` turns any error into exit 6 — the code a
 workspace can wire into its own hooks. A document deliberately filed as "notes

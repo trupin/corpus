@@ -34,7 +34,7 @@ opus
   by the user 2026-08-09 (SHARED-040 Decision 2)
 - SPEC.md **§2.2** rule 4 — bootstrap-class operations (`corpus init`,
   `corpus workspace upgrade`) write directly with the server stopped
-- SPEC.md **§14** — a commit git refuses discards no work
+- SPEC.md **§11** — a commit git refuses discards no work
 
 ## Summary
 
@@ -56,7 +56,7 @@ so an unclean stop does **not** strand a window's work. That is the design and i
 is deliberate. Recovery therefore exists for the changes the commit path never
 saw, and there are three real sources:
 
-1. **A commit git refused** (§14) — a workspace hook, a full disk, a mid-rebase
+1. **A commit git refused** (§11) — a workspace hook, a full disk, a mid-rebase
    repository. The mutation stood and stayed on disk.
 2. **Out-of-band edits** — today, uncommitted indefinitely (SERVER-090). That
    defect is being fixed separately; until it is, recovery is what catches them,
@@ -92,7 +92,7 @@ is not, and a test that pretends otherwise will be built on a fake.
 - [x] The recovery commit opens no window: the first save after boot makes a
       fresh commit rather than amending the recovery
 - [x] A recovery that git itself refuses leaves the changes on disk and logs
-      loudly (§14), exactly as a refused auto-commit does. It must not prevent the
+      loudly (§11), exactly as a refused auto-commit does. It must not prevent the
       server from starting — a workspace that cannot commit is still a workspace
       you can read
 - [x] The index is left clean on every path that does not land a commit, matching
@@ -319,7 +319,7 @@ HEAD unchanged: YES
 recovery log lines before=1 after=1
 ```
 
-### 7. §14 — a refused recovery does not prevent the start
+### 7. §11 — a refused recovery does not prevent the start
 
 ```
 $ echo 'exit 1' > .git/hooks/pre-commit   (with a message on stderr)
@@ -368,7 +368,7 @@ mechanism. Two adjacent notes, neither a defect: (a) an *operator's* own deletio
 of a template file is deliberately left uncommitted by the upgrade — recovery
 commits it on the next boot, which is §5-correct and leaves `--restore` working;
 (b) `upgrade.ts:539` has a documented path where the commit fails and the files
-stay on disk — that is §14, source #1, exactly what recovery exists for.
+stay on disk — that is §11, source #1, exactly what recovery exists for.
 
 ### 10. CLI-037 ordering — checked, no collision
 

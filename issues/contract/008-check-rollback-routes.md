@@ -23,7 +23,7 @@ opus — the validator's shape already exists server-side; this pins it to the w
 
 ## Spec References
 
-- SPEC.md §14 — validation ("hooks and API share one implementation"), `doc check --staged`
+- SPEC.md §11 — validation ("hooks and API share one implementation"), `doc check --staged`
 - SPEC.md §7 — skills as documents, `corpus skill rollback` loop safety
 - `issues/sprints/sprint-007.md` — Open Conflicts (discovery: no validation or targeted-revert endpoint exists)
 
@@ -66,7 +66,7 @@ nothing), body **required**, responses `200/400/401`.
   traversal segment is refused before any handler runs.
 - Body `{to?: string | null}` — omitted or `null` means last-known-good.
 - Response `SkillRollbackResult = {name, docId, commit, path, warnings}`. `warnings` is present because
-  the revert is a normal auto-commit, and §14's rejected-hook warning has to reach every response that
+  the revert is a normal auto-commit, and §11's rejected-hook warning has to reach every response that
   produces one — the rule `routes/db.ts` states from the other side ("neither route touches workspace
   files, so neither produces a git commit … `warnings` is deliberately absent from both").
 
@@ -199,7 +199,7 @@ closes the loop with a test that lives on the side that *can* see both.
 
 `operation("/api/check","post").parameters` contains **no** header entries at all (asserted). The
 route description states it runs "the same validator every server mutation runs before writing —
-hooks and API share one implementation". The §14-commit-warning carrier is deliberately absent, and
+hooks and API share one implementation". The §11-commit-warning carrier is deliberately absent, and
 `CheckReport.warnings` is documented on the schema as the *validator's* severity split, explicitly
 "unrelated to the `Warning` shape mutation responses carry".
 
@@ -410,7 +410,7 @@ in the test file:
   is exempted via a named `READ_ONLY_POSTS` set: it is a `POST` because a body is the only way to say
   what to check, and it writes nothing, so there is no git author to attribute (TEST-60 asserts the
   absence positively).
-- `§14 warnings reach every mutation response` — `SkillRollbackResult` **added** to `CARRIERS`;
+- `§11 warnings reach every mutation response` — `SkillRollbackResult` **added** to `CARRIERS`;
   `CheckReport` listed in a new `FOREIGN_WARNINGS` set with an explanation, plus a new positive test
   that its `warnings` is a `CheckFinding[]` rather than a `Warning[]`.
 - `request bodies declare whether they are mandatory` — the "wholly optional" computation was replaced
@@ -445,13 +445,13 @@ CLI verb, no kit hook. `apps/server/src/core/check.ts` was **read** and never to
 #### TEST-74 — the SPEC amendment is drafted and HELD, not smuggled
 
 `SPEC.md` §9.2 mentions neither validation nor skill rollback today (`grep` confirms: the only
-occurrences of `corpus skill rollback` are in §7 and §15 M5; `corpus doc check` in §14). **SPEC.md is
+occurrences of `corpus skill rollback` are in §7 and §12 M5; `corpus doc check` in §11). **SPEC.md is
 unmodified by this issue.** The drafted amendment, for the orchestrator to carry to the user at the
 phase PR:
 
 > Add to §9.2's route list, after the `GET /api/jobs…` bullet:
 >
-> - `POST /api/check` — the §14 validator on demand: body is **either** `{ids}` (documents to read
+> - `POST /api/check` — the §11 validator on demand: body is **either** `{ids}` (documents to read
 >   from the workspace) **or** `{documents: [{path, content}]}` (unsaved content, for
 >   `corpus doc check --staged`), never both and never neither. Returns
 >   `{ok, errors[], warnings[]}` over the validator's own thirteen codes; `ok` is `errors` empty, which
@@ -462,12 +462,12 @@ phase PR:
 >   auto-commit, so it carries the acting party like any mutation.
 
 Until it is signed off, `src/routes/inventory.ts`'s docblock records that these two entries come from
-§14 and §7 rather than §9.2, and that the amendment is pending — so the gap is documented at the one
+§11 and §7 rather than §9.2, and that the amendment is pending — so the gap is documented at the one
 place that would otherwise read as an unexplained extra.
 
 #### Escalations recorded rather than invented
 
-1. **There is no whole-workspace check request.** §14 says "`corpus doc check` exposes the same
+1. **There is no whole-workspace check request.** §11 says "`corpus doc check` exposes the same
    validator on demand **over the whole workspace**", but TEST-55 binds the request to `{ids}` XOR
    `{documents}` with "neither" rejected, and TEST-57 binds `{ids: []}` to an *empty* report. So a bare
    `corpus doc check` has no direct wire form: CLI-006 must enumerate ids (via `GET /api/docs`) and

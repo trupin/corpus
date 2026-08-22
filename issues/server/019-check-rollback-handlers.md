@@ -23,12 +23,12 @@ opus — the validator exists; rollback is a targeted git revert through the exi
 
 ## Spec References
 
-- SPEC.md §14 — validation; §7 — skill rollback loop safety
+- SPEC.md §11 — validation; §7 — skill rollback loop safety
 - `issues/contract/008-check-rollback-routes.md`
 
 ## Summary
 
-Server half of the CLI-003 deferral (2026-07-27 adjudication): attach handlers to CONTRACT-008's routes. Validation reuses `apps/server/src/core/check.ts` — the same implementation the write path runs, per §14. Rollback restores a skill document's last-known-good version via the git module (revert of the file to a prior commit, authored per the acting party, through the standard mutation pipeline so projection and SSE stay consistent).
+Server half of the CLI-003 deferral (2026-07-27 adjudication): attach handlers to CONTRACT-008's routes. Validation reuses `apps/server/src/core/check.ts` — the same implementation the write path runs, per §11. Rollback restores a skill document's last-known-good version via the git module (revert of the file to a prior commit, authored per the acting party, through the standard mutation pipeline so projection and SSE stay consistent).
 
 ## Acceptance Criteria
 
@@ -103,7 +103,7 @@ Zero files under `packages/contract`, `apps/cli`, `apps/ui`, `packages/kit`, `pl
 
 **TEST-8 / TEST-9** — a drifted corpus is a `200`. Three pairs (two duplicate ids + one unparseable) → `200`, `ok:false`, `errors` carrying `duplicate-id` and `frontmatter-unparseable`. `ok === (errors.length === 0)` held on every response observed, including warning-only ones where `warnings` was non-empty and `ok` stayed `true`.
 
-**TEST-10** — the two §14 carve-outs. Live runs produced `ref-unresolved` (above) and, in the colocated suite, `anchor-unresolved` alongside it; both only ever in `warnings`, never in `errors`, and no other code ever appeared in `warnings`.
+**TEST-10** — the two §11 carve-outs. Live runs produced `ref-unresolved` (above) and, in the colocated suite, `anchor-unresolved` alongside it; both only ever in `warnings`, never in `errors`, and no other code ever appeared in `warnings`.
 
 **Adjudication 6, on a real hand-written `SKILL.md`.** `.claude/skills/hand-written/SKILL.md` written by hand with only Claude Code's `name`/`description` and no Corpus frontmatter at all. The watcher indexed it as `doc_skill5959ccdb`. The whole-workspace check a `corpus doc check` will perform — paginate `GET /api/docs?limit=200&includeArchived=true`, post the 9 ids — returned:
 
@@ -239,7 +239,7 @@ Ports: `9092` and `8765` both verified free with `lsof -nP -iTCP:<port> -sTCP:LI
 
 1. **`MutationPlan["commit"].squash` is a new optional field on the shared write pipeline** (`docs/write.ts`), defaulted-off, so no existing verb changes behaviour. It is the minimum needed to keep a rollback from amending away the edit it is undoing.
 2. **`checkSave` / `checkSeams` / `isSkillFrontmatterException` are new exports of `docs/`**, and `findDocumentRowByPath` is a new export of `docs/read.ts` (a skill's identity is its path, so the rollback needs the by-path direction). `validateBeforeWrite`'s signature and behaviour are unchanged.
-3. **`{ids}` cannot report `duplicate-id`** — one row per id. Worth a line in CLI-006's docs if `corpus doc check` claims to find every §14 problem; `db doctor` is the surface that reports duplicate ids today.
+3. **`{ids}` cannot report `duplicate-id`** — one row per id. Worth a line in CLI-006's docs if `corpus doc check` claims to find every §11 problem; `db doctor` is the surface that reports duplicate ids today.
 4. **Nested skills stay unaddressable** by `POST /api/skills/{name}/rollback` (`SkillNameSchema` forbids `/`). Named as a limitation, per Out of Scope.
 5. This log was written into the **worktree's** copy of the issue file — the harness blocks a worktree-isolated agent from editing the shared checkout. Harvest it with the code.
 

@@ -154,7 +154,7 @@ Two things a stamp deliberately does *not* write into a carried document:
 `updated` (nothing about its content changed, and §5's staleness clock must not
 be reset by a neighbour's archiving) and ~~`status` (for a skill the *root* says
 what the status is, so a written one would lie after the reverse move)~~. A
-carried write is also not put through §14 validation — the content is the
+carried write is also not put through §11 validation — the content is the
 author's, and a finding would be about a document the act never asked to edit.
 
 > **Amended by Decision 5** (PR #38 review, finding 2). "The root says what the
@@ -242,7 +242,7 @@ disagreed. `ownedFields` is now the only one, called by both halves:
   the nested skill *is* enabled, so the row saying `open` is the truth.
 
 A carried document is still given no `updated` (§5's staleness clock is not a
-neighbour's to reset) and is still not put through §14 validation.
+neighbour's to reset) and is still not put through §11 validation.
 
 **6. This verb holds the lanes and the leases of what it carries** (PR #38
 review, finding 3). Stamping is a write to another document's file, and it was

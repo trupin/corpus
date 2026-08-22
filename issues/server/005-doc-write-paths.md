@@ -27,8 +27,8 @@ opus — mechanics are pinned by the spec; the one genuinely open question (squa
 - SPEC.md §5 — "The document model" (frontmatter, `reviewed`, staleness)
 - SPEC.md §7 — "Agent stewardship" (archive-not-delete; archiving a skill moves it to `.claude/skills-archived/`)
 - SPEC.md §9.2 — "HTTP API" (`POST /api/docs`, `PUT /api/docs/:id`, `DELETE /api/docs/:id`)
-- SPEC.md §11 — "Templates are documents" (`type: template` with `for: <doc-type>`; quick-create lands in `data/docs/inbox/`)
-- SPEC.md §14 — hook failure during auto-commit surfaces loudly; the mutation still stands
+- SPEC.md §10 — "Templates are documents" (`type: template` with `for: <doc-type>`; quick-create lands in `data/docs/inbox/`)
+- SPEC.md §11 — hook failure during auto-commit surfaces loudly; the mutation still stands
 - CLAUDE.md — Architecture Decision 2 (the server is the sole writer; the CLI performs no file writes)
 
 ## Summary
@@ -37,14 +37,14 @@ Implement the document mutation surface: create, edit, move, archive, and delete
 
 ## Acceptance Criteria
 
-- [x] `POST /api/docs` creates a document: generated id, path from the requested folder (default `data/docs/inbox/`, §11), frontmatter stamped (`created`, `updated`, `status`, `anchors: {}`), and — when no body is supplied — body and starting frontmatter pre-filled from a `type: template` document whose `for:` matches the new document's type (§11).
+- [x] `POST /api/docs` creates a document: generated id, path from the requested folder (default `data/docs/inbox/`, §10), frontmatter stamped (`created`, `updated`, `status`, `anchors: {}`), and — when no body is supplied — body and starting frontmatter pre-filled from a `type: template` document whose `for:` matches the new document's type (§10).
 - [x] `PUT /api/docs/:id` edits body and/or frontmatter, runs `reconcileAnchors(oldBody, newBody, anchors)` and persists the updated anchors map **in the same write and the same commit** as the body change (§6); the response reports `{ remapped: [], orphaned: [] }`.
 - [x] Move changes a document's path while its `id` stays stable (path is presentation, §5); the commit records both paths.
 - [x] Archive flips `status` to `archived` (and back), and archiving a `type: skill` document additionally moves its folder from `.claude/skills/<name>/` to `.claude/skills-archived/<name>/` (§7); unarchiving reverses it.
 - [x] `DELETE /api/docs/:id` is **user-only**: an agent actor gets `403` (§7 — "the agent archives, never deletes"). Deleting a document leaves its threads in place as orphaned records; git retains the file's history.
 - [x] Every mutation auto-commits with the acting party as git author (`user` or `agent`) and a structured message; `git log --format='%an %s'` is a readable audit trail (§4).
 - [x] Repeated `PUT`s to the same document by the same actor within the idle window amend the previous auto-commit rather than creating a new one; the amend is refused whenever it would rewrite anything other than the immediately preceding, matching auto-commit.
-- [x] A failing git hook during auto-commit does **not** roll back the file mutation; the response carries a loud warning and the failure is logged (§14).
+- [x] A failing git hook during auto-commit does **not** roll back the file mutation; the response carries a loud warning and the failure is logged (§11).
 - [x] Every mutation re-projects synchronously before responding (read-your-write, §9.1) — an immediately following `GET` reflects the change with no polling.
 - [x] Unit + integration tests cover each verb, the anchor-reconciliation path, the squash window (inside and outside it), the actor gate on delete, and the hook-failure path.
 
@@ -52,7 +52,7 @@ Implement the document mutation surface: create, edit, move, archive, and delete
 
 Orchestrator decisions — implement exactly these; full reasoning in `issues/sprints/sprint-005.md`:
 
-1. **Warnings field**: CONTRACT-005 adds the §14 response-side `warnings` carrier (rider) — CONTRACT-005 hard-blocks this issue's warning ACs; build against its shape (coordinate via the sprint contract, not by inventing).
+1. **Warnings field**: CONTRACT-005 adds the §11 response-side `warnings` carrier (rider) — CONTRACT-005 hard-blocks this issue's warning ACs; build against its shape (coordinate via the sprint contract, not by inventing).
 2. **Squash residuals pinned**: idle window **30 s**; create→edit within the window **folds** (amend), per SPEC §4's amend-within-idle-window.
 3. **Header is `x-corpus-author`** (shipped contract), never `X-Corpus-Actor`; **`baseHash` ACs are struck** (no such contract field — do not defer, delete); move/archive collisions are **400 with `issues`** (no 409 is declared on those routes).
 4. **Git hygiene**: the server is now a git writer — duplicate `sanitizeGitEnv` (strip `GIT_*` by prefix, case-insensitive) as a server-local util with a cross-reference comment to apps/cli's, use it on EVERY git child spawn, retrofit the existing unsanitized `readHeadVersion` in the watcher's git-head.ts, and port the hostile-env regression test.
@@ -99,7 +99,7 @@ Steps: acquire the per-document mutex → `assertWritable(docId, actor)` (a seam
 
 **Actor.** The contract carries the acting party (header **`x-corpus-author: user|agent`** — `ACTOR_HEADER`, validated by `ActorHeaderSchema`, default `user`). Mapping to git identity: `user` → `Corpus User <user@corpus.local>`, `agent` → `Corpus Agent <agent@corpus.local>`. Only the **author** is set from the actor; the committer stays the process identity, which is what makes `git log --format='%an'` a clean audit trail (§4).
 
-**Create.** Allocate the id with SERVER-001's `newId` using a projection-backed `isTaken` predicate. Path: `body.folder ?? "data/docs/inbox"` (§11's quick-create default) + `slugifyTitle(title)`; on collision append `-2`, `-3`, … Threads always land flat at `data/threads/<id>.md`. Template pre-fill (§11): when no `body` is supplied, query the projection for `type = 'template'` documents, filter to those whose frontmatter `for` equals the new document's type, order by `path` for determinism, take the first, and use its body plus any frontmatter keys it defines that the request did not (core identity fields — `id`, `created`, `updated`, `type` — are always the server's). Stamp `created = updated = nowIso()`, `status = "open"`, `anchors = {}`.
+**Create.** Allocate the id with SERVER-001's `newId` using a projection-backed `isTaken` predicate. Path: `body.folder ?? "data/docs/inbox"` (§10's quick-create default) + `slugifyTitle(title)`; on collision append `-2`, `-3`, … Threads always land flat at `data/threads/<id>.md`. Template pre-fill (§10): when no `body` is supplied, query the projection for `type = 'template'` documents, filter to those whose frontmatter `for` equals the new document's type, order by `path` for determinism, take the first, and use its body plus any frontmatter keys it defines that the request did not (core identity fields — `id`, `created`, `updated`, `type` — are always the server's). Stamp `created = updated = nowIso()`, `status = "open"`, `anchors = {}`.
 
 **Update.** Load, apply the patch, reconcile, write:
 
@@ -138,7 +138,7 @@ Corpus-Actor: <user|agent>
 Corpus-Anchors: remapped=<n> orphaned=<n>      # only when non-zero
 ```
 
-**Squash-on-idle (autosave).** §11 requires "auto-commits squashed on idle so git history stays meaningful". This issue implements the **amend-within-idle-window** strategy: keep an in-memory record of the last auto-commit per `(docId, actor)` — its SHA and timestamp. On the next commit for the same pair, amend instead of creating a new commit when **all** of these hold:
+**Squash-on-idle (autosave).** §10 requires "auto-commits squashed on idle so git history stays meaningful". This issue implements the **amend-within-idle-window** strategy: keep an in-memory record of the last auto-commit per `(docId, actor)` — its SHA and timestamp. On the next commit for the same pair, amend instead of creating a new commit when **all** of these hold:
 
 1. Less than `SQUASH_IDLE_MS = 30_000` has elapsed since that commit (exported constant).
 2. `git rev-parse HEAD` still equals the recorded SHA (nothing has been committed since).
@@ -149,7 +149,7 @@ The amend is `git commit --amend --no-edit --date=<original author date>` after 
 
 > **Settled, not open** (Adjudication 2 / Open Conflict 5): SHARED-001 landed §4's revised text and it is binding. Amend-within-idle-window is pinned behaviour. The two residuals are pinned here: the window is **30 s** (`SQUASH_IDLE_MS`, exported), and a **create→edit inside the window folds** into the create commit.
 
-**Hook failure (§4/§14).** The auto-commit runs through the workspace's own git hooks — deliberately, since that makes every mutation self-checking. If `git commit` exits non-zero: the file mutation **stands** (files are the source of truth), the failure is logged to stderr with the full hook output, and the response includes `warnings: [{ code: "commit_failed", detail: <first lines of hook output> }]`. Never `--no-verify`, never a rollback, never a silent swallow. The projection still runs, so the UI shows the change; the warning is what makes the uncommitted drift visible.
+**Hook failure (§4/§11).** The auto-commit runs through the workspace's own git hooks — deliberately, since that makes every mutation self-checking. If `git commit` exits non-zero: the file mutation **stands** (files are the source of truth), the failure is logged to stderr with the full hook output, and the response includes `warnings: [{ code: "commit_failed", detail: <first lines of hook output> }]`. Never `--no-verify`, never a rollback, never a silent swallow. The projection still runs, so the UI shows the change; the warning is what makes the uncommitted drift visible.
 
 **Contract coupling.** Route shapes come from `@corpus/contract`. Where a needed shape is missing (the `warnings` field), do **not** hand-roll it in the server — escalate to the orchestrator for a CONTRACT issue and consume the regenerated client (CLAUDE.md: a change spanning contract + one consumer is two issues).
 
@@ -158,7 +158,7 @@ The amend is `git commit --amend --no-edit --date=<original author date>` after 
 - **Workspace is not a git repository** (or git is missing from `PATH`): the mutation stands, the commit is skipped, and the response carries a `commit_skipped` warning naming the reason — the server must remain usable.
 - **Detached HEAD, in-progress merge/rebase, or unborn branch**: never amend; plain commit (or, on an unborn branch, the first commit).
 - **Nothing actually changed** (a `PUT` whose result serializes byte-identically): skip the write, skip the commit, skip re-projection, respond `200` with an empty anchors report — autosave will do this constantly.
-- **Pre-commit hook rejects the document** (e.g. `doc check` failure from §14): handled by the hook-failure path above; the response is a success **with a warning**, not a 500.
+- **Pre-commit hook rejects the document** (e.g. `doc check` failure from §11): handled by the hook-failure path above; the response is a success **with a warning**, not a 500.
 - **Concurrent `PUT`s to the same document**: serialized by the per-document mutex; the second reads the first's result from disk, so reconciliation chains correctly.
 - **Out-of-band edit between a client's read and its write**: reconciliation always uses the on-disk body, so the out-of-band change survives and the anchors describe reality.
 - **Path traversal** in `folder`/`path` inputs (`../`, absolute paths, symlinks pointing outside the workspace) — rejected by the containment guard with `400`.
@@ -246,8 +246,8 @@ sqlite3 .corpus/cache.db → doc_vsvhds7g|note|data/docs/inbox/mortgage-options.
 
 The author is the acting party and the **committer is the process identity** — `%an` alone is the
 audit column. ~~`evergreen: true` was carried from the template's own frontmatter (a key the request
-did not name), which is the §11 carry-over rule working.~~ **Struck — this was the bug, and the
-"§11 carry-over rule" it cited does not exist. See "Correction: template pre-fill is body-only"
+did not name), which is the §10 carry-over rule working.~~ **Struck — this was the bug, and the
+"§10 carry-over rule" it cited does not exist. See "Correction: template pre-fill is body-only"
 below.**
 
 **TEST-38 — hostile environment, directly-started server.** The server was launched with
@@ -319,7 +319,7 @@ DELETE (default actor) → 200 {"deletedId":"doc_vsvhds7g","orphanedThreadIds":[
   sqlite3 threads → th_e2e00001|doc_vsvhds7g   (orphaned record, never cascade-deleted)
 ```
 
-**Hook failure (§14).** A real executable `.git/hooks/pre-commit` printing to stderr and exiting 1:
+**Hook failure (§11).** A real executable `.git/hooks/pre-commit` printing to stderr and exiting 1:
 
 ```
 PUT → HTTP 200, body is the declared UpdateDocResponse shape
@@ -365,13 +365,13 @@ A scratch probe compiled clean under `tsc --strict --module nodenext`.
 
 **~~DEFERRED → CONTRACT-005 (TEST-45)~~ — CLEARED 2026-07-27 (opus).** CONTRACT-005 landed
 `warningsField` on `DocMutationResponse`, `UpdateDocResponse` and `DeleteDocResult`, so the
-deferral above is closed: **§14's "a warning on the API response" is now met on every mutation
+deferral above is closed: **§11's "a warning on the API response" is now met on every mutation
 verb**, alongside the log line (which stays — it is the half that names the document and survives
 a client that ignores the field).
 
 Wiring, all of it in `apps/server`:
 
-- `validateBeforeWrite` now **returns** the §14 validation warnings it already computed instead of
+- `validateBeforeWrite` now **returns** the §11 validation warnings it already computed instead of
   only logging them: the checker's `anchor-unresolved` → `orphaned_anchor`, `ref-unresolved` →
   `unresolved_ref`. No second pass, no recomputation.
 - That required one seam: `CheckOptions.documentExists`, mirroring the existing `resolveAnchor`
@@ -467,7 +467,7 @@ Found incidentally during the CONTRACT-005 timestamps E2E and logged in
 ("…plus any frontmatter keys it defines that the request did not").
 
 **The claimed rule does not exist.** SERVER-005's escalation 4 called the frontmatter carry-over
-"the §11 carry-over rule working". SPEC.md §9.2 (line ~311) is the operative sentence and it says
+"the §10 carry-over rule working". SPEC.md §9.2 (line ~311) is the operative sentence and it says
 **body**, nothing else: "body pre-filled from the type's `template` document when one exists and no
 body is given". `CreateDocRequestSchema` independently documents the server default for every
 frontmatter field a request may omit (`tags` → no tags, `status` → `open`, `due` → `null`,
@@ -526,7 +526,7 @@ POST {"type":"note","title":"Repro Evergreen"}   → 201, wire "evergreen":false
 POST {…,"evergreen":true,"tags":["x"],"status":"resolved","due":"2027-03-04"}
   → 201, all four honoured verbatim; row evergreen=1
 POST {…,"body":"Only my words."}                 → template body absent, request body present
-POST {"type":"view","title":"No Template"}       → 201, body "" (no view template; §11's "none → empty")
+POST {"type":"view","title":"No Template"}       → 201, body "" (no view template; §10's "none → empty")
 git log --format='%an|%s' -4 → four `user|doc create: …` lines, unchanged
 sqlite3 → doc_seedtemplatenote|template|Note template|1   ← the template keeps its OWN evergreen
 ```
@@ -538,9 +538,9 @@ Scratch trees `/tmp/corpus-tmpl-repro` and `/tmp/corpus-tmpl-e2e` removed, serve
 `npm run typecheck` (every workspace) ✔ · `npm run test:coverage` → **155 files / 2 725 tests, all
 passing**, **statements 98.81 %, branches 95.06 %, functions 99.39 %, lines 98.81 %** (gate 90 %).
 
-**Flagged for the orchestrator, not decided here:** SPEC.md §11 line 376 reads "provides the starting
+**Flagged for the orchestrator, not decided here:** SPEC.md §10 line 376 reads "provides the starting
 **frontmatter/body** for new documents of that type", which is in tension with §9.2's body-only
-sentence. Implemented per §9.2 and the orchestrator's directive; if §11's phrasing is meant to
+sentence. Implemented per §9.2 and the orchestrator's directive; if §10's phrasing is meant to
 license a *scoped* carry-over (plugin-declared keys only, never the fields with documented server
 defaults), that is a spec clarification plus a follow-up issue, not a silent re-widening.
 
@@ -618,7 +618,7 @@ $ git log -1 --format='%h %s'
 2. **The staged-state invariant.** `unstage(paths, head)` restores the index to `HEAD` for exactly
    the paths an attempt staged, and it now runs on **every** outcome that is not a landed commit:
    staging failure, `nothing to commit`, `commit produced no HEAD`, and git refusing the commit
-   (hook rejection included). The working tree is never touched — the mutation stands (SPEC §14), it
+   (hook rejection included). The working tree is never touched — the mutation stands (SPEC §11), it
    is simply no longer in the shared index, so it cannot ride along on the next commit made by
    anything at all. `git reset --quiet HEAD -- <paths>` where there is a `HEAD`,
    `git rm --cached -r -q --ignore-unmatch` on an unborn branch. The property is stated in the
@@ -682,7 +682,7 @@ PUT /api/docs/<id> → 200, warnings [{"code":"commit_failed",
 HEAD                       → 4fb3e01, unmoved
 git status --porcelain -uall →  M data/docs/inbox/hooked.md     ← unstaged (was "M ")
 git diff --cached --name-only → (empty)                          ← the invariant
-file on disk               → holds the edit (SPEC §14: the mutation stands)
+file on disk               → holds the edit (SPEC §11: the mutation stands)
 then, hook removed: the operator's own commit carries UNRELATED2.md ALONE
                     the next PUT commits normally → 9c43f26 doc edit: Hooked (doc_d23s6s5v) by user,
                     git status → (empty)

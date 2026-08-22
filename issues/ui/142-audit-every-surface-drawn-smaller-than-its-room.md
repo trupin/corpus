@@ -17,7 +17,7 @@ opus
 - Related: UI-128 (the audit this mirrors), UI-130, UI-136, SHARED-057
 
 ## Spec References
-- SPEC.md **§11** — *"a surface is as large as its place allows"* (rider authorized 2026-08-21), and SHARED-057's paragraph immediately above it, which it completes
+- SPEC.md **§10** — *"a surface is as large as its place allows"* (rider authorized 2026-08-21), and SHARED-057's paragraph immediately above it, which it completes
 
 ## Summary
 

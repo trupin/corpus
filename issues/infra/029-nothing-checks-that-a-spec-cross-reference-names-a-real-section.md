@@ -147,7 +147,7 @@ spec:check ✗ 13 citation(s) name a section SPEC.md does not have
   applied everywhere else (`GET /api/agents` … "behind the ordinary invalidate
   keys (§9.2)").
 - **`apps/ui/src/editor/markdown/serialize.ts:849`** cited CommonMark's §5.3 with
-  no document named, in a file that also cites SPEC.md §11 and §6. Rewritten as
+  no document named, in a file that also cites SPEC.md §10 and §6. Rewritten as
   `(CommonMark §5.3, "Lists")` — which is what the check asks for, and a better
   comment than the one it replaced.
 - The other eleven were **the check's own docblocks**, which quote the missing

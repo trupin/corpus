@@ -17,7 +17,7 @@ opus
 - Blocks: PLUGINS-010, PLUGINS-009
 
 ## Spec References
-- SPEC.md §10 plugin surfaces (kit seam); §11 reader
+- SPEC.md §10 plugin surfaces (kit seam); §10 reader
 
 ## Summary
 Sprint-023 OC5 ruling. PLUGINS-010 (click a todo item → open the doc revealed

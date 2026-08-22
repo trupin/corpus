@@ -30,23 +30,23 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11**, "Selecting rows, and acting on the selection" (rider signed
+- SPEC.md **§10**, "Selecting rows, and acting on the selection" (rider signed
   2026-08-05) — the whole feature: additive selection, one column at a time,
   browser-local, the offered actions, the three-part result, the selection
   reducing to what did not change, select-all vs. select-everything-matching,
   bulk delete's heavier gate, what clears a selection, and the context-menu rule
-- SPEC.md **§11**, Keyboard scheme (v1) — `x`, `⇧↑`/`⇧↓`, `⌘A`, and `esc`
+- SPEC.md **§10**, Keyboard scheme (v1) — `x`, `⇧↑`/`⇧↓`, `⌘A`, and `esc`
   clearing a non-empty selection **last**
 - SPEC.md **§4**, "One action, one commit" — the history the result must agree
   with
 - SPEC.md **§7** — document locks; a locked document is refused, naming the holder
 - SPEC.md **§9** — `DELETE /api/docs/:id` is user-only with an explicit confirm;
   deleted documents' threads become orphaned records
-- SPEC.md **§14** — a document that fails validation is refused with its reason
+- SPEC.md **§11** — a document that fails validation is refused with its reason
 
 ## Summary
 
-The board can act on one row at a time. §11 now describes acting on a set, and
+The board can act on one row at a time. §10 now describes acting on a set, and
 every action it batches already exists individually — the reader's ⋯ menu, the
 per-row staleness quick actions, and the §9.2 write routes. **This issue invents
 no action.** It lets you aim an existing one at more than one document.
@@ -182,7 +182,7 @@ and required the contract issue to be filed first.
   distinguishes rows from text and the next reader is spared a trap
 - `apps/ui/src/menu/docActions.ts` — the one action declaration behind both ⋯ and
   the context menu; the selection's actions must be derived from it rather than
-  written a second time (§11: "listing exactly that item's existing actions,
+  written a second time (§10: "listing exactly that item's existing actions,
   nothing invented")
 - **A persistent result surface** — see below
 - `packages/kit/src/query/` — the mutation over CONTRACT-037's route, and the
@@ -194,7 +194,7 @@ and required the contract issue to be filed first.
 **The result surface does not exist yet, and a toast cannot be it.**
 `apps/ui/src/shell/Toasts.tsx` auto-dismisses after 6 s and caps at 3 — so a
 twenty-document result with three named failures would either vanish while being
-read or be dropped for being the fourth notice. §11 requires the opposite: "it
+read or be dropped for being the fourth notice. §10 requires the opposite: "it
 **stays until it is dismissed**; it is never a message that disappears on its own,
 because the part worth re-reading is the part that did not happen." So this issue
 needs a surface that persists and can hold three lists of named documents. The
@@ -203,7 +203,7 @@ persistent *status* surface. Decide deliberately where the result lives, and do
 not let "reuse the toast" win by being nearest — the persistence is a stated
 requirement, not a nicety.
 
-**Derive the actions; do not re-declare them.** §11's governing rule for the
+**Derive the actions; do not re-declare them.** §10's governing rule for the
 context menu is "listing exactly that item's existing actions, nothing invented",
 and the selection menu must obey it rather than sidestep it. `docActions.ts` is
 that list. An action is offered only when it applies to **every** selected item,
@@ -230,11 +230,11 @@ rows that leave the list leave the selection with them. Both rules point the sam
 way; implement them as one reduction, not two that race.
 
 **`⌘A` is the only binding that takes a key the browser also uses**, which is why
-§11 narrows it to "only while the list itself has focus". `useShortcuts.ts`
+§10 narrows it to "only while the list itself has focus". `useShortcuts.ts`
 already has `isWritingSurface` and `currentScope` for exactly this kind of
 narrowing — use them rather than a global preventDefault.
 
-**Extending to the whole result set is not a key.** §11 says so explicitly: it is
+**Extending to the whole result set is not a key.** §10 says so explicitly: it is
 a second, separately labelled act that names the number before it is taken. And
 bulk delete is excluded from it entirely.
 

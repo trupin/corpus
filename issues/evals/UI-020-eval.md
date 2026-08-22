@@ -73,7 +73,7 @@ Unarchive from reader ⋯ writes: ["POST /api/docs/doc_gdh3dstu/unarchive"]
 
 One write each, and it is the `POST`. **Zero `PUT`s** in either direction.
 
-The `e` shortcut (§11), both entry points:
+The `e` shortcut (§10), both entry points:
 
 ```
 e with the reader open        → POST /api/docs/doc_hffvakmq/archive
@@ -158,7 +158,7 @@ None.
 ## Note on `e` (checked because the brief asked whether it toggles)
 
 `e` **archives only**; on an already-archived open document it answers
-`✓ "…" is already archived.` and sends nothing. That is SPEC.md §11 verbatim —
+`✓ "…" is already archived.` and sends nothing. That is SPEC.md §10 verbatim —
 "`e` archive the open (or highlighted) document" — not a toggle, so this is correct
 behaviour, not a gap. Recording it because the phrasing "`e` toggles" would
 otherwise read as an unmet expectation.

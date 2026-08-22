@@ -25,7 +25,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — the board's columns, and the reader opening inside one
+- SPEC.md **§10** — the board's columns, and the reader opening inside one
 
 ## Summary
 

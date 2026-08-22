@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 document view: "threads sit Docs-style in the right margin, aligned to their anchors with connectors", "Clicking an anchored highlight opens its thread"; §6 anchors
+- SPEC.md §10 document view: "threads sit Docs-style in the right margin, aligned to their anchors with connectors", "Clicking an anchored highlight opens its thread"; §6 anchors
 
 ## Summary
 Evaluator finding (2026-07-30, UI-024 eval LEDGER-1 — pre-existing, reproduced on the
@@ -25,7 +25,7 @@ untouched floating-toolbar path too): after commenting on a selection, **no
 `.anchor-hl` ever renders** — column reader, focus mode, and after a full reload with
 two anchors verifiably on disk. The DOM carries only the empty margin container; the
 `.anchor-hl` CSS ships unused (evidence: DOM dump grep — 0 markup hits, style-block
-hits only). Two §11 behaviors are therefore unreachable: clicking a highlight to open
+hits only). Two §10 behaviors are therefore unreachable: clicking a highlight to open
 its thread, and margin cards aligned to anchors with connectors. Diagnose where the
 anchor layer loses the ranges (anchors arrive in `GET /api/docs/:id`; the layer
 resolves selectors to editor ranges) and make highlights + click-through + margin
@@ -33,7 +33,7 @@ alignment real in both hosts. The evaluator's rig steps are the reproduction rec
 
 ## Acceptance Criteria
 - [x] Commenting paints the highlight over the anchored words in both hosts, immediately and after reload
-- [x] Clicking a highlight opens/expands its thread (§11)
+- [x] Clicking a highlight opens/expands its thread (§10)
 - [x] Margin cards (focus/wide) align to their anchors; narrow columns keep chips at the anchor
 - [x] Orphaned anchors (§6) render per spec (no phantom highlight)
 - [x] e2e coverage for highlight presence — the gap that let this ship silently
@@ -116,7 +116,7 @@ heading, an indented code block or any other reshaping construct is still refuse
 | `.anchor-pip` | `1` | `1` |
 | chip at the anchor (narrow column) | 1 × `.anchor-slot .t-chip`, `.with-margin` = 0 | same |
 
-**Clicking the highlight opens its thread** (§11): `.thread-slot.expanded` 0 → 1,
+**Clicking the highlight opens its thread** (§10): `.thread-slot.expanded` 0 → 1,
 `data-slot-thread="th_55y3cyim"`, card reading
 `💬 1 · user "lender spreads" … Which lenders?`.
 

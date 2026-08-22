@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 Thread view — "An agent turn says which model wrote it" (rider signed 2026-08-07)
+- SPEC.md §10 Thread view — "An agent turn says which model wrote it" (rider signed 2026-08-07)
 
 ## Summary
 
@@ -39,12 +39,12 @@ model worked on it."*
 - [x] **Quickly identifiable** is the requirement, not merely present: it reads
       at a glance beside the author and timestamp, without opening anything
 - [x] A turn with **no recorded model shows nothing** — no "unknown", no dash
-      that reads as a value. §11 is explicit that an unknown says so by absence
+      that reads as a value. §10 is explicit that an unknown says so by absence
       rather than by a plausible attribution
 - [x] A person's turn shows nothing
-- [x] A **collapsed** conversation is unaffected: §11 fixes exactly what a
+- [x] A **collapsed** conversation is unaffected: §10 fixes exactly what a
       collapsed line reports, and this is not in that list. Do not add it
-- [x] It survives a revised turn (§11), which changes text without adding a turn
+- [x] It survives a revised turn (§10), which changes text without adding a turn
 
 ## Technical Design
 
@@ -64,7 +64,7 @@ model worked on it."*
 
 **Placement — the header, decided rather than defaulted to.** The alternative
 weighed was the turn's footer, beside the trace line. The header won on three
-counts, recorded in `Turn.tsx`: §11's phrasing is "shown with the turn" and this
+counts, recorded in `Turn.tsx`: §10's phrasing is "shown with the turn" and this
 issue's own criterion is "beside the author and timestamp", which names this row
 and no other; the motivating question is *which* turns a given model wrote, and a
 footer makes that scan alternate between two y-offsets per turn while a long turn
@@ -87,13 +87,13 @@ lives in `apps/ui/src/thread/`; what the kit shares is the *row* vocabulary for
 lists (`Row`, `badges`, `reasons`), `MarkdownView`, the composer/autocomplete
 contracts and the data hooks. A plugin can reach `useThread` and therefore the
 turn data — `Turn.model` is on the wire type it already receives — but there is
-no shared component for a model chip to belong to, and §11 makes `thread` one of
+no shared component for a model chip to belong to, and §10 makes `thread` one of
 the two document types a plugin `View` may not replace. No plugin in `plugins/`
 renders a turn (verified). So the display stays in `apps/ui`; if a turn renderer
 is ever promoted to the kit, the model goes with it as part of that move.
 
 **One component, five surfaces.** `ThreadCard` is deliberately one component in
-four hosts, so the chip landing in `Turn.tsx` reaches every placement §11 names
+four hosts, so the chip landing in `Turn.tsx` reaches every placement §10 names
 without a second code path — which is what the browser suite then checks one
 placement at a time rather than assuming.
 
@@ -162,7 +162,7 @@ the second turn's text, which is what makes the nested case a real nesting.
    name as whole rather than ellipsized.
 7. _collapsed_ — with the conversation expanded the chip read `…opus…`; after
    clicking its own `.t-collapse`, `.turn-model` count went to **0**, the
-   collapsed line contained neither model name, and the five things §11 fixes for
+   collapsed line contained neither model name, and the five things §10 fixes for
    that line were all still there (`4 turns`, `agent`, `lender spreads`).
 8. _revised turn_ — the same thread with turn `09:05`'s body rewritten in place
    (same author, same timestamp, no new turn) still drew all four results

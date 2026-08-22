@@ -4,7 +4,7 @@
 shared
 
 ## Status
-done — applied to SPEC.md §11 (Thread view) on 2026-08-05.
+done — applied to SPEC.md §10 (Thread view) on 2026-08-05.
 
 ## Priority
 P1
@@ -17,7 +17,7 @@ fable
 - Blocks: UI-070, PLUGINS-012
 
 ## Spec References
-- §6 (attachments on turns and thread creation), §11 (thread view composer)
+- §6 (attachments on turns and thread creation), §10 (thread view composer)
 
 ## Summary
 **User, verbatim (2026-08-05):** _"I want attachments to be allowed in any type
@@ -48,7 +48,7 @@ separately. That one was fixed by extracting the rule into the kit so a plugin
 could consume it — and PLUGINS-011 proved the placement by consuming it with a
 single import. Do the same here.
 
-REPLACE, in §11's thread-view composer sentence, the attachment clause — and
+REPLACE, in §10's thread-view composer sentence, the attachment clause — and
 state it once for all composers rather than per surface:
 
 > **Every composer takes attachments.** Wherever a comment can be written — the
@@ -75,12 +75,12 @@ state it once for all composers rather than per surface:
   already exist; do not invent a third.
 
 ## Acceptance Criteria
-- [x] The §11 replacement applied verbatim at phase kickoff
+- [x] The §10 replacement applied verbatim at phase kickoff
 - [ ] The chain does not start before the text is in place
 
 ## Technical Design
 ### Files to Create/Modify
-- `SPEC.md` §11
+- `SPEC.md` §10
 
 ## Testing Strategy
 None — spec text.

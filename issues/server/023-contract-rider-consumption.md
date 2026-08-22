@@ -23,7 +23,7 @@ opus — each half is an established pattern (SERVER-006 warnings carrier, SERVE
 
 ## Spec References
 
-- SPEC.md §6 (attachments), §8 (Ask with attachments), §14 (warnings carrier)
+- SPEC.md §6 (attachments), §8 (Ask with attachments), §11 (warnings carrier)
 - `issues/contract/007-forms-surface.md`, `issues/contract/009-thread-multipart-rider.md`
 - `issues/sprints/sprint-008.md` — Open Conflicts 5–7 (exact compile-break site: `apps/server/src/queue/routes.ts:35`)
 
@@ -32,7 +32,7 @@ opus — each half is an established pattern (SERVER-006 warnings carrier, SERVE
 The server half of the sprint-008 contract batch, coupled to the contract commit because the riders stop `apps/server` compiling:
 
 1. **`ReapStaleResult.failed`**: `queue/routes.ts` returns the QueueService's `failed: string[]` instead of dropping it.
-2. **Resolve/reopen warnings**: both handlers carry §14 warnings in the response (they are log-only today); `corpus thread resolve --json` output gains the field (documented CLI output change — no CLI code change needed if it passes responses through).
+2. **Resolve/reopen warnings**: both handlers carry §11 warnings in the response (they are log-only today); `corpus thread resolve --json` output gains the field (documented CLI output change — no CLI code change needed if it passes responses through).
 3. **`originTitle`**: the jobs listing populates the origin's title for thread- and doc-origin jobs from the projection.
 4. **Multipart `createThread`**: the JSON-only route gains the multipart variant, reusing SERVER-010's ingest (bytes-before-markdown, `whileUnreferenced` cleanup scope, same limits) — Ask-with-attachments works end to end.
 5. **413 flip**: over-cap uploads on both multipart routes return the now-declared 413 (replacing SERVER-010's adjudicated interim 400).
@@ -133,7 +133,7 @@ POST /api/queue/reap-stale  ->  {"reaped": [], "failed": ["evt_ceioul5quefj"]}
 against a merely-stale event (`attempts: 0`) answered `{"reaped": ["evt_tlbhzxxbg4dr"], "failed": []}`
 — the two arrays are disjoint in both directions, observed, not asserted.
 
-**5. `resolve`/`reopen` carry §14's warnings.** Clean workspace →
+**5. `resolve`/`reopen` carry §11's warnings.** Clean workspace →
 `{"thread":{…,"status":"resolved"},"warnings":[]}`. With a `pre-commit` hook that exits 1:
 
 ```
@@ -142,7 +142,7 @@ POST /api/threads/th_mxxaggux/resolve  ->  200
 ```
 
 commit count unchanged (9 → 9), `status: resolved` on disk, `git status --porcelain` showing the
-file modified-and-uncommitted — §14's "the write stands, the drift surfaces loudly". `reopen`
+file modified-and-uncommitted — §11's "the write stands, the drift surfaces loudly". `reopen`
 behaves identically (observed with the same hook). **TEST-60 discharged**, both verbs.
 `corpus thread resolve --json` passes the new envelope straight through:
 `{"thread":{…},"warnings":[]}` — the documented CLI output change, no CLI code needed (`docs/cli.md`

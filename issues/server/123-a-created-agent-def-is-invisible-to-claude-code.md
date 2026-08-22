@@ -105,7 +105,7 @@ cannot load must not pass `check` without a word.
 - `apps/server/src/docs/check.ts` (or wherever `CHECK_CODES` findings are
   produced) — the new finding
 - `apps/server/src/docs/write.ts` / `create.ts` — only if route 1 or 3 is chosen
-- `packages/contract` — if a new warning code is needed, §14's warning set is
+- `packages/contract` — if a new warning code is needed, §11's warning set is
   closed and this is a cross-domain change; escalate rather than widening it
   quietly
 
@@ -160,7 +160,7 @@ filename is a `400`; an explicitly empty `description` is a `400`.
   for the same reason: the drill confirms a `name`-only profile is **not
   listed**. Its good half is kept — deriving `name` is exactly what closes the
   naming divergence at the source.
-- **Both also need a new wire code.** `corpus doc check`'s vocabulary *is* §14's:
+- **Both also need a new wire code.** `corpus doc check`'s vocabulary *is* §11's:
   `apps/server/src/core/check.ts`'s `CHECK_CODES` is pinned member-for-member to
   the contract's `CHECK_CODES` by `apps/server/src/check/codes.test.ts`, and
   `CHECK_WARNING_CODES` is closed at two. Reporting these as *warnings* is
@@ -172,7 +172,7 @@ filename is a `400`; an explicitly empty `description` is a `400`.
   `LOCAL_CHECK_CODES`, so it blocks a save. A blocking finding the create route
   did not satisfy would make `--type agent-def` a verb that always fails, so the
   create must supply what the check demands — which is what route 3 says.
-- **Why `description` is defaulted rather than required.** §11's creation is
+- **Why `description` is defaulted rather than required.** §10's creation is
   zero-form ("a type and a title are the whole requirement, and everything else
   the server fills in"), and `corpus doc create` has **no `--extra` flag** — so a
   hard requirement would be unsendable through the agent's only interface
