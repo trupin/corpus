@@ -25,9 +25,9 @@ Implements `workspace.reflect`: the ask route enqueues it at once, a scheduler e
 
 ## Acceptance Criteria
 - [ ] `POST /api/workspace/reflect` enqueues `{ type: "workspace.reflect", payload: { since } }` on the orchestrator's lane; when one is pending or in progress it answers `202` with that event and `pending: true` instead of enqueuing a second.
-- [ ] **Quiet window**: after any write that changes a document's `updated`, a timer (re)starts; when it fires with `reflected < lastChange`, no reflection pending or in progress, and `reflect.quiet > 0`, one event is enqueued. Config key `reflect.quiet` (minutes, default 30, `0` disables) in the workspace config, read on start and on config change.
+- [ ] **Quiet window**: after any write **by someone other than the agent** that changes a document's `updated`, a timer (re)starts; an agent write never starts or restarts it (§7: the agent's own writes never count as unreflected). When it fires with an unreflected change present (the `changed` count below > 0), no reflection pending or in progress, and `reflect.quiet > 0`, one event is enqueued. Config key `reflect.quiet` (minutes, default 30, `0` disables) in the workspace config, read on start and on config change.
 - [ ] **Clock**: `.corpus/reflect.json` `{ reflected: ISO | null }`, written when a `workspace.reflect` job reaches `processed`, to that event's `created`; `failed`, `abandoned` and `deferred` leave it; a retried event keeps its `since`.
-- [ ] `GET /api/workspace/reflect` returns the shape CONTRACT-076 defines; `changed` is computed from the projection (`updated > reflected`, not archived); `lastDigest` is the newest `type: thread` whose `origin` names a reflection job.
+- [ ] `GET /api/workspace/reflect` returns the shape CONTRACT-076 defines; `changed` is computed from the projection (`updated > reflected AND last_actor <> 'agent'`, not archived — SERVER-138's `last_actor` column); `lastDigest` is the newest `type: thread` whose `origin` names a reflection job.
 - [ ] SSE announces clock changes (so the UI's marks clear) and pending-state changes (so the control shows "reflecting…").
 - [ ] A server restart with unreflected changes and a quiet corpus enqueues at most one event, after one full window from start (never at the instant of start).
 
@@ -45,8 +45,8 @@ Implements `workspace.reflect`: the ask route enqueues it at once, a scheduler e
 - "Pending or in progress" is a queue query (`type = workspace.reflect AND status IN (pending, in-progress, deferred)`).
 
 ### Edge Cases
-- Agent writes (changelog entries, the digest thread) bump `updated` too and would retrigger: writes whose acting party is the agent **and** that happen while a reflection job is in progress do not restart the timer, and the clock moves to the event's `created`, so the agent's own output is never "unreflected".
-- Two people cannot ask twice: the second ask is `409` with the pending id.
+- Agent writes (changelog entries, the digest thread, any edit the agent makes at any time) bump `updated` but never count: `last_actor = 'agent'` keeps them out of the timer and the count, whether or not a reflection is in progress. A document the agent wrote and a person then edited counts again, because its last actor is the person.
+- Two people cannot ask twice: the second ask is answered `202` with the pending event and `pending: true`.
 
 ## Testing Strategy
 Vitest with fake timers over a real temp workspace and queue: the debounce, the three conditions, the clock on each job outcome, the restart rule, the agent-write exemption.

@@ -26,6 +26,7 @@ A board is a `type: board` document whose frontmatter lists its columns, its pos
 
 ## Acceptance Criteria
 - [ ] `DocRow` carries `stage: string | null`, `columns: string[] | null`, `kanban: Kanban | null`, `defaultOpen: boolean`, and `order: number | null` documented as "a board's position among boards"; `query` (already on the row as `ViewQuerySchema | null`) is documented as "a view's query, or a kanban board's scope".
+- [ ] `DocRow` carries `lastActor: "user" | "agent"` — the acting party of the document's last write (§4 attribution; an out-of-band edit the watcher picks up is `user`). It is what §7's reflection marks and counts read, so it is on the row rather than behind a request.
 - [ ] The update body accepts `unset: string[]` beside `changes`: each named frontmatter key is removed (core or `extra`); `id`, `type`, `created` refuse with a message naming the key. This is what CLI-060's `--unset` and CLI-061's migration send.
 - [ ] `DocRow` no longer carries `pinned`; `DocsQuerySchema` no longer accepts `pinned`; `sort=order` stays.
 - [ ] `DocsQuerySchema` accepts `stage=<string>`; `GET /api/search` does too.

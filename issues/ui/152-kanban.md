@@ -33,8 +33,8 @@ A board with `kanban` has no view columns: its columns are its stages, derived f
 - [ ] The kanban column's `⋯`: Edit the stages…, Edit/Add the transitions…, Move left/right (reorders `stages`), Open the board document; no Remove and no Edit query (the scope is the board's).
 - [ ] The board document's reader draws the graph (`graphSVG` ported: nodes in a row, forward edges above, backward edges dashed below, mapped nodes outlined) above its frontmatter, and shows the explanation paragraphs from the prototype.
 - [ ] The status line / board hint says whether a drag follows transitions or the funnel.
-- [ ] A kanban over `status` works with no special code: its field is `status`, its stages the three, the coupling has nothing to do.
-- [ ] e2e `kanban.spec.ts`: derived columns match the seed `by-status` board; a stage kanban fixture with transitions and a status map: lit/dim on drag, refused drop, accepted drop shows both fields changed, chip override, first column holds unstaged.
+- [ ] A kanban over `status` has the three statuses as its stages and no coupling to run. **A row whose status is derived** (§12; the same signal the frontmatter form's status control reads to say "derived from its items", Phase 40) **is not draggable on it**: the row carries no drag handle, and a drop attempted through any other route is refused with "its status is derived from its items — move the items". On a kanban over `stage` the same row drags like any other, and only its stage moves (§11, amendment signed 2026-08-22).
+- [ ] e2e `kanban.spec.ts`: derived columns match the seed `by-status` board; a stage kanban fixture with transitions and a status map: lit/dim on drag, refused drop, accepted drop shows both fields changed, chip override, first column holds unstaged; a derived-status (todo) row on a kanban over `status` is not draggable, and on a kanban over `stage` drags with its status untouched.
 
 ## Technical Design
 
