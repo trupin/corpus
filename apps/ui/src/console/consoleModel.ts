@@ -52,7 +52,7 @@ export function jobDotClass(status: QueueEventStatus): JobDotClass {
 }
 
 /**
- * The job row's label: `<event type> · <origin title>` (SPEC.md §11).
+ * The job row's label: `<event type> · <origin title>` (SPEC.md §10).
  *
  * `originTitle` is null exactly when the job has no origin, or when the document
  * it named no longer exists — the contract's own rule — so the separator is
@@ -128,7 +128,7 @@ export function jobStartedLabel(started: string): string {
 }
 
 /**
- * What the agent pill can say — SPEC.md §11's four states, plus the one the
+ * What the agent pill can say — SPEC.md §10's four states, plus the one the
  * server never reports.
  *
  * The four are the contract's own {@link AgentActivity} (CONTRACT-045), used
@@ -136,7 +136,7 @@ export function jobStartedLabel(started: string): string {
  * precedence. The fifth is not a state of the agent at all. **`unknown` is the
  * absence of an answer**, which the strip has to render because it is one line
  * and always draws — and it exists because each of the other four is a claim
- * about somebody. §11 makes `idle` "a claim that requires evidence"; UI-098's
+ * about somebody. §10 makes `idle` "a claim that requires evidence"; UI-098's
  * whole subject is that the console used to make it by elimination. Asserting
  * `disconnected` from a response that never arrived would be the identical
  * mistake pointed the other way, so the pill says neither.
@@ -146,7 +146,7 @@ export type AgentState = AgentActivity | "unknown";
 /**
  * The pill's state — **the contract's verdict, never a second derivation of it**.
  *
- * `agentActivity` already encodes §11's four states and the precedence between
+ * `agentActivity` already encodes §10's four states and the precedence between
  * them, including the one decision this surface must not re-open:
  * `disconnected` outranks `working`, because `inProgress > 0` is a fact about
  * events and not about anybody holding them. Two surfaces read the same
@@ -227,7 +227,7 @@ export function agentPillText(status: QueueStatus | undefined, now: Date = new D
  * - **`halted` is `--signal`** — red, because the strip's red means needs-you
  *   and a halted queue is a thing somebody switched off.
  * - **`disconnected` takes the neutral dot**, `--ink-3`, borrowed from the
- *   `abandoned` job dot and the disabled index dot for exactly their reason: §11
+ *   `abandoned` job dot and the disabled index dot for exactly their reason: §10
  *   says disconnected "is not an error state and is not styled as a failure",
  *   the three hues are each already a meaning, and "no agent is running here" is
  *   not one of them. It does not pulse and it is not `idle`'s green.
@@ -254,7 +254,7 @@ export function agentDotClass(state: AgentState): AgentDotClass {
 }
 
 /**
- * The index pill's dot, in the agent pill's own vocabulary (SPEC.md §11's
+ * The index pill's dot, in the agent pill's own vocabulary (SPEC.md §10's
  * index-pill rider: "the semantic index's state dot").
  *
  * Two of the four states map straight onto a dot the strip already draws, and

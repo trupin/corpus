@@ -56,7 +56,7 @@ export const releaseCommand: WorkspaceCommandSpec = {
     "of a resident, never a third state.\n\n" +
     "**Idempotent.** Releasing a thread that has nobody resident writes nothing, commits nothing " +
     "and announces nothing; it reports _nothing to release_ and exits 0. A real release rewrites " +
-    "the thread's frontmatter and commits it, so any SPEC.md §14 warning that commit raises is " +
+    "the thread's frontmatter and commits it, so any SPEC.md §11 warning that commit raises is " +
     "appended to the printed line.\n\n" +
     "**Resolving a thread already does this** (SPEC.md §7): a settled conversation has nobody to " +
     "keep resident, so `corpus thread resolve` releases as part of resolving — and **reopening " +

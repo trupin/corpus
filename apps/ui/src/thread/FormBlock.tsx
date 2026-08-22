@@ -22,7 +22,7 @@ import { optionParts, type AnsweredForm } from "./parseFormBlock";
 
 /**
  * A ```` ```form ```` fence rendered as live controls, and — once answered — as
- * the record it becomes (SPEC.md §6, §11; `design/index.html`'s
+ * the record it becomes (SPEC.md §6, §10; `design/index.html`'s
  * `.form-comment`).
  *
  * **One control per field, matched to what the field asks.** §6 has exactly
@@ -35,7 +35,7 @@ import { optionParts, type AnsweredForm } from "./parseFormBlock";
  *
  * **Native inputs, visible and focusable.** The mockup hides its radios
  * (`<input type="radio" hidden>`) and paints the whole row; `hidden` removes an
- * element from the tab order, and §11 says every answer is reachable from the
+ * element from the tab order, and §10 says every answer is reachable from the
  * keyboard — "a form the person cannot answer without a mouse is a question they
  * cannot answer". So the inputs are real and on screen, the row is still the
  * card the mockup draws, and arrow keys move within a radio group exactly as
@@ -74,7 +74,7 @@ export interface FormBlockProps {
   readonly onNotify: (notice: RowNotice) => void;
 }
 
-/** The submit's key, named on the control like every other composer's (§11). */
+/** The submit's key, named on the control like every other composer's (§10). */
 const SUBMIT_KEY_HINT = "⌘↵";
 
 /**
@@ -214,7 +214,7 @@ export function FormBlock({
       className="form-comment"
       data-form={formTs}
       /*
-       * The key the submit names, actually bound (§11 — "a single submit for the
+       * The key the submit names, actually bound (§10 — "a single submit for the
        * whole form that names its key like every other composer control"). It
        * fires from anywhere inside the form, including the `write` textarea,
        * where `↵` stays a newline exactly as the composer contract says it does.
@@ -400,7 +400,7 @@ function FieldControl({
 
       {/*
        * The refusal, at the field that earned it and before the round trip —
-       * §11's posture for a missing required field, applied to an answer that
+       * §10's posture for a missing required field, applied to an answer that
        * would not read back (`formPreflight.ts`). The contract's sentence is
        * printed as it comes: it names the line to rewrite, which is the only
        * thing the person can act on.
@@ -415,7 +415,7 @@ function FieldControl({
 }
 
 /**
- * The record an answered form becomes — §11's "once submitted, the form stops
+ * The record an answered form becomes — §10's "once submitted, the form stops
  * being a question… each question beside what was given for it".
  *
  * There are **no controls here at all**, disabled or otherwise. A disabled

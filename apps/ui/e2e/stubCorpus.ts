@@ -175,7 +175,7 @@ export interface StubRow {
    * A separate seed from `body` because the record is a separate place on disk:
    * §6 keeps it in the thread document's **frontmatter**, so the turn's own text
    * carries none of it and a body alone names no model. Seeding it here is what
-   * lets a spec meet the mixed conversation §11 is written about — a turn with a
+   * lets a spec meet the mixed conversation §10 is written about — a turn with a
    * model, an agent turn without, and a person's turn — rather than only the
    * all-null thread a body-only stub can produce. A timestamp with no entry
    * reports `null`, exactly as the server reports a turn nobody recorded one for.
@@ -223,7 +223,7 @@ export interface StubRow {
    *
    * Seeded because the flag is what the one collapse rule defers to: "a
    * conversation carrying a turn you have not seen is never collapsed by the
-   * rule" (§11, UI-077), and a stub that answered `unread: false` for everything
+   * rule" (§10, UI-077), and a stub that answered `unread: false` for everything
    * could not tell a rule that honours the interlock from one that ignores it.
    * Cleared by `POST /api/threads/{id}/seen`, as the server clears it.
    */
@@ -713,7 +713,7 @@ function refIdsIn(body: string): readonly string[] {
 
 /**
  * `includeArchived=true` on a related request — the archived exclusion every
- * list applies by default (SPEC.md §11), lifted into the union.
+ * list applies by default (SPEC.md §10), lifted into the union.
  */
 function subjectWantsArchived(url: URL): boolean {
   return url.searchParams.get("includeArchived") === "true";
@@ -777,7 +777,7 @@ function unansweredFormsOf(doc: StoredDoc): number {
 }
 
 /**
- * The row's attention reasons (SPEC.md §11), derived rather than seeded.
+ * The row's attention reasons (SPEC.md §10), derived rather than seeded.
  *
  * Two of the five, which are the two UI-084's asymmetry is about: an unanswered
  * form (which survives being read) and an unread agent reply (which does not).
@@ -947,7 +947,7 @@ export async function stubCorpus(
    * `parseThreadTurns` is the body-only parser the server's own is mirrored from
    * and names no model, and the `turnModels` map keyed by turn timestamp is what
    * supplies one. A timestamp with no entry stays `null` — the honest answer
-   * §11 requires for a turn nobody recorded a model for.
+   * §10 requires for a turn nobody recorded a model for.
    */
   const turnsOf = (doc: StoredDoc): readonly StubTurn[] =>
     doc.type === "thread"
@@ -1178,7 +1178,7 @@ export async function stubCorpus(
     const folder = params.get("folder");
     if (folder !== null && !doc.path.includes(`/${folder.replace(/\/+$/, "")}/`)) return false;
     /*
-     * `needs=` — the Attention column's filter (SPEC.md §11). `me` is the union
+     * `needs=` — the Attention column's filter (SPEC.md §10). `me` is the union
      * of every reason; every other value names one. Derived from the same
      * `attentionOf` the row reports, so a row can never appear in Attention
      * carrying no reason chip, or carry one and be filtered out.
@@ -1206,7 +1206,7 @@ export async function stubCorpus(
      * This line used to be `JSON.parse(request.postData())` unconditionally,
      * which throws on a `multipart/form-data` body: the route handler died, the
      * request hung, and so no spec in the suite had ever posted an attachment on
-     * any surface. Every composer §11's rider binds now can, so the send path
+     * any surface. Every composer §10's rider binds now can, so the send path
      * has to be recordable, and the JSON path has to keep behaving exactly as it
      * did — every other spec in this directory reads `body`.
      */
@@ -1335,7 +1335,7 @@ export async function stubCorpus(
 
     if (url.pathname === "/api/tree") return json(route, { folders: [] } satisfies FolderTree);
     /*
-     * `GET /api/index/status` — the strip's index pill (SPEC.md §11's
+     * `GET /api/index/status` — the strip's index pill (SPEC.md §10's
      * index-pill rider).
      *
      * Nobody had written a handler, so the `{}` fallback at the bottom of this
@@ -1787,7 +1787,7 @@ export async function stubCorpus(
     }
 
     /*
-     * `POST /api/capture` — the global composer's second submit (SPEC.md §11).
+     * `POST /api/capture` — the global composer's second submit (SPEC.md §10).
      *
      * Multipart-only on the wire, which is why it had no handler here before
      * UI-116: the recorder threw on the body before this branch could have run.
@@ -2216,7 +2216,7 @@ export async function stubCorpus(
         resident: null,
         // `turnsOf`, not the bare body parser: this is the read every thread
         // surface goes through, and it is where a turn learns which model wrote
-        // it (SPEC.md §11).
+        // it (SPEC.md §10).
         turns: [...turnsOf(doc)],
       } satisfies Thread);
     }

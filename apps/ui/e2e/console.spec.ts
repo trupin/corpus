@@ -69,7 +69,7 @@ test.describe("the collapsed strip", () => {
    * UI-098's dots, in the one place they can actually be checked.
    *
    * The unit suite pins the class names; only a browser can say what those
-   * classes *look* like, and §11's requirement is visual: `disconnected` must be
+   * classes *look* like, and §10's requirement is visual: `disconnected` must be
    * distinct from `idle` and from the `working` pulse, and must not be styled as
    * a failure — with no agent running it is the plain truth, not an error. The
    * assertions therefore compare against the declared tokens rather than against
@@ -158,7 +158,7 @@ test.describe("the drawer pushes the board", () => {
     // The board gave up exactly what the drawer took (plus the 5px resizer).
     expect(Math.round(boardBefore - boardAfter)).toBeGreaterThanOrEqual(Math.round(bodyHeight));
 
-    // §11's one explicit prohibition.
+    // §10's one explicit prohibition.
     await expect(page.locator(".console")).toHaveCSS("position", "static");
     await expect(page.locator(".console-body")).toHaveCSS("position", "static");
     await expect(page.locator(".console-body")).toHaveCSS("height", "210px");
@@ -256,7 +256,7 @@ test.describe("drag resize", () => {
 });
 
 /*
- * SPEC.md §15 M3's named check: "expand the console → job list + selected job's
+ * SPEC.md §12 M3's named check: "expand the console → job list + selected job's
  * log detail render **and the drawer height persists after drag-resize**".
  */
 test.describe("sticky state", () => {

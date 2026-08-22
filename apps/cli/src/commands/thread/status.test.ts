@@ -95,7 +95,7 @@ describe("corpus thread resolve", () => {
     });
   });
 
-  it("appends a §14 warning raised by the auto-commit to the printed line", async () => {
+  it("appends a §11 warning raised by the auto-commit to the printed line", async () => {
     const stub = await scripted("open", "resolved", [COMMIT_FAILED]);
     const harness = stubContext(stub, { args: ARGS });
 
@@ -141,7 +141,7 @@ describe("corpus thread reopen", () => {
     expect(harness.stdout()).toBe("th_a1b2c3 is already open\n");
   });
 
-  it("appends a §14 warning raised by the auto-commit to the printed line", async () => {
+  it("appends a §11 warning raised by the auto-commit to the printed line", async () => {
     const stub = await scripted("resolved", "open", [COMMIT_FAILED]);
     const harness = stubContext(stub, { args: ARGS });
 

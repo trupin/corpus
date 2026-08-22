@@ -1,5 +1,5 @@
 /**
- * SPEC.md §11's **autocomplete key contract**, in one place.
+ * SPEC.md §10's **autocomplete key contract**, in one place.
  *
  * > All autocompletes in the app share one keyboard contract: arrows move the
  * > highlight (wrapping at both ends), `⇥` and `↵` both accept the highlighted
@@ -44,7 +44,7 @@ export interface AutocompleteKeyEvent {
  *
  * The contract's keys are bare keys — `↑` `↓` `⇥` `↵` `esc` — and every chord
  * built on one of them belongs to somebody else. Two of those somebodies are
- * live in the same field: SPEC.md §11 gives the composer `⌘↵` ("the primary
+ * live in the same field: SPEC.md §10 gives the composer `⌘↵` ("the primary
  * action is always `⌘↵`") and `⇧⌘↵`, and the browser gives everyone `⇧⇥` for
  * reverse focus. Neither has any accept semantics, and a menu that answered
  * them would be a menu overruling the app's primary action from a popup the

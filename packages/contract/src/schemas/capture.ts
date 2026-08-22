@@ -7,7 +7,7 @@ import { requestedWeightField } from "./weight.js";
 
 /**
  * Capture is the composer's "this should live on as a document" action (SPEC.md
- * §11): one call creates the inbox document, the whole-document filing thread
+ * §10): one call creates the inbox document, the whole-document filing thread
  * that asks the agent to retitle/move/expand/tag it, and the event that wakes
  * the agent. It is a thin composition of primitives that already exist — no new
  * machinery — and exists as one endpoint only so the board can show the new
@@ -43,7 +43,7 @@ export const CaptureResultSchema = z
     ),
     // A capture is a document write and a thread write in one call, so it has
     // strictly more ways to warn than either — the same `warningsField`, so the
-    // composition reports what its parts would have (SPEC.md §14).
+    // composition reports what its parts would have (SPEC.md §11).
     warnings: warningsField,
   })
   .openapi("CaptureResult");

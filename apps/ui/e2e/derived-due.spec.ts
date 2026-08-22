@@ -18,7 +18,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  *
  * Three signed rules meet here, and they all say the same thing:
  *
- * - **§11 / SHARED-030** — a derived field "shows the value and says where it
+ * - **§10 / SHARED-030** — a derived field "shows the value and says where it
  *   comes from, and is editable by nobody".
  * - **`PluginDocType`** (`@corpus/kit/plugin`) — "a surface that would offer a
  *   `due` edit renders it locked".

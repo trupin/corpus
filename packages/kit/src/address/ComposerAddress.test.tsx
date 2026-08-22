@@ -151,7 +151,7 @@ describe("the line", () => {
 });
 
 /**
- * The line's own reveal (SPEC.md §11's rider signed 2026-08-20, UI-137).
+ * The line's own reveal (SPEC.md §10's rider signed 2026-08-20, UI-137).
  *
  * Its **width** is the browser spec's — `apps/ui/e2e/address-geometry.spec.ts`,
  * because the slot is a flex basis and jsdom implements no layout. What is
@@ -228,7 +228,7 @@ describe("the two sections", () => {
   });
 });
 
-describe("the resident rule (SPEC.md §7 and §11, rider signed 2026-08-19)", () => {
+describe("the resident rule (SPEC.md §7 and §10, rider signed 2026-08-19)", () => {
   /**
    * THE pin. A composer addressing a resident's lane offers **no weight
    * control** — the section is one sentence naming the resident's weight.
@@ -300,7 +300,7 @@ describe("the floor", () => {
 });
 
 /**
- * The statement under the rows (SPEC.md §11's rider signed 2026-08-20, UI-127).
+ * The statement under the rows (SPEC.md §10's rider signed 2026-08-20, UI-127).
  *
  * Its **height** is the browser spec's — `apps/ui/e2e/address-geometry.spec.ts`,
  * because jsdom implements no layout and the defect was a layout loop. What is

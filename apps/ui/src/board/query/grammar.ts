@@ -16,7 +16,7 @@ import {
  * once for both the editor's autocomplete and its help panel (UI-039).
  *
  * **There is no second grammar here.** A column's query *is* the `GET /api/docs`
- * query string (SPEC.md §9.2, §11), so the field names come from
+ * query string (SPEC.md §9.2, §10), so the field names come from
  * {@link DocsQuerySchema} itself — `Object.keys(schema.shape)` is the parser's
  * own list, read at runtime — and every enumerated value list is the same
  * exported constant `packages/contract/src/schemas/query.ts` builds its

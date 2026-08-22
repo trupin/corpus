@@ -18,7 +18,7 @@ describe("droppedNoticesLine", () => {
   });
 
   /**
-   * §11 forbids a listing that ends quietly, so the line has to name the bound
+   * §10 forbids a listing that ends quietly, so the line has to name the bound
    * as well as the loss — and name the bound the store actually enforces. A
    * literal here rather than `MAX_NOTICES` is the v0.15.0 defect (a reserve
    * written as a magic value) at a different grain.

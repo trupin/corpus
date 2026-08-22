@@ -374,7 +374,7 @@
  * a count crossing into two digits re-cuts the list's own name. Tabular figures
  * hold it inside a digit count and `2ch` holds it across the crossing — two
  * because a checklist of a hundred items is not the case this box is sized for
- * (SPEC.md §11's rider, signed 2026-08-20).
+ * (SPEC.md §10's rider, signed 2026-08-20).
  */
 .todos-group-count {
   margin-left: auto;
@@ -505,7 +505,7 @@
   margin-bottom: 8px;
 }
 
-/* `↵` writes a newline in this composer (SPEC.md §11), so the field has to be a
+/* `↵` writes a newline in this composer (SPEC.md §10), so the field has to be a
    decent place to write more than one line. The wrapper is the visible box and
    stacks a hidden copy of the value in the *same* grid cell as the field, so the
    row is exactly as tall as the text — capped, past which the wrapper scrolls

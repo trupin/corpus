@@ -444,7 +444,7 @@ describe("the generated client's view of the repair", () => {
     expect(REATTACH_REFUSAL_REASONS).toContain(changed.reason);
   });
 
-  it("types the 200 as the anchor, the thread and §14's warnings", () => {
+  it("types the 200 as the anchor, the thread and §11's warnings", () => {
     const repaired: Pick<ReattachOk, "warnings"> = { warnings: [] };
     expect(repaired.warnings).toEqual([]);
   });

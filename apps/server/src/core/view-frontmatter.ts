@@ -1,5 +1,5 @@
-// Reading the §11 view keys and the open extra-frontmatter object out of a
-// frontmatter mapping (SPEC.md §5, §11, §12; CONTRACT-011).
+// Reading the §10 view keys and the open extra-frontmatter object out of a
+// frontmatter mapping (SPEC.md §5, §10, §12; CONTRACT-011).
 //
 // One module, because two very different consumers must answer identically
 // about the same file: the projection (`documents` rows, and therefore
@@ -112,7 +112,7 @@ export function readExtraFrontmatter(
   return extra;
 }
 
-/** `pinned` is a two-state key: the file says `true` or it does not (SPEC.md §11). */
+/** `pinned` is a two-state key: the file says `true` or it does not (SPEC.md §10). */
 export const readPinned = (data: Readonly<Record<string, unknown>>): boolean =>
   data["pinned"] === true;
 
@@ -144,7 +144,7 @@ export function readViewQuery(data: Readonly<Record<string, unknown>>): ViewQuer
  * The plugin column reference, or `null`. Not pattern-checked on read: the
  * `<plugin>/<type>` format earns its `400` at the write boundary, and a view
  * whose `column` names something uninstalled or misspelled must keep its board
- * position and render a plugin-missing card (SPEC.md §15) rather than silently
+ * position and render a plugin-missing card (SPEC.md §12) rather than silently
  * become a plain list.
  */
 export function readColumn(data: Readonly<Record<string, unknown>>): string | null {

@@ -283,7 +283,7 @@ const landed = (outcome: CommitOutcome | null): { sha: string; amended: boolean 
   if (outcome === null) return null;
   if (outcome.kind === "committed") return { sha: outcome.sha, amended: false };
   if (outcome.kind === "amended") return { sha: outcome.sha, amended: true };
-  // `skipped` (SPEC.md §14 — no git in the workspace, nothing to commit) and
+  // `skipped` (SPEC.md §11 — no git in the workspace, nothing to commit) and
   // `failed` (a workspace hook refused): the file mutation stands, but there is
   // no revision to name. A session made only of these has no range and emits
   // nothing, exactly as CONTRACT-028 §3 requires — which falls out of never

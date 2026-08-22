@@ -13,7 +13,7 @@ import { useRef, type ReactElement } from "react";
  *
  * Published from the kit alongside {@link useAttachmentIntake} and
  * `PendingAttachments` (UI-070). The picker is the route a plugin cannot supply
- * for itself without re-deriving both of those details, and §11's rider binds
+ * for itself without re-deriving both of those details, and §10's rider binds
  * "any composer a plugin contributes" to all three routes, not two.
  */
 

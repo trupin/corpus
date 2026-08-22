@@ -1,5 +1,5 @@
 // Full rebuild: a brand-new database built from the workspace's files alone,
-// then swapped in atomically (SPEC.md §9.1, §15 M1).
+// then swapped in atomically (SPEC.md §9.1, §12 M1).
 //
 // The rename is the commit point. An interrupted rebuild therefore leaves the
 // previous `cache.db` intact and a leftover temp file, never a half-written
@@ -29,7 +29,7 @@ export interface RebuildOptions {
   /**
    * Build here and leave it here instead of replacing `cache.db`. This is the
    * mode the pre-push check uses to prove the projection is reconstructible
-   * from files alone (§14) without disturbing a running workspace.
+   * from files alone (§11) without disturbing a running workspace.
    */
   readonly into?: string;
   readonly logger?: Logger;

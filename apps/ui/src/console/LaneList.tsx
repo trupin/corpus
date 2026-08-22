@@ -8,7 +8,7 @@ import {
 } from "./residentsModel";
 
 /**
- * The master half of the Residents tab (SPEC.md §7's roster, §11's console):
+ * The master half of the Residents tab (SPEC.md §7's roster, §10's console):
  * every lane the server named, in the server's own order — the orchestrator's
  * first — at the job list's width and with its anatomy.
  *

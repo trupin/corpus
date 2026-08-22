@@ -32,7 +32,7 @@ type TurnBlock = Turn & { readonly start: number; readonly end: number };
  * The model that wrote a turn is **not in the body** (CONTRACT-043): it lives in
  * the thread document's frontmatter, keyed by turn timestamp, so that nothing a
  * turn's own text can say is able to claim it. This module only ever sees a
- * body, so every turn it produces names no model — which is §11's answer for a
+ * body, so every turn it produces names no model — which is §10's answer for a
  * turn nobody recorded one for: `null`, never a guess.
  *
  * Joining the frontmatter map to these turns is the read path's job, above this
@@ -144,7 +144,7 @@ export const deleteTurn = (body: string, ts: string): { body: string; deleted: T
   };
 };
 
-/** Timestamps written more than once in this thread body — a §14 hard failure. */
+/** Timestamps written more than once in this thread body — a §11 hard failure. */
 export const duplicateTurnTimestamps = (body: string): string[] => {
   const seen = new Set<string>();
   const duplicates = new Set<string>();

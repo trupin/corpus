@@ -1,5 +1,5 @@
 /*
- * The three-part shell (SPEC.md §11): top bar · board · console. A flex column,
+ * The three-part shell (SPEC.md §10): top bar · board · console. A flex column,
  * not a grid with a fixed console row — the console has to *push* the board
  * when it expands (UI-011) and must never overlay content.
  */

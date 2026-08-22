@@ -8,7 +8,7 @@ import {
 } from "./nativeMenu";
 
 /**
- * SPEC.md §11's two shared halves: the native menu survives where it is the
+ * SPEC.md §10's two shared halves: the native menu survives where it is the
  * useful one (spellcheck, and anywhere no Corpus item is under the cursor), and
  * a selection in the document body gets Corpus's own menu.
  *

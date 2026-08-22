@@ -20,7 +20,7 @@ import {
 
 /**
  * The **per-conversation starting point**, and the **liveness** rule — the two
- * halves of §11's rider with a plausible-looking wrong implementation each.
+ * halves of §10's rider with a plausible-looking wrong implementation each.
  *
  * The starting point is a starting point and not a setting: it is one value per
  * conversation, visible the moment a composer opens, changeable in one gesture,
@@ -228,7 +228,7 @@ describe("the starting point is browser-local", () => {
     fireEvent.click(screen.getByRole("button", { name: "Standard" }));
     // The whole of "a reload clears it": there is nowhere for it to come back
     // from. `threadCollapse.ts` persists because a fold should outlive a reload;
-    // this is about the request you are about to send, and §11 puts it in the
+    // this is about the request you are about to send, and §10 puts it in the
     // browser-local class without a durable home.
     expect(JSON.stringify(globalThis.localStorage)).not.toContain("standard");
     expect(JSON.stringify(globalThis.sessionStorage)).not.toContain("standard");
@@ -267,7 +267,7 @@ describe("liveness is presentation only", () => {
     expect(document.querySelectorAll("[data-weight-key]")).toHaveLength(0);
 
     // Nothing is stated either: a value the surface no longer shows must not
-    // ride the wire — that is §11's "acts on you unseen" in wire form.
+    // ride the wire — that is §10's "acts on you unseen" in wire form.
     fireEvent.change(screen.getByLabelText("Reply"), { target: { value: "a note" } });
     fireEvent.keyDown(screen.getByLabelText("Reply"), { key: "Enter", metaKey: true });
     await waitFor(() => {

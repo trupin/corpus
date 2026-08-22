@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 import type { PluginColumnRef } from "../board/viewDoc.js";
 
 /**
- * The "plugin missing" card (SPEC.md §15 M6): a pinned view document whose
+ * The "plugin missing" card (SPEC.md §12 M6): a pinned view document whose
  * `column:` names an unregistered plugin or column type renders this in the
  * column's **body**, while the column header and controls stay present,
  * reorderable and deletable. The view document's frontmatter is left

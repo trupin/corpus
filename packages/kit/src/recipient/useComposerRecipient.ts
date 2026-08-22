@@ -58,7 +58,7 @@ import { useScopeWalk } from "./useScopeWalk.js";
  *
  * The first two prohibitions were once enforced by omission of capability — the
  * kit's client had no way to designate or release — and since UI-109 they are
- * enforced by **evidence** instead, because §11 puts designate/release in the
+ * enforced by **evidence** instead, because §10 puts designate/release in the
  * conversation's own menu and that menu is a kit consumer. What is left, and
  * what the test pins, is that nothing on this path issues a request to
  * `/resident` and that `request` is spread onto the message's own body and

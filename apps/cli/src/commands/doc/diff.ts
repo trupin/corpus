@@ -36,7 +36,7 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  *
  * **Nothing here is a failure.** A range in which this document did not change
  * prints a sentence and exits 0; a document with no committed history — never
- * committed, or a workspace with no version control at all (SPEC.md §14) — prints
+ * committed, or a workspace with no version control at all (SPEC.md §11) — prints
  * that and exits 0. Both are answers the agent will legitimately hit.
  *
  * The diff itself is passed through untouched. It is a diff of a markdown
@@ -210,7 +210,7 @@ export const diffCommand: WorkspaceCommandSpec = {
     "this verb can cause, so it is said before the body and again where the body stops.\n\n" +
     "**Nothing normal here is an error.** A range in which this document did not change prints " +
     "one line and exits 0; a document with no committed history — never committed, or a workspace " +
-    "with no version control (SPEC.md §14) — prints that and exits 0.\n\n" +
+    "with no version control (SPEC.md §11) — prints that and exits 0.\n\n" +
     `Revisions are commit shas only. A \`--${FROM_FLAG}\`/\`--${TO_FLAG}\` that is not a sha at ` +
     "all is a " +
     "usage error (exit 2) and no request is sent; a well-formed sha this workspace does not " +

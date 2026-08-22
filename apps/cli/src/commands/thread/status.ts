@@ -24,7 +24,7 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * Both routes answer with the `{thread, warnings}` mutation envelope, because
  * flipping the status rewrites the thread file's frontmatter and auto-commits
  * it: a workspace git hook that refuses that commit leaves the change on disk
- * and uncommitted. SPEC.md §14 says that surfaces loudly, so the warnings are
+ * and uncommitted. SPEC.md §11 says that surfaces loudly, so the warnings are
  * appended to the human line exactly as every other mutating verb does, and the
  * whole envelope is what `--json` emits.
  */
@@ -70,7 +70,7 @@ export const resolveCommand: WorkspaceCommandSpec = {
     "person's.\n\n" +
     "Resolving an already-resolved thread " +
     "reports “already resolved” and exits 0, having written and committed nothing. A real flip " +
-    "rewrites the thread's frontmatter and commits it, so any SPEC.md §14 warning it raises " +
+    "rewrites the thread's frontmatter and commits it, so any SPEC.md §11 warning it raises " +
     "(`commit_failed`, say) is appended to the printed line.",
   args: [{ name: "id", required: true, description: "The thread's id." }],
   flags: [],
@@ -99,7 +99,7 @@ export const reopenCommand: WorkspaceCommandSpec = {
     "adding a turn, and for the agent, whose turns never reopen. Reopening an already-open " +
     "thread reports “already open” and exits 0, " +
     "having written and committed nothing. A real flip rewrites the thread's frontmatter and " +
-    "commits it, so any SPEC.md §14 warning it raises is appended to the printed line.",
+    "commits it, so any SPEC.md §11 warning it raises is appended to the printed line.",
   args: [{ name: "id", required: true, description: "The thread's id." }],
   flags: [],
   examples: [

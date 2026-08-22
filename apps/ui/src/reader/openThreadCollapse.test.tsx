@@ -25,7 +25,7 @@ import { resetEscapeLayers } from "./useEscapeStack.js";
  * same rule as every other placement.**
  *
  * SPEC.md §6 states it as a property of `status`: "a resolved thread is
- * collapsed by default *wherever it is shown*". §11 enumerates the placements
+ * collapsed by default *wherever it is shown*". §10 enumerates the placements
  * and names this one — "a `type: thread` document open in a reader in a column
  * or in full screen" — and settles the direction outright: "a change to the
  * thread's status re-asserts the rule and clears that override, **so resolving a
@@ -186,14 +186,14 @@ describe("a resolved thread opened as its own document", () => {
     await waitFor(() => {
       expect(panel("th_x")?.querySelectorAll(".turn")).toHaveLength(TURNS.length);
     });
-    // §11's interlock, and it is the clause that keeps the fold from being a way
+    // §10's interlock, and it is the clause that keeps the fold from being a way
     // to lose messages — read off the thread's own row, not assumed.
     expect(isFolded("th_x")).toBe(false);
   });
 });
 
 /**
- * The half of §11 that is not open to interpretation: "a change to the thread's
+ * The half of §10 that is not open to interpretation: "a change to the thread's
  * status re-asserts the rule… so resolving a conversation collapses it even
  * while it is open on screen".
  */
@@ -253,7 +253,7 @@ describe("resolving a thread while it is the open document", () => {
  * browser changes"). Where this placement has no row it used to answer the
  * interlock with `!hasSeenMark(…)` — a module-level `Map` with a page session's
  * lifetime, reporting a conversation the server knows was read as carrying
- * something unseen. It reached the same placement §11's interlock would have
+ * something unseen. It reached the same placement §10's interlock would have
  * chosen, by asserting a fact it did not have; the honest answer is that it does
  * not know, and the rule stands down on that rather than on a guess.
  *

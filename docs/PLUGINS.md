@@ -108,7 +108,7 @@ frontmatter under your own keys — they travel on the wire in `extra`
 (`@corpus/contract`), which the server stores verbatim and never interprets.
 
 **`seedTemplate` supplies a BODY and nothing else.** Template pre-fill is
-body-only (SPEC.md §11): a template's frontmatter is the _template document's_
+body-only (SPEC.md §10): a template's frontmatter is the _template document's_
 housekeeping and never bleeds onto instances. So a plugin key cannot be seeded
 — design your reader so an **absent key means its empty value**. That is also
 what makes a hand-written document, and one whose key someone deleted, render

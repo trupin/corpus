@@ -50,7 +50,7 @@ describe("corpus db doctor", () => {
   });
 
   /**
-   * A report-only finding is printed and changes nothing else: SPEC.md §14's
+   * A report-only finding is printed and changes nothing else: SPEC.md §11's
    * standing `rebuild && doctor` clean invariant is about drift, so a warning
    * that moved the exit code would fail a routine check on a workspace whose
    * projection is correct (SERVER-038).

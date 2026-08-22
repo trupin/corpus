@@ -44,7 +44,7 @@ describe("FileFrontmatterSchema", () => {
    * The five fields added below are the ones a *file* does not have to carry
    * and a *response* always does (CONTRACT-011). `extra` is not a disk key at
    * all — it is the wire envelope for every non-core key, which on disk sits
-   * beside the core ones (SPEC.md §12) — and the four §11 view keys are
+   * beside the core ones (SPEC.md §12) — and the four §10 view keys are
    * optional in a file the way `tags` and `due` are. `docs/read.ts`'s
    * `wireFrontmatter` is what supplies them, which is why this schema's output
    * is a *subset* of the wire shape rather than equal to it.

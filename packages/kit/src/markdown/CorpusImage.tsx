@@ -115,7 +115,7 @@ function ViewableImg({ src, alt, title, className, attachment }: ViewableImgProp
     <img
       {...attrs}
       // `role`/`tabIndex` on the image rather than a `<button>` around it: a
-      // wrapper is a new box in the middle of phrasing content, and §11's
+      // wrapper is a new box in the middle of phrasing content, and §10's
       // prose layout is not this feature's to change.
       role="button"
       tabIndex={0}

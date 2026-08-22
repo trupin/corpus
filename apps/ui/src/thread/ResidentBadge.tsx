@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { useNowTick } from "./useNowTick";
 
 /**
- * **Who is resident here, and whether they are there** — SPEC.md §11's board
+ * **Who is resident here, and whether they are there** — SPEC.md §10's board
  * showing who is running, on the conversation that has the resident (§7).
  *
  * ## The roster *is* the designation
@@ -78,7 +78,7 @@ export function ResidentBadge({ threadId }: ResidentBadgeProps): ReactElement | 
       data-resident-kind={row.kind}
       /*
        * The line is beside the name *and* on the title, rather than only on the
-       * title: §11 wants what a lapse means readable without a pointer, and a
+       * title: §10 wants what a lapse means readable without a pointer, and a
        * hover is not available to a keyboard at all. The title repeats it for
        * the truncated case, where the line is elided by width.
        */

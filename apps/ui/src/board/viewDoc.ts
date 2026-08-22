@@ -2,7 +2,7 @@ import type { DocRow } from "@corpus/contract";
 import { readStoredWidth } from "./columnWidth";
 
 /**
- * The view-document contract, read (SPEC.md §11 — "a column IS a `type: view`
+ * The view-document contract, read (SPEC.md §10 — "a column IS a `type: view`
  * document with `pinned: true`").
  *
  * Everything a column *is* — its title, its query, its board position, its
@@ -58,7 +58,7 @@ export interface BoardColumn {
   readonly folder: string | null;
   readonly plugin: PluginColumnRef | null;
   /**
-   * The width the view document carries (SPEC.md §11), or `null` for the
+   * The width the view document carries (SPEC.md §10), or `null` for the
    * default. An unusable stored value reads as `null` rather than as an error:
    * the server never interprets `extra`, so a hand-edited `width: wide` must
    * degrade to the default and not to a broken column.

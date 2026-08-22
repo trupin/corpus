@@ -4,7 +4,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-066 in a real browser: the document body's width is the reader's to
- * choose (SPEC.md §11's rider, signed 2026-08-04).
+ * choose (SPEC.md §10's rider, signed 2026-08-04).
  *
  * > *"The document body has a comfortable default width, and the reader can
  * > change it — in column view and in full screen — with the width persisting
@@ -264,7 +264,7 @@ test.describe("the document body's width, in a column", () => {
     // default that was never changed.
     expect(chosen).toBeGreaterThan(before + 150);
 
-    // Navigation: §11 asks for a width that persists across it, and navigation
+    // Navigation: §10 asks for a width that persists across it, and navigation
     // is exactly what changes the document — so the width is the reader's.
     await page.locator(".reader .back").click();
     await page.locator('.row[data-row-doc="doc_note"]').click();

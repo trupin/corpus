@@ -70,7 +70,7 @@ const createAppendTurnRoute = (required: boolean) =>
       "is not checked, because §6 makes a form something an *agent* turn carries and a person " +
       "quoting a form fence in a reply is quoting rather than asking; and this is not the only " +
       "route that writes a turn — `POST /api/threads` creates a thread with its first turn and " +
-      "does not run this check. So the reader's rule (§11: an unreadable form renders as the " +
+      "does not run this check. So the reader's rule (§10: an unreadable form renders as the " +
       "visibly broken code block it is, never as a partial set of controls) is the safety net " +
       "for every fence this endpoint did not vet — a hand-edited file, an older server, a " +
       "person's quoted block, a thread's first turn — and not a formality.",

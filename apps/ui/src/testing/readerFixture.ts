@@ -116,7 +116,7 @@ export interface ReaderTransportOptions {
    */
   readonly holdWrites?: Promise<void>;
   /**
-   * Warnings `POST /api/threads` answers with (SPEC.md §14). A created thread
+   * Warnings `POST /api/threads` answers with (SPEC.md §11). A created thread
    * can succeed and still carry them — an unresolved `[[ref]]`, a skipped
    * commit — and they are the half of the outcome the user has to be told
    * about.
@@ -805,7 +805,7 @@ export function relatedPath(docId: string): string {
   return `/api/docs/${docId}/related`;
 }
 
-/** A related row, for the ranking the panel renders (SPEC.md §11). */
+/** A related row, for the ranking the panel renders (SPEC.md §10). */
 export function relatedFixture(overrides: Partial<RelatedDoc> = {}): RelatedDoc {
   return {
     id: "doc_related",

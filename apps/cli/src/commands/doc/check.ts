@@ -5,9 +5,9 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
 import { collectStagedDocuments } from "../../staged.js";
 
 /**
- * `corpus doc check` — SPEC.md §14's validator, on demand.
+ * `corpus doc check` — SPEC.md §11's validator, on demand.
  *
- * §14's requirement is that there is exactly **one** validator: the same rules
+ * §11's requirement is that there is exactly **one** validator: the same rules
  * that gate every save are what this verb reports. So the verb runs none of them
  * — it posts to `POST /api/check` and renders what comes back. Anything it
  * re-derived would be a second implementation, and a second implementation that
@@ -28,7 +28,7 @@ import { collectStagedDocuments } from "../../staged.js";
  *
  * The verdict is the exit code: **6** when the report carries errors, **0**
  * otherwise. Warnings — an orphaned anchor, a `[[ref]]` whose target does not
- * exist yet — are printed and do not fail, because §14 makes both normal states
+ * exist yet — are printed and do not fail, because §11 makes both normal states
  * of a living corpus and a hook that punished them would be turned off.
  *
  * **An error here does not imply a save would be refused, and the help says so.**
@@ -119,13 +119,13 @@ function warningTail(report: CheckReport): string {
 
 export const checkCommand: WorkspaceCommandSpec = {
   name: "check",
-  summary: "Validate documents against the SPEC.md §14 rules; exit 6 on errors.",
+  summary: "Validate documents against the SPEC.md §11 rules; exit 6 on errors.",
   description:
     "Runs the corpus validator through `POST /api/check` — the **same** implementation every " +
-    "server mutation runs before writing, which is what §14 requires — and turns its verdict " +
+    "server mutation runs before writing, which is what §11 requires — and turns its verdict " +
     "into an exit code: **6** when anything failed, **0** when nothing did. Warnings are printed " +
     "and never fail: an orphaned anchor and a `[[ref]]` whose target does not exist yet are " +
-    "normal states of a living corpus (§14), and a hook that blocked on them would be switched " +
+    "normal states of a living corpus (§11), and a hook that blocked on them would be switched " +
     "off. Findings print one per line as `severity code path: detail`, and `--json` emits the " +
     "server's report — `{ok, errors, warnings}` — unchanged, with the exit code unaffected.\n\n" +
     "**Exit 6 is possible on a file the server will still happily save, and the two are not in " +

@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from "react";
 
 /**
- * SPEC.md §11's **composer key contract**, in one place.
+ * SPEC.md §10's **composer key contract**, in one place.
  *
  * > `↵` always inserts a newline and never submits; the primary action is
  * > always `⌘↵`; a secondary action, where one exists, is `⇧⌘↵`. Every submit

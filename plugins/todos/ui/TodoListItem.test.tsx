@@ -166,7 +166,7 @@ describe("TodoListItem", () => {
   });
 
   /**
-   * SPEC.md §7 replaced the per-document lock with a key, and §11 says the board
+   * SPEC.md §7 replaced the per-document lock with a key, and §10 says the board
    * is never read-only. So this row asks no lock service anything and draws no
    * chip announcing that another writer holds the document — the assertion is
    * the inverse of the one that used to stand here, and it is the one worth

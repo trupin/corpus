@@ -81,7 +81,7 @@ export interface WriteWorkspaceOptions {
   /**
    * §12's derived fields (SERVER-085, SERVER-134), as plugin discovery would
    * have found them. Omitted, the workspace has no plugins at all — which is
-   * what every other suite wants, and is also §15 M6's subtractive state.
+   * what every other suite wants, and is also §12 M6's subtractive state.
    */
   readonly derivedFields?: DerivedFieldsRegistry | undefined;
 }
@@ -284,7 +284,7 @@ export async function putDoc(
 
 /**
  * `POST /api/docs`, returning the created document, failing loudly on anything
- * else. The response is §14's mutation envelope — `{ doc, warnings }` — so the
+ * else. The response is §11's mutation envelope — `{ doc, warnings }` — so the
  * document is unwrapped here and `warnings` handed back beside it for the tests
  * that assert on it.
  */

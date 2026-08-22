@@ -3,7 +3,7 @@ import type { SearchQuery } from "./searchQuery";
 
 /**
  * The overlay's **second** serializer: one {@link SearchQuery} to
- * `GET /api/search`'s narrower grammar (SPEC.md §9.2, §11).
+ * `GET /api/search`'s narrower grammar (SPEC.md §9.2, §10).
  *
  * **This module exists so `searchQuery.ts` does not have to change.** That file
  * documents `toApiParams` and `toViewFrontmatter` as *the same map* — the view
@@ -22,7 +22,7 @@ import type { SearchQuery } from "./searchQuery";
  *   `toApiParams` / `toViewFrontmatter` → `GET /api/docs`, byte-identical to
  *   before.
  *
- * That fork is the signed rule, not an implementation detail (SPEC.md §11:
+ * That fork is the signed rule, not an implementation detail (SPEC.md §10:
  * "saved views and board columns remain filtered lists served by
  * `GET /api/docs` — relevance ranking is a property of interactive search, not
  * of persisted views").
@@ -44,7 +44,7 @@ import type { SearchQuery } from "./searchQuery";
  * what a board column is for, and a column is a `GET /api/docs` list.
  *
  * Every other chip is carried through unchanged, which is what makes SPEC.md
- * §11's "same filter chips and archived semantics" true: the filters are spread
+ * §10's "same filter chips and archived semantics" true: the filters are spread
  * from the contract's single `docFilterShape` on both endpoints, so `folder`,
  * `needs`, `unread`, `references` and the rest mean exactly what they meant on
  * `GET /api/docs`.

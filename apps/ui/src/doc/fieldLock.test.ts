@@ -222,7 +222,7 @@ describe("formStatusLock", () => {
     expect(formStatusLock(note, EMPTY_REGISTRY)).toBeNull();
   });
 
-  it("leaves the field editable when the plugin is gone (§15 M6)", () => {
+  it("leaves the field editable when the plugin is gone (§12 M6)", () => {
     expect(formStatusLock(todo(), EMPTY_REGISTRY)).toBeNull();
   });
 });
@@ -389,7 +389,7 @@ describe("formDueLock", () => {
     }
   });
 
-  it("leaves the field editable when the plugin is gone (§15 M6)", () => {
+  it("leaves the field editable when the plugin is gone (§12 M6)", () => {
     expect(formDueLock(todo(), EMPTY_REGISTRY)).toBeNull();
   });
 });

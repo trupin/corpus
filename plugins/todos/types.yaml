@@ -2,7 +2,7 @@
 # read this file so they never load UI code. parity.test.ts asserts the two
 # declarations agree in both directions.
 #
-# `seedTemplate` names a BODY-only template (SPEC.md §11 — "template pre-fill is
+# `seedTemplate` names a BODY-only template (SPEC.md §10 — "template pre-fill is
 # body-only"): it contributes headings and starter task-list lines, never
 # frontmatter. That works since PLUGINS-005 because items ARE body text
 # (SPEC.md §12), which is what "its type's template can ship starter items in

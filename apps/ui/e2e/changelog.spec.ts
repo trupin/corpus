@@ -4,10 +4,10 @@ import { settledReader } from "./settle";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 
 /**
- * The changelog's clip, in a real browser (UI-089; SPEC.md §5 and §11's rider
+ * The changelog's clip, in a real browser (UI-089; SPEC.md §5 and §10's rider
  * signed 2026-08-07, re-based on clipping the same day).
  *
- * §11: "Past a threshold of entries it **clips**, exactly as a long fenced block
+ * §10: "Past a threshold of entries it **clips**, exactly as a long fenced block
  * does … the newest entries stay visible, the rest sit behind a control that
  * expands them and says how many are hidden … Clipped entries stay selectable,
  * commentable and searchable like any other body text, and an anchor into a
@@ -55,7 +55,7 @@ const BODY = [
 
 /**
  * The document, with a conversation anchored **inside the second entry** — one
- * of the seven the clip hides. That anchor is the case §11 calls out by name and
+ * of the seven the clip hides. That anchor is the case §10 calls out by name and
  * the one this spec exists for.
  */
 const NOTE: StubRow = {
@@ -172,7 +172,7 @@ test.describe("a document whose changelog is past the threshold", () => {
   test("expands from the keyboard alone", async ({ page }) => {
     await openNote(page);
 
-    // §11 adds no exclusive-pointer capability: the control is a button, it
+    // §10 adds no exclusive-pointer capability: the control is a button, it
     // takes focus, and its own activation keys reach it — the host binds `↵`
     // globally, which is why the button claims the key rather than preventing it.
     await control(page).focus();
@@ -184,7 +184,7 @@ test.describe("a document whose changelog is past the threshold", () => {
   });
 
   /**
-   * §11: "clipped entries stay selectable, commentable and searchable like any
+   * §10: "clipped entries stay selectable, commentable and searchable like any
    * other body text" — which is a statement about the entries not being
    * *removed*, and it is asserted here as the two things a browser can show.
    *
@@ -192,7 +192,7 @@ test.describe("a document whose changelog is past the threshold", () => {
    * not painting is text `Selection.toString()` does not return — measured here
    * before this assertion was written: a `Range` over the clipped entries came
    * back holding the list markers and nothing else. That is true of every clip,
-   * including `CodeFence`'s lines below its cut, and §11 asks for this one
+   * including `CodeFence`'s lines below its cut, and §10 asks for this one
    * "exactly as a long fenced block does". So the guarantee is delivered the way
    * a clip can deliver it: the entries are still in the document, and **any
    * selection that reaches them opens the clip** — after which they select,
@@ -248,7 +248,7 @@ test.describe("a conversation anchored inside a clipped entry", () => {
     // 💬 popover this replaced did the same, through the same reveal seam
     // (UI-037). Before UI-089 this landed on a box of no height: the jump
     // "succeeded" and showed the reader nothing, which is exactly the quiet
-    // failure §11 forbids.
+    // failure §10 forbids.
     const reader = page.locator('.reader[data-reader-doc="doc_note"]');
     await reader.locator(".comments-btn").click();
     await reader.locator('[data-comment-row="th_old"] [data-reveal-thread]').click();

@@ -24,7 +24,7 @@ When given an issue ID (e.g., PLUGINS-001):
 4. Implement per Technical Design.
 5. Write tests per Testing Strategy.
 6. Run checks (lint, typecheck, tests).
-7. **Verify E2E**: the SPEC §15/M5 drill is the canonical check — delete the plugin dir → core still boots and renders plugin docs as plain markdown; restore → renderer/column/panel return. Log concrete evidence.
+7. **Verify E2E**: the SPEC §12/M5 drill is the canonical check — delete the plugin dir → core still boots and renders plugin docs as plain markdown; restore → renderer/column/panel return. Log concrete evidence.
 8. Self-review, fix, re-run.
 9. Report to the orchestrator: criteria met, test results, E2E summary, unresolved problems.
 

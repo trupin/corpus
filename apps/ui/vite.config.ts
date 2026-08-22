@@ -76,7 +76,7 @@ function workspaceProxy(origin: string): Record<ServerPath, ProxyOptions> {
 /**
  * Answers every workspace-server path with the same `500 text/plain` Vite's own
  * proxy returns when its target refuses the connection — the shell then reports
- * "server unreachable" (SPEC.md §11), honestly, because there is no server.
+ * "server unreachable" (SPEC.md §10), honestly, because there is no server.
  *
  * This is what makes an isolated run isolated *by construction*: with no proxy
  * configured the dev server holds no target, so no request can leave the

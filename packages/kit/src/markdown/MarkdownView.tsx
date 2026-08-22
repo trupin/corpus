@@ -55,7 +55,7 @@ export interface MarkdownViewProps {
    *
    * - **Text a person typed into a composer** — a thread reply, a comment on a
    *   turn or on a selection. `↵` inserts a newline there and never submits
-   *   (SPEC.md §11's composer key contract, amended by SHARED-009), so a
+   *   (SPEC.md §10's composer key contract, amended by SHARED-009), so a
    *   newline is a line break the author asked for, exactly as in every chat
    *   tool. This is what the option is for.
    * - **Authored markdown** — a document body, and anything an agent wrote.
@@ -169,7 +169,7 @@ export function MarkdownView({
     () => ({
       /*
        * Every fenced block on a rendered surface is a copyable canvas (SPEC.md
-       * §11's rider). It is wired here, at the one renderer, rather than at the
+       * §10's rider). It is wired here, at the one renderer, rather than at the
        * thread: the rider is about *rendered* markdown, and a fence in a turn,
        * in a `view` body and in a plugin's read surface are the same block seen
        * from three hosts. The editable body is TipTap and reaches none of this.

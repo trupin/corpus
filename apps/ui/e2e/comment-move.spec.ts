@@ -206,7 +206,7 @@ test.describe("the comment composer on a document selection", () => {
     expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(viewport?.height ?? 0);
   });
 
-  /** §11 adds no exclusive-pointer capability. */
+  /** §10 adds no exclusive-pointer capability. */
   test("moves from the keyboard, by a handle that is focusable", async ({ page }) => {
     await openMemo(page);
     const composer = await commentOnTheFirstParagraph(page);

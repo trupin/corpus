@@ -294,7 +294,7 @@ describe("which documents get an editor", () => {
   /**
    * UI-014. The gate used to be `CORE_DOC_TYPES`, so a plugin-typed document —
    * and every document of a plugin that had since been deleted — rendered
-   * through the static `MarkdownView`. §11 has no read-only markdown body; §10's
+   * through the static `MarkdownView`. §10 has no read-only markdown body; §10's
    * "renders as plain markdown" is about losing the plugin's chrome.
    */
   it("takes every other markdown body, core or not", () => {
@@ -320,7 +320,7 @@ describe("the surface", () => {
 
     expect(prose().className).toContain("doc-body");
     expect(prose().getAttribute("contenteditable")).toBe("true");
-    // SPEC.md §11: no edit mode, no save button, anywhere.
+    // SPEC.md §10: no edit mode, no save button, anywhere.
     expect(document.querySelector("button[type=submit]")).toBeNull();
     expect(
       [...document.querySelectorAll("button")].filter((button) =>
@@ -397,12 +397,12 @@ describe("references (SPEC.md §5)", () => {
 });
 
 /**
- * SPEC.md §11, amended by SHARED-041: **the board is never read-only**, and §7
+ * SPEC.md §10, amended by SHARED-041: **the board is never read-only**, and §7
  * has nothing to acquire or release. Both halves are asserted, because the
  * second one is the quiet regression — a surface can be editable and still be
  * chattering at a lock endpoint that no longer exists.
  */
-describe("the surface has one state, and it is editable (SPEC.md §11)", () => {
+describe("the surface has one state, and it is editable (SPEC.md §10)", () => {
   it("renders an editable body with no read-only affordance", async () => {
     render(<Host transport={wire()} />);
     await waitFor(() => {
@@ -525,7 +525,7 @@ describe("editing", () => {
   });
 });
 
-describe("the `[[` autocomplete (SPEC.md §11)", () => {
+describe("the `[[` autocomplete (SPEC.md §10)", () => {
   const RATES = docFixture({ frontmatter: { id: "doc_z9y8x7", title: "Rates" } });
   const MORTGAGE = docFixture({ frontmatter: { id: "doc_m1n2o3", title: "Mortgage options" } });
 

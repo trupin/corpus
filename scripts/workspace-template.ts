@@ -278,7 +278,7 @@ export function readContractDoc(docPath: string = CONTRACT_DOC_PATH): ContractDo
 
 // --- Declared weight levels --------------------------------------------------
 //
-// AGENT-015, SPEC.md §7 and §11 (rider SHARED-022, signed 2026-08-06). A request
+// AGENT-015, SPEC.md §7 and §10 (rider SHARED-022, signed 2026-08-06). A request
 // may state the weight its work is done at, "choosing among the levels the skill
 // itself defines" — so the orchestrate skill's tier table is not only prose a
 // model reads, it is the **declaration** a composer enumerates to build its

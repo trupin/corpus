@@ -1,4 +1,4 @@
-// Jobs: the console's view of the queue (SPEC.md §7, §11).
+// Jobs: the console's view of the queue (SPEC.md §7, §10).
 //
 // A job is a queue event being worked, addressed by that event's id. This
 // service owns the log file, the console row and the two actions the console

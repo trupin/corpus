@@ -8,7 +8,7 @@ import { publishDoc, releaseDoc, retainDoc, subscribeAbandoned } from "./registr
 import { unloadClient } from "./unloadClient";
 
 /**
- * A reader's half of the abandon rule (SPEC.md §11): while this host displays a
+ * A reader's half of the abandon rule (SPEC.md §10): while this host displays a
  * document it publishes what it knows about it, and the moment it stops
  * displaying it — for any reason — an empty one is removed.
  *
@@ -88,7 +88,7 @@ export function useAbandonEmptyDoc({
   );
 
   /**
-   * Closing or reloading the tab (SPEC.md §11's "closing the tab").
+   * Closing or reloading the tab (SPEC.md §10's "closing the tab").
    *
    * Nothing unmounts, so the teardown above never runs. `pagehide` is the same
    * event `useAutosave` and `FrontmatterForm` flush on, and it is deliberately

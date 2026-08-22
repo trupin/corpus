@@ -112,7 +112,7 @@ const ORDINARY_SAVE_CHIP_TEXTS = [
 ] as const;
 
 /**
- * **The width the chip's box is reserved to** (UI-135, SPEC.md §11's *"nothing
+ * **The width the chip's box is reserved to** (UI-135, SPEC.md §10's *"nothing
  * resizes because of what it holds"*): the wider of the two ordinary strings
  * above, derived rather than written out, so the reservation cannot drift from
  * the copy. Change a word in `saveChipText` and the box changes with it.

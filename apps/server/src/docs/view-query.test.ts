@@ -1,6 +1,6 @@
 // The collection query's CONTRACT-011 surface: the `pinned` filter, the `order`
 // sort and its tiebreak, the view keys and `extra` on every row, and the
-// `parentTitle` live join (SPEC.md §11, §12).
+// `parentTitle` live join (SPEC.md §10, §12).
 //
 // Seeded from real files through the real projector, like every other query
 // suite — and the board's own case is seeded from the **shipped** seed views in

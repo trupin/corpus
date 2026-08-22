@@ -636,7 +636,7 @@ describe("skills", () => {
   });
 
   /**
-   * Copyable canvases (SPEC.md §11, rider signed 2026-08-02): the reader draws
+   * Copyable canvases (SPEC.md §10, rider signed 2026-08-02): the reader draws
    * every fenced block in a rendered turn with a copy button and its info string
    * as the label. The skills' half of that contract is the authoring rule —
    * text the person is expected to lift and reuse elsewhere is emitted alone
@@ -721,7 +721,7 @@ describe("skills", () => {
   });
 
   /**
-   * AGENT-021, SPEC.md §11's rider signed 2026-08-07. CLI-033 made `--model`
+   * AGENT-021, SPEC.md §10's rider signed 2026-08-07. CLI-033 made `--model`
    * possible; this is what makes every agent turn actually carry one. The rule
    * is pinned where it decays fastest — in the *examples*, since an example
    * that posts a turn without stating a model teaches the opposite of the rule
@@ -1846,7 +1846,7 @@ describe("orchestrate skill body", () => {
   });
 
   /**
-   * AGENT-015, SPEC.md §7 and §11 (rider SHARED-022, signed 2026-08-06). The
+   * AGENT-015, SPEC.md §7 and §10 (rider SHARED-022, signed 2026-08-06). The
    * tier table stopped being prose only a model reads: a composer enumerates it
    * to build its picker, so its shape is a de-facto interface. What is pinned
    * here is therefore the *parse* — the exact set, in order — because that is
@@ -2317,7 +2317,7 @@ describe("orchestrate skill body", () => {
     });
 
     /**
-     * AGENT-020, SPEC §5/§7/§11's rider signed 2026-08-07. Noticing writes an
+     * AGENT-020, SPEC §5/§7/§10's rider signed 2026-08-07. Noticing writes an
      * entry; only needing something opens a thread. Each load-bearing claim is
      * pinned separately, because the ones that decay quietly are the mechanical
      * ones — the exact heading, the read-before-write that makes an append an
@@ -3264,7 +3264,7 @@ describe("comment skill body", () => {
 
     it("makes a form the default shape for a turn whose purpose is to ask", () => {
       expect(body).toMatch(/When a turn's purpose is to get something from the person, ask with/);
-      // The asymmetry that is the whole reason to prefer one (SPEC.md §11):
+      // The asymmetry that is the whole reason to prefer one (SPEC.md §10):
       // a prose question stops signalling the moment the thread is read.
       expect(body).toMatch(/awaiting your answer/);
       expect(body).toMatch(/Reading a question is not\s+answering it/);

@@ -18,7 +18,7 @@ import { contractRoutes } from "./index.js";
 const BASE_URL = "http://127.0.0.1:8765";
 
 const KNOWN = "doc_a1b2c3";
-/** A document the workspace has, with no commit behind it (SPEC.md §14). */
+/** A document the workspace has, with no commit behind it (SPEC.md §11). */
 const UNCOMMITTED = "doc_fresh1";
 /** A document that does not exist — the only thing a `404` on this route means. */
 const MISSING = "doc_gone99";
@@ -277,7 +277,7 @@ describe("the bound", () => {
 });
 
 /**
- * SPEC.md §14: a workspace whose git rejected or skipped the commit degrades
+ * SPEC.md §11: a workspace whose git rejected or skipped the commit degrades
  * visibly rather than failing. A document that has never been committed has a
  * null range and an empty diff — an answer, not an error.
  */

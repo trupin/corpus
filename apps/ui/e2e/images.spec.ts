@@ -5,7 +5,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-049, in a real browser: images that load wherever they appear, and a
- * full-screen viewer over them (SPEC.md §11, rider signed 2026-08-03).
+ * full-screen viewer over them (SPEC.md §10, rider signed 2026-08-03).
  *
  * **Why the attachment route is guarded here.** `/attachments/*` sits behind
  * the workspace bearer token, and that guard *is* the bug: a browser sends no
@@ -285,7 +285,7 @@ test.describe("the full-screen viewer", () => {
     await expect(image).toBeFocused();
   });
 
-  /** SPEC.md §11: the image is keyboard-reachable and `↵` opens it. */
+  /** SPEC.md §10: the image is keyboard-reachable and `↵` opens it. */
   test("opens from the keyboard", async ({ page }) => {
     await openThreadImage(page);
     const image = page.locator(`.reader .turn img.md-img[data-att-target="${SHOT}"]`);

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { composerReachesAgent } from "./composerReach.js";
 
 /**
- * The one derivation of "will sending reach the agent" (SPEC.md §8, §11).
+ * The one derivation of "will sending reach the agent" (SPEC.md §8, §10).
  *
  * Pinned on its own because two features consume it — the weight control's
- * liveness today, the reach statement (§11's rider signed 2026-08-05) when it is
+ * liveness today, the reach statement (§10's rider signed 2026-08-05) when it is
  * built — and the failure this exists to prevent is the two of them answering
  * one sentence differently.
  */

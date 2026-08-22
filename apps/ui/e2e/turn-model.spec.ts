@@ -4,7 +4,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-090 in a real browser: an agent turn says which model wrote it (SPEC.md
- * §11, rider signed 2026-08-07), on every surface a turn is read from.
+ * §10, rider signed 2026-08-07), on every surface a turn is read from.
  *
  * **Why a browser suite and not only component tests.** The requirement is
  * "quickly identifiable", not "present in the DOM" — and the turn header is the
@@ -16,7 +16,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * made *against* the hover controls in the same row.
  *
  * The other thing only this suite can testify to is coverage of the placements.
- * §11 lists five — a card in the margin, a chip at its anchor, a thread in a
+ * §10 lists five — a card in the margin, a chip at its anchor, a thread in a
  * column, full screen, and a child thread nested under a turn — and which one a
  * conversation gets is decided by measuring a live element, which jsdom reports
  * as zero-width for everything. All five are entered here the way the app
@@ -100,7 +100,7 @@ const THREAD: StubRow = {
   anchors: [{ anchorId: "anc_child", threadId: "th_child", exact: "Three of them." }],
 };
 
-/** A conversation about one of those turns — §11's "child thread nested under a turn". */
+/** A conversation about one of those turns — §10's "child thread nested under a turn". */
 const CHILD: StubRow = {
   id: "th_child",
   type: "thread",
@@ -136,7 +136,7 @@ function modelOf(scope: Page | Locator, ts: string): Locator {
 async function expectTheRule(scope: Page | Locator): Promise<void> {
   await expect(modelOf(scope, ANSWERED)).toHaveText(OPUS);
   await expect(modelOf(scope, FILED)).toHaveText(HAIKU);
-  // Absence, not an empty chip and not a placeholder: §11 says an unknown says
+  // Absence, not an empty chip and not a placeholder: §10 says an unknown says
   // so by absence rather than by a plausible attribution nobody can check.
   await expect(modelOf(scope, UNRECORDED)).toHaveCount(0);
   await expect(modelOf(scope, ASKED)).toHaveCount(0);
@@ -252,7 +252,7 @@ test.describe("which model wrote a turn", () => {
   });
 
   /**
-   * §11 fixes exactly what a collapsed line reports — that it exists, what it is
+   * §10 fixes exactly what a collapsed line reports — that it exists, what it is
    * about, who spoke last, how many turns, and whether anything is unread — and
    * says the set is closed. The model is not in it.
    */

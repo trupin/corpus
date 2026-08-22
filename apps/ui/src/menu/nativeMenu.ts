@@ -1,6 +1,6 @@
 /**
  * Which menu a right-click gets, in the two halves that are the same everywhere
- * (SPEC.md §11).
+ * (SPEC.md §10).
  *
  * The native browser menu survives *"inside the editor and any editable field
  * **when nothing is selected**, and anywhere no Corpus item is under the
@@ -32,7 +32,7 @@
  */
 const PLUGIN_SURFACE = "[data-plugin-surface]";
 
-/** Editable hosts, plus the plugin surfaces core paints no menu over (§11). */
+/** Editable hosts, plus the plugin surfaces core paints no menu over (§10). */
 const NATIVE_HOSTS = [
   "input",
   "textarea",
@@ -76,7 +76,7 @@ export function keepsNativeMenu({ target }: NativeMenuContext): boolean {
  *
  * The surface's **origin** is the subject: rows a plugin column body invents
  * are its own, so core declines to half-populate a menu over them. The 2026-08-02
- * §11 amendment reversed SHARED-004 item 4 — a plugin may now contribute its own
+ * §10 amendment reversed SHARED-004 item 4 — a plugin may now contribute its own
  * menu there — which changes who paints, not this rule about who does not.
  * Nothing here reads a document's type. A row
  * whose renderer is a plugin `ListItem` but whose surface is a core column list

@@ -28,7 +28,7 @@ import { GrowingTextarea } from "../thread/GrowingTextarea";
 import { ASK_AGENT_LABEL, NOTE_ONLY_LABEL } from "../thread/ThreadComposer";
 
 /**
- * The comments list's own composer (SPEC.md §11, rider signed 2026-08-04): *"A
+ * The comments list's own composer (SPEC.md §10, rider signed 2026-08-04): *"A
  * comment does not require a selection. The comments list carries a composer, so
  * a remark about the document as a whole starts a thread with no anchor (§6)."*
  *
@@ -72,7 +72,7 @@ export function NewCommentComposer({ docId, onNotify }: NewCommentComposerProps)
   const create = useCreateThread();
   /*
    * A comment on the document is a thread on the document, so the document is
-   * both the weight scope §11's rider names and the point §7's recipient walk
+   * both the weight scope §10's rider names and the point §7's recipient walk
    * climbs from — the same two the selection composer uses for the same reason.
    */
   const weight = useComposerWeight(docWeightScope(docId));

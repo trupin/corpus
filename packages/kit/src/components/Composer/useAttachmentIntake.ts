@@ -12,7 +12,7 @@ import {
  * clipboard paste, and a drag onto the composer — normalised into **one**
  * pending list, because a turn does not care which one the person used.
  *
- * **Why this lives in the kit** (UI-070). SPEC.md §11's rider binds *every*
+ * **Why this lives in the kit** (UI-070). SPEC.md §10's rider binds *every*
  * composer — "the global composer, a thread's reply box, a comment on a document
  * selection, a comment on a turn or on a selection within one, **and any
  * composer a plugin contributes**" — and a plugin may import nothing but

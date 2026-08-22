@@ -3,7 +3,7 @@ import { forwardRef, type TextareaHTMLAttributes } from "react";
 /**
  * A composer field that is one line tall and grows with what is typed into it.
  *
- * **Why it exists.** SPEC.md §11's composer key contract makes `↵` a newline in
+ * **Why it exists.** SPEC.md §10's composer key contract makes `↵` a newline in
  * every composer. The reply box and the turn-comment box were `<input>`
  * elements, which cannot hold a newline at all — re-binding their keys without
  * changing the element would have left `↵` doing nothing, which is a worse bug
@@ -20,7 +20,7 @@ import { forwardRef, type TextareaHTMLAttributes } from "react";
  *
  * The design mockup draws these as one-line boxes (`design/index.html`'s
  * `.composer input`) and that is still what they look like empty; growing is
- * the behaviour §11 now requires, and it wins over the mockup's static markup.
+ * the behaviour §10 now requires, and it wins over the mockup's static markup.
  */
 
 export interface GrowingTextareaProps extends Omit<

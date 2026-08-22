@@ -47,7 +47,7 @@ describe("POST /api/threads/{id}/resolve and /reopen", () => {
     };
 
     expect(response.status).toBe(200);
-    // The §14 envelope, not a bare summary: `{thread, warnings}`, mirroring
+    // The §11 envelope, not a bare summary: `{thread, warnings}`, mirroring
     // `DocMutationResponse` (CONTRACT-007's rider).
     expect(payload.thread).toMatchObject({ id: created.id, status: "resolved", turnCount: 2 });
     expect(payload.warnings).toEqual([]);

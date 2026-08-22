@@ -167,7 +167,7 @@ export interface AnchorLayerOptions {
 
 /**
  * A comment on its way out — held whole, so one that waits for an edit session
- * to flush is posted exactly as it was written (SPEC.md §11's rider adds the
+ * to flush is posted exactly as it was written (SPEC.md §10's rider adds the
  * weight to what "as it was written" covers).
  */
 interface CommentPost {
@@ -175,7 +175,7 @@ interface CommentPost {
   readonly requestsAgent: boolean;
   /**
    * What the composer stated, spread onto the request; `{}` when it stated
-   * nothing. The weight the work should be done at (SPEC.md §11) and the lane it
+   * nothing. The weight the work should be done at (SPEC.md §10) and the lane it
    * was addressed to (§7) — the latter present whenever somebody **picked** one,
    * including a pick that names the lane the composer had already computed,
    * because only a default nobody touched travels by being absent (UI-118).
@@ -211,7 +211,7 @@ export interface AnchorLayer {
    * The body's live editor, or `null` when the body is not one.
    *
    * Published because this layer is already the only thing that holds it, and
-   * the selection context menu (SPEC.md §11) has to act on the same instance —
+   * the selection context menu (SPEC.md §10) has to act on the same instance —
    * a second subscription to `DocEditor.onEditor` would be a second source of
    * truth for one editor.
    */
@@ -220,7 +220,7 @@ export interface AnchorLayer {
   readonly onEditor: (editor: Editor | null) => void;
   readonly onComment: (selection: EditorSelection) => void;
   /**
-   * The live selection as a comment action, captured now — SPEC.md §11's
+   * The live selection as a comment action, captured now — SPEC.md §10's
    * "Comment on selection", which is 💬's own act reached by right-click.
    *
    * Returns `null` when there is nothing to comment on: no editor, a foreign
@@ -670,7 +670,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   /**
    * Clicking an anchored highlight opens its thread — and **expands** it, which
-   * is the reader's own act and therefore overrides the rule (SPEC.md §11's
+   * is the reader's own act and therefore overrides the rule (SPEC.md §10's
    * precedence). A resolved conversation folded by default is still one click
    * away from its own highlight, which is the route back the "collapsed is never
    * hidden" clause promises: the passage keeps saying it has been discussed.
@@ -712,7 +712,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
    * half of "jumps to its anchor" — the highlighted words themselves, which in
    * a long document are what the person is actually looking for.
    *
-   * **And open the clip, when the anchor is inside one** (UI-089). SPEC.md §11:
+   * **And open the clip, when the anchor is inside one** (UI-089). SPEC.md §10:
    * "an anchor into a clipped entry still resolves — revealing that conversation
    * expands the clip rather than quietly failing to reach it." Resolving is
    * already true, because an anchor is matched against the document rather than

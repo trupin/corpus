@@ -2,7 +2,7 @@ import type { FolderNode, FolderTree } from "@corpus/contract";
 import type { CreateDocInput } from "@corpus/kit";
 
 /**
- * The new-list picker's offer, and what each choice creates (SPEC.md §11 — the
+ * The new-list picker's offer, and what each choice creates (SPEC.md §10 — the
  * trailing ghost column: "a folder, a library/preset view, a plugin column
  * type, or from current search").
  *
@@ -38,7 +38,7 @@ export interface NewListChoice {
  * Deliberately **disjoint from the seed columns**: the workspace already ships
  * Attention, Inbox and Open threads as documents, and a picker that re-offered
  * them would be the board's own column set restated in TypeScript — the thing
- * SPEC.md §11's "nothing hardwired" forbids. These are starting points the seed
+ * SPEC.md §10's "nothing hardwired" forbids. These are starting points the seed
  * does not cover, and every one of them is only a query: choosing it writes a
  * document the user can then rename, re-query or archive like any other.
  */
@@ -100,7 +100,7 @@ function walkFolders(nodes: readonly FolderNode[], into: NewListChoice[]): void 
  * Every folder under `data/docs/`, with the count `GET /api/tree` reports.
  *
  * Descendants are offered too — the hierarchy is the primary organization
- * (SPEC.md §11) and a column scoped to `finance/mortgage` is as legitimate as
+ * (SPEC.md §10) and a column scoped to `finance/mortgage` is as legitimate as
  * one scoped to `finance`. `totalCount` rather than `count`, because a folder
  * query matches the folder *and its descendants*.
  */

@@ -510,7 +510,7 @@ describe("the out-of-band committer's request (SPEC.md §4)", () => {
     expect(recording.commits.every((request) => request.docIds === undefined)).toBe(true);
   });
 
-  it("does not throw when git refuses (SPEC.md §14 — the change stands on disk)", async () => {
+  it("does not throw when git refuses (SPEC.md §11 — the change stands on disk)", async () => {
     const recording = createRecordingCommitter();
     recording.setOutcome({ kind: "failed", reason: "a hook refused", output: "no" });
     await expect(createOutOfBandCommitter({ git: recording })([change])).resolves.toBeUndefined();

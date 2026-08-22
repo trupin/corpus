@@ -267,7 +267,7 @@ describe("manifest.deriveDue ↔ server/derive parity", () => {
 });
 
 describe("the seed template", () => {
-  /** SPEC.md §11: a template IS a document — `type: template` with `for: <type>`. */
+  /** SPEC.md §10: a template IS a document — `type: template` with `for: <type>`. */
   it("is a valid template document for the todo type", () => {
     const path = declared()[0]?.seedTemplate;
     expect(path).toBe("seeds/todo-template.md");
@@ -283,7 +283,7 @@ describe("the seed template", () => {
 
   /**
    * sprint-014 Adjudication 17, still true and now for a second reason.
-   * Template pre-fill is **body-only** (SPEC.md §11 — "a template's own
+   * Template pre-fill is **body-only** (SPEC.md §10 — "a template's own
    * housekeeping fields do not bleed into documents created from it"), so a
    * seeded `items:` key could never reach an instance — and since PLUGINS-005
    * there is nothing it could seed, because items are body text.

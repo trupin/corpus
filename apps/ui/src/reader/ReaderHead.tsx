@@ -58,7 +58,7 @@ export interface ReaderHeadProps {
   /** ⤢ — omitted in focus mode, which is already full screen. */
   readonly onExpand?: (() => void) | undefined;
   readonly onBack: (toList: boolean) => void;
-  /** Which half of the reader is showing (SPEC.md §11's `Document / Comments` switch). */
+  /** Which half of the reader is showing (SPEC.md §10's `Document / Comments` switch). */
   readonly tab: ReaderTab;
   readonly onTab: (tab: ReaderTab) => void;
   readonly onGone: () => void;
@@ -151,11 +151,11 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
         {readerIdText(props.docId)}
       </span>
       <SaveChip />
-      {/* §11's rider puts the switch in the header unconditionally, and it is
+      {/* §10's rider puts the switch in the header unconditionally, and it is
           **measured as not fitting** on one head — see `CommentsSwitch`, which
           carries the numbers and the deviation. So it renders under 💬's own
           condition, plus one: whenever the list is showing, so the way back is
-          never missing. The empty case §11 cares about most is reached from the
+          never missing. The empty case §10 cares about most is reached from the
           ⋯ menu, which costs the row nothing. */}
       {threads.length === 0 && props.tab !== "comments" ? null : (
         <CommentsSwitch tab={props.tab} count={threads.length} onTab={props.onTab} />

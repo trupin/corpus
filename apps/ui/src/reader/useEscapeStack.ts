@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Escape precedence, as a registry (SPEC.md §11: "`esc`/`⌫` close/back —
+ * Escape precedence, as a registry (SPEC.md §10: "`esc`/`⌫` close/back —
  * overlays and focus mode take precedence, then the column reader").
  *
  * The prototype hard-codes the chain (`overlay → compose → kbd → focus`), which
@@ -26,7 +26,7 @@ import { useEffect, useRef } from "react";
  * than inventing a number, and ties inside a band fall to mount order.
  */
 export const EscapeLayerPriority = {
-  /** A column reader. Bottom of the chain — SPEC.md §11 says "then the column reader". */
+  /** A column reader. Bottom of the chain — SPEC.md §10 says "then the column reader". */
   Reader: 0,
   /** Focus mode: full-viewport, `z-index: 35`. */
   Focus: 10,
@@ -38,7 +38,7 @@ export const EscapeLayerPriority = {
    * The full-screen image viewer (UI-049, `z-index: 70`). Top of the chain by
    * declaration rather than by mount order: it opens *from* a reader, a focus
    * mode or an overlay — every layer below it is still mounted underneath — and
-   * SPEC.md §11 gives Escape to the image. Tying that to registration order
+   * SPEC.md §10 gives Escape to the image. Tying that to registration order
    * would make it true only for as long as nothing else registered later.
    */
   ImageViewer: 40,
@@ -53,7 +53,7 @@ interface Layer {
   readonly handler: (event: KeyboardEvent) => void;
 }
 
-/** SPEC.md §11's keyboard scheme: "`esc`/`⌫` close/back". */
+/** SPEC.md §10's keyboard scheme: "`esc`/`⌫` close/back". */
 const CLOSE_KEYS = new Set(["Escape", "Backspace"]);
 
 /**

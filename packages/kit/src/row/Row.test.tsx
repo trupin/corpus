@@ -171,7 +171,7 @@ describe("badges", () => {
   });
 
   /**
-   * SPEC.md §7 replaced the lock with a key, and §11 made the board never
+   * SPEC.md §7 replaced the lock with a key, and §10 made the board never
    * read-only: there is no holder to name on a row and no projection to name
    * one from. A row therefore draws no lock chip and — the part worth pinning —
    * **asks nobody for one**, because a row hook runs once per card and a
@@ -440,7 +440,7 @@ describe("the reason line", () => {
   });
 
   /*
-   * SPEC.md §11 — "a thread holding more than one unanswered form says how many
+   * SPEC.md §10 — "a thread holding more than one unanswered form says how many
    * are still open". The number comes off `DocRow.unansweredForms`, which the
    * server derives from the same predicate as the `form` reason itself, so the
    * row never counts anything for itself and never fetches a thread to do it.

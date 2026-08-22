@@ -4,7 +4,7 @@ import { expect, test } from "./coverage";
 /**
  * UI-132 — the toast stack, in a real browser.
  *
- * SPEC.md §11's rider (signed 2026-08-20) rules out the shape this suite pins:
+ * SPEC.md §10's rider (signed 2026-08-20) rules out the shape this suite pins:
  * *"an element that grows pushes whatever is stacked above it… the element
  * under the cursor moves out from under it."* The toast stack was that shape
  * with a timer in place of a hover. `.toast-wrap` was bottom-anchored and the

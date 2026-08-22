@@ -10,7 +10,7 @@ import { HEALTH_KEY } from "../query/keys.js";
 
 /**
  * The single `invalidate` → `invalidateQueries` bridge (SPEC.md §2.2 rule 3,
- * §11 "Live updates").
+ * §10 "Live updates").
  *
  * Deliberately framework-free: no React here, so the reconnect schedule, the
  * coalescing window and the invalidation mapping are testable without a

@@ -165,7 +165,7 @@ export {
   type QueryKeySegment,
 } from "./query/keys.js";
 
-// Type-aware rows (SPEC.md §11). `Row` is the default renderer and the seam a
+// Type-aware rows (SPEC.md §10). `Row` is the default renderer and the seam a
 // plugin's registered `ListItem` replaces (PLUGINS-001) — which is why the prop
 // types ship beside the component: a conforming `ListItem` cannot be written
 // without them.
@@ -246,7 +246,7 @@ export {
 // (UI-064). Exported because the document editor parses with the same rule —
 // reader and editor must not be two readings of one file.
 export { isLineBreakTag, remarkTableCellBreaks } from "./markdown/tableBreaks.js";
-// One image renderer for every host (SPEC.md §11's "images open full-size"):
+// One image renderer for every host (SPEC.md §10's "images open full-size"):
 // the authenticated attachment fetch and the click-to-open affordance, so a
 // plugin's read surface draws pictures exactly as a turn does. The viewer
 // itself is the app's — `ImageViewerProvider` is the door to it, and images
@@ -268,7 +268,7 @@ export {
   type ViewableImage,
 } from "./markdown/imageViewer.js";
 
-// SPEC.md §11's "smart input everywhere": one `@` / `/` / `[[` implementation,
+// SPEC.md §10's "smart input everywhere": one `@` / `/` / `[[` implementation,
 // shared by the thread composer, the document editor and the global composer.
 // Its stylesheet is a subpath, like the tokens: `import "@corpus/kit/autocomplete.css"`.
 //
@@ -309,7 +309,7 @@ export {
   type UseAutocompleteOptions,
 } from "./components/Autocomplete/index.js";
 
-// SPEC.md §11's composer key contract — `↵` newline, `⌘↵` primary, `⇧⌘↵`
+// SPEC.md §10's composer key contract — `↵` newline, `⌘↵` primary, `⇧⌘↵`
 // secondary — as one function, because the sentence binds every composer in the
 // app *and* every composer a plugin contributes, and a plugin may import
 // nothing but this package.
@@ -329,7 +329,7 @@ export {
   type PendingAttachmentsProps,
 } from "./components/Composer/index.js";
 
-// SPEC.md §11's "every composer can choose how much thought the work gets"
+// SPEC.md §10's "every composer can choose how much thought the work gets"
 // (rider signed 2026-08-06). Here rather than in `apps/ui` for the same reason
 // the key contract and the attachment intake are: the sentence binds every
 // composer in the app *and* every composer a plugin contributes, and a plugin
@@ -360,8 +360,8 @@ export {
 // The control both of the above are shown through since UI-126: one line
 // stating who answers and at what weight, opening to change either — and, for
 // a resident's lane, the sentence that replaces a weight control whose choice
-// would be discarded (SPEC.md §7 and §11, rider signed 2026-08-19). Here for
-// the same reason: §11's enumeration binds every composer a plugin
+// would be discarded (SPEC.md §7 and §10, rider signed 2026-08-19). Here for
+// the same reason: §10's enumeration binds every composer a plugin
 // contributes. Stylesheet subpath: `import "@corpus/kit/address.css"`.
 export {
   answeringRow,

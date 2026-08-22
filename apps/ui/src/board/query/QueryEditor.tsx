@@ -15,7 +15,7 @@ import { useQueryAutocomplete } from "./useQueryAutocomplete";
 import "./queryEditor.css";
 
 /**
- * The column's query field (SPEC.md §11 — reconfiguring a column edits its view
+ * The column's query field (SPEC.md §10 — reconfiguring a column edits its view
  * document), with the two things a bare text input never had: completions and a
  * way to learn the language without leaving it (UI-039).
  *
@@ -154,7 +154,7 @@ export function QueryEditor({
             if (event.key === "ArrowDown" && !engaged) setEngaged(true);
             if (autocomplete.handleKeyDown(event)) return;
             // `↵` commits the query. This is **not** a composer, so SPEC.md
-            // §11's composer key contract (`↵` newline, `⌘↵` submit) does not
+            // §10's composer key contract (`↵` newline, `⌘↵` submit) does not
             // reach it: a query is one line of filter syntax, never prose, and
             // there is no newline for the key to insert.
             if (event.key === "Enter") {

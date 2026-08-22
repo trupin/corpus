@@ -1,4 +1,4 @@
-// The write path's CONTRACT-011 surface: §11's view keys and §12's plugin keys
+// The write path's CONTRACT-011 surface: §10's view keys and §12's plugin keys
 // through `POST /api/docs` and `PUT /api/docs/{id}`.
 //
 // Every case goes through the real app, writes a real file into a real git
@@ -422,7 +422,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
     const text = ws.read(created.path);
     expect(text).not.toContain("order:");
     expect(text).not.toContain("column:");
-    // §5's canonical block keeps its `due: null`; only the §11 keys are cleared.
+    // §5's canonical block keeps its `due: null`; only the §10 keys are cleared.
     expect(text).toContain("due: null");
     expect(text).toContain("pinned: true");
 

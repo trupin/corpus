@@ -150,7 +150,7 @@ export const QueueEventSchema = z
           "(SPEC.md §7) — one release produces exactly one such event, and a lapse produces " +
           "none.\n\n" +
           "**One key crosses every type: `weight`.** When the request that enqueued the event " +
-          "stated the weight its work should be done at (SPEC.md §7, §11), that level name rides " +
+          "stated the weight its work should be done at (SPEC.md §7, §10), that level name rides " +
           "here verbatim, and the dispatch honours it rather than weighing the work again. It is " +
           "**absent** when the request stated nothing, which means the orchestrator decides — never " +
           "a default level, and never `null`. It is deliberately not part of any one payload " +
@@ -389,7 +389,7 @@ export const AGENT_PRESENCE_WINDOW_SECONDS = MAX_IDLE_TIMEOUT_SECONDS * 2;
  * existed the console had to guess the second from the first. It guessed by
  * elimination — not halted and nothing in progress ⇒ `idle` — so a machine with
  * no agent at all reported an agent with nothing to do, which is precisely the
- * claim §11's rider now says requires evidence. The evidence is this field.
+ * claim §10's rider now says requires evidence. The evidence is this field.
  *
  * It is **the roster's own verdict aggregated**, not a second notion of
  * liveness: `agent.live` is true exactly when some `AgentLane.live` is, and
@@ -438,7 +438,7 @@ export const QueueStatusSchema = z
  * *withdraw* a stale presence, never manufacture one the server denied, which is
  * what keeps this a second application of one rule rather than a second rule.
  *
- * It takes a clock so a UI can re-evaluate on a tick without refetching: §11
+ * It takes a clock so a UI can re-evaluate on a tick without refetching: §10
  * asks the pill to flip on its own when an agent walks away, and a pill that
  * only moved when new data arrived would sit on `idle` for as long as nothing
  * else happened — the original bug with extra steps. Clock skew costs nothing
@@ -460,12 +460,12 @@ export function isAgentPresent(presence: AgentPresence, now: Date = new Date()):
 }
 
 /**
- * The four states SPEC.md §11's agent pill names, in one place because two
+ * The four states SPEC.md §10's agent pill names, in one place because two
  * consumers already read them — the console strip and any plugin reading queue
  * status — and a rule about honesty that each derives for itself is a rule that
  * holds in one of them.
  *
- * The precedence is the interesting part, and every step of it is §11's own
+ * The precedence is the interesting part, and every step of it is §10's own
  * "reports what the server can actually observe":
  *
  * 1. **`halted`** outranks everything. While the sentinel is set nothing new is

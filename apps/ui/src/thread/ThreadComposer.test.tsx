@@ -166,7 +166,7 @@ describe("ThreadComposer", () => {
     expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
   });
 
-  /** SPEC.md §11's composer key contract, as UI-052 rebound it. */
+  /** SPEC.md §10's composer key contract, as UI-052 rebound it. */
   it("sends on ⌘↵ and clears the field", async () => {
     const transport = wire();
     render(<Host transport={transport} />);
@@ -231,7 +231,7 @@ describe("ThreadComposer", () => {
     expect(notify.mock.calls[0]?.[0]).toMatchObject({ tone: "error" });
   });
 
-  /** SPEC.md §11's smart input: one menu, from `GET /api/docs`. */
+  /** SPEC.md §10's smart input: one menu, from `GET /api/docs`. */
   it("opens the shared autocomplete on @", async () => {
     const { container } = render(<Host transport={wire()} />);
     fireEvent.change(input(), { target: { value: "@" } });

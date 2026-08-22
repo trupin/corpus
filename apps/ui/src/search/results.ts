@@ -2,7 +2,7 @@ import type { SearchHit } from "@corpus/contract";
 
 /**
  * What the overlay renders, derived from the one response it already has
- * (SPEC.md §11 — "snippet-highlighted results grouped by type").
+ * (SPEC.md §10 — "snippet-highlighted results grouped by type").
  *
  * Everything here is a pure function of the returned `hits`. Grouping is a
  * partition, the counts are the partition's sizes, and the create row's

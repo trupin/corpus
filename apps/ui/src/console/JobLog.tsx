@@ -3,7 +3,7 @@ import { useCallback, useLayoutEffect, useRef, type ReactElement } from "react";
 import { isErrorLine } from "./consoleModel";
 
 /**
- * The selected job's log lines (SPEC.md §7, §11).
+ * The selected job's log lines (SPEC.md §7, §10).
  *
  * ## Auto-scroll discipline
  *

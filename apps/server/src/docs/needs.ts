@@ -1,4 +1,4 @@
-// Attention (SPEC.md §11): the five reasons a row asks for the user, expressed
+// Attention (SPEC.md §10): the five reasons a row asks for the user, expressed
 // as SQL over the same joins the collection query already makes.
 //
 // They are SQL rather than a post-pass in TypeScript for one reason: `needs=`
@@ -70,7 +70,7 @@ const OUTSTANDING_EVENT_STATUS_LIST = OUTSTANDING_EVENT_STATUSES.map(
 ).join(", ");
 
 /**
- * The pending-agent affordance (SPEC.md §8, §11): **the queue still owes this
+ * The pending-agent affordance (SPEC.md §8, §10): **the queue still owes this
  * thread something**.
  *
  * **This is a question about the queue, and it used to be a guess about the
@@ -133,7 +133,7 @@ export const AWAITING_AGENT_SQL = `(t.id IS NOT NULL AND EXISTS (
 
 /**
  * An unanswered form is an agent turn of an **open** thread carrying an
- * answerable ```form block that nobody has answered yet (SPEC.md §6, §11).
+ * answerable ```form block that nobody has answered yet (SPEC.md §6, §10).
  *
  * **The reason is form-scoped, not thread-scoped** (SERVER-032). §6: a form "is
  * identified by the timestamp of the turn carrying it, so a turn carries at most
@@ -148,7 +148,7 @@ export const AWAITING_AGENT_SQL = `(t.id IS NOT NULL AND EXISTS (
  * renderer, correctly, kept offering it. The count of unanswered forms is the
  * question; who spoke last was only ever a proxy for it in the one-form case.
  *
- * Resolving the thread is one of §11's ways of handling the reason: a resolved
+ * Resolving the thread is one of §10's ways of handling the reason: a resolved
  * conversation is not waiting for an answer, and without the status guard it sat
  * in Attention with no remaining action that could clear it (SERVER-022
  * finding 3).
@@ -181,7 +181,7 @@ export const AWAITING_AGENT_SQL = `(t.id IS NOT NULL AND EXISTS (
  * notices.
  *
  * **It counts rather than existence-tests, because the row reports the number**
- * (SERVER-084). §11's Attention clause ends "a thread holding more than one
+ * (SERVER-084). §10's Attention clause ends "a thread holding more than one
  * unanswered form says how many are still open", so `DocRow.unansweredForms`
  * carries the count — and CONTRACT-040 publishes the invariant with its
  * direction: `unansweredForms > 0` **iff** `attention` contains `form`. Two

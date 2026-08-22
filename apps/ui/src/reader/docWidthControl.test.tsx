@@ -33,7 +33,7 @@ import { resetEscapeLayers } from "./useEscapeStack";
 import { FOCUS_SURFACE, columnSurface } from "../thread/threadCollapse";
 
 /**
- * The reader's width control, in both hosts (SPEC.md §11's rider of
+ * The reader's width control, in both hosts (SPEC.md §10's rider of
  * 2026-08-04, UI-066).
  *
  * jsdom has no layout, so what is provable here is the **state**: that a
@@ -134,7 +134,7 @@ describe("the document width control", () => {
     const handle = screen.getByRole("separator", { name: DOC_WIDTH_LABEL });
     expect(handle.closest(".reader")).not.toBeNull();
     expect(handle.getAttribute("aria-orientation")).toBe("vertical");
-    // Reachable without a pointer — §11 adds no exclusive-pointer capability.
+    // Reachable without a pointer — §10 adds no exclusive-pointer capability.
     expect(handle.getAttribute("tabindex")).toBe("0");
   });
 
@@ -239,7 +239,7 @@ describe("the document width control", () => {
   });
 
   /**
-   * §11 asks for a width that persists **across navigation**, and navigation is
+   * §10 asks for a width that persists **across navigation**, and navigation is
    * exactly what changes the document — which is why the width belongs to the
    * reader and not to what it happens to be showing.
    */

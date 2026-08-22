@@ -658,7 +658,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       index: indexMaintenance,
     });
 
-    // §14's validator over HTTP, and §7's skill creation. Both need the
+    // §11's validator over HTTP, and §7's skill creation. Both need the
     // projection — the check resolves ids and answers "does this `[[ref]]`
     // target exist", a create mints an id against it — so both live in this
     // block, and both are mounted before the plugin routers like every other

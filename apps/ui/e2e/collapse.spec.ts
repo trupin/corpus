@@ -309,7 +309,7 @@ test.describe("a document whose thread rows are slower than its body", () => {
     await page.locator(".reader .ProseMirror").waitFor();
 
     // The highlight is in the body from the first paint and never waits for a
-    // row — §11's "the passage still says it has been discussed".
+    // row — §10's "the passage still says it has been discussed".
     await expect(page.locator('.reader .anchor-hl[data-thread="th_done"]')).toHaveCount(1);
 
     // And the conversations are placed on the answer, not on a guess.
@@ -378,7 +378,7 @@ test.describe("the rule and the reader", () => {
 
 /**
  * PR #25 review, MAJOR — the placement §6 names most directly: "a resolved
- * thread is collapsed by default **wherever it is shown**", and §11 lists "a
+ * thread is collapsed by default **wherever it is shown**", and §10 lists "a
  * `type: thread` document open in a reader in a column or in full screen" among
  * the placements the fold applies to. This reader used to opt out of the rule
  * altogether, which also broke the one sentence that is not open to reading:
@@ -452,7 +452,7 @@ test.describe("a thread opened as its own document", () => {
  * The one collapse in the app that had no way back. Past the drawn depth a child
  * thread rendered as a chip that **navigated away**, so reading it meant losing
  * your place — and the turns that deep lost their "comment on this" control with
- * it. §11's "every collapse expands again in place" is what forces both fixes.
+ * it. §10's "every collapse expands again in place" is what forces both fixes.
  */
 test.describe("a conversation nested deeper than the surface can draw", () => {
   /** A whole-document thread on the note, then five child threads under it. */
@@ -494,7 +494,7 @@ test.describe("a conversation nested deeper than the surface can draw", () => {
 });
 
 /**
- * SPEC.md §11: the fold claims **no new key**, so it has to be reachable without
+ * SPEC.md §10: the fold claims **no new key**, so it has to be reachable without
  * a pointer through controls that already exist — an ordinary focusable button,
  * and the conversation's own right-click menu.
  */

@@ -107,7 +107,7 @@ export interface AppendTurnInput {
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
   readonly requestsAgent?: boolean;
   /**
-   * The weight this request states its work should be done at (SPEC.md §7, §11)
+   * The weight this request states its work should be done at (SPEC.md §7, §10)
    * — one of the **Key** tokens the workspace's own orchestrate skill declares.
    *
    * **Omit it to state no weight**, which means the orchestrator decides,
@@ -165,7 +165,7 @@ export interface CreateThreadUpload {
 }
 
 /**
- * `POST /api/capture` (SPEC.md §11) — the composer's *Capture*, which is
+ * `POST /api/capture` (SPEC.md §10) — the composer's *Capture*, which is
  * multipart-only on the wire even without files.
  *
  * `text` is required by the contract: a capture becomes a document's body, and
@@ -246,7 +246,7 @@ export interface CorpusClient {
    * The narrower grammar is deliberate. `/api/search` publishes no `sort`, no
    * `offset` and no `pinned`, and silently ignores them if sent, so a caller
    * that wants paging or a stored order wants {@link listDocs} — which is why
-   * saved views and board columns stay on it (SPEC.md §11).
+   * saved views and board columns stay on it (SPEC.md §10).
    */
   searchCorpus(params: SearchParams, options?: RequestOptions): Promise<SearchResults>;
   /**
@@ -285,7 +285,7 @@ export interface CorpusClient {
   getAgentRoster(options?: RequestOptions): Promise<AgentRoster>;
   /**
    * `GET /api/index/status` — the semantic index's own health report behind the
-   * console strip's index pill (SPEC.md §9.1, §11's index-pill rider).
+   * console strip's index pill (SPEC.md §9.1, §10's index-pill rider).
    *
    * Read-only and parameterless, like {@link getQueueStatus}: the endpoint
    * answers one snapshot of derived state, and every field on it is a fact the
@@ -357,10 +357,10 @@ export interface CorpusClient {
    */
   pluginRequest(plugin: string, path: string, init?: PluginRequestInit): Promise<unknown>;
   /**
-   * `POST /api/docs` — zero-form creation (SPEC.md §11).
+   * `POST /api/docs` — zero-form creation (SPEC.md §10).
    *
    * Also how a board column comes into being: a column IS a `type: view`
-   * document with `pinned: true`, so pinning a list is this call with the §11
+   * document with `pinned: true`, so pinning a list is this call with the §10
    * view keys set, and nothing else. See {@link CreateDocInput}.
    */
   createDoc(input: CreateDocInput): Promise<DocMutationResponse>;
@@ -450,7 +450,7 @@ export interface CorpusClient {
    */
   createThreadWithFiles(input: CreateThreadUpload): Promise<CreateThreadResponse>;
   /**
-   * `POST /api/capture` — the composer's Capture (SPEC.md §11).
+   * `POST /api/capture` — the composer's Capture (SPEC.md §10).
    *
    * One call, because it is one act: the server creates the `data/docs/inbox/`
    * document, the agent-requested whole-document filing thread that asks for it
@@ -488,7 +488,7 @@ export interface CorpusClient {
    * It did not until UI-109, and the absence was load-bearing prose:
    * `useComposerRecipient` cited it as the structural enforcement of §7's first
    * two prohibitions on an override — *"an override never rewires a scope, never
-   * re-designates anything"*. That argument has moved rather than lapsed. §11
+   * re-designates anything"*. That argument has moved rather than lapsed. §10
    * puts designate/release in the conversation's own menu, which is a board
    * surface and therefore a kit consumer, so the capability has to be reachable;
    * what enforces the prohibitions now is that the recipient path never calls
@@ -503,7 +503,7 @@ export interface CorpusClient {
    *
    * **Idempotent**: releasing a thread that has none is the state the caller
    * asked for, not an error, and it answers with the thread either way because a
-   * release that does write can raise §14 warnings.
+   * release that does write can raise §11 warnings.
    */
   releaseResident(threadId: string): Promise<ThreadMutationResponse>;
   /**
@@ -623,7 +623,7 @@ export type UpdateDocChanges = UpdateDocRequest;
  * The `POST /api/docs` body, exactly as the contract declares it.
  *
  * Aliased for the same reason as {@link UpdateDocChanges}: which fields a
- * creation may carry is the contract's decision. In particular the §11 view
+ * creation may carry is the contract's decision. In particular the §10 view
  * keys (`pinned`, `order`, `query`, `column`) live here, which is what lets the
  * board create a column without a second write.
  */

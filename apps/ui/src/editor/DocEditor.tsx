@@ -28,14 +28,14 @@ import { useAutosave, type AnchorReport } from "./useAutosave.js";
 import "./editor.css";
 
 /**
- * The document body, always editable (SPEC.md §11).
+ * The document body, always editable (SPEC.md §10).
  *
  * There is no edit mode and no button: the body *is* the editor, you click
  * where you want to write and you write. Everything that used to be a mode is
  * now a consequence — the caret is `var(--accent)` because the surface is
  * editable.
  *
- * **And there is no other state.** §11: *the board is never read-only.* A
+ * **And there is no other state.** §10: *the board is never read-only.* A
  * document the agent is writing is the same surface as any other; what protects
  * the two writers from each other is the key each of them presents (§7), not a
  * mode this component enters. The read-only branch, the banner it raised and the
@@ -53,7 +53,7 @@ import "./editor.css";
  *
  * A `thread` renders as its conversation — SPEC.md §6's "the conversation is
  * the document" — and a `view` is a saved query whose content is its
- * frontmatter, not its prose. Everything else is a markdown body, and §11 says
+ * frontmatter, not its prose. Everything else is a markdown body, and §10 says
  * a markdown body is editable.
  */
 const NON_EDITABLE_TYPES = new Set(["thread", "view"]);
@@ -78,7 +78,7 @@ function asPmNode(content: JSONContent): PmNode {
  * **Every markdown body, not only the core's.** This used to gate on
  * `CORE_DOC_TYPES`, which made a plugin-typed document — and any document whose
  * plugin had since been deleted — render through the static `MarkdownView`: a
- * body a person could read and not correct, in a product whose §11 principle is
+ * body a person could read and not correct, in a product whose §10 principle is
  * that there is no edit mode. §10's "a removed plugin's documents render as
  * plain markdown" is about the absence of the plugin's *chrome*, not about the
  * body turning read-only; sprint-011 adjudicated "the editor owns doc bodies
@@ -220,7 +220,7 @@ export function DocEditor({
       // `corpusExtensions()` — which parsing and serialising share — stays the
       // list of what a *file* can contain.
       SoftWrap,
-      // View-only for the same reason (UI-089): a changelog past §11's
+      // View-only for the same reason (UI-089): a changelog past §10's
       // threshold is *drawn* clipped, and the file keeps every entry.
       ChangelogClip,
     ],
@@ -228,7 +228,7 @@ export function DocEditor({
   );
 
   /**
-   * The clipboard's two flavors (SPEC.md §11 clipboard rider), built once
+   * The clipboard's two flavors (SPEC.md §10 clipboard rider), built once
    * beside the schema they serialize.
    *
    * The resolver is read through a box for the same reason `openRef` is: it
@@ -408,7 +408,7 @@ export function DocEditor({
       className="doc-editor"
       data-doc-editor={docId}
       /*
-       * The whole editor subtree opts out of SPEC.md §11's single-letter
+       * The whole editor subtree opts out of SPEC.md §10's single-letter
        * bindings, not just the contenteditable node inside it (UI-010's
        * `isWritingSurface`). ProseMirror re-targets key events and mounts node
        * views and a selection toolbar that can hold focus, so "is the caret in

@@ -31,7 +31,7 @@ import { GrowingTextarea } from "./GrowingTextarea";
  * `@` / `/` / `[[` autocomplete, the `◉ ask agent` / `○ note only` toggle, and
  * three ways to attach a file.
  *
- * **Its keys are the kit's, not its own** (SPEC.md §11): `↵` is a newline and
+ * **Its keys are the kit's, not its own** (SPEC.md §10): `↵` is a newline and
  * `⌘↵` sends. That is why the field is a `GrowingTextarea` rather than the
  * mockup's `<input>` — a reply is prose, and prose has paragraphs.
  *
@@ -75,7 +75,7 @@ export function ThreadComposer({
   const intake = useAttachmentIntake();
   const append = useAppendTurn(threadId);
   /*
-   * The weight, scoped to **this conversation** (SPEC.md §11's rider): two
+   * The weight, scoped to **this conversation** (SPEC.md §10's rider): two
    * columns showing the same thread show the same standing choice, exactly as
    * their collapse state agrees. Liveness follows the toggle beside it and
    * nothing else, and the choice never touches the toggle in return.
@@ -149,7 +149,7 @@ export function ThreadComposer({
           // §7: an override "never persists past the message it was set on".
           recipient.clear();
           intake.release(attachments);
-          // SPEC.md §14: a non-fatal problem "surfaces loudly". The turn landed
+          // SPEC.md §11: a non-fatal problem "surfaces loudly". The turn landed
           // either way — files are the source of truth — so this is a notice
           // beside a success, not a failure.
           for (const warning of result.warnings) {

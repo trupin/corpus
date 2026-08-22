@@ -9,7 +9,7 @@ import { resolveAnchor } from "./resolve.js";
 import type { ReconcileReport, TextQuoteSelector } from "./types.js";
 
 /**
- * The §15 M1 matrix run for real: an actual markdown file with an `anchors:`
+ * The §12 M1 matrix run for real: an actual markdown file with an `anchors:`
  * frontmatter block on an actual disk, edited, reconciled, written back, and
  * re-read — the engine stays pure; the test plays the server's save path.
  * (Sprint-001 TEST-22…TEST-26; TEST-26 with the contract's Given — the words

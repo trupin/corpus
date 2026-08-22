@@ -9,13 +9,13 @@ import { captureCopy } from "./selectionCopy";
 import { SelectionMenuItems } from "./SelectionMenuItems";
 
 /**
- * The document body's right-click on a **selection** (SPEC.md §11).
+ * The document body's right-click on a **selection** (SPEC.md §10).
  *
  * Hosted on the document view, so the column reader and focus mode get the same
  * menu from the same code — as they do for everything else the view renders.
  *
  * **It opens on every document-body selection**, and lets the items thin out:
- * §11 says Copy always, Comment where there is something to anchor to, Cut and
+ * §10 says Copy always, Comment where there is something to anchor to, Cut and
  * Paste in editable content. A thread's conversation, a `view`, and a document
  * a `view`'s stored query therefore gets a Copy-only menu rather than falling
  * back to the browser's. Declining there — which is what this hook did until

@@ -822,7 +822,7 @@ describe("the position trace", () => {
  * because the block on the left keeps reading the line below it: a paragraph
  * after a nested list is a lazy continuation of the last nested item, a
  * paragraph after a blockquote is swallowed by the quotation, a paragraph after
- * a table becomes another row of it. §11 gives the editor autosave and no save
+ * a table becomes another row of it. §10 gives the editor autosave and no save
  * button, so each of those reaches the user's own file the first time anything
  * is typed in the document.
  *

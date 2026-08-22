@@ -40,7 +40,7 @@ export function todoBody(items: readonly (readonly [string, boolean, string?])[]
  * depend on more than that. A key is opaque: the UI reads a document, keeps the
  * key it was given, and presents it back on a body write. Nothing here parses
  * one, and nothing here is a lock: §7 removed the thing that could be held, and
- * §11 says the board is never read-only.
+ * §10 says the board is never read-only.
  */
 export function fixtureKey(id: string): string {
   let hash = 0x811c9dc5;

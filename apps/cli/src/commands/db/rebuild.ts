@@ -4,7 +4,7 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
 
 /**
  * `corpus db rebuild` — re-derives `.corpus/cache.db` from the workspace's files
- * alone and swaps it in atomically (SPEC.md §14). It is what makes §9.1's
+ * alone and swaps it in atomically (SPEC.md §11). It is what makes §9.1's
  * "derived tables only" checkable rather than merely asserted.
  *
  * **It does not use the global `--timeout`.** That flag is the *transport*
@@ -50,13 +50,13 @@ export const rebuildCommand: WorkspaceCommandSpec = {
   summary: "Rebuild the projection from the workspace's files.",
   description:
     "Re-derives every row of `.corpus/cache.db` from the files alone and replaces the database " +
-    "atomically, so an interrupted rebuild leaves the previous one intact (SPEC.md §14). Files " +
+    "atomically, so an interrupted rebuild leaves the previous one intact (SPEC.md §11). Files " +
     "are the source of truth; the projection is a cache, and this proves it. Prints the per-table " +
     "row counts and how long it took, and names any file that is a document by location but " +
     "produced no row — an empty `skipped` list is the good case. This call ignores the global " +
     "`--timeout`, which is a ten-second transport deadline: a rebuild of a large corpus is the " +
     "longest-running call in the API and is given ten minutes of its own. `rebuild` followed by a " +
-    "clean `doctor` is §14's standing invariant.",
+    "clean `doctor` is §11's standing invariant.",
   args: [],
   flags: [],
   examples: [

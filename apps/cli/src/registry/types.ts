@@ -35,7 +35,7 @@ export type Example = PluginExample;
 /**
  * The published positional shape plus one core-only refinement: the **last**
  * argument may be variadic and absorb every remaining token, which is what
- * `corpus doc check <id>…` needs (SPEC.md §14). It is deliberately not in
+ * `corpus doc check <id>…` needs (SPEC.md §11). It is deliberately not in
  * `@corpus/contract/plugin`: a plugin declares fixed positionals, and widening
  * the published shape for one core verb would put a field on the plugin surface
  * that nothing there uses. The widening is safe in the direction that matters —

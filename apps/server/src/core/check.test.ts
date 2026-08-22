@@ -67,7 +67,7 @@ describe("checkCorpus on a clean corpus", () => {
   });
 });
 
-describe("§14 hard failures", () => {
+describe("§11 hard failures", () => {
   it("reports unparseable frontmatter without throwing", () => {
     const corpus = [
       ...cleanCorpus(),
@@ -212,7 +212,7 @@ Body.
   });
 
   it("reports an anchor entry no thread references", () => {
-    // §14 lists "every anchor belongs to an existing thread" among the failures;
+    // §11 lists "every anchor belongs to an existing thread" among the failures;
     // §6 is the invariant behind it — no highlight left on an empty conversation.
     const report = checkCorpus(
       [doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY)],
@@ -255,7 +255,7 @@ Body.
  * every heading after it and folded the user's reply into the agent's turn.
  * Nothing reported anything.
  */
-describe("§14 unterminated fenced code blocks", () => {
+describe("§11 unterminated fenced code blocks", () => {
   /** The reported shape: the closing run shares a line with the content. */
   const SWALLOWING_TURN = [
     "## agent · 2026-07-19T10:07:12Z",
@@ -367,7 +367,7 @@ describe("§14 unterminated fenced code blocks", () => {
   });
 });
 
-describe("§14 warnings", () => {
+describe("§11 warnings", () => {
   it("warns — never errors — on an anchor that no longer resolves", () => {
     const corpus = [
       doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, "The sentence was rewritten.\n"),

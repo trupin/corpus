@@ -185,7 +185,7 @@ describe("a start commits what a previous run left uncommitted (SPEC.md §4)", (
 
     expect(address.port).toBeGreaterThan(0);
     expect(ws.log("%H")).toEqual(before);
-    // SPEC.md §14: the change stands on disk, and the index is not left dirty.
+    // SPEC.md §11: the change stands on disk, and the index is not left dirty.
     expect(ws.exists("data/docs/inbox/left-behind.md")).toBe(true);
     expect(ws.git("diff", "--cached", "--name-only")).toBe("");
   });

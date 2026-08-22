@@ -1,4 +1,4 @@
-// `POST /api/capture` — the composer's Capture action (SPEC.md §11, §6).
+// `POST /api/capture` — the composer's Capture action (SPEC.md §10, §6).
 //
 // One call, three effects, **one commit**: an inbox document holding the
 // captured text, a whole-document filing thread on it, and the
@@ -68,7 +68,7 @@ import {
   type ThreadsWorkspace,
 } from "../threads/index.js";
 
-/** The document type a capture lands as — a plain note, filed in `inbox/` (§11). */
+/** The document type a capture lands as — a plain note, filed in `inbox/` (§10). */
 export const CAPTURE_DOC_TYPE = "note";
 
 /** How much of the captured text becomes the document's title. */

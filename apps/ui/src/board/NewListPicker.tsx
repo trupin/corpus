@@ -12,7 +12,7 @@ import {
 } from "./newList";
 
 /**
- * The new-list picker (SPEC.md §11): a positioned menu offering a folder, a
+ * The new-list picker (SPEC.md §10): a positioned menu offering a folder, a
  * preset view, a plugin column type, or the current search.
  *
  * Folders and their counts come from `GET /api/tree` — the real hierarchy, not
@@ -79,7 +79,7 @@ export function NewListPicker({
   const menu = useRef<HTMLDivElement>(null);
 
   /**
-   * **The menu is as tall as the room below it** — SPEC.md §11's rider
+   * **The menu is as tall as the room below it** — SPEC.md §10's rider
    * authorized 2026-08-21 (SHARED-061), *"a bound is derived from the room, not
    * chosen as a number"* (UI-142).
    *

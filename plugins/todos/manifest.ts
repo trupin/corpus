@@ -6,7 +6,7 @@ import { TodoListItem } from "./ui/TodoListItem.js";
 import { TodosColumn } from "./ui/TodosColumn.js";
 
 /**
- * The v1 reference plugin (SPEC.md §12), and the subject of §15 M6's
+ * The v1 reference plugin (SPEC.md §12), and the subject of §12 M6's
  * subtractive check: delete `plugins/todos/` and the core must still boot, with
  * todo documents rendering as ordinary markdown **with working checkboxes** and
  * this column showing a "plugin missing" card.

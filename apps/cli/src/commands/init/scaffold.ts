@@ -216,7 +216,7 @@ export interface ScaffoldResult {
   readonly installed: readonly PlannedTemplateFile[];
   /** Plugin skill files installed, workspace-relative. */
   readonly installedPluginSkills: readonly string[];
-  /** Plugin seed templates installed, workspace-relative (SPEC.md §10, §11). */
+  /** Plugin seed templates installed, workspace-relative (SPEC.md §10, §10). */
   readonly installedPluginSeeds: readonly string[];
   /** Skipped plugin assets (name collisions, missing declarations) — surfaced by `corpus init`. */
   readonly pluginWarnings: readonly string[];

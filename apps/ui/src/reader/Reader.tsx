@@ -18,12 +18,12 @@ import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
 import "./Reader.css";
 
 /**
- * The per-column reader (SPEC.md §11): clicking a row opens the document **in
+ * The per-column reader (SPEC.md §10): clicking a row opens the document **in
  * that column**, the column widens, and the reader replaces the list.
  *
  * Per column, not per route, and that is the whole design: several columns hold
  * different documents open side by side, each with its own history, which is the
- * wide-screen workflow §11 describes. A route would make "the open document" a
+ * wide-screen workflow §10 describes. A route would make "the open document" a
  * single global — and then two columns could not both be reading.
  */
 
@@ -34,7 +34,7 @@ export interface ReaderProps {
   readonly setNav: (nav: readonly NavEntry[]) => void;
   /** True right after creation: the title is focused *and* selected. */
   readonly selectTitle: boolean;
-  /** Only the active column's reader consumes Escape (SPEC.md §11's active column). */
+  /** Only the active column's reader consumes Escape (SPEC.md §10's active column). */
   readonly isActive: boolean;
   readonly onFocusMode: (docId: string) => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -57,7 +57,7 @@ export function Reader({
   return (
     /*
      * The folds are the column's, and they outlive every document it opens
-     * (SPEC.md §11): "two columns showing the same document keep their own",
+     * (SPEC.md §10): "two columns showing the same document keep their own",
      * which is the same division that already gives each column its own scroll
      * position and its own navigation stack. So the provider wraps the reader
      * rather than sitting inside it, and is keyed by the column.
@@ -106,11 +106,11 @@ function ColumnReader({
   const docId = stack.docId ?? "";
 
   /*
-   * The reading measure this column is set to (SPEC.md §11's width rider).
+   * The reading measure this column is set to (SPEC.md §10's width rider).
    *
    * Per column, on UI-077's own surface key, and for the same reason its folds
    * and its scroll position are: two columns showing the same document keep
-   * their own. Per **column** and not per document is what makes §11's "the
+   * their own. Per **column** and not per document is what makes §10's "the
    * width persists across navigation" true — navigation is exactly what changes
    * the document, so a width that belonged to the document would be re-set on
    * every ref followed.
@@ -142,7 +142,7 @@ function ColumnReader({
   }, [nav, reader.docId, reader.isMissing, setNav, stack.depth]);
 
   /**
-   * SPEC.md §11's "an empty document does not survive leaving it".
+   * SPEC.md §10's "an empty document does not survive leaving it".
    *
    * The stack entry goes with the document, which is what keeps Back from
    * landing on something that no longer exists after the user followed a
@@ -156,7 +156,7 @@ function ColumnReader({
   });
 
   // Which half of the reader is showing, and the comments list's two axes
-  // (SPEC.md §11's rider). Per column: two readers on one document each keep
+  // (SPEC.md §10's rider). Per column: two readers on one document each keep
   // their own, exactly as their folds and their scroll do.
   const comments = useCommentsTab(docId, surface.jumpToThread);
 

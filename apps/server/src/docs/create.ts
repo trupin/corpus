@@ -1,6 +1,6 @@
 import type { JobLookup } from "./write.js";
 import { unknownJob } from "../errors.js";
-// `POST /api/docs` — creation (SPEC.md §9.2, §11).
+// `POST /api/docs` — creation (SPEC.md §9.2, §10).
 //
 // Creation is zero-form and inbox-first: a type and a title are the whole
 // requirement, and everything else the server fills in — the id, the path, the
@@ -107,7 +107,7 @@ export function allocatePath(
  *   because it asked for something the system cannot give it.
  * - **`description` is the caller's, and the server fills it in when the caller
  *   sends none.** Without it Claude Code loads nothing at all, so it cannot
- *   simply be left out; but §11's creation is **zero-form** — "a type and a
+ *   simply be left out; but §10's creation is **zero-form** — "a type and a
  *   title are the whole requirement, and everything else the server fills in" —
  *   and demanding one here would make the type's own verb refuse the shape
  *   every other type accepts. It would also be unsendable: the agent reaches
@@ -153,7 +153,7 @@ function claudeCodeFields(path: string, input: CreateDocRequest): Record<string,
 }
 
 /**
- * §11's view keys and §12's plugin keys, as frontmatter keys of a brand-new
+ * §10's view keys and §12's plugin keys, as frontmatter keys of a brand-new
  * document (CONTRACT-011).
  *
  * Two rules, both the contract's own. **A key whose value is absent is not

@@ -7,7 +7,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-134 in a real browser: **a count reaching two digits moves nothing**
- * (SPEC.md §11's rider, signed 2026-08-20 — "Nothing resizes because of what it
+ * (SPEC.md §10's rider, signed 2026-08-20 — "Nothing resizes because of what it
  * holds", where "a count reaching two digits" is named by clause 1).
  *
  * ## What is measured, and why it is never the number itself

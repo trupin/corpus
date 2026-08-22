@@ -53,7 +53,7 @@ export function insertChunkRows(
   passages: readonly ChunkablePassage[],
 ): Chunk[] {
   // `OR IGNORE` for the same reason the `turns` insert has it: two turns of one
-  // thread can share a timestamp in a hand-edited file (§14 reports it, the
+  // thread can share a timestamp in a hand-edited file (§11 reports it, the
   // projection survives it), and a timestamp is a turn's identity — so both
   // turns produce the same `ref`. First one wins, in both tables, exactly as it
   // does in `turns`.

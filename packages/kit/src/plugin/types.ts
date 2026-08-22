@@ -96,7 +96,7 @@ export type OpenPayload = string | OpenRequest;
 /**
  * Props a plugin column `Component` receives. A plugin column IS a pinned
  * `type: view` document with `column: "<plugin>/<type>"` frontmatter (SPEC.md
- * §11); the component renders only the column *body* — header, drag-reorder,
+ * §10); the component renders only the column *body* — header, drag-reorder,
  * deletion and persistence are the board's, identical for every column kind.
  */
 export interface ColumnComponentProps {
@@ -175,7 +175,7 @@ export interface DerivedDocDue {
  *
  * 1. The function here is the UI half, and its presence IS the declaration:
  *    a surface that would offer an edit of that field renders it locked
- *    instead (§11 — "a field that was never the person's to set").
+ *    instead (§10 — "a field that was never the person's to set").
  * 2. `null` means *the derivation does not apply* and the **stored** value
  *    stands. Every member owns the same two not-applicable states — a stored
  *    status of `archived` (archiving says where a document is kept, which no
@@ -226,7 +226,7 @@ export interface PluginDocType {
   /**
    * Declares that this type's `due` is **derived from the document's own
    * content rather than set**, and computes it (PLUGINS-018). A surface that
-   * would offer a `due` edit renders it locked, for the same §11 reason the
+   * would offer a `due` edit renders it locked, for the same §10 reason the
    * status control is locked.
    *
    * **Compose it on the outer value, never with `??` on the inner one.** The

@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 
 /**
  * A **real** `/events` stream for the specs that are about the transport itself
- * (SPEC.md §2.2 rule 3, §11 "Live updates").
+ * (SPEC.md §2.2 rule 3, §10 "Live updates").
  *
  * `stubCorpus` answers `/api/**` from inside the page and pushes nothing: every
  * repaint a stubbed spec sees is driven by a mutation's own

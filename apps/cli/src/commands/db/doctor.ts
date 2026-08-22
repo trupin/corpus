@@ -4,7 +4,7 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
 
 /**
  * `corpus db doctor` — reports every disagreement between the workspace's files
- * and the projection's rows (SPEC.md §14), and turns the verdict into an exit
+ * and the projection's rows (SPEC.md §11), and turns the verdict into an exit
  * code: **6 on drift, 0 when clean**. Six rather than one because a drifted
  * projection is a successful check with a negative answer, which is exactly the
  * distinction a pre-commit hook needs.
@@ -49,7 +49,7 @@ export const doctorCommand: WorkspaceCommandSpec = {
   description:
     "Compares every document file with the row the projection holds for it and reports what " +
     "disagrees — a missing row, an orphan row, a content mismatch, a count mismatch, an " +
-    "unparseable file, a duplicate id (SPEC.md §14). Cheap enough for a pre-commit hook: a file " +
+    "unparseable file, a duplicate id (SPEC.md §11). Cheap enough for a pre-commit hook: a file " +
     "whose size and mtime are unchanged is never re-read. Exits **6** when anything drifted and " +
     "**0** when nothing did, so a hook can gate on the code alone; the findings are printed one " +
     "per line, and `--json` emits the server's report — `{ok, drift, stats}` — untouched. " +
@@ -65,7 +65,7 @@ export const doctorCommand: WorkspaceCommandSpec = {
     },
     {
       command: "corpus db rebuild && corpus db doctor",
-      description: "SPEC.md §14's standing invariant: a rebuild is followed by a clean check.",
+      description: "SPEC.md §11's standing invariant: a rebuild is followed by a clean check.",
     },
     {
       command: "corpus db doctor --json",

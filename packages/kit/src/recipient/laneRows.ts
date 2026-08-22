@@ -131,7 +131,7 @@ export interface LaneRow {
 /**
  * What the orchestrator's lane is called in a composer.
  *
- * "agent" rather than "orchestrator": §11 keeps the product's vocabulary out of
+ * "agent" rather than "orchestrator": §10 keeps the product's vocabulary out of
  * the surface — the person asking has one agent unless they designated another,
  * and the lane's wire name is `orchestrator` for the queue's benefit, not
  * theirs.
@@ -143,7 +143,7 @@ export const UNNAMED_RESIDENT_LABEL = "this conversation";
 
 /**
  * What a **general resident** is called on a surface that shows one lane on the
- * conversation the lane *is* — the board badge (SPEC.md §11).
+ * conversation the lane *is* — the board badge (SPEC.md §10).
  *
  * There, {@link laneName}'s answer (the conversation's own title) would be a
  * tautology, so the badge prints the role instead. Deliberately not a name and

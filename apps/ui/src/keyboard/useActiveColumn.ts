@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * The active column (SPEC.md §11: "the active column follows focus/hover with a
+ * The active column (SPEC.md §10: "the active column follows focus/hover with a
  * visible cue"), and `←`/`→`'s movement between columns.
  *
  * **Resolved on every render rather than stored as an index.** The board changes

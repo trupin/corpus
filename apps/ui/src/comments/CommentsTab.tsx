@@ -22,7 +22,7 @@ import "./comments.css";
 
 /**
  * The Comments tab — the document's conversations as a surface you can work
- * (SPEC.md §11, rider signed 2026-08-04).
+ * (SPEC.md §10, rider signed 2026-08-04).
  *
  * It holds **every** thread on the document, anchored or not, filters on two
  * independent axes, reveals an anchored row at its anchor, says why an
@@ -41,7 +41,7 @@ import "./comments.css";
  * **A row is a `ThreadPanel`**, which is the same component every other
  * placement uses. So a conversation listed here obeys the one collapse rule, is
  * marked seen when it is displayed and not before, carries its own reply box,
- * its resolve/reopen control and its right-click menu — §11's *"every thread in
+ * its resolve/reopen control and its right-click menu — §10's *"every thread in
  * the list can be replied to in place"* is not a second reply path, it is the
  * reply path, in a third placement.
  *
@@ -70,7 +70,7 @@ export interface CommentsTabProps {
   readonly onFilters: (filters: CommentFilters) => void;
   readonly flashThread: string | null;
   /**
-   * Reveal this conversation at its anchor — §11's *"selecting an anchored row
+   * Reveal this conversation at its anchor — §10's *"selecting an anchored row
    * reveals it at its anchor in the document"*.
    *
    * The host owns it because revealing means leaving this tab: the body is not

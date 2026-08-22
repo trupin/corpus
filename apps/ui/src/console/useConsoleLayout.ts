@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
  * the console has no business making a board state migration happen (or
  * inheriting one). Both are "this browser's session" state, and neither is
  * corpus state — nothing here is committed, and a second browser is entitled to
- * its own answer (SPEC.md §11).
+ * its own answer (SPEC.md §10).
  */
 
 export const CONSOLE_STORAGE_KEY = "corpus.console";

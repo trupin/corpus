@@ -66,7 +66,7 @@ describe("corpus thread designate", () => {
     expect(harness.stdout()).toBe(`${JSON.stringify(response)}\n`);
   });
 
-  it("appends a §14 warning to the line rather than hiding it", async () => {
+  it("appends a §11 warning to the line rather than hiding it", async () => {
     const stub = await startStubServer(
       jsonResponder(200, {
         thread: THREAD,

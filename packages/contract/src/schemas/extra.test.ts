@@ -142,11 +142,11 @@ describe("RESERVED_FRONTMATTER_KEYS drift pin", () => {
     }
   });
 
-  it("covers §11's per-turn model record, which is frontmatter on thread files", () => {
+  it("covers §10's per-turn model record, which is frontmatter on thread files", () => {
     expect(RESERVED_FRONTMATTER_KEYS).toContain("turnModels");
   });
 
-  it("covers the §11 view keys, now first-class core fields", () => {
+  it("covers the §10 view keys, now first-class core fields", () => {
     for (const key of ["pinned", "order", "query", "column"]) {
       expect(RESERVED_FRONTMATTER_KEYS).toContain(key);
     }

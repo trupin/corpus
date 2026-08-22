@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
 
 /**
- * Roving focus for a `role="menu"` surface — the keyboard half of SPEC.md §11's
+ * Roving focus for a `role="menu"` surface — the keyboard half of SPEC.md §10's
  * menu conventions ("arrows move, `↵` activates, `esc` closes"), owned in one
  * place.
  *
@@ -66,7 +66,7 @@ export function useRovingMenu(
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     /*
      * The menu takes focus even when a pointer opened it, because otherwise the
-     * arrow keys land on the body and "arrows navigate" (SPEC.md §11) is a
+     * arrow keys land on the body and "arrows navigate" (SPEC.md §10) is a
      * promise the menu cannot keep. A key-opened menu goes one step further and
      * focuses the first item, which is what ⇧F10 means.
      */

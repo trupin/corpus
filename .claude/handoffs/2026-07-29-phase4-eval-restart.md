@@ -6,7 +6,7 @@
 > are DONE, and the user survey (2026-07-29) resolved everything else:
 >
 > - **All four SPEC amendments APPROVED and APPLIED** to SPEC.md on the branch (§9.2 routes +
->   SSE token boundary, §7 deferral wording incl. the §9.2 locks bullet, §11 editor ownership,
+>   SSE token boundary, §7 deferral wording incl. the §9.2 locks bullet, §10 editor ownership,
 >   §7 genesis scope). Signed off via the survey — no further sign-off needed.
 > - **No npm publish, ever (user decision)**: distribution is clone + build + pack (README
 >   updated with the real commands). The npm-name question is moot; `publish:dry-run` and
@@ -83,7 +83,7 @@ restart for a fresh evaluator. Everything is committed and pushed; nothing is in
   - §7: deferral wording — "stays queued" vs the shipped fail-with-deferred:-reason +
     `job retry` protocol (sprint-012 Adjudication 6; SERVER-030 filed for the honest
     transition).
-  - §11: editor-ownership line (UI-014 log, verbatim draft held for sign-off).
+  - §10: editor-ownership line (UI-014 log, verbatim draft held for sign-off).
   - §7 genesis wording: extend-plus-propose until CLI-011 lands creation.
 - **Open user decision carried from Phase 3**: retitle updates `title:` but never renames
   the file.

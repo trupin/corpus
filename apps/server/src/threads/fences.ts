@@ -1,5 +1,5 @@
 // The guards that keep a turn's own text from imitating the format that
-// delimits turns (SPEC.md §6, §14; SERVER-075, SERVER-076).
+// delimits turns (SPEC.md §6, §11; SERVER-075, SERVER-076).
 //
 // Two shapes qualify, and {@link assertAppendableTurnText} is the pair: text
 // that leaves a code fence open, and text carrying a line that reads as a turn
@@ -48,7 +48,7 @@
 // would refuse ordinary prose. Nothing about a swallowed turn depends on who
 // wrote it, so this guard draws no such line.
 //
-// **Quoting a fence still works**, which is what §11's snippet action depends
+// **Quoting a fence still works**, which is what §10's snippet action depends
 // on: a turn that opens a wider fence and closes it on its own line closes, so
 // the scanner reports nothing and the guard says nothing. The predicate here is
 // not "does this text contain a fence" but "does this text leave one open", and
@@ -76,7 +76,7 @@
 // as the fence guard and no heavier.
 //
 // **Quoting a heading still works**, and it has to: the skills document the turn
-// format, and §11's snippet action exists to paste markdown into a thread. Every
+// format, and §10's snippet action exists to paste markdown into a thread. Every
 // way of writing the format down survives — inside a fence (the code scanner
 // masks it), inside an inline code span or a block quote or under any
 // indentation (the line no longer starts with `## `, so the parser's own heading

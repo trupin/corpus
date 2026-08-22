@@ -430,7 +430,7 @@ describe("commenting on a selection", () => {
   });
 
   /**
-   * SPEC.md §11's rider, signed 2026-08-05: a comment on a document selection
+   * SPEC.md §10's rider, signed 2026-08-05: a comment on a document selection
    * carries files like every other composer, and carrying them is what makes
    * the request multipart (§6). Asserted on the **wire**, because a composer
    * that collects attachments and a layer that drops them on the way out is the
@@ -514,7 +514,7 @@ describe("commenting on a selection", () => {
   });
 
   /**
-   * SPEC.md §11's rider: the composer states the weight, and the layer is what
+   * SPEC.md §10's rider: the composer states the weight, and the layer is what
    * puts it on the request. Absence stays absence — an untouched picker sends
    * `{}` and the body must not grow a `weight` key from it (UI-082).
    */
@@ -928,7 +928,7 @@ describe("commenting on a file whose two printings used to disagree about struct
 });
 
 /**
- * The seam the right-click menu comments through (UI-024, SPEC.md §11).
+ * The seam the right-click menu comments through (UI-024, SPEC.md §10).
  *
  * "Comment on selection" is 💬's own act reached by another gesture, so it goes
  * through this layer rather than beside it. What has to hold is that the range

@@ -3,7 +3,7 @@ import { UNTITLED_DOCUMENT_TITLE } from "../board/useCreateInColumn";
 import { isAbandonable, isBlankBody, isBlankTitle, type DocSnapshot } from "./emptiness";
 
 /**
- * SPEC.md §11's emptiness, at its seam.
+ * SPEC.md §10's emptiness, at its seam.
  *
  * Both branches of every clause are pinned: the conjunction (a title alone and
  * a body alone each save the document), the placeholder (which is not a title),
@@ -101,7 +101,7 @@ describe("isAbandonable", () => {
   });
 
   /*
-   * SPEC.md §11's "Templates are documents": every workspace `corpus init`
+   * SPEC.md §10's "Templates are documents": every workspace `corpus init`
    * creates ships a `note` template, so an untouched new note is never
    * literally blank. Found by the real-app drill.
    */

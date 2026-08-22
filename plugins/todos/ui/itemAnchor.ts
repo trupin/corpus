@@ -95,7 +95,7 @@ export function itemSelector(
  * "Call the plumber" lines has two candidate spans, and matching on the quote
  * alone hands the second row the first row's thread — "Open existing thread"
  * appears on an item that has none and navigates to a conversation about a
- * different line (PR #19 review, MAJOR 3). Both halves of SPEC.md §11's
+ * different line (PR #19 review, MAJOR 3). Both halves of SPEC.md §10's
  * "exactly that item's existing actions, nothing invented" fail at once. So the
  * question asked is the one `itemSelector` already asks: *which characters of
  * this body is this row?* — and an anchor belongs to the row when it resolves

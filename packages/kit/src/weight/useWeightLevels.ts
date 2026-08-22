@@ -9,7 +9,7 @@ import { useDoc } from "../query/useDoc.js";
 import { parseWeightLevels, type WeightLevel } from "./weightLevels.js";
 
 /**
- * The levels this workspace declares, read through the projection (SPEC.md §11;
+ * The levels this workspace declares, read through the projection (SPEC.md §10;
  * SHARED-022 Decision 1; UI-082's orchestrator adjudication, 2026-08-08).
  *
  * **No route, no server parse, no second copy.** The orchestrate skill is

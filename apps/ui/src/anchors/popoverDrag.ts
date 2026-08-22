@@ -18,7 +18,7 @@ import {
  * The gesture is the board's own, not a second kind of drag: pointer capture on
  * the handle, `pointermove`/`pointerup`/`pointercancel` on the window, a clamp
  * recomputed from the live viewport — `useColumnWidth`, which took it from
- * `useConsoleLayout`. And like those, it is **not pointer-only**: SPEC.md §11
+ * `useConsoleLayout`. And like those, it is **not pointer-only**: SPEC.md §10
  * adds no exclusive-pointer capability anywhere, so the handle is a real button
  * that moves the box by arrow key, a step at a time.
  *

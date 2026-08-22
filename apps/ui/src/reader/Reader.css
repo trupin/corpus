@@ -1,5 +1,5 @@
 /*
- * The in-column reader, ported from `design/index.html` (SPEC.md §11 names the
+ * The in-column reader, ported from `design/index.html` (SPEC.md §10 names the
  * mockup authoritative for look & feel): `.reader`, `.reader-head`, `.back`,
  * `.reader-id`, `.save-chip`, `.comments-btn`, `.comments-pop`, `.cp-item`,
  * `.expand`, `.fm-chips`, `.doc-title`, `.thread-slot`, `.thread-card`,
@@ -30,7 +30,7 @@
 /*
  * ── The head, and the rule it used to break (UI-135) ─────────────────────
  *
- * SPEC.md §11: *"Nothing resizes because of what it holds… Text that does not
+ * SPEC.md §10: *"Nothing resizes because of what it holds… Text that does not
  * fit is revealed rather than accommodated."* This row carries three runs of
  * text nobody chose the length of — a parent document's title on `.back`, the
  * document id, and a save chip whose copy grows *because the person just
@@ -130,7 +130,7 @@
  * 246px worst case instead was tried and reversed: it held every state in one
  * box and paid for it by leaving the reading width permanently short, with the
  * back label squeezed below its own cap and the document id truncating on a
- * head where nothing unusual was happening. SPEC.md §11 asks for the opposite
+ * head where nothing unusual was happening. SPEC.md §10 asks for the opposite
  * — *"the box is sized for the text people actually have… so revealing is the
  * uncommon case and not the ordinary reading path"* — so the anchor tail is
  * the thing that gets revealed, and the head is the thing that stays whole.
@@ -213,7 +213,7 @@
 }
 
 /*
- * ── The width control (UI-066, SPEC.md §11's rider of 2026-08-04) ─────────
+ * ── The width control (UI-066, SPEC.md §10's rider of 2026-08-04) ─────────
  *
  * *"The document body has a comfortable default width, and the reader can
  * change it — in column view and in full screen… Anchored thread placement
@@ -540,7 +540,7 @@
 }
 
 /*
- * ── The `Document / Comments` switch (SPEC.md §11's rider, 2026-08-04) ──
+ * ── The `Document / Comments` switch (SPEC.md §10's rider, 2026-08-04) ──
  *
  * It **is** the 💬 button — the same pill, the same place, the same width —
  * with a pressed state for the half you are on. That is what the row can hold:
@@ -573,7 +573,7 @@
 }
 
 /*
- * The thread count, in its own box (SPEC.md §11's rider, 2026-08-20).
+ * The thread count, in its own box (SPEC.md §10's rider, 2026-08-20).
  *
  * The button is `flex: none` — a control that never yields, by the rule above —
  * so a count crossing into two digits widens the *control*, and the head pays
@@ -928,7 +928,7 @@
   font-size: 12.5px;
 }
 
-/* ── Related (SPEC.md §11) ── */
+/* ── Related (SPEC.md §10) ── */
 
 /*
  * The pair. "Related" sits beside "Referenced by" below the body and shares its

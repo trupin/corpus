@@ -31,7 +31,7 @@ describe("the clipboard's ref resolver", () => {
     expect(refResolver(client)("doc_a1b2c3")).toBe(UNRESOLVED_REF);
   });
 
-  it("never invents an external address for a document (SPEC.md §11 rider)", () => {
+  it("never invents an external address for a document (SPEC.md §10 rider)", () => {
     const client = new QueryClient();
     cached(client, "doc_a1b2c3", "Lender spreads");
     expect(refResolver(client)("doc_a1b2c3").href).toBeNull();

@@ -9,7 +9,7 @@ describe("Warning", () => {
     );
   });
 
-  it("names exactly §14's two warning families and CONTRACT-047's third", () => {
+  it("names exactly §11's two warning families and CONTRACT-047's third", () => {
     expect(WARNING_CODES).toEqual([
       "commit_failed",
       "commit_skipped",

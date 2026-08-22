@@ -383,7 +383,7 @@ test.describe("the top bar's way in", () => {
   });
 
   /**
-   * SPEC.md §11's composer key contract in a real browser, where `↵` is a real
+   * SPEC.md §10's composer key contract in a real browser, where `↵` is a real
    * keystroke into a real textarea rather than a synthetic event: it types a
    * newline, and the composer is still open afterwards because nothing was
    * submitted. `⇧↵` keeps doing the same thing it always did.
@@ -427,14 +427,14 @@ test.describe("the top bar's way in", () => {
 
 test.describe("the cheat sheet is generated from the registry", () => {
   /**
-   * Thirteen since UI-018. Twelve come from §11's "Keyboard scheme (v1)" bullet;
+   * Thirteen since UI-018. Twelve come from §10's "Keyboard scheme (v1)" bullet;
    * the thirteenth is the same section's right-click bullet — "the menu key (or
    * ⇧F10) opens the same menu on the current keyboard highlight" — which is a
-   * §11 binding wherever the sentence happens to sit, and therefore belongs in
+   * §10 binding wherever the sentence happens to sit, and therefore belongs in
    * the legend the registry generates. It is listed with the row bindings
    * because that is what it acts on.
    */
-  test("`?` toggles it, and it lists SPEC.md §11's thirteen bindings in the prototype's order", async ({
+  test("`?` toggles it, and it lists SPEC.md §10's thirteen bindings in the prototype's order", async ({
     page,
   }) => {
     await page.locator(".topbar").click({ position: { x: 4, y: 4 } });

@@ -40,7 +40,7 @@ describe("the validator's codes and the wire's", () => {
 });
 
 /**
- * The severity split is §14's, and it is the half a rename would silently
+ * The severity split is §11's, and it is the half a rename would silently
  * invert — a code moved between the two families keeps the drift guard above
  * green while changing what fails a check. So it is asserted from *behaviour*:
  * a corpus is built that produces both warning kinds and several error kinds,
@@ -49,7 +49,7 @@ describe("the validator's codes and the wire's", () => {
 describe("the warning/error split", () => {
   const corpus = [
     // An anchor whose quote no longer resolves, claimed by a thread that exists:
-    // §6's orphaned thread, §14's first warning.
+    // §6's orphaned thread, §11's first warning.
     toCheckDocument(
       "data/docs/note.md",
       document(

@@ -3,7 +3,7 @@ import { stubCorpus } from "./stubCorpus";
 
 /**
  * UI-019 in a real browser: a column's width is a property of its view document
- * (SPEC.md §11), adjusted by dragging its edge.
+ * (SPEC.md §10), adjusted by dragging its edge.
  *
  * A real pointer drag is the point — jsdom has no layout and no pointer capture
  * — and so is the `PUT` it ends in. That the write reaches disk, is

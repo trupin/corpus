@@ -1,5 +1,5 @@
 /*
- * The conversation surface, ported from `design/index.html` (SPEC.md §11 names
+ * The conversation surface, ported from `design/index.html` (SPEC.md §10 names
  * the mockup authoritative for look & feel): the turn stream's delete arming and
  * trace line, the composer and its foot, attachments in both states, live form
  * controls, the honest `.working` row, and nested child threads.
@@ -16,7 +16,7 @@
 /* ── Turns ── */
 
 /*
- * Which model wrote an agent turn (SPEC.md §11, rider signed 2026-08-07).
+ * Which model wrote an agent turn (SPEC.md §10, rider signed 2026-08-07).
  *
  * A chip rather than a third grey word, because "quickly identifiable" is the
  * requirement: in a mono metadata row it is the only bordered object, so the eye
@@ -114,7 +114,7 @@
 /*
  * The pending row (SPEC.md §8). Its last tier carries a duration that ticks on a
  * clock with no data arriving at all — `still working — 18m`, `19m`, `20m` — so
- * the figures are tabular (SPEC.md §11's rider, signed 2026-08-20).
+ * the figures are tabular (SPEC.md §10's rider, signed 2026-08-20).
  *
  * **No reservation here, and the unit crossings are not a defect.** The duration
  * ends a sentence that ends the row: nothing is aligned against it, so
@@ -135,7 +135,7 @@
 
 /* ── Composer ── */
 
-/* **A composer in use stays on screen** (UI-110, SPEC.md §11).
+/* **A composer in use stays on screen** (UI-110, SPEC.md §10).
    The problem it solves, in the words it was reported in: *"I often have to
    scroll up to see what I'm commenting on… I want to be able to keep typing
    while seeing the content I'm commenting on."* In ordinary flow the reply box
@@ -173,7 +173,7 @@
 }
 
 /* The field is a textarea rather than the mockup's `<input>` because SPEC.md
-   §11's composer contract makes `↵` a newline, and an `<input>` cannot hold one.
+   §10's composer contract makes `↵` a newline, and an `<input>` cannot hold one.
    It still *looks* like the mockup's single line: borderless, transparent, the
    card's own font. `.composer-grow` (see `GrowingTextarea.tsx`) stacks a hidden
    copy of the value in the same grid cell, so the row is as tall as the text and
@@ -430,7 +430,7 @@
 }
 
 /* The still-missing questions, named rather than left to a silent failed
-   attempt (SPEC.md §11). */
+   attempt (SPEC.md §10). */
 .form-missing {
   margin: 0;
   font-size: 11px;
@@ -473,7 +473,7 @@
 
 /* The focus ring belongs on the card, not on the small native control inside
    it: keyboard focus has to be visible at the size the thing being chosen is
-   drawn (SPEC.md §11 — every affordance is operable from the keyboard). */
+   drawn (SPEC.md §10 — every affordance is operable from the keyboard). */
 .form-opt:focus-within {
   border-color: var(--accent);
   outline: 2px solid var(--accent);
@@ -533,7 +533,7 @@
   margin-left: 6px;
 }
 
-/* An answered form is a record, not a set of dead controls (SPEC.md §11). */
+/* An answered form is a record, not a set of dead controls (SPEC.md §10). */
 .form-record {
   display: flex;
   flex-direction: column;
@@ -634,7 +634,7 @@
  * words in a `<mark>` would be undone by the next render.
  *
  * Deliberately the same reading as `.anchor-hl` in `anchors/anchors.css` — the
- * same wash and the same accent underline — because SPEC.md §11 says a selection
+ * same wash and the same accent underline — because SPEC.md §10 says a selection
  * commented on in a turn is highlighted "the way an anchor is highlighted in a
  * document", and two spellings of one idea drift. `::highlight()` accepts only
  * the paint properties, so the border becomes a text decoration.
@@ -647,7 +647,7 @@
   text-underline-offset: 3px;
 }
 
-/* ── Who is resident (SPEC.md §7, §11; UI-109) ── */
+/* ── Who is resident (SPEC.md §7, §10; UI-109) ── */
 
 /*
  * The resident badge in the conversation's head.

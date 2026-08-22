@@ -19,7 +19,7 @@ import { splitFormFence } from "./parseFormBlock";
 import { splitTrace } from "./Turn";
 
 /**
- * Selections inside a **rendered turn**, in both directions (SPEC.md §11's
+ * Selections inside a **rendered turn**, in both directions (SPEC.md §10's
  * "Commenting on a selection", §6's recursion).
  *
  * A thread is a document, so commenting on part of a turn is the ordinary

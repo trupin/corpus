@@ -32,7 +32,7 @@ export const MENU_SURFACE = '[role="menu"]';
  * Whether an open menu owns the keyboard.
  *
  * UI-028. A menu is a layer drawn over the board, and while it is up its items
- * are what the keyboard is talking to — SPEC.md §11: "`esc` dismisses, arrows
+ * are what the keyboard is talking to — SPEC.md §10: "`esc` dismisses, arrows
  * navigate, `↵` activates". The arrows worked because {@link ContextMenu}
  * handles them itself and the dispatcher skips an already-defaulted event; `↵`
  * did not, because a `<button>` activates on `↵` through its *default action*,

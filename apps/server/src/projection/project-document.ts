@@ -139,7 +139,7 @@ type DocumentFields = {
   readonly origin: string | null;
   readonly anchors: Record<string, TextQuoteSelector>;
   /**
-   * §11's view keys and §12's plugin keys, read by the same functions
+   * §10's view keys and §12's plugin keys, read by the same functions
    * `docs/read.ts` uses — so a row and a single-document read can never
    * describe one file's frontmatter differently (CONTRACT-011).
    */
@@ -150,7 +150,7 @@ type DocumentFields = {
  * Read the frontmatter field by field rather than through
  * `validateFrontmatter`: §7's skill and agent-definition roots legitimately
  * carry files with no Corpus fields at all, and one invalid optional must never
- * cost a document its row. Validation *reporting* is `doc check`'s job (§14) —
+ * cost a document its row. Validation *reporting* is `doc check`'s job (§11) —
  * the projection's job is to index what is there.
  */
 function readDocumentFields(
@@ -356,7 +356,7 @@ const noIdReason = (relativePath: string): string =>
 /**
  * The leading `EXCERPT_LENGTH` characters of a body, from its first non-blank
  * character. Exported because the collection query excerpts a thread's last turn
- * for the row's second line (SPEC.md §11) and must do it by the same rule —
+ * for the row's second line (SPEC.md §10) and must do it by the same rule —
  * a row's document preview and its turn preview trim and truncate alike.
  */
 export function bodyExcerpt(body: string): string {
@@ -482,18 +482,18 @@ function projectThread(
   );
 
   // `OR IGNORE`: the primary key is (thread_id, ts) because a turn's timestamp
-  // is its identity (§6). A file with two turns at one instant is a §14 hard
+  // is its identity (§6). A file with two turns at one instant is a §11 hard
   // failure that `doc check` reports; the projection keeps the first and does
   // not abort the document over it.
   const insertTurn = db.prepare(
     `INSERT OR IGNORE INTO turns (thread_id, idx, author, ts, body_md, has_form, form_answered, model)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  // Which model wrote each turn (§6, §11, CONTRACT-043). The record is in the
+  // Which model wrote each turn (§6, §10, CONTRACT-043). The record is in the
   // thread's own frontmatter keyed by turn timestamp, so the join happens here
   // once and the board never reparses a file to draw it. `null` for a turn with
   // no entry — a person's, and one written before the record existed — which is
-  // §11's nothing rather than a guess, and there is no branch here that could
+  // §10's nothing rather than a guess, and there is no branch here that could
   // produce anything else.
   const models = turnModelsOf(data);
   // §6's form grammar, decided here rather than in the `needs=form` SQL: the

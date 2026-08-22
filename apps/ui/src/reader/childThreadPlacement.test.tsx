@@ -25,7 +25,7 @@ import { resetEscapeLayers } from "./useEscapeStack.js";
 /**
  * UI-087 — **a child thread is rendered once.**
  *
- * SPEC.md §11 places a thread's children per turn, and reserves the list below
+ * SPEC.md §10 places a thread's children per turn, and reserves the list below
  * the body for threads that have "no place in the body". `DocView` used to key
  * that list off `anchorsHost`, which is false for every thread, so a thread
  * reader rendered `reader.threads` in full underneath a conversation that had
@@ -158,7 +158,7 @@ function Column({
   );
 }
 
-/** The other host §11 names: the same `DocView`, full screen (SPEC.md §11's ⤢). */
+/** The other host §10 names: the same `DocView`, full screen (SPEC.md §10's ⤢). */
 function Focus({
   docId,
   transport,

@@ -94,7 +94,7 @@ export interface ThreadCreateInput {
   readonly text: string | undefined;
   /** The §8 tri-state, exactly as it arrived; `undefined` means *omitted*. */
   readonly requestsAgent: boolean | undefined;
-  /** The model that wrote the first turn (SPEC.md §11); `undefined` when unstated. */
+  /** The model that wrote the first turn (SPEC.md §10); `undefined` when unstated. */
   readonly model: string | undefined;
   /**
    * The weight the request states its work should be done at (SPEC.md §7);
@@ -202,7 +202,7 @@ export function normalizeSelector(
  * The §6 frontmatter of a new thread, in the key order §6's example fixes.
  *
  * `turnModels` is written only when the request stated a model, and then holds
- * exactly one entry: the first turn's (SPEC.md §11, CONTRACT-043). A thread
+ * exactly one entry: the first turn's (SPEC.md §10, CONTRACT-043). A thread
  * created without one carries no key at all — the server records and never
  * invents, so there is nothing to write.
  */
@@ -278,8 +278,8 @@ export async function createThread(
   // so the guards are placed together by design.
   assertAppendableTurnText(input.text, TURN_SUBJECT);
   // And likewise for an attribution nobody made: this route is the second door
-  // onto a turn, so §11's "a person's turn names no model" is refused here too
-  // rather than only on the reply path (SPEC.md §11, CONTRACT-043).
+  // onto a turn, so §10's "a person's turn names no model" is refused here too
+  // rather than only on the reply path (SPEC.md §10, CONTRACT-043).
   assertModelNamesAnAgentTurn(actor, input.model);
 
   // An unknown parent is a 404 before anything is written, and it is answered

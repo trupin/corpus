@@ -159,7 +159,7 @@ describe("corpus doc patch — the applied patch", () => {
     expect(harness.stdout()).not.toContain("patched");
   });
 
-  it("renders the anchor report and §14's warnings on the same line", async () => {
+  it("renders the anchor report and §11's warnings on the same line", async () => {
     const response = patched(1, {
       doc: {
         ...rekeyed(DOC, NEXT_KEY),

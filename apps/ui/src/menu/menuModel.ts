@@ -1,5 +1,5 @@
 /**
- * One action, declared once and presented twice (SPEC.md §11's right-click
+ * One action, declared once and presented twice (SPEC.md §10's right-click
  * bullet: "listing exactly that item's existing actions — the same set its ⋯ /
  * header menu offers, nothing invented").
  *

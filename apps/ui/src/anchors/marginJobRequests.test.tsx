@@ -21,7 +21,7 @@ afterEach(cleanup);
 /**
  * UI-075. **The margin is the common case, not an edge one.**
  *
- * SPEC.md §11 puts anchored threads in the margin in focus mode and in a wide
+ * SPEC.md §10 puts anchored threads in the margin in focus mode and in a wide
  * reader, and `MarginColumn` mounts one `ThreadCard` per anchored thread,
  * ungated — so every per-card query is multiplied by the document's comment
  * count. UI-069 moved the pending indicator's lookup to a `["jobs", {originId}]`

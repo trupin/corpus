@@ -22,7 +22,7 @@ import type { BoardColumn, PluginColumnRef } from "./viewDoc";
  * drag itself belongs to the board, because reordering is about the whole set
  * and the `order` values written are the neighbours' as much as this one's.
  *
- * **Its width is the view document's** (SPEC.md §11), not a constant and not a
+ * **Its width is the view document's** (SPEC.md §10), not a constant and not a
  * browser-local preference: `336px` is only what a column with no chosen width
  * renders at, and opening a reader widens it *relative to* whatever the user
  * chose. The right edge is the handle; the two drags cannot fight, because the
@@ -33,12 +33,12 @@ export interface ColumnProps {
   readonly column: BoardColumn;
   readonly isActive: boolean;
   readonly isDragging: boolean;
-  /** Lit for 1.5 s after the board scrolled this column into view (SPEC.md §11). */
+  /** Lit for 1.5 s after the board scrolled this column into view (SPEC.md §10). */
   readonly isFlashing: boolean;
   readonly local: ColumnLocalState;
   /** True when the open document was just created — its title is selected. */
   readonly selectTitle: boolean;
-  /** The row the keyboard cursor is on, when this is the active column (SPEC.md §11). */
+  /** The row the keyboard cursor is on, when this is the active column (SPEC.md §10). */
   readonly cursorDocId: string | null;
   readonly onActivate: () => void;
   readonly onScroll: (scrollTop: number) => void;
@@ -187,7 +187,7 @@ function PluginColumnBody({
         <div className="col-list" data-plugin-surface="">
           {/*
            * The surface below this node is the plugin's, and `data-plugin-surface`
-           * is how every menu rule says so (SPEC.md §10; §11 as amended
+           * is how every menu rule says so (SPEC.md §10; §10 as amended
            * 2026-08-02, which lets the plugin paint its own there) — the
            * same stamp `DocView` puts on a plugin `View`. Marking the *surface*
            * is what lets core stop guessing from a document's **type**, which is

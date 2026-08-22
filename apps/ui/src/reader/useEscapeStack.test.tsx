@@ -46,7 +46,7 @@ describe("topLayer", () => {
 });
 
 describe("useEscapeLayer", () => {
-  /** SPEC.md §11: "overlays and focus mode take precedence, then the column reader". */
+  /** SPEC.md §10: "overlays and focus mode take precedence, then the column reader". */
   it("closes a menu, then focus mode, then the column reader", () => {
     const closed: string[] = [];
     function App({ menu, focus }: { readonly menu: boolean; readonly focus: boolean }) {
@@ -109,7 +109,7 @@ describe("useEscapeLayer", () => {
     expect(onEscape).not.toHaveBeenCalled();
   });
 
-  /** SPEC.md §11's keyboard scheme names both: "`esc`/`⌫` close/back". */
+  /** SPEC.md §10's keyboard scheme names both: "`esc`/`⌫` close/back". */
   it("takes Backspace as well as Escape", () => {
     const onEscape = vi.fn();
     render(<Layer priority={EscapeLayerPriority.Reader} onEscape={onEscape} />);

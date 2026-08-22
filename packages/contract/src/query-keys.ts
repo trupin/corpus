@@ -43,7 +43,7 @@ export const JOBS_KEY: QueryKey = ["jobs"];
 
 /**
  * The semantic index's derived state behind `GET /api/index/status` (SPEC.md
- * §9.1, and §11's console index pill).
+ * §9.1, and §10's console index pill).
  *
  * One segment, exactly as {@link QUEUE_KEY} is one segment for
  * `GET /api/queue/status`: the resource is named, not the endpoint. Anything a

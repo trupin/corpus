@@ -134,7 +134,7 @@ export async function relatedDocs(
 ): Promise<RelatedDocs> {
   if (findDocumentRow(db, id) === null) throw notFound(`no document with id ${id}`);
 
-  // §11's archived default, through the *same* fragment the collection query
+  // §10's archived default, through the *same* fragment the collection query
   // and the unread aggregate use: archiving is organizational, so an archived
   // neighbour is a real relation that is simply not what an agent expanding
   // from a live document usually wants first. The semantic half is scoped by

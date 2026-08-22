@@ -41,7 +41,7 @@
 //
 // **The prose is a contract artefact, and this module does not spell it.** The
 // answer turn is the only durable record of what was answered — the
-// `form.respond` payload is reaped with its event — and §11 requires an answered
+// `form.respond` payload is reaped with its event — and §10 requires an answered
 // form to render each question beside what was given for it after a reload. So
 // the format and its reader are a **pair**, and the pair lives in
 // `@corpus/contract` (`formatFormAnswerBody` / `parseFormAnswerBody`), where the
@@ -100,7 +100,7 @@ export function formAnswerBody(form: Form, answer: FormAnswerRequest): string {
 
 /**
  * Refuse an answer whose own text would not survive being appended as **one**
- * turn, or would not read back as the answer it records (SPEC.md §6, §11, §14;
+ * turn, or would not read back as the answer it records (SPEC.md §6, §10, §11;
  * SERVER-066; PR #28 finding 2).
  *
  * A `write` answer and the note are the two places a person's arbitrary text
@@ -170,7 +170,7 @@ export const formCommitSubject = (threadId: string, actor: Actor, reopened = fal
  * It is not, and cannot be, a guarantee that no unreadable fence is on disk:
  * this route is not the only door (`POST /api/threads` writes a first turn
  * without this check — SERVER-070), and a turn from any other actor is
- * deliberately not checked (below). That is why §11's rule — an unreadable form
+ * deliberately not checked (below). That is why §10's rule — an unreadable form
  * renders as the visibly broken code block it is, never as a partial set of
  * controls — is load-bearing rather than decorative, and why the grammar refuses
  * a form that could not be answered rather than leaving it to the answer route:
@@ -300,7 +300,7 @@ export function formRespondPayload(input: {
  * the agent can clear for you is not a signal, and an agent handed an opaque
  * error retries. It is a refusal, not a silent no-op, so the message says why.
  *
- * **A form is answered once, as a whole** (SPEC.md §6, §11). A second answer is
+ * **A form is answered once, as a whole** (SPEC.md §6, §10). A second answer is
  * a `409` — the request is well formed and the state refuses it, so retrying
  * with a different body will not help. What already happened is not undone:
  * turns are append-only, and "changing your mind is an ordinary reply, not a

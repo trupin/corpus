@@ -425,7 +425,7 @@ export const patchCommand: WorkspaceCommandSpec = {
     "else**, though — a patch replaces, so it catches a writer who changed your excerpt and not " +
     "one who inserted elsewhere. An append that another writer may also be appending to goes " +
     "back whole under a key instead. Everything else about a patch is an " +
-    "ordinary write: it is validated before it lands (SPEC.md §14), anchors are reconciled with " +
+    "ordinary write: it is validated before it lands (SPEC.md §11), anchors are reconciled with " +
     "remaps and orphans reported (SPEC.md §6), the change is committed and attributed to `--from` — " +
     "folded into the open commit window like any other save, not necessarily a commit of its own (§4) — and " +
     "the fresh key is printed on the line after the confirmation.\n\n" +

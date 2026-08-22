@@ -95,7 +95,7 @@ describe("assertClosedFences", () => {
     expect(refusal("prose\n\n````\n```\n").message).toContain("the ```` on line 3");
   });
 
-  it("accepts a turn that quotes a fence correctly, however wide (SPEC.md §6, §11)", () => {
+  it("accepts a turn that quotes a fence correctly, however wide (SPEC.md §6, §10)", () => {
     const quoted = ["Here is how you write one:", "", "````markdown", "```js", "```", "````", ""];
     expect(() => assertClosedFences(quoted.join("\n"), TURN_SUBJECT)).not.toThrow();
     expect(() => assertClosedFences("```\ncode\n```\n", TURN_SUBJECT)).not.toThrow();

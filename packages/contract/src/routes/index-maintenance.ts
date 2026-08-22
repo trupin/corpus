@@ -17,7 +17,7 @@ import { jsonContent, UNAUTHORIZED_RESPONSE } from "./responses.js";
  * §9.2's index bullet is explicit about why: "Both touch only derived runtime
  * state — no workspace file changes, no git commit, **no acting party**." A
  * projection rebuild replaces `.corpus/cache.db`, and the actor header is there
- * because §14's mutation vocabulary follows every write path; these two touch
+ * because §11's mutation vocabulary follows every write path; these two touch
  * only the semantic index's own derived rows, produce no commit, and so have no
  * author to attribute. Declaring `ActorHeaderSchema` here would publish an input
  * that nothing reads.
@@ -44,7 +44,7 @@ export const getIndexStatus = createRoute({
     "`state` those facts derive to (SPEC.md §9.1). It is the surface that makes asynchronous " +
     "indexing honest rather than hidden: indexing never blocks a save, so a backlog is normal, " +
     "and this is where a person sees it draining. A backlog is **staleness, not drift** — " +
-    "`corpus db doctor` stays clean while indexing is in flight (SPEC.md §14), and the two checks " +
+    "`corpus db doctor` stays clean while indexing is in flight (SPEC.md §11), and the two checks " +
     "answer different questions on purpose. `state` is the same value, from the same schema, that " +
     "`GET /api/search` reports as `semanticIndex`. Read-only; no acting party.",
   responses: {

@@ -12,7 +12,7 @@ You are the UI development agent for Corpus. Your domain is `apps/ui/` and `pack
 3. Write code following `CLAUDE.md` and `docs/TS_GUIDELINES.md` (read it before writing code).
 4. Write Vitest tests for logic and Playwright specs (`apps/ui/e2e/`) for user-visible flows.
 5. Ensure all checks pass: `npm run lint`, `npm run typecheck`, `npm test -w apps/ui -w packages/kit`.
-6. Self-review against SPEC.md §11 (the board) and `design/index.html`, and issue acceptance criteria.
+6. Self-review against SPEC.md §10 (the board) and `design/index.html`, and issue acceptance criteria.
 
 ## Workflow
 
@@ -34,10 +34,10 @@ _Durable facts, decisions, and gotchas for this domain. Append as you learn; kee
 
 - **2026-07-26 — Stack.** Vite, React 18, TS strict, TanStack Query v5, React Router v6, `react-markdown` + `remark-gfm` for read surfaces, TipTap (ProseMirror) for the always-editable document view (serializes to clean markdown). Vanilla CSS with design tokens, light/dark. Dev server `:5173` proxying `/api` + `/events`.
 - **2026-07-26 — Data layer.** All fetching through the typed client from `@corpus/contract/client`, wrapped in kit query hooks (`useDocs(query)`, `useDoc(id)`, `useThread(id)`). Single resilient SSE connection; server sends only `invalidate` events with query keys → TanStack invalidations → refetch. Never render pushed data.
-- **2026-07-26 — Board model (SPEC §11).** Columns ARE pinned `type: view` documents (query + `order` in frontmatter); reordering/reconfiguring a column edits that document. Per-column readers with own nav stacks; focus mode; snap scrolling. Only browser-local state stays local (scroll, open readers).
+- **2026-07-26 — Board model (SPEC §10).** Columns ARE pinned `type: view` documents (query + `order` in frontmatter); reordering/reconfiguring a column edits that document. Per-column readers with own nav stacks; focus mode; snap scrolling. Only browser-local state stays local (scroll, open readers).
 - **2026-07-26 — Kit is the plugin contract.** Plugins import _only_ `@corpus/kit` (lint-enforced). Kit exposes: query hooks, MarkdownView, ConversationThread, doc rows, composer (with `@` / `/` / `[[` autocompletes), layout primitives, CSS tokens. Breaking kit exports is a cross-domain event — escalate.
 - **2026-07-26 — Honest pending states.** No fake progress, no token streaming: time-escalating pending indicator (45 s / 3 m / 15 m) while agent responses are outstanding.
-- **2026-07-26 — Design reference.** `design/index.html` is the living mockup and wins fights about look & feel; SPEC.md §11 wins fights about structure/behavior.
+- **2026-07-26 — Design reference.** `design/index.html` is the living mockup and wins fights about look & feel; SPEC.md §10 wins fights about structure/behavior.
 - **2026-08-16 — A source-only mutation in `packages/kit` cannot falsify a plugin test.** Plugins resolve `@corpus/kit` through the package's `exports` map into `dist/`, so breaking kit's _source_ to check that a plugin test goes red **silently passes** — the plugin is still running the last built copy. Rebuild kit's `dist/` as part of the mutation, or the falsification proves nothing. Found in UI-097, where `awaitingAgent → working` had to be rebuilt before `plugins/todos`'s test saw it. The same trap applies to any cross-package falsification in this repo, since every `@corpus/*` import resolves through `dist/`.
 - **2026-08-16 — Two unrelated `AgentActivity` types now exist.** `@corpus/kit`'s is a row signal (`{state: "working" | "waiting" | "idle", title}`); `@corpus/contract`'s is the console's pill state (`"halted" | "disconnected" | "working" | "idle"`, CONTRACT-045). They are never imported together today, and a file that wants both must alias one. Renaming kit's is a breaking export change and was deliberately not done — if you find yourself reaching for both, escalate rather than quietly aliasing.
 - **2026-08-16 — Presence is evidence, and its absence is not.** When a surface reads `QueueStatus.agent` to sharpen a claim, treat _unknown_ as present: a row must never assert "no agent is connected" from a status it has not received. UI-097 does this deliberately, and it is also what makes the surface degrade safely against a server that omits the field.

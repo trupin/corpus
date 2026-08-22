@@ -9,7 +9,7 @@ import { useCorpusClient } from "../client/context.js";
 import { DOCS_KEY, JOBS_KEY, QUEUE_KEY } from "./keys.js";
 
 /**
- * The console's four write actions (SPEC.md §7, §11): halt, resume, retry a
+ * The console's four write actions (SPEC.md §7, §10): halt, resume, retry a
  * failed job, abandon one. None is optimistic — the halted flag and a job's
  * status are the *server's* answer, read back from `GET /api/queue/status` and
  * `GET /api/jobs`, and a console that drew its own conclusion would be the one
@@ -19,7 +19,7 @@ import { DOCS_KEY, JOBS_KEY, QUEUE_KEY } from "./keys.js";
  *
  * A **failed job is an Attention reason** — the server's own `failed-job` code,
  * computed in SQL from `events.status = 'failed'` joined to the document the
- * event's payload names (SPEC.md §11). Retrying or abandoning a job therefore
+ * event's payload names (SPEC.md §10). Retrying or abandoning a job therefore
  * changes which rows `?needs=me` returns.
  *
  * The server's queue transitions announce `["queue"]` and `["jobs"]` and **not**

@@ -24,7 +24,7 @@ async function arrowTo(page: Page, item: Locator): Promise<void> {
 /**
  * UI-018 in a real browser: right-clicking an actionable item opens that item's
  * own actions, and leaves the browser's menu alone where it is the useful one
- * (SPEC.md §11).
+ * (SPEC.md §10).
  *
  * A real right-click is the only way to prove this — `contextmenu` is a native
  * gesture and `preventDefault` on it is the whole mechanism, neither of which
@@ -237,7 +237,7 @@ test.describe("the context menu", () => {
   });
 
   /**
-   * SPEC.md §11: "`esc` dismisses, arrows navigate, `↵` activates". UI-028 —
+   * SPEC.md §10: "`esc` dismisses, arrows navigate, `↵` activates". UI-028 —
    * the case above only ever exercised the arrows, and `↵` activated nothing in
    * any menu in the app: the board's own `↵` (`rows.open`) matched first on the
    * document listener and `preventDefault()` cancelled the focused button's
@@ -341,7 +341,7 @@ test.describe("the context menu", () => {
    * Core suppressed its own row menu for every document type that had a plugin
    * `ListItem`, so a `todo` document — the shipped case — had **no** menu at
    * all: no open, no open in focus, no archive, no delete, no staleness, from
-   * either input path. The signed v1 exclusion (SPEC.md §11, SHARED-004 item 4)
+   * either input path. The signed v1 exclusion (SPEC.md §10, SHARED-004 item 4)
    * is about surfaces a plugin *renders*; a todo document listed in an ordinary
    * column is a core subject in a core surface, and the menu's actions are
    * built from the `DocRow` core already holds.
@@ -409,7 +409,7 @@ test.describe("the context menu", () => {
   });
 
   /**
-   * The negative UI-036 owns, restated for the SPEC §11 amendment of
+   * The negative UI-036 owns, restated for the SPEC §10 amendment of
    * 2026-08-02 (TEST-1075, as the amendment leaves it).
    *
    * When this test was written the rule was "a plugin column body's rows keep

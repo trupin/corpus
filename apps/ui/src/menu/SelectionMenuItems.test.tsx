@@ -9,7 +9,7 @@ import {
 } from "./SelectionMenuItems";
 
 /**
- * SPEC.md §11's selection menu: Comment on selection first, then Copy always,
+ * SPEC.md §10's selection menu: Comment on selection first, then Copy always,
  * then Cut and Paste in editable content.
  *
  * Two halves are worth testing hardest. **The flavors** (UI-042): Copy used to
@@ -149,7 +149,7 @@ function items(): string[] {
  * The document body is either the editor's — unlocked, so commentable *and*
  * editable — or it is not the editor's at all: a thread's conversation, a
  * `view`'s query, or a document under someone else's lock, where neither
- * commenting nor editing is on offer and §11's "Copy always" is the whole menu.
+ * commenting nor editing is on offer and §10's "Copy always" is the whole menu.
  * There is no reachable state in between, which is why only these two are
  * pinned here.
  */
@@ -180,7 +180,7 @@ describe("Comment on selection", () => {
 /**
  * UI-042. The reproduction: right-click → Copy put `["text/plain"]` on the
  * clipboard and no `text/html` at all, which is "loses ALL formatting" in a
- * word processor, from the gesture SPEC.md §11 puts Copy on.
+ * word processor, from the gesture SPEC.md §10 puts Copy on.
  */
 describe("Copy's two flavors", () => {
   it("writes rich text and the markdown together", async () => {

@@ -114,7 +114,7 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
     name: "needs",
     type: "string",
     valueName: "reason",
-    description: `The Attention filter (SPEC.md §11): ${NEEDS_FILTERS.join(", ")}. \`me\` is the union of every reason.`,
+    description: `The Attention filter (SPEC.md §10): ${NEEDS_FILTERS.join(", ")}. \`me\` is the union of every reason.`,
   },
   {
     name: "parent",

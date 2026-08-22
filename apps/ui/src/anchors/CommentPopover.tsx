@@ -29,7 +29,7 @@ import { usePopoverDrag } from "./popoverDrag";
  * rather than a setting.
  *
  * **It takes attachments by all three of §6's routes** — the 📎 picker, a paste
- * and a drop — because §11's rider says every composer does, naming "a comment
+ * and a drop — because §10's rider says every composer does, naming "a comment
  * on a document selection" in its own list: *"a comment is a comment wherever it
  * starts; which surface it was written in decides nothing about what it can
  * carry"* (UI-111). The intake, the chips and the button are the reply box's,
@@ -57,7 +57,7 @@ import { usePopoverDrag } from "./popoverDrag";
  * above focus mode, so Escape closes the popover and leaves the document open
  * (sprint-011 TEST-101).
  *
- * Its keys are the kit's contract (SPEC.md §11): `↵` is a newline, `⌘↵`
+ * Its keys are the kit's contract (SPEC.md §10): `↵` is a newline, `⌘↵`
  * comments, `esc` closes.
  */
 
@@ -128,7 +128,7 @@ export interface CommentPopoverProps {
   readonly left: number;
   readonly pending: boolean;
   /**
-   * Which conversation this comment's weight belongs to (SPEC.md §11's rider) —
+   * Which conversation this comment's weight belongs to (SPEC.md §10's rider) —
    * `docWeightScope(docId)` for a comment on a document, `threadWeightScope(id)`
    * for one on a turn. The host owns it because the host knows what is being
    * commented on; this popover is one component in two placements.

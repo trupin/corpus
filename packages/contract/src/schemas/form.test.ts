@@ -315,7 +315,7 @@ describe("the form grammar", () => {
  * precondition of the answer prose that **nothing checked**, and its violation
  * was silent all the way through: the form posted, the answer posted, and only
  * the read-back failed — leaving the thread in Attention as "awaiting your
- * answer" with no answer able to clear it, which is exactly what §11 forbids.
+ * answer" with no answer able to clear it, which is exactly what §10 forbids.
  *
  * These cases pin the enforcement where it makes the failure inert rather than
  * silent: a form that could not be answered does not parse, so it is refused at

@@ -38,7 +38,7 @@ describe("readPinned", () => {
     expect(readPinned(SEED_ATTENTION)).toBe(true);
     expect(readPinned(frontmatterOf("pinned: false"))).toBe(false);
     expect(readPinned(frontmatterOf("title: T"))).toBe(false);
-    // A string is not a boolean; §11's key is two-state and nothing else.
+    // A string is not a boolean; §10's key is two-state and nothing else.
     expect(readPinned(frontmatterOf('pinned: "true"'))).toBe(false);
   });
 });
@@ -89,7 +89,7 @@ describe("readColumn", () => {
   });
 
   it("does not reject a malformed reference, so the view keeps its board place", () => {
-    // SPEC.md §15: an unknown column renders a plugin-missing card; silently
+    // SPEC.md §12: an unknown column renders a plugin-missing card; silently
     // demoting the view to a plain list would hide the misconfiguration.
     expect(readColumn(frontmatterOf("column: todos"))).toBe("todos");
     expect(readColumn(frontmatterOf("column: null"))).toBeNull();

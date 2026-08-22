@@ -177,7 +177,7 @@ export type TurnFormState = {
  *
  * The alternative — `answered: false` without opening it — advertises the form
  * but makes it unclearable, because no later answer could ever be paired with a
- * form that was never open. §11's reasons must have an action that clears them
+ * form that was never open. §10's reasons must have an action that clears them
  * (SERVER-022 finding 3), so that one was rejected.
  *
  * The renderer's `mapFormAnswers` (`apps/ui/src/thread/parseFormBlock.ts`) read

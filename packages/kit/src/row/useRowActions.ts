@@ -5,7 +5,7 @@ import { useSetDocArchived } from "../query/useSetDocArchived.js";
 import { useUpdateDoc } from "../query/useUpdateDoc.js";
 
 /**
- * The three quick actions a stale row grows (SPEC.md §5, §11). Each one is a
+ * The three quick actions a stale row grows (SPEC.md §5, §10). Each one is a
  * real, committed mutation through the kit's hooks — the ramp is actionable, not
  * decorative, and none of these is a local UI flag.
  *
@@ -53,7 +53,7 @@ export function triagePrompt(title: string): string {
 
 /**
  * What archiving narrates. Exported because archiving has two entry points —
- * this row action and SPEC.md §11's `e` — and a second wording would be a second
+ * this row action and SPEC.md §10's `e` — and a second wording would be a second
  * claim about what the same `POST /api/docs/{id}/archive` call did.
  */
 export function archivedMessage(title: string): string {

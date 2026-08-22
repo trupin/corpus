@@ -7,7 +7,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * Like the rest of the suite it runs against the Vite dev server with **no**
  * workspace server on `127.0.0.1:8765` — which for this issue is not a
  * limitation but a fixture: a board that can reach no pinned view documents is
- * exactly SPEC.md §11's zero-column case, and the honest answer to it is the
+ * exactly SPEC.md §10's zero-column case, and the honest answer to it is the
  * ghost column and nothing else.
  *
  * The column CRUD half — a drag writing `order` into a view document, `＋`
@@ -87,7 +87,7 @@ test.describe("the board", () => {
   });
 
   /**
-   * **The picker is as tall as the room below it** — SPEC.md §11's rider
+   * **The picker is as tall as the room below it** — SPEC.md §10's rider
    * authorized 2026-08-21 (SHARED-061), measured in a real browser (UI-142).
    *
    * It is the second surface that audit found bounded well below its room, and

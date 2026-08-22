@@ -31,7 +31,7 @@ import "./todos.css";
  * argument.
  *
  * **Archived documents are excluded** because the default result set excludes
- * them (SPEC.md §11); the column states no `status` and therefore inherits
+ * them (SPEC.md §10); the column states no `status` and therefore inherits
  * core's answer rather than inventing a second one.
  *
  * **A click on an item names the item** (PLUGINS-010): the open carries UI-037's
@@ -63,7 +63,7 @@ import "./todos.css";
  * **Right-click is the plugin's own** (PLUGINS-009). Core deliberately leaves
  * this surface alone — `Column.tsx` stamps `data-plugin-surface` on the node
  * above these rows, which is exactly where every core menu rule bails — so a
- * plugin row that wants a menu has to open one, and SPEC.md §11's 2026-08-02
+ * plugin row that wants a menu has to open one, and SPEC.md §10's 2026-08-02
  * amendment is what permits it. `TodoItemMenu` holds what is in it and why
  * nothing else is; the *writes* it triggers live here, in the component that
  * outlives the menu (`itemActions.ts`).
@@ -180,7 +180,7 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
     setMenu({ target, clientX, clientY, autoFocus });
   };
 
-  /** The menu key and ⇧F10, on the row the keyboard is on (SPEC.md §11). */
+  /** The menu key and ⇧F10, on the row the keyboard is on (SPEC.md §10). */
   const onItemKeyDown = (event: KeyboardEvent<HTMLDivElement>, target: TodoItemTarget): void => {
     if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
     // Also stops the board's own `menu.open` shortcut: its dispatcher skips an

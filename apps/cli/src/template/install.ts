@@ -194,7 +194,7 @@ export function templateSkillNames(installed: readonly PlannedTemplateFile[]): R
   return names;
 }
 
-/** Where template documents live in a workspace (SPEC.md §11 — template pre-fill). */
+/** Where template documents live in a workspace (SPEC.md §10 — template pre-fill). */
 export const WORKSPACE_TEMPLATES_DIR = "data/docs/templates";
 
 /** The template file names the workspace template itself installs — the reserved set. */
@@ -295,7 +295,7 @@ function escapesPlugin(declared: string): boolean {
 }
 
 /**
- * The plugin seed-template copy step, as data (SPEC.md §10 plugin assets, §11
+ * The plugin seed-template copy step, as data (SPEC.md §10 plugin assets, §10
  * template pre-fill). A plugin's `types.yaml` may declare
  * `seedTemplate: seeds/<file>.md` per doc type; the file lands beside the
  * workspace's own templates in `data/docs/templates/`, which is where the

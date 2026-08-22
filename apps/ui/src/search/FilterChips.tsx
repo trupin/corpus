@@ -213,7 +213,7 @@ export function FilterChips({ query, onChange, tree, hits }: FilterChipsProps): 
 
 /**
  * `references:` and `parent:` name a document, so they pick a title rather than
- * asking for an id (SPEC.md §11). The candidates are the rows already returned —
+ * asking for an id (SPEC.md §10). The candidates are the rows already returned —
  * refining "what references this" from the search in progress — which is also
  * why the picker issues no request.
  */

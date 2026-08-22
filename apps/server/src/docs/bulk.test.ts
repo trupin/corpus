@@ -1,4 +1,4 @@
-// `POST /api/docs/bulk` — SPEC.md §4's "One action, one commit" and §11's
+// `POST /api/docs/bulk` — SPEC.md §4's "One action, one commit" and §10's
 // staged set (SERVER-077, SERVER-087).
 //
 // Everything load-bearing here is asserted against **real git output**, never
@@ -79,7 +79,7 @@ const staged = (
 const idsOf = (outcomes: readonly BulkActionOutcome[]): string[] =>
   outcomes.map((outcome) => outcome.id);
 
-/** Each outcome as the pair §11's report is made of: the document and its verb. */
+/** Each outcome as the pair §10's report is made of: the document and its verb. */
 const pairsOf = (outcomes: readonly BulkActionOutcome[]): [string, string][] =>
   outcomes.map((outcome) => [outcome.id, outcome.action]);
 
@@ -430,7 +430,7 @@ describe("the eight acts", () => {
     // does not move until `finishMutation` runs after the whole loop, so the
     // parent's plan still sees the row of the thread this same act deleted one
     // iteration earlier. Reporting it here would name it as deleted and as a
-    // surviving orphan whose caches to drop, and §11's confirm counts exactly
+    // surviving orphan whose caches to drop, and §10's confirm counts exactly
     // this number.
     expect(result.orphanedThreadIds).toEqual([standalone.id]);
     expect(result.orphanedThreadIds).not.toContain(anchored.id);
@@ -849,7 +849,7 @@ describe("a mixed staged set is one act (SPEC.md §4, SHARED-032)", () => {
       chmodSync(join(ws.root, "data", "docs", "vault"), 0o700);
     }
 
-    // §11: never refuse the whole set because of one document — and every
+    // §10: never refuse the whole set because of one document — and every
     // refusal says which act it was refusing, which is the only way a mixed
     // report can be read without the request beside it.
     expect(status).toBe(200);
@@ -1044,7 +1044,7 @@ describe("per-document outcomes", () => {
     );
 
     // Not a 404 for the request: the other documents are not the caller's
-    // mistake (§11).
+    // mistake (§10).
     expect(status).toBe(200);
     expect(idsOf(result.changed)).toEqual([docs[0]?.id, docs[1]?.id]);
     expect(result.refused).toEqual([
@@ -1142,7 +1142,7 @@ describe("per-document outcomes", () => {
     expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([
       [second.id, "write-failed"],
     ]);
-    // And the message says which name is taken, which is what §11's third part
+    // And the message says which name is taken, which is what §10's third part
     // means by carrying the specifics.
     expect(result.refused[0]?.message).toContain("data/docs/finance/budget.md");
     // "Nothing about this document reached the commit."
@@ -1230,7 +1230,7 @@ describe("the projection and the bus see one act", () => {
   });
 });
 
-describe("§11's whole-result-set entry", () => {
+describe("§10's whole-result-set entry", () => {
   /** Four notes tagged `finance`, and one that is not. */
   const seedTagged = async (): Promise<{ id: string; path: string }[]> => {
     const docs: { id: string; path: string }[] = [];
@@ -1257,7 +1257,7 @@ describe("§11's whole-result-set entry", () => {
     // what makes a precedence rule unnecessary — and the other three come back
     // named by ids that appear nowhere in the request.
     // Enumerated rows first, in request order; the query's own matches follow
-    // in a stable order of their own (by id — nothing in §11 asks for more, and
+    // in a stable order of their own (by id — nothing in §10 asks for more, and
     // the board renders in its column's order regardless).
     expect(pairsOf(result.changed)[0]).toEqual([byHand?.id, "review"]);
     expect(pairsOf(result.changed).slice(1).sort()).toEqual(
@@ -1277,7 +1277,7 @@ describe("§11's whole-result-set entry", () => {
   });
 
   it("re-evaluates what the query matches when the Save runs", async () => {
-    // §11: "the count is re-evaluated when the Save runs … the corpus can change
+    // §10: "the count is re-evaluated when the Save runs … the corpus can change
     // between staging and saving". A document tagged after a board would have
     // counted is in the act; one that left the result set is not.
     const tagged = await seedTagged();
@@ -1394,7 +1394,7 @@ describe("§11's whole-result-set entry", () => {
   });
 
   it("cannot spell `delete`, and the refusal is the request's", async () => {
-    // §11: "all 412 matching" is not a set anyone read before confirming. The
+    // §10: "all 412 matching" is not a set anyone read before confirming. The
     // contract makes it a type error for a typed client and a `400` on the wire.
     const docs = await seed(1);
     const head = ws.head();

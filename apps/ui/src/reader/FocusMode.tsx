@@ -18,7 +18,7 @@ import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
 import "./FocusMode.css";
 
 /**
- * Focus mode (SPEC.md §11's ⤢): a full-viewport reading surface over the board.
+ * Focus mode (SPEC.md §10's ⤢): a full-viewport reading surface over the board.
  *
  * **Its own navigation stack.** Entering focus from a column and following two
  * refs there must leave the column's history exactly as it was — the column is
@@ -56,7 +56,7 @@ export function FocusMode(props: FocusModeProps): ReactElement {
   /*
    * Focus mode is one surface, because there is only ever one full-screen
    * reader — and it is its **own**, distinct from the column it was opened
-   * from: SPEC.md §11 makes a fold per reader, and focus mode keeps its own
+   * from: SPEC.md §10 makes a fold per reader, and focus mode keeps its own
    * navigation stack for exactly the same reason (it is a reading excursion,
    * not a place the board was left).
    */
@@ -80,11 +80,11 @@ function FocusReader({
   const reader = useReaderDoc(current);
 
   /*
-   * Focus mode's own reading measure (SPEC.md §11's width rider), on the same
+   * Focus mode's own reading measure (SPEC.md §10's width rider), on the same
    * surface key its folds use: one full-screen reader, one width, distinct from
    * the column it was opened from. A full viewport and a 560px column are not
    * the same room, so a width chosen in one would be meaningless in the other —
-   * which is exactly why §11 asks for the control in **both**.
+   * which is exactly why §10 asks for the control in **both**.
    */
   const rootRef = useRef<HTMLDivElement>(null);
   const docWidth = useDocWidthSurface(FOCUS_SURFACE, rootRef);
@@ -119,7 +119,7 @@ function FocusReader({
   });
 
   /**
-   * The same rule in the other host (SPEC.md §11). `DocView` is one component
+   * The same rule in the other host (SPEC.md §10). `DocView` is one component
    * with two hosts, and a rule implemented in only one of them is a bug — but
    * the *count* in the registry is what makes closing focus mode over a
    * document its column still has open a non-event.

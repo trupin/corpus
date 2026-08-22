@@ -147,7 +147,7 @@ describe("corpus thread release", () => {
     expect(JSON.parse(harness.stdout())).toEqual({ thread: RELEASED_SUMMARY, warnings: [] });
   });
 
-  it("appends a §14 warning to the line rather than hiding it", async () => {
+  it("appends a §11 warning to the line rather than hiding it", async () => {
     const stub = await startStubServer(
       residentStub(THREAD.resident, [
         { code: "commit_failed", detail: "hook rejected the change" },

@@ -1,5 +1,5 @@
 // The projection's maintenance surface: `POST /api/db/rebuild` and
-// `GET /api/db/doctor` (SPEC.md §2.2, §14).
+// `GET /api/db/doctor` (SPEC.md §2.2, §11).
 //
 // Both go over HTTP rather than running inside the CLI for the reason every
 // other verb does: the server is the sole writer, and it is the process holding
@@ -73,7 +73,7 @@ export interface DbRoutesDeps {
    * The semantic index's operational service (SERVER-046). `doctor` needs one
    * fact only a live process has — which model this server can embed with —
    * because an index whose every vector was produced by some *other* model
-   * reports itself fully covered and is entirely unusable (§9.1, §14). Optional
+   * reports itself fully covered and is entirely unusable (§9.1, §11). Optional
    * because a server can be built without a semantic half at all, and because
    * `doctor` run standalone has no provider to ask.
    */

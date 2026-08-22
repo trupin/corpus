@@ -246,7 +246,7 @@ describe("parseDocument / serializeDocument", () => {
 });
 
 /**
- * SERVER-066: §14 findings about the body report **file** lines, so an operator
+ * SERVER-066: §11 findings about the body report **file** lines, so an operator
  * can go to the number their editor shows. Every case is cross-checked against
  * the raw source with `indexOf`, so the expectation is not a hand count.
  */

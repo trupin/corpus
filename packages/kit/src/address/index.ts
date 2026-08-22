@@ -1,5 +1,5 @@
 /**
- * The composer's **address** (SPEC.md §11, UI-126) — who answers, at what
+ * The composer's **address** (SPEC.md §10, UI-126) — who answers, at what
  * weight — as one unit.
  *
  * Three parts, and the split is the design:
@@ -14,7 +14,7 @@
  *     with.
  *   - `address.css` — the anatomy, as a subpath: `@corpus/kit/address.css`.
  *
- * It ships from the kit for the reason the controls it replaced did: §11's
+ * It ships from the kit for the reason the controls it replaced did: §10's
  * enumeration binds "any composer a plugin contributes", and kit is how a
  * plugin gets a first-party affordance with one import and no copy. The
  * derivations underneath — `useComposerRecipient`, `useComposerWeight`,

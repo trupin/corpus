@@ -2,7 +2,7 @@
 // contract** (orchestrator decision 2026-08-07).
 //
 // The `form.respond` payload lives in `.corpus/`: runtime state, reaped with its
-// event. But §11 requires an answered form to render "each question beside what
+// event. But §10 requires an answered form to render "each question beside what
 // was given for it" after a reload, and after a reload the *only* durable record
 // of what was answered is the answer turn's markdown. **So the prose is the
 // data**, and a format written on one side and re-read loosely on the other is a
@@ -69,7 +69,7 @@
 //   - **The form's half** is `./form.ts`'s grammar. A question and an option are
 //     single-line, and no option may spell one of the delimiters below. Both are
 //     checked by `FormSchema`, so a form that would be unanswerable does not
-//     parse — and an unparseable form is inert everywhere at once (§11 renders
+//     parse — and an unparseable form is inert everywhere at once (§10 renders
 //     it as the broken block it is), rather than being an answerable-looking
 //     question with no answer.
 //   - **The person's half** is {@link unreadableAnswer}, which the write path
@@ -352,7 +352,7 @@ function delimiterIn(value: string, claimable: ReadonlySet<string>): string | un
  * swallowed into the wrong one. The parse **succeeds**, so nothing downstream
  * flags it — the bytes on disk are what the person wrote, and every subsequent
  * read of them is wrong, showing them beside a question something they did not
- * write there. §11 promises "each question beside what was given for it".
+ * write there. §10 promises "each question beside what was given for it".
  *
  * **So the round trip is performed rather than reasoned about.** The check is
  * the format's inverse applied to the format's output: format, parse, compare.

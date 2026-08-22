@@ -114,7 +114,7 @@ describe("GET /api/threads/{id}", () => {
 
 // A read must not 500 on a thread nobody's server wrote. The turns are still
 // there and the conversation is still a conversation; `doc check` is what
-// reports the drift (§14), and every field falls back to something true.
+// reports the drift (§11), and every field falls back to something true.
 describe("GET /api/threads/{id} — hand-written files", () => {
   it("fills the §6 fields a minimal file omits", async () => {
     ws.write(

@@ -186,7 +186,7 @@ export const showCommand: WorkspaceCommandSpec = {
     "move is to leave the document alone and come back, or to park the claimed work with " +
     "`corpus queue defer <event-id> --blocked-on <id>`, which returns to pending on its own when " +
     "the session ends.\n\n" +
-    "The human rendering is a summary: the whole payload — including the §11 view keys and any " +
+    "The human rendering is a summary: the whole payload — including the §10 view keys and any " +
     "plugin `extra` — is what `--json` emits, unchanged. An id that names no document is the " +
     "server's `404`, which is exit 5.",
   args: [{ name: "id", required: true, description: "The document's id." }],

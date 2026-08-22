@@ -1,4 +1,4 @@
-// The recovery surface for documents nobody can see (SPEC.md §5, §14 —
+// The recovery surface for documents nobody can see (SPEC.md §5, §11 —
 // SERVER-038).
 //
 // SERVER-037 stopped the *creation* of documents under a path segment the
@@ -13,7 +13,7 @@
 //
 // **Report-only, and a `warning` rather than `drift`.** Nothing here is moved,
 // deleted, rewritten or committed; deletion stays a user act (§7). The findings
-// never move `ok` and never change `corpus db doctor`'s exit code, because §14's
+// never move `ok` and never change `corpus db doctor`'s exit code, because §11's
 // standing `rebuild && doctor` clean invariant is about the projection
 // disagreeing with the files — and the projection is *correct* here. The files
 // are real, and no rebuild can ever index them; a verdict flip would fail a

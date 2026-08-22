@@ -15,7 +15,7 @@ import type { BoardColumn } from "./viewDoc";
 
 /**
  * "Open this document, wherever it lives" — the one implementation of scroll,
- * flash and open (SPEC.md §11).
+ * flash and open (SPEC.md §10).
  *
  * Three surfaces need it and none of them is inside the board: the search
  * overlay's `↵` (UI-009), the console's `↗ open` (UI-011), and UI-010's
@@ -49,7 +49,7 @@ export interface OpenTarget {
   /**
    * The column to open in, when the caller is *looking at* the document rather
    * than resolving where it lives — the keyboard's `↵` on a highlighted row
-   * (SPEC.md §11: "open the highlighted document **in its column**").
+   * (SPEC.md §10: "open the highlighted document **in its column**").
    *
    * Resolution is skipped when this is given, because a row's column is not a
    * guess: it is the column that fetched it, and a row visible in a narrower
@@ -181,7 +181,7 @@ function listValues(raw: string | undefined): readonly string[] {
  * do not exclude it. Among the candidates:
  *
  * 1. **Folder** — the most specific folder column wins. Placement is the primary
- *    organization (SPEC.md §11), so a document in `finance/housing` belongs to
+ *    organization (SPEC.md §10), so a document in `finance/housing` belongs to
  *    the Housing column over the Finance one, and to either over a type filter
  *    that also happens to match.
  * 2. **Type / status** — a column filtering on both outranks one filtering on

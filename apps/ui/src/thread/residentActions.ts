@@ -9,7 +9,7 @@ import type { MenuAction } from "../menu/menuModel";
  *
  * ## Why a declared list rather than a control
  *
- * §11 binds the conversation's right-click menu to *"exactly that item's
+ * §10 binds the conversation's right-click menu to *"exactly that item's
  * existing actions"*, and `menuModel.ts` exists so the ⋯ sheet and the context
  * menu cannot come to offer different ones. A designation is an action on this
  * thread, so it belongs in that list; a dialog beside it would be a second
@@ -205,7 +205,7 @@ export const RELEASE_GENERAL_LABEL = "Release the resident";
  *     place back by
  *     being one line.
  *   - **The board already says it better.** The dropped document is listed, with
- *     its folder on the row and its path in the reader; §11's own surface for
+ *     its folder on the row and its path in the reader; §10's own surface for
  *     "what does this workspace hold" is one column away and can be precise
  *     where two lines of menu meta cannot.
  */

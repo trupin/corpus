@@ -164,7 +164,7 @@
      re-sent (SPEC.md §7). It says the one thing the person cannot otherwise see:
      their save went on top of a change they never read. It grants nobody a claim,
      disables nothing, and can always be dismissed — the document stays editable
-     underneath it, because the board is never read-only (SPEC.md §11). */
+     underneath it, because the board is never read-only (SPEC.md §10). */
   .change-notice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px 9px; border: 1px solid var(--sepia-wash-2); background: var(--sepia-wash); color: var(--sepia-ink); border-radius: 10px; padding: 9px 13px; margin-bottom: 14px; font-size: 12.5px; font-family: var(--sans); max-width: 62ch; }
   .change-notice .cn-mark { font-family: var(--mono); font-size: 11px; color: var(--sepia); margin-right: 4px; }
   /* The sentence gets the full width and the actions sit under it, right-aligned:
@@ -318,7 +318,7 @@
 
   .composer { margin-top: 9px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
   /* A reply is prose, and prose has paragraphs: `↵` inserts a newline, so the
-     field is multi-line (SPEC.md §11's composer key contract, SHARED-009
+     field is multi-line (SPEC.md §10's composer key contract, SHARED-009
      Amendment 1). */
   .composer textarea { border: none; background: none; font: inherit; color: var(--ink); width: 100%; resize: none; min-height: 2.6em; }
   .composer textarea::placeholder { color: var(--ink-3); }
@@ -1056,7 +1056,7 @@ function turnHTML(t, tid, idx) {
 }
 
 function bodyHTML(doc) {
-  // Unconditional: no document is ever rendered read-only (SPEC.md §11) — not
+  // Unconditional: no document is ever rendered read-only (SPEC.md §10) — not
   // while the agent is writing it, not while a save is in flight.
   const ed = ` contenteditable="true" spellcheck="false"`;
   return doc.body.map(block => {
@@ -1075,7 +1075,7 @@ function bodyHTML(doc) {
   }).join("");
 }
 
-/* ── The change notice (SPEC.md §7 "A key, not a lock", §11 "never read-only") ──
+/* ── The change notice (SPEC.md §7 "A key, not a lock", §10 "never read-only") ──
  *
  * There is no lock, so there is nothing to hold, break or announce. What the
  * person still cannot see for themselves is a *collision*: the agent wrote the
@@ -2322,7 +2322,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.getElementById("btn-compose").addEventListener("click", openCompose);
-/* The signed key contract (SPEC.md §11, SHARED-009 Amendment 1): `↵` inserts a
+/* The signed key contract (SPEC.md §10, SHARED-009 Amendment 1): `↵` inserts a
    newline everywhere, `⌘↵` is the primary action and `⇧⌘↵` the secondary one.
    The prototype binds it here so the mockup cannot disagree with the app about
    what a key does, as it did until UI-055. */
@@ -2420,7 +2420,7 @@ document.addEventListener("change", (e) => {
   inp.value = "";
 });
 /* The reply box's keys, delegated because the cards are re-rendered from
-   `threadCardHTML` (SPEC.md §11's composer key contract, SHARED-009 Amendment 1):
+   `threadCardHTML` (SPEC.md §10's composer key contract, SHARED-009 Amendment 1):
    `↵` inserts a newline, `⌘↵` sends. `#compose-text` has its own handler above,
    because its two actions need `⇧⌘↵` as well. */
 document.addEventListener("keydown", (e) => {

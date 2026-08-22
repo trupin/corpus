@@ -11,7 +11,7 @@ import {
 
 /**
  * **What actually goes on the wire when a composer carries a file** (SPEC.md §6;
- * §11's rider *"every composer takes attachments"*, signed 2026-08-05).
+ * §10's rider *"every composer takes attachments"*, signed 2026-08-05).
  *
  * UI-116 exists because this file did not. Five composers gained attachments in
  * this release and every proof that the files reached the server came from a
@@ -220,7 +220,7 @@ test.describe("the reply box, carrying files", () => {
 
 test.describe("the composer under a turn, carrying a file", () => {
   /**
-   * The fourth of §11's five composers, and the one that does not use
+   * The fourth of §10's five composers, and the one that does not use
    * `take`/`restore` at all: it **holds** its chips and clears them by id once
    * the server has accepted, so "the chips survive a refusal" is true here by
    * construction rather than by recovery. Worth pinning for exactly that reason

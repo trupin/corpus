@@ -21,7 +21,7 @@ import { Turn } from "./Turn";
  * character means two different things:
  *
  * - a **user** turn is typed into a composer where `↵` inserts a newline and
- *   never submits (SPEC.md §11's key contract, SHARED-009 Amendment 1), so its
+ *   never submits (SPEC.md §10's key contract, SHARED-009 Amendment 1), so its
  *   newlines are line breaks somebody pressed a key for;
  * - an **agent** turn is authored markdown, hard-wrapped like the prose it is —
  *   measured on a real workspace, 10 of its 11 agent turns wrap their

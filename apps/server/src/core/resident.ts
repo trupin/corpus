@@ -2,7 +2,7 @@
 // belongs to, as it is stored in that thread's frontmatter.
 //
 // One reader, for the same reason `provenance.ts` is one reader of `origin`:
-// three paths ask this question of raw frontmatter — the file parser (§14
+// three paths ask this question of raw frontmatter — the file parser (§11
 // validation), the thread read that answers the wire, and the projection — and
 // three spellings of "is this a resident" is how they come to disagree about a
 // hand-written file.

@@ -32,7 +32,7 @@ import { SaveChipView } from "../editor/SaveChip";
 import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
 
 /**
- * Frontmatter as the small form SPEC.md §11 asks for — title, tags, status,
+ * Frontmatter as the small form SPEC.md §10 asks for — title, tags, status,
  * due — over the prototype's `.fm-chips` strip.
  *
  * **Under the body's rule, not beside it: no edit mode, no save button**
@@ -51,7 +51,7 @@ import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
  * **When a change is sent** is the one thing this form decides, and it decides
  * it per *change*, not per control — see {@link isDeliberate}. Nothing here
  * chooses a cadence: the debounce is `AUTOSAVE_DEBOUNCE_MS`, imported from the
- * body's autosave, because §11 says frontmatter is "debounced exactly as the
+ * body's autosave, because §10 says frontmatter is "debounced exactly as the
  * body's autosave is" and a second constant is how two rules that agree on the
  * day they were written stop agreeing.
  *
@@ -65,9 +65,9 @@ import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
  * writer per concern.
  *
  * **The local map outlives no surface.** Leaving the document flushes it, on the
- * same seams the abandon rule (SPEC.md §11) watches — the reader unmounting or
+ * same seams the abandon rule (SPEC.md §10) watches — the reader unmounting or
  * rebinding, and `pagehide`. Without that, a user who typed a title and left
- * (which is the gesture §11 describes as primary — "title selected, ready to
+ * (which is the gesture §10 describes as primary — "title selected, ready to
  * type") lost it silently, *and* left behind exactly the untitled empty
  * document UI-017 exists to delete: the abandon rule was keeping the document
  * on the strength of a title that would never be written (UI-017 eval FAIL-1).
@@ -418,7 +418,7 @@ function Field({ label, lock, hint, children }: FieldProps): ReactElement {
  * A **derived** status: the value, stated, where the control would have been.
  *
  * SPEC.md §12 (rider signed 2026-08-12) asks for a status control that "shows
- * the derived value and says it comes from the items", and §11 (SHARED-030) for
+ * the derived value and says it comes from the items", and §10 (SHARED-030) for
  * a field that "shows the value and says where it comes from, and is editable by
  * nobody". A disabled `<select>` gets the first half right and the second half
  * wrong: it is the shape of an act, and every disabled act in this app is one a
@@ -702,7 +702,7 @@ export function FrontmatterForm({
     if (!selectTitle || selected.current) return;
     selected.current = true;
     field.current?.focus();
-    // Selected, not merely focused: SPEC.md §11 says "ready to type", and a
+    // Selected, not merely focused: SPEC.md §10 says "ready to type", and a
     // caret after "Untitled" is not that.
     field.current?.select();
   }, [selectTitle]);

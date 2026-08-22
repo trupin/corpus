@@ -6,7 +6,7 @@
 // come from that agreement (sprint-004 TEST-52):
 //
 // - **Threads count where their parent is filed.** They are flat in
-//   `data/threads/` and are therefore not tree *nodes*, but §11 folder scoping
+//   `data/threads/` and are therefore not tree *nodes*, but §10 folder scoping
 //   puts them in their parent's folder column, so a folder's badge counts them.
 // - **Archived documents are excluded**, exactly as the default result set of
 //   `GET /api/docs` excludes them — a badge that counted rows the column does

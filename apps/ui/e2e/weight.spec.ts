@@ -4,7 +4,7 @@ import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-082 in a real browser: **every composer can choose how much thought the
- * work gets** (SPEC.md §11's rider, signed 2026-08-06).
+ * work gets** (SPEC.md §10's rider, signed 2026-08-06).
  *
  * The half that is honest to assert here is the half above the transport, and it
  * is the load-bearing half of this feature: the offered levels are read from the
@@ -105,7 +105,7 @@ async function openThread(page: Page): Promise<void> {
 /**
  * Waits for the conversation a reload restored.
  *
- * An open reader is browser-local state that survives a reload (SPEC.md §11), so
+ * An open reader is browser-local state that survives a reload (SPEC.md §10), so
  * there is nothing to click: the row is behind the reader that is already there.
  */
 async function reopenedThread(page: Page): Promise<void> {
@@ -151,7 +151,7 @@ test.describe("the weight a composer may state", () => {
 
     await openAddress(page);
     await option(page, "heavy").click();
-    // The line states the outcome before sending (§11's statement).
+    // The line states the outcome before sending (§10's statement).
     await expect(page.locator('[data-address-line="th_w"]')).toContainText(
       "Heavy or judgment-laden",
     );
@@ -217,7 +217,7 @@ test.describe("the weight a composer may state", () => {
     await openAddress(page);
     await option(page, "standard").click();
 
-    // Note only is §11's floor since UI-126: the line says nobody is asked and
+    // Note only is §10's floor since UI-126: the line says nobody is asked and
     // no level is offered anywhere — never a dimmed control holding a value.
     await page.locator('[data-dropzone="th_w"] .composer-foot .toggle').click();
     await expect(address).toHaveAttribute("data-address-live", "false");

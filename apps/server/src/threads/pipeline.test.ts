@@ -1,5 +1,5 @@
 // What every thread mutation owes the pipeline, asserted once rather than in
-// each verb's suite: §14's warnings, §2.2's invalidation keys, §7's one enqueue
+// each verb's suite: §11's warnings, §2.2's invalidation keys, §7's one enqueue
 // path, and §4's auto-commit session folding.
 
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
@@ -49,7 +49,7 @@ async function framesDuring(run: () => Promise<unknown>): Promise<QueryKey[][]> 
   return frames;
 }
 
-describe("§14 warnings reach every thread response (CONTRACT-006)", () => {
+describe("§11 warnings reach every thread response (CONTRACT-006)", () => {
   beforeEach(() => {
     ws = createThreadWorkspace("warnings");
   });
@@ -68,7 +68,7 @@ describe("§14 warnings reach every thread response (CONTRACT-006)", () => {
 
     expect(response.status).toBe(201);
     expect(codesOf(payload)).toContain("commit_failed");
-    // §14: the file is the source of truth, so a rejected commit does not roll
+    // §11: the file is the source of truth, so a rejected commit does not roll
     // the write back — it surfaces loudly.
     expect(ws.exists(threadPath(payload.thread.id))).toBe(true);
     expect(ws.log("%H")).toHaveLength(before);
@@ -102,7 +102,7 @@ describe("§14 warnings reach every thread response (CONTRACT-006)", () => {
   });
 
   // The rider CONTRACT-007 landed: resolving rewrites the thread's frontmatter
-  // and auto-commits it, so these two owed §14 a response field exactly as the
+  // and auto-commits it, so these two owed §11 a response field exactly as the
   // other four verbs do. They computed the warnings all along and could only
   // log them.
   it.each([

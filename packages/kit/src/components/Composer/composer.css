@@ -6,7 +6,7 @@
  *     import "@corpus/kit/composer.css";
  *
  * `PendingAttachments` draws `.pending-atts` / `.att-chip`; `AttachButton` draws
- * `.clip`. SPEC.md §11's rider binds "any composer a plugin contributes" to the
+ * `.clip`. SPEC.md §10's rider binds "any composer a plugin contributes" to the
  * same three intake routes and the same chip previews as the board's own, and a
  * plugin can import the components but not `apps/ui/src/thread/thread.css` — so
  * the look travels with them or it does not travel at all (UI-070).

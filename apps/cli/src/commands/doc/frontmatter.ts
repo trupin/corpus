@@ -11,7 +11,7 @@ import type { FlagSpec } from "../../registry/types.js";
  * It lives outside both verbs because both write the same keys and a second
  * grammar is the defect this module exists to prevent — CLI-016 published
  * `--extra`'s five rules in the flag's own description, and CLI-018's view
- * flags (SPEC.md §11) parse numbers and `null` for exactly the same reasons.
+ * flags (SPEC.md §10) parse numbers and `null` for exactly the same reasons.
  * `edit.ts` re-exports the two functions its own tests drive, so the split is
  * invisible from outside.
  */
@@ -100,7 +100,7 @@ function jsonStringLiteral(raw: string): string | undefined {
  * only makes the message actionable, so a key the contract adds tomorrow is
  * still refused, just with the generic hint.
  *
- * The four §11 view keys earn entries here the moment they earn flags
+ * The four §10 view keys earn entries here the moment they earn flags
  * (CLI-018): before that, `--extra pinned=true` was refused with "core keys are
  * not user-writable through `--extra`" and nowhere to go, which is a refusal an
  * agent cannot act on.
@@ -253,7 +253,7 @@ export function combineExtraPatches(
 }
 
 /**
- * The §11 view keys, parsed off the flags both verbs declare (CLI-018).
+ * The §10 view keys, parsed off the flags both verbs declare (CLI-018).
  *
  * A column **is** a `type: view` document with `pinned: true` — its frontmatter
  * holds the query and the board position — so "@agent pin me a view of
@@ -306,7 +306,7 @@ export function parseOrder(raw: string | undefined): number | null | undefined {
  *
  * The check is about the **shape** and never about whether the plugin is
  * installed: a view referencing an uninstalled plugin keeps its board position
- * and renders the plugin-missing card (SPEC.md §15 M6), which is the behaviour
+ * and renders the plugin-missing card (SPEC.md §12 M6), which is the behaviour
  * that makes a plugin removable. `null` clears the key; no legal reference can
  * be the word `null`, since every reference carries a slash.
  */
@@ -419,7 +419,7 @@ export const VIEW_KEY_FLAGS: readonly FlagSpec[] = [
     type: "string",
     valueName: "true|false",
     description:
-      "Pin this document to the board as a column, or unpin it (SPEC.md §11 — **a column IS a " +
+      "Pin this document to the board as a column, or unpin it (SPEC.md §10 — **a column IS a " +
       "`type: view` document with `pinned: true`**). Takes an explicit value, like `--evergreen`: " +
       "omitting the flag leaves the field alone, `--pinned false` removes the column. The board " +
       "picks the change up over SSE with no reload. Note this is the **write** side of `doc list " +
@@ -459,6 +459,6 @@ export const VIEW_KEY_FLAGS: readonly FlagSpec[] = [
       "Render this pinned view as a plugin column type (SPEC.md §10), e.g. `--column todos/todos`; " +
       "`--column null` makes it a plain filtered list again. Exactly one slash, no whitespace. The " +
       "check is about the shape only — a reference to a plugin that is **not installed** is legal " +
-      "and keeps its board position, rendering the plugin-missing card (SPEC.md §15).",
+      "and keeps its board position, rendering the plugin-missing card (SPEC.md §12).",
   },
 ];

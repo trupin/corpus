@@ -88,7 +88,7 @@ function Composer({
 }
 
 describe("useAutocomplete", () => {
-  /** SPEC.md §11: "there is no separate registry" — one endpoint, a type filter. */
+  /** SPEC.md §10: "there is no separate registry" — one endpoint, a type filter. */
   it("resolves each trigger through GET /api/docs with a type filter", async () => {
     const wire = transport({
       "?limit=50&type=agent-def": [

@@ -3,7 +3,7 @@
  * SPEC.md §9.2 lists, plus the queue and job verbs §7 requires, the
  * projection-maintenance pair behind §2.2's `corpus db rebuild` / `db doctor`,
  * and the validation route `POST /api/check`. That one was derived from a
- * behavioural section before §9.2 listed it (§14's "`corpus doc check` exposes
+ * behavioural section before §9.2 listed it (§11's "`corpus doc check` exposes
  * the same validator on demand"); the amendment CONTRACT-008 drafted for it is
  * signed off and applied — §9.2 now names it in its own bullet (SHARED-002).
  * Bullets are cited by the route they name, never by line number: §9.2 has been
@@ -124,7 +124,7 @@
  * board selection became a **mode** in which each row carries its own staged
  * action, and §4 gained "**A Save carrying a mix of verbs is still one act and
  * still one commit**". So the route now takes a staged set of `{id, action}`
- * pairs plus §11's single whole-result-set entry, rather than one verb over many
+ * pairs plus §10's single whole-result-set entry, rather than one verb over many
  * ids — the same one endpoint, because grouping client-side by verb would be
  * several commits, which is what §4 forbids and what this route exists to
  * prevent. It sits immediately after `POST /api/docs` because it is the
@@ -138,7 +138,7 @@
  * so. Three §9.2 amendments were signed and applied on 2026-08-08 — the
  * re-attach route, the widening of the acting-party clause, and the weight
  * bullet — and this one was not among them; SHARED-032's sign-off on 2026-08-09
- * amended §4 and §11 and did not touch §9.2 either.
+ * amended §4 and §10 and did not touch §9.2 either.
  *
  * `POST /api/docs/{id}/patch` (CONTRACT-046) needs no derivation at all, and
  * that is worth recording next to the entries above that did: SHARED-037 took it

@@ -48,7 +48,7 @@ describe("the reason vocabulary", () => {
 });
 
 /**
- * SPEC.md §11: "a thread holding **more than one** unanswered form says how many
+ * SPEC.md §10: "a thread holding **more than one** unanswered form says how many
  * are still open". The threshold is the behaviour — one form reads exactly as it
  * always has — so every case around it is pinned, not just the plural one.
  */

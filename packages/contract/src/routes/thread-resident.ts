@@ -49,8 +49,8 @@ import {
  * ## Why both answer with the thread
  *
  * Designating and releasing each rewrite the thread file's frontmatter and
- * auto-commit it, so both can raise §14's warnings — a workspace git hook that
- * rejects the commit leaves the change on disk and uncommitted, and §14 requires
+ * auto-commit it, so both can raise §11's warnings — a workspace git hook that
+ * rejects the commit leaves the change on disk and uncommitted, and §11 requires
  * that to surface on the response rather than in a log. That is precisely the
  * argument `ThreadMutationResponseSchema` was created for on `resolve`/`reopen`,
  * and it applies here unchanged, so the release answers `200` with the thread
@@ -108,7 +108,7 @@ export const designateResident = createRoute({
     "value and interprets nothing about it; a level the launcher cannot meet is reported in the " +
     "listener's first reply, not refused here. `Resident.weight` carries it back on the thread, " +
     "the roster row and the `resident.designated` payload, so the choice is never write-only. A " +
-    "composer addressing this lane offers no per-turn weight and says why (SPEC.md §11).\n\n" +
+    "composer addressing this lane offers no per-turn weight and says why (SPEC.md §10).\n\n" +
     "**Single-valued, so designating again replaces.** A thread has one resident or none, and " +
     "nothing has to arbitrate between two; designating a thread that already has one is a " +
     "replacement rather than a `409` — and a replacement is a release of the old occupant, so it " +
@@ -172,7 +172,7 @@ export const releaseResident = createRoute({
     "**Idempotent.** Releasing a thread that has no resident is a `200` that changes nothing, " +
     "writes nothing and commits nothing — the caller often cannot know, and a release with " +
     "nothing to release is a no-op rather than an error. It answers with the thread rather than a " +
-    "bare `204` because a release that *does* write can raise §14's warnings, and a rejected " +
+    "bare `204` because a release that *does* write can raise §11's warnings, and a rejected " +
     "auto-commit has to be visible somewhere.\n\n" +
     "**User-only**: `403` for `x-corpus-author: agent`, exactly as designating is — release is the " +
     "other half of the same user-only state, and an agent able to release could quietly stop " +

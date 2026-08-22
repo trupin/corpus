@@ -43,7 +43,7 @@ export const getQueueStatus = createRoute({
   tags: ["queue"],
   summary: "Whether an agent is there, halted state, and per-status event counts",
   description:
-    "What the console strip reads (SPEC.md §11): the counts describe the work, and `agent` " +
+    "What the console strip reads (SPEC.md §10): the counts describe the work, and `agent` " +
     "describes the worker. **`agent` is the roster's own liveness aggregated** — the same " +
     "observation `GET /api/agents` reports per lane, so the strip and the recipient picker " +
     "cannot disagree about whether anybody is listening — and it is here so that `idle` can be " +

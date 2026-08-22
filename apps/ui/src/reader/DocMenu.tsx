@@ -8,7 +8,7 @@ import { usePopoverShift } from "./popover";
 import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
 
 /**
- * The reader's ⋯ menu (SPEC.md §11): Comments, Still current, Resolve/Reopen for
+ * The reader's ⋯ menu (SPEC.md §10): Comments, Still current, Resolve/Reopen for
  * threads, Archive, and Delete.
  *
  * **It declares nothing.** The items come from `useDocActions`, which the
@@ -22,11 +22,11 @@ import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
  * `esc` dismiss, and focus returns to the ⋯ button. Before that it had
  * `role="menuitem"` buttons focus never reached.
  *
- * **The publish-plugin items are deliberately absent.** The prototype's menu
- * carries "Copy for Google Docs" and "Push update to Google Doc…", but SPEC.md
- * §13 says the publish *plugin* adds them and §10 says the core must not know a
- * plugin's name. They arrive through the manifest with the plugin, not as inert
- * placeholders here.
+ * **The prototype's publish items are deliberately absent.** Its menu carries
+ * "Copy for Google Docs" and "Push update to Google Doc…". Nothing in Corpus
+ * publishes anywhere: a workspace is local files behind a localhost server, so
+ * there is no target to push to and no address to copy. They are not stubbed
+ * here, because an inert menu item is a promise the product does not keep.
  */
 
 export {
@@ -42,7 +42,7 @@ export interface DocMenuProps {
   readonly threadStatus: string | null;
   readonly onClose: () => void;
   /**
-   * Show the document's comments list (SPEC.md §11's rider, UI-063).
+   * Show the document's comments list (SPEC.md §10's rider, UI-063).
    *
    * Here as well as on the head's own toggle, because the toggle appears only
    * once a document has conversations — see `comments/CommentsSwitch`, which

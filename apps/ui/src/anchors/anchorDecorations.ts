@@ -185,7 +185,7 @@ export interface DecorationHosts {
   /**
    * The element this thread's collapsed chip renders into, or `null` for none.
    *
-   * SPEC.md §11 puts the chip **at the anchor** in a narrow column, and the
+   * SPEC.md §10 puts the chip **at the anchor** in a narrow column, and the
    * body is one contenteditable surface — so the chip is a widget decoration
    * placed after the anchor's top-level block, and React portals the real
    * `ThreadPanel` into the element this returns. The element is owned by the
@@ -210,7 +210,7 @@ export function buildDecorations(
         Decoration.inline(
           only.from,
           only.to,
-          // `.anchor-hl` and nothing else: §11 asks for the same paint as an
+          // `.anchor-hl` and nothing else: §10 asks for the same paint as an
           // anchor's, and a second class would be a second appearance waiting
           // to drift from the first. No pip — there is no conversation to count.
           { class: "anchor-hl", "data-provisional": "true" },
@@ -412,7 +412,7 @@ export function anchorDecorationPlugin({ onActivate, slotFor }: AnchorPluginOpti
         return anchorPluginKey.getState(state)?.set;
       },
       /**
-       * Opening the thread and placing the caret are not exclusive: SPEC.md §11
+       * Opening the thread and placing the caret are not exclusive: SPEC.md §10
        * says clicking a highlight opens its thread and typing inside one just
        * edits, so this reports the click and declines to consume it.
        */

@@ -200,7 +200,7 @@ describe("TodosColumn", () => {
 
   /**
    * The server's default result set already excludes `status: archived`
-   * (SPEC.md §11) and the column states no `status`, so it inherits core's
+   * (SPEC.md §10) and the column states no `status`, so it inherits core's
    * answer instead of inventing a second one — asserted here as the query it
    * actually sends.
    */

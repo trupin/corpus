@@ -19,7 +19,7 @@
  *     person's text carrying a literal `## user · <ts>` line splits their own
  *     message into two turns (`threads/fences.ts`, SERVER-076).
  *   - the composer wants to say so before the round trip, against the field at
- *     fault (§11, UI-091) — and `apps/ui` cannot import `apps/server`.
+ *     fault (§10, UI-091) — and `apps/ui` cannot import `apps/server`.
  *
  * Only the first of those wants a `Turn[]`. So what moved into the contract is
  * the **grammar** — which lines are delimiters, given that fences mask them —

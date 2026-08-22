@@ -14,7 +14,7 @@ export const capture = createRoute({
   tags: ["capture"],
   summary: "Capture text (and attachments) as an inbox document",
   description:
-    "The composer's Capture action (SPEC.md §11): creates the document in `data/docs/inbox/` **plus** " +
+    "The composer's Capture action (SPEC.md §10): creates the document in `data/docs/inbox/` **plus** " +
     "its whole-document filing thread asking the agent to retitle, move, expand and tag it, in one " +
     "call. `multipart/form-data`, so a screenshot plus one line is a first-class capture; build the " +
     "body with `uploadCapture` from `@corpus/contract/client`. The returned `eventId` lets the board " +

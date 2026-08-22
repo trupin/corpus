@@ -1,6 +1,6 @@
 /*
  * Console — the bottom drawer and the single home of agent/queue status
- * (SPEC.md §11), transcribed from `design/index.html`'s console block.
+ * (SPEC.md §10), transcribed from `design/index.html`'s console block.
  *
  * `flex: none` inside `.app`'s column and **never** `position: fixed`: expanding
  * the drawer has to push the board up, not cover it. The board is the flex-grow
@@ -16,7 +16,7 @@
 
 /*
  * The strip's height is a property of the strip, not of what it says (SPEC.md
- * §11's rider, signed 2026-08-20 — "Nothing resizes because of what it holds").
+ * §10's rider, signed 2026-08-20 — "Nothing resizes because of what it holds").
  *
  * Without this, `.console { flex: none }` against `.board { flex: 1 }` means
  * every extra line the strip takes is a line the board loses: measured at
@@ -67,13 +67,13 @@
 }
 
 /*
- * The unread-notice marker (UI-139; SPEC.md §11 — "an unread notice of error
+ * The unread-notice marker (UI-139; SPEC.md §10 — "an unread notice of error
  * tone marks the console until the tab has been opened").
  *
  * **It is reserved, not conditional.** The strip is a `flex` row with a 12px
  * gap, so a dot that mounted when a refusal arrived would push the agent pill,
  * the counts and the index pill right — a line that always renders, moving
- * because of something that happened elsewhere, which is precisely what §11's
+ * because of something that happened elsewhere, which is precisely what §10's
  * rider forbids. So the span is always in the DOM and always this box, and
  * `visibility` is the only thing the unread state changes. The negative margin
  * pulls it back against the word `console` it belongs to, so the reserve costs
@@ -125,7 +125,7 @@
 
 /*
  * `N running · N queued · N done · N failed`, on ordinary queue traffic
- * (SPEC.md §11's rider, 2026-08-20).
+ * (SPEC.md §10's rider, 2026-08-20).
  *
  * **Tabular figures and no reservation**, deliberately. The span's *segments*
  * come and go — `queued` and `deferred` are omitted at zero — so a `min-width`
@@ -166,7 +166,7 @@
 }
 
 /*
- * The two strip pills. `.index-pill` is the agent pill's twin (SPEC.md §11's
+ * The two strip pills. `.index-pill` is the agent pill's twin (SPEC.md §10's
  * index-pill rider): same geometry, same dot vocabulary, one declaration — a
  * second copy of these rules is how the two drift apart at the next token
  * change. They keep separate class names so a Playwright locator for either
@@ -209,9 +209,9 @@
 }
 
 /*
- * Nobody is parked (SPEC.md §11, UI-098). The neutral treatment the abandoned
+ * Nobody is parked (SPEC.md §10, UI-098). The neutral treatment the abandoned
  * job dot and the disabled index dot wear, for their reason and for one of its
- * own: §11 is explicit that "disconnected is not an error state and is not
+ * own: §10 is explicit that "disconnected is not an error state and is not
  * styled as a failure" — with no agent running it is simply the truth, and the
  * thing it prompts is starting the agent, not fixing a fault. So never
  * `--signal`, which is halted's and means needs-you; never `--good`, which is
@@ -290,7 +290,7 @@
  *
  * This rule used to wrap (`overflow-wrap: anywhere`), on the reasoning that a
  * sentence cut at the drawer's edge is a sentence that stopped explaining. The
- * reasoning is right and the conclusion is inverted under SPEC.md §11's rider
+ * reasoning is right and the conclusion is inverted under SPEC.md §10's rider
  * (2026-08-20): text that does not fit is **revealed, not accommodated**. So the
  * line is cut here and the whole sentence goes to the span's `title`
  * (`IndexPill.tsx`), which is where a person reads it without the board moving
@@ -311,7 +311,7 @@
  * width is taken out of the server's sentence. Tabular figures hold it steady
  * inside a digit count, and `9ch` — the width of `147 failed` — holds it across
  * the crossing. One character of slack beside `9 failed` is the whole cost
- * (SPEC.md §11's rider, 2026-08-20).
+ * (SPEC.md §10's rider, 2026-08-20).
  */
 .index-failed {
   color: var(--signal);
@@ -724,7 +724,7 @@
 /*
  * ── The reserved box, and the pattern the next late-arriving value copies ──
  *
- * SPEC.md §11's rider, signed 2026-08-20: "Nothing resizes because of what it
+ * SPEC.md §10's rider, signed 2026-08-20: "Nothing resizes because of what it
  * holds… a value that arrives later than the box holding it moves nothing else
  * on the screen."
  *
@@ -912,7 +912,7 @@
 /*
  * ── The Notices tab (UI-139) ──
  *
- * SPEC.md §11's Notices paragraph, rider authorized 2026-08-21: every warning
+ * SPEC.md §10's Notices paragraph, rider authorized 2026-08-21: every warning
  * and refusal this session raised, newest first, each with its whole text.
  *
  * **Nothing here clamps, and that is the point.** A toast is cut to two lines so
@@ -1009,7 +1009,7 @@
   line-height: 1.7;
 }
 
-/* §11 forbids a listing that ends quietly: the bound says what it discarded. */
+/* §10 forbids a listing that ends quietly: the bound says what it discarded. */
 .notice-dropped {
   padding: 10px;
   color: var(--ink-3);

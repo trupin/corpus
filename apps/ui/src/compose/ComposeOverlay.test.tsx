@@ -143,7 +143,7 @@ describe("ComposeOverlay", () => {
     });
 
     /**
-     * Capture is the *secondary* submit under SPEC.md §11's contract, so it
+     * Capture is the *secondary* submit under SPEC.md §10's contract, so it
      * moved off `⌘↵` — which the primary action now owns in every composer —
      * onto `⇧⌘↵`.
      */
@@ -343,7 +343,7 @@ describe("ComposeOverlay", () => {
 
     /**
      * The composer that has both claims on `↵` — a menu that owns the bare key
-     * and a contract that owns the chords (SPEC.md §11: "the primary action is
+     * and a contract that owns the chords (SPEC.md §10: "the primary action is
      * always `⌘↵`"). All four combinations, because the defect PR #20's review
      * found lived in exactly one of them: an open menu answered *any* `Enter`,
      * so `⌘↵` accepted a completion instead of asking.
@@ -424,7 +424,7 @@ describe("ComposeOverlay", () => {
 
       /**
        * `⇧⇥` is the browser's reverse-focus key and has no accept semantics;
-       * SPEC.md §11 gives the menu `⇥`.
+       * SPEC.md §10 gives the menu `⇥`.
        */
       it("menu open · ⇧⇥ — leaves the field, accepting nothing", async () => {
         const wire = withMenu();

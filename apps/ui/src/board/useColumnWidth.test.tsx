@@ -12,7 +12,7 @@ import { memoryStorage } from "../testing/memoryStorage";
 import { COLUMN_RESIZE_STEP, MIN_COLUMN_WIDTH } from "./columnWidth";
 
 /**
- * Dragging a column's edge, through the real board (SPEC.md §11).
+ * Dragging a column's edge, through the real board (SPEC.md §10).
  *
  * The assertions that matter are about the **wire**: one completed drag is one
  * `PUT` carrying `{ extra: { width } }` and nothing else, because `extra` is

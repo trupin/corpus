@@ -17,7 +17,7 @@ export const MAX_NESTED_DEPTH = 3;
  *
  * It used to be the depth at which a conversation stopped being a card and
  * became a link that **navigated away** — a fold whose only way back was losing
- * your place, which SPEC.md §11 now rules out ("every collapse expands again in
+ * your place, which SPEC.md §10 now rules out ("every collapse expands again in
  * place"). So the cap stayed and its meaning changed: past it the conversation
  * is collapsed rather than dropped, expands where it stands like every other
  * fold, and opening it in its own reader remains a choice rather than the only

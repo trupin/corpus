@@ -7,7 +7,7 @@ afterEach(cleanup);
 
 /**
  * The frame's half of "the menu behaves like every other menu in the app"
- * (SPEC.md §11: `esc` dismisses, arrows navigate, `↵` activates). What is *in*
+ * (SPEC.md §10: `esc` dismisses, arrows navigate, `↵` activates). What is *in*
  * the menu is `TodoItemMenu`'s business and is tested there.
  */
 

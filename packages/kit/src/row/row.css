@@ -1,5 +1,5 @@
 /*
- * The row, ported selector-for-selector from `design/index.html` (SPEC.md §11
+ * The row, ported selector-for-selector from `design/index.html` (SPEC.md §10
  * names it authoritative for look & feel). Consumed as a stylesheet subpath —
  *
  *     import "@corpus/kit/row.css";
@@ -142,7 +142,7 @@
  *
  * The pill sits in `.row-meta` before `.age`'s `margin-left: auto`, so without
  * this a row that gained a second unread thread pushed its own context line
- * (SPEC.md §11's rider, signed 2026-08-20).
+ * (SPEC.md §10's rider, signed 2026-08-20).
  */
 .unread {
   display: inline-flex;
@@ -210,7 +210,7 @@
 }
 
 /*
- * The age chip (SPEC.md §11's rider, signed 2026-08-20 — "Nothing resizes
+ * The age chip (SPEC.md §10's rider, signed 2026-08-20 — "Nothing resizes
  * because of what it holds").
  *
  * `.row-meta .age` is `margin-left: auto`, so its neighbour is `.row-context`,
@@ -316,7 +316,7 @@
   color: var(--signal);
 }
 
-/* ── The attention reason line (SPEC.md §11) ─────────── */
+/* ── The attention reason line (SPEC.md §10) ─────────── */
 
 .reason {
   font-size: 11px;

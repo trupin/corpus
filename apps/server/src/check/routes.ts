@@ -1,7 +1,7 @@
 // `POST /api/check` — the validation surface behind `corpus doc check`
-// (SPEC.md §14).
+// (SPEC.md §11).
 //
-// §14's requirement is not that a check exists but that there is **one** of them:
+// §11's requirement is not that a check exists but that there is **one** of them:
 // "the same validator behind `corpus doc check` runs on every save". This handler
 // is what makes that literally true rather than a claim about two
 // implementations that agree today. It calls `checkCorpus` — the same function
@@ -25,7 +25,7 @@
 //   own XOR produces it before this handler ever runs.
 // - **`ok` is derived here.** The server's `CheckReport` is `{errors, warnings}`;
 //   the wire adds the verdict, defined as `errors.length === 0`. Warnings never
-//   flip it — that is the whole point of §14's severity split.
+//   flip it — that is the whole point of §11's severity split.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";

@@ -191,7 +191,7 @@ describe("CorpusImage: opening the viewer", () => {
     expect(opened[0]?.origin).toBe(image);
   });
 
-  /** SPEC.md §11's keyboard scheme: the image is reachable and `↵` opens it. */
+  /** SPEC.md §10's keyboard scheme: the image is reachable and `↵` opens it. */
   it("opens on ↵", () => {
     const { opened, Viewer } = viewerHarness();
     const harness = createCorpusTestHarness({ fetch: wire().fetch });

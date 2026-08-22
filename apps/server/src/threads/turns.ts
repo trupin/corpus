@@ -85,7 +85,7 @@ export interface TurnInput {
   /** The §8 tri-state, exactly as it arrived; `undefined` means *omitted*. */
   readonly requestsAgent: boolean | undefined;
   /**
-   * The model that wrote this turn (SPEC.md §11), or `undefined` when the writer
+   * The model that wrote this turn (SPEC.md §10), or `undefined` when the writer
    * did not say. Recorded verbatim and interpreted in no way — see
    * {@link assertModelNamesAnAgentTurn}.
    */
@@ -119,7 +119,7 @@ export interface TurnInput {
 }
 
 /**
- * A model may be stated only about a turn the **agent** wrote (SPEC.md §11,
+ * A model may be stated only about a turn the **agent** wrote (SPEC.md §10,
  * CONTRACT-043).
  *
  * "A turn a person wrote names no model" is not a rendering convention: a server
@@ -138,7 +138,7 @@ export function assertModelNamesAnAgentTurn(actor: Actor, model: string | undefi
   validationError("only an agent turn names the model that wrote it", [
     {
       path: "model",
-      message: `a turn authored by \`${actor}\` names no model (SPEC.md §11)`,
+      message: `a turn authored by \`${actor}\` names no model (SPEC.md §10)`,
     },
   ]);
 }
@@ -185,7 +185,7 @@ export function turnRequestBody(body: AppendTurnBody): TurnInput {
   };
 }
 
-/** The bytes an append will write, and what §14 noticed about them. */
+/** The bytes an append will write, and what §11 noticed about them. */
 export interface PreparedTurn {
   readonly appended: { readonly body: string; readonly turn: Turn };
   /** The whole thread file, frontmatter included, ready to be written. */
@@ -195,7 +195,7 @@ export interface PreparedTurn {
 
 /**
  * Build the thread file a turn append will write — the turn itself, the
- * frontmatter it moves, and §14's verdict on the result.
+ * frontmatter it moves, and §11's verdict on the result.
  *
  * Extracted so the form-answer path (SERVER-016) appends through *this* code
  * rather than a second copy of it. A form answer is a turn like any other: the
@@ -223,7 +223,7 @@ export function buildTurnAppend(
     /** The thread's `status` after this turn, per §8's reopen. */
     readonly status: ThreadStatus;
     /**
-     * The model that wrote this turn (SPEC.md §11), recorded in the thread's
+     * The model that wrote this turn (SPEC.md §10), recorded in the thread's
      * frontmatter beside its `anchors` map. Omitted by every caller that has
      * nothing to report — a person's turn, and a form answer, which the contract
      * gives no way to state one on.
@@ -239,7 +239,7 @@ export function buildTurnAppend(
   // `core/turns.ts` only ever sees a body, so every turn it produces names no
   // model; the model is what this write is *recording*, so the wire turn carries
   // it from here rather than from a re-read of the file this write has not made
-  // yet. `null` when nothing was stated — §11's nothing, never a default.
+  // yet. `null` when nothing was stated — §10's nothing, never a default.
   const appended = {
     body: written.body,
     turn: { ...written.turn, model: input.model ?? null },
@@ -367,7 +367,7 @@ export async function appendThreadTurn(
   // either shape still accepts replies (`fences.ts` states the SERVER-066
   // boundary in full).
   assertAppendableTurnText(input.text, TURN_SUBJECT);
-  // Likewise for an attribution nobody made (SPEC.md §11): a person's turn names
+  // Likewise for an attribution nobody made (SPEC.md §10): a person's turn names
   // no model, on any path.
   assertModelNamesAnAgentTurn(actor, input.model);
   // Likewise for a malformed form the *agent* wrote: this is the endpoint it
@@ -375,7 +375,7 @@ export async function appendThreadTurn(
   // when they try to answer. It vets neither another actor's turn nor the first
   // turn of a thread created through `POST /api/threads`, both by design, so it
   // is the agent's guard rather than a guarantee about disk; `assertWritableForm`
-  // states the boundary and §11's broken-block rendering covers the rest.
+  // states the boundary and §10's broken-block rendering covers the rest.
   assertWritableForm(actor, input.text);
 
   return mutex.run(id, async () => {

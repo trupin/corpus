@@ -355,7 +355,7 @@ describe("a fold sticks, and belongs to one reader", () => {
 });
 
 /**
- * SPEC.md §11: the fold claims **no new key**, and joins each conversation's
+ * SPEC.md §10: the fold claims **no new key**, and joins each conversation's
  * existing right-click actions instead — the menu that already lists "exactly
  * that item's existing actions, nothing invented".
  */
@@ -408,7 +408,7 @@ describe("the fold claims no key of its own", () => {
 
 /**
  * SPEC.md §7's designation, offered where a person acts on the conversation
- * (UI-109). The menu is the same declared list §11 binds to "exactly that
+ * (UI-109). The menu is the same declared list §10 binds to "exactly that
  * item's existing actions" — a designation *is* an action on this thread — and
  * these tests drive it through the real menu rather than through
  * `residentActions`, which is unit-tested next door.
@@ -515,7 +515,7 @@ describe("designating a resident", () => {
   });
 
   /**
-   * The keyboard has to reach the new item like any other: §11's menu contract
+   * The keyboard has to reach the new item like any other: §10's menu contract
    * is unchanged, and a designation offered only to a pointer would be the same
    * unreachability in a different disguise.
    */
@@ -750,7 +750,7 @@ describe("a conversation nested deeper than the surface can draw", () => {
    * The one collapse in the app that used to have no way back: past the drawn
    * depth a child thread became a chip that **navigated away**, so reading it
    * meant losing your place, and its turns lost their "comment on this" control
-   * with it. §11's "every collapse expands again in place" is what forces this.
+   * with it. §10's "every collapse expands again in place" is what forces this.
    */
   it("is collapsed rather than dropped, and expands where it stands", async () => {
     const transport = wire();
@@ -790,7 +790,7 @@ describe("a conversation nested deeper than the surface can draw", () => {
 
   /**
    * The interlock governs **the rule**, not the clamp (PR #25 review, MINOR).
-   * §11 binds it to "never collapsed *by the rule*", and depth is not a rule —
+   * §10 binds it to "never collapsed *by the rule*", and depth is not a rule —
    * it is what the surface can draw. An unread conversation down there used to
    * defeat the clamp and render a full card at a depth the surface had already
    * said it could not usefully draw; now it is placed collapsed like the rest,
@@ -841,7 +841,7 @@ describe("a conversation nested deeper than the surface can draw", () => {
  * PR #25 re-review, MINOR — **the chip↔margin swap is an unmount, and the
  * placement has to survive it.**
  *
- * "Reading never collapses anything" (SPEC.md §11) is kept by recording what a
+ * "Reading never collapses anything" (SPEC.md §10) is kept by recording what a
  * conversation was placed with and never letting that answer soften; the record
  * used to be a ref inside `ThreadPanel`, which made it a property of one mounted
  * component. Crossing `MARGIN_MIN_WIDTH` unmounts the chip's panel and mounts a
@@ -852,7 +852,7 @@ describe("a conversation nested deeper than the surface can draw", () => {
  * by a resize.
  *
  * The other half is asserted beside it, because the fix is a *lifetime* and not
- * a memory: a placement is a fresh decision every time §11 says one is made, so
+ * a memory: a placement is a fresh decision every time §10 says one is made, so
  * leaving the conversation and coming back has to fold it.
  */
 describe("a conversation that changes placement while it is on screen", () => {

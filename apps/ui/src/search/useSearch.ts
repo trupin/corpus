@@ -6,7 +6,7 @@ import type { SearchQuery } from "./searchQuery";
 
 /**
  * The overlay's data path: one debounced `GET /api/search` per query, and
- * nothing else (SPEC.md §11 — "its ranked result list is served by
+ * nothing else (SPEC.md §10 — "its ranked result list is served by
  * `GET /api/search`").
  *
  * Three properties this hook exists to guarantee, all of which are acceptance

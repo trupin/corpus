@@ -20,7 +20,7 @@ import { z } from "@hono/zod-openapi";
  * whole design: a new plugin doc type is *zero* contract changes.
  *
  * Core keys, by contrast, stay closed and validated where they always were.
- * §11's view keys (`pinned`, `order`, `query`, `column`) are deliberately
+ * §10's view keys (`pinned`, `order`, `query`, `column`) are deliberately
  * **not** in here — they graduated to first-class core fields (see `doc.ts`),
  * because two of them are server semantics (`pinned` is a filter, `order` is a
  * sort, and a key the server filters and sorts on is by definition not opaque)
@@ -30,7 +30,7 @@ import { z } from "@hono/zod-openapi";
 
 /**
  * The closed set of core frontmatter keys (SPEC.md §5 base fields, §6 thread
- * fields, §11 view fields). A key in `extra` naming one of these is rejected
+ * fields, §10 view fields). A key in `extra` naming one of these is rejected
  * with `400`, on requests and by construction on responses — so a core field
  * can never be shadowed, duplicated, or smuggled past its own validation.
  *
@@ -76,12 +76,12 @@ export const RESERVED_FRONTMATTER_KEYS = [
   // queue routes on designation (SERVER-111) that is also a way for an agent to
   // redirect its own work.
   "resident",
-  // SPEC.md §11 — which model wrote each agent turn, keyed by turn timestamp.
+  // SPEC.md §10 — which model wrote each agent turn, keyed by turn timestamp.
   // Reserved is what makes it unforgeable: `extra` is a client-supplied merge
   // patch, so an attribution stored there could be rewritten by an ordinary
   // `PUT /api/docs/{id}` (see `./turn-model.ts`).
   "turnModels",
-  // SPEC.md §11 — view documents (first-class core keys, see doc.ts)
+  // SPEC.md §10 — view documents (first-class core keys, see doc.ts)
   "pinned",
   "order",
   "query",

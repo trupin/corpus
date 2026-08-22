@@ -40,7 +40,7 @@ export const DocStatusSchema = z.enum(DOC_STATUSES).openapi({
 });
 
 /**
- * Folder placement under `data/docs/`. Creation is inbox-first (SPEC.md §11
+ * Folder placement under `data/docs/`. Creation is inbox-first (SPEC.md §10
  * "zero-form, inbox-first"), so an omitted folder lands the document in
  * `data/docs/inbox/` rather than at the root — unless the type being created has
  * a root of its own that it can actually land in, which
@@ -118,7 +118,7 @@ export const DEFAULT_DOC_FOLDER = "inbox";
 const CREATE_FOLDER_DESCRIPTION =
   "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
   `(\`data/docs/finance\`). Defaults to \`${DEFAULT_DOC_FOLDER}\` — creation is inbox-first ` +
-  "(SPEC.md §11), and the agent files inbox arrivals per its skill — **except for a type that " +
+  "(SPEC.md §10), and the agent files inbox arrivals per its skill — **except for a type that " +
   "SPEC.md §7 gives a document root of its own that takes ordinary markdown documents**, which " +
   "is where an omitted `folder` files it: a " +
   "`type: agent-def` document lands in `.claude/agents/`, so creating a persona never requires " +
@@ -191,7 +191,7 @@ const MOVE_FOLDER_DESCRIPTION =
   "Destination folder under `data/docs/`, accepted either as a bare name (`finance`) or as the " +
   "full prefix (`data/docs/finance`). **Required, and it has no default**: a move names where " +
   "the document is going. Nothing here is inbox-first — that is creation's rule " +
-  "(`POST /api/docs`, SPEC.md §11), and a document being moved already has a folder. Every " +
+  "(`POST /api/docs`, SPEC.md §10), and a document being moved already has a folder. Every " +
   "destination is under `data/docs/`: a move carries no type, and each document root SPEC.md §7 " +
   "adds alongside `data/` holds exactly one type, so naming one (`.claude/agents`) is a `400` — " +
   "filing a document into such a root is part of creating it, not of moving it. The filename " +
@@ -223,14 +223,14 @@ const UNDATED_DESCRIPTION = (which: string): string =>
   "substituting a date; staleness treats an unknown age as fresh.";
 
 /**
- * **The §11 view keys are first-class core fields, not extra frontmatter**
+ * **The §10 view keys are first-class core fields, not extra frontmatter**
  * (CONTRACT-011 design decision, 2026-07-27). Three reasons, in force order:
  *
  * 1. Two of the four are server semantics — `pinned` is a `GET /api/docs`
  *    filter and `order` is a sort key, and a key the server filters and sorts
  *    on is by definition not opaque passthrough. Routing them through `extra`
  *    would mean the server reaching into a blob it promises never to read.
- * 2. §11 makes columns core product ("a column IS a `type: view` document");
+ * 2. §10 makes columns core product ("a column IS a `type: view` document");
  *    core keys are closed and validated here, and `query`'s well-formedness
  *    and `column`'s `<plugin>/<type>` format deserve `400`s at the write
  *    boundary, which `extra` deliberately never provides.
@@ -247,11 +247,11 @@ const UNDATED_DESCRIPTION = (which: string): string =>
  * nullable timestamps follow.
  */
 const PINNED_DESCRIPTION =
-  "True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when " +
+  "True pins this `type: view` document to the board as a column (SPEC.md §10). `false` when " +
   "the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`.";
 
 const ORDER_DESCRIPTION =
-  "Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the " +
+  "Board position of a pinned view, ascending under `sort=order` (SPEC.md §10). `null` when the " +
   "file carries no `order` key — such a column is still placed, by the documented tiebreak " +
   "(`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder " +
   "may write midpoints between neighbours instead of renumbering every column.";
@@ -287,7 +287,7 @@ const REMOVE_TAGS_DESCRIPTION =
   "be combined with `tags`.";
 
 const VIEW_QUERY_DESCRIPTION =
-  "The stored board query of a `type: view` document (SPEC.md §11): a flat map from " +
+  "The stored board query of a `type: view` document (SPEC.md §10): a flat map from " +
   "`GET /api/docs` parameter names to a value or an array of values — arrays OR together, like " +
   'the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server ' +
   "stores it and never interprets it: the client compiles it into the collection query and " +
@@ -297,7 +297,7 @@ const VIEW_QUERY_DESCRIPTION =
 const COLUMN_DESCRIPTION =
   'Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — ' +
   "e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an " +
-  "uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15).";
+  "uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §12).";
 
 const viewQueryValue = z.union([z.string(), z.number(), z.boolean()]);
 
@@ -422,7 +422,7 @@ export const docRowBaseShape = {
 } as const;
 
 /**
- * Creation is zero-form (SPEC.md §11): a type and a title are the whole
+ * Creation is zero-form (SPEC.md §10): a type and a title are the whole
  * requirement, and everything else the server fills in. Those fields are
  * therefore `.optional()` with their server-applied default documented, never
  * `.default()` — see the optional-in/defaulted-out note in `./index.ts`.
@@ -612,7 +612,7 @@ export const AnchorReconciliationSchema = z
 
 /**
  * What every non-editing document mutation returns — create, move, archive,
- * unarchive. The document is wrapped rather than returned bare so §14's
+ * unarchive. The document is wrapped rather than returned bare so §11's
  * warnings have somewhere to live: a hook that rejected the auto-commit, or a
  * workspace with no git, must surface on the response and not only in a log.
  */
@@ -623,7 +623,7 @@ export const DocMutationResponseSchema = z
 /**
  * What a write that changes a document's **content** answers with — the saved
  * document (carrying its fresh key), what reconciliation did to the anchors, and
- * §14's warnings.
+ * §11's warnings.
  *
  * Shared verbatim between `PUT /api/docs/{id}` and `POST /api/docs/{id}/patch`
  * (`./doc-patch.js`) rather than restated, so the two cannot describe the same

@@ -6,7 +6,7 @@ import { isPendingTurn, type PendingTurn, type ThreadView } from "./pendingTurns
 
 /**
  * `POST /api/threads/{id}/turns` with an optimistic append of the user's own
- * turn (SPEC.md §11).
+ * turn (SPEC.md §10).
  *
  * The provisional turn lands in the `["threads", id]` cache synchronously,
  * marked `pending` so a view can render it differently, and is reconciled by
@@ -20,11 +20,11 @@ export interface AppendTurnVariables {
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
   readonly requestsAgent?: boolean;
   /**
-   * The weight this request states (SPEC.md §7, §11) — a **Key** token from the
+   * The weight this request states (SPEC.md §7, §10) — a **Key** token from the
    * workspace's own guidance. Omit for "the orchestrator decides", which is the
    * ordinary case; there is no default and no other spelling of absence.
    *
-   * It rides on **both** request shapes below, because §11 names Capture and a
+   * It rides on **both** request shapes below, because §10 names Capture and a
    * comment carrying a file among the surfaces that may state one: a weight that
    * survived only the JSON path would be silently dropped by attaching a file.
    */
@@ -114,7 +114,7 @@ export function useAppendTurn(
         author: "user",
         ts: new Date().toISOString(),
         body: provisionalBody(variables),
-        // A person's turn names no model (SPEC.md §11) — never a placeholder.
+        // A person's turn names no model (SPEC.md §10) — never a placeholder.
         model: null,
         pending: true,
         clientId: nextClientId(),

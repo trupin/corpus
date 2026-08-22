@@ -19,7 +19,7 @@ import {
  * reload and no polling — including **the agent's own writes**, which reach this
  * hook as `["docs", id]` frames exactly as they always have (SPEC.md §9.2).
  * Nothing here ever read lock state, and there is none to read: SPEC.md §7
- * replaced it with a key the writer presents, and §11 makes the board never
+ * replaced it with a key the writer presents, and §10 makes the board never
  * read-only.
  *
  * The two collection reads are one request each, not one per item:
@@ -69,7 +69,7 @@ export interface ReaderDoc {
   /** Documents referencing this one — the "Referenced by" panel. */
   readonly backlinks: readonly DocRow[];
   /**
-   * The ranked related set — the "Related" panel (SPEC.md §11), in the server's
+   * The ranked related set — the "Related" panel (SPEC.md §10), in the server's
    * order with the server's relation labels, neither re-sorted nor filtered.
    */
   readonly related: readonly RelatedDoc[];

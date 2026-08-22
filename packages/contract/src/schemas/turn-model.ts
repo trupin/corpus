@@ -3,7 +3,7 @@ import { CANONICAL_INSTANT } from "../turns.js";
 import { IsoDateTimeSchema } from "./time.js";
 
 /**
- * The model that wrote an agent turn (SPEC.md §11, rider signed 2026-08-07), and
+ * The model that wrote an agent turn (SPEC.md §10, rider signed 2026-08-07), and
  * **where it is recorded** — which is the whole of CONTRACT-043's decision.
  *
  * ---
@@ -144,7 +144,7 @@ import { IsoDateTimeSchema } from "./time.js";
 export const TURN_MODEL_MAX_LENGTH = 200;
 
 const TURN_MODEL_DESCRIPTION =
-  "Display name of the model that wrote this turn (SPEC.md §11) — a **display string, not an " +
+  "Display name of the model that wrote this turn (SPEC.md §10) — a **display string, not an " +
   "enum**: §7 keeps model names in the orchestrator skill, so this contract never enumerates " +
   "them and a workspace that changes its tiers changes nothing here. " +
   "**One model, never a list.** Where a request ran in stages at different weights (§7), this " +
@@ -174,7 +174,7 @@ export const TurnModelSchema = z
 
 /**
  * Response side. **Nullable, not optional** — the convention `threadRowShape`
- * documents in `./query.ts`, and §11 is unusually explicit about why it matters
+ * documents in `./query.ts`, and §10 is unusually explicit about why it matters
  * here: "a turn a person wrote names no model, and a turn written before this was
  * recorded shows **nothing** rather than a guess".
  *
@@ -204,7 +204,7 @@ export const turnModelResponseField = TurnModelSchema.nullable().describe(
  */
 export const turnModelRequestField = TurnModelSchema.optional().describe(
   `${TURN_MODEL_DESCRIPTION} Omit it when no model wrote the turn. Supplying it on a turn ` +
-    "authored by anyone but `agent` (`x-corpus-author`) is a `400`: §11 says a person's turn " +
+    "authored by anyone but `agent` (`x-corpus-author`) is a `400`: §10 says a person's turn " +
     "names no model, and a server that accepted one would be publishing an attribution nobody " +
     "made. The server records the value verbatim and interprets nothing about it.",
 );

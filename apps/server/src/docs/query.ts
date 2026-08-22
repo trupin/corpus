@@ -1,5 +1,5 @@
 // `GET /api/docs` — the single collection query behind every list in the
-// product (SPEC.md §9.2, §11): board columns, the search overlay, the Attention
+// product (SPEC.md §9.2, §10): board columns, the search overlay, the Attention
 // view and every autocomplete are this one statement with different parameters.
 //
 // Three rules shape the SQL:
@@ -70,7 +70,7 @@ const ORDER_BY: Readonly<Record<DocSort, string>> = {
   "-created": "d.created DESC, d.id ASC",
   due: "d.due IS NULL, d.due ASC, d.id ASC",
   title: "d.title COLLATE NOCASE ASC, d.id ASC",
-  // The board's column ordering (SPEC.md §11, CONTRACT-011): ascending, with
+  // The board's column ordering (SPEC.md §10, CONTRACT-011): ascending, with
   // the contract's documented tiebreak spelled out — `order` **nulls last** (a
   // view with no `order` key is placed, never dropped), then `title`, then
   // `id`. `IS NULL` yields 0 before 1, which is what puts the nulls after the
@@ -135,7 +135,7 @@ const threadOnly = (sql: string): string => `CASE WHEN t.id IS NULL THEN NULL EL
  * `0` too — COUNT is never NULL, so the column is never "unknown".
  *
  * Archived threads are excluded, by the same {@link notArchivedSql} fragment the
- * collection query's default lifecycle rule uses (§11). Without it the two sides
+ * collection query's default lifecycle rule uses (§10). Without it the two sides
  * of the contract's stated equality disagreed the moment a thread was archived:
  * the filtered query dropped it and the pill did not, leaving a document
  * advertising unread work that nothing visible on the board could explain or
@@ -154,10 +154,10 @@ export const UNREAD_THREADS_SQL = `CASE WHEN t.id IS NOT NULL THEN 0 ELSE (
          ) END`;
 
 /**
- * The §11 thread affordances and the staleness tier, as columns of the page
+ * The §10 thread affordances and the staleness tier, as columns of the page
  * query.
  *
- * `unanswered_forms` (CONTRACT-040) is §11's "a thread holding more than one
+ * `unanswered_forms` (CONTRACT-040) is §10's "a thread holding more than one
  * unanswered form says how many are still open", carried on the row so no list
  * has to fetch each thread to count its forms — a row holds no turns, so a
  * client-side count is one `GET /api/threads/{id}` per row per render.
@@ -295,7 +295,7 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     evergreen: row.evergreen !== 0,
     origin: row.origin,
     excerpt: row.excerpt,
-    // The §11 view keys, from the columns the projection filled by parsing the
+    // The §10 view keys, from the columns the projection filled by parsing the
     // file with the contract's own schemas — so the row and `GET /api/docs/{id}`
     // report one file's frontmatter identically (CONTRACT-011).
     pinned: row.pinned !== 0,
@@ -392,7 +392,7 @@ export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): Do
  * **Every** document a query matches, as ids — the same collection query with no
  * page and no row columns.
  *
- * §11's whole-result-set selection ("all 412 matching", `docs/selection.ts`) is
+ * §10's whole-result-set selection ("all 412 matching", `docs/selection.ts`) is
  * the one caller: a Save that acts on what a column's query matches has to mean
  * the same set the column would list, so this shares {@link compileFilters} and
  * {@link whereClause} with {@link queryDocs} rather than restating the grammar.

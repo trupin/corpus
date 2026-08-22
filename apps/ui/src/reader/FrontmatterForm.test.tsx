@@ -790,7 +790,7 @@ describe("a derived status", () => {
     expect(status().value).toBe("open");
   });
 
-  it("is an ordinary control when the plugin is gone (§15 M6)", () => {
+  it("is an ordinary control when the plugin is gone (§12 M6)", () => {
     setPluginRegistry(EMPTY_REGISTRY);
     mount({ doc: todo() });
     expect(screen.queryByRole("status")).toBeNull();
@@ -876,7 +876,7 @@ describe("leaving the document", () => {
   });
 
   /**
-   * SPEC.md §11's "empty document does not survive leaving it": a cleared title
+   * SPEC.md §10's "empty document does not survive leaving it": a cleared title
    * is never written, and the abandon rule is what removes the document. The
    * control keeps showing the emptiness the person typed rather than
    * repopulating itself from disk.
@@ -990,7 +990,7 @@ describe("the document's edit session", () => {
  * the write path undoes: SERVER-134 converges a derived `due` on every write the
  * server makes, so picking a date on a todo sent `PUT {"due":"2030-01-01"}`, got
  * a `200`, and snapped back to the derived value with no error and nothing said.
- * §11 (SHARED-030) — *"editable by nobody"* — and `PluginDocType`'s own contract
+ * §10 (SHARED-030) — *"editable by nobody"* — and `PluginDocType`'s own contract
  * — *"a surface that would offer a `due` edit renders it locked"* — both rule it
  * out.
  *
@@ -1170,7 +1170,7 @@ describe("a derived due", () => {
     expect(status().disabled).toBe(true);
   });
 
-  it("is an ordinary control when the plugin is gone (§15 M6)", () => {
+  it("is an ordinary control when the plugin is gone (§12 M6)", () => {
     setPluginRegistry(EMPTY_REGISTRY);
     mount({ doc: todo() });
     expect(dueCell().querySelector("output.fm-statement")).toBeNull();

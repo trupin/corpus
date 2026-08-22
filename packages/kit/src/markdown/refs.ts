@@ -27,7 +27,7 @@ import { DocumentIdSchema } from "@corpus/contract";
  *
  * Matching the server here is not tidiness. The server is what decides whether
  * a token becomes a `links` row and whether it warns as an unresolved reference
- * (SPEC.md §14); a client that recognised *more* tokens than the server would
+ * (SPEC.md §11); a client that recognised *more* tokens than the server would
  * render a live link the corpus has no record of, which is exactly what
  * `[[not-a-real-doc]]` used to do — a navigable ref into a reader for an id
  * that can never exist.

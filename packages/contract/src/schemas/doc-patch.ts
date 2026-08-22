@@ -200,7 +200,7 @@ export const PatchConflictErrorSchema = z
  *
  * **The same shape every content write answers with** ({@link
  * docWriteResponseShape} — the saved document with its fresh key, the anchor
- * reconciliation report, §14's warnings), because SPEC.md §9.2 says a patch is
+ * reconciliation report, §11's warnings), because SPEC.md §9.2 says a patch is
  * an ordinary write once applied and that has to be true of the response too. A
  * leaner reply was considered and rejected on two counts: the fresh key is
  * published in exactly one place, on `Doc` (`./key.ts` — a sibling `key` field

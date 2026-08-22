@@ -15,7 +15,7 @@ import { stubCorpus } from "./stubCorpus";
  *
  * The reply is typed into the real composer with real keystrokes, because the
  * key that produces the newline is the whole reason the defect became
- * reachable: `↵` inserts and never submits (SPEC.md §11's composer key
+ * reachable: `↵` inserts and never submits (SPEC.md §10's composer key
  * contract, SHARED-009 Amendment 1), and `⌘↵` sends.
  */
 

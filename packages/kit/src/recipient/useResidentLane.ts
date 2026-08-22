@@ -6,7 +6,7 @@ import { useScopeWalk } from "./useScopeWalk.js";
 
 /**
  * The roster, read the way a **board surface** reads it — SPEC.md §7's *"who is
- * running is a read, never a push"*, and §11's board showing who is resident.
+ * running is a read, never a push"*, and §10's board showing who is resident.
  *
  * ## Why this is here and not in `apps/ui`
  *

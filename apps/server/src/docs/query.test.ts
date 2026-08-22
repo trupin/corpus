@@ -826,7 +826,7 @@ describe("staleness", () => {
       expect(found({ needs: "me", includeArchived: "true" })).toEqual(["doc_agedopen"]);
     });
 
-    it("reports no tier at all, so §11's ramp renders it fresh", () => {
+    it("reports no tier at all, so §10's ramp renders it fresh", () => {
       const tiers = new Map(query({ includeArchived: "true" }).map((row) => [row.id, row.stale]));
       expect(tiers.get("doc_agedopen")).toBe("very-stale");
       expect(tiers.get("doc_agedresolved")).toBeNull();
@@ -1766,7 +1766,7 @@ describe("unreadThreads", () => {
       ],
     });
 
-    // …and one that is unread but ARCHIVED, which §11 drops from the default
+    // …and one that is unread but ARCHIVED, which §10 drops from the default
     // set. `?parent=doc_hub&type=thread&unread=true` does not return it, so the
     // aggregate must not count it either (PR #10 review, finding 4).
     hub.thread({
@@ -1826,7 +1826,7 @@ describe("unreadThreads", () => {
     expect(aggregate("doc_settled")).toBe(0);
   });
 
-  it("does not count archived threads, which the default set excludes (§11)", () => {
+  it("does not count archived threads, which the default set excludes (§10)", () => {
     // The fixture's archived thread IS unread — it is excluded for its
     // lifecycle, not for its read state.
     const archived = rows({ status: "archived", type: "thread", unread: "true" }).map((i) => i.id);
@@ -1927,7 +1927,7 @@ describe("unreadThreads", () => {
   });
 });
 
-// The count behind §11's last Attention clause — "a thread holding more than
+// The count behind §10's last Attention clause — "a thread holding more than
 // one unanswered form says how many are still open" (CONTRACT-040, SERVER-084).
 // Its own workspace because the interesting cases are *how many* forms are open
 // at once, and the shared corpus deliberately has exactly one such thread.
@@ -2001,7 +2001,7 @@ describe("unansweredForms", () => {
     open.doc({ id: "doc_host", title: "The commented document" });
     open.doc({ id: "doc_quiet", title: "No threads at all" });
 
-    // 0, 1, 2 and 3 open questions — the numbers §11's clause reads.
+    // 0, 1, 2 and 3 open questions — the numbers §10's clause reads.
     seed("th_zero", [ASK, { author: "agent", body: "Ordinary prose, no question." }]);
     seed("th_one", [ASK, form("F1")]);
     seed("th_two", [ASK, form("F1"), form("F2")]);
@@ -2010,7 +2010,7 @@ describe("unansweredForms", () => {
     seed("th_partly", [ASK, form("F1"), form("F2"), form("F3"), answering("F2-no")]);
     // Asked and answered: back to zero without the thread being settled.
     seed("th_answered", [ASK, form("F1"), answering("F1-yes")]);
-    // A settled conversation is not waiting for an answer (SPEC.md §6, §11).
+    // A settled conversation is not waiting for an answer (SPEC.md §6, §10).
     seed("th_resolved", [ASK, form("F1"), form("F2")], { status: "resolved" });
     // Same two forms, archived rather than resolved.
     seed("th_archived", [ASK, form("F1"), form("F2")], { status: "archived" });
@@ -2237,7 +2237,7 @@ describe("unansweredForms", () => {
       expect(movingRow("th_settling").attention).not.toContain("form");
     });
 
-    // §11: "an unanswered form's row is the one that survives being read" — the
+    // §10: "an unanswered form's row is the one that survives being read" — the
     // opposite of `unread`/`unreadThreads`, which being read is what clears.
     it("survives being read, while `unread` does not", () => {
       put("th_reading", "open", false);

@@ -10,7 +10,7 @@ import {
 } from "react";
 
 /**
- * What the keyboard can ask the board to do (SPEC.md §11).
+ * What the keyboard can ask the board to do (SPEC.md §10).
  *
  * The shortcut dispatcher is mounted by the shell, and the board is the shell's
  * sibling — the same geometry `useOpenInColumn` already solves for "open this
@@ -19,7 +19,7 @@ import {
  * alternative is the dispatcher reaching into board state, and then two things
  * know which column is active.
  *
- * Deliberately *narrow*. Every entry here is one of §11's bindings, phrased as
+ * Deliberately *narrow*. Every entry here is one of §10's bindings, phrased as
  * the act rather than as the key, so the registry stays the only place a key
  * appears and this stays the only place the board's behaviour does.
  */

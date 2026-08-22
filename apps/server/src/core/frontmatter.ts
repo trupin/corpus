@@ -122,11 +122,11 @@ export const FileFrontmatterSchema = z.looseObject({
  *
  * `turnModels` (SPEC.md §6, CONTRACT-043) defaults to the empty map for the same
  * reason every optional field here does: a thread nobody recorded a model for
- * simply has no key, which is §11's "nothing rather than a guess" spelled in
+ * simply has no key, which is §10's "nothing rather than a guess" spelled in
  * frontmatter. Its shape is `core/turn-model.ts`'s file-level form — the
  * contract's canonical map behind the one normalisation a file needs — so a
  * hand-written offset instant is accepted and an entry naming no instant at all
- * is reported as the §14 finding it is, rather than silently missing every turn.
+ * is reported as the §11 finding it is, rather than silently missing every turn.
  */
 export const FileThreadFrontmatterSchema = FileFrontmatterSchema.extend({
   id: ThreadIdSchema,
@@ -201,7 +201,7 @@ export const isThreadFrontmatter = (data: Readonly<Record<string, unknown>>): bo
  * Validate a frontmatter mapping, picking the thread schema when the document
  * declares `type: thread`. Returns issues rather than throwing — the corpus
  * checker reports every document's problems, so one bad file must not abort the
- * run (§14).
+ * run (§11).
  */
 export const validateFrontmatter = (data: Readonly<Record<string, unknown>>): FrontmatterResult => {
   const schema = isThreadFrontmatter(data) ? FileThreadFrontmatterSchema : FileFrontmatterSchema;

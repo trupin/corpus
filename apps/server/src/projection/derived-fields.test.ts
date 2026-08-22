@@ -168,7 +168,7 @@ describe("the projection derives a status its type answers for (SPEC.md §12)", 
     expect(askedDue).toEqual([]);
   });
 
-  it("keeps the stored status when no plugin is present at all (§15 M6)", () => {
+  it("keeps the stored status when no plugin is present at all (§12 M6)", () => {
     const bare = openProjection({ workspaceRoot: ws, corpusDir: join(ws, ".corpus", "bare") });
     try {
       const abs = join(ws, "data", "docs", "h.md");

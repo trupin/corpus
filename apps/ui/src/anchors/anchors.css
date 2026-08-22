@@ -4,7 +4,7 @@
  *
  * Every value is `design/index.html`'s, and every colour is a token from
  * `packages/kit/src/tokens.css` — the prototype is authoritative for look and
- * feel (SPEC.md §11) and both themes come from the token set, not from a second
+ * feel (SPEC.md §10) and both themes come from the token set, not from a second
  * palette declared here.
  */
 
@@ -93,7 +93,7 @@
 /*
  * The cascade positions the **panel**, not the card inside it: a conversation in
  * the margin is a card when it is expanded and a single line when it is folded
- * (SPEC.md §11), and both have to sit beside their anchor. Direct children only
+ * (SPEC.md §10), and both have to sit beside their anchor. Direct children only
  * — a nested child thread is a panel too, and it is laid out by the card that
  * contains it.
  */
@@ -154,7 +154,7 @@
    off them (UI-112). A full-width strip rather than a corner dot, because the
    thing being said is "this whole box moves"; `touch-action: none` so a drag on
    a touch screen is a drag and not a scroll of the document underneath. It is a
-   real button — §11 adds no exclusive-pointer capability, so it takes focus and
+   real button — §10 adds no exclusive-pointer capability, so it takes focus and
    answers arrow keys. */
 .cm-drag {
   display: block;

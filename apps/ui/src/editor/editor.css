@@ -209,7 +209,7 @@
  *
  * Split that way because the kit is the plugin contract (SPEC.md §10) and no
  * plugin can emit this markup: the kit carries no TipTap and no editor. The two
- * halves must still *draw the same document the same way* — §11's "there is no
+ * halves must still *draw the same document the same way* — §10's "there is no
  * edit mode" is a visual promise, and `.doc-body` is what the editor puts on its
  * contenteditable and what every read surface puts on its wrapper — so the
  * shared measurements are repeated deliberately: a 13px box, 8px from its text,
@@ -291,7 +291,7 @@
  * ── Images, the editor's shape (UI-049) ──────────────────────────────
  *
  * The picture itself is the kit's `CorpusImage` — the same component the read
- * surfaces draw, so §11's "there is no edit mode" holds for images too. What
+ * surfaces draw, so §10's "there is no edit mode" holds for images too. What
  * belongs here is only the wrapper ProseMirror needs around an inline node
  * view: it must not introduce a line box of its own, or an image mid-sentence
  * would push the sentence apart.
@@ -316,7 +316,7 @@
 /*
  * ── The changelog's clip (UI-089) ────────────────────────────────────
  *
- * SPEC.md §11: a document's changelog "past a threshold of entries **clips**,
+ * SPEC.md §10: a document's changelog "past a threshold of entries **clips**,
  * exactly as a long fenced block does" — the newest entries stay visible, the
  * rest sit behind a control that says how many are hidden. `changelogClip.ts`
  * decides which entries; this decides what "clipped" looks like.

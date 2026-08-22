@@ -31,7 +31,7 @@ import { META_SCHEMA_VERSION, PROJECTION_TABLES, SCHEMA_VERSION } from "./schema
  * agrees with itself.
  *
  * `documents` carries five columns past §9.1's list, retyped from CONTRACT-011
- * for the same reason: §11 makes a board column a pinned view document, so
+ * for the same reason: §10 makes a board column a pinned view document, so
  * `pinned` is a `GET /api/docs` filter and `order` one of its sorts, and the
  * board reads every view's `query`, `column` and plugin keys off the same
  * bounded response rather than one follow-up read per column.

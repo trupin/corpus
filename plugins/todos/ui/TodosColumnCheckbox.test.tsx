@@ -115,7 +115,7 @@ describe("the checkbox on a Todos column row", () => {
     expect(wire.body()).toBe(BODY);
   });
 
-  /** SPEC.md §11: "§11 adds no exclusive-pointer capability". */
+  /** SPEC.md §10: "§10 adds no exclusive-pointer capability". */
   it("checks the item from the keyboard", async () => {
     const { wire, onOpen } = mount();
     await settled();

@@ -1,4 +1,4 @@
-// Full-text search over the projection's `search` table (SPEC.md §9.1, §11):
+// Full-text search over the projection's `search` table (SPEC.md §9.1, §10):
 // turning a human query string into an FTS5 expression that cannot be a syntax
 // error, and turning FTS5's `snippet()` output into the contract's structured
 // segments.

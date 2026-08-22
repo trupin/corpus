@@ -502,7 +502,7 @@ describe("corpus doc edit", () => {
     expect(JSON.parse(machine.stdout())).toEqual({ doc, anchors, warnings: [] });
   });
 
-  it("folds a §14 warning onto the same single line", async () => {
+  it("folds a §11 warning onto the same single line", async () => {
     const stub = await startStubServer(
       jsonResponder(200, {
         ...UPDATED,
@@ -862,7 +862,7 @@ describe("the --extra value grammar", () => {
   });
 });
 
-describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
+describe("corpus doc edit — the §10 view keys (CLI-018)", () => {
   it("pins, positions and reconfigures a column in one request", async () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, {

@@ -8,7 +8,7 @@ import { FIXTURE_COLUMN_TYPE, FIXTURE_DOC_TYPE } from "./shared.js";
 /**
  * The test-only fixture plugin (PLUGINS-001). It exists to exercise every §10
  * extension point — one doc type with all three renderers, one column type,
- * one server route, one CLI verb, one skill — and to be deleted: §15 M6's
+ * one server route, one CLI verb, one skill — and to be deleted: §12 M6's
  * subtractive check runs against this directory. The leading underscore keeps
  * it out of production bundles, `docs/cli.md` and packaging (sprint-012
  * Adjudication 9). It is not a design study; the real reference plugin is

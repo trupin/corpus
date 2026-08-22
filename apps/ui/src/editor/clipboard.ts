@@ -11,7 +11,7 @@ import { NODE, type PmNode } from "./markdown/schema.js";
 import { serializeDoc } from "./markdown/serialize.js";
 
 /**
- * What the clipboard carries, in both directions (SPEC.md §11 clipboard
+ * What the clipboard carries, in both directions (SPEC.md §10 clipboard
  * fidelity rider, signed 2026-08-02).
  *
  * **Copying is two flavors, not one.** ProseMirror already writes `text/html`
@@ -50,9 +50,9 @@ import { serializeDoc } from "./markdown/serialize.js";
  * `href` is `null` for every document in v1 and that is not a stub: a Corpus
  * workspace is local files behind a localhost server with a single `/` route,
  * so no document has an address a reader outside the app could follow. The
- * publish plugin (SPEC.md §13) is what mints one — a Google Doc id under
- * `publish.gdoc` — and when it does, it fills this in and the same rule below
- * starts emitting links. Keeping the branch in the serializer rather than the
+ * branch is kept because the rule it encodes — link where the target is
+ * addressable — is the durable half; if a document ever gains an address, this
+ * fills in and the same rule below starts emitting links. Keeping the branch in the serializer rather than the
  * caller is what stops "linking where the target is addressable" from being
  * re-decided per surface.
  */

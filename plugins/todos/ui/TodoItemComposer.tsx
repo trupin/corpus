@@ -17,7 +17,7 @@ import "./todos.css";
 /**
  * The composer *Comment on item* opens — a composer, not a dialog.
  *
- * SPEC.md §11 says what the core menu's Comment does, and this is the same act
+ * SPEC.md §10 says what the core menu's Comment does, and this is the same act
  * one surface over: *"captures the text-quote selector and opens the thread
  * composer, §6"*. It does **not** create a thread on its own, here or there: a
  * first turn is required (`CreateThreadRequest.body` is `min(1)`), and a menu
@@ -33,7 +33,7 @@ import "./todos.css";
  * ordinary §6 one, selector included.
  *
  * **The keys are not a copy — they are the kit's `handleComposerKeyDown`.**
- * SPEC.md §11's composer contract binds "any composer a plugin contributes", so
+ * SPEC.md §10's composer contract binds "any composer a plugin contributes", so
  * `↵` inserts a newline, `⌘↵` sends, and an IME composition commit never sends.
  * The plugin does not re-implement that sentence and does not spell the chord
  * itself: the label is built from `COMPOSER_PRIMARY_KEY`, so the glyph on this
@@ -49,7 +49,7 @@ import "./todos.css";
  *
  * **It takes attachments by all three of §6's routes** — the 📎 picker, a paste
  * and a drop onto the popover, with chip previews before sending (PLUGINS-012).
- * §11's rider names "any composer a plugin contributes" in the same breath as
+ * §10's rider names "any composer a plugin contributes" in the same breath as
  * the board's own, and the reference plugin is the one that has to demonstrate
  * it rather than be the surface without it. Every part of that is the kit's:
  * `useAttachmentIntake` normalises the three routes, `PendingAttachments` draws
@@ -80,7 +80,7 @@ export const ASK_AGENT_LABEL = "◉ ask agent";
 export const NOTE_ONLY_LABEL = "○ note only";
 export const COMMENT_PLACEHOLDER = "Comment on this item";
 
-/** Every submit control names its key, and this one names the kit's (§11). */
+/** Every submit control names its key, and this one names the kit's (§10). */
 export const COMMENT_SUBMIT_LABEL = `Comment ${COMPOSER_PRIMARY_KEY}`;
 
 export interface TodoItemComposerProps {

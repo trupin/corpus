@@ -13,7 +13,7 @@ import { jsonContent, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./respo
  * — a cost that scales with the documents, not with the answer. This route
  * exists for the output contract alone: id, title, heading path, one snippet
  * line, never a body (SPEC.md §1's "the agent retrieves; it never enumerates").
- * Lists stay on `GET /api/docs`; §11's columns and saved views are filtered
+ * Lists stay on `GET /api/docs`; §10's columns and saved views are filtered
  * lists, because relevance ranking is a property of interactive search.
  */
 export const searchCorpus = createRoute({

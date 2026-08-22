@@ -15,7 +15,7 @@ import {
 
 /**
  * The act itself: an empty document that has just been left stops existing
- * (SPEC.md §11).
+ * (SPEC.md §10).
  *
  * **It is the user's own act and asks nothing** (sprint-016 Adjudication 27).
  * §7's "deletion is user-only" constrains the *agent* — the server refuses

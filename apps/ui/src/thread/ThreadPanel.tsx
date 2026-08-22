@@ -14,7 +14,7 @@ import { MAX_DRAWN_DEPTH } from "./threadDepth";
 
 /**
  * One conversation, wherever it is shown — and the one place that decides
- * whether it is folded (SPEC.md §11, rider signed 2026-08-05).
+ * whether it is folded (SPEC.md §10, rider signed 2026-08-05).
  *
  * Every placement goes through here: a chip at its anchor, a card in the margin,
  * a thread listed below the body, a whole-document or detached thread, a
@@ -61,7 +61,7 @@ export function ThreadPanel({
 
   /**
    * What this conversation is being placed with, decided by the **surface**
-   * rather than by this component (SPEC.md §11's "reading never collapses
+   * rather than by this component (SPEC.md §10's "reading never collapses
    * anything" — see `ThreadCollapseApi.place`).
    *
    * The record used to be a ref here, which made it a property of one mounted
@@ -153,14 +153,14 @@ export function ThreadPanel({
   }, [collapse, collapsed, subject]);
 
   /**
-   * The conversation's own right-click menu (SPEC.md §11).
+   * The conversation's own right-click menu (SPEC.md §10).
    *
    * The fold **claims no new key**: it is an ordinary focusable control, and it
-   * joins this conversation's existing actions in the menu §11 already binds to
+   * joins this conversation's existing actions in the menu §10 already binds to
    * "exactly that item's existing actions". Nothing here is invented — collapse
    * and resolve/reopen are the two controls the card's head has always carried,
    * and a nested conversation's "open in its own reader" is what the
-   * navigate-away chip used to be, now offered as the choice §11 requires rather
+   * navigate-away chip used to be, now offered as the choice §10 requires rather
    * than as the only way in.
    */
   const openMenu = useCallback(

@@ -137,7 +137,7 @@ describe("TodoItemMenu", () => {
   /**
    * PR #19, MAJOR 3. Two rows read "Call the plumber"; one of them has a
    * thread. Offering it to the other is the menu inventing a relationship the
-   * document does not have (SPEC.md §11 — "exactly that item's existing
+   * document does not have (SPEC.md §10 — "exactly that item's existing
    * actions, nothing invented"), and following it navigates to a conversation
    * about a different line.
    */

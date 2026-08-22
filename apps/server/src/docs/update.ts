@@ -114,7 +114,7 @@ export const UPDATABLE_FRONTMATTER_KEYS = [
 ] as const satisfies readonly (keyof UpdateDocRequest)[];
 
 /**
- * The §11 view keys whose `null` **clears the key from the file** rather than
+ * The §10 view keys whose `null` **clears the key from the file** rather than
  * writing `null` into it (CONTRACT-011). `due` and `reviewed` are pointedly not
  * here: they are §5 canonical-block fields whose `null` is a written value.
  */
@@ -192,7 +192,7 @@ export function changedFields(
     const merged = nextTags(current["tags"], patch.addTags, patch.removeTags);
     // Through the same "different from the file?" gate every other field passes,
     // so a delta that asks for what is already there is a no-op rather than a
-    // commit — the autosave rule, applied to the verb §11 calls a no-op too.
+    // commit — the autosave rule, applied to the verb §10 calls a no-op too.
     if (!sameValue(current["tags"], merged)) changed["tags"] = merged;
   }
   for (const key of CLEARABLE_FRONTMATTER_KEYS) {
@@ -464,7 +464,7 @@ function assertNotUnarchivingByPut(
  *
  * **The two options, and why this one.** Dropping the field before the plan
  * would be quieter, but a caller still could not tell their date was ignored
- * unless the response said so — and saying so means a new §14 warning code,
+ * unless the response said so — and saying so means a new §11 warning code,
  * which is a contract change this could not make. A refusal needs no new
  * vocabulary (the route already declares `400`, this is genuinely a statement
  * about the request body, and it is where SERVER-039 already says "this field is

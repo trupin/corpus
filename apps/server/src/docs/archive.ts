@@ -1,4 +1,4 @@
-// `POST /api/docs/{id}/archive` and `/unarchive` (SPEC.md §7, §11).
+// `POST /api/docs/{id}/archive` and `/unarchive` (SPEC.md §7, §10).
 //
 // Archiving is "a reversible organizational act, never a deletion" — the file
 // stays, git keeps everything, and the document stays indexed. It drops out of
@@ -270,7 +270,7 @@ function assertMergeable(workspaceRoot: string, move: FolderMove): void {
  * Two things a carried document is still deliberately not given. Its `updated`
  * is not stamped: nothing about its content changed, and §5's staleness clock
  * must not be reset by a neighbour's archiving. Nor is a carried write put
- * through §14 validation — the file's content is the author's, unchanged but for
+ * through §11 validation — the file's content is the author's, unchanged but for
  * keys the system owns, so a finding would be about a document this act never
  * asked to edit.
  */
@@ -521,7 +521,7 @@ function planCarriedWrites(
  * folder lives.
  *
  * Validation is deliberately left to the caller: it needs `path` and `text`,
- * which are exactly what this returns, and the two callers report a §14 refusal
+ * which are exactly what this returns, and the two callers report a §11 refusal
  * differently (a `400` for one document, a `refused` entry for one of many).
  *
  * `held` is the set of document ids whose write lane the caller holds. It always
@@ -614,7 +614,7 @@ export async function setArchived(
       return { doc: toWireDoc(workspace, loaded), result: emptyResult() };
     }
 
-    // §14's findings about the bytes being written, then §7's about the
+    // §11's findings about the bytes being written, then §7's about the
     // documents this act carried. The two are independent: `plan.text === null`
     // is a folder move that rewrote nothing of the requested document, which is
     // exactly the case where the carried warnings matter most — every skill

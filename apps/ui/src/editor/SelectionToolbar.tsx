@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
  *
  * **It opens only over an editable surface.** `editor.isEditable` is the gate
  * and it is the whole of it — a toolbar offering to bold text that cannot be
- * bolded is a control that lies. Since SPEC.md §11's *the board is never
+ * bolded is a control that lies. Since SPEC.md §10's *the board is never
  * read-only*, that gate is never closed by a document's state; it still answers
  * for an editor that has been torn down or put into a non-editing surface.
  *

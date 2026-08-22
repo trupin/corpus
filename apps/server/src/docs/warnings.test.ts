@@ -1,4 +1,4 @@
-// SPEC.md §14's warnings, on the wire.
+// SPEC.md §11's warnings, on the wire.
 //
 // Every assertion here goes through a real request against the real app, and
 // parses the response with the contract's own schema — the point of the field is
@@ -92,7 +92,7 @@ function anchored(name: string): WriteWorkspace {
   return ws;
 }
 
-describe("§14 warnings on mutation responses", () => {
+describe("§11 warnings on mutation responses", () => {
   it("returns 200 and a commit_failed warning when a hook rejects the auto-commit", async () => {
     ws = createWriteWorkspace("warn-hook");
     ws.reproject();
@@ -102,7 +102,7 @@ describe("§14 warnings on mutation responses", () => {
 
     const response = await putDoc(ws, created.id, { body: "after the hook refused" });
 
-    // The status code is untouched: §14's warning never turns a completed write
+    // The status code is untouched: §11's warning never turns a completed write
     // into a failure, because the file is the source of truth.
     expect(response.status).toBe(200);
     const payload = UpdateDocResponseSchema.parse(await response.json());
@@ -168,7 +168,7 @@ describe("§14 warnings on mutation responses", () => {
     expect(response.status).toBe(200);
     const payload = UpdateDocResponseSchema.parse(await response.json());
     // The reconciliation report and the warning are two views of one fact: the
-    // report is machine-readable causality, the warning is what §14 asks to
+    // report is machine-readable causality, the warning is what §11 asks to
     // surface to a human.
     expect(payload.anchors.orphaned).toEqual([ANCHOR]);
     expect(payload.warnings).toHaveLength(1);

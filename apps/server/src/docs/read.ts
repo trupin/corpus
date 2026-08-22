@@ -100,7 +100,7 @@ export function isIdTaken(projection: ProjectionDb, id: string): boolean {
 
 /**
  * The ids of threads the projection records as claiming `<docId>#<anchorId>` —
- * §14's `anchor-unused` seam, the anchor-claim counterpart of {@link isIdTaken}.
+ * §11's `anchor-unused` seam, the anchor-claim counterpart of {@link isIdTaken}.
  *
  * Every thread counts, resolved ones included: resolving a thread keeps both its
  * `anchor` field and the parent's anchor entry (§6 removes the entry on
@@ -175,7 +175,7 @@ const asText = (value: unknown): string | null =>
  * The `anchors` map as the wire declares it, entry by entry. A single malformed
  * selector in a hand-edited file must not detach every other thread on the
  * document, so unreadable entries are dropped rather than failing the read —
- * `doc check` is what reports them (SPEC.md §14).
+ * `doc check` is what reports them (SPEC.md §11).
  */
 export function readAnchorsMap(value: unknown): Record<string, TextQuoteSelector> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
@@ -236,7 +236,7 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     // because `origin` was a legal `extra` key before it was reserved and a
     // corpus that predates the field must stay readable.
     origin: originOrNull(data["origin"]),
-    // §11's view keys and §12's plugin keys, read by the same functions the
+    // §10's view keys and §12's plugin keys, read by the same functions the
     // projection uses for the list row (CONTRACT-011). Shared rather than
     // restated for the reason the nullable timestamps above document: one file
     // read through two routes must not answer two different things.
@@ -272,7 +272,7 @@ type AnchorThreadRow = { readonly anchor_id: string; readonly id: string; readon
  * orphaned, visibly, with the selector intact.
  *
  * An anchor entry no thread claims is omitted rather than reported with a
- * fabricated thread id: `ResolvedAnchor` requires one. §14 already reports the
+ * fabricated thread id: `ResolvedAnchor` requires one. §11 already reports the
  * dangling entry as a hard `anchor-unused` failure.
  */
 export function resolveDocumentAnchors(

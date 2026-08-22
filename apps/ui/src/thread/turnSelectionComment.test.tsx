@@ -19,7 +19,7 @@ import { weightWiring } from "../testing/weightFixture";
 import { ThreadCard } from "./ThreadCard";
 
 /**
- * SPEC.md §11's rider, end to end through the card (UI-051): select words inside
+ * SPEC.md §10's rider, end to end through the card (UI-051): select words inside
  * a turn, right-click, comment — and get a child thread anchored to *those*
  * words, framed well enough that the repeated phrase beside them is not what the
  * server resolves to.
@@ -124,7 +124,7 @@ describe("commenting on a selection inside a turn", () => {
     const { container } = render(<Host transport={wire()} />);
     selectAndRightClick(await loaded(container), PHRASE, 1);
     expect(screen.getByRole("menuitem", { name: /Comment on selection/ })).toBeDefined();
-    // …and the clipboard basics stay where §11 puts them.
+    // …and the clipboard basics stay where §10 puts them.
     expect(screen.getByRole("menuitem", { name: /^Copy/ })).toBeDefined();
   });
 
@@ -170,7 +170,7 @@ describe("commenting on a selection inside a turn", () => {
   });
 
   /**
-   * SPEC.md §11's rider (UI-082): the popover this path opens offers the weight,
+   * SPEC.md §10's rider (UI-082): the popover this path opens offers the weight,
    * scoped to **this conversation** — the same starting point the card's reply
    * box uses — and what it states rides out on the comment's own request.
    */
@@ -244,7 +244,7 @@ describe("commenting on a selection inside a turn", () => {
   });
 
   /**
-   * SPEC.md §11's rider, signed 2026-08-05: *"a comment on a turn or on a
+   * SPEC.md §10's rider, signed 2026-08-05: *"a comment on a turn or on a
    * selection within one"* is in the list of surfaces that take files. Driven
    * through the real popover with a real drop, and asserted on the wire — the
    * multipart parts the fixture records (UI-111).
@@ -368,7 +368,7 @@ describe("the anchor's highlight", () => {
   });
 
   /**
-   * UI-112, in a turn: SPEC.md §11 says a selection commented on inside a turn
+   * UI-112, in a turn: SPEC.md §10 says a selection commented on inside a turn
    * "is highlighted in the turn the way an anchor is highlighted in a document",
    * and until now it was highlighted only once the server had resolved it — after
    * the comment was posted, which is the moment it stops being useful. The

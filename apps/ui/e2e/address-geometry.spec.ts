@@ -6,7 +6,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * **Nothing in the address popover resizes because of what it holds** — SPEC.md
- * §11's rider signed 2026-08-20, measured in a real browser (UI-127).
+ * §10's rider signed 2026-08-20, measured in a real browser (UI-127).
  *
  * ## Why this spec is geometry and not words
  *
@@ -325,7 +325,7 @@ test.describe("the address popover holds still while you read it", () => {
     // The ordinary statements are *not* truncated — including the lapsed one,
     // which is four lines and is what the reserve is sized for. The box is
     // sized for the text people actually have, so revealing is the uncommon
-    // case and not the reading path (SPEC.md §11's rider).
+    // case and not the reading path (SPEC.md §10's rider).
     for (const lane of ["orchestrator", "th_host"]) {
       await page.locator(`${PICKER} [data-recipient-lane="${lane}"]`).focus();
       const fits = await says.evaluate((element) => ({
@@ -512,7 +512,7 @@ test.describe("the address popover has a ceiling", () => {
         ).toBeGreaterThanOrEqual(head.y + head.height);
 
         // …and it is bounded **by the room**, rather than by a number (UI-142,
-        // SPEC.md §11's rider of 2026-08-21). The claim is a relationship and
+        // SPEC.md §10's rider of 2026-08-21). The claim is a relationship and
         // not a pixel count: `<= 280` used to stand here, and it was the defect
         // written down as an assertion — the card drew 240×280 at 1728×1080
         // with 782px of room above it.
@@ -610,7 +610,7 @@ test.describe("the address popover has a ceiling", () => {
     const head = await boxOf(page.locator(".reader-head"));
 
     // From the line, one Tab reaches the first row: the popover binds no keys,
-    // so the keyboard path through it is the browser's (SPEC.md §11).
+    // so the keyboard path through it is the browser's (SPEC.md §10).
     await page.locator('button[data-address-line="th_host"]').focus();
     await page.keyboard.press("Tab");
 
@@ -786,7 +786,7 @@ test.describe("a host the window bounds", () => {
 
 /**
  * **The line's width is a property of its slot in the footer, never of the
- * sentence in it** — UI-137, SPEC.md §11's rider signed 2026-08-20, measured in
+ * sentence in it** — UI-137, SPEC.md §10's rider signed 2026-08-20, measured in
  * the same browser at the same 1280×720.
  *
  * ## What was wrong, and why it is the release's own headline

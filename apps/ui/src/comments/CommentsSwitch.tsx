@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 
 /**
- * The `Document / Comments` switch in the reader's header (SPEC.md §11, rider
+ * The `Document / Comments` switch in the reader's header (SPEC.md §10, rider
  * signed 2026-08-04): *"A document's comments are also available as a **list**,
  * reached by a Document / Comments switch in the reader's header and present in
  * both column view and full screen."*
@@ -22,7 +22,7 @@ import type { ReactElement } from "react";
  * cost, which is the only budget available.
  *
  * **It renders under 💬's own condition, plus one — and that is a deviation from
- * §11, recorded here rather than hidden.** The rider says the list is *"reached
+ * §10, recorded here rather than hidden.** The rider says the list is *"reached
  * by a Document / Comments switch in the reader's header"*, with no clause about
  * the document already having conversations. Unconditional was built and
  * measured, and the head has no room for it at one width.
@@ -51,7 +51,7 @@ import type { ReactElement } from "react";
  * So the toggle appears when there is something to list, **and** whenever the
  * list is showing, so the way back is never missing. A document with no comments
  * reaches the list through the reader's ⋯ menu, where the document's own actions
- * already live — which costs the row nothing. Restoring §11's unconditional
+ * already live — which costs the row nothing. Restoring §10's unconditional
  * reading needs room the head does not have: a shorter `.reader-id`, a smaller
  * `.back` cap, or a narrower save-chip reservation — each of them somebody
  * else's signed tuning.
@@ -99,7 +99,7 @@ export function CommentsSwitch({ tab, count, onTab }: CommentsSwitchProps): Reac
     >
       {/* The count is its own box, so crossing into two digits does not widen
           the control and re-cut `.back` and `.reader-id` beside it (SPEC.md
-          §11's rider; `.comments-count` carries the reservation). */}
+          §10's rider; `.comments-count` carries the reservation). */}
       💬 <span className="comments-count">{count}</span>
     </button>
   );

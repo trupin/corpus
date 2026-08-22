@@ -28,7 +28,7 @@ const capture = (body: string, exact: string): TextQuoteSelector => {
 const ANCHOR_ID = "anc_k4f7";
 const anchorsFor = (body: string): AnchorsMap => ({ [ANCHOR_ID]: capture(body, SENTENCE) });
 
-describe("reconcileAnchors — §15 M1 matrix", () => {
+describe("reconcileAnchors — §12 M1 matrix", () => {
   it("edit strictly before the anchored range (outside the context window) → unchanged", () => {
     const newBody = BODY.replace(
       "# Mortgage options",

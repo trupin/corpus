@@ -1,5 +1,5 @@
 /**
- * `jobs` — the console feed (SPEC.md §7, §11).
+ * `jobs` — the console feed (SPEC.md §7, §10).
  *
  * Every queue event is a job: an append-only `.corpus/jobs/<eventId>.jsonl` of
  * progress lines, a console row whose status is joined from the queue, and the

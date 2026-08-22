@@ -649,7 +649,7 @@ describe("edit session tracker — actor scoping (the loop cannot feed itself)",
   });
 });
 
-describe("edit session tracker — a session with no range emits nothing (§14)", () => {
+describe("edit session tracker — a session with no range emits nothing (§11)", () => {
   it("ignores a save whose auto-commit was skipped", async () => {
     const h = harness({ parents: new Map() });
     h.tracker.observeCommit(

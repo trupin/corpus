@@ -1,5 +1,5 @@
 /*
- * Base styles, ported from `design/index.html` (SPEC.md §11 names it
+ * Base styles, ported from `design/index.html` (SPEC.md §10 names it
  * authoritative for look & feel). The tokens these rules consume live in
  * `@corpus/kit/tokens.css`, which `main.tsx` imports first — plugins get the
  * tokens without inheriting the app's chrome.

@@ -2,7 +2,7 @@ import { z } from "@hono/zod-openapi";
 
 /**
  * The **weight** a request states its work should be done at (SPEC.md §7 and
- * §11, rider SHARED-022 signed 2026-08-06), and **how it travels** — which is
+ * §10, rider SHARED-022 signed 2026-08-06), and **how it travels** — which is
  * the whole of CONTRACT-039's job.
  *
  * ---
@@ -12,7 +12,7 @@ import { z } from "@hono/zod-openapi";
  * §7 already says the subagent's model scales with the task's weight, and that
  * the concrete tier guidance lives in the orchestrate skill rather than in the
  * spec. SHARED-022 bolted an override onto that rule: *"A request may choose the
- * weight, and that choice is a directive."* §11 says where the choice is made
+ * weight, and that choice is a directive."* §10 says where the choice is made
  * — every composer that can reach the agent — and that it **"rides with the
  * request to whatever does the work"**.
  *
@@ -117,15 +117,15 @@ import { z } from "@hono/zod-openapi";
  * ## Where it is carried — and where it deliberately is not
  *
  * **Carried** on every request body a composer that can reach the agent sends
- * (§11 enumerates the surfaces; `./thread.ts` and `./capture.ts` attach it):
+ * (§10 enumerates the surfaces; `./thread.ts` and `./capture.ts` attach it):
  * thread creation and turn append in both their JSON and multipart forms, and
- * capture. Stated once for the set, the way §11 states attachments and snippets,
+ * capture. Stated once for the set, the way §10 states attachments and snippets,
  * rather than per surface — SHARED-012's lesson, and the reason three of five
  * composers once shipped without attachments.
  *
  * **Not carried** in two places, both on purpose:
  *
- *   - **The form answer** (`POST /api/threads/{id}/forms/{ts}/answer`). §11's
+ *   - **The form answer** (`POST /api/threads/{id}/forms/{ts}/answer`). §10's
  *     amendment enumerates *composers*, and a form answer is a reply to a
  *     question the agent asked inside work already dispatched, not a composer
  *     writing a new request. Whether answering may re-weight the continuation is
@@ -165,7 +165,7 @@ const REQUESTED_WEIGHT_DESCRIPTION =
   "agent does not offer that model, the level no longer exists in the guidance) the work is still " +
   "done, at what the orchestrator judges best, and the deviation is stated: in the job's log " +
   "while it runs, and in the reply the request receives. It **rides with the request to whatever " +
-  "does the work** (§11) — onto the queue event this call enqueues, under the payload key " +
+  "does the work** (§10) — onto the queue event this call enqueues, under the payload key " +
   "`weight`, which is what the dispatch reads.";
 
 /**

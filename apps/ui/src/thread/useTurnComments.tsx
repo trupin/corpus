@@ -33,7 +33,7 @@ import {
 } from "./turnAnchors";
 
 /**
- * **Comment on a selection inside a turn** (SPEC.md §11's rider, signed
+ * **Comment on a selection inside a turn** (SPEC.md §10's rider, signed
  * 2026-08-03; §6's recursion).
  *
  * The card owns this rather than the turn, for the same reason `ThreadCard` is

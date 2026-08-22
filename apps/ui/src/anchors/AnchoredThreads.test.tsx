@@ -23,7 +23,7 @@ import type { AnchoredThread } from "./anchorPlacement.js";
  * page limit the rows simply are not in the answer, and a placement that keyed
  * on the row dropped those conversations out of the margin while their
  * highlights stayed in the body — permanently on a document that busy, and for a
- * frame on every first paint. SPEC.md §11: "its anchored highlight stays in the
+ * frame on every first paint. SPEC.md §10: "its anchored highlight stays in the
  * body, so the passage still says it has been discussed and *the conversation is
  * still reachable from it*".
  *
@@ -201,7 +201,7 @@ describe.each([
       expect(panel("th_overflow")?.querySelectorAll(".turn")).toHaveLength(2);
     });
     // Placed expanded, because nothing here can vouch that it has been seen —
-    // §11's interlock, which is what keeps the fold from hiding a new turn.
+    // §10's interlock, which is what keeps the fold from hiding a new turn.
     expect(isFolded("th_overflow")).toBe(false);
   });
 

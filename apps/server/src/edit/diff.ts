@@ -384,7 +384,7 @@ export async function readDocDiff(
         : ((await resolveRevision(git, query.to)) ?? unknownRevision("to", query.to));
 
     // A document the workspace has never committed — a file not yet committed,
-    // or a workspace with no git at all (SPEC.md §14). An answer, not an error.
+    // or a workspace with no git at all (SPEC.md §11). An answer, not an error.
     if (to === null) {
       return {
         id,

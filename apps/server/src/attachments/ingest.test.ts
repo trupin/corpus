@@ -661,7 +661,7 @@ describe("atomicity", () => {
 
   it("removes the bytes when the write is refused after they land", async () => {
     const created = await createThread(ws, { body: "first" });
-    // Two turns sharing a timestamp: §14's `duplicate-turn-timestamp` is a hard
+    // Two turns sharing a timestamp: §11's `duplicate-turn-timestamp` is a hard
     // error, so `validateBeforeWrite` refuses the append — which happens *after*
     // the bytes are on disk, exactly the window the cleanup exists for.
     const clash = "2026-07-27T08:00:00Z";
@@ -774,9 +774,9 @@ describe("the deletion cascade", () => {
     expect(existsSync(attachmentsDir(created.id))).toBe(false);
   });
 
-  it("keeps the bytes when the commit fails but the file mutation stands (§14)", async () => {
+  it("keeps the bytes when the commit fails but the file mutation stands (§11)", async () => {
     const { thread, ts } = await uploadTurn([["files", png()]]);
-    // A pre-commit hook that always refuses: §14 says the deletion still lands
+    // A pre-commit hook that always refuses: §11 says the deletion still lands
     // on disk and the failure is a warning, so the bytes must go with the turn.
     const hooks = join(ws.root, ".git", "hooks");
     mkdirSync(hooks, { recursive: true });

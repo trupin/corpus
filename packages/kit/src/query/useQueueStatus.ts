@@ -5,7 +5,7 @@ import { QUEUE_KEY } from "./keys.js";
 
 /**
  * `GET /api/queue/status` — everything the console strip needs from one call
- * (SPEC.md §7, §11): the halted flag, the queue depth, and the per-status
+ * (SPEC.md §7, §10): the halted flag, the queue depth, and the per-status
  * counts the strip renders.
  *
  * Cached under `QUEUE_KEY` itself rather than a filtered sub-key: the endpoint

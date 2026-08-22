@@ -5,7 +5,7 @@ import { publishPristineBody } from "../abandon/registry";
 import type { PluginColumnRef } from "./viewDoc";
 
 /**
- * `＋` on a column — zero-form, inbox-first creation (SPEC.md §11).
+ * `＋` on a column — zero-form, inbox-first creation (SPEC.md §10).
  *
  * The rule is the column's own document, read: a `folder:` query creates into
  * that folder; a plugin `column:` creates that plugin's document type; anything
@@ -74,7 +74,7 @@ export function useCreateInColumn(): CreateInColumn {
       const response = await mutateAsync(creationRequest(target, title));
       /*
        * The body the document was born with — a template's prefill (SPEC.md
-       * §11's "Templates are documents"), or nothing at all.
+       * §10's "Templates are documents"), or nothing at all.
        *
        * The abandon rule needs it: a new `note` in a seeded workspace arrives
        * holding `## Context / ## Notes / ## Open questions`, and a user who

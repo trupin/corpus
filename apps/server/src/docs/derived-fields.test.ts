@@ -233,7 +233,7 @@ describe("a derived status converges into the file the server writes (SPEC.md §
     expect(rowStatus(note.id)).toBe("open");
   });
 
-  it("leaves every document alone when the plugin is gone (§15 M6)", async () => {
+  it("leaves every document alone when the plugin is gone (§12 M6)", async () => {
     openWorkspace({ plugins: false });
     const todo = await seedTodo("- [x] already done\n");
 
@@ -377,7 +377,7 @@ describe("a derived due date converges into the file too (PLUGINS-018, SERVER-13
     expect(rowDue(note.id)).toBe("2030-01-01");
   });
 
-  it("leaves every deadline alone when the plugin is gone (§15 M6)", async () => {
+  it("leaves every deadline alone when the plugin is gone (§12 M6)", async () => {
     openWorkspace({ plugins: false });
     const todo = await seedTodo(DATED);
 
@@ -598,7 +598,7 @@ describe("a save may not set a field §12 makes the document's own (PR #55)", ()
     expect(storedDue(note.path)).toBe("2030-01-01");
   });
 
-  it("refuses nothing when the plugin is gone (§15 M6)", async () => {
+  it("refuses nothing when the plugin is gone (§12 M6)", async () => {
     openWorkspace({ plugins: false });
     const todo = await seedTodo(DATED);
     ws.advance(60_000);

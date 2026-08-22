@@ -63,7 +63,7 @@ export const getThreadScope = createRoute({
     "its origin reaches it, exactly as the queue would route a comment on it; an archived document " +
     'is listed with `status: "archived"`, because archiving does not touch origin or parent and ' +
     "detaching is the only way out of a scope. A person asks this to see what an agent owns " +
-    "(SPEC.md §11); a resident asks it to learn what it owns — reading your own lane is not a " +
+    "(SPEC.md §10); a resident asks it to learn what it owns — reading your own lane is not a " +
     "sweep.\n\n" +
     `**Bounded at ${SCOPE_PAGE_SIZE} members, with no cursor and no total.** The root thread ` +
     "comes first, then the most recently updated members first, so a truncated page holds the " +

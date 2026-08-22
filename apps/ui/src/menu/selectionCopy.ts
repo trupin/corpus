@@ -1,7 +1,7 @@
 import type { Editor } from "@tiptap/react";
 
 /**
- * What the selection menu's Copy puts on the clipboard (SPEC.md §11 clipboard
+ * What the selection menu's Copy puts on the clipboard (SPEC.md §10 clipboard
  * rider, signed 2026-08-02).
  *
  * **Why this exists at all.** UI-042's reproduction found the rider satisfied
@@ -9,7 +9,7 @@ import type { Editor } from "@tiptap/react";
  * `navigator.clipboard.writeText(selection.toString())`, so the right-click
  * Copy put a single `text/plain` flavor on the clipboard and nothing else.
  * Pasted into a word processor that is the user's report verbatim — *all*
- * formatting lost — and it is the same gesture §11 puts Copy on. One menu item
+ * formatting lost — and it is the same gesture §10 puts Copy on. One menu item
  * away from the editor's own copy, with none of the editor's fidelity.
  *
  * **Two paths, because the body has two renders.** Inside the editor, the copy

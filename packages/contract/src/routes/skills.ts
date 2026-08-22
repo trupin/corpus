@@ -21,7 +21,7 @@ import {
  * from history — the caller reads the history and `PUT /api/docs/{id}`s the
  * content it wants back, presenting the key of the version it read. A dedicated
  * revert route would have to reimplement anchor reconciliation (§6), validation
- * (§14), attributed commit (§4) and the key (§7), and would restore a whole file
+ * (§11), attributed commit (§4) and the key (§7), and would restore a whole file
  * rather than revert a path, silently discarding anything not yet committed.
  * _(Rider signed 2026-08-12 — replaces `POST /api/skills/{name}/rollback`.)_
  */
@@ -67,7 +67,7 @@ export const createSkill = createRoute({
     "**The creation lands as a normal auto-commit** (SPEC.md §9.2) and is projected and " +
     "broadcast like any other write, so the new skill appears on the board and in " +
     "`GET /api/docs?type=skill` without a restart. If the workspace's git hooks reject the " +
-    "commit, the file stands anyway and the rejection comes back in `warnings` (SPEC.md §14).\n\n" +
+    "commit, the file stands anyway and the rejection comes back in `warnings` (SPEC.md §11).\n\n" +
     "`409` means the name is taken — a skill of that name is already installed. Whether a name " +
     "held only by an *archived* skill (`.claude/skills-archived/{name}/`, where " +
     "`corpus doc archive` moves one) is likewise taken is answered by the server, and both " +
@@ -88,7 +88,7 @@ export const createSkill = createRoute({
     201: jsonContent(
       DocMutationResponseSchema,
       "The created skill as an ordinary document — its frontmatter, body and workspace-relative " +
-        "path — plus any §14 warnings. The same shape `POST /api/docs` returns, because what was " +
+        "path — plus any §11 warnings. The same shape `POST /api/docs` returns, because what was " +
         "created is the same kind of thing.",
     ),
     400: VALIDATION_RESPONSE,

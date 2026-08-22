@@ -209,7 +209,7 @@ test.describe("UI-059 — links in a rendered body", () => {
 
   test("treats a link in the editable body exactly as in the read view", async ({ page }) => {
     // `DocEditor` puts `doc-body` on its contenteditable, so the rule reaches
-    // TipTap from the same declaration. "There is no edit mode" (SPEC.md §11) is
+    // TipTap from the same declaration. "There is no edit mode" (SPEC.md §10) is
     // a visual promise about links too, and the long URL must not overflow here
     // either.
     await stubCorpus(page, [FOLDER_VIEW, NOTE, THREAD_ROW]);

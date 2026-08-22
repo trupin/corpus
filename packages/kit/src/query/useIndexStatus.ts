@@ -6,7 +6,7 @@ import { INDEX_KEY } from "./keys.js";
 /**
  * `GET /api/index/status` — the semantic index's counts, recorded identity and
  * derived state, which is everything the console strip's index pill and its
- * expanded status row render (SPEC.md §9.1, §11's index-pill rider).
+ * expanded status row render (SPEC.md §9.1, §10's index-pill rider).
  *
  * Cached under `INDEX_KEY` itself, for {@link useQueueStatus}'s reason: the
  * endpoint takes no parameters, and `["index"]` is exactly the key the embed

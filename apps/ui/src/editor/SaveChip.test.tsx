@@ -66,7 +66,7 @@ describe("copy", () => {
  * The reservation (UI-135). The *width* it produces is a browser fact and is
  * asserted in `e2e/reader-head-geometry.spec.ts`; what is checkable here is
  * **which** string is being reserved — the ordinary reading path, not the worst
- * case, which is what SPEC.md §11's third clause asks for.
+ * case, which is what SPEC.md §10's third clause asks for.
  */
 describe("the reserved width", () => {
   /**

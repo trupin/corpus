@@ -86,7 +86,7 @@ test.describe("replying to a resolved conversation", () => {
     await page.locator('.row[data-row-doc="doc_note"]').first().click();
     await page.locator(".reader .ProseMirror").waitFor();
 
-    // Resolved, so §11's one rule places it collapsed. Expanding it is the
+    // Resolved, so §10's one rule places it collapsed. Expanding it is the
     // reader's own act, and it is what puts the reply box on screen.
     const panel = page.locator('[data-thread-panel="th_done"]');
     await panel.locator("[data-thread-expand]").click();

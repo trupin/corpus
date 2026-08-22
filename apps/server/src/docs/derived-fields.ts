@@ -16,7 +16,7 @@
 // whose type derives it, because {@link resolveDocumentStatus} and {@link
 // resolveDocumentDue} ask the derivation first and only fall through to the file
 // for types that own their own field. Deleting the plugin restores the stored
-// values to authority, which is exactly §15 M6's subtractive check.
+// values to authority, which is exactly §12 M6's subtractive check.
 
 import type { UpdateDocRequest } from "@corpus/contract";
 import {
@@ -180,7 +180,7 @@ export function convergeDocumentText(
     parsed = parseDocument(content, path);
   } catch {
     // Not this module's text to fix. A document the parser refuses is `doc
-    // check`'s business (§14), and the write path has already had its say about
+    // check`'s business (§11), and the write path has already had its say about
     // whether these bytes may land.
     return null;
   }

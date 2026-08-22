@@ -35,7 +35,7 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * the server's, and it answers the two failure shapes differently (SERVER-071):
  *
  *   - A quote the parent **does not contain** still creates the thread and comes
- *     back carrying §14's `orphaned_anchor` warning, which the printed line
+ *     back carrying §11's `orphaned_anchor` warning, which the printed line
  *     reports like every other warning. An orphan is a normal state of a living
  *     corpus, not a rejected request.
  *   - A quote the parent contains **more than once** is **refused** with a `400`
@@ -129,7 +129,7 @@ export async function runThreadCreate(
         ...(requestsAgent === undefined ? {} : { requestsAgent }),
         // Same rule, and it matters most here: an unstated model must be an
         // absent field, never a blank one, so a first turn nobody recorded a
-        // model for shows nothing rather than a guess (SPEC.md §11).
+        // model for shows nothing rather than a guess (SPEC.md §10).
         ...(model === undefined ? {} : { model }),
       },
     }),
@@ -188,7 +188,7 @@ export const createCommand: WorkspaceCommandSpec = {
     "id, where it landed, and any enqueued event; `--json` emits the server's " +
     "`{thread, anchorId, eventId, warnings}` response unchanged.\n\n" +
     "**`--model` states what wrote the first turn**, and only an agent's turn may carry one " +
-    "(SPEC.md §11) — the same flag `corpus thread reply` takes, since both write a turn. It " +
+    "(SPEC.md §10) — the same flag `corpus thread reply` takes, since both write a turn. It " +
     "records what ran; it asks for nothing to run. Omit it and the turn carries no model at all, " +
     "which reads as nothing rather than as a guess.",
   args: [],
@@ -260,7 +260,7 @@ export const createCommand: WorkspaceCommandSpec = {
         "corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'\nI split this into two notes; the second needs a title.\nCORPUS_EOF",
       description:
         "A whole-document thread from the agent, body as a heredoc, committed with `agent` as the " +
-        "git author and recording the model that wrote the first turn (SPEC.md §11).",
+        "git author and recording the model that wrote the first turn (SPEC.md §10).",
     },
     {
       command:

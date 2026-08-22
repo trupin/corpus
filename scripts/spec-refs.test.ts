@@ -122,7 +122,7 @@ describe("findCitations", () => {
   });
 
   it("reports every citation on a line, with 1-based line numbers", () => {
-    const citations = findCitations("a.ts", "nothing here\n§7 and §9.2 and §11\n");
+    const citations = findCitations("a.ts", "nothing here\n§7 and §9.2 and §10\n");
     expect(citations.map((citation) => [citation.line, citation.section])).toEqual([
       [2, "7"],
       [2, "9.2"],

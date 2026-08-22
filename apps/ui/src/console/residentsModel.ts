@@ -11,7 +11,7 @@ import { NOTICES_TAB_LABEL } from "./noticesModel";
 
 /**
  * The words the console's **Residents** tab says — who is resident, and what
- * they own (SPEC.md §7 and §11; UI-125, requested by the user 2026-08-19).
+ * they own (SPEC.md §7 and §10; UI-125, requested by the user 2026-08-19).
  *
  * Pure and apart from the components, for the reason every liveness rule in this
  * repo is: the honesty is in the wording, and wording derived inside a component
@@ -53,7 +53,7 @@ export const JOBS_TAB_LABEL = "Jobs";
 export type ConsoleTab = "jobs" | "notices" | "residents";
 
 /**
- * The drawer's tabs, in §11's own order: Jobs, Notices, Residents. None of the
+ * The drawer's tabs, in §10's own order: Jobs, Notices, Residents. None of the
  * three is the corpus — each is the running system's account of itself, which
  * is what puts them in the console (rider authorized 2026-08-21).
  */

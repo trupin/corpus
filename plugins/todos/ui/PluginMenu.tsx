@@ -4,7 +4,7 @@ import "@corpus/kit/autocomplete.css";
 import "./todos.css";
 
 /**
- * A context menu for a **plugin-rendered** surface (SPEC.md §11, as amended
+ * A context menu for a **plugin-rendered** surface (SPEC.md §10, as amended
  * 2026-08-02).
  *
  * The amendment lets a plugin's own rows contribute a menu "through the plugin

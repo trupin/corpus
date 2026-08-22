@@ -491,7 +491,7 @@ describe("the address line's recipient rows", () => {
     await waitFor(() => {
       expect(lanesShown()).toEqual([]);
     });
-    // The §11 statement is said, not offered: a plain line, no popover behind it.
+    // The §10 statement is said, not offered: a plain line, no popover behind it.
     const lineEl = document.querySelector<HTMLElement>('[data-address-line="probe"]');
     expect(lineEl?.tagName).toBe("SPAN");
     expect(document.querySelector("[data-address-pop]")).toBeNull();

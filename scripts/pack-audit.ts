@@ -41,7 +41,7 @@ export interface RequiredEntry {
  */
 export const REQUIRED_PACK_ENTRIES: readonly RequiredEntry[] = [
   { reason: "the generated manifest", pattern: "package.json", min: 1 },
-  { reason: "the operator-facing README (SPEC.md §15)", pattern: "README.md", min: 1 },
+  { reason: "the operator-facing README (SPEC.md §12)", pattern: "README.md", min: 1 },
   { reason: "the license the manifest declares", pattern: "LICENSE", min: 1 },
   { reason: "the `corpus` bin", pattern: CLI_BUNDLE_PATH, min: 1 },
   {

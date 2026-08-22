@@ -54,7 +54,7 @@ export const flushEditSession = createRoute({
     "window may have elapsed a millisecond earlier, and the session would then already be gone " +
     "through the other door. And emission is decided *after* this response: a session whose " +
     "path-scoped range turns out to be empty — an edit and its undo inside one sitting — or whose " +
-    "auto-commits were all rejected or skipped (SPEC.md §14) correctly produces no event at all. " +
+    "auto-commits were all rejected or skipped (SPEC.md §11) correctly produces no event at all. " +
     "What the caller needs is the postcondition, and that is the whole of what `204` states.\n\n" +
     "**One event per session, whichever door it leaves by.** The flush path and the inactivity " +
     "path converge on the same session object, and whichever fires first removes it, so the other " +

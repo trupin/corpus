@@ -551,7 +551,7 @@ describe("isAgentPresent", () => {
   });
 
   /**
-   * The point of taking a clock: §11 asks the pill to flip on its own when an
+   * The point of taking a clock: §10 asks the pill to flip on its own when an
    * agent walks away, and nothing else may have happened to prompt a refetch.
    */
   it("expires a stale `live` no invalidation has arrived to correct", () => {
@@ -578,7 +578,7 @@ describe("isAgentPresent", () => {
 });
 
 /**
- * The pill's four states (SPEC.md §11, rider SHARED-033). Two of the three
+ * The pill's four states (SPEC.md §10, rider SHARED-033). Two of the three
  * precedence steps were already the UI's behaviour; the third — `disconnected`
  * over `working` — is the decision CONTRACT-045 makes, and it is the mirror of
  * the bug that filed the issue: `working` about an agent that claimed work and

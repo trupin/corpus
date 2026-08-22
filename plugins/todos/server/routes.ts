@@ -325,7 +325,7 @@ export default function routes(context: PluginServerContext): Hono {
    * documents than one page holds is a workspace whose column, rows and
    * `corpus todos list` would otherwise all stop at the same arbitrary row
    * (FIX 2). Archived documents are excluded, inheriting core's default result
-   * set (SPEC.md §11) rather than inventing a second answer — unlike migration,
+   * set (SPEC.md §10) rather than inventing a second answer — unlike migration,
    * which deliberately includes them: a document left unmigrated because it
    * happened to be archived is a document that breaks the day it is unarchived.
    */

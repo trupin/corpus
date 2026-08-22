@@ -5,7 +5,7 @@ import { DocumentIdSchema, codeRanges, overlapsRange } from "@corpus/contract";
  * `[[doc_a1b2c3|as text]]` to override the rendered label. Nobody types them by
  * hand — composers autocomplete by title and insert the id — so the scanner's
  * job is only to find them for the projection's `links` table and for the
- * unresolved-reference warning (§14).
+ * unresolved-reference warning (§11).
  */
 export type DocumentRef = {
   /** Target document id — always a contract-valid `doc_*` / `th_*` id. */

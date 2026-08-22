@@ -146,7 +146,7 @@ describe("the started clock", () => {
 /**
  * UI-098. `idle` used to be the else-branch — not halted, nothing in progress —
  * so a machine with no agent running at all reported an agent with nothing to
- * do. SPEC.md §11 now makes `idle` "a claim that requires evidence", and the
+ * do. SPEC.md §10 now makes `idle` "a claim that requires evidence", and the
  * evidence is `QueueStatus.agent`.
  *
  * The ladder itself belongs to the contract (`agentActivity`, CONTRACT-045) and
@@ -253,7 +253,7 @@ describe("the agent pill", () => {
     ["idle", "dot"],
     ["working", "dot busy"],
     ["halted", "dot halted"],
-    // §11: disconnected is not an error state and is not styled as a failure.
+    // §10: disconnected is not an error state and is not styled as a failure.
     ["disconnected", "dot away"],
     ["unknown", "dot unknown"],
   ] as const)("dresses %s in %s", (state, expected) => {
@@ -268,7 +268,7 @@ describe("the agent pill", () => {
     expect(agentDotClass("unknown")).not.toBe(agentDotClass("disconnected"));
   });
 
-  // The index pill borrows this pill's dot vocabulary (SPEC.md §11's index-pill
+  // The index pill borrows this pill's dot vocabulary (SPEC.md §10's index-pill
   // rider), so a state added here must not silently become an index treatment.
   it("leaves the index pill's own vocabulary alone", () => {
     const agentDots = (["idle", "working", "halted", "disconnected", "unknown"] as const).map(

@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 /**
- * The declaration itself (SPEC.md §11's "one source of actions, two
+ * The declaration itself (SPEC.md §10's "one source of actions, two
  * presentations"). These read the array rather than a rendered menu, because
  * the availability rule is the thing under test and two hand-written UI
  * assertions are exactly the drift the shape exists to prevent.
@@ -135,7 +135,7 @@ describe("Archive and Unarchive are the two halves of one act", () => {
     expect(notify.mock.calls.at(-1)?.[0]?.message).toContain("Unarchive failed");
   });
 
-  /** A reversible act; §11 keeps the two-click ceremony for the one that is not. */
+  /** A reversible act; §10 keeps the two-click ceremony for the one that is not. */
   it("asks for no confirmation, because nothing is destroyed", () => {
     const harness = createCorpusTestHarness({ fetch: readerTransport({ docs: [] }).fetch });
     const { result } = renderHook(
@@ -155,7 +155,7 @@ describe("Archive and Unarchive are the two halves of one act", () => {
 });
 
 /**
- * SPEC.md §11's right-click bullet: the context menu lists "exactly that item's
+ * SPEC.md §10's right-click bullet: the context menu lists "exactly that item's
  * existing actions — the same set its ⋯ / header menu offers, nothing
  * invented". Asserted as an equality between the two presentations rather than
  * as two hand-written expectations, which could drift apart the day one of them
@@ -361,7 +361,7 @@ describe("Resolve is offered wherever a status is settable", () => {
   });
 
   it("offers it on that same type when no plugin claims it — the declaration is the gate", () => {
-    // §15 M6: with `plugins/todos/` gone, a todo document is an ordinary one.
+    // §12 M6: with `plugins/todos/` gone, a todo document is an ordinary one.
     expect(actionsOf(TODO).ids()).toContain("resolve");
   });
 

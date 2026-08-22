@@ -21,7 +21,7 @@ import { serializeDoc } from "./markdown/serialize.js";
 import { SaveStatusProvider } from "./SaveChip.js";
 
 /**
- * The changelog's clip (UI-089, SPEC.md §5 and §11's rider signed 2026-08-07).
+ * The changelog's clip (UI-089, SPEC.md §5 and §10's rider signed 2026-08-07).
  *
  * Three properties, and they answer to different criteria:
  *
@@ -31,13 +31,13 @@ import { SaveStatusProvider } from "./SaveChip.js";
  *   another heading) are cheap to state.
  * - **What the reader sees** is asserted through a *mounted* editor, because the
  *   clip is a decoration and a decoration only exists on a live view.
- * - **What the file says** is asserted on the same mount: §11's clip is a
+ * - **What the file says** is asserted on the same mount: §10's clip is a
  *   reading convenience, so a document opened, clipped and expanded must be
  *   byte-identical to the one on disk and must produce no write. That is the
  *   property the obvious implementation — dropping the older entries — breaks.
  *
  * The geometry (a clipped entry occupying no height) is a browser fact and lives
- * in `e2e/changelog.spec.ts`, together with §11's anchor clause, which needs a
+ * in `e2e/changelog.spec.ts`, together with §10's anchor clause, which needs a
  * real anchor highlight in a real layout to mean anything.
  */
 
@@ -210,7 +210,7 @@ describe("what the reader sees", () => {
     expect(clipped()).toHaveLength(7);
     const button = moreButton();
     // The whole size, the way every fold in this app reports itself, *and* how
-    // many are hidden, which is what §11 asks of this control by name.
+    // many are hidden, which is what §10 asks of this control by name.
     expect(button?.textContent).toBe(clipLabel(12, 7));
     expect(button?.textContent).toContain("12");
     expect(button?.textContent).toContain("7");
@@ -316,7 +316,7 @@ describe("reaching into the clip", () => {
     await mount(changelog(12));
     const inside = clipped()[0];
     expect(inside).toBeDefined();
-    // §11's anchor clause, at the seam `useAnchorLayer` uses: whatever is about
+    // §10's anchor clause, at the seam `useAnchorLayer` uses: whatever is about
     // to scroll a node into view says so, and the clip opens rather than
     // scrolling to a box of no height.
     expect(expandClipAround(inside ?? null)).toBe(true);

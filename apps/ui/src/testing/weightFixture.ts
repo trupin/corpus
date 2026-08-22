@@ -3,7 +3,7 @@ import { docRowFixture } from "@corpus/kit/testing";
 
 /**
  * A workspace's declared weight levels, as the composers' suites meet them
- * (SPEC.md §11's rider; UI-082).
+ * (SPEC.md §10's rider; UI-082).
  *
  * The composers read the set from the **orchestrate skill document**, so every
  * surface's suite needs a projected `type: skill` document with a tier table in

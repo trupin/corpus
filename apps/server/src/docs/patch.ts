@@ -7,7 +7,7 @@
 // in its place — and then hands the resulting body to `updateDocumentLocked`,
 // which is the same function `PUT /api/docs/{id}` calls. Everything §9.2
 // promises of "an ordinary write once applied" therefore holds *because it is
-// the ordinary write*, not because this file remembered to do it: §14's
+// the ordinary write*, not because this file remembered to do it: §11's
 // validation before writing, §6's reconciliation with remaps and orphans
 // reported, §4's one attributed commit and its window folding, the synchronous
 // re-projection, the invalidation keys, the edit-session acknowledgment, and the

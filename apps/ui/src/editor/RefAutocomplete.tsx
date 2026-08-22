@@ -19,7 +19,7 @@ import type { RefSuggestionState } from "./refSuggestion.js";
  *
  * Everything a user can perceive comes from the kit: `useRefCompletions` is the
  * same list in the same order with the same rows, `AutocompleteMenu` is the same
- * DOM, and `handleAutocompleteKeyDown` is SPEC.md §11's one keyboard contract.
+ * DOM, and `handleAutocompleteKeyDown` is SPEC.md §10's one keyboard contract.
  * Before this the two `[[` menus were separate implementations that happened to
  * agree, and had already drifted — different limits, different `.d` column,
  * different highlight class, and neither of them accepting on `⇥`.

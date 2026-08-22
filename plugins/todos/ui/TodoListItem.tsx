@@ -20,7 +20,7 @@ import { useTodoItems } from "./queries.js";
 import "./todos.css";
 
 /**
- * A `todo` document's row, in every column that lists one (SPEC.md §10, §11).
+ * A `todo` document's row, in every column that lists one (SPEC.md §10, §10).
  *
  * A registered `ListItem` replaces the kit `Row` **wholesale** for its type, so
  * this component is responsible for everything a row owes the board — the
@@ -32,7 +32,7 @@ import "./todos.css";
  *
  * **There is no chip saying another writer holds this document, and there must
  * not be one.** SPEC.md §7 replaced the per-document lock with a key, so there
- * is nothing to hold; §11 is explicit that the board is never read-only, and a
+ * is nothing to hold; §10 is explicit that the board is never read-only, and a
  * chip announcing someone else's claim on a row is that banner in miniature.
  * The kit's `Row` draws no such chip either — this row matches it because both
  * follow the same sentence, not because one copied the other.

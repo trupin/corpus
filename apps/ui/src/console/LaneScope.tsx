@@ -44,7 +44,7 @@ import {
  * ## Every member opens
  *
  * A row opens the document or thread in its column, exactly as a job's detail
- * header opens its originating document (§11). Knowing what an agent owns is
+ * header opens its originating document (§10). Knowing what an agent owns is
  * only half of what somebody opens this tab for; the other half is going there.
  */
 

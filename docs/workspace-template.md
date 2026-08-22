@@ -25,7 +25,7 @@ assets/workspace/
       orchestrate/SKILL.md               # the agent loop, on the orchestrator's lane (SPEC §7)
       comment/SKILL.md                   # handles comment.created / form.respond (SPEC §7-§8)
       converse/SKILL.md                  # a resident's own loop, on its conversation's lane (SPEC §7)
-      profile/SKILL.md                   # writes a subagent profile into agents/ (SPEC §7, §11)
+      profile/SKILL.md                   # writes a subagent profile into agents/ (SPEC §7, §10)
       asd-ste100/                        # vendored, MIT — controlled language (AGENT-037)
         SKILL.md                         #   the skill itself, byte-identical to .claude/skills/
         LICENSE                          #   the licence it ships under
@@ -35,7 +35,7 @@ assets/workspace/
     agents/.gitkeep                      # subagent personas — `type: agent-def` documents
   data/
     docs/
-      inbox/.gitkeep                     # quick creation always lands here (SPEC §11)
+      inbox/.gitkeep                     # quick creation always lands here (SPEC §10)
       templates/note.md                  # `type: template`, `for: note`
       views/
         attention.md                     # seed pinned view, order 1
@@ -55,7 +55,7 @@ directory name or Claude Code will not discover the skill.
 
 `claude/agents/` ships empty. It is the home of subagent personas — `type: agent-def`
 documents, one markdown file per persona — which the projection indexes alongside the skills
-and which become `@<subagent>` autocomplete targets in every composer (SPEC.md §7, §11).
+and which become `@<subagent>` autocomplete targets in every composer (SPEC.md §7, §10).
 A document in that root is addressable with no registry to enter it in; what a persona has to
 carry to be **loadable by Claude Code** as well as resolvable by Corpus is the `profile`
 skill's, which is why one ships. Because
@@ -101,7 +101,7 @@ and to the reader. Entries with a trailing `/` are directories, the rest are fil
 copied template files (`data/docs/templates/`, `data/docs/views/`, `.claude/skills/`, and
 their parents) arrive with the copy and are not listed here.
 
-- `data/docs/inbox/` — where quick creation always lands (SPEC.md §11). Its template
+- `data/docs/inbox/` — where quick creation always lands (SPEC.md §10). Its template
   counterpart holds nothing but a `.gitkeep`, which the copy filter drops, so the directory
   itself has to be created.
 - `data/threads/` — thread documents, flat, named `<thread-id>.md` (SPEC.md §4). Also a

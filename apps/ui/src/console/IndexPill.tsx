@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { indexDotClass, indexPillText } from "./consoleModel";
 
 /**
- * The semantic index's pill (SPEC.md §11's index-pill rider, signed
+ * The semantic index's pill (SPEC.md §10's index-pill rider, signed
  * 2026-08-02). It sits at the end of the strip's left group, immediately
  * before the spacer — UI-133 moved it there from beside the agent pill,
  * because its sentence is the strip's one unbounded string and anything after
@@ -64,7 +64,7 @@ export function IndexStatusRow({
       <span className={indexDotClass(status)} aria-hidden="true" />
       {detail === undefined ? null : (
         /*
-         * Truncated in place, whole in `title` (SPEC.md §11's rider, signed
+         * Truncated in place, whole in `title` (SPEC.md §10's rider, signed
          * 2026-08-20). The row used to wrap this sentence, which took its second
          * line out of the board — measured at 28.94px → 44.88px on the row and
          * 348.63px → 332.69px on the board (UI-133). The sentence is the

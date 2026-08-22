@@ -2,7 +2,7 @@ import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 /**
- * The browser-local half of the board, and **only** that half (SPEC.md §11).
+ * The browser-local half of the board, and **only** that half (SPEC.md §10).
  *
  * The dividing line is a correctness rule, not a preference: which columns
  * exist, what they query, what they are called and what order they sit in is
@@ -19,7 +19,7 @@ export const BOARD_STORAGE_KEY = "corpus.board";
  * Bumped when the shape below changes; an older blob degrades to defaults.
  *
  * **2** — UI-005 replaced `open: string | null` with the navigation stack
- * SPEC.md §11 requires ("each reader keeps its own navigation stack … Back pops
+ * SPEC.md §10 requires ("each reader keeps its own navigation stack … Back pops
  * with scroll position restored"). A single open id cannot express a stack, and
  * every v1 blob is discarded on first load: the cost is one lost scroll position
  * per column, which is the right trade against migrating a shape whose whole

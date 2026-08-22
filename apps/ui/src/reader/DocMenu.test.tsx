@@ -150,11 +150,11 @@ describe("DocMenu", () => {
   });
 
   /**
-   * SPEC.md §10/§13: the publish plugin adds "Copy for Google Docs" and "Push
-   * update to Google Doc…" through the manifest. Core rendering them — even
-   * inert — is core knowing a plugin's name.
+   * The prototype's menu carries "Copy for Google Docs" and "Push update to
+   * Google Doc…". Nothing in Corpus publishes anywhere, so an item offering it
+   * would be a promise the product does not keep.
    */
-  it("carries no publish-plugin items", () => {
+  it("carries no publish items", () => {
     mount();
     expect(itemLabels().join(" ")).not.toContain("Google");
   });

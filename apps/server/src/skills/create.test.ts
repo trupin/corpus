@@ -128,7 +128,7 @@ describe("creating a skill", () => {
     expect(listed.items.find((row) => row.id === id)?.path).toBe(PATH);
   });
 
-  it("passes the §14 validator it was written through", async () => {
+  it("passes the §11 validator it was written through", async () => {
     await create();
 
     const response = await ws.post("/api/check", {
@@ -177,7 +177,7 @@ describe("what the request may choose", () => {
     expect(DocMutationResponseSchema.parse(payload).doc.body).toBe("");
   });
 
-  it("reports §14 warnings without failing the write", async () => {
+  it("reports §11 warnings without failing the write", async () => {
     const { status, payload } = await create({
       name: NAME,
       description: "Run it.",

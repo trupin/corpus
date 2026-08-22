@@ -7,7 +7,7 @@ import { MenuItems } from "./MenuItems";
 import type { MenuAction } from "./menuModel";
 
 /**
- * A console job row's own actions (SPEC.md §11): open the originating
+ * A console job row's own actions (SPEC.md §10): open the originating
  * document, and — for a job that is actually stalled — retry or abandon.
  *
  * The set is the detail header's, exactly: `↗ open` stays present and

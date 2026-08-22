@@ -11,7 +11,7 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * that makes the backlog visible rather than hidden: it is the only place a
  * person sees the corpus draining, and the reason a pending backlog can be
  * *staleness* rather than drift — `corpus db doctor` stays clean while this
- * number falls (SPEC.md §14), and the two checks answer different questions.
+ * number falls (SPEC.md §11), and the two checks answer different questions.
  *
  * The rendering is a label/value block through the shared {@link renderColumns},
  * so it lines up like every other tabular verb, and the field order is fixed:
@@ -72,7 +72,7 @@ export const statusCommand: WorkspaceCommandSpec = {
     "**A backlog is normal.** Indexing is asynchronous and no save ever waits on it, so `pending` " +
     "is non-zero right after an edit, an import or a rebuild, and watching it fall is what this " +
     "verb is for. That is staleness rather than drift: `corpus db doctor` stays clean while it " +
-    "drains (SPEC.md §14). `failed` is the number that does _not_ drain by itself — those chunks " +
+    "drains (SPEC.md §11). `failed` is the number that does _not_ drain by itself — those chunks " +
     "are re-queued by `corpus index rebuild`, once whatever made them fail is fixed.\n\n" +
     "`state` is the same value, from the same schema, that `corpus search` and `corpus doc " +
     "related` report as `semanticIndex` and warn about when it is anything but `current`. A " +

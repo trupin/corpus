@@ -4,7 +4,7 @@ import type { Editor } from "@tiptap/react";
 import { DOC_REF_NAME } from "./markdown/refNode.js";
 
 /**
- * `[[` — SPEC.md §11's "smart input everywhere", in the document body.
+ * `[[` — SPEC.md §10's "smart input everywhere", in the document body.
  *
  * The trigger is handled as a ProseMirror plugin rather than by watching the
  * DOM, because the thing being tracked is a *range in the document*: text typed
@@ -42,7 +42,7 @@ export interface RefSuggestionOptions {
   readonly keyHandler: { current: ((event: KeyboardEvent) => boolean) | null };
 }
 
-/** SPEC.md §11's trigger for "documents by title". */
+/** SPEC.md §10's trigger for "documents by title". */
 export const REF_TRIGGER = "[[";
 
 /**

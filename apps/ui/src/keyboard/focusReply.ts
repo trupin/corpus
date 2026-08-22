@@ -1,6 +1,6 @@
 /**
  * `r` — "focus the reply composer of the open document's visible thread"
- * (SPEC.md §11).
+ * (SPEC.md §10).
  *
  * **Expressed against the DOM on purpose.** Every other binding acts on state;
  * this one acts on *focus*, and focus is a DOM fact. The alternative — threading
@@ -15,7 +15,7 @@
  * what the user just asked for by a faster route.
  *
  * **It keeps working now that folds are sticky and by-rule** (UI-077). SPEC.md
- * §11's rider requires exactly that of the existing `r` binding, and the fallback
+ * §10's rider requires exactly that of the existing `r` binding, and the fallback
  * below is what delivers it: a document whose only conversation is a resolved
  * one, folded by the rule, still has a composer one activation away.
  */
@@ -66,7 +66,7 @@ export function focusReplyComposer(
 
   // The collapsed line, wherever it is placed — a chip at an anchor, a folded
   // card in the margin, a thread listed below the body. One marker, because
-  // there is one collapsed representation (SPEC.md §11).
+  // there is one collapsed representation (SPEC.md §10).
   const chip = root.querySelector<HTMLElement>("[data-thread-expand]");
   if (chip === null) return "none";
   chip.click();

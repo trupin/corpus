@@ -4,7 +4,7 @@ import { stubCorpus } from "./stubCorpus";
 
 /**
  * UI-135, in a real browser: **the reader's head is a fixed box holding text of
- * unknown length** (SPEC.md §11's rider, signed 2026-08-20 — *"Nothing resizes
+ * unknown length** (SPEC.md §10's rider, signed 2026-08-20 — *"Nothing resizes
  * because of what it holds"*).
  *
  * The defect this pins was ordinary to reach and total in effect. Nothing in
@@ -461,7 +461,7 @@ test.describe("the reader head never resizes because of what it holds", () => {
    *
    * It is also where the *choice* of string is pinned. The box is sized for
    * what a save ordinarily says, and the anchor tail — the uncommon case — is
-   * what truncates and gets revealed instead (SPEC.md §11's third clause).
+   * what truncates and gets revealed instead (SPEC.md §10's third clause).
    * Reserving the worst case was tried and reversed, so the assertion that the
    * reservation carries no anchor count is deliberate rather than incidental.
    */

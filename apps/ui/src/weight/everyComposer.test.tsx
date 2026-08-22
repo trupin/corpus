@@ -23,13 +23,13 @@ import { ThreadComposer } from "../thread/ThreadComposer";
 
 /**
  * **Every** composer offers the weight, and the surfaces are enumerated here
- * rather than sampled (SPEC.md §11's rider, signed 2026-08-06; UI-082, and the
+ * rather than sampled (SPEC.md §10's rider, signed 2026-08-06; UI-082, and the
  * address line of UI-126, which the levels now sit behind).
  *
  * The enumeration is the point. SHARED-012's lesson, learned the expensive way
  * in UI-070, is that a spec sentence phrased per surface gets implemented on one
  * of them: three of five composers shipped without attachments because the tests
- * checked one and asserted the rest by inspection. So the table below is §11's
+ * checked one and asserted the rest by inspection. So the table below is §10's
  * table, one case each, and adding a composer to the app without adding it here
  * leaves a row of the spec untested rather than quietly satisfied.
  *
@@ -43,7 +43,7 @@ import { ThreadComposer } from "../thread/ThreadComposer";
  *
  * The comment-on-a-turn box is deliberately **not** in the table any more: it
  * sends `requestsAgent: false` unconditionally, so since UI-126 it sits on
- * §11's floor — nothing to weigh, nothing offered, nothing stated — and has its
+ * §10's floor — nothing to weigh, nothing offered, nothing stated — and has its
  * own describe below instead of a dimmed control.
  */
 
@@ -220,7 +220,7 @@ function commentPopoverProbe(body: string): Probe {
   };
 }
 
-/** §11's enumeration, in §11's order — every composer whose send reaches the agent. */
+/** §10's enumeration, in §10's order — every composer whose send reaches the agent. */
 const SURFACES: readonly Surface[] = [
   { name: "the global composer — Ask", mount: (body) => composeProbe(body, "ask") },
   { name: "the global composer — Capture", mount: (body) => composeProbe(body, "capture") },
@@ -298,7 +298,7 @@ describe.each(SURFACES)("$name", (surface) => {
     const probe = surface.mount(THREE_LEVELS);
     await drawn();
     fireEvent.click(screen.getByRole("button", { name: "Heavy or judgment-laden" }));
-    // The line states the outcome before sending (SPEC.md §11's statement).
+    // The line states the outcome before sending (SPEC.md §10's statement).
     expect(addressLine().textContent).toContain("Heavy or judgment-laden");
     const sent = await probe.send();
     expect(sent["weight"]).toBe("heavy");
@@ -333,10 +333,10 @@ describe.each(SURFACES)("$name", (surface) => {
   it("claims no key: ↵ is still a newline and ⌘↵ still sends, popover open or not", async () => {
     const probe = surface.mount(THREE_LEVELS);
     // Open, and left open: the popover must claim nothing from the field
-    // (SPEC.md §11's key contract, UI-126 acceptance).
+    // (SPEC.md §10's key contract, UI-126 acceptance).
     await drawn();
     fireEvent.change(probe.field(), { target: { value: "half a thought" } });
-    // Not prevented — the field's own insertion is the behaviour (SPEC.md §11).
+    // Not prevented — the field's own insertion is the behaviour (SPEC.md §10).
     expect(fireEvent.keyDown(probe.field(), { key: "Enter" })).toBe(true);
     expect(fireEvent.keyDown(probe.field(), { key: "Enter", shiftKey: true })).toBe(true);
     // …and the control adds no binding of its own to the composer's field.
@@ -354,7 +354,7 @@ describe.each(SURFACES)("$name", (surface) => {
   });
 
   /**
-   * §11: an IME composition commit never submits — and the popover is exactly
+   * §10: an IME composition commit never submits — and the popover is exactly
    * the kind of control rewrite that breaks it silently, so the pin holds with
    * it open (UI-126).
    */
@@ -373,7 +373,7 @@ describe.each(SURFACES)("$name", (surface) => {
 });
 
 /**
- * The comment-on-a-turn box (§11's floor, UI-126): it sends `requestsAgent:
+ * The comment-on-a-turn box (§10's floor, UI-126): it sends `requestsAgent:
  * false` unconditionally, so no weight exists to offer or to state. The dimmed
  * control that used to stand here is exactly what the issue removed — a choice
  * it accepted was a choice nothing would read.

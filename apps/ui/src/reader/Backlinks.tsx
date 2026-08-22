@@ -2,7 +2,7 @@ import type { DocRow } from "@corpus/contract";
 import type { ReactElement } from "react";
 
 /**
- * "Referenced by" (SPEC.md §11): every document whose body carries a `[[ref]]`
+ * "Referenced by" (SPEC.md §10): every document whose body carries a `[[ref]]`
  * to this one, from the projection's `links` table via `GET
  * /api/docs?references=<id>`.
  *
@@ -11,7 +11,7 @@ import type { ReactElement } from "react";
  * client-side) is the shape of N+1 the collection query exists to prevent.
  *
  * Clicking a backlink pushes onto the reader's navigation stack exactly like a
- * `[[ref]]` does; SPEC.md §11 names refs, backlinks and thread-context links as
+ * `[[ref]]` does; SPEC.md §10 names refs, backlinks and thread-context links as
  * the three sources of one history.
  */
 

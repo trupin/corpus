@@ -17,11 +17,11 @@ import {
 } from "./addressModel.js";
 
 /**
- * The control every composer offers (SPEC.md §11, UI-126): **one line stating
+ * The control every composer offers (SPEC.md §10, UI-126): **one line stating
  * the outcome** — who answers, at what weight — that opens to change either.
  *
  * It ships from `@corpus/kit` for the reason the two controls it replaces did:
- * §11's enumeration binds "any composer a plugin contributes", and kit is how a
+ * §10's enumeration binds "any composer a plugin contributes", and kit is how a
  * plugin gets a first-party affordance with one import and no copy.
  *
  * ## What it renders, and what it refuses to
@@ -42,7 +42,7 @@ import {
  *   routes one message, pressing a standing choice clears it.
  * - **A line with nothing behind it does not pretend to open.** When there is
  *   neither a lane to choose nor a level to state, the line renders as plain
- *   text — the §11 recipient statement, still true, still there.
+ *   text — the §10 recipient statement, still true, still there.
  * - **The card is as large as its place allows** (UI-130, then UI-142). It grows
  *   upward out of a composer that sits inside a scrollport, so a long roster
  *   used to push its top rows behind the reader's head, which then took the
@@ -57,7 +57,7 @@ import {
  *
  * ## Keys
  *
- * It claims none — §11's composer key contract is untouched, and the popover
+ * It claims none — §10's composer key contract is untouched, and the popover
  * adds no binding of its own. Everything here is an ordinary `<button>`: the
  * line toggles on click, `↵` or `space`, and closes on a click outside; every
  * row and level is tabbable while open. Escape is deliberately not handled —
@@ -101,7 +101,7 @@ const POP_MARGIN = 6;
  * choosing a recipient from what they can see would be choosing from a list
  * whose end they never reached. So the count is said out loud beside the lead,
  * on the one line the lead already occupies — the note therefore costs the card
- * no height, which is what keeps it inside SPEC.md §11's rider rather than an
+ * no height, which is what keeps it inside SPEC.md §10's rider rather than an
  * exception to it.
  *
  * Since UI-142 it is also the *rare* case rather than the fourth-lane case:
@@ -119,7 +119,7 @@ export function lanesCappedNote(count: number): string {
  * The line's slot is a property of the footer and not of the sentence in it
  * (UI-137, `address.css`), so a statement wider than 22ch truncates there —
  * `agent will answer · Heavy or judgment-laden` is 302px against a 139px slot.
- * SPEC.md §11's rider signed 2026-08-20 allows that only where the whole of it
+ * SPEC.md §10's rider signed 2026-08-20 allows that only where the whole of it
  * is reachable, so the sentence leads the title and the explanation follows it.
  *
  * **One title and not two.** UI-127 put the popover statement's own sentence on
@@ -195,7 +195,7 @@ function clipperOf(node: HTMLElement): HTMLElement | null {
 }
 
 /**
- * The room the card has, in both axes — SPEC.md §11's rider of 2026-08-21
+ * The room the card has, in both axes — SPEC.md §10's rider of 2026-08-21
  * (SHARED-061): *"a bound is derived from the room, not chosen as a number."*
  *
  * Two readings, and each answers a different question the layout asks.
@@ -207,7 +207,7 @@ function clipperOf(node: HTMLElement): HTMLElement | null {
  * **`right` — how wide it may be drawn.** The trailing edge of `host`, which is
  * the element the address line was placed in: a composer foot, the global
  * panel's action bar, the comment popover's foot. That row **is** the card's
- * place, in the sense §11 gives the word — a property of the layout, never of
+ * place, in the sense §10 gives the word — a property of the layout, never of
  * the roster — so a card as wide as its row is as wide as the surface it
  * belongs to, and a column dragged wider or a window that narrows the panel
  * moves it. It is clamped by the room's own right edge so a host wider than the
@@ -240,7 +240,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
   /**
    * The row whose full statement the popover is showing: whatever the person is
    * looking at, else whoever will answer. Tabbing through the lanes reads them
-   * out, so nothing here is available only to a pointer (SPEC.md §11).
+   * out, so nothing here is available only to a pointer (SPEC.md §10).
    */
   const [previewed, setPreviewed] = useState<string | null>(null);
   /** True once the lane list has more rows than the ceiling lets it show. */
@@ -305,7 +305,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
    * **It runs on opening and never on previewing.** Its dependencies are the
    * open flag and the roster's length: hovering or focusing a row changes
    * neither, so nothing here can move a row out from under a pointer, which is
-   * the loop UI-127 closed and SPEC.md §11's rider forbids.
+   * the loop UI-127 closed and SPEC.md §10's rider forbids.
    */
   useLayoutEffect(() => {
     const card = pop.current;
@@ -405,7 +405,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
           </span>
         </button>
       ) : (
-        // §11's recipient statement with nothing to change behind it: said, not
+        // §10's recipient statement with nothing to change behind it: said, not
         // offered. Plain text so it neither focuses nor pretends to open — and
         // the sentence alone on the title, because there is no gesture here to
         // explain and the slot truncates this line exactly as it does the other.
@@ -449,7 +449,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                   />
                 ))}
               </div>
-              {/* The box is reserved (SPEC.md §11's rider signed 2026-08-20):
+              {/* The box is reserved (SPEC.md §10's rider signed 2026-08-20):
                * previewing a lane changes these words and never this height,
                * because a popover anchored by its bottom edge that grew on
                * hover moved the row out from under the cursor. A statement

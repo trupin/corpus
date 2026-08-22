@@ -20,18 +20,18 @@ import { ThreadPanel } from "./ThreadPanel.js";
 import { turnModelLabel } from "./turnModel.js";
 
 /**
- * UI-090: an agent turn says which model wrote it (SPEC.md §11, rider signed
+ * UI-090: an agent turn says which model wrote it (SPEC.md §10, rider signed
  * 2026-08-07) — and every other turn says nothing at all.
  *
  * The suite is written around the one thread the rider's sentence needs to be
  * read against: a person's turn, an agent turn nobody recorded a model for, and
  * agent turns that name two different models. Asserting only that a model
  * appears would pass on a component that printed a placeholder for the other
- * two, which is exactly what §11 forbids ("shows **nothing** rather than a
+ * two, which is exactly what §10 forbids ("shows **nothing** rather than a
  * guess").
  *
  * `ThreadPanel` is the entry point rather than `Turn`, because it is the seam
- * where §11's other closed set lives: the collapsed line's contents. Rendering
+ * where §10's other closed set lives: the collapsed line's contents. Rendering
  * the conversation and then folding it is the only way to prove the model went
  * with the expansion instead of leaking into the fold.
  */
@@ -155,7 +155,7 @@ describe("turnModelLabel", () => {
   });
 
   /**
-   * §11: "a turn a person wrote names no model". The write path already `400`s
+   * §10: "a turn a person wrote names no model". The write path already `400`s
    * on one, so the only source is a hand-edited frontmatter entry the server
    * would have refused — an attribution the UI declines to publish on its behalf.
    */
@@ -223,7 +223,7 @@ describe("a conversation of mixed turns", () => {
   });
 
   /**
-   * §11 is explicit that an unknown says so by absence. A dash, an "unknown", or
+   * §10 is explicit that an unknown says so by absence. A dash, an "unknown", or
    * an empty chip all read as values — so the assertion is that the element does
    * not exist, not that it is blank.
    */
@@ -239,7 +239,7 @@ describe("a conversation of mixed turns", () => {
   });
 
   /**
-   * §11 fixes exactly what a collapsed line reports — that it exists, what it is
+   * §10 fixes exactly what a collapsed line reports — that it exists, what it is
    * about, who spoke last, how many turns, and whether anything is unread — and
    * says the set is closed. The model is not in it, and this is what keeps it out.
    */

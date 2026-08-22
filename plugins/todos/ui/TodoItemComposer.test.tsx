@@ -213,7 +213,7 @@ describe("TodoItemComposer", () => {
 
   /**
    * PLUGINS-011. This composer sent on `↵` with `⇧↵` for a newline, which was
-   * the convention SPEC.md §11 replaced. The contract binds "any composer a
+   * the convention SPEC.md §10 replaced. The contract binds "any composer a
    * plugin contributes", so the reference plugin demonstrates it: `↵` belongs to
    * the text, `⌘↵` sends. The handler is the kit's `handleComposerKeyDown` — its
    * own unit tests cover the contract, and what is asserted here is that this
@@ -385,7 +385,7 @@ describe("TodoItemComposer", () => {
 });
 
 /**
- * PLUGINS-012 — SPEC.md §11's rider: *"any composer a plugin contributes"*
+ * PLUGINS-012 — SPEC.md §10's rider: *"any composer a plugin contributes"*
  * takes files by all three of §6's routes, previewed as chips before sending.
  *
  * Everything asserted here is behaviour reachable from the plugin's own import

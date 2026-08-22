@@ -4,7 +4,7 @@ import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
- * **The address card is as large as its place allows** — SPEC.md §11's rider
+ * **The address card is as large as its place allows** — SPEC.md §10's rider
  * authorized 2026-08-21 (SHARED-061), measured in a real browser (UI-142).
  *
  * ## What was wrong, in numbers
@@ -197,7 +197,7 @@ async function openReply(
 }
 
 /**
- * The row the address line sits in — the card's *place*, in §11's sense, and
+ * The row the address line sits in — the card's *place*, in §10's sense, and
  * the element `ComposerAddress` measures its width against.
  *
  * Written as "the foot that contains this control" rather than as a path from

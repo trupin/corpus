@@ -141,7 +141,7 @@ describe("DocFrontmatter", () => {
 });
 
 /**
- * CONTRACT-011: the §11 view keys are first-class core fields on every
+ * CONTRACT-011: the §10 view keys are first-class core fields on every
  * response surface, so the board reads its whole column set — query, order,
  * column type — from the list response with no per-view follow-up read.
  */
@@ -245,7 +245,7 @@ describe("Doc", () => {
 
 describe("CreateDocRequest", () => {
   /**
-   * The zero-form create (SPEC.md §11). The schema deliberately does *not*
+   * The zero-form create (SPEC.md §10). The schema deliberately does *not*
    * materialise `tags`/`status`/`due`/`evergreen` at parse time: a Zod default
    * becomes a JSON Schema `default`, which `openapi-typescript` renders as a
    * required member of the client's request type — so the caller would be forced
@@ -304,7 +304,7 @@ describe("CreateDocRequest", () => {
   });
 
   /**
-   * The default is `inbox`, not the root: creation is inbox-first (SPEC.md §11)
+   * The default is `inbox`, not the root: creation is inbox-first (SPEC.md §10)
    * and the server's `documentPathFor` implements it. The schema leaves `folder`
    * absent so the server owns the default — what is asserted here is that the
    * published description says so, since that is the only place a client learns it.
@@ -425,7 +425,7 @@ describe("DeleteDocResult", () => {
     expect(DeleteDocResultSchema.parse(result)).toEqual(result);
   });
 
-  it("carries the §14 warnings of a deletion whose commit was refused", () => {
+  it("carries the §11 warnings of a deletion whose commit was refused", () => {
     const result = {
       deletedId: "doc_a1b2c3",
       orphanedThreadIds: [],
@@ -538,7 +538,7 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
 });
 
 describe("DocMutationResponse", () => {
-  it("wraps the document so §14 warnings have somewhere to travel", () => {
+  it("wraps the document so §11 warnings have somewhere to travel", () => {
     const response = {
       doc,
       warnings: [{ code: "commit_skipped" as const, detail: "workspace is not a git repository" }],

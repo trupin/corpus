@@ -155,7 +155,7 @@ export const ReattachConflictErrorSchema = z
  * sent, because the caller sent none.
  *
  * `warnings` because re-attaching rewrites the parent's frontmatter and
- * auto-commits it, so §14's commit warnings apply exactly as they do to
+ * auto-commits it, so §11's commit warnings apply exactly as they do to
  * `resolve` and `reopen`. `thread` mirrors `ThreadMutationResponse`'s summary so
  * a board row can be updated from the same response.
  */

@@ -278,7 +278,7 @@ export async function runDocEdit(
     // whole object back would race every other writer of a key this invocation
     // never mentioned.
     ...(extra === undefined ? {} : { extra }),
-    // The §11 view keys are *not* a merge patch — each is one core field, and
+    // The §10 view keys are *not* a merge patch — each is one core field, and
     // an unnamed one is simply absent here.
     ...view,
   };
@@ -358,9 +358,9 @@ export const editCommand: WorkspaceCommandSpec = {
     "The server refuses the same write (SERVER-039); refusing it here costs no round trip and " +
     "names a **command** where the server can only name a route. `--extra` and `--extra-json` " +
     "write non-core frontmatter keys — the " +
-    "column `width` of SPEC.md §11 among them — as a merge patch: named keys replace, `null` " +
+    "column `width` of SPEC.md §10 among them — as a merge patch: named keys replace, `null` " +
     "removes, unnamed keys are untouched. `--pinned`, `--order`, `--query` and `--column` write " +
-    "the four **view keys** of SPEC.md §11, which are core fields rather than `extra` ones: a " +
+    "the four **view keys** of SPEC.md §10, which are core fields rather than `extra` ones: a " +
     "board column IS a `type: view` document with `pinned: true`, so pinning, reordering and " +
     "reconfiguring one is this verb, and the board follows over SSE with no reload. An edit that " +
     "names no change at all is a usage error, not an empty request.\n\n" +
@@ -449,7 +449,7 @@ export const editCommand: WorkspaceCommandSpec = {
       repeated: true,
       description:
         "Set one non-core frontmatter key, repeatably — the agent's way to steward a column's " +
-        "`width` (SPEC.md §11) or any plugin key. **The value grammar is total over scalars** — " +
+        "`width` (SPEC.md §10) or any plugin key. **The value grammar is total over scalars** — " +
         "every input maps to exactly one JSON scalar, and `--extra-json` is the flag for an " +
         "object or an array: `null` deletes " +
         "the key (RFC 7386), `true`/`false` are booleans, a canonical **finite** JSON number " +

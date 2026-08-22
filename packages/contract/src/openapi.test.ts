@@ -1447,14 +1447,14 @@ describe("the edit-session flush (CONTRACT-031)", () => {
 });
 
 /**
- * CONTRACT-011: the extra-frontmatter surface and the first-class §11 view
+ * CONTRACT-011: the extra-frontmatter surface and the first-class §10 view
  * keys. The schema descriptions here ARE the plugin contract — a plugin author
  * reads only the generated document — so these invariants pin the published
  * prose, not just the shapes.
  */
 /**
  * CONTRACT-037 — the contract half of SPEC.md §4's "One action, one commit"
- * (rider signed 2026-08-05) and §11's bulk actions on a selection; CONTRACT-048
+ * (rider signed 2026-08-05) and §10's bulk actions on a selection; CONTRACT-048
  * for the staged-set request shape SHARED-032 (signed 2026-08-09) requires. Each
  * property below is one a careless later edit would break silently, and the
  * failure would only surface as a history that disagrees with what the user was
@@ -1476,7 +1476,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
 
   /**
    * The single-document routes are unchanged — they stay the path for the
-   * reader's ⋯ menu and the per-row quick actions (§11). Pinned here because
+   * reader's ⋯ menu and the per-row quick actions (§10). Pinned here because
    * "add a batch route" is exactly the change that tempts someone to fold the
    * singles into it.
    */
@@ -1589,7 +1589,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   });
 
   /**
-   * §11's one selection that has no enumerated form: "a whole-result-set
+   * §10's one selection that has no enumerated form: "a whole-result-set
    * selection stages as a single entry … carrying one action for all of them",
    * with "the count re-evaluated when the Save runs". Ids remain the shape of a
    * staged row; this is the narrow exception, not a filter-shaped mutation.
@@ -1610,7 +1610,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   });
 
   /**
-   * §11: "Bulk delete is offered **only** on a selection whose documents are
+   * §10: "Bulk delete is offered **only** on a selection whose documents are
    * enumerated — a whole-result-set selection cannot be deleted." Published as a
    * narrower union, so it is a type error in the generated client rather than a
    * refusal discovered after confirming on 412 documents.
@@ -1626,7 +1626,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
       "tag",
       "review",
     ]);
-    // Still expressible on an enumerated row, which is what §11 allows.
+    // Still expressible on an enumerated row, which is what §10 allows.
     expect(actionSchema()?.oneOf?.at(-1)?.properties?.["action"]?.enum).toEqual(["delete"]);
   });
 
@@ -1656,7 +1656,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   });
 
   /**
-   * §11: tagging "adds or removes the named tags and never replaces a document's
+   * §10: tagging "adds or removes the named tags and never replaces a document's
    * tag set". The published shape has to make the replacement *inexpressible* —
    * a `tags` key here would flatten twenty different tag sets into one, and no
    * response could report that.
@@ -1672,7 +1672,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
     }
   });
 
-  it("states §11's three parts as three separate, always-present lists", () => {
+  it("states §10's three parts as three separate, always-present lists", () => {
     const parts = [
       "changed",
       "alreadyInState",
@@ -1719,7 +1719,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
   it("requires a reason and a message on every refusal, and nothing else", () => {
     const refusal = componentSchemas?.["BulkActionRefusal"];
     expect(refusal?.required).toEqual(["id", "action", "reason", "message"]);
-    // No `stale`: it was kept alive by a §11 sentence struck on 2026-08-13, and
+    // No `stale`: it was kept alive by a §10 sentence struck on 2026-08-13, and
     // nothing ever produced it — the request carries no key, so the route has no
     // version to compare (PR #46 review). Pinned from the published document
     // because a class a client can branch on and a server can never send is a
@@ -1764,7 +1764,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
    * Partial failure is the normal case, not the error path: a document whose
    * content moved and an unknown id are per-document outcomes here, so neither
    * becomes a verdict on the request. Declaring `404` would invite exactly the
-   * all-or-nothing server §11 forbids.
+   * all-or-nothing server §10 forbids.
    */
   it("declares no 404, and says why", () => {
     const responses = bulk().responses ?? {};
@@ -1926,7 +1926,7 @@ describe("DocRow.unreadThreads (CONTRACT-012)", () => {
 
 /**
  * CONTRACT-040. The count that lets a reason chip say "2 still open" (SPEC.md
- * §11) from the collection response alone. Like `unreadThreads`, its description
+ * §10) from the collection response alone. Like `unreadThreads`, its description
  * is the whole contract the server half implements against, so it is pinned in
  * the published document rather than only inferred from the type.
  */
@@ -1955,7 +1955,7 @@ describe("DocRow.unansweredForms (CONTRACT-040)", () => {
 
   it("publishes the resolve rule, the seen asymmetry, and that 0 is not `unknown`", () => {
     const description = JSON.stringify(property());
-    expect(description).toContain("SPEC.md §6, §11");
+    expect(description).toContain("SPEC.md §6, §10");
     expect(description).toContain("Resolving the thread takes it to `0`");
     expect(description).toContain("/seen");
     expect(description).toContain("non-thread row");
@@ -1984,7 +1984,7 @@ describe("author attribution", () => {
    *
    * - `POST /api/check` is a `POST` because a request body is the only way to
    *   say what to check, not because anything is written: it runs the validator
-   *   and mutates nothing (SPEC.md §14).
+   *   and mutates nothing (SPEC.md §11).
    * - `POST /api/index/rebuild` genuinely mutates — but only **derived runtime
    *   state**, the semantic index inside the projection, which is not a
    *   workspace file and never reaches git (SPEC.md §9.2: "Both touch only
@@ -3258,7 +3258,7 @@ describe("routes declare only the codes they can return", () => {
 });
 
 /**
- * CONTRACT-008. The validation surface §14 requires ("`corpus doc check` exposes
+ * CONTRACT-008. The validation surface §11 requires ("`corpus doc check` exposes
  * the same validator on demand"), and the skill-creation surface §7's genesis
  * clause requires.
  *
@@ -3379,7 +3379,7 @@ describe("the validation and skill surface", () => {
 
   /**
    * The check writes nothing, so there is no git author to attribute — and no
-   * §14 commit warning it could ever produce. Both absences are asserted, not
+   * §11 commit warning it could ever produce. Both absences are asserted, not
    * merely intended.
    */
   describe("the check is read-only and says so", () => {
@@ -3512,12 +3512,12 @@ describe("the validation and skill surface", () => {
 });
 
 /**
- * CONTRACT-006. §14's "a warning on the API response" has to be true of every
+ * CONTRACT-006. §11's "a warning on the API response" has to be true of every
  * mutation, not only of the document ones: thread writes go through the same
  * server pipeline, and anchored creation writes the **parent document's**
- * frontmatter. A shape that cannot carry a warning makes §14 selectively true.
+ * frontmatter. A shape that cannot carry a warning makes §11 selectively true.
  */
-describe("§14 warnings reach every mutation response", () => {
+describe("§11 warnings reach every mutation response", () => {
   const CARRIERS = [
     "DocMutationResponse",
     "UpdateDocResponse",
@@ -3539,7 +3539,7 @@ describe("§14 warnings reach every mutation response", () => {
     // uncommitted — the widest reach any single `commit_failed` has.
     "BulkActionResult",
     // CONTRACT-046: an applied patch is an ordinary write (SPEC.md §9.2) —
-    // validated, reconciled, auto-committed — so it reaches §14's warnings by
+    // validated, reconciled, auto-committed — so it reaches §11's warnings by
     // exactly the routes `UpdateDocResponse` does, and shares its shape.
     "PatchDocResponse",
   ];
@@ -3547,7 +3547,7 @@ describe("§14 warnings reach every mutation response", () => {
   /**
    * Components whose `warnings` is a different vocabulary and must not be held
    * to `Warning`'s shape. `CheckReport.warnings` is the **validator's** severity
-   * split — §14's "unresolvable-but-well-formed anchors and unresolved
+   * split — §11's "unresolvable-but-well-formed anchors and unresolved
    * `[[refs]]` are warnings, not failures" — carrying `CheckFinding`s.
    * `/api/check` writes nothing and can produce no commit warning at all, so
    * there is no shape here for `Warning` to occupy.
@@ -3965,7 +3965,7 @@ describe("the CONTRACT-007 riders", () => {
 });
 
 /**
- * SPEC.md §2.2 and §14's projection-maintenance pair. `rebuild && doctor` clean
+ * SPEC.md §2.2 and §11's projection-maintenance pair. `rebuild && doctor` clean
  * is the standing invariant v1's definition of done gates on, so both halves are
  * contract surface rather than server-local commands.
  */
@@ -4018,11 +4018,11 @@ describe("the projection maintenance routes", () => {
 
   /**
    * Unchanged by CONTRACT-025 and worth keeping pinned: neither route writes a
-   * workspace file, so neither can produce a §14 commit warning. `RebuildResult`
+   * workspace file, so neither can produce a §11 commit warning. `RebuildResult`
    * carries no warnings field of any kind — a rebuild already reports what it
    * could not use, in `skipped`.
    */
-  it("keeps the §14 mutation warning carrier off both db responses", () => {
+  it("keeps the §11 mutation warning carrier off both db responses", () => {
     expect(componentSchemas?.["RebuildResult"]?.properties?.["warnings"]).toBeUndefined();
     expect(
       JSON.stringify(componentSchemas?.["DoctorReport"]?.properties?.["warnings"]),
@@ -4518,7 +4518,7 @@ describe("a stated weight rides the request (CONTRACT-039)", () => {
   }
 
   /**
-   * §11 states the control once for the set of composers rather than per surface
+   * §10 states the control once for the set of composers rather than per surface
    * (SHARED-012's lesson: per-surface phrasing is how three of five composers
    * shipped without attachments). These are those surfaces on the wire.
    */
@@ -4535,7 +4535,7 @@ describe("a stated weight rides the request (CONTRACT-039)", () => {
    * (CONTRACT-067): §7's rider signed 2026-08-19 makes it the place a
    * **resident's** weight is chosen, and a designation is not a composer, so
    * it is named here as the single exception rather than folded into the set
-   * §11 enumerates. Its own pins live with the roster's, below.
+   * §10 enumerates. Its own pins live with the roster's, below.
    */
   const DESIGNATION_BODY = "POST /api/threads/{id}/resident (application/json)";
 
@@ -4955,7 +4955,7 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("answers a designation and a release with the thread, so §14's warnings surface", () => {
+  it("answers a designation and a release with the thread, so §11's warnings surface", () => {
     for (const method of ["post", "delete"] as const) {
       const ok = operation("/api/threads/{id}/resident", method).responses?.["200"];
       expect(JSON.stringify(ok), method).toContain("ThreadMutationResponse");

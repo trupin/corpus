@@ -171,15 +171,15 @@ const RUNTIME_SURFACE = [
   "handleComposerKeyDown",
   // the attachment trio every composer obeys §6 with: the three intake routes,
   // the chip strip that previews them, and the 📎 that opens the picker. Here
-  // for the same reason the key contract is — §11's rider binds "any composer a
+  // for the same reason the key contract is — §10's rider binds "any composer a
   // plugin contributes", and a plugin may import nothing else (UI-070).
   "useAttachmentIntake",
   "releaseAttachments",
   "PendingAttachments",
   "AttachButton",
-  // the weight a composer may state (SPEC.md §11's rider, signed 2026-08-06).
+  // the weight a composer may state (SPEC.md §10's rider, signed 2026-08-06).
   // Published here so a plugin's composer offers the same levels a first-party
-  // one does, with one import and no copy — the plugin row of §11's enumeration.
+  // one does, with one import and no copy — the plugin row of §10's enumeration.
   "WEIGHT_TABLE_HEADER",
   "useComposerWeight",
   "useWeightLevels",
@@ -191,7 +191,7 @@ const RUNTIME_SURFACE = [
   "weightChoice",
   "subscribeWeightChoices",
   // `resetWeightChoices` is deliberately absent: it is test support, and it lives
-  // on `@corpus/kit/testing`. SPEC.md §11 describes no "forget my weights"
+  // on `@corpus/kit/testing`. SPEC.md §10 describes no "forget my weights"
   // action, so publishing one to plugin authors would invent one (UI-082's PR #35 review).
   "threadWeightScope",
   "docWeightScope",
@@ -200,7 +200,7 @@ const RUNTIME_SURFACE = [
   // one line stating who answers and at what weight, opening to change either.
   // For a resident's lane the weight section is a sentence naming the
   // resident's weight, never a control whose choice would be discarded
-  // (SPEC.md §7 and §11, rider signed 2026-08-19).
+  // (SPEC.md §7 and §10, rider signed 2026-08-19).
   "ComposerAddress",
   "composerAddress",
   "answeringRow",

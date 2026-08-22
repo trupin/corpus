@@ -2,7 +2,7 @@ import { UNTITLED_DOCUMENT_TITLE } from "../board/useCreateInColumn";
 import { canonicalizeMarkdown } from "../editor/markdown/serialize";
 
 /**
- * What "empty" means, for the one rule that destroys a document (SPEC.md §11):
+ * What "empty" means, for the one rule that destroys a document (SPEC.md §10):
  * *"a document that is empty — no title and no body content — when you exit it
  * is automatically deleted, whatever the exit route"*.
  *
@@ -15,7 +15,7 @@ import { canonicalizeMarkdown } from "../editor/markdown/serialize";
  * user wrote the rule for — start typing, change your mind, remove what you
  * wrote, leave — so nothing here remembers what a document once held.
  *
- * **A template's skeleton is not content the user wrote.** SPEC.md §11's
+ * **A template's skeleton is not content the user wrote.** SPEC.md §10's
  * "Templates are documents" means a new `note` in a seeded workspace is born
  * holding `## Context / ## Notes / ## Open questions` — so a rule that only
  * asked "is the body blank?" would exempt the `＋` path from the whole issue in
@@ -59,7 +59,7 @@ export function isBlankBody(body: string): boolean {
  * rule therefore never applies to.
  *
  * A `thread` is its conversation (SPEC.md §6) and a `view` is its stored query
- * (SPEC.md §11) — both are routinely "empty" in the body sense while being
+ * (SPEC.md §10) — both are routinely "empty" in the body sense while being
  * entirely full of what the user made. `DocEditor` draws the same line for the
  * same reason.
  */

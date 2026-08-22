@@ -1,4 +1,4 @@
-// The resolve/reopen confirmations (SPEC.md §14 — a mutation's outcome is
+// The resolve/reopen confirmations (SPEC.md §11 — a mutation's outcome is
 // reported honestly), in one module because three surfaces report the same
 // write: the thread card's head, the conversation panel's menu, and the
 // document menu's ⋯ set.

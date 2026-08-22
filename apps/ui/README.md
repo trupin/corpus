@@ -1,6 +1,6 @@
 # `@corpus/ui`
 
-The board (SPEC.md §11). React 19 + Vite, served statically by the workspace
+The board (SPEC.md §10). React 19 + Vite, served statically by the workspace
 server in the installed tool and proxied through the Vite dev server in
 development.
 

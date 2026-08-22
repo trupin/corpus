@@ -210,7 +210,7 @@ export const EditSessionEndReasonSchema = z.enum(EDIT_SESSION_END_REASONS);
  * preserve). Stats are path-scoped to the document's file, so an interleaved
  * commit touching *other* documents cannot inflate them either.
  *
- * **A session with no commit emits nothing.** §14 lets an auto-commit be rejected
+ * **A session with no commit emits nothing.** §11 lets an auto-commit be rejected
  * by a workspace hook or skipped in a workspace with no git — the write stands and
  * the failure surfaces as a warning on the write itself. Such a session has no
  * range to report, so it produces no event: there is no null-range `doc.edited`,
@@ -406,7 +406,7 @@ export const DocDiffSchema = z
     to: CommitShaSchema.nullable().describe(
       "The resolved head of the range, inclusive. **`null` exactly when the workspace has no " +
         "committed history for this document** — a file written but not yet committed, or a " +
-        "workspace with no git at all (SPEC.md §14). In that case `from` is null too, `diff` is " +
+        "workspace with no git at all (SPEC.md §11). In that case `from` is null too, `diff` is " +
         "empty, `stats` are zero and `truncated` is false: an answer, not an error, because a " +
         "document that has never been committed genuinely has no change to show.",
     ),

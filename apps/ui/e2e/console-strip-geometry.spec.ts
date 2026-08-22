@@ -7,7 +7,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-133 in a real browser: **the console strip's height is a property of the
- * strip, never of what it says** (SPEC.md §11's rider, signed 2026-08-20 —
+ * strip, never of what it says** (SPEC.md §10's rider, signed 2026-08-20 —
  * "Nothing resizes because of what it holds").
  *
  * ## Why the board is what gets measured

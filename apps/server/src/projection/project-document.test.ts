@@ -483,7 +483,7 @@ describe("projectDocument — threads and turns", () => {
     });
 
     it("drops the second of two turns sharing a timestamp, form and all", () => {
-      // `INSERT OR IGNORE` on (thread_id, ts) keeps the first row, so a §14 hard
+      // `INSERT OR IGNORE` on (thread_id, ts) keeps the first row, so a §11 hard
       // failure the file already has — two turns at one instant — costs the
       // *second* turn's form its row, and `needs=form` cannot mention a question
       // that has no row. Recorded rather than worked around: the duplicate is

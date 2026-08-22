@@ -4,7 +4,7 @@ import { stubCorpus, type StubCorpus } from "./stubCorpus";
 
 /**
  * UI-107, in a real browser: **a refusal arriving mid-sentence does not discard
- * the sentence** (SPEC.md §7 "A key, not a lock", §11 "the board is never
+ * the sentence** (SPEC.md §7 "A key, not a lock", §10 "the board is never
  * read-only").
  *
  * This is the half no component test can make. The board's autosave, the
@@ -123,7 +123,7 @@ test.describe("the agent writes the document you have open (SPEC.md §7)", () =>
     const corpus = await openNote(page);
     await corpus.writeAsAgent("doc_shared", "The agent is writing right now.\n");
 
-    // §11, amended: the board is never read-only. No banner, no Force unlock, no
+    // §10, amended: the board is never read-only. No banner, no Force unlock, no
     // frozen title — on a document another writer is actively rewriting.
     await expect(page.locator(".lock-banner")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Force unlock" })).toHaveCount(0);

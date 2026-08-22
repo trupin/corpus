@@ -320,7 +320,7 @@ describe("boot recovery (SPEC.md §4)", () => {
     expect(outcome.kind).toBe("failed");
     if (outcome.kind !== "failed") return;
     expect(outcome.output).toContain("policy says no");
-    // SPEC.md §14: the change stands, and it is not left staged for the next
+    // SPEC.md §11: the change stands, and it is not left staged for the next
     // commit by anything at all to swallow.
     expect(fixture.log("%H")).toEqual(before);
     expect(fixture.status()).toBe(" M data/docs/inbox/seed.md\n");

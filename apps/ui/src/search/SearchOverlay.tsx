@@ -23,7 +23,7 @@ import { useSearch } from "./useSearch";
 import "./search.css";
 
 /**
- * The search overlay (SPEC.md §11, `design/index.html`'s `#search-overlay`): one
+ * The search overlay (SPEC.md §10, `design/index.html`'s `#search-overlay`): one
  * query input, a chip row, snippet-highlighted results grouped by type, and a
  * footer legend — over a blurred scrim.
  *
@@ -88,7 +88,7 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
 
   /**
    * `↵` opens the hit **in its list** — the footer legend's promise, and
-   * SPEC.md §11's "clicking a row opens the document _in that column_".
+   * SPEC.md §10's "clicking a row opens the document _in that column_".
    *
    * Working out which column that is needs the document's folder, type and
    * status (`resolveColumn`), and a ranked hit carries none of the three: it is

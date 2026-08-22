@@ -14,7 +14,7 @@ import { useRowActions, type RowNotice } from "./useRowActions.js";
 import { useAgentActivity } from "./useRowSignals.js";
 
 /**
- * The single list-item renderer every column uses (SPEC.md §11 — type-aware rows).
+ * The single list-item renderer every column uses (SPEC.md §10 — type-aware rows).
  *
  * **A row knows nothing about any column.** It takes a `DocRow` and callbacks;
  * it never reads a board, a view document or a query. That is what lets the same
@@ -68,7 +68,7 @@ export interface RowProps {
    */
   readonly ListItem?: ComponentType<RowProps> | undefined;
   /**
-   * The keyboard row cursor is on this row (SPEC.md §11's `↑`/`↓`, `j`/`k`) —
+   * The keyboard row cursor is on this row (SPEC.md §10's `↑`/`↓`, `j`/`k`) —
    * the prototype's `.row.kbd` outline.
    *
    * A prop rather than a class the host adds from outside, because the host that
@@ -88,7 +88,7 @@ export type ListItemComponent = ComponentType<RowProps>;
  * It stays the bare kind — `form` — and does **not** carry
  * `unansweredForms`. The pill is "short text only — the reason line carries the
  * sentence" ({@link NeedsYouBadge}), the mockup's own form pill reads `form`
- * with no number, and §11's "says how many" is one statement: putting the count
+ * with no number, and §10's "says how many" is one statement: putting the count
  * in two places on the same row is two things to keep in step for no second
  * reader.
  */

@@ -12,9 +12,9 @@ import {
 } from "./triggers.js";
 
 /**
- * The data half of SPEC.md §11's smart input: `@` routes, `/` skills and `[[`
+ * The data half of SPEC.md §10's smart input: `@` routes, `/` skills and `[[`
  * links, **all three answered by `GET /api/docs` with a type filter**. There is
- * no registry — §11 says so in as many words — so a document created a second
+ * no registry — §10 says so in as many words — so a document created a second
  * ago with `corpus doc create --type agent-def` is completable on the next
  * keystroke, because the only thing standing between it and this menu is a
  * cache the SSE stream already invalidates.
@@ -150,7 +150,7 @@ export interface AutocompleteState {
   readonly dismiss: () => void;
   readonly choose: (index: number) => void;
   /**
-   * SPEC.md §11's one keyboard contract — ↑ ↓ ⇥ ↵ esc — applied while the menu
+   * SPEC.md §10's one keyboard contract — ↑ ↓ ⇥ ↵ esc — applied while the menu
    * is open, from {@link handleAutocompleteKeyDown}. Returns true when it
    * consumed the key, so a host can fall through to its own handling when it did
    * not: the composer's ↵ must still insert a newline when no menu is open, ⇥

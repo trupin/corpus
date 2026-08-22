@@ -5,7 +5,7 @@ import { createCorpusTestHarness } from "../testing/harness.js";
 import { MarkdownView } from "./MarkdownView.js";
 
 /**
- * Fences as copyable canvases (SPEC.md §11's rider). What is worth testing hard
+ * Fences as copyable canvases (SPEC.md §10's rider). What is worth testing hard
  * is the **bytes**: a prompt block exists to be pasted into another agent, so a
  * copy that drops a blank line, adds a newline, or smuggles the fence markers in
  * is a wrong answer that looks like a right one.

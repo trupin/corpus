@@ -240,7 +240,7 @@ function walk(state: WalkState, dir: string, depth: number): void {
 /**
  * Every document file under every root, sorted by workspace-relative path.
  * Sorted because path order is the tie-break for duplicate ids and the thing
- * that makes two rebuilds byte-identical (§15 M1).
+ * that makes two rebuilds byte-identical (§12 M1).
  */
 export function enumerateDocuments(workspaceRoot: string): EnumeratedFile[] {
   const absoluteRoot = resolve(workspaceRoot);

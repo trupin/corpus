@@ -7,7 +7,7 @@ import type { LaneLiveness } from "./laneRows.js";
  *
  * A component rather than a class name each caller writes, because there are now
  * two callers a screen apart: the composer's recipient row (SPEC.md §7) and the
- * board's resident badge (§11). Two hand-written spellings of
+ * board's resident badge (§10). Two hand-written spellings of
  * `` `lane-dot ${liveness}` `` agree on the day they are written, and the one
  * that gets a fifth state later is the one nobody remembers to update.
  *

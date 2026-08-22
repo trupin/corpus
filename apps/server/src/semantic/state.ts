@@ -84,7 +84,7 @@ export interface IndexRebuildFlag {
  * produce a vector if we asked?" is answered only by resolution. `db doctor`
  * needs both to tell an index that is merely idle from one whose every vector
  * was produced by a model that is no longer the effective one — the second is
- * §14's drift, the first is not (SERVER-046).
+ * §11's drift, the first is not (SERVER-046).
  *
  * The third case is not a fact about the workspace at all: **nobody asked**.
  * `doctor(config)` run standalone — a pre-commit hook, a workspace whose server

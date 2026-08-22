@@ -63,7 +63,7 @@ export function capLogLines(
 
 export interface UseJobLogOptions {
   /**
-   * Off while the drawer is collapsed (SPEC.md §11): nothing is visible, so
+   * Off while the drawer is collapsed (SPEC.md §10): nothing is visible, so
    * nothing should be fetched and no invalidation should cost a request.
    */
   readonly enabled?: boolean;

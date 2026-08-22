@@ -546,7 +546,7 @@ describe("POST /api/docs/{id}/edit-session/flush", () => {
     expect(acknowledgments(ws)).toHaveLength(0);
   });
 
-  it("answers 204 and emits nothing when the session's commits were all skipped (§14)", async () => {
+  it("answers 204 and emits nothing when the session's commits were all skipped (§11)", async () => {
     // A workspace with no git: every auto-commit is `skipped`, so there is no
     // revision to name and no session to end. The postcondition still holds, so
     // the answer is still `204` — the route reports the state, not the work.

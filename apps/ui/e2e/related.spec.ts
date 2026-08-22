@@ -78,7 +78,7 @@ test.describe("the related panel", () => {
   /**
    * Beside "Referenced by", not instead of it. `doc_rates` is referenced by the
    * mortgage note *and* related to it, so it is the one document in this corpus
-   * that shows the pair — which is the arrangement SPEC.md §11 describes and the
+   * that shows the pair — which is the arrangement SPEC.md §10 describes and the
    * one a single-panel implementation would pass every other test without.
    */
   test("sits beside the backlinks panel, both below the body", async ({ page }) => {

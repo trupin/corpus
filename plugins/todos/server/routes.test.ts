@@ -136,7 +136,7 @@ function docFixture(
   return {
     key: keyOf(body, extra),
     // The advisory signal, never a gate: nothing in these routes reads it, and
-    // §11 is explicit that the board is never read-only.
+    // §10 is explicit that the board is never read-only.
     userEditing: false,
     frontmatter: {
       id,

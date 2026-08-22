@@ -392,7 +392,7 @@ describe("threads that hang off no text", () => {
  * PR #25 review, MINOR: a document's threads arrive as one paginated list while
  * its anchors do not, so a placement has to be able to describe a conversation
  * whose row is not in the answer — otherwise it disappears from the margin while
- * its highlight stays in the body, which SPEC.md §11 forbids in as many words.
+ * its highlight stays in the body, which SPEC.md §10 forbids in as many words.
  */
 describe("an anchored conversation whose row has not arrived", () => {
   const placedAnchor = (overrides: Partial<ResolvedAnchor> = {}): AnchoredThread => {

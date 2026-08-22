@@ -5,7 +5,7 @@ import type { MenuAction } from "./menuModel";
 import type { SelectionCopy } from "./selectionCopy";
 
 /**
- * A text selection's own actions (SPEC.md §11): **Comment on selection** first,
+ * A text selection's own actions (SPEC.md §10): **Comment on selection** first,
  * then the clipboard basics — Copy always, Cut and Paste in editable content.
  *
  * Comment is not a second commenting path. It is the floating toolbar's own
@@ -13,7 +13,7 @@ import type { SelectionCopy } from "./selectionCopy";
  * captured action, so the selector, the composer and the anchor are UI-007's
  * exactly as they are for 💬 (SPEC.md §6).
  *
- * **Copy carries both flavors** (SPEC.md §11 clipboard rider). It used to be
+ * **Copy carries both flavors** (SPEC.md §10 clipboard rider). It used to be
  * `writeText`, which can hold exactly one — so the menu's Copy put plain text
  * and nothing else on the clipboard while ⌘C two keystrokes away put full
  * structure, and pasting into a word processor lost every heading, every bullet

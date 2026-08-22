@@ -31,7 +31,7 @@ export const listJobs = createRoute({
   summary: "Recent jobs for the console, or the jobs outstanding on one document",
   description:
     "Two questions on one route. **Unfiltered** it is the console's master list: one row per " +
-    "queue event with its status and last log line (SPEC.md §7, §11), most recently touched " +
+    "queue event with its status and last log line (SPEC.md §7, §10), most recently touched " +
     "first, and `originId` links each row back to the document or thread it came from. " +
     "**Filtered by `originId` (and usually `status`)** it is a predicate about a single " +
     "document — *is the agent still working here?* — which SPEC.md §8's pending row and the " +
@@ -112,7 +112,7 @@ export const retryJob = createRoute({
   summary: "Retry a failed or deferred job",
   description:
     "Returns the event to `pending/` so the agent picks it up again — the retry action in the " +
-    "console's detail header (SPEC.md §11).\n\n" +
+    "console's detail header (SPEC.md §10).\n\n" +
     "It works on a **deferred** job too, and stays the manual override once deferrals re-enter " +
     "on their own (SPEC.md §7, CONTRACT-021): automatic re-entry handles the edit session ending, " +
     "and this handles everything it did not reach — a deferral an operator simply wants back " +

@@ -546,7 +546,7 @@ describe("Board", () => {
 });
 
 /**
- * SPEC.md §11's scheme, exercised through real key events over a real board.
+ * SPEC.md §10's scheme, exercised through real key events over a real board.
  *
  * Every assertion here is about what the *board* does with a binding; that the
  * binding exists, is documented and is suppressed inside writing surfaces is

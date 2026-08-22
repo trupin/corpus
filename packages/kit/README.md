@@ -64,7 +64,7 @@ this table is a map, not a census.
 
 ## Every composer takes attachments
 
-SPEC.md §11's rider binds the whole class — "the global composer, a thread's
+SPEC.md §10's rider binds the whole class — "the global composer, a thread's
 reply box, a comment on a document selection, a comment on a turn or on a
 selection within one, **and any composer a plugin contributes**" — to §6's three
 intake routes and its chip previews. A plugin may import nothing but this
@@ -219,7 +219,7 @@ in exactly the same mechanism.
 - **A body replacement must present it.** `PUT /api/docs/{id}` requires `key`
   when — and only when — the patch carries `body` (the contract's
   `KEYED_UPDATE_FIELDS`, and a `400` if you omit it). A **delta** write names
-  what it changes — `tags`, `status`, `due`, `archived`, the §11 view keys — and
+  what it changes — `tags`, `status`, `due`, `archived`, the §10 view keys — and
   needs no key at all, because it merges instead of overwriting.
 - **A refusal is a `409` with `code: "stale_key"`, never a bare "no".** It
   carries the document _as it now stands_, whose own `key` is the fresh one.
@@ -246,7 +246,7 @@ try {
 and the reason a conflict arriving mid-sentence costs a round trip rather than a
 sentence. There is nothing to acquire before writing and nothing to release
 after, so a plugin that crashes mid-edit wedges no document, and no surface ever
-renders read-only (SPEC.md §11).
+renders read-only (SPEC.md §10).
 
 ## Live updates
 

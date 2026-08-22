@@ -1,4 +1,4 @@
-// Drift detection: does the projection still describe the files (SPEC.md §15
+// Drift detection: does the projection still describe the files (SPEC.md §12
 // M1)? Cheap enough to run in a pre-commit hook, so it never re-reads a file
 // whose size and mtime are unchanged, and never parses a file that already has
 // a row.

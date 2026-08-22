@@ -3,7 +3,7 @@
 // agree, and a renamed column here silently breaks every reader downstream.
 //
 // Nothing durable lives only in this database: every table is reconstructible
-// from the workspace's files (§9.1, §15 M1). That invariant is why a schema
+// from the workspace's files (§9.1, §12 M1). That invariant is why a schema
 // change replaces and repopulates instead of migrating — see `db.ts`.
 //
 // `chunk_embeddings` is reconstructible too, but not in milliseconds, so it is
@@ -85,19 +85,19 @@
  * posts, answers, and then cannot be read back, leaving an Attention row no
  * action can clear. Those forms no longer parse, so a turn that stored
  * `has_form = 1` under v11 stores `0` under v12 and renders as the broken block
- * §11 asks for. That is the intended outcome: an inert failure rather than a
+ * §10 asks for. That is the intended outcome: an inert failure rather than a
  * silent, permanent one.
  *
  * Both are derived from the file like everything else here, so the rebuild this
  * bump triggers is the whole migration.
  *
  * 12 → 13 (SERVER-074): `turns.model` — which model wrote an agent turn (§6,
- * §11, CONTRACT-043). A new column, so a v12 database does not have it and no
+ * §10, CONTRACT-043). A new column, so a v12 database does not have it and no
  * value in one could be carried over; it is read straight off the thread file's
  * `turnModels` frontmatter map, so the rebuild this bump triggers is the whole
  * migration. **No backfill and no guessing**: a turn written before the record
  * existed has no entry, and the rebuild writes `NULL` for it — the same nothing
- * §11 asks a reader to show, never an attribution reconstructed after the fact.
+ * §10 asks a reader to show, never an attribution reconstructed after the fact.
  *
  * 13 → 14 (SERVER-099): the `locks` table is **dropped**. SPEC.md §7's key
  * replaced the per-document edit lock, and §7's own words are "nothing to
@@ -227,7 +227,7 @@ export const REPOPULATED_TABLES = [
  *
  * **`documents` carries five columns past §9.1's list** — `pinned`,
  * `sort_order`, `query_json`, `column_ref`, `extra_json` (CONTRACT-011,
- * SERVER-026). §9.1 enumerated the columns the queries of the day needed; §11
+ * SERVER-026). §9.1 enumerated the columns the queries of the day needed; §10
  * then made a board column *be* a pinned view document, and `pinned` is a
  * `GET /api/docs` filter while `order` is one of its sort keys. A filter and a
  * sort cannot be answered from the files at request time without one read per
@@ -276,7 +276,7 @@ export const REPOPULATED_TABLES = [
  * turn timestamp (§6, CONTRACT-043) — locality the file gives up on purpose —
  * and joining a map at the top of a file onto the turn it names is exactly the
  * work a projection exists to have done already. Nullable, and `NULL` is the
- * only honest value for a turn nobody recorded one for: §11 wants nothing shown
+ * only honest value for a turn nobody recorded one for: §10 wants nothing shown
  * there, never a placeholder. Derived like every other column here, from the one
  * reader (`core/turn-model.ts`) the write path and the wire also go through.
  *

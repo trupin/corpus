@@ -47,7 +47,7 @@ describe("commentPayload", () => {
   });
 
   // SERVER-069 / SHARED-022: the payload is where a stated weight is handed to
-  // whatever does the work (§7, §11).
+  // whatever does the work (§7, §10).
   it("carries a stated weight verbatim, under the key the dispatch reads", () => {
     const payload = commentPayload({
       threadId: "th_x9y8z7w6",

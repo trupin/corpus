@@ -148,7 +148,7 @@ export function Turn({
   /*
    * A newline in a **user** turn is a line break (UI-054).
    *
-   * `↵` in every composer inserts a newline and never submits (SPEC.md §11's
+   * `↵` in every composer inserts a newline and never submits (SPEC.md §10's
    * key contract, SHARED-009 Amendment 1), so the newlines in a user turn are
    * the ones a person pressed a key for — and CommonMark rendering them as
    * spaces made them invisible, which is the defect. Every chat tool keeps
@@ -166,7 +166,7 @@ export function Turn({
   const hardBreaks = turn.author === "user";
 
   /**
-   * Which model wrote this (SPEC.md §11, rider signed 2026-08-07), or `null`.
+   * Which model wrote this (SPEC.md §10, rider signed 2026-08-07), or `null`.
    *
    * **Why the header and not the footer.** The header is the turn's provenance
    * line, and the model is provenance: "who wrote this" is answered by the
@@ -174,7 +174,7 @@ export function Turn({
    * the top of the turn and half at the bottom. Three things settled it against
    * the alternative of hanging it off the trace line:
    *
-   * - §11's own phrasing is that the model is "shown with the turn", and the
+   * - §10's own phrasing is that the model is "shown with the turn", and the
    *   issue's criterion is that it reads "beside the author and timestamp" —
    *   which is this row and no other;
    * - scanning a conversation for *which* turns a given model wrote is the

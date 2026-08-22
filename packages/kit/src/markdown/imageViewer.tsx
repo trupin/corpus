@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, type ReactElement, type ReactNode }
 
 /**
  * The seam between a kit-rendered image and the app's full-screen viewer
- * (SPEC.md §11: "clicking any rendered image … opens it full-screen over the
+ * (SPEC.md §10: "clicking any rendered image … opens it full-screen over the
  * app, where `esc` closes it and returns focus to the image").
  *
  * **Why a seam and not a viewer.** The kit renders the images; it does not own

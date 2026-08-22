@@ -26,7 +26,7 @@ import { corpusSchema, type PmNode } from "./markdown/schema.js";
 import { serializeDoc } from "./markdown/serialize.js";
 
 /**
- * The §11 clipboard rider, both directions.
+ * The §10 clipboard rider, both directions.
  *
  * The pre-fix reproduction (UI-042's E2E log) is the shape of this file: the
  * `text/html` flavor was already structural and is asserted here so it stays

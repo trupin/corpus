@@ -226,7 +226,7 @@ describe("the mutation pipeline", () => {
     });
     off();
 
-    // The mutation stands: SPEC.md §14 — the server never rolls back a file
+    // The mutation stands: SPEC.md §11 — the server never rolls back a file
     // write because a commit failed.
     expect(ws.read(created.path)).toContain("after the hook refused");
     expect(ws.git("status", "--porcelain")).toContain(created.path);

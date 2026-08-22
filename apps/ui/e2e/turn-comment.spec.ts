@@ -4,7 +4,7 @@ import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-051 in a real browser: **comment on a selection inside a turn** (SPEC.md
- * §11's rider, signed 2026-08-03; §6's recursion).
+ * §10's rider, signed 2026-08-03; §6's recursion).
  *
  * UI-051 shipped without this spec because the stub served no
  * `GET /api/threads/{id}` — a `ThreadCard` never rendered a turn here, so there
@@ -143,7 +143,7 @@ test.describe("commenting on a selection inside a turn", () => {
     await selectPhrase(page, `${TURN_PROSE}:nth-of-type(2)`, PHRASE);
     await contextClickSelection(page);
 
-    // SPEC.md §11's menu on a non-editable body: Comment first, clipboard after.
+    // SPEC.md §10's menu on a non-editable body: Comment first, clipboard after.
     const menu = page.getByRole("menu", { name: "Actions for the selection" });
     await expect(menu).toBeVisible();
     expect(
@@ -296,7 +296,7 @@ test.describe("a thread that arrives with anchors already on it", () => {
  *
  * `DocView` keyed its below-body thread list off `anchorsHost`, which is false
  * for every thread, so a thread reader listed `reader.threads` in full under a
- * conversation that had already placed every one of them per turn (SPEC.md §11).
+ * conversation that had already placed every one of them per turn (SPEC.md §10).
  * Both hosts, because the report named both and the duplicate sat above the
  * placement split — it was never a width behaviour.
  *

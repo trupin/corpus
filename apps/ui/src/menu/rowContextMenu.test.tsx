@@ -14,7 +14,7 @@ import { memoryStorage } from "../testing/memoryStorage";
 import { ContextMenuProvider } from "./ContextMenuHost";
 
 /**
- * Right-clicking a row opens that row's own actions (SPEC.md §11), driven
+ * Right-clicking a row opens that row's own actions (SPEC.md §10), driven
  * through the real board.
  *
  * The assertions that matter are about the **target** and about the **wire**:
@@ -202,7 +202,7 @@ function menuActions(): string[] {
 }
 
 describe("a row's context menu", () => {
-  it("offers exactly the row set SPEC.md §11 enumerates", async () => {
+  it("offers exactly the row set SPEC.md §10 enumerates", async () => {
     renderBoard([FRESH]);
     fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
 

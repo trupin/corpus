@@ -80,7 +80,7 @@ export const getDocDiff = createRoute({
     "conflating the two would have a caller believe its document had been deleted when it had " +
     "merely mistyped a range.\n\n" +
     "A document the workspace has never committed — a file not yet committed, or a workspace with " +
-    "no git (SPEC.md §14) — answers `200` with a null range, an empty diff and zero stats: an " +
+    "no git (SPEC.md §11) — answers `200` with a null range, an empty diff and zero stats: an " +
     "answer, not an error. Read-only; no acting party.",
   request: { params: DocIdParamSchema, query: DocDiffQuerySchema },
   responses: {

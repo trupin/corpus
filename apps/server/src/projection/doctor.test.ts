@@ -249,7 +249,7 @@ describe("doctor", () => {
     const report = doctor(config);
 
     // Warnings are not drift: `ok` is the exit code `corpus db doctor` returns,
-    // and §14's `rebuild && doctor` clean invariant may not break on a workspace
+    // and §11's `rebuild && doctor` clean invariant may not break on a workspace
     // whose projection is right (sprint-018 TEST-609).
     expect(report.ok).toBe(true);
     expect(report.drift).toEqual([]);

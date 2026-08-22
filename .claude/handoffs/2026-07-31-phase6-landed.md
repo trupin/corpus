@@ -40,7 +40,7 @@ A `[SHARED-003]` ledger commit was **staged but not yet committed** (`issues/sha
 1. **SHARED-003 triage.** The ledger in `issues/shared/003-pr11-review-followups.md` is large
    now. It contains:
    - **TWO SPEC riders needing a user sign-off round**, both already drafted in the ledger:
-     §11 (⋯-menu Unarchive wording, TEST-647 / UI-020) and §14 (doctor report-only warnings
+     §10 (⋯-menu Unarchive wording, TEST-647 / UI-020) and §11 (doctor report-only warnings
      line, CONTRACT-025).
    - **Dispositions to rule on**: Unpin PUT-archive consistency · doctor sync-git worst case ·
      margin-width numbers · thread-create warning scope · doctor `--json` stale description ·

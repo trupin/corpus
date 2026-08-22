@@ -19,7 +19,7 @@ import "./Shell.css";
 export { isOverlayOpen } from "./overlays";
 
 /**
- * Top bar · board · console, in that document order (SPEC.md §11). No sidebar.
+ * Top bar · board · console, in that document order (SPEC.md §10). No sidebar.
  *
  * The toast surface wraps rather than joins them: it is `position: fixed`
  * chrome, and putting it inside `.app` would make it a fourth region of a
@@ -115,7 +115,7 @@ function ShellSurfaces(): ReactElement {
 
   useShortcuts(context);
   /*
-   * The weight levels this workspace declares (SPEC.md §11's rider), warmed once
+   * The weight levels this workspace declares (SPEC.md §10's rider), warmed once
    * here so every composer reads them from cache.
    *
    * The shell rather than a composer, and deliberately: `CommentPopover` opens

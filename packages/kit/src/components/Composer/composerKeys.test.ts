@@ -46,7 +46,7 @@ function press({
   return { event, prevented: () => prevented, stopped: () => stopped };
 }
 
-describe("the composer key contract (SPEC.md §11)", () => {
+describe("the composer key contract (SPEC.md §10)", () => {
   it("leaves ↵ to the text: not consumed, not prevented, nothing submitted", () => {
     const onPrimary = vi.fn();
     const onSecondary = vi.fn();

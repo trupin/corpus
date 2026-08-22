@@ -16,7 +16,7 @@ import {
 } from "./columnWidth";
 
 /**
- * Dragging a column's edge (SPEC.md §11), on the console's own pattern.
+ * Dragging a column's edge (SPEC.md §10), on the console's own pattern.
  *
  * `useConsoleLayout` is the precedent the spec names — pointer capture on the
  * handle, `pointermove`/`pointerup`/`pointercancel` on the window, a clamp

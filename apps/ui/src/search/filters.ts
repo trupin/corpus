@@ -153,7 +153,7 @@ export interface DocumentChoice {
 /**
  * The pickers' candidates: the documents this search already returned.
  *
- * SPEC.md §11 asks for a title picker rather than a typed id, and the honest
+ * SPEC.md §10 asks for a title picker rather than a typed id, and the honest
  * source for one is the result set the user is looking at — "show me what
  * references *that*" is a refinement of the search in progress. It also means
  * neither picker issues a request of its own, so the overlay's request count

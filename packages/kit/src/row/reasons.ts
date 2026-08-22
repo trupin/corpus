@@ -2,7 +2,7 @@ import type { NeedsReason, StaleTier } from "@corpus/contract";
 import { stalenessLevel } from "./staleness.js";
 
 /**
- * Attention reason code → chip, as one table (SPEC.md §11 — "each row carries a
+ * Attention reason code → chip, as one table (SPEC.md §10 — "each row carries a
  * reason chip").
  *
  * A table rather than a chain of conditions in the component, for two reasons
@@ -34,7 +34,7 @@ import { stalenessLevel } from "./staleness.js";
  * Two of the five codes cannot be spelled by the code alone, and both numbers
  * they need are already on the row rather than derivable here: `stale` chooses
  * its wording from the tier, and `form` says **how many** forms are still open
- * (SPEC.md §11 — "a thread holding more than one unanswered form says how many
+ * (SPEC.md §10 — "a thread holding more than one unanswered form says how many
  * are still open"). Neither is sniffed: the tier is `DocRow.stale` and the count
  * is `DocRow.unansweredForms`, both computed by the server, and the second is
  * derived from the same predicate as the `form` reason itself, so the chip's
@@ -82,7 +82,7 @@ interface ReasonEntry {
 const REASON_TABLE: Readonly<Record<NeedsReason, ReasonEntry>> = {
   "unread-reply": { label: "agent replied", chipClass: REASON_CHIP_CLASSES.reply },
   /*
-   * §11 asks for the number only above one: one unanswered form reads exactly as
+   * §10 asks for the number only above one: one unanswered form reads exactly as
    * it always has, and "1 awaiting your answer" would be a count nobody needed
    * and a second wording for the ordinary case.
    */

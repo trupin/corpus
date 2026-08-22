@@ -36,7 +36,7 @@ key. Those are read for as long as they exist and converted on the first write
 through any verb; `corpus todos migrate` converts the rest in one pass and is
 safe to re-run.
 
-This directory is the subject of SPEC.md §15 M6's subtractive check: delete it
+This directory is the subject of SPEC.md §12 M6's subtractive check: delete it
 and the core must still boot, with todo documents rendering as ordinary
 markdown **with working checkboxes** and the Todos column showing a "plugin
 missing" card.

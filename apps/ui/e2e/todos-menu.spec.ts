@@ -7,7 +7,7 @@ import { multipartBodyOf, stubCorpus, type StubRow } from "./stubCorpus";
  * PLUGINS-009 in a real browser: the quick actions on a **todo item row** in
  * the todos plugin column.
  *
- * This is the surface SPEC.md §11's 2026-08-02 amendment opened. Everything
+ * This is the surface SPEC.md §10's 2026-08-02 amendment opened. Everything
  * under test is the plugin's own — core deliberately leaves a
  * `[data-plugin-surface]` alone — so what is asserted here is that the plugin's
  * menu behaves like every other menu in the app (`esc`, arrows, `↵`, focus
@@ -397,7 +397,7 @@ test.describe("the comment action", () => {
   });
 
   /**
-   * PLUGINS-012 — SPEC.md §11's rider: *"any composer a plugin contributes"*
+   * PLUGINS-012 — SPEC.md §10's rider: *"any composer a plugin contributes"*
    * takes files by all three of §6's routes, previewed as chips before sending.
    *
    * In a **real browser**, which is the point: the picker is a real

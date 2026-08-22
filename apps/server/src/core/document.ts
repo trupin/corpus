@@ -27,7 +27,7 @@ const CLOSE_FENCE = /^(-{3,})[ \t]*$/;
 const BOM = "\uFEFF";
 /**
  * Duplicate keys are tolerated at the parser level so the corpus checker can
- * report them as the specific rule they violate (SPEC.md §14) instead of
+ * report them as the specific rule they violate (SPEC.md §11) instead of
  * collapsing every structural problem into "unparseable".
  */
 const PARSE_OPTIONS = { uniqueKeys: false } as const;
@@ -187,7 +187,7 @@ export const emptyDocument = (body = ""): ParsedDocument => parseDocument(`---\n
  * The 1-based **file** line number of {@link ParsedDocument.body}'s first line.
  *
  * A body-relative line number is arithmetic the operator has to do: the whole
- * value of a §14 finding that names a line is that the line matches what an
+ * value of a §11 finding that names a line is that the line matches what an
  * editor's gutter shows. Derived from the recorded source rather than from a
  * stored offset, because every part of the file is already kept verbatim — the
  * concatenation `bom + openFence + frontmatterText + closeFence + closeFenceEol`
@@ -278,7 +278,7 @@ const withTrailingNewline = (text: string): string =>
 /**
  * Rebuild `emitted` so that every key the patch did not touch contributes its
  * original bytes instead of the serializer's rendering of them. Untouched keys
- * are matched by name in order, so duplicate keys (§14 reports them; the parser
+ * are matched by name in order, so duplicate keys (§11 reports them; the parser
  * tolerates them) each keep their own lines.
  *
  * Returns `null` when either side cannot be split by key, leaving the caller
@@ -436,7 +436,7 @@ export const setBody = (parsed: ParsedDocument, body: string): ParsedDocument =>
 /**
  * Keys written more than once at `path` in the frontmatter mapping. YAML allows
  * it (the last wins) but Corpus does not: duplicate anchor ids are a hard
- * validation failure (§14), and reporting them needs the AST, since the plain
+ * validation failure (§11), and reporting them needs the AST, since the plain
  * object has already collapsed them.
  */
 export const duplicateKeysAt = (parsed: ParsedDocument, path: readonly string[]): string[] => {

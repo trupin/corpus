@@ -1,5 +1,5 @@
 /*
- * The full-screen image viewer (UI-049, SPEC.md §11's "images open full-size").
+ * The full-screen image viewer (UI-049, SPEC.md §10's "images open full-size").
  *
  * It carries `.overlay.open` because that class pair is the app's contract for
  * "a modal surface owns the keyboard" — `isOverlayOpen()` queries exactly it,

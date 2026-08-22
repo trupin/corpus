@@ -5,7 +5,7 @@ import { relatedKey } from "./keys.js";
 
 /**
  * `GET /api/docs/{id}/related` — the ranked related set behind the reader's
- * related panel (SPEC.md §9.2, §11).
+ * related panel (SPEC.md §9.2, §10).
  *
  * Caches under `relatedKey(id)`, i.e. `["docs", id, "related"]`: under the
  * `["docs"]` prefix the server emits on every document and thread mutation, so

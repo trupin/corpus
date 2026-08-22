@@ -13,7 +13,7 @@
  * fence rule is a *format* rule, and the format has more than one reader. The
  * server refuses a write that leaves a fence open (`threads/fences.ts`) and
  * reports one that is already on disk (`core/check.ts`); the composer wants to
- * say so *before* the round trip, in the field at fault, which is what §11 asks
+ * say so *before* the round trip, in the field at fault, which is what §10 asks
  * of a form. `apps/ui` may not import `apps/server` — sibling applications, not
  * a dependency edge — so with the scanner over there the only way to pre-check
  * was a second copy, and a second fence scanner is a copy that drifts. It sits
@@ -327,7 +327,7 @@ export const fencedCodeRanges = (text: string): TextRange[] => {
  *
  * {@link fencedCodeRanges} already *models* the state — it runs the range to the
  * end of the text, which is what CommonMark says — but a mask cannot say where
- * the mistake is. §14's validator needs the opening line, because the whole
+ * the mistake is. §11's validator needs the opening line, because the whole
  * reason to report an unclosed fence is that a person has to go and close it
  * (SERVER-066): everything after it reads as code, so the body's `[[refs]]` and
  * — in a thread — its `## author · timestamp` turn headings stop being seen.

@@ -195,7 +195,7 @@ export async function createSkill(
     const stamp = formatInstant(workspace.now());
     // Same rule `POST /api/docs` follows: an omitted body pre-fills from the
     // type's template document when the workspace defines one, and a workspace
-    // with none gets an empty body (SPEC.md §11 — "none → empty").
+    // with none gets an empty body (SPEC.md §10 — "none → empty").
     const body =
       input.body ??
       findTemplate(workspace.workspaceRoot, workspace.projection, SKILL_TYPE)?.body ??

@@ -1238,6 +1238,31 @@ left in a report.
 | SHARED-063 | §11's reader menu offers Resolve on every document that has one (SIGNED 2026-08-22, applied) | done | P1 | — |
 | UI-147 | The mockup still draws the eased column open that UI-146 removed | todo | P2 | UI-146 |
 | SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | todo | P2 | — |
+
+## Phase 41 — The core is the whole of it (2026-08-22, v0.18.0 scope)
+
+**The plugin surface and the todos plugin are removed entirely**, on the user's
+instruction: *"I want it fully gone, no trace of it in the codebase or the
+specs."* Asked what should become of `todo` — since v0.17.0's derived `status`
+and `due` are plugin-declared — they chose **delete it entirely: `todo` is not a
+type**, with the loss named and accepted.
+
+**SHARED-064 is signed and applied.** It replaces a premise rather than removing
+a feature: §1 said *"every domain feature is a plugin"*, and now says the core is
+the whole of the product and extension happens in the corpus. §10, §12 and §13
+are deleted; §11 → §10, §14 → §11, §15 → §12; 1,574 citations renumbered in one
+pass across 596 files.
+
+**M6 survives in substance rather than being struck.** It was *"plugin system +
+todos plugin"* with a subtractive check. It is now *"an unknown type still
+opens"* — a document whose `type:` the core has never heard of opens, renders
+with working checkboxes, searches, and passes `doc check`. That check is what
+protects the user's existing `type: todo` documents, so it outlives the thing it
+was written for.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-064 | The plugin system is removed, and the core is the whole of it (SIGNED 2026-08-22, applied) | done | P0 | — |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |

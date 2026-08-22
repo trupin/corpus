@@ -1,5 +1,5 @@
 // `corpus db doctor`'s semantic half: what is drift, what is staleness, and what
-// is worth saying without moving a verdict (SPEC.md §14, Retrieval Phase B).
+// is worth saying without moving a verdict (SPEC.md §11, Retrieval Phase B).
 //
 // Every fixture starts from a real workspace rebuilt from real files, so the
 // clean case is clean because the projector produced it. The drifted cases are
@@ -102,7 +102,7 @@ describe("staleness is not drift", () => {
   it("stays clean on a workspace whose only anomaly is a pending backlog", () => {
     seed();
 
-    // TEST-901/904, SPEC.md §14's signed rule: `corpus db rebuild` restores the
+    // TEST-901/904, SPEC.md §11's signed rule: `corpus db rebuild` restores the
     // projection synchronously and *queues* semantic re-indexing, so the moment
     // it returns every chunk is pending. If a backlog were drift, `rebuild &&
     // doctor` could never be clean.
@@ -190,7 +190,7 @@ describe("identity drift", () => {
     // The sticky case (SPEC.md §9.1, SERVER-043's `unresolved`): the index was
     // built by a model this machine cannot offer right now, so resolution
     // refuses to adopt anything and every vector stays valid and untouched.
-    // Failing here would break §14's standing `rebuild && doctor` invariant
+    // Failing here would break §11's standing `rebuild && doctor` invariant
     // permanently — `corpus db rebuild` carries embeddings over by design, so no
     // rebuild could ever clear the verdict.
     const report = doctor(config, {

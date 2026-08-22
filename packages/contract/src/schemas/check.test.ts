@@ -56,8 +56,8 @@ describe("the check code vocabulary", () => {
     expect(new Set(CHECK_CODES).size).toBe(CHECK_CODES.length);
   });
 
-  /** SPEC.md §14 carves out exactly two non-failing states, and no others. */
-  it("treats exactly the two §14 states as warnings", () => {
+  /** SPEC.md §11 carves out exactly two non-failing states, and no others. */
+  it("treats exactly the two §11 states as warnings", () => {
     expect([...CHECK_WARNING_CODES]).toEqual(["anchor-unresolved", "ref-unresolved"]);
   });
 
@@ -68,7 +68,7 @@ describe("the check code vocabulary", () => {
   });
 
   /**
-   * §14 lists "every anchor belongs to an existing thread" among the rules a
+   * §11 lists "every anchor belongs to an existing thread" among the rules a
    * mutation must satisfy, so a highlight pointing at no conversation is
    * structural drift rather than an evolving-corpus state. It is the one code
    * that reads like a warning and is not.

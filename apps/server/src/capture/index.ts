@@ -1,5 +1,5 @@
 /**
- * Capture (SPEC.md §11): the composer's "this should live on as a document"
+ * Capture (SPEC.md §10): the composer's "this should live on as a document"
  * action, composed from the document and thread primitives into one call and one
  * commit.
  */

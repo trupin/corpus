@@ -1,4 +1,4 @@
-// `POST /api/capture`, bound to the contract's route definition (SPEC.md §11).
+// `POST /api/capture`, bound to the contract's route definition (SPEC.md §10).
 
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { contractRoutes } from "@corpus/contract";

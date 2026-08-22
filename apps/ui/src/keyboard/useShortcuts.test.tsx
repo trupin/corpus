@@ -339,7 +339,7 @@ describe("useShortcuts", () => {
 
     /**
      * The trap: the board's row is a control too, and `↵` on the highlighted row
-     * is the scheme's own binding (SPEC.md §11). A rule phrased as "skip when a
+     * is the scheme's own binding (SPEC.md §10). A rule phrased as "skip when a
      * button has focus" would have taken it away.
      */
     it("exempts the board's row, which is a control bound to ↵ on purpose", () => {

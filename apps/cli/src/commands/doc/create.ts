@@ -83,7 +83,7 @@ export const createCommand: WorkspaceCommandSpec = {
   name: "create",
   summary: "Create a document.",
   description:
-    "A type and a title are the whole requirement (SPEC.md §11's zero-form creation); everything " +
+    "A type and a title are the whole requirement (SPEC.md §10's zero-form creation); everything " +
     "else the server fills in, including the id, which is immutable thereafter. The body comes " +
     "from `-m`, from `--file`, or from stdin — the heredoc form the agent's skills use — and " +
     "omitting all three is legal: the server pre-fills from the type's `template` document when " +
@@ -110,7 +110,7 @@ export const createCommand: WorkspaceCommandSpec = {
     "`<name>/SKILL.md`, while `--type skill --folder finance` files an ordinary document in " +
     "`data/docs/finance/`. A folder the server rejects is reported verbatim rather than " +
     "pre-validated here. " +
-    "`--pinned`, `--order`, `--query` and `--column` write the SPEC.md §11 **view keys** at " +
+    "`--pinned`, `--order`, `--query` and `--column` write the SPEC.md §10 **view keys** at " +
     "creation, so `--type view --pinned true` is a board column in one command — the board picks " +
     "it up over SSE with no reload. A column the board's own “＋ New list” would have written " +
     "also carries `--folder views --evergreen true`, which is what the seed columns look like " +
@@ -192,7 +192,7 @@ export const createCommand: WorkspaceCommandSpec = {
       command:
         'corpus doc create --type view --title "Unresolved finance" --folder views --evergreen true --pinned true --order 4 --query type=thread --query status=open --query tag=finance --from agent',
       description:
-        "SPEC.md §11's “pin me a view of unresolved finance threads”, in one command: the view document lands in `data/docs/views/`, the board grows a fourth column live over SSE, and `git log` records the agent as its author.",
+        "SPEC.md §10's “pin me a view of unresolved finance threads”, in one command: the view document lands in `data/docs/views/`, the board grows a fourth column live over SSE, and `git log` records the agent as its author.",
     },
     {
       command:

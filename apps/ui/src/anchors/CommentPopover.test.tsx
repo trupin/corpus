@@ -25,7 +25,7 @@ function open(overrides: Partial<Parameters<typeof CommentPopover>[0]> = {}): {
   const onClose = vi.fn();
   /*
    * A provider, because the composer reads the workspace's declared weight
-   * levels from the ordinary document queries (SPEC.md §11's rider, UI-082).
+   * levels from the ordinary document queries (SPEC.md §10's rider, UI-082).
    * This transport declares none, so no control is drawn and every assertion
    * below describes the composer exactly as it did before that feature — which
    * is also what a workspace on an older template sees (§2.4).
@@ -124,7 +124,7 @@ describe("the comment composer", () => {
   });
 
   /**
-   * SPEC.md §11's composer key contract, as UI-052 rebound it: `↵` is the
+   * SPEC.md §10's composer key contract, as UI-052 rebound it: `↵` is the
    * newline now — in *this* composer it always could have been, since the field
    * was already a textarea — and `⌘↵` is the submit.
    */
@@ -180,7 +180,7 @@ describe("the comment composer", () => {
 });
 
 /**
- * SPEC.md §11's rider, signed 2026-08-05: *"Every composer takes attachments.
+ * SPEC.md §10's rider, signed 2026-08-05: *"Every composer takes attachments.
  * Wherever a comment can be written — … a comment on a document selection … —
  * files can be added by picker, paste or drag-and-drop, and appear as chip
  * previews before sending (§6)."*
@@ -406,7 +406,7 @@ describe("moving the comment composer", () => {
     });
   });
 
-  /** §11 adds no exclusive-pointer capability: the grip is a real button. */
+  /** §10 adds no exclusive-pointer capability: the grip is a real button. */
   it("moves from the keyboard, and takes the key rather than letting it through", () => {
     const { onClose } = open();
     sized(320, 200);

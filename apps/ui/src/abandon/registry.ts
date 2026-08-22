@@ -2,7 +2,7 @@ import type { DocSnapshot } from "./emptiness";
 
 /**
  * What every surface knows about the documents that are open right now, so the
- * abandon rule (SPEC.md §11) can be decided **at the instant of exit** rather
+ * abandon rule (SPEC.md §10) can be decided **at the instant of exit** rather
  * than guessed at from the server a moment later.
  *
  * Three facts have to meet, and they live in three different components:
@@ -30,7 +30,7 @@ const known = new Map<string, DocSnapshot>();
 /**
  * The body a document was born with, published by the create flow.
  *
- * A template's prefill (SPEC.md §11) is content the *product* put there, not
+ * A template's prefill (SPEC.md §10) is content the *product* put there, not
  * content the user wrote, and a document still holding exactly it is still
  * untouched. Only this session can know it — hence a registry entry rather
  * than a derivation.

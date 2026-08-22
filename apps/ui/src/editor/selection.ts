@@ -27,7 +27,7 @@ export const SELECTOR_CONTEXT = 32;
 /**
  * What is said when the document moved between capturing a range and using it.
  *
- * The context menu (SPEC.md §11) captures a range when it opens and acts on it
+ * The context menu (SPEC.md §10) captures a range when it opens and acts on it
  * when an item is chosen; anything can land in between, including the agent's
  * write arriving over SSE. Both users of that pattern say the same thing.
  */

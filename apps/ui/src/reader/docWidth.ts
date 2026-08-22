@@ -1,5 +1,5 @@
 /**
- * How wide the document body is drawn, and who decided (SPEC.md §11, rider
+ * How wide the document body is drawn, and who decided (SPEC.md §10, rider
  * signed 2026-08-04).
  *
  * > *"The document body has a comfortable default width, and the reader can
@@ -12,7 +12,7 @@
  * Three decisions are worth stating here, because each one had a live
  * alternative:
  *
- * - **The width belongs to the surface, not to the document.** §11 asks for a
+ * - **The width belongs to the surface, not to the document.** §10 asks for a
  *   width that persists *across navigation*, and navigation is exactly what
  *   changes the document — so a per-document width would be re-set on every
  *   ref followed, which is the opposite of what the sentence promises. What a
@@ -27,7 +27,7 @@
  * - **Nothing here is ever written to the corpus.** Every write in this product
  *   goes through the server and auto-commits (§4, §7), so a reading posture
  *   stored in the document would mean *reading a document produces git
- *   commits*. §11 puts the reader's chosen width in the browser-local set by
+ *   commits*. §10 puts the reader's chosen width in the browser-local set by
  *   name, beside the console's height and a conversation's collapse state.
  *
  * **This is not the column's width.** A column carries its own width in its
@@ -175,7 +175,7 @@ export function writeDocWidthState(
  * For the jsdom suites' `afterEach`: a width outlives a component and a
  * document by design, so without this one test's drag is the next one's
  * starting state. Nothing in the app calls it — there is no "forget my widths"
- * action, and §11 describes none.
+ * action, and §10 describes none.
  */
 export function clearDocWidthState(storage: Storage | null = storageOrNull()): void {
   try {

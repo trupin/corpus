@@ -28,7 +28,7 @@ export interface ColumnListProps {
   readonly items: readonly DocRow[];
   readonly isPending: boolean;
   readonly error: Error | null;
-  /** Restored browser-local scroll position (SPEC.md §11). */
+  /** Restored browser-local scroll position (SPEC.md §10). */
   readonly scrollTop: number;
   /**
    * The document the keyboard cursor is on, or `null` — the prototype's
@@ -38,7 +38,7 @@ export interface ColumnListProps {
   readonly cursorDocId: string | null;
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpen: (row: DocRow) => void;
-  /** SPEC.md §11's "open in focus" — the ⇧↵ act, offered by the row's menu. */
+  /** SPEC.md §10's "open in focus" — the ⇧↵ act, offered by the row's menu. */
   readonly onOpenFocus: (row: DocRow) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -101,10 +101,10 @@ export function ColumnList({
         const row = items.find((item) => item.id === element?.dataset["rowDoc"]);
         // Off any row, or inside a field: the browser's menu. A selection —
         // here, or anywhere else on the page — does not suppress a row's own
-        // menu (SPEC.md §11, user report 2026-07-30).
+        // menu (SPEC.md §10, user report 2026-07-30).
         if (row === undefined) return;
         // Core paints no menu over a plugin-*rendered* surface: since the
-        // 2026-08-02 §11 amendment the plugin may contribute one of its own
+        // 2026-08-02 §10 amendment the plugin may contribute one of its own
         // through the kit, so a half-populated core menu there would now be
         // painting over somebody else's. `keepsNativeMenu` is where that rule
         // lives — `[data-plugin-surface]` is one of its hosts. This list is

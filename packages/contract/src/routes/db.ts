@@ -5,7 +5,7 @@ import { jsonContent, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./respo
 
 /**
  * The projection's maintenance surface — `corpus db rebuild` and `corpus db
- * doctor` (SPEC.md §2.2, §14).
+ * doctor` (SPEC.md §2.2, §11).
  *
  * Both go over HTTP rather than running in the CLI, for the same reason every
  * other verb does: the server is the sole writer, and it is the process holding
@@ -13,7 +13,7 @@ import { jsonContent, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./respo
  * running server reading a replaced inode.
  *
  * Neither route touches workspace files, so neither produces a git commit and
- * neither can warn under §14 — the `Warning` carrier every mutation response
+ * neither can warn under §11 — the `Warning` carrier every mutation response
  * spreads is deliberately absent from both responses, and stays absent.
  * `doctor` is read-only in the strictest sense: it opens the database read-only
  * and mutates nothing at all.
@@ -23,10 +23,10 @@ import { jsonContent, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./respo
  * that happens to share the word, for report-only findings a person should see
  * and the projection is nonetheless correct about (SERVER-038's unindexable
  * files). The paragraph above still holds as written: doctor cannot produce a
- * §14 commit warning, because it performs no write. What was wrong was reading
- * "no §14 warnings" as "no findings beyond drift", which left a recovery surface
+ * §11 commit warning, because it performs no write. What was wrong was reading
+ * "no §11 warnings" as "no findings beyond drift", which left a recovery surface
  * with nowhere to land except `drift` — where it would have flipped `ok` and the
- * exit code, breaking §14's `rebuild && doctor` clean invariant for the exact
+ * exit code, breaking §11's `rebuild && doctor` clean invariant for the exact
  * workspaces that most need the report. `RebuildResult` gains nothing: a rebuild
  * already reports what it could not use, in `skipped`.
  */
@@ -39,11 +39,11 @@ export const rebuildDb = createRoute({
   description:
     "Re-derives every row of `.corpus/cache.db` from the workspace's files alone and swaps the " +
     'result in atomically, which is what makes §9.1\'s "derived tables only" checkable rather ' +
-    "than merely asserted (SPEC.md §14). The rename is the commit point: an interrupted rebuild " +
+    "than merely asserted (SPEC.md §11). The rename is the commit point: an interrupted rebuild " +
     "leaves the previous database intact. **Takes no request body at all** — there is nothing to " +
     "configure, and a bodiless `POST` is the whole call. A rebuild of a large corpus is the " +
     "longest-running call in the API; clients give it a longer timeout than the default. " +
-    "`rebuild` followed by a clean `doctor` is the standing invariant §14 names.",
+    "`rebuild` followed by a clean `doctor` is the standing invariant §11 names.",
   request: { headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(
@@ -62,7 +62,7 @@ export const doctorDb = createRoute({
   summary: "Check the projection against the files",
   description:
     "Reports every disagreement between the workspace's files and the projection's rows (SPEC.md " +
-    "§14). Cheap enough for a pre-commit hook: a file whose size and mtime are unchanged is never " +
+    "§11). Cheap enough for a pre-commit hook: a file whose size and mtime are unchanged is never " +
     "re-read, and a file that already has a row is never re-parsed. Nothing is mutated and no " +
     "rebuild is triggered — a drifted projection is reported, never quietly repaired, because the " +
     "point of the check is that drift is visible. `ok` is the verdict `corpus db doctor` turns " +

@@ -7,7 +7,7 @@ import { PluginMenu, type PluginMenuAction } from "./PluginMenu.js";
 /**
  * The quick actions a todo **item** has, as a context menu (PLUGINS-009).
  *
- * SPEC.md §11, as amended 2026-08-02, admits this menu on one condition: it
+ * SPEC.md §10, as amended 2026-08-02, admits this menu on one condition: it
  * lists *"only the item's existing actions, nothing invented … and no exclusive
  * capability"*. All three are the item's, and all three stay reachable without
  * this menu — toggling is a checkbox in the reader, commenting is selecting the

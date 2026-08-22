@@ -25,7 +25,7 @@ export const JobSchema = z
           "Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define " +
           "their own event types (SPEC.md §7, §10). The console's collapsed job row reads " +
           "`<type> · <originTitle>`, so this is what tells the user *what* is running, not just " +
-          "what it is running on (SPEC.md §11).",
+          "what it is running on (SPEC.md §10).",
       ),
     status: QueueEventStatusSchema,
     started: IsoDateTimeSchema,

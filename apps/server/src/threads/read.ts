@@ -9,7 +9,7 @@
 // hand-written thread that omits `created` or spells `agent` wrong: the turns
 // are still there and the conversation is still a conversation. Each field falls
 // back to something true rather than failing, and `doc check` is what reports
-// the drift (§14).
+// the drift (§11).
 
 import {
   ThreadAgentSchema,
@@ -149,7 +149,7 @@ export function readThread(workspace: ThreadReader, loaded: LoadedDocument): Loa
   // each (SPEC.md §6, CONTRACT-043). Joined here, once, so every reader that
   // goes through the server — the thread route, the context pack, the summary —
   // reads a turn with its model on it and nobody re-derives the join. A turn the
-  // map says nothing about keeps the parser's `null`: §11's nothing, not a guess.
+  // map says nothing about keeps the parser's `null`: §10's nothing, not a guess.
   const turns = withTurnModels(parseTurns(loaded.parsed.body), turnModelsOf(data));
   const tags: unknown = data["tags"];
 

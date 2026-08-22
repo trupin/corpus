@@ -71,7 +71,7 @@ export interface InitReport {
   readonly installed: readonly string[];
   /** Plugin skill files copied into `.claude/skills/` (SPEC.md §10). */
   readonly installedPluginSkills: readonly string[];
-  /** Plugin seed templates copied into `data/docs/templates/` (SPEC.md §10, §11). */
+  /** Plugin seed templates copied into `data/docs/templates/` (SPEC.md §10, §10). */
   readonly installedPluginSeeds: readonly string[];
   readonly warnings: readonly string[];
 }

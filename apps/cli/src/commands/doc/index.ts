@@ -26,7 +26,7 @@ import { unarchiveCommand } from "./unarchive.js";
  * without enumerating anything (SPEC.md §7); `show` is the single read; `diff`
  * is the read of a *change* rather than a state, and the one call a `doc.edited`
  * event's frugal payload is meant to be escalated into (SPEC.md §4); `check`
- * is the validator (SPEC.md §14) reported rather than run here; `create`,
+ * is the validator (SPEC.md §11) reported rather than run here; `create`,
  * `edit`, `patch`, `move`, `archive` and `unarchive` are the agent's own
  * initiative; `delete` is the user's alone.
  *
@@ -56,7 +56,7 @@ export const docTopic: TopicSpec = {
     "person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal " +
     "way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the " +
     "git author of the server's auto-commit — `git log` is the audit trail of who changed what. " +
-    "`check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over " +
+    "`check` is the same topic's read-only verdict: SPEC.md §11's validator, run server-side over " +
     "documents, the whole workspace, or what is staged in git.",
   commands: [
     listCommand,

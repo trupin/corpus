@@ -64,7 +64,7 @@ export const IMAGE_OPTIONS = { inline: true, allowBase64: true } as const;
  * different configurations.
  *
  * `history` stays on: undo is the user's only defence against an editor that is
- * always saving, and SPEC.md §11's "no edit mode" makes ⌘Z the whole safety
+ * always saving, and SPEC.md §10's "no edit mode" makes ⌘Z the whole safety
  * story. Autosave never dispatches a transaction (see `useAutosave`), so a save
  * landing mid-sequence cannot truncate the stack.
  */

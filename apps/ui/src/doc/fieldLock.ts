@@ -39,7 +39,7 @@ import { usePluginRegistry, type PluginRegistry } from "../plugins/registry";
  *   value, and it asks one **additional** question first — see
  *   {@link formStatusLock}, which narrows this answer and never replaces it.
  * - A document's action menu (UI-094) **omits** Resolve/Reopen instead. SPEC.md
- *   §11's context menu lists "exactly that item's existing actions", and an item
+ *   §10's context menu lists "exactly that item's existing actions", and an item
  *   nothing the user does could arm is not an action — it is a caption. The
  *   reason is unused there, and stays on the shape regardless, because the form
  *   half needs it.
@@ -130,7 +130,7 @@ const ARCHIVED_OVER_DERIVED_LOCK: FieldLock = {
  *
  * One sentence for every derived field, and it names no field: the reader is
  * looking at the field's own label already, and a per-field wording would be two
- * ways of saying the one thing §11 says once.
+ * ways of saying the one thing §10 says once.
  */
 const DERIVED_LOCK: FieldLock = {
   kind: "derived",
@@ -252,7 +252,7 @@ function declaresDerivedDue(type: string, registry: PluginRegistry): boolean {
  * write path undoes in the same request. PR #55's review measured exactly that —
  * pick a date, `PUT {"due":"2030-01-01"}`, `200`, and the file still reads
  * `2026-08-04` while the control snaps back with no error and no explanation.
- * §11 (SHARED-030) says a derived field is *editable by nobody*, and kit's
+ * §10 (SHARED-030) says a derived field is *editable by nobody*, and kit's
  * `PluginDocType` says a surface that would offer such an edit renders it locked.
  *
  * **The archived case is where this parts company with {@link statusLock}, and

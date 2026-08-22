@@ -61,7 +61,7 @@ export interface ProjectionDb {
    * re-projection all reach it through the same handle, so a rebuild that swaps
    * the connection cannot lose it. {@link EMPTY_DERIVED_FIELDS} when no plugin
    * declares one, which is every test that does not care and every workspace
-   * whose `plugins/` directory is gone (§15 M6).
+   * whose `plugins/` directory is gone (§12 M6).
    */
   readonly derivedFields: DerivedFieldsRegistry;
   prepare(sql: string): SqliteStatement;

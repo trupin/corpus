@@ -4,7 +4,7 @@ import { escapeSelectorValue } from "./cssEscape";
  * Google-Docs-style margin cards: measure, sort, cascade.
  *
  * `design/index.html`'s `layoutMargin()`, kept algorithm for algorithm because
- * the prototype is authoritative for look and feel (SPEC.md §11) and because
+ * the prototype is authoritative for look and feel (SPEC.md §10) and because
  * the routine is the whole behaviour: each card wants to sit beside its anchor,
  * no two may overlap, and the one rule that reconciles those is
  * `y = max(anchorTop, lastBottom)`.
@@ -81,7 +81,7 @@ export function measureMargin(main: HTMLElement, margin: HTMLElement): MarginIte
   /*
    * Direct children only, and by the **panel** marker rather than by the card's
    * class: a conversation in the margin is a card when it is expanded and a
-   * single line when it is folded (SPEC.md §11), and both have to be cascaded —
+   * single line when it is folded (SPEC.md §10), and both have to be cascaded —
    * a fold that dropped out of the layout would leave the ones below it stacked
    * where the card used to be. A nested child thread is a panel too, and it is
    * laid out by the card that contains it, not by this cascade.

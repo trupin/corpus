@@ -53,7 +53,7 @@ describe("folderChoices", () => {
 describe("the preset library", () => {
   it("never restates a column the seed workspace already ships", () => {
     // A picker that re-offered the seed columns would be the board's own column
-    // set written in TypeScript — the thing SPEC.md §11 forbids.
+    // set written in TypeScript — the thing SPEC.md §10 forbids.
     const text = JSON.stringify(PRESET_CHOICES);
     expect(text).not.toContain("Attention");
     expect(text).not.toContain("Open threads");

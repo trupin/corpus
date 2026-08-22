@@ -13,7 +13,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * `<select>`, which is a different sentence — a disabled control says there is
  * an act here that is momentarily unavailable, and there is no act here.
  *
- * The two rules this file also holds to, both signed into §11:
+ * The two rules this file also holds to, both signed into §10:
  *
  * - **SHARED-057** — the statement must not resize when its value changes. A
  *   box whose width follows its text moves the hint under it every time an item
