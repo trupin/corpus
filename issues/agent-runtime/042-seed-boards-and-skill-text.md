@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: SHARED-064 (riders 2, 5, 6, 9 signed); CLI-060 for the verbs the skill text cites; SERVER-137 for the event to exist end to end
-- Blocks: —
+- Blocks: PLUGINS-019
 
 ## Spec References
 - SPEC.md §4 — the workspace tree and seeds

@@ -14,7 +14,7 @@ fable — every rider is a judgment about the product's direction, read back to 
 
 ## Dependencies
 - Depends on: —
-- Blocks: CONTRACT-074, CONTRACT-075, AGENT-042 (and through them the whole of Phase 41)
+- Blocks: CONTRACT-074, CONTRACT-075, CONTRACT-076, AGENT-042 (and through them the whole of Phase 41)
 
 ## Spec References
 - SPEC.md §2.4 — "Upgrading"
@@ -83,7 +83,7 @@ None — prose. `npm run lint` covers formatting of the issue and plan files.
 ## E2E Verification Plan
 ### Verification Steps
 1. `grep -n "No sidebar\|pinned: true\|column widens" SPEC.md` returns nothing in §11.
-2. Eight `_(Rider signed 2026-…)_` markers exist for the riders above.
+2. Eleven `_(Rider signed 2026-…)_` markers exist: nine riders and two consequence notes.
 
 ## E2E Verification Log
 Orchestrator, 2026-08-22, on fable. Nine riders read back one at a time, each signed by the user ("signed" / "sign it") on the quoted text, each written verbatim into SPEC.md in the same turn:
@@ -97,6 +97,8 @@ Orchestrator, 2026-08-22, on fable. Nine riders read back one at a time, each si
 7. §9.2 — `pinned=` out, `stage=` in on `/api/docs` and `/api/search`; the 2026-08-08 amendment reworded; folder acts line after `GET /api/tree`; board fields in the `POST /api/docs` line. Consequences applied under it: §9.1 projection columns (`stage`, `board_json`, no `pinned`), §10 plugin column sentence, M4 milestone line.
 8. §2.4 migrations — appended.
 9. §7 `workspace.reflect` — in the core event types paragraph.
+
+**PR #56 review (pr-reviewer on fable, REQUEST_CHANGES: 1 critical, 5 major, 5 minor).** Three findings were spec gaps and became amendments, each read back and signed the same day: (1) rider 9 — the agent's own writes never count as unreflected, and an ask while one is pending is answered, not doubled (the critical: clock and digest contradicted each other); (2) riders 5 and 6 — a derived-status document keeps its derivation under the coupling and cannot be dragged on a kanban over `status`; (3) rider 2 — `default-open` receives every open that names no board, falling back to the first in `order`. The rest were consequence edits applied without new sign-off: the width and keyboard sentences rider 2 contradicted, `⌘B`/`⌘1…⌘9` in the keyboard scheme, `unset` on the update body (CONTRACT-074, SERVER-138), `query` named as a board field, the prototype's `pinned: true` line and its "open in…" placement, `202 { pending }` instead of a `409` on a second ask, the plan's batching and `Blocks` lists, "Eight" → "Eleven".
 
 Checks: `grep -c "No sidebar\|column widens\|pinned: true\|create pinned view" SPEC.md` → 0. Remaining `pinned` mentions are the riders saying it left, and "anchor quote pinned at top" (unrelated). Prettier clean. Prototype committed in `a720e6dd`.
 

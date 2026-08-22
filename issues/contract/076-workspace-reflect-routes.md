@@ -25,7 +25,7 @@ Reflection is one event with one field and two routes: ask for one, and read the
 
 ## Acceptance Criteria
 - [ ] Event type `workspace.reflect` is in the core event-type list with payload `{ since: string (ISO) | null }` — `null` for a corpus never reflected on.
-- [ ] `POST /api/workspace/reflect` → `202 { eventId, since }`; `409 { pending: eventId }` when a reflection is pending or in progress (the UI shows the pending state instead of asking twice).
+- [ ] `POST /api/workspace/reflect` → `202 { eventId, since, pending: boolean }`: a new event when none is pending or in progress, else the one already pending, with `pending: true` — an ask while one is pending is answered with the pending one, never refused and never doubled.
 - [ ] `GET /api/workspace/reflect` → `{ reflected: string | null, pending: eventId | null, changed: number, lastDigest: threadId | null, quiet: number }` — `changed` is the count of documents with `updated > reflected` (archived excluded), `quiet` the configured window in minutes.
 - [ ] `openapi.json` regenerated, drift check green, typed client exposes both.
 

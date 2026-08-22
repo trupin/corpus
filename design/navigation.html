@@ -649,7 +649,7 @@ function openOnBoard(boardId, docId) {
   const onBoard = paths().find((p) => pathTops(p).includes(docId));
   if (onBoard) { render(); recenterIfInPath(onBoard, docId); return; }
   const p = { kind: "path", id: state.seq++, origin: null, cols: [{ stack: [docId] }] };
-  strip().push(p);
+  strip().splice(0, 0, p);   // no origin → the left edge, the same place the explorer's path lands
   save(); afterRender(`p:${p.id}:0`, { flash: true });
 }
 
@@ -800,7 +800,7 @@ function bodyHTML(d) {
 }
 function fmBlock(id) {
   const d = DOCS[id]; const lines = [`<b>type:</b> ${d.type}`, `<b>title:</b> ${esc(d.title)}`];
-  if (d.type === "view") { lines.push(`<b>pinned:</b> true`, `<b>query:</b>`); for (const [k, v] of Object.entries(d.query)) lines.push(`  <b>${k}:</b> ${esc(v)}`); lines.push(`<b>sort:</b> ${esc(d.sort)}`); }
+  if (d.type === "view") { lines.push(`<b>query:</b>`); for (const [k, v] of Object.entries(d.query)) lines.push(`  <b>${k}:</b> ${esc(v)}`); lines.push(`<b>sort:</b> ${esc(d.sort)}`); }
   if (d.type === "board") {
     if (d.kanban) { lines.push(`<b>kanban:</b>`, `  <b>field:</b> ${d.kanban.field}`, `  <b>stages:</b> [${d.kanban.stages.join(", ")}]`); if (d.kanban.transitions) { lines.push(`  <b>transitions:</b>`); for (const st of d.kanban.stages) lines.push(`    <b>${st}:</b> [${(d.kanban.transitions[st] || []).join(", ")}]`); } if (d.kanban.status) lines.push(`  <b>status:</b> { ${Object.entries(d.kanban.status).map(([k, v]) => `${k}: ${v}`).join(", ")} }`); if (d.query) { lines.push(`<b>query:</b>`); for (const [k, v] of Object.entries(d.query)) lines.push(`  <b>${k}:</b> ${esc(v)}`); } }
     else { lines.push(`<b>columns:</b>${d.columns.length ? "" : " []"}`); for (const c of d.columns) lines.push(`  - ${c}`); }

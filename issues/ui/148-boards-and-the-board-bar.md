@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: CONTRACT-074, SERVER-138
-- Blocks: UI-149, UI-152
+- Blocks: UI-149, UI-152, UI-153
 
 ## Spec References
 - SPEC.md §11 — "UI — the board" (rider 2: boards as documents; rider 1's last sentence: a board document in the explorer is the board)

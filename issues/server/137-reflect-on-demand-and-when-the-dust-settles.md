@@ -24,7 +24,7 @@ opus
 Implements `workspace.reflect`: the ask route enqueues it at once, a scheduler enqueues it when the corpus has been quiet for the configured window after an unreflected change, the clock moves when the job is processed, and the status route reports clock, pending state and the count of changed documents.
 
 ## Acceptance Criteria
-- [ ] `POST /api/workspace/reflect` enqueues `{ type: "workspace.reflect", payload: { since } }` on the orchestrator's lane; `409` when one is pending or in progress.
+- [ ] `POST /api/workspace/reflect` enqueues `{ type: "workspace.reflect", payload: { since } }` on the orchestrator's lane; when one is pending or in progress it answers `202` with that event and `pending: true` instead of enqueuing a second.
 - [ ] **Quiet window**: after any write that changes a document's `updated`, a timer (re)starts; when it fires with `reflected < lastChange`, no reflection pending or in progress, and `reflect.quiet > 0`, one event is enqueued. Config key `reflect.quiet` (minutes, default 30, `0` disables) in the workspace config, read on start and on config change.
 - [ ] **Clock**: `.corpus/reflect.json` `{ reflected: ISO | null }`, written when a `workspace.reflect` job reaches `processed`, to that event's `created`; `failed`, `abandoned` and `deferred` leave it; a retried event keeps its `since`.
 - [ ] `GET /api/workspace/reflect` returns the shape CONTRACT-076 defines; `changed` is computed from the projection (`updated > reflected`, not archived); `lastDigest` is the newest `type: thread` whose `origin` names a reflection job.

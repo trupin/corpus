@@ -35,6 +35,8 @@ The server reads and writes the fields CONTRACT-074 put on the wire, indexes `st
 - [ ] A `stage` write is never refused for being off the board's transitions (the UI governs the drag; the CLI and the reader may set any stage).
 - [ ] Validation of `kanban` at the write boundary matches CONTRACT-074's refusals; `404`/`400` messages name the field.
 - [ ] Unknown frontmatter keys, `pinned` included, keep landing in `extra` unchanged.
+- [ ] `unset: [..]` on the update body removes each named key from the file's frontmatter (core or `extra`) in the same commit as any `changes`; `id`, `type`, `created` refuse `400` naming the key; an absent key is a no-op, not an error.
+- [ ] A document whose status is **derived** (§12, e.g. `todo`) never has `status` written by the stage coupling: the stage is written, the status is left to its derivation, and the response's warnings say so. (Spec amendment pending user sign-off — see SHARED-064.)
 
 ## Technical Design
 

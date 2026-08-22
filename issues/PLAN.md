@@ -1382,10 +1382,10 @@ window itself, writes changelog entries and one digest thread; the board marks
 what is unreflected.
 
 **Order of work.** SHARED-064 first, rider by rider. Then CONTRACT-074,
-CONTRACT-075, CONTRACT-076 and AGENT-042 together. Then SERVER-138, SERVER-136,
-SERVER-137, CLI-060 and UI-148 (three at a time on this machine). Then UI-149
-and UI-152. Then UI-150, UI-151, UI-153, CLI-061 and PLUGINS-019. Critical
-path: SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
+CONTRACT-075 and CONTRACT-076 together. Then SERVER-138, SERVER-136, SERVER-137
+and UI-148 (three at a time on this machine). Then CLI-060, UI-149 and UI-152.
+Then AGENT-042, CLI-061, UI-150, UI-151, UI-153 and PLUGINS-019. Critical path:
+SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |

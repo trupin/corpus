@@ -25,7 +25,8 @@ opus
 A board is a `type: board` document whose frontmatter lists its columns, its position, its kanban definition and whether it receives the explorer's opens. `stage` is a new core field on every document. `pinned` goes away: nothing reads it once a board lists its columns. This issue puts all of that on the wire — schemas, route definitions, the generated `openapi.json` and the typed client — so the server and the three clients build against one shape. **Breaking by the user's decision (2026-08-22)**: `pinned` and the `pinned=` filter are removed, not deprecated; CLI-061 tells an existing workspace what to do.
 
 ## Acceptance Criteria
-- [ ] `DocRow` carries `stage: string | null`, `columns: string[] | null`, `kanban: Kanban | null`, `defaultOpen: boolean`, and `order: number | null` documented as "a board's position among boards".
+- [ ] `DocRow` carries `stage: string | null`, `columns: string[] | null`, `kanban: Kanban | null`, `defaultOpen: boolean`, and `order: number | null` documented as "a board's position among boards"; `query` (already on the row as `ViewQuerySchema | null`) is documented as "a view's query, or a kanban board's scope".
+- [ ] The update body accepts `unset: string[]` beside `changes`: each named frontmatter key is removed (core or `extra`); `id`, `type`, `created` refuse with a message naming the key. This is what CLI-060's `--unset` and CLI-061's migration send.
 - [ ] `DocRow` no longer carries `pinned`; `DocsQuerySchema` no longer accepts `pinned`; `sort=order` stays.
 - [ ] `DocsQuerySchema` accepts `stage=<string>`; `GET /api/search` does too.
 - [ ] `"board"` is in `CORE_DOC_TYPES`; `DocTypeSchema` stays an open string.
