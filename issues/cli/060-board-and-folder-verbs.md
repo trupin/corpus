@@ -13,7 +13,7 @@ P1
 opus
 
 ## Dependencies
-- Depends on: CONTRACT-074, CONTRACT-075, SERVER-135, SERVER-136
+- Depends on: CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-135, SERVER-136, SERVER-137
 - Blocks: CLI-061, AGENT-042 (skill text cites the verbs)
 
 ## Spec References
@@ -31,6 +31,7 @@ The agent's whole surface is the CLI, and the agent must be able to build a boar
 - [ ] `corpus doc list --stage <value>` filters; `corpus doc show` prints `stage`, `columns`, `kanban`, `default-open`, `order` when present.
 - [ ] `corpus folder rename <from> <to>`, `corpus folder archive <path>`, `corpus folder unarchive <path>`, `corpus folder delete <path> --yes`; `delete` without `--yes` prints the documents it would delete and exits 2; every verb prints the documents the server reported, one per line, token-frugal like `doc list`.
 - [ ] When a `--stage` edit's response reports a status change too, the output says so on its own line.
+- [ ] `corpus reflect` asks for a reflection now (`POST /api/workspace/reflect`, CONTRACT-076): prints the event id and the window's `since`; on `409` prints the pending event id and exits 0 (asking for what is already happening is not an error). `corpus reflect --status` prints the clock, the pending state, the changed count and the quiet window from `GET /api/workspace/reflect`.
 - [ ] Registry-driven `--help` at all levels; `docs/cli.md` regenerates with no diff; the drift check passes.
 
 ## Technical Design

@@ -32,6 +32,7 @@ Phase 41 replaces the board's navigation model. SPEC §11 today says "No sidebar
 - [ ] §9.2's `GET /api/docs` line no longer lists `pinned=`, and lists `stage=`.
 - [ ] §5 carries `stage` in the canonical frontmatter and the coupling rule.
 - [ ] §2.4 says an upgrade reports data migrations as commands.
+- [ ] §7 carries `workspace.reflect`, the quiet window, the clock and the digest thread (rider 9).
 
 ## Technical Design
 
@@ -64,6 +65,9 @@ Phase 41 replaces the board's navigation model. SPEC §11 today says "No sidebar
 
 **Rider 8 — §2.4, migrations.**
 > An upgrade also reports the **data migrations** the workspace needs — files the installed tool no longer reads as they are written — listed distinctly from updates and conflicts, each as the commands that perform it, so an agent running the upgrade can do the work. The upgrade never performs a migration itself.
+
+**Rider 9 — §7, reflection (added 2026-08-22 after the user asked whether a stage change triggers the agent).**
+> **Reflection is an act over the whole corpus, never a side effect of one change.** A stage moved, a status flipped, a tag, a move, an archive: none of these enqueues anything, exactly as before. What reaches the agent is **`workspace.reflect`**, whose payload is one timestamp, `since`: the corpus's last reflection. The agent gathers the window itself (`corpus doc list --since`), reads what it chooses, and pays only for that. The event falls in no scope and takes the orchestrator's lane; the orchestrator may hand a resident the part of the window inside its scope. **Two things produce it.** A person asks — the board bar's Reflect control, or `corpus reflect` — and it is enqueued at once. Or the dust settles: the server enqueues one when something changed after the last reflection, nothing has changed for a **quiet window** (`reflect.quiet`, default 30 minutes, `0` disables the automatic path), and no reflection is pending or running. Ten changes in five minutes are one reflection, half an hour after the last. **The clock** — `reflected`, the `created` time of the last reflection whose job was processed — is server state in `.corpus/`; a failed job leaves it, so a retry sees the same window. **What a reflection produces**: an entry in the changelog of each document the agent has something to say about (§5), and one **standalone thread** per reflection, the digest, whose first turn names the window, so git holds the clock too and a person answers it where Attention shows it. A reflection with nothing to say still posts the thread, in one line. **The board shows what is unreflected**: a document whose `updated` is later than `reflected` is marked on every board, each column counts its own, a board tab carries a dot while it holds any, and the Reflect control carries the corpus count. When the job lands, the marks clear.
 
 ### Key Implementation Details
 - Read each rider back verbatim, wait for "signed" or a correction, then write it. Do not write rider N+1 before rider N is signed.
