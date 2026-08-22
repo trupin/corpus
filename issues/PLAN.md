@@ -1236,7 +1236,7 @@ left in a report.
 | UI-146 | The document body rises 75px after it is on screen, and a right-click jumps it 188px (UI-093 consequence) | done | P0 | — |
 | SHARED-062 | A todo list's `due` is its items, and a hand-written date does not survive (SIGNED 2026-08-22, applied) | done | P0 | — |
 | SHARED-063 | §10's reader menu offers Resolve on every document that has one (SIGNED 2026-08-22, applied) | done | P1 | — |
-| UI-147 | The mockup still draws the eased column open that UI-146 removed | todo | P2 | UI-146 |
+| UI-147 | The mockup still draws the eased column open that UI-146 removed | done | P2 | UI-146 |
 | SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | closed | P2 | — |
 
 ## Phase 41 — The core is the whole of it (2026-08-22, v0.18.0 scope)
@@ -1264,13 +1264,13 @@ was written for.
 | --- | --- | --- | --- | --- |
 | SHARED-064 | The plugin system is removed, and the core is the whole of it (SIGNED 2026-08-22, applied) | done | P0 | — |
 | AGENT-042 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-064 |
-| UI-149 | Relocate the reader's open payloads out of the plugin surface, then delete it | todo | P0 | SHARED-064 |
+| UI-149 | Relocate the reader's open payloads out of the plugin surface, then delete it | done | P0 | SHARED-064 |
 | SERVER-136 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-064 |
-| UI-150 | Delete the UI's plugin registry, slot dispatch and plugin columns | todo | P0 | UI-149 |
+| UI-150 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-149 |
 | CLI-060 | Delete the CLI's plugin discovery, command topics and template install | todo | P0 | SHARED-064 |
 | CONTRACT-074 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-060 |
-| INFRA-031 | Delete the plugins workspace, its tooling and its docs | todo | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |
-| SHARED-065 | Sweep every open issue clean of plugins and todos | todo | P0 | — |
+| INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |
+| SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
 | SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | todo | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |
 | AGENT-043 | Does a workspace skill covering a domain oblige the comment loop to apply it? | todo | P2 | SHARED-064 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |

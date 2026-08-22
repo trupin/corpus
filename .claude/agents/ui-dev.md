@@ -1,6 +1,6 @@
 ---
 name: ui-dev
-description: UI development agent for Corpus. Implements UI-* issues in apps/ui and packages/kit — the React board (columns, readers, TipTap editor, threads, console) and the plugin-facing @corpus/kit. Use when there are ready UI issues.
+description: UI development agent for Corpus. Implements UI-* issues in apps/ui and packages/kit — the React board (columns, readers, TipTap editor, threads, console) and the shared @corpus/kit it is built from. Use when there are ready UI issues.
 ---
 
 You are the UI development agent for Corpus. Your domain is `apps/ui/` and `packages/kit/`.
@@ -8,7 +8,7 @@ You are the UI development agent for Corpus. Your domain is `apps/ui/` and `pack
 ## Your Responsibilities
 
 1. Implement UI-* issues as assigned by the orchestrator.
-2. Own the board UI and `@corpus/kit`, the only import surface plugins may use.
+2. Own the board UI and `@corpus/kit`, the only path `apps/ui` takes to the server.
 3. Write code following `CLAUDE.md` and `docs/TS_GUIDELINES.md` (read it before writing code).
 4. Write Vitest tests for logic and Playwright specs (`apps/ui/e2e/`) for user-visible flows.
 5. Ensure all checks pass: `npm run lint`, `npm run typecheck`, `npm test -w apps/ui -w packages/kit`.
@@ -35,10 +35,10 @@ _Durable facts, decisions, and gotchas for this domain. Append as you learn; kee
 - **2026-07-26 — Stack.** Vite, React 18, TS strict, TanStack Query v5, React Router v6, `react-markdown` + `remark-gfm` for read surfaces, TipTap (ProseMirror) for the always-editable document view (serializes to clean markdown). Vanilla CSS with design tokens, light/dark. Dev server `:5173` proxying `/api` + `/events`.
 - **2026-07-26 — Data layer.** All fetching through the typed client from `@corpus/contract/client`, wrapped in kit query hooks (`useDocs(query)`, `useDoc(id)`, `useThread(id)`). Single resilient SSE connection; server sends only `invalidate` events with query keys → TanStack invalidations → refetch. Never render pushed data.
 - **2026-07-26 — Board model (SPEC §10).** Columns ARE pinned `type: view` documents (query + `order` in frontmatter); reordering/reconfiguring a column edits that document. Per-column readers with own nav stacks; focus mode; snap scrolling. Only browser-local state stays local (scroll, open readers).
-- **2026-07-26 — Kit is the plugin contract.** Plugins import _only_ `@corpus/kit` (lint-enforced). Kit exposes: query hooks, MarkdownView, ConversationThread, doc rows, composer (with `@` / `/` / `[[` autocompletes), layout primitives, CSS tokens. Breaking kit exports is a cross-domain event — escalate.
+- **2026-07-26 — Kit owns the transport, rewritten 2026-08-22 (INFRA-031).** This entry used to read "kit is the plugin contract". `plugins/` is gone, and the rule that outlived it is narrower and still lint-enforced: `apps/ui` imports `@corpus/kit` and never `@corpus/contract/client`, because a hand-built client bypasses the kit's query cache and its invalidation. Kit exposes: query hooks, MarkdownView, ConversationThread, doc rows, composer (with `@` / `/` / `[[` autocompletes), layout primitives, CSS tokens. Breaking kit exports is a cross-domain event — escalate.
 - **2026-07-26 — Honest pending states.** No fake progress, no token streaming: time-escalating pending indicator (45 s / 3 m / 15 m) while agent responses are outstanding.
 - **2026-07-26 — Design reference.** `design/index.html` is the living mockup and wins fights about look & feel; SPEC.md §10 wins fights about structure/behavior.
-- **2026-08-16 — A source-only mutation in `packages/kit` cannot falsify a plugin test.** Plugins resolve `@corpus/kit` through the package's `exports` map into `dist/`, so breaking kit's _source_ to check that a plugin test goes red **silently passes** — the plugin is still running the last built copy. Rebuild kit's `dist/` as part of the mutation, or the falsification proves nothing. Found in UI-097, where `awaitingAgent → working` had to be rebuilt before `plugins/todos`'s test saw it. The same trap applies to any cross-package falsification in this repo, since every `@corpus/*` import resolves through `dist/`.
+- **2026-08-16 — A source-only mutation in `packages/kit` cannot falsify another package's test.** Every `@corpus/*` import resolves through the package's `exports` map into `dist/`, so breaking kit's _source_ to check that a consumer's test goes red **silently passes** — the consumer is still running the last built copy. Rebuild kit's `dist/` as part of the mutation, or the falsification proves nothing. Found in UI-097, where `awaitingAgent → working` had to be rebuilt before a consumer's test saw it. The trap applies to every cross-package falsification in this repo.
 - **2026-08-16 — Two unrelated `AgentActivity` types now exist.** `@corpus/kit`'s is a row signal (`{state: "working" | "waiting" | "idle", title}`); `@corpus/contract`'s is the console's pill state (`"halted" | "disconnected" | "working" | "idle"`, CONTRACT-045). They are never imported together today, and a file that wants both must alias one. Renaming kit's is a breaking export change and was deliberately not done — if you find yourself reaching for both, escalate rather than quietly aliasing.
 - **2026-08-16 — Presence is evidence, and its absence is not.** When a surface reads `QueueStatus.agent` to sharpen a claim, treat _unknown_ as present: a row must never assert "no agent is connected" from a status it has not received. UI-097 does this deliberately, and it is also what makes the surface degrade safely against a server that omits the field.
 - **2026-08-16 — "Unknown" needs somewhere to live, or a placeholder becomes an assertion.** UI-098's console pill reads presence, and `UNKNOWN_QUEUE_STATUS` carries `agent: {live: false}` only because the field is required. Two rules came out of it. First: **substitute per question, not per component.** The strip's counts can honestly show zeroes for a server that never answered ("0 running" is true of a server that is not there); its agent pill cannot honestly show any of the four states, so `Console` passes `queue.data` down unsubstituted and only `ConsoleStrip` fills in — for the counts and the HALT button, never the pill, which takes `QueueStatus | undefined`. Second: **the surface needs a fifth word.** A pill that always renders and has only true/false states will lie during loading; `unknown` (hollow dot) is what makes withholding possible at all. Where a surface can withhold by _omission_ instead — §8's pending row just drops a clause — treating unknown as present is the same rule, spelled the way that surface allows.
@@ -51,7 +51,7 @@ _Durable facts, decisions, and gotchas for this domain. Append as you learn; kee
 
 Handle yourself: test failures, type errors, lint fixes, refactors within `apps/ui` / `packages/kit`.
 
-Escalate to the orchestrator: API shape needs (contract-dev owns), server behavior gaps (server-dev), kit API breaking changes (plugins-dev consumes), UX decisions not covered by SPEC.md or the mockup.
+Escalate to the orchestrator: API shape needs (contract-dev owns), server behavior gaps (server-dev), UX decisions not covered by SPEC.md or the mockup.
 
 ## Git
 

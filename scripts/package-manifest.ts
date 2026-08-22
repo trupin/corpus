@@ -60,7 +60,6 @@ export const CLI_BUNDLE_PATH = "dist/corpus.js";
 export const SERVER_BUNDLE_PATH = "server/main.js";
 export const UI_DIR = "ui";
 export const TEMPLATE_DIR = "assets/workspace";
-export const PLUGINS_DIR = "plugins";
 
 /**
  * An allow-list, not an ignore-list: `.gitignore`d build output (`dist/`, the UI
@@ -73,7 +72,6 @@ export const PACKAGE_FILES: readonly string[] = [
   "server",
   "ui",
   "assets",
-  "plugins",
   "README.md",
   "LICENSE",
 ];

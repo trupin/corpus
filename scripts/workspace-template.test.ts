@@ -7,18 +7,13 @@ import { describe, expect, it } from "vitest";
 // directories, so importing them is what stops the install contract from drifting
 // away from the implementation it documents.
 import { WORKSPACE_DIRECTORIES } from "../apps/cli/src/commands/init/scaffold.js";
-import {
-  planPluginSkillInstall,
-  planTemplateInstall,
-  templateSkillNames,
-} from "../apps/cli/src/template/install.js";
+import { planTemplateInstall } from "../apps/cli/src/template/install.js";
 import {
   CLI_COMMANDS_PENDING_CLI_006,
   CONTRACT_DOC_PATH,
   INIT_GENERATED,
   INSTALL_FILTERS,
   INSTALL_RENAMES,
-  PLUGINS_ROOT,
   REPO_ROOT,
   TEMPLATE_ROOT,
   TemplateError,
@@ -109,36 +104,24 @@ interface InstalledSkill {
 const templatePlan = planTemplateInstall(TEMPLATE_ROOT);
 
 /**
- * Every skill document `corpus init` installs, from **both** trees: the
- * template's own and every plugin's `skills/<name>/` (SPEC.md §10). The plan is
- * the CLI's real installer rather than a glob re-written here, so a plugin that
- * ships a skill is swept the day it lands, and a skill the installer *skips* —
- * one whose name collides with a core skill — is not held to rules it never
- * reaches a workspace to break.
+ * Every skill document `corpus init` installs. The plan is the CLI's real
+ * installer rather than a glob re-written here, so a skill added to the template
+ * is swept the day it lands.
  *
- * This is the file set the rules in "every installed skill" run over. There is
- * deliberately no second inventory and no plugins-side copy of those assertions:
- * a plugin skill is prose the agent executes in a user's workspace, so what the
- * core skills teach binds it identically, from one list (PLUGINS-013).
+ * This used to read two trees: the template's own and a plugin's
+ * `skills/<name>/`. INFRA-031 deleted `plugins/`, so the template is now the
+ * whole of it — which is the point of SHARED-064, that the core is the whole of
+ * the product. The rules in "every installed skill" still run over one list.
  */
-const installedSkills: readonly InstalledSkill[] = [
-  ...templatePlan
-    .filter(
-      (file) =>
-        file.to.startsWith(".claude/skills/") && file.to.endsWith(".md") && !isVendored(file.from),
-    )
-    .map((file) => ({
-      label: `assets/workspace/${file.from}`,
-      body: documentAt(file.from).body,
-    })),
-  ...planPluginSkillInstall(PLUGINS_ROOT, templateSkillNames(templatePlan))
-    .files.filter((file) => file.to.endsWith(".md"))
-    .map((file) => ({
-      label: `plugins/${file.from}`,
-      body: parseFrontmatter(file.from, readFileSync(path.join(PLUGINS_ROOT, file.from), "utf8"))
-        .body,
-    })),
-];
+const installedSkills: readonly InstalledSkill[] = templatePlan
+  .filter(
+    (file) =>
+      file.to.startsWith(".claude/skills/") && file.to.endsWith(".md") && !isVendored(file.from),
+  )
+  .map((file) => ({
+    label: `assets/workspace/${file.from}`,
+    body: documentAt(file.from).body,
+  }));
 
 /**
  * Every worked turn-writing invocation in a skill body: `--from agent` on a
@@ -744,8 +727,8 @@ describe("skills", () => {
    */
   describe("stating the model that wrote the turn", () => {
     it.each(skills)("$name works at least one turn-writing example", ({ relPath }) => {
-      // The per-command `--model` check moved to the widened inventory below,
-      // which covers these two skills and every plugin's alike (PLUGINS-013).
+      // The per-command `--model` check moved to the installed-skill inventory
+      // below, which covers every skill `corpus init` writes into a workspace.
       // What stays here is the obligation that is *these* skills' alone: each
       // has to show the command at all, or the rule holds over an empty set.
       expect(
@@ -796,31 +779,29 @@ describe("skills", () => {
   });
 
   /**
-   * PLUGINS-013. The rules above are written for the template's two skills
-   * because that is where they were first broken; none of them is *about* the
-   * template. Once `corpus init` has run, a plugin's skill sits in the same
-   * `.claude/skills/` and is read by the same agent, so it inherits them — and
-   * the shipped `todos` skill had been teaching a reply with no `--model` since
-   * the day AGENT-021 made stating one the rule, because the sweep that closed
-   * it looked at one directory.
+   * The rules above are written for the template's two doctrine skills because
+   * that is where they were first broken; none of them is *about* those two.
+   * Every skill `corpus init` installs sits in the same `.claude/skills/` and is
+   * read by the same agent, so every one of them inherits the rules — a sweep
+   * that looks at one directory is how AGENT-021's `--model` rule went unheld
+   * for a release.
    *
-   * So the *file set* is widened, and the assertions are not copied. Each core
-   * skill keeps its own extra obligation next door — that it shows a
-   * turn-writing example, a trace and a heredoc *at all* — which is a demand on
-   * a skill that teaches the loop, not on every skill that ships.
+   * So the *file set* is the installer's own plan, and the assertions are not
+   * copied. Each core skill keeps its own extra obligation next door — that it
+   * shows a turn-writing example, a trace and a heredoc *at all* — which is a
+   * demand on a skill that teaches the loop, not on every skill that ships.
    */
   describe("every installed skill", () => {
-    it("reaches past the template, to a plugin skill that posts a turn", () => {
-      // Anti-vacuity, in both directions the widening can fail silently: the
-      // inventory has to be bigger than the template's own, and some plugin
-      // skill has to actually post a turn — without which `--model` below would
-      // pass by matching nothing at all.
-      expect(installedSkills.length).toBeGreaterThan(skills.length);
-      const fromPlugins = installedSkills.filter((skill) => skill.label.startsWith("plugins/"));
-      expect(fromPlugins.map((skill) => skill.label)).toContain(
-        "plugins/todos/skills/todos/SKILL.md",
+    it("draws its inventory from the installer, and that inventory posts turns", () => {
+      // Anti-vacuity, in both directions this can fail silently: the inventory
+      // has to hold at least the doctrine skills the rules were written for, and
+      // some skill has to actually post a turn — without which `--model` below
+      // would pass by matching nothing at all.
+      expect(installedSkills.length).toBeGreaterThanOrEqual(skills.length);
+      expect(installedSkills.every((skill) => skill.label.startsWith("assets/workspace/"))).toBe(
+        true,
       );
-      expect(fromPlugins.some((skill) => turnCommands(skill.body).length > 0)).toBe(true);
+      expect(installedSkills.some((skill) => turnCommands(skill.body).length > 0)).toBe(true);
     });
 
     it.each(installedSkills)("$label posts no example turn without a model", ({ label, body }) => {
@@ -1435,12 +1416,12 @@ describe("skills", () => {
     /**
      * The prose above is worth nothing if the examples teach the other word:
      * an example is what gets copied, and 34 of them saying `EOF` beat one
-     * paragraph saying `CORPUS_EOF`. Every shipped skill, plugins included —
-     * they install into the same workspace and are read by the same agent.
+     * paragraph saying `CORPUS_EOF`. Every shipped skill — they install into
+     * the same workspace and are read by the same agent.
      */
     it.each(installedSkills)("$label ends every heredoc with CORPUS_EOF", ({ label, body }) => {
-      // Not every installed skill has a heredoc — a plugin fixture ships none —
-      // so this pin is a prohibition, and the anti-vacuity for it is the
+      // Not every installed skill has a heredoc, so this pin is a prohibition,
+      // and the anti-vacuity for it is the
       // aggregate below plus the per-core-skill count further down.
       //
       // It forbids **every** delimiter but `CORPUS_EOF`, not merely `EOF`, and
@@ -1475,10 +1456,10 @@ describe("skills", () => {
         (count, skill) => count + (skill.body.match(/<<'CORPUS_EOF'/g)?.length ?? 0),
         0,
       );
-      // 34 across the four core skills at the time of the change, plus the
-      // todos plugin's one. A floor, not the count: the pin is that the rule
-      // above is checking real examples.
-      expect(total).toBeGreaterThanOrEqual(35);
+      // 34 across the four core skills at the time of the change. A floor, not
+      // the count: the pin is that the rule above is checking real examples.
+      // (It read 35 until INFRA-031 deleted the todos plugin's own skill.)
+      expect(total).toBeGreaterThanOrEqual(34);
     });
 
     /**
@@ -2015,13 +1996,12 @@ describe("orchestrate skill body", () => {
       //     markdown code span is how every docblock in this repo names a key,
       //     and `weight.ts` legitimately names all three while justifying a
       //     length bound.
-      //   - **The server and the plugins.** AGENT-015's criterion is about the
-      //     product, not about the two workspaces the guard happened to name;
-      //     `apps/server/src` routes the weight and `plugins/` is shipped v1
-      //     code with composers of its own.
+      //   - **The server too.** AGENT-015's criterion is about the product, not
+      //     about the two workspaces the guard happened to name;
+      //     `apps/server/src` routes the weight.
       //   - **No exemption for a published directory.** `@corpus/kit/testing`
-      //     is a subpath plugin authors can import, so what sits in it ships
-      //     whatever its name says; the assertion below pins that it is scanned.
+      //     is a published subpath, so what sits in it ships whatever its name
+      //     says; the assertion below pins that it is scanned.
       //     Only `apps/ui/src/testing` is exempt, and only because a fixture
       //     *must* spell a whole declaration — UI-082's suites drive five
       //     composers from a fixture skill document, and a fixture that could
@@ -2050,7 +2030,6 @@ describe("orchestrate skill body", () => {
         "apps/server/src",
         "packages/kit/src",
         "packages/contract/src",
-        "plugins",
       ].flatMap((root) => sources(path.join(REPO_ROOT, root)));
 
       // The key matcher, proven on the exact form it exists to catch, so a
@@ -2190,7 +2169,7 @@ describe("orchestrate skill body", () => {
      * §9.2, the published contract, the CLI help, these skills), each time by
      * somebody doing something else — so it is pinned in both directions: the
      * correct framing must be present *with its reason*, and the too-narrow one
-     * must be absent from every installed skill, plugin skills included. The
+     * must be absent from every installed skill. The
      * reason is the half that stops it drifting back: §4's commit windows are
      * party-scoped, so the parent of a window commit is not this document's
      * history but whoever else's document was saved in the same window.
@@ -6785,11 +6764,11 @@ describe("cli command references", () => {
     }
   });
 
-  it("spells no undocumented flag in a plugin's skill either", () => {
-    for (const { label, body } of installedSkills) {
-      expect(undocumentedFlagsIn(body), label).toEqual([]);
-    }
-  });
+  // There was a second pass here over `installedSkills`, because a plugin's
+  // skill lived outside the template tree and the check above could not see it.
+  // INFRA-031 deleted `plugins/`, so every installed skill is now a file the
+  // check above already reads — and it reads the whole file, frontmatter
+  // included, where this one saw only the body.
 
   it("catches a flag the command does not have", () => {
     // The regression this exists for: `corpus doc patch` takes no `--key`

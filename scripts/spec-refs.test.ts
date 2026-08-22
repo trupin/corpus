@@ -126,7 +126,7 @@ describe("findCitations", () => {
     expect(citations.map((citation) => [citation.line, citation.section])).toEqual([
       [2, "7"],
       [2, "9.2"],
-      [2, "11"],
+      [2, "10"],
     ]);
   });
 
@@ -166,7 +166,7 @@ describe("isExcluded", () => {
     // The pack audit learned this one the hard way: an unanchored `**/data/**`
     // would have forbidden the workspace template's own `data/`.
     expect(isExcluded("apps/server/src/issues/reporter.ts")).toBe(false);
-    expect(isExcluded("plugins/todos/issues.ts")).toBe(false);
+    expect(isExcluded("packages/kit/src/issues.ts")).toBe(false);
   });
 
   it("spares the generated artefacts, which inherit their citations from source", () => {

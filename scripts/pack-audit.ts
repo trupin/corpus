@@ -198,10 +198,6 @@ export const FORBIDDEN_PACK_PATTERNS: readonly ForbiddenEntry[] = [
   { reason: "environment files never ship", pattern: "**/.env*" },
   { reason: "coverage output is development state", pattern: "**/coverage*/**" },
   {
-    reason: "underscore-prefixed plugins are dev fixtures (sprint-012 Adjudication 9)",
-    pattern: "plugins/_*/**",
-  },
-  {
     reason: "source maps would multiply the install size for no operator benefit",
     pattern: "**/*.map",
   },
@@ -218,7 +214,7 @@ const EXECUTABLE_BITS = 0o111;
 /**
  * A tarball with a handful of files is a staging bug that would otherwise sail
  * through every exclusion. The floor is deliberately far below the real count
- * (~25 with an empty `plugins/`): it catches "nothing was staged", not drift.
+ * (~30): it catches "nothing was staged", not drift.
  */
 export const MINIMUM_PACKED_FILES = 15;
 
@@ -232,8 +228,8 @@ export const MINIMUM_PACKED_FILES = 15;
  * it — the whole semantic stack cost the tarball **+145,755 bytes (+4.7%)**,
  * almost all of it the server bundle (492 KiB → 584 KiB) carrying the embedding
  * engine's own code. Same 30 files: nothing new was staged. The ceiling is ~2.6×
- * that, which leaves ordinary UI and plugin growth alone and still trips on the
- * smallest artifact anyone proposed shipping.
+ * that, which leaves ordinary UI growth alone and still trips on the smallest
+ * artifact anyone proposed shipping.
  */
 export const MAXIMUM_PACKED_BYTES = 8 * 1024 * 1024;
 

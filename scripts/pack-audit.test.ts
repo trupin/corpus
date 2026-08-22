@@ -119,41 +119,11 @@ describe("the negative half", () => {
     expect(violations.join("\n")).toContain(offending);
   });
 
-  it("rejects a `.test.ts` even in a plugin's staged output", () => {
+  it("rejects a `.test.js` however deep in the staged output it sits", () => {
     const violations = auditPackedFiles(
-      cleanListing([{ path: "plugins/todos/dist/server/routes.test.js", mode: READ_ONLY }]),
+      cleanListing([{ path: "server/lifecycle/routes.test.js", mode: READ_ONLY }]),
     );
     expect(violations.join("\n")).toContain("routes.test.js");
-  });
-});
-
-/**
- * sprint-013 Adjudication 15 / TEST-64: the rule has to be proven in **both**
- * directions. A rule that excluded every plugin would pass the exclusion test
- * while being completely broken, so the admission half is asserted too.
- *
- * `plugins/todos` (PLUGINS-002) is the first real subject: sprint-014
- * TEST-290 drives the same two directions against an actual packed tarball,
- * and the listings below stay as the unit-level guard on the rule itself.
- */
-describe("the plugin rule", () => {
-  it("admits a built non-underscore plugin", () => {
-    const violations = auditPackedFiles(
-      cleanListing([
-        { path: "plugins/todos/dist/server/routes.js", mode: READ_ONLY },
-        { path: "plugins/todos/dist/cli/commands/add.js", mode: READ_ONLY },
-        { path: "plugins/todos/types.yaml", mode: READ_ONLY },
-        { path: "plugins/todos/skills/todos/SKILL.md", mode: READ_ONLY },
-      ]),
-    );
-    expect(violations).toEqual([]);
-  });
-
-  it("denies an underscore-prefixed dev fixture", () => {
-    const violations = auditPackedFiles(
-      cleanListing([{ path: "plugins/_fixture/dist/server/routes.js", mode: READ_ONLY }]),
-    );
-    expect(violations.join("\n")).toContain("plugins/_fixture/dist/server/routes.js");
   });
 });
 

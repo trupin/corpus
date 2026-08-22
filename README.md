@@ -108,14 +108,14 @@ from the command registry so it cannot drift from the binary.
 ## Contributing
 
 Corpus is an npm workspaces monorepo: `apps/server`, `apps/cli`, `apps/ui`, `packages/contract`,
-`packages/kit`, and `plugins/*`.
+and `packages/kit`.
 
 ```sh
 git clone https://github.com/trupin/corpus.git
 cd corpus
 npm install
 npm run setup-hooks     # one-time per clone: wires .githooks/ via core.hooksPath
-npm run build           # contract → kit → plugins → cli → server/ui
+npm run build           # contract → kit → cli → server/ui
 npm test
 ```
 

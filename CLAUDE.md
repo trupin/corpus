@@ -67,14 +67,13 @@ corpus/
     ui/                   # @corpus/ui — React board (+ e2e/ Playwright specs)
   packages/
     contract/             # @corpus/contract — zod-openapi route defs, generated openapi.json + typed client
-    kit/                  # @corpus/kit — plugin-facing UI kit
-  plugins/                # drop-in plugins (todos is the v1 reference plugin)
+    kit/                  # @corpus/kit — the shared UI kit apps/ui is built from
   assets/workspace/       # files `corpus init` copies into a new user workspace (product agent skills)
   .githooks/              # versioned git hooks (wired via `npm run setup-hooks`)
   scripts/                # repo tooling (TS, run via tsx)
 ```
 
-**Dependency direction: `packages/contract` ← `apps/server` / `apps/cli` / `packages/kit`; `packages/kit` ← `apps/ui`; `plugins/*` import only `@corpus/kit` + `@corpus/contract`. Never import upstream.**
+**Dependency direction: `packages/contract` ← `apps/server` / `apps/cli` / `packages/kit`; `packages/kit` ← `apps/ui`. Never import upstream. `apps/ui` reaches the server only through `@corpus/kit`, never `@corpus/contract/client` — ESLint enforces that one.**
 
 ## Multi-Agent Workflow
 
@@ -90,7 +89,6 @@ This project uses a multi-domain architecture with an orchestrator pattern.
 | **cli-dev**            | apps/cli               | `corpus` CLI: server lifecycle, queue verbs, agent-facing commands               |
 | **ui-dev**             | apps/ui + packages/kit | React board, document/thread views, @corpus/kit                                  |
 | **agent-runtime-dev**  | assets/workspace       | Product agent skills (orchestrate/comment), workspace template                   |
-| **plugins-dev**        | plugins/               | Plugin system extension points, todos reference plugin                           |
 | **infra-dev**          | root tooling           | Monorepo config, hooks, CI, packaging/release                                    |
 
 Agent definitions live in `.claude/agents/`. Each has a **Domain Knowledge** section — the durable home for domain-specific facts, decisions, and gotchas. When you or a domain agent learns something domain-specific worth keeping, record it there.
@@ -137,7 +135,6 @@ Implementation work defaults to **Opus** — don't spend Fable on tasks that don
 - Command surface, output formatting, server lifecycle management, long-poll parking → **cli-dev**.
 - Board, readers, editors, threads UI, kit components → **ui-dev**.
 - Product skills, stewardship rules, workspace scaffolding content → **agent-runtime-dev**.
-- Extension points, manifest/discovery, todos plugin → **plugins-dev**.
 - Hooks, CI, packaging, monorepo config → **infra-dev**.
 - A change spanning contract + one consumer is two issues with a dependency, not one issue.
 
@@ -270,7 +267,7 @@ Domain agents must never run `git commit`, `git push`, `git checkout`, `git rese
 - `npm run dev -w apps/cli` — runs the `corpus` bin from source via tsx. Dev servers (`npm run watch`: server + UI concurrently) arrive with the server/UI scaffolding issues.
 - `npm run version:check` — **version singularity** (INFRA-008): the root `package.json`'s `version` is the single source and every workspace must equal it. It checks **two trees** — the working tree and the committed tree (INFRA-022) — because a bump that rewrites disk but commits only the root passed the working-tree-only check while the tag it created failed CI. Runs in pre-push (the one check that survived INFRA-025 there, because a bad `v*` tag is already published by the time CI reports it) and CI; in the release workflow it also reads `GITHUB_REF`, so a `v1.2.3` tag against a differently-versioned manifest fails there instead of half-publishing
 - `npm run release:prepare <x.y.z> ["headline"]` — the only supported way to bump (INFRA-022): refuses a dirty tree or an existing tag, bumps every manifest with `--no-git-tag-version`, stages them by name, makes one `[RELEASE] v<x.y.z> — headline` commit, re-reads the versions **out of that commit**, and only then tags. Pushes nothing. See `docs/RELEASING.md`, which also carries the recovery for a pushed tag whose release failed
-- `npm run package:build` — assembles the single publishable package into `dist-package/` (gitignored): esbuild bundles the CLI and the server with every `@corpus/*` import **inlined** and every third-party import left external, then stages `apps/ui/dist` → `ui/`, `assets/workspace/`, and any built non-underscore plugin. Run `npm run build` first — it bundles from built output. The published manifest is generated, so no workspace manifest is ever mutated by a pack
+- `npm run package:build` — assembles the single publishable package into `dist-package/` (gitignored): esbuild bundles the CLI and the server with every `@corpus/*` import **inlined** and every third-party import left external, then stages `apps/ui/dist` → `ui/` and `assets/workspace/`. Run `npm run build` first — it bundles from built output. The published manifest is generated, so no workspace manifest is ever mutated by a pack
 - `npm run pack:check` — audits the tarball `npm pack` would produce from `dist-package/`, in **both** directions: every artifact the installed tool resolves must be present, and no development state may leak. Rules live in `scripts/pack-audit.ts`. Wired into CI; deliberately not in pre-push (it builds and packs, too slow for a push)
 - `npm run publish:dry-run` — `npm publish --dry-run` over the staged package. Nothing has been published: the package name is **provisional** (`corpus` and `corpus-cli` are taken on npm — sprint-013 Adjudication 9) and there is no `NPM_TOKEN`. A real release is a user decision, made by pushing a `v*` tag once both are settled
 

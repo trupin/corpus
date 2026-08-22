@@ -574,12 +574,6 @@ SPEC.md §10's “pin me a view of unresolved finance threads”, in one command
 corpus doc create --type view --title "Unresolved finance" --folder views --evergreen true --pinned true --order 4 --query type=thread --query status=open --query tag=finance --from agent
 ```
 
-A plugin column: the same pinned view document, rendered by the plugin's own column type (SPEC.md §10). An uninstalled plugin keeps the position and shows the plugin-missing card.
-
-```
-corpus doc create --type view --title "Todos" --folder views --evergreen true --pinned true --order 5 --column todos/todos
-```
-
 Body from a file; one JSON value — `{"doc":{…},"warnings":[]}` — for a caller that needs the id.
 
 ```

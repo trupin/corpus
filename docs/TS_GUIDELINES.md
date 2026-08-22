@@ -1,6 +1,6 @@
 # TypeScript Guidelines
 
-Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `apps/ui`, `packages/contract`, `packages/kit`, `plugins/*`). Every domain agent must read this file before writing code. Domain agents point here instead of duplicating rules — if a rule needs changing, change it here (orchestrator approval required, since it affects every domain).
+Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `apps/ui`, `packages/contract`, `packages/kit`). Every domain agent must read this file before writing code. Domain agents point here instead of duplicating rules — if a rule needs changing, change it here (orchestrator approval required, since it affects every domain).
 
 ## Language & module system
 
@@ -32,7 +32,7 @@ Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `ap
 
 - **Colocate by feature, not by kind.** A feature's implementation, types, helpers, and tests live in the same directory. Ask: "can two agents work on two features without touching the same files?"
 - Keep types and constants next to the code that uses them. `utils.ts` grab-bags are forbidden; a shared helper earns a named module (`slug.ts`, `time.ts`).
-- **Respect the dependency direction** (see CLAUDE.md): `packages/contract` ← `apps/server` / `apps/cli` / `packages/kit`; `packages/kit` ← `apps/ui`; `plugins/*` import only `@corpus/kit` and `@corpus/contract`. Never import upstream; never deep-import another workspace's `src/` (use its package entry points).
+- **Respect the dependency direction** (see CLAUDE.md): `packages/contract` ← `apps/server` / `apps/cli` / `packages/kit`; `packages/kit` ← `apps/ui`. Never import upstream; never deep-import another workspace's `src/` (use its package entry points). `apps/ui` reaches the server only through `@corpus/kit` — never `@corpus/contract/client`, which builds a transport that bypasses the kit's cache. ESLint enforces that last one.
 - Named exports only. Default exports are allowed solely where a framework requires them (e.g. config files, React lazy routes).
 
 ## Building & cross-workspace imports

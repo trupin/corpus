@@ -50,11 +50,11 @@ describe("selectWorkspaceManifests", () => {
 
   // The point of the whole `unsupported` channel: npm accepts these, this
   // selector does not resolve them, and the difference must be loud.
-  it.each(["plugins/**", "apps/{cli,server}", "!plugins/_fixture", "apps/pkg-*", "*"])(
+  it.each(["tools/**", "apps/{cli,server}", "!apps/_fixture", "apps/pkg-*", "*"])(
     "reports %s as unsupported rather than silently selecting nothing",
     (glob) => {
       expect(isSupportedWorkspaceGlob(glob)).toBe(false);
-      const selection = selectWorkspaceManifests([glob], ["plugins/todos/package.json"]);
+      const selection = selectWorkspaceManifests([glob], ["tools/probe/package.json"]);
       expect(selection.selected).toEqual([]);
       expect(selection.unsupported).toEqual([glob]);
     },
@@ -62,11 +62,11 @@ describe("selectWorkspaceManifests", () => {
 
   it("keeps resolving the globs it understands alongside one it does not", () => {
     const selection = selectWorkspaceManifests(
-      ["apps/*", "plugins/**"],
-      ["apps/cli/package.json", "plugins/todos/package.json"],
+      ["apps/*", "tools/**"],
+      ["apps/cli/package.json", "tools/probe/package.json"],
     );
     expect(selection.selected).toEqual(["apps/cli/package.json"]);
-    expect(selection.unsupported).toEqual(["plugins/**"]);
+    expect(selection.unsupported).toEqual(["tools/**"]);
   });
 });
 
@@ -201,8 +201,8 @@ describe("reading a real repository", () => {
 
   it("fails the check on a glob it cannot resolve, instead of covering less than it claims", () => {
     // A drifted workspace *inside* the unresolvable glob: the old selector
-    // returned nothing for `plugins/**` and the check went green over it.
-    write("plugins/todos/package.json", "9.9.9");
+    // returned nothing for `tools/**` and the check went green over it.
+    write("tools/probe/package.json", "9.9.9");
     writeFileSync(
       join(repo, "package.json"),
       `${JSON.stringify(
@@ -210,25 +210,25 @@ describe("reading a real repository", () => {
           name: "scratch-root",
           private: true,
           version: "0.1.0",
-          workspaces: ["apps/*", "packages/*", "plugins/**"],
+          workspaces: ["apps/*", "packages/*", "tools/**"],
         },
         null,
         2,
       )}\n`,
     );
     git("add", "-A");
-    git("commit", "-qm", "add a plugins workspace under a glob form we do not resolve");
+    git("commit", "-qm", "add a workspace under a glob form we do not resolve");
 
     const result = check();
     expect(result.ok).toBe(false);
     expect(result.problems).toEqual([
-      'working tree and committed tree (HEAD): the workspaces glob "plugins/**" is not a form ' +
+      'working tree and committed tree (HEAD): the workspaces glob "tools/**" is not a form ' +
         "this check resolves, so any workspace it selects is unchecked — declare it as an exact " +
         "path or `<dir>/*`, or teach scripts/version-sources.ts the form",
     ]);
     // And it is not a false alarm: the workspace really was going unchecked.
     expect(readWorkingTreeSource(repo).workspaces.map((manifest) => manifest.path)).not.toContain(
-      "plugins/todos/package.json",
+      "tools/probe/package.json",
     );
   });
 

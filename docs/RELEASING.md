@@ -90,7 +90,7 @@ Fix what the gate reported, commit that fix like any other change, and run the s
 itself failed, or you interrupted the run — the message names the command that clears them:
 
 ```sh
-git restore --staged --worktree -- package.json package-lock.json apps/*/package.json packages/*/package.json plugins/*/package.json
+git restore --staged --worktree -- package.json package-lock.json apps/*/package.json packages/*/package.json
 ```
 
 Committing them instead produces a commit with neither the `[RELEASE]` subject nor a tag, which is
@@ -103,7 +103,7 @@ Two other stops need a decision rather than a retry:
   it is a change to review, not to smuggle into a commit whose subject promises a version bump and
   nothing else. Run `npm install`, commit the lockfile on its own, then re-run.
 - **`cannot resolve every workspaces glob`** — the root manifest declares a `workspaces` entry the
-  version guard does not resolve (`plugins/**`, `apps/{a,b}`, `!plugins/_fixture`). npm would bump
+  version guard does not resolve (`tools/**`, `apps/{a,b}`, `!apps/_fixture`). npm would bump
   the workspaces it selects; nothing would stage or check them. Declare them as an exact path or
   `<dir>/*`, or teach `scripts/version-sources.ts` the form.
 
