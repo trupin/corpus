@@ -18,6 +18,7 @@
 // for types that own their own field. Deleting the plugin restores the stored
 // values to authority, which is exactly §15 M6's subtractive check.
 
+import type { UpdateDocRequest } from "@corpus/contract";
 import {
   parseDocument,
   readExtraFrontmatter,
@@ -89,6 +90,70 @@ export function convergeDocumentFields(
   if (derivedFields.due.derives(type)) patch["due"] = resolveDocumentDue(input);
 
   return setFrontmatterFields(parsed, patch);
+}
+
+/**
+ * The §12 core fields a caller can name on `PUT /api/docs/{id}` and a plugin can
+ * derive — the intersection of `UPDATABLE_FRONTMATTER_KEYS` and
+ * {@link DerivedFieldsRegistry}'s members. A third derived field joins this list
+ * and {@link convergeDocumentFields} together, and {@link overwrittenDerivedFields}
+ * needs nothing else.
+ */
+export const DERIVED_CORE_FIELDS = [
+  "status",
+  "due",
+] as const satisfies readonly (keyof UpdateDocRequest & keyof DerivedFieldsRegistry)[];
+
+/**
+ * Which of the fields a write **asked for** the convergence would take back —
+ * the honesty guard on the save path (PR #55 review, MINOR).
+ *
+ * A `PUT` that sets `status` or `due` on a derived type used to answer `200`
+ * while changing nothing: `changedFields` accepted the patch (the stored value
+ * really did differ from the requested one), the write was planned, and then
+ * {@link convergeDocumentFields} put the derived value back before the bytes
+ * landed — leaving a commit whose whole diff was the `updated` stamp, a caller
+ * told it had succeeded, and §5's staleness clock reset for nothing.
+ *
+ * **The question is asked of the convergence itself, over the document the patch
+ * would produce.** That is the only formulation that separates *asking to change
+ * the field* from *echoing it back*, and it separates several other pairs for
+ * free, with no rule restated here:
+ *
+ * - The board publishes whole documents, so a save re-sending the value the
+ *   reader was shown is the common case. Almost always `changedFields` has
+ *   already dropped it — every server write converges the file, so the shown
+ *   value *is* the stored one. When the file is stale (a body edited out of band,
+ *   a plugin installed after the fact) the echo survives that far, the
+ *   convergence answers the same value the caller sent, and the save proceeds
+ *   and heals the file. Nothing the caller asked for is refused, because nothing
+ *   it asked for is being ignored.
+ * - `status: archived` stays writable, as SERVER-039 requires. Archiving says
+ *   where a document is kept, which is §12's own carve-out: handed a stored
+ *   `archived`, every derivation declines and the requested value stands.
+ * - So does any field on a document the derivation declines for at all — an
+ *   archived list's `due`, a list whose items cannot be read. The convergence
+ *   leaves those alone, so this leaves them alone.
+ *
+ * Returns the field names in {@link DERIVED_CORE_FIELDS} order. Empty is the
+ * answer for every document no plugin derives, and the caller reaches this only
+ * for a patch that names one of the fields at all — an autosave of a body pays
+ * nothing.
+ */
+export function overwrittenDerivedFields(
+  path: string,
+  next: ParsedDocument,
+  requested: Readonly<Record<string, unknown>>,
+  derivedFields: DerivedFieldsRegistry,
+): readonly string[] {
+  const named = DERIVED_CORE_FIELDS.filter((key) => Object.hasOwn(requested, key));
+  if (named.length === 0) return [];
+  const converged = convergeDocumentFields(path, next, derivedFields);
+  // Identity is `setFrontmatterFields`' own answer for "every derived value is
+  // already what this document states" — so the requested values, which are in
+  // `next` by construction, are the derived ones.
+  if (converged === next) return [];
+  return named.filter((key) => converged.data[key] !== requested[key]);
 }
 
 /**

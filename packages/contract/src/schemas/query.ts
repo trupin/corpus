@@ -381,8 +381,11 @@ const threadRowShape = {
         "thread (no `parent` at all) and must not be labelled as one.",
     ),
   agent: ThreadAgentSchema.nullable().describe(
-    `Agent participation state (${THREAD_AGENT_STATES.join(", ")}, SPEC.md §6, §8), backing the ` +
-      "pending-agent indicator. Null on non-threads.",
+    `Agent participation state (${THREAD_AGENT_STATES.join(", ")}, SPEC.md §6, §8) — the ` +
+      "`agent=` filter's column. It only ever climbs, and nothing lowers it again, so it says " +
+      "what this thread's history contains and never what the queue is holding now: the " +
+      "pending-agent indicator is `awaitingAgent`, which asks the queue instead. Null on " +
+      "non-threads.",
   ),
   anchorQuote: z
     .string()
@@ -419,8 +422,23 @@ const threadRowShape = {
     .boolean()
     .nullable()
     .describe(
-      "True when the agent has been drawn into an open thread and the last turn is not yet its " +
-        "reply — the pending-agent indicator (SPEC.md §8). Null on non-threads.",
+      "True when the queue still owes this thread something — the pending-agent indicator " +
+        "(SPEC.md §8, §11). **It is a question about the queue, not about the thread**: true " +
+        "exactly when some event in a non-terminal status (`pending`, `in-progress` or " +
+        "`deferred`, SPEC.md §7 — `deferred` included, since a job parked while somebody edits " +
+        "is still owed) carries this thread's id as a top-level value of its payload. The " +
+        "payload is matched by value rather than by a fixed key list (`threadId`, `parentId`, " +
+        "…), the same way the `failed-job` attention reason matches one, so an event type " +
+        "defined by a plugin that names this thread under its own key lights the indicator with " +
+        "no server change (SPEC.md §7, §10). **It reads no thread state, deliberately** — not " +
+        "`agent`, not `status`, not `lastAuthor`. In particular resolving a thread does not " +
+        "clear it, because resolving cancels no queued event: the missing `status` test is the " +
+        "rule here, not an omission. A note-only turn enqueues nothing, so it never sets this. " +
+        "**Not a duplicate of a `GET /api/jobs` scan**, which asks a different question of the " +
+        "same source: separating SPEC.md §8's *working* from *waiting* needs each job's own " +
+        "`status` and `lastLine`, which a boolean cannot carry, and that scan is bounded by one " +
+        "response's worth of unfinished jobs where this column is unwindowed. Null on " +
+        "non-threads.",
     ),
 } as const;
 

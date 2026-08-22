@@ -351,16 +351,18 @@ describe("a derived due date converges into the file too (PLUGINS-018, SERVER-13
     expect(rowDue(todo.id)).toBeNull();
   });
 
-  it("refuses to be set by hand: a `due` a PUT carries is overwritten by the items", async () => {
+  it("refuses to be set by hand: a `due` a PUT carries is the items' to answer", async () => {
     // PLUGINS-018 decision 3 — the derived value wins, and "hand-written wins"
     // is not implementable for a shadow field. A person puts a deadline on an
-    // item, which is what §12's model already asks of them.
+    // item, which is what §12's model already asks of them. What changed with
+    // PR #55's review is only *how* the caller is told: this used to answer 200
+    // and quietly overwrite them.
     openWorkspace();
     const todo = await seedTodo(DATED);
     ws.advance(60_000);
 
     const response = await putDoc(ws, todo.id, { due: "2030-01-01" });
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
     expect(storedDue(todo.path)).toBe("2026-07-09");
     expect(rowDue(todo.id)).toBe("2026-07-09");
   });
@@ -425,5 +427,186 @@ describe("a derived due date converges into the file too (PLUGINS-018, SERVER-13
     }
     // An undated list is not due today either.
     expect(await listed("due=today")).not.toContain(undated.id);
+  });
+});
+
+// PR #55 review, MINOR. A `PUT` naming a derived field used to answer 200 while
+// `convergeDerivedFields` put the derived value back before the bytes landed —
+// so the caller was told it had succeeded, the only thing in the commit was the
+// `updated` stamp, and §5's staleness clock reset for a request nothing acted
+// on. The refusal is `assertNotUnarchivingByPut`'s sibling, and everything here
+// turns on one question: can it tell *asking to change the field* from *echoing
+// it back*, which is what the board does on every save.
+describe("a save may not set a field §12 makes the document's own (PR #55)", () => {
+  const DATED = "- [ ] call the dentist (due: 2026-07-09)\n";
+
+  const issuePaths = async (response: Response): Promise<string[]> => {
+    const payload = (await response.json()) as { issues?: { path: string }[] };
+    return (payload.issues ?? []).map((issue) => issue.path);
+  };
+
+  it("refuses a `status` the items answer for, and writes nothing at all", async () => {
+    openWorkspace();
+    const todo = await seedTodo();
+    ws.advance(60_000);
+    const bytes = ws.read(todo.path);
+    const before = commitCount();
+
+    const response = await putDoc(ws, todo.id, { status: "resolved" });
+
+    expect(response.status).toBe(400);
+    expect(await issuePaths(response)).toEqual(["body.status"]);
+    // Byte-for-byte: not even the `updated` stamp moved, which is the half of
+    // this defect that fed the Attention view.
+    expect(ws.read(todo.path)).toBe(bytes);
+    expect(commitCount()).toBe(before);
+    expect(rowStatus(todo.id)).toBe("open");
+  });
+
+  it("refuses a `due` the items answer for, and writes nothing at all", async () => {
+    openWorkspace();
+    const todo = await seedTodo(DATED);
+    ws.advance(60_000);
+    const bytes = ws.read(todo.path);
+    const before = commitCount();
+
+    const response = await putDoc(ws, todo.id, { due: "2030-01-01" });
+
+    expect(response.status).toBe(400);
+    expect(await issuePaths(response)).toEqual(["body.due"]);
+    expect(ws.read(todo.path)).toBe(bytes);
+    expect(commitCount()).toBe(before);
+  });
+
+  it("refuses a `due: null` that would clear a deadline the items still carry", async () => {
+    // The clearing spelling, which is a different value from every date and had
+    // to be compared as one: `due` is a §5 canonical-block field whose `null` is
+    // written rather than removed, so the guard asks the convergence about a
+    // `null` exactly as it asks about a date.
+    openWorkspace();
+    const todo = await seedTodo(DATED);
+    ws.advance(60_000);
+    const bytes = ws.read(todo.path);
+
+    const response = await putDoc(ws, todo.id, { due: null });
+
+    expect(response.status).toBe(400);
+    expect(await issuePaths(response)).toEqual(["body.due"]);
+    expect(ws.read(todo.path)).toBe(bytes);
+  });
+
+  it("lets a `due: null` through once the items carry no deadline", async () => {
+    openWorkspace();
+    const todo = await seedTodo("- [ ] buy milk\n");
+    ws.advance(60_000);
+    expect(storedDue(todo.path)).toBe("null");
+
+    // Nothing to overwrite, so nothing to refuse — and nothing to write either.
+    const before = commitCount();
+    const response = await putDoc(ws, todo.id, { due: null });
+
+    expect(response.status).toBe(200);
+    expect(commitCount()).toBe(before);
+  });
+
+  it("names both fields when a patch sets both", async () => {
+    openWorkspace();
+    const todo = await seedTodo(DATED);
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, todo.id, { status: "resolved", due: "2030-01-01" });
+
+    expect(response.status).toBe(400);
+    expect(await issuePaths(response)).toEqual(["body.status", "body.due"]);
+  });
+
+  it("refuses nothing a title edit carries alongside an unchanged status", async () => {
+    // The board publishes whole documents, so this is the common save. It never
+    // reaches the guard — `changedFields` drops a value equal to the file's,
+    // and every server write has already converged the file.
+    openWorkspace();
+    const todo = await seedTodo();
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, todo.id, {
+      title: "Errands and more",
+      status: "open",
+      due: null,
+    });
+
+    expect(response.status).toBe(200);
+    expect(/^title: (.+)$/m.exec(ws.read(todo.path))?.[1]).toBe("Errands and more");
+  });
+
+  it("lets an echo through when the file is stale, and heals the file with it", async () => {
+    // The one case where a value the reader was shown is *not* the stored one:
+    // an out-of-band edit moved the items and no server write has converged the
+    // file since. The caller sends what it was shown, the convergence agrees
+    // with it, and nothing it asked for is being ignored — so the save stands.
+    openWorkspace();
+    const todo = await seedTodo();
+    ws.write(todo.path, ws.read(todo.path).replace("- [ ] renew", "- [x] renew"));
+    ws.reproject();
+    expect(storedStatus(todo.path)).toBe("open");
+    expect(rowStatus(todo.id)).toBe("resolved");
+
+    ws.advance(60_000);
+    const response = await putDoc(ws, todo.id, { status: "resolved" });
+
+    expect(response.status).toBe(200);
+    expect(storedStatus(todo.path)).toBe("resolved");
+    expect(rowStatus(todo.id)).toBe("resolved");
+  });
+
+  it("still lets a PUT archive a derived document (SERVER-039)", async () => {
+    // §12's own carve-out: archiving says where a document is kept, which no
+    // reading of its items can imply. Handed a stored `archived` every
+    // derivation declines, so the requested value stands and the guard is silent.
+    openWorkspace();
+    const todo = await seedTodo();
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, todo.id, { status: "archived" });
+
+    expect(response.status).toBe(200);
+    expect(storedStatus(todo.path)).toBe("archived");
+    expect(rowStatus(todo.id)).toBe("archived");
+  });
+
+  it("lets a `due` through on an archived list, where the derivation declines", async () => {
+    openWorkspace();
+    const todo = await seedTodo(DATED);
+    ws.advance(60_000);
+    expect((await ws.post(`/api/docs/${todo.id}/archive`, {})).status).toBe(200);
+
+    ws.advance(60_000);
+    const response = await putDoc(ws, todo.id, { due: "2030-01-01" });
+
+    expect(response.status).toBe(200);
+    expect(storedDue(pathOf(todo.id))).toBe("2030-01-01");
+  });
+
+  it("refuses nothing on a type no plugin declares", async () => {
+    openWorkspace();
+    const note = await seedTodo(DATED, "note");
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, note.id, { status: "resolved", due: "2030-01-01" });
+
+    expect(response.status).toBe(200);
+    expect(storedStatus(note.path)).toBe("resolved");
+    expect(storedDue(note.path)).toBe("2030-01-01");
+  });
+
+  it("refuses nothing when the plugin is gone (§15 M6)", async () => {
+    openWorkspace({ plugins: false });
+    const todo = await seedTodo(DATED);
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, todo.id, { status: "resolved", due: "2030-01-01" });
+
+    expect(response.status).toBe(200);
+    expect(storedStatus(todo.path)).toBe("resolved");
+    expect(storedDue(todo.path)).toBe("2030-01-01");
   });
 });

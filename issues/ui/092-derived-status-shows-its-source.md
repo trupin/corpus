@@ -321,6 +321,154 @@ working in both directions.
 free**; 8765 still held by the user's own server, untouched. No `vitest`,
 `playwright`, `chromium` or `vite` process left behind.
 
+## E2E Verification Log — PR #55 review, finding 1 (CRITICAL) + finding 6
+
+**Model: Opus 5 (1M context).** Branch `phase-40-derived-status`. Nothing was
+committed by this agent.
+
+### The defect, reproduced first, against a real server
+
+The reviewer's scenario, run before a line was changed. Workspace `init`ed in a
+scratch directory on port **8791** (the user's live server on 8765 was never
+touched), Vite dev on **5373** proxying to it, Chromium via Playwright.
+
+```
+corpus server start                   → corpus 0.16.0 listening on 127.0.0.1:8791 (pid 58210)
+corpus doc create --type todo --title "Reproduction list" \
+  -m "- [ ] call the plumber (due: 2026-08-04)\n- [ ] file the form (due: 2026-09-30)"
+                                      → created doc_dhcgks7l
+data/docs/inbox/reproduction-list.md  → due: 2026-08-04     (SERVER-134 wrote it)
+```
+
+Opened the document in its column reader and read the `due` field:
+
+```
+file due before        : due: 2026-08-04
+due control exists     : 1
+due control disabled   : false            ← live, on a field the server derives
+due control value      : 2026-08-04
+due field statements   : 0                ← no statement
+due field hint         : (none)           ← nothing says where the value came from
+
+--- typing 2030-01-01 into the due field ---
+PUTs sent               : ["{\"due\":\"2030-01-01\"}"]     ← isDeliberate fires at once
+due control value after : 2026-08-04                        ← snapped back
+file due after          : due: 2026-08-04                   ← convergence won
+due control value +2s   : 2026-08-04
+file due +2s            : due: 2026-08-04
+```
+
+**No error, no explanation, deadline not set** — exactly as reported. The
+document also appeared in the Attention column throughout, on the derived date
+the person had just tried to replace.
+
+### What was built
+
+- `apps/ui/src/doc/fieldLock.ts` — `statusLock.ts` renamed, because the module is
+  now the derived-field seam rather than the status one. Same exports, plus
+  `dueLock` / `formDueLock` / `useFormDueLock` in `statusLock`'s two-function
+  shape: a declaration-level predicate over `{type, status}`, and a form-level
+  one holding the `Doc` that may only **narrow** it. `StatusSubject` →
+  `FieldSubject`.
+- `apps/ui/src/reader/FrontmatterForm.tsx` — a `derived` `due` lock renders
+  `<output class="fm-statement">` carrying the server's value, or the words
+  `no deadline` for `DerivedDocDue`'s middle answer. `changedFields` grew a
+  `dueLocked` guard, beside the archive-boundary one and for its stated reason:
+  the control is not the only path to the wire. `Field` carries `data-field`.
+- `apps/ui/src/plugins/validate.ts` — finding 6: `deriveDue` is checked exactly
+  as `deriveStatus` is, so a manifest carrying `deriveDue: "x"` is refused whole
+  rather than loaded halfway.
+- `apps/ui/e2e/stubCorpus.ts` — `StubRow.due`, stored, reported on the row and
+  the document, and updatable through `PUT`. It was flatly `null`, so no spec
+  could put a **date** in front of a surface that shows one (UI-085's lesson, one
+  field over).
+- `apps/ui/e2e/derived-due.spec.ts` — 4 specs. `derived-status.spec.ts`'s
+  locators scoped to `[data-field="status"]`, which two statements now require.
+
+### One predicate, not two
+
+`formDueLock` calls `dueLock` and can only release its answer, pinned by the
+same property case `formStatusLock` carries — *locks nothing the shared
+predicate left open*. The two members differ on exactly one thing, and it is
+stated at both sites: **archiving is a fact about `status`, not about `due`.**
+`statusLock` returns an `archived` lock; `dueLock` returns `null`, because
+`PluginDocType` rule 2 makes an archived document a state every derivation
+declines, and where one declines "the stored value stands".
+
+The three-valued contract is never composed with the two-valued one. Nothing in
+`apps/ui` combines a derived value with a stored one: `formDueLock` asks only
+*whether the derivation applies*, and the statement shows `doc.frontmatter.due`,
+which is what the server wrote.
+
+### Unit tests
+
+```
+vitest run apps/ui/src/doc/fieldLock.test.ts           → 33 passed
+vitest run apps/ui/src/reader/FrontmatterForm.test.tsx → 61 passed
+vitest run apps/ui/src/plugins apps/ui/src/menu        → 13 files, 172 passed
+vitest run apps/ui                                     → 155 files, 3408 passed
+tsc --noEmit -p apps/ui                                → clean
+eslint + prettier on every touched file                → clean
+```
+
+### Falsification — six mutations, each caught
+
+| Mutation | What failed |
+| --- | --- |
+| `formDueLock` reads `{due: null}` as *does not apply* (the `??` collapse) | 4 tests, incl. `keeps the lock where the derivation applies and there is no deadline` and the e2e flip |
+| `dueLock` locks an archived document too | `hands an archived document's deadline back — archiving is a fact about status` |
+| `changedFields`' `dueLocked` guard removed | `drops a date typed before the lock engaged, on every path to the wire` |
+| `deriveDue` dropped from the manifest schema (the pre-fix state) | `fails a deriveDue that is not a function — every member of the seam, or none` |
+| The pre-fix live date control rendered anyway | 3 unit cases + 2 of the 4 e2e specs (`element(s) not found`) |
+| `.fm-statement { width: max-content }` (SHARED-057) | both geometry cases: `due` reports **91.89px → 85.88px** across `2026-09-30` → `no deadline`, and `status` still reports the documented `47.3 → 67.9` |
+
+### Playwright, against the real UI (`CORPUS_UI_PORT=5273`, `--workers=1`)
+
+```
+e2e/derived-due.spec.ts + e2e/derived-status.spec.ts   → 8 passed (15.5s)
+```
+
+### Real-app drill — the fix, on the same running server
+
+Same workspace, same document, after the change:
+
+```
+due control exists     : 0                ← no control at all
+due statement count    : 1
+due statement text     : 2026-08-04
+status statement text  : open
+due field hint         : derived from this document’s own content, so it is nobody’s to set
+```
+
+Then the derivation driven from the body, through the real editor, with the file
+read back after each click:
+
+```
+1. derived todo — checking the last dated item
+   file            : due: 2026-08-04   | statement: "2026-08-04"
+   after 1 checked : file due: 2026-09-30 | statement: "2026-09-30"
+   after 2 checked : file due: null       | statement: "no deadline"
+   status field    : statement: "resolved"
+   restored        : due: 2026-08-04      | statement: "2026-08-04"
+
+2. archived todo (doc_jb2nplfs) — the deadline is the person's again
+   due field       : control: value="2026-11-01" disabled=false
+   status field    : control: value="archived"   disabled=true
+
+3. a note (doc_y6qiwyrd) — nothing changed for a type nothing derives
+   due field       : control: value="" disabled=false
+   PUTs            : ["{\"due\":\"2026-12-24\"}"]
+   due field       : control: value="2026-12-24" disabled=false   ← it lands and stays
+```
+
+The statement tracks the file on every step, and the two documents that derive
+nothing keep an ordinary, writable date control.
+
+### Teardown
+
+Scratch server stopped, Vite killed, ports **5373 / 5273 / 8791 free**. 8765 is
+still held by the user's own server and was never touched.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing
