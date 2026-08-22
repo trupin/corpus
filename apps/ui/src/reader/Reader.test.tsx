@@ -341,17 +341,30 @@ describe("Reader", () => {
     });
   });
 
-  it("leaves Escape to the title field while a draft is unsaved", async () => {
+  /**
+   * There is no draft to revert any more (UI-093), so Escape does what it does
+   * in the body: the first press leaves the field, the second reaches the chain.
+   * Nothing the person typed is undone by either — the title saves itself.
+   */
+  it("leaves the title field on Escape before it closes the reader", async () => {
     const { container } = render(<Host wire={fullWire()} />);
     await showsTitle(container, "Mortgage options");
 
     const title = container.querySelector(".doc-title") as HTMLTextAreaElement;
+    title.focus();
     fireEvent.change(title, { target: { value: "Half a thought" } });
     fireEvent.keyDown(title, { key: "Escape" });
 
-    // The draft reverted; the reader did not close underneath the user.
+    // Out of the field, and the reader did not close underneath the user.
+    expect(document.activeElement).not.toBe(title);
     expect(container.querySelector(".reader")).not.toBeNull();
-    expect(titleOf(container)).toBe("Mortgage options");
+    // The typed title stands: Escape is not a revert.
+    expect(titleOf(container)).toBe("Half a thought");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => {
+      expect(container.querySelector(".reader")).toBeNull();
+    });
   });
 
   it("lists backlinks from the references filter, and pushes when one is followed", async () => {

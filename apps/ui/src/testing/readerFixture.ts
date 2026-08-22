@@ -3,6 +3,7 @@ import type {
   AgentRoster,
   Doc,
   DocRow,
+  DocStatus,
   Job,
   QueueStatus,
   RelatedDoc,
@@ -427,7 +428,14 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       const doc = docs.get(id);
       if (doc === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
       if (request.method === "PUT") {
-        const changes = (call.body ?? {}) as { body?: string; key?: string };
+        const changes = (call.body ?? {}) as {
+          body?: string;
+          key?: string;
+          title?: string;
+          tags?: string[];
+          status?: DocStatus;
+          due?: string | null;
+        };
         /*
          * SPEC.md §7's check, in the shape the server performs it: a write that
          * replaces the body presents the key of the version it read, and a key
@@ -445,8 +453,30 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
             409,
           );
         }
-        const written: Doc =
-          changes.body === undefined ? doc : { ...doc, body: changes.body, key: nextDocumentKey() };
+        /*
+         * **The frontmatter delta is applied**, not echoed back unchanged. A
+         * live control reads its value from the document the response carries
+         * (UI-093's read-your-write), so a stub that answered with the document
+         * as it was would make every landed save look like it had been reverted
+         * — and would let a form that dropped the person's value pass.
+         *
+         * The key moves only for a body write, which is narrower than the
+         * server (where the key names the whole file). That is deliberate: the
+         * conflict suites choose their own keys through `writeAsOther`, and a
+         * key that also moved on a title edit would refuse body saves those
+         * tests never asked about.
+         */
+        const written: Doc = {
+          ...doc,
+          ...(changes.body === undefined ? {} : { body: changes.body, key: nextDocumentKey() }),
+          frontmatter: {
+            ...doc.frontmatter,
+            ...(changes.title === undefined ? {} : { title: changes.title }),
+            ...(changes.tags === undefined ? {} : { tags: changes.tags }),
+            ...(changes.status === undefined ? {} : { status: changes.status }),
+            ...(changes.due === undefined ? {} : { due: changes.due }),
+          },
+        };
         docs.set(id, written);
         return json({ doc: written, anchors: { remapped: [], orphaned: [] }, warnings: [] });
       }

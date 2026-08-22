@@ -1,29 +1,56 @@
 import { DOC_STATUSES, type Doc, type DocStatus, type UpdateDocRequest } from "@corpus/contract";
-import { folderOf, useUpdateDoc, type RowNotice } from "@corpus/kit";
-import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { docKey as docQueryKey, folderOf, useUpdateDoc, type RowNotice } from "@corpus/kit";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
 import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
+import { SaveChipView } from "../editor/SaveChip";
+import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
 
 /**
  * Frontmatter as the small form SPEC.md §11 asks for — title, tags, status,
  * due — over the prototype's `.fm-chips` strip.
  *
- * **One draft, one write.** The title is a field styled as the document's `h1`
- * (the prototype edits it in place), and it belongs to the *same* draft as the
- * three fields below it, so editing all four and saving issues one `PUT`
- * carrying only the keys that actually changed. That is not a nicety: the server
- * compares untouched keys structurally and leaves their bytes alone (SERVER-001),
- * and a form that re-sent every field would defeat that guarantee from the
- * client side.
+ * **Under the body's rule, not beside it: no edit mode, no save button**
+ * (SHARED-030, signed 2026-08-12). The controls are live wherever the document
+ * is shown, and a change commits where it is made. There was an `edit` chip, a
+ * draft and a Save button here until UI-093, which meant changing a status cost
+ * three clicks on a surface whose neighbouring body accepts a keystroke.
  *
- * The body is **not** here. UI-006 brings the always-editable document with its
+ * **One patch, one write.** Every control writes into one *local* map of the
+ * fields the person has touched; the request carries only what differs from the
+ * document, and only one request is ever on the wire. That is not a nicety: the
+ * server compares untouched keys structurally and leaves their bytes alone
+ * (SERVER-001), and four controls each firing their own `PUT` would defeat that
+ * guarantee from the client side and race each other besides.
+ *
+ * **When a change is sent** is the one thing this form decides, and it decides
+ * it per *change*, not per control — see {@link isDeliberate}. Nothing here
+ * chooses a cadence: the debounce is `AUTOSAVE_DEBOUNCE_MS`, imported from the
+ * body's autosave, because §11 says frontmatter is "debounced exactly as the
+ * body's autosave is" and a second constant is how two rules that agree on the
+ * day they were written stop agreeing.
+ *
+ * **Nothing here squashes commits.** Two fields changed a second apart are two
+ * writes, and §4's open commit window is what makes them one commit — the same
+ * window that already joins them to a body edit made in the same sitting. A
+ * batching window of this form's own would be that rule written twice.
+ *
+ * The body is **not** here. UI-006 owns the always-editable document with its
  * own autosave; this form deliberately stops at frontmatter so there is one
  * writer per concern.
  *
- * **The draft outlives no surface.** Enter and Save are not the only ways a
- * frontmatter edit reaches the corpus: leaving the document flushes it, on the
+ * **The local map outlives no surface.** Leaving the document flushes it, on the
  * same seams the abandon rule (SPEC.md §11) watches — the reader unmounting or
  * rebinding, and `pagehide`. Without that, a user who typed a title and left
  * (which is the gesture §11 describes as primary — "title selected, ready to
@@ -51,6 +78,13 @@ interface Draft {
   readonly status: DocStatus;
   readonly due: string;
 }
+
+type FieldName = keyof Draft;
+
+const FIELD_NAMES: readonly FieldName[] = ["title", "tags", "status", "due"];
+
+/** The fields the person has touched and the server has not yet confirmed. */
+type Local = { -readonly [K in FieldName]?: Draft[K] };
 
 /** `["finance", "mortgage"]` ⇄ `"finance, mortgage"`. Tags are comma-free by contract. */
 export function tagsToText(tags: readonly string[]): string {
@@ -83,6 +117,68 @@ export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
 );
 
 /**
+ * A field the person may **see but not set**, and the sentence that says why.
+ *
+ * SHARED-030: *"A field whose value is derived rather than authored… shows the
+ * value and says where it comes from, and is editable by nobody — that is not an
+ * edit mode, it is a field that was never the person's to set."* So a control
+ * has three states here, not two: absent, live, or shown-with-a-reason. The
+ * archived status below is the first of the third kind, and UI-092's derived
+ * status for a todo list is the next one — which is why the reason travels with
+ * the lock rather than being a special case inside one control.
+ */
+export interface FieldLock {
+  readonly reason: string;
+}
+
+/**
+ * Why the status control is not this person's to set, or `null` when it is.
+ *
+ * **The archive boundary** (UI-020): archiving and unarchiving are routes this
+ * form does not call, so the control shows `archived` — a select needs its own
+ * value among its options — and refuses to move off it, naming where the way
+ * back is.
+ *
+ * A **derived** status (SHARED-036, UI-092) belongs here too and is not here
+ * yet: this is the one function that decides the question for every caller.
+ */
+export function statusLock(doc: Doc): FieldLock | null {
+  if (doc.frontmatter.status === ARCHIVED) {
+    return { reason: "archived — Unarchive in the ⋯ menu brings it back" };
+  }
+  return null;
+}
+
+/** The options a select must offer: the editable set, plus its own value. */
+function statusOptions(current: DocStatus): readonly DocStatus[] {
+  return EDITABLE_STATUSES.includes(current) ? EDITABLE_STATUSES : DOC_STATUSES;
+}
+
+/**
+ * Whether this change is a **deliberate commit moment** — send it now — or one
+ * keystroke in a run of them, which waits out the debounce.
+ *
+ * The question is asked of the *change*, not of the control, and that is the
+ * whole of the distinction. A `<select>` produces one chosen value per gesture
+ * and nothing in between, so it always commits. A free-text field produces a
+ * value per keystroke and never commits on one.
+ *
+ * **A date input is discrete except when it is empty**, and that exception is
+ * measured rather than assumed: while its segments are half-filled Chromium
+ * reports `value === ""` and fires a change for each one, so "commit every
+ * change a date picker makes" would clear a stored deadline twice on the way to
+ * typing a new one. Empty is also what *clearing* the field looks like, and the
+ * two are indistinguishable at the moment they arrive — so the empty value waits
+ * out the debounce, which is exactly long enough for the rest of a typed date to
+ * arrive and short enough that a deliberate clear still lands by itself.
+ */
+export function isDeliberate(field: FieldName, value: string): boolean {
+  if (field === "status") return true;
+  if (field === "due") return value !== "";
+  return false;
+}
+
+/**
  * The `PUT` body: only what the user changed.
  *
  * `due` is cleared with `null` rather than by omission, because omission means
@@ -96,7 +192,7 @@ export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
  * with a `400` naming `POST …/unarchive` (SERVER-039). The guard lives *here*
  * rather than only on the `<select>` because the select is not the only path to
  * the wire: leaving the document, rebinding the reader and `pagehide` all flush
- * through this function, and guarding the button alone would ship a refusal the
+ * through this function, and guarding the control alone would ship a refusal the
  * user could not connect to anything they did.
  */
 export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
@@ -110,6 +206,104 @@ export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
   }
   if (draft.due !== current.due) changes.due = draft.due === "" ? null : draft.due;
   return changes;
+}
+
+/** What the person is looking at: the document, overlaid with what they typed. */
+function valueOf(doc: Doc, local: Local): Draft {
+  return { ...draftOf(doc), ...local };
+}
+
+/**
+ * `{ ...local, [name]: value }`, written out.
+ *
+ * TypeScript cannot type a computed key drawn from a union of literals — the
+ * result widens to a string index signature and `status` stops being a
+ * `DocStatus`. This switch *is* that inference, so every other site here reads
+ * and writes ordinary fields. `status` is checked against the contract's own
+ * list on the way in rather than asserted: a `<select>` is a boundary like any
+ * other, and a value nothing recognises changes nothing.
+ */
+function withField(local: Local, name: FieldName, value: string): Local {
+  switch (name) {
+    case "title":
+      return { ...local, title: value };
+    case "tags":
+      return { ...local, tags: value };
+    case "due":
+      return { ...local, due: value };
+    case "status": {
+      const status = DOC_STATUSES.find((each) => each === value);
+      return status === undefined ? local : { ...local, status };
+    }
+  }
+}
+
+/** The subset of `local` a request carries, remembered until it answers. */
+function pickFields(local: Local, names: ReadonlySet<string>): Local {
+  let picked: Local = {};
+  for (const name of FIELD_NAMES) {
+    const value = local[name];
+    if (value === undefined || !names.has(name)) continue;
+    picked = withField(picked, name, value);
+  }
+  return picked;
+}
+
+/**
+ * `local` with the fields a landed request carried removed — unless the person
+ * has typed into one again since it was sent, in which case the newer value is
+ * the one that must survive.
+ */
+function dropSettled(local: Local, carried: Local): Local {
+  let kept: Local = {};
+  for (const name of FIELD_NAMES) {
+    const value = local[name];
+    if (value === undefined || value === carried[name]) continue;
+    kept = withField(kept, name, value);
+  }
+  return kept;
+}
+
+/**
+ * Escape leaves the field, exactly as it leaves the body (`DocEditor`).
+ *
+ * The escape chain ignores keys typed inside an `input`, a `textarea` or a
+ * `select` — otherwise `⌫` would close the reader instead of deleting a
+ * character — so with no draft left to revert, Escape in one of these controls
+ * would do nothing at all, on a surface whose own hint says "esc closes". The
+ * first press blurs and the second reaches the chain, which is the rule the
+ * always-editable body already follows.
+ */
+function leaveOnEscape(event: KeyboardEvent<HTMLElement>): void {
+  if (event.key !== "Escape") return;
+  event.currentTarget.blur();
+}
+
+interface FieldProps {
+  readonly label: string;
+  /** Non-null when the value is shown but not settable — the reason is rendered. */
+  readonly lock: FieldLock | null;
+  /** What the field says when it is live and has something to say. */
+  readonly hint?: string;
+  readonly children: ReactNode;
+}
+
+/**
+ * One labelled control, with the one line beneath it that says where its act
+ * lives when it is not this control (UI-020) or why it is nobody's to set.
+ *
+ * The note comes from the lock when there is one, so a field never has to carry
+ * two explanations that could disagree.
+ */
+function Field({ label, lock, hint, children }: FieldProps): ReactElement {
+  const note = lock?.reason ?? hint;
+  return (
+    <label className="fm-field">
+      <span>{label}</span>
+      {children}
+      {note === undefined ? null : <span className="fm-hint">{note}</span>}
+    </label>
+  );
 }
 
 export function FrontmatterForm({
@@ -127,57 +321,180 @@ export function FrontmatterForm({
    * flush the session out from under the reader still showing it.
    */
   useEditSurface(docId);
+  const queryClient = useQueryClient();
+
+  const [local, setLocal] = useState<Local>({});
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+
   /*
-   * The callbacks ride on the **hook**, not on the call (the `SettledCallbacks`
-   * seam UI-012 added). A save issued while the reader is unmounting has no
-   * observer left to receive a per-call `onSuccess`, so it would commit the
-   * write in silence — and the exit flush below is exactly that save.
+   * What the timers and the exit flush read, held in refs rather than closed
+   * over: an effect registered once and a `setTimeout` armed several keystrokes
+   * ago would otherwise write the value the field had when they were created.
+   * Same rule, and the same reason, as `useAutosave`.
    */
-  /*
-   * The edit-session bracket rides on these — the **hook**-level callbacks —
-   * for the same reason the toast does: the write that most needs releasing it
-   * is the one issued from the unmount cleanup below, and a per-call callback
-   * is skipped once the observer is gone. A `beginEditWrite` never answered
-   * would hold this document's close flush open indefinitely.
-   */
-  const update = useUpdateDoc(docId, {
-    onSuccess: (_response, saved) => {
-      endEditWrite(docId, true);
-      setDraft(null);
-      onNotify({
-        tone: "info",
-        message: `Saved — ${Object.keys(saved).join(", ")} updated and committed.`,
-      });
-    },
-    onError: (error) => {
-      endEditWrite(docId, false);
-      onNotify({ tone: "error", message: `Save failed — ${error.message}` });
-    },
-  });
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [editing, setEditing] = useState(false);
+  const localRef = useRef<Local>(local);
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const inFlight = useRef(false);
+  /** A change arrived while a `PUT` was on the wire; send it when that lands. */
+  const queued = useRef(false);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The field values the request in flight carries, so a landing can clear them. */
+  const sent = useRef<Local>({});
+  const notify = useRef(onNotify);
+  notify.current = onNotify;
+
   // A textarea, not an input: the title wraps (UI-065). The `.title-grow`
   // wrapper in `Reader.css` gives it its height.
   const field = useRef<HTMLTextAreaElement>(null);
   const selected = useRef(false);
 
-  const current = draftOf(doc);
-  const value = draft ?? current;
-  const changes = draft === null ? {} : changedFields(doc, draft);
-  const isDirty = Object.keys(changes).length > 0;
+  const clearTimer = useCallback((): void => {
+    if (debounce.current !== null) clearTimeout(debounce.current);
+    debounce.current = null;
+  }, []);
+
+  /** The landed request's fields leave the local map; anything newer stays. */
+  const clearSettled = useCallback((): void => {
+    const carried = sent.current;
+    sent.current = {};
+    const kept = dropSettled(localRef.current, carried);
+    if (Object.keys(kept).length === Object.keys(localRef.current).length) return;
+    localRef.current = kept;
+    setLocal(kept);
+  }, []);
+
+  const send = useRef<() => void>(() => undefined);
+
+  /*
+   * The callbacks ride on the **hook**, not on the call (the `SettledCallbacks`
+   * seam UI-012 added). A save issued while the reader is unmounting has no
+   * observer left to receive a per-call `onSuccess`, so it would commit the
+   * write in silence — and the exit flush below is exactly that save. The
+   * edit-session bracket rides on them for the same reason: a `beginEditWrite`
+   * never answered would hold this document's close flush open indefinitely.
+   */
+  const update = useUpdateDoc(docId, {
+    onSuccess: (response) => {
+      inFlight.current = false;
+      endEditWrite(docId, true);
+      /*
+       * Read-your-write, exactly as `DocEditor` publishes a save's response
+       * (SPEC.md §7): `useDoc` reads this cache entry, so the controls show what
+       * the server stored the instant it stored it. Without it the invalidation
+       * behind this leaves a refetch-long gap in which every live control snaps
+       * back to the value the person just changed away from.
+       */
+      queryClient.setQueryData(docQueryKey(docId), response.doc);
+      clearSettled();
+      setSave({
+        kind: "saved",
+        remapped: response.anchors.remapped.length,
+        orphaned: response.anchors.orphaned.length,
+      });
+      if (!queued.current) return;
+      queued.current = false;
+      send.current();
+    },
+    onError: (error) => {
+      inFlight.current = false;
+      queued.current = false;
+      endEditWrite(docId, false);
+      /*
+       * Nothing is cleared: the local map still holds every value the person
+       * set, the controls still show them, and the chip's retry re-sends the
+       * lot. A form that dropped them would have discarded an edit silently,
+       * which is worse than a form that says it could not save one.
+       */
+      setSave({ kind: "error", message: error.message });
+      notify.current({ tone: "error", message: `Save failed — ${error.message}` });
+    },
+  });
+  const mutate = useRef(update.mutate);
+  mutate.current = update.mutate;
+
+  /**
+   * What a write would carry right now, or `null` when it would carry nothing.
+   *
+   * It declines for an **abandoned** document for the same reason autosave
+   * does: the emptiness that decided the removal is what this would be writing,
+   * and it would be a `PUT` racing the `DELETE` behind it. The ordering is
+   * load-bearing and not incidental — the abandon decision is taken in the
+   * host's *layout*-effect teardown, which runs ahead of this passive one, and
+   * on the tab-close route by {@link onPageHide}'s `decide` phase.
+   */
+  const outgoingWrite = useCallback((): { id: string; changes: UpdateDocRequest } | null => {
+    const outgoing = docRef.current;
+    const id = outgoing.frontmatter.id;
+    if (isAbandoned(id)) return null;
+    const changes = changedFields(outgoing, valueOf(outgoing, localRef.current));
+    if (Object.keys(changes).length === 0) return null;
+    return { id, changes };
+  }, []);
+
+  send.current = (): void => {
+    clearTimer();
+    const write = outgoingWrite();
+    if (write === null) return;
+    /*
+     * Two `PUT`s for one document must never overlap: the second could land
+     * first and re-assert a value the first one changed. The change is not
+     * dropped — the local map still holds it, and the landing above sends it.
+     */
+    if (inFlight.current) {
+      queued.current = true;
+      return;
+    }
+    inFlight.current = true;
+    sent.current = pickFields(localRef.current, new Set(Object.keys(write.changes)));
+    setSave({ kind: "saving" });
+    beginEditWrite(write.id);
+    mutate.current(write.changes);
+  };
+
+  const arm = useCallback((): void => {
+    clearTimer();
+    debounce.current = setTimeout(() => {
+      debounce.current = null;
+      send.current();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }, [clearTimer]);
+
+  /**
+   * A control changed. The value is remembered and the write is scheduled — or
+   * issued, when the change was a deliberate one ({@link isDeliberate}).
+   *
+   * A deliberate change sends **everything outstanding**, not only its own
+   * field: the request is one patch either way, and holding a half-typed tag
+   * back would mean a second write a moment later for a sitting §4 is going to
+   * squash into one commit regardless.
+   */
+  const patch = useCallback(
+    (name: FieldName, value: string): void => {
+      localRef.current = withField(localRef.current, name, value);
+      setLocal(localRef.current);
+      if (isDeliberate(name, value)) send.current();
+      else arm();
+    },
+    [arm],
+  );
+
+  const retry = useCallback((): void => {
+    send.current();
+  }, []);
 
   /**
    * The title the abandon rule should judge: the one that is about to be
    * written, not the one on disk.
    *
-   * It is safe to publish an *uncommitted* draft here only because the exit
+   * It is safe to publish an *uncommitted* value here only because the exit
    * flush below guarantees it is committed on every route the abandon rule
    * treats as an exit — otherwise this would keep a document alive on a value
    * that gets dropped.
    */
   useEffect(() => {
-    publishTitleDraft(docId, draft?.title ?? null);
-  }, [docId, draft]);
+    publishTitleDraft(docId, local.title ?? null);
+  }, [docId, local.title]);
 
   useEffect(() => {
     if (!selectTitle || selected.current) return;
@@ -188,50 +505,24 @@ export function FrontmatterForm({
     field.current?.select();
   }, [selectTitle]);
 
-  const save = (): void => {
-    if (!isDirty) return;
-    beginEditWrite(docId);
-    update.mutate(changes);
-  };
-
-  /*
-   * What the flush needs, read at flush time rather than closed over: the
-   * effect below is registered once, and a handler holding the first render's
-   * draft would write an empty title over a typed one.
-   */
-  const pending = useRef({ doc, draft });
-  pending.current = { doc, draft };
-  const mutate = useRef(update.mutate);
-  mutate.current = update.mutate;
-
   /**
-   * What leaving the document would write, or `null` when it would write
-   * nothing.
+   * Send what is outstanding now — the document is being left, inside a living
+   * page.
    *
-   * It declines for an **abandoned** document for the same reason autosave
-   * does: the emptiness that decided the removal is what this would be writing,
-   * and it would be a `PUT` racing the `DELETE` behind it. The ordering is
-   * load-bearing and not incidental — the abandon decision is taken in the
-   * host's *layout*-effect teardown, which runs ahead of this passive one, and
-   * on the tab-close route by {@link onPageHide}'s `decide` phase.
+   * It does not defer to a request already in flight, and that is the one place
+   * this form sends a second one: the flush's patch is computed against the same
+   * document the in-flight one was, so it carries everything that write carries
+   * plus whatever was typed after it left. Deferring would mean waiting for a
+   * response on a surface that is being torn down, which is the same as dropping
+   * the edit.
    */
-  const outgoingWrite = useCallback((): { id: string; changes: UpdateDocRequest } | null => {
-    const { doc: outgoing, draft: unsaved } = pending.current;
-    if (unsaved === null) return null;
-    const id = outgoing.frontmatter.id;
-    if (isAbandoned(id)) return null;
-    const changes = changedFields(outgoing, unsaved);
-    if (Object.keys(changes).length === 0) return null;
-    return { id, changes };
-  }, []);
-
-  /** Send the draft now — the document is being left, inside a living page. */
   const flush = useCallback((): void => {
+    clearTimer();
     const write = outgoingWrite();
     if (write === null) return;
     beginEditWrite(write.id);
     mutate.current(write.changes);
-  }, [outgoingWrite]);
+  }, [clearTimer, outgoingWrite]);
 
   /**
    * The same flush, on the one exit the ordinary client does not survive
@@ -243,8 +534,8 @@ export function FrontmatterForm({
    * the very loss this flush exists to prevent (UI-017 eval FAIL-1). It goes
    * out through {@link unloadClient} for the same reason the abandon `DELETE`
    * does: `keepalive: true` lets the request outlive the document that issued
-   * it. Nothing is reported — the toast surface is going away with the page —
-   * and the refusal is swallowed rather than left as an unhandled rejection.
+   * it. Nothing is reported — the chip is going away with the page — and the
+   * refusal is swallowed rather than left as an unhandled rejection.
    */
   const flushOnUnload = useCallback((): void => {
     const write = outgoingWrite();
@@ -265,15 +556,18 @@ export function FrontmatterForm({
     [flush],
   );
 
-  const patch = (change: Partial<Draft>): void => {
-    setDraft({ ...value, ...change });
-  };
-
-  const isArchived = doc.frontmatter.status === ARCHIVED;
+  const value = valueOf(doc, local);
+  const lock = statusLock(doc);
   const folder = folderOf(doc.path);
 
   return (
     <>
+      {/*
+       * The strip is the document **as the corpus holds it** — the mockup's own
+       * `.fm-chips`, unchanged — and the controls below are what you are
+       * setting. The two agree except while a save is on the wire, which is
+       * exactly when the chip at the end of the strip says `saving…`.
+       */}
       <div className="fm-chips">
         <span className="chip">{doc.frontmatter.type}</span>
         {folder === "" ? null : <span className="chip">{folder}</span>}
@@ -286,16 +580,19 @@ export function FrontmatterForm({
         {doc.frontmatter.updated === null ? null : (
           <span className="chip">updated {doc.frontmatter.updated.slice(0, 10)}</span>
         )}
-        <button
-          type="button"
-          className="chip fm-edit-toggle"
-          aria-expanded={editing}
-          onClick={() => {
-            setEditing(!editing);
-          }}
-        >
-          {editing ? "done" : "edit"}
-        </button>
+        {/*
+         * Where the `edit` chip used to be, and it costs the layout nothing that
+         * the chip it replaced did not: one always-present item, of one reserved
+         * width, at the end of a strip that was already there. It is pointedly
+         * **not** in the reader head — that row is at its limit (UI-135), and a
+         * body save landing there must never be able to overwrite the report
+         * that a frontmatter save failed.
+         */}
+        <SaveChipView
+          state={save}
+          onRetry={save.kind === "error" ? retry : null}
+          surface="frontmatter"
+        />
       </div>
 
       {banner}
@@ -318,102 +615,72 @@ export function FrontmatterForm({
           ref={field}
           className="doc-title"
           aria-label="Document title"
-          // The field grows by wrapping, never by the user adding rows: `↵` is
-          // save (below), so no newline can reach the value and one row is
-          // always the floor.
+          // The field grows by wrapping, never by the user adding rows: `↵`
+          // sends what is outstanding (below), so no newline can reach the
+          // value and one row is always the floor.
           rows={1}
           value={value.title}
           onChange={(event) => {
-            patch({ title: event.target.value });
+            patch("title", event.target.value);
           }}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              save();
-            }
-            if (event.key === "Escape" && draft !== null) {
-              // Consumed here rather than by the escape chain: reverting a draft
-              // is what Escape means while a field holds unsaved text.
-              event.stopPropagation();
-              setDraft(null);
-            }
+            leaveOnEscape(event);
+            if (event.key !== "Enter") return;
+            /*
+             * Not a save button in disguise: the title saves itself either way,
+             * and this only says "now" instead of "in 700 ms".
+             */
+            event.preventDefault();
+            send.current();
           }}
         />
       </div>
 
-      {editing ? (
-        <div className="fm-form" aria-label="Frontmatter">
-          <label className="fm-field">
-            <span>tags</span>
-            <input
-              className="fm-input"
-              value={value.tags}
-              placeholder="comma, separated"
-              onChange={(event) => {
-                patch({ tags: event.target.value });
-              }}
-            />
-          </label>
-          <label className="fm-field">
-            <span>status</span>
-            <select
-              className="fm-input"
-              value={value.status}
-              disabled={isArchived}
-              onChange={(event) => {
-                patch({ status: event.target.value as DocStatus });
-              }}
-            >
-              {/*
-               * `archived` is offered only as the *current* value of a document
-               * that already is, so the control has something to show — never as
-               * a destination. Picking it here would set the frontmatter key and
-               * leave a skill's folder in `.claude/skills/`, which is §7's
-               * promise with the only part that mattered missing (UI-020).
-               */}
-              {(isArchived ? DOC_STATUSES : EDITABLE_STATUSES).map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-            <span className="fm-hint">
-              {isArchived
-                ? "archived — Unarchive in the ⋯ menu brings it back"
-                : "archive from the ⋯ menu — a status flip would not move a skill’s folder"}
-            </span>
-          </label>
-          <label className="fm-field">
-            <span>due</span>
-            <input
-              className="fm-input"
-              type="date"
-              value={value.due}
-              onChange={(event) => {
-                patch({ due: event.target.value });
-              }}
-            />
-          </label>
-        </div>
-      ) : null}
-
-      {isDirty ? (
-        <div className="fm-actions" role="status">
-          <span className="fm-dirty">unsaved changes</span>
-          <button type="button" className="fm-save" disabled={update.isPending} onClick={save}>
-            {update.isPending ? "Saving…" : "Save"}
-          </button>
-          <button
-            type="button"
-            className="fm-revert"
-            onClick={() => {
-              setDraft(null);
+      <div className="fm-form" aria-label="Frontmatter">
+        <Field label="tags" lock={null}>
+          <input
+            className="fm-input"
+            value={value.tags}
+            placeholder="comma, separated"
+            onKeyDown={leaveOnEscape}
+            onChange={(event) => {
+              patch("tags", event.target.value);
+            }}
+          />
+        </Field>
+        <Field
+          label="status"
+          lock={lock}
+          hint="archive from the ⋯ menu — a status flip would not move a skill’s folder"
+        >
+          <select
+            className="fm-input"
+            value={value.status}
+            disabled={lock !== null}
+            onKeyDown={leaveOnEscape}
+            onChange={(event) => {
+              patch("status", event.target.value);
             }}
           >
-            Revert
-          </button>
-        </div>
-      ) : null}
+            {statusOptions(value.status).map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="due" lock={null}>
+          <input
+            className="fm-input"
+            type="date"
+            value={value.due}
+            onKeyDown={leaveOnEscape}
+            onChange={(event) => {
+              patch("due", event.target.value);
+            }}
+          />
+        </Field>
+      </div>
     </>
   );
 }
