@@ -38,7 +38,6 @@ const fullCreateDoc: CreateDocBody = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: { source: "import" },
 };
 
@@ -83,7 +82,6 @@ function createTestClient() {
             pinned: request.pinned ?? false,
             order: request.order ?? null,
             query: request.query ?? null,
-            column: request.column ?? null,
             extra: request.extra ?? {},
           },
           body: request.body ?? "",

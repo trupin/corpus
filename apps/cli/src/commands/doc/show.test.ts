@@ -33,7 +33,6 @@ const NOTE = {
     pinned: false,
     order: null,
     query: null,
-    column: null,
     extra: {},
   },
   body: "30-year fixed at 6.1%.\n",

@@ -1795,7 +1795,7 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
 });
 
 describe("the extra-frontmatter surface (CONTRACT-011)", () => {
-  const VIEW_AND_EXTRA_KEYS = ["pinned", "order", "query", "column", "extra"];
+  const VIEW_AND_EXTRA_KEYS = ["pinned", "order", "query", "extra"];
 
   function component(name: string): SchemaNode {
     const found = componentSchemas?.[name];
@@ -1853,18 +1853,21 @@ describe("the extra-frontmatter surface (CONTRACT-011)", () => {
   });
 
   /**
-   * `column` outlived the surface that read it. The key is still written,
-   * validated and round-tripped, and the core renders no column from it — a
-   * published description that left that unsaid would read as a feature.
+   * `column` named a plugin renderer, `<plugin>/<type>`, and the plugin surface
+   * is gone (SHARED-066). A published field that selects nothing would read as
+   * a feature, so it is off the wire entirely — on every one of the four
+   * document components, not just the ones a client happens to write.
    */
-  it("publishes the column reference format, and says the core renders nothing from it", () => {
-    const description = JSON.stringify(component("DocFrontmatter").properties?.["column"]);
-    expect(description).toContain("exactly one `/`");
-    expect(description).toContain("The core defines no column renderer");
-  });
+  it.each(["DocFrontmatter", "DocRow", "CreateDocRequest", "UpdateDocRequest"])(
+    "publishes no `column` field on %s",
+    (name) => {
+      expect(component(name).properties?.["column"]).toBeUndefined();
+      expect(component(name).required ?? []).not.toContain("column");
+    },
+  );
 
   it("states the null-clears rule on every clearable update field", () => {
-    for (const key of ["order", "query", "column"]) {
+    for (const key of ["order", "query"]) {
       expect(
         JSON.stringify(component("UpdateDocRequest").properties?.[key]),
         `UpdateDocRequest.${key}`,

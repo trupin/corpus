@@ -119,7 +119,6 @@ export const UPDATABLE_FRONTMATTER_KEYS = [
 export const CLEARABLE_FRONTMATTER_KEYS = [
   "order",
   "query",
-  "column",
 ] as const satisfies readonly (keyof UpdateDocRequest)[];
 
 /**

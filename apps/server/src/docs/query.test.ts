@@ -170,7 +170,6 @@ describe("the envelope", () => {
       "anchorQuote",
       "attention",
       "awaitingAgent",
-      "column",
       "created",
       "due",
       "evergreen",

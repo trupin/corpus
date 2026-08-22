@@ -142,22 +142,18 @@ export function readViewQuery(data: Readonly<Record<string, unknown>>): ViewQuer
 }
 
 /**
- * A view's `column` reference (§9's `column_ref`), or `null`. Read verbatim and
- * never pattern-checked here: the format earns its `400` at the write boundary,
- * and a view whose `column` names something this build does not recognise must
- * keep its board position rather than silently become a plain list.
+ * The wire fields CONTRACT-011 added, read off one frontmatter mapping.
+ *
+ * Four, not five (SHARED-066): a `column` reference named a plugin renderer,
+ * and with no plugin surface it names nothing. There is no reader for it here
+ * any more, and that is what routes an old view's `column:` into `extra` — the
+ * key is no longer reserved, so {@link readExtraFrontmatter} keeps it verbatim
+ * and the server never looks at it again.
  */
-export function readColumn(data: Readonly<Record<string, unknown>>): string | null {
-  const value = data["column"];
-  return typeof value === "string" && value.trim() !== "" ? value : null;
-}
-
-/** The five wire fields CONTRACT-011 added, read off one frontmatter mapping. */
 export type ViewFrontmatter = {
   readonly pinned: boolean;
   readonly order: number | null;
   readonly query: ViewQuery | null;
-  readonly column: string | null;
   readonly extra: Record<string, unknown>;
 };
 
@@ -165,6 +161,5 @@ export const readViewFrontmatter = (data: Readonly<Record<string, unknown>>): Vi
   pinned: readPinned(data),
   order: readOrder(data),
   query: readViewQuery(data),
-  column: readColumn(data),
   extra: readExtraFrontmatter(data),
 });

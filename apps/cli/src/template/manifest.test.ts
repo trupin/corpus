@@ -63,9 +63,9 @@ describe("the template manifest", () => {
     // `corpus workspace upgrade` in exactly the workspaces that have one.
     const legacy =
       '{"version":1,"tool":"0.1.0","installedAt":"x","files":[' +
-      `{"path":"a.md","sha256":"${"a".repeat(64)}","source":"plugin:todos"}]}`;
+      `{"path":"a.md","sha256":"${"a".repeat(64)}","source":"starter:examples"}]}`;
     expect(readTemplateManifest(write(legacy))?.files).toEqual([
-      { path: "a.md", sha256: "a".repeat(64), source: "plugin:todos" },
+      { path: "a.md", sha256: "a".repeat(64), source: "starter:examples" },
     ]);
   });
 

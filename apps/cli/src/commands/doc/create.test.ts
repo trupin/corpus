@@ -166,14 +166,13 @@ describe("corpus doc create", () => {
         pinned: "true",
         order: "5",
         query: ["type=note"],
-        column: "todos/board",
       },
     });
 
     await runDocCreate(harness.context, { stdinIsBodySource: false });
 
     expect(Object.keys(JSON.parse(stub.requests[0]?.body ?? "") as object).sort()).toEqual(
-      ["type", "title", "folder", "evergreen", "pinned", "order", "query", "column"].sort(),
+      ["type", "title", "folder", "evergreen", "pinned", "order", "query"].sort(),
     );
   });
 
@@ -192,12 +191,7 @@ describe("corpus doc create", () => {
 
   it("refuses a malformed view flag before any request", async () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
-    for (const flags of [
-      { order: "first" },
-      { column: "nonsense" },
-      { pinned: "yes" },
-      { query: ["type"] },
-    ]) {
+    for (const flags of [{ order: "first" }, { pinned: "yes" }, { query: ["type"] }]) {
       const harness = stubContext(stub, { flags: { type: "view", title: "T", ...flags } });
       const error: unknown = await runDocCreate(harness.context, {
         stdinIsBodySource: false,

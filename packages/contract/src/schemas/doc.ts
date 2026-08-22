@@ -236,14 +236,14 @@ const UNDATED_DESCRIPTION = (which: string): string =>
  * **The §10 view keys are first-class core fields, not extra frontmatter**
  * (CONTRACT-011 design decision, 2026-07-27). Three reasons, in force order:
  *
- * 1. Two of the four are server semantics — `pinned` is a `GET /api/docs`
+ * 1. Two of the three are server semantics — `pinned` is a `GET /api/docs`
  *    filter and `order` is a sort key, and a key the server filters and sorts
  *    on is by definition not opaque passthrough. Routing them through `extra`
  *    would mean the server reaching into a blob it promises never to read.
  * 2. §10 makes columns core product ("a column IS a `type: view` document");
  *    core keys are closed and validated here, and `query`'s well-formedness
- *    and `column`'s two-segment format deserve `400`s at the write boundary,
- *    which `extra` deliberately never provides.
+ *    deserves a `400` at the write boundary, which `extra` deliberately never
+ *    provides.
  * 3. It keeps `extra`'s contract absolute — *nothing* in it is ever
  *    interpreted by the server, with no view-key asterisk.
  *
@@ -305,23 +305,11 @@ const VIEW_QUERY_DESCRIPTION =
   "renders it as filter chips, so an unknown key degrades in the client, never on the wire. " +
   "`null` when the file carries no `query` key.";
 
-const COLUMN_DESCRIPTION =
-  "The `column` frontmatter key of this pinned view — a renderer name, stored and returned " +
-  "verbatim, in two non-empty whitespace-free segments separated by exactly one `/`. `null` " +
-  "when the file carries no `column` key. **The core defines no column renderer**: every " +
-  "pinned view renders as the filtered list its `query` describes (SPEC.md §10), so a value " +
-  "here selects nothing and changes no board position. It stays a validated core key rather " +
-  "than extra frontmatter because workspaces already hold it on disk and it must round-trip " +
-  "unchanged through every read and write.";
-
 const viewQueryValue = z.union([z.string(), z.number(), z.boolean()]);
 
 export const ViewQuerySchema = z
   .record(z.string().min(1), z.union([viewQueryValue, z.array(viewQueryValue)]))
   .openapi({ description: VIEW_QUERY_DESCRIPTION });
-
-/** Exactly one `/` between two non-empty, whitespace-free segments. */
-export const COLUMN_REF_PATTERN = /^[^/\s]+\/[^/\s]+$/;
 
 /**
  * Response-side view keys plus the open extra object, spread into both
@@ -330,12 +318,18 @@ export const COLUMN_REF_PATTERN = /^[^/\s]+\/[^/\s]+$/;
  * every response (`false`/`null`/`{}` when the file omits the key): the
  * nullable-not-optional convention `threadRowShape` documents, and what lets
  * the board read its whole column set from the list response with no N+1.
+ *
+ * **Three keys, not four** (SHARED-066). A `column` key once named a renderer
+ * `<plugin>/<type>`, and with no plugin surface left it names nothing — so it
+ * is not a core key any more. A file that still carries one is not an error: it
+ * arrives in `extra` like every other key the core does not define (§9.1),
+ * round-trips verbatim, and its view renders as the filtered list its `query`
+ * describes.
  */
 const viewFrontmatterShape = {
   pinned: z.boolean().describe(PINNED_DESCRIPTION),
   order: z.number().nullable().describe(ORDER_DESCRIPTION),
   query: ViewQuerySchema.nullable().describe(VIEW_QUERY_DESCRIPTION),
-  column: z.string().nullable().describe(COLUMN_DESCRIPTION),
   extra: ExtraFrontmatterSchema,
 } as const;
 
@@ -476,12 +470,6 @@ export const CreateDocRequestSchema = z
     query: ViewQuerySchema.nullable()
       .optional()
       .describe(`${VIEW_QUERY_DESCRIPTION} Null is the same as omitting it: no \`query\` key.`),
-    column: z
-      .string()
-      .regex(COLUMN_REF_PATTERN, "A column reference is two segments with exactly one slash.")
-      .nullable()
-      .optional()
-      .describe(`${COLUMN_DESCRIPTION} Null is the same as omitting it: no \`column\` key.`),
     extra: ExtraFrontmatterSchema.optional(),
   })
   .openapi("CreateDocRequest");
@@ -538,12 +526,6 @@ export const UpdateDocRequestSchema = z
     query: ViewQuerySchema.nullable()
       .optional()
       .describe(`${VIEW_QUERY_DESCRIPTION} On update, \`null\` clears the key from the file.`),
-    column: z
-      .string()
-      .regex(COLUMN_REF_PATTERN, "A column reference is two segments with exactly one slash.")
-      .nullable()
-      .optional()
-      .describe(`${COLUMN_DESCRIPTION} On update, \`null\` clears the key from the file.`),
     extra: ExtraFrontmatterSchema.optional(),
   })
   .refine((patch) => !updateNeedsDocumentKey(patch) || patch.key !== undefined, {

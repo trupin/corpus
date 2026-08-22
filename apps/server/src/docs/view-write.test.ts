@@ -60,7 +60,10 @@ describe("POST /api/docs with view keys", () => {
       pinned: true,
       order: 20,
       query: { folder: "finance", type: ["note", "thread"] },
-      column: "board/kanban",
+      // The `column` key a pre-SHARED-066 board carried. It is no longer a core
+      // field, so it travels as extra frontmatter and lands as a plain YAML key
+      // beside the others — which is what makes an old view round-trip.
+      extra: { column: "board/kanban" },
     });
 
     const text = ws.read(created.path);
@@ -93,16 +96,15 @@ describe("POST /api/docs with view keys", () => {
     expect(frontmatter["pinned"]).toBe(true);
     expect(frontmatter["order"]).toBe(20);
     expect(frontmatter["query"]).toEqual({ folder: "finance", type: ["note", "thread"] });
-    expect(frontmatter["column"]).toBe("board/kanban");
-    expect(frontmatter["extra"]).toEqual({});
+    expect(frontmatter["column"]).toBeUndefined();
+    expect(frontmatter["extra"]).toEqual({ column: "board/kanban" });
 
     const row = rowOf(await list("pinned=true&type=view&sort=order"), created.id);
     expect(row).toMatchObject({
       pinned: true,
       order: 20,
       query: { folder: "finance", type: ["note", "thread"] },
-      column: "board/kanban",
-      extra: {},
+      extra: { column: "board/kanban" },
     });
   });
 
@@ -116,14 +118,13 @@ describe("POST /api/docs with view keys", () => {
       pinned: false,
       order: null,
       query: null,
-      column: null,
     });
     const text = ws.read(created.path);
-    for (const key of ["pinned", "order", "query", "column"]) {
+    for (const key of ["pinned", "order", "query"]) {
       expect(text).not.toContain(`${key}:`);
     }
     const row = rowOf(await list("type=note"), created.id);
-    expect(row).toMatchObject({ pinned: false, order: null, query: null, column: null });
+    expect(row).toMatchObject({ pinned: false, order: null, query: null });
   });
 
   it("keeps the shipped seed views round-tripping through the create route", async () => {
@@ -138,7 +139,9 @@ describe("POST /api/docs with view keys", () => {
       ["Inbox", 2, { folder: "inbox" }],
       ["Open threads", 3, { type: "thread", status: "open" }],
     ]);
-    expect(board.items.every((item) => item.pinned && item.column === null)).toBe(true);
+    expect(board.items.every((item) => item.pinned && Object.keys(item.extra).length === 0)).toBe(
+      true,
+    );
   });
 });
 
@@ -212,10 +215,14 @@ describe("POST /api/docs with extra frontmatter", () => {
     expect(readdirSync(join(ws.root, "data", "docs", "inbox"))).toEqual([]);
   });
 
-  it("refuses a malformed column reference and an unusable query with 400", async () => {
+  it("refuses a top-level `column` and an unusable query with 400", async () => {
     ws = createWriteWorkspace("view-reject", { sprint: "s026" });
+    // `column` is not a core field any more (SHARED-066), and the create
+    // request is strict — so a caller written against the old contract gets a
+    // `400` naming the key rather than a silent no-op. `extra: { column }` is
+    // the way to write it, and that is exercised above.
     expect(
-      (await ws.post("/api/docs", { type: "view", title: "T", column: "kanban" })).status,
+      (await ws.post("/api/docs", { type: "view", title: "T", column: "todos/todos" })).status,
     ).toBe(400);
     expect(
       (await ws.post("/api/docs", { type: "view", title: "T", query: { needs: { deep: 1 } } }))
@@ -418,12 +425,14 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       folder: "views",
       pinned: true,
       order: 30,
-      column: "board/kanban",
+      extra: { column: "board/kanban" },
     });
     ws.advance(60_000);
-    expect((await putDoc(ws, created.id, { order: null, column: null, due: null })).status).toBe(
-      200,
-    );
+    // `order` is a core view key and clears with `null`; a stale `column` is an
+    // extra key, so it clears through the merge patch that owns it.
+    expect(
+      (await putDoc(ws, created.id, { order: null, due: null, extra: { column: null } })).status,
+    ).toBe(200);
 
     const text = ws.read(created.path);
     expect(text).not.toContain("order:");
@@ -433,7 +442,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
     expect(text).toContain("pinned: true");
 
     const row = rowOf(await list("pinned=true"), created.id);
-    expect(row).toMatchObject({ pinned: true, order: null, column: null });
+    expect(row).toMatchObject({ pinned: true, order: null, extra: {} });
   });
 
   it("writes `pinned: false` as itself, since the key has no null state", async () => {

@@ -288,7 +288,7 @@ export async function runDocEdit(
   // trade a usage error for a write that rewrites the document with itself.
   if (body === undefined && Object.keys(patch).length === 0) {
     throw new UsageError(`nothing to change on ${id}.`, {
-      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra, --extra-json, --pinned, --order, --query, --column.",
+      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra, --extra-json, --pinned, --order, --query.",
     });
   }
 
@@ -359,8 +359,8 @@ export const editCommand: WorkspaceCommandSpec = {
     "names a **command** where the server can only name a route. `--extra` and `--extra-json` " +
     "write non-core frontmatter keys — the " +
     "column `width` of SPEC.md §10 among them — as a merge patch: named keys replace, `null` " +
-    "removes, unnamed keys are untouched. `--pinned`, `--order`, `--query` and `--column` write " +
-    "the four **view keys** of SPEC.md §10, which are core fields rather than `extra` ones: a " +
+    "removes, unnamed keys are untouched. `--pinned`, `--order` and `--query` write " +
+    "the three **view keys** of SPEC.md §10, which are core fields rather than `extra` ones: a " +
     "board column IS a `type: view` document with `pinned: true`, so pinning, reordering and " +
     "reconfiguring one is this verb, and the board follows over SSE with no reload. An edit that " +
     "names no change at all is a usage error, not an empty request.\n\n" +
@@ -462,7 +462,7 @@ export const editCommand: WorkspaceCommandSpec = {
         "everywhere else (`9007199254740993` stores as `9007199254740992`); quote it to keep the " +
         "digits. Only the keys named are sent: the rest of `extra` is untouched " +
         "byte-for-byte, never read-modify-written. Naming a **core** key (`title`, `status`, " +
-        "`due`, `tags`, `pinned`, `order`, `query`, `column`, `id`, …) is a usage error before " +
+        "`due`, `tags`, `pinned`, `order`, `query`, `id`, …) is a usage error before " +
         "any request, pointing at the real flag where there is one.",
     },
     {

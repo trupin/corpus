@@ -110,7 +110,7 @@ export const createCommand: WorkspaceCommandSpec = {
     "`<name>/SKILL.md`, while `--type skill --folder finance` files an ordinary document in " +
     "`data/docs/finance/`. A folder the server rejects is reported verbatim rather than " +
     "pre-validated here. " +
-    "`--pinned`, `--order`, `--query` and `--column` write the SPEC.md §10 **view keys** at " +
+    "`--pinned`, `--order` and `--query` write the SPEC.md §10 **view keys** at " +
     "creation, so `--type view --pinned true` is a board column in one command — the board picks " +
     "it up over SSE with no reload. A column the board's own “＋ New list” would have written " +
     "also carries `--folder views --evergreen true`, which is what the seed columns look like " +

@@ -72,7 +72,6 @@ const frontmatter = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 

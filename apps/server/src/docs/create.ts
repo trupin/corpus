@@ -165,15 +165,14 @@ function claudeCodeFields(path: string, input: CreateDocRequest): Record<string,
  * `extra:` mapping the file format has never had. A `null` extra value is a no-op on create, since there
  * is nothing yet to remove.
  *
- * A key here can never shadow a core one: `ExtraFrontmatterSchema` rejects all
- * eighteen reserved keys with a `400` before the handler is reached.
+ * A key here can never shadow a core one: `ExtraFrontmatterSchema` rejects every
+ * reserved key with a `400` before the handler is reached.
  */
 function viewFields(input: CreateDocRequest): Record<string, unknown> {
   const fields: Record<string, unknown> = {};
   if (input.pinned === true) fields["pinned"] = true;
   if (input.order !== undefined && input.order !== null) fields["order"] = input.order;
   if (input.query !== undefined && input.query !== null) fields["query"] = input.query;
-  if (input.column !== undefined && input.column !== null) fields["column"] = input.column;
   for (const [key, value] of Object.entries(input.extra ?? {})) {
     if (value === null) continue;
     fields[key] = value;

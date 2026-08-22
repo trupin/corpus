@@ -39,7 +39,6 @@ const frontmatter = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 
@@ -143,8 +142,8 @@ describe("DocFrontmatter", () => {
 
 /**
  * CONTRACT-011: the §10 view keys are first-class core fields on every
- * response surface, so the board reads its whole column set — query, order,
- * column type — from the list response with no per-view follow-up read.
+ * response surface, so the board reads its whole column set — pinned, order,
+ * query — from the list response with no per-view follow-up read.
  */
 describe("view frontmatter keys", () => {
   it("round-trips the seed attention view's frontmatter", () => {
@@ -159,12 +158,22 @@ describe("view frontmatter keys", () => {
     expect(DocFrontmatterSchema.parse(withQuery)).toEqual(withQuery);
   });
 
-  it("round-trips a view carrying a column key the core renders nothing from", () => {
-    const columnView = { ...viewFrontmatter, query: null, column: "ledger/board" };
+  /**
+   * `column` was a core view key until SHARED-066, when the plugin surface it
+   * named went away. A workspace that predates the removal still has it on
+   * disk, and it must survive the round trip — as `extra`, which is the whole
+   * point of `extra` (SPEC.md §9.1).
+   */
+  it("carries a pre-removal `column` key as extra frontmatter, verbatim", () => {
+    const columnView = { ...viewFrontmatter, query: null, extra: { column: "ledger/board" } };
     expect(DocFrontmatterSchema.parse(columnView)).toEqual(columnView);
   });
 
-  it.each(["pinned", "order", "query", "column", "extra"] as const)(
+  it("no longer declares `column` as a core key of its own", () => {
+    expect(Object.keys(DocFrontmatterSchema.shape)).not.toContain("column");
+  });
+
+  it.each(["pinned", "order", "query", "extra"] as const)(
     "requires %s to be present — absent-on-disk is false/null/{}, never a missing key",
     (field) => {
       const { [field]: _dropped, ...without } = frontmatter as Record<string, unknown>;
@@ -172,7 +181,7 @@ describe("view frontmatter keys", () => {
     },
   );
 
-  it.each(["pinned", "order", "query", "column", "extra"] as const)(
+  it.each(["pinned", "order", "query", "extra"] as const)(
     "describes %s identically to the list row, since they describe the same file key",
     (field) => {
       expect(DocFrontmatterSchema.shape[field].meta()?.description).toBe(
@@ -354,18 +363,17 @@ describe("CreateDocRequest", () => {
     expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
   });
 
-  it.each(["ledger/board", "publish/status"])("accepts the column reference %s", (column) => {
-    const request = { type: "view", title: "T", pinned: true, column };
-    expect(CreateDocRequestSchema.parse(request).column).toBe(column);
+  it("takes a `column` key only through extra, since the core no longer defines one", () => {
+    const request = { type: "view", title: "T", pinned: true, extra: { column: "ledger/board" } };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
   });
 
-  it.each(["ledger", "ledger/", "/board", "ledger/b/oard", "led ger/board"])(
-    "rejects the malformed column reference %s — the format is two slash-separated segments",
-    (column) => {
-      const request = { type: "view", title: "T", column };
-      expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
-    },
-  );
+  it("refuses a top-level `column` outright — the request is strict and no such field exists", () => {
+    // Not a loosening: strictness is what turns a caller written against the
+    // old contract into a `400` naming the key, rather than a silent no-op.
+    const request = { type: "view", title: "T", column: "ledger/board" };
+    expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
+  });
 });
 
 describe("MoveDocRequest", () => {
@@ -512,10 +520,7 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
       query: { needs: "me" },
     });
     expect(UpdateDocRequestSchema.parse({ query: null })).toEqual({ query: null });
-    expect(UpdateDocRequestSchema.parse({ order: null, column: null })).toEqual({
-      order: null,
-      column: null,
-    });
+    expect(UpdateDocRequestSchema.parse({ order: null })).toEqual({ order: null });
   });
 
   it("accepts a per-key extra merge patch, null removing the named key", () => {

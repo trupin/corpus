@@ -158,8 +158,20 @@
  * frontmatter, and a designation written before the rider has no key there — so
  * the rebuild this bump triggers is the whole migration and every carried-over
  * row correctly reads NULL, which is "no level was chosen".
+ *
+ * 19 → 20 (SHARED-066): `documents.column_ref` is **dropped**. It held a view's
+ * `column` frontmatter key, which only ever named a plugin renderer
+ * (`<plugin>/<type>`), and the plugin surface is gone. The bump is not a
+ * migration, and it is not needed to keep the code running — the column was
+ * nullable, so a v19 database would have gone on accepting the shorter INSERT
+ * while nothing read the column back. It is here because
+ * supersede-and-repopulate is the **only** way a DDL change reaches a workspace
+ * that already has a `cache.db`: without the bump, every existing user's
+ * projection carries a dead `column_ref` forever. The repopulation costs one
+ * pass over the files and carries the embeddings across, and the frontmatter
+ * key itself survives on disk as extra frontmatter.
  */
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -225,18 +237,18 @@ export const REPOPULATED_TABLES = [
  * Columns are positional for `snippet()`: 0 `ref`, 1 `kind`, 2 `doc_id`,
  * 3 `title`, 4 `body`.
  *
- * **`documents` carries five columns past §9.1's list** — `pinned`,
- * `sort_order`, `query_json`, `column_ref`, `extra_json` (CONTRACT-011,
- * SERVER-026). §9.1 enumerated the columns the queries of the day needed; §10
- * then made a board column *be* a pinned view document, and `pinned` is a
- * `GET /api/docs` filter while `order` is one of its sort keys. A filter and a
- * sort cannot be answered from the files at request time without one read per
- * row — the N+1 the collection query exists to avoid — so they are columns.
- * `query_json`, `column_ref` and `extra_json` ride along because the board
- * reads its whole column set, queries and all, from that one bounded response.
- * Every one of them is still *derived*: `db rebuild` reconstructs all five from
- * frontmatter, and nothing durable lives here. `sort_order` is spelled apart
- * from the frontmatter key because `order` is SQL.
+ * **`documents` carries four columns past §9.1's list** — `pinned`,
+ * `sort_order`, `query_json`, `extra_json` (CONTRACT-011, SERVER-026). §9.1
+ * enumerated the columns the queries of the day needed; §10 then made a board
+ * column *be* a pinned view document, and `pinned` is a `GET /api/docs` filter
+ * while `order` is one of its sort keys. A filter and a sort cannot be answered
+ * from the files at request time without one read per row — the N+1 the
+ * collection query exists to avoid — so they are columns. `query_json` and
+ * `extra_json` ride along because the board reads its whole column set, queries
+ * and all, from that one bounded response. Every one of them is still
+ * *derived*: `db rebuild` reconstructs all four from frontmatter, and nothing
+ * durable lives here. `sort_order` is spelled apart from the frontmatter key
+ * because `order` is SQL.
  *
  * **`turns.has_form` is §6's form grammar, evaluated once at projection time**
  * (SERVER-029). `needs=form` has to ask "does this turn carry a form somebody
@@ -332,7 +344,6 @@ CREATE TABLE documents (
   pinned INTEGER NOT NULL,
   sort_order REAL,
   query_json TEXT,
-  column_ref TEXT,
   extra_json TEXT NOT NULL
 );
 

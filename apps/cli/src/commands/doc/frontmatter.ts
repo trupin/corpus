@@ -1,4 +1,4 @@
-import { COLUMN_REF_PATTERN, RESERVED_FRONTMATTER_KEYS, type ViewQuery } from "@corpus/contract";
+import { RESERVED_FRONTMATTER_KEYS, type ViewQuery } from "@corpus/contract";
 import { UsageError } from "../../errors.js";
 import { parseTriStateBoolean } from "../../input.js";
 import type { ParsedFlags } from "../../parse-args.js";
@@ -100,9 +100,9 @@ function jsonStringLiteral(raw: string): string | undefined {
  * only makes the message actionable, so a key the contract adds tomorrow is
  * still refused, just with the generic hint.
  *
- * The four §10 view keys earn entries here the moment they earn flags
- * (CLI-018): before that, `--extra pinned=true` was refused with "core keys are
- * not user-writable through `--extra`" and nowhere to go, which is a refusal an
+ * The §10 view keys earn entries here the moment they earn flags (CLI-018):
+ * before that, `--extra pinned=true` was refused with "core keys are not
+ * user-writable through `--extra`" and nowhere to go, which is a refusal an
  * agent cannot act on.
  */
 const FLAG_FOR_RESERVED_KEY: Readonly<Record<string, string>> = {
@@ -115,7 +115,6 @@ const FLAG_FOR_RESERVED_KEY: Readonly<Record<string, string>> = {
   pinned: "--pinned",
   order: "--order",
   query: "--query",
-  column: "--column",
 };
 
 const RESERVED_KEYS: ReadonlySet<string> = new Set(RESERVED_FRONTMATTER_KEYS);
@@ -256,7 +255,7 @@ export function combineExtraPatches(
  *
  * A column **is** a `type: view` document with `pinned: true` — its frontmatter
  * holds the query and the board position — so "@agent pin me a view of
- * unresolved finance threads" is these four keys and nothing else. They are
+ * unresolved finance threads" is these three keys and nothing else. They are
  * core fields on the contract (`packages/contract/src/schemas/doc.ts`), already
  * accepted on `POST /api/docs` and `PUT /api/docs/{id}`; the whole of this
  * issue is the verb surface over them.
@@ -272,13 +271,11 @@ export function parseViewFlags(flags: ParsedFlags) {
   const pinned = parseTriStateBoolean("pinned", flags.string("pinned"));
   const order = parseOrder(flags.string("order"));
   const query = parseQuery(flags.strings("query"));
-  const column = parseColumn(flags.string("column"));
 
   return {
     ...(pinned === undefined ? {} : { pinned }),
     ...(order === undefined ? {} : { order }),
     ...(query === undefined ? {} : { query }),
-    ...(column === undefined ? {} : { column }),
   };
 }
 
@@ -297,27 +294,6 @@ export function parseOrder(raw: string | undefined): number | null | undefined {
   throw new UsageError(`--order takes a finite number or \`null\` — got "${raw}".`, {
     hint: "The board sorts columns on this number, so it has to be one: `--order 4`, `--order 1.5` to land between two neighbours without renumbering them, or `--order null` to drop the key and take the documented tiebreak (nulls last, then title, then id).",
   });
-}
-
-/**
- * `column` is a plugin column reference, `"<plugin>/<type>"` — the shape
- * `COLUMN_REF_PATTERN` pins, imported rather than re-typed.
- *
- * The check is about the **shape** and never about whether the plugin is
- * installed: a view referencing an uninstalled plugin keeps its board position
- * and renders the plugin-missing card (SPEC.md §12 M6), which is the behaviour
- * that makes a plugin removable. `null` clears the key; no legal reference can
- * be the word `null`, since every reference carries a slash.
- */
-export function parseColumn(raw: string | undefined): string | null | undefined {
-  if (raw === undefined) return undefined;
-  if (raw === "null") return null;
-  if (!COLUMN_REF_PATTERN.test(raw)) {
-    throw new UsageError(`--column takes \`<plugin>/<type>\` — got "${raw}".`, {
-      hint: "Exactly one slash, no whitespace: `--column todos/todos`. A plugin that is not installed is still a legal reference — the column keeps its place and renders a plugin-missing card. `--column null` makes it a plain filtered list again.",
-    });
-  }
-  return raw;
 }
 
 type QueryValue = ViewQuery[string];
@@ -449,15 +425,5 @@ export const VIEW_KEY_FLAGS: readonly FlagSpec[] = [
       "is the string as typed. **Naming any key replaces the whole query** — `query` is one core " +
       "field, not a merge patch — and `--query null` clears it. An object or array value is a " +
       "usage error: the map is flat.",
-  },
-  {
-    name: "column",
-    type: "string",
-    valueName: "plugin/type",
-    description:
-      "Render this pinned view as a plugin column type (SPEC.md §10), e.g. `--column todos/todos`; " +
-      "`--column null` makes it a plain filtered list again. Exactly one slash, no whitespace. The " +
-      "check is about the shape only — a reference to a plugin that is **not installed** is legal " +
-      "and keeps its board position, rendering the plugin-missing card (SPEC.md §12).",
   },
 ];

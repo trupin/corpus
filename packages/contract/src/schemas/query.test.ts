@@ -36,7 +36,6 @@ const row = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
   stale: null,
   parent: null,
@@ -447,7 +446,6 @@ describe("DocRow", () => {
     "awaitingAgent",
     "order",
     "query",
-    "column",
   ])("carries %s as null on a non-thread row rather than omitting it", (field) => {
     expect(DocRowSchema.parse(row)).toHaveProperty(field, null);
     const { [field]: _dropped, ...without } = row as Record<string, unknown>;

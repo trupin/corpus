@@ -397,14 +397,17 @@ describe("corpus workspace upgrade", () => {
     // The migration this phase has to get right: a workspace initialized by a
     // tool that installed files from somewhere other than the template carries
     // manifest entries this build can no longer produce an incoming copy for.
+    // `source` names such an origin; no build still writes one, and the
+    // fixture's value is deliberately arbitrary — what is under test is an
+    // entry with no incoming copy, never a particular origin.
     // The `retired` cell is what must fire — report it, leave the file exactly
     // where it is, drop only the entry. A user's workspace files are not ours
     // to remove.
     const template = makeTemplate();
     const root = await makeWorkspace(template);
 
-    write(root, ".claude/skills/todos/SKILL.md", "todos skill v1\n");
-    write(root, "data/docs/templates/todo-template.md", "todo template v1\n");
+    write(root, ".claude/skills/triage/SKILL.md", "triage skill v1\n");
+    write(root, "data/docs/templates/meeting-template.md", "meeting template v1\n");
     const installed = readTemplateManifest(templateManifestPath(root));
     writeFileSync(
       templateManifestPath(root),
@@ -413,14 +416,14 @@ describe("corpus workspace upgrade", () => {
         files: [
           ...(installed?.files ?? []),
           {
-            path: ".claude/skills/todos/SKILL.md",
-            sha256: sha256(Buffer.from("todos skill v1\n")),
-            source: "plugin:todos",
+            path: ".claude/skills/triage/SKILL.md",
+            sha256: sha256(Buffer.from("triage skill v1\n")),
+            source: "starter:examples",
           },
           {
-            path: "data/docs/templates/todo-template.md",
-            sha256: sha256(Buffer.from("todo template v1\n")),
-            source: "plugin:todos",
+            path: "data/docs/templates/meeting-template.md",
+            sha256: sha256(Buffer.from("meeting template v1\n")),
+            source: "starter:examples",
           },
         ],
       } as TemplateManifest),
@@ -432,15 +435,16 @@ describe("corpus workspace upgrade", () => {
     await upgrade(harness, { template });
 
     expect(harness.report().changes.map((change) => [change.path, change.action])).toEqual([
-      [".claude/skills/todos/SKILL.md", "retired"],
-      ["data/docs/templates/todo-template.md", "retired"],
+      [".claude/skills/triage/SKILL.md", "retired"],
+      ["data/docs/templates/meeting-template.md", "retired"],
     ]);
     // The files stay, byte for byte, and only the entries go.
-    expect(read(root, ".claude/skills/todos/SKILL.md")).toBe("todos skill v1\n");
-    expect(read(root, "data/docs/templates/todo-template.md")).toBe("todo template v1\n");
+    expect(read(root, ".claude/skills/triage/SKILL.md")).toBe("triage skill v1\n");
+    expect(read(root, "data/docs/templates/meeting-template.md")).toBe("meeting template v1\n");
     expect(harness.report().written).toEqual([]);
     const manifest = readTemplateManifest(templateManifestPath(root));
-    expect(manifest?.files.some((file) => file.path.includes("todo"))).toBe(false);
+    expect(manifest?.files.some((file) => file.path.includes("triage"))).toBe(false);
+    expect(manifest?.files.some((file) => file.path.includes("meeting"))).toBe(false);
   });
 
   it("overwrites nothing without a manifest, and writes a baseline under --adopt", async () => {

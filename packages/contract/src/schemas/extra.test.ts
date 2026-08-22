@@ -147,9 +147,21 @@ describe("RESERVED_FRONTMATTER_KEYS drift pin", () => {
   });
 
   it("covers the §10 view keys, now first-class core fields", () => {
-    for (const key of ["pinned", "order", "query", "column"]) {
+    for (const key of ["pinned", "order", "query"]) {
       expect(RESERVED_FRONTMATTER_KEYS).toContain(key);
     }
+  });
+
+  /**
+   * The one view key that went the other way (SHARED-066). `column` named a
+   * plugin renderer; with no plugin surface it names nothing, so it stopped
+   * being a core key rather than becoming a core key that means nothing. Absent
+   * from this list is precisely what lets an old view's `column:` round-trip
+   * through `extra` instead of being rejected as a shadowed core field.
+   */
+  it("does not reserve `column`, so a pre-removal view keeps its key", () => {
+    expect(RESERVED_FRONTMATTER_KEYS).not.toContain("column");
+    expect(ExtraFrontmatterSchema.safeParse({ column: "todos/todos" }).success).toBe(true);
   });
 
   it("stays deduplicated", () => {

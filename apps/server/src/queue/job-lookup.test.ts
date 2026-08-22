@@ -45,8 +45,8 @@ const project = (id: string, origin: string | null): void => {
   projection
     .prepare(
       `INSERT INTO documents (id, type, title, path, status, tags_json, created, updated, due,
-        reviewed, evergreen, origin, body_excerpt, pinned, sort_order, query_json, column_ref, extra_json)
-       VALUES (?, 'note', 'T', ?, 'open', '[]', NULL, NULL, NULL, NULL, 0, ?, '', 0, NULL, NULL, NULL, '{}')`,
+        reviewed, evergreen, origin, body_excerpt, pinned, sort_order, query_json, extra_json)
+       VALUES (?, 'note', 'T', ?, 'open', '[]', NULL, NULL, NULL, NULL, 0, ?, '', 0, NULL, NULL, '{}')`,
     )
     .run(id, `data/docs/inbox/${id}.md`, origin);
 };

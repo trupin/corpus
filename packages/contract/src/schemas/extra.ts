@@ -22,12 +22,12 @@ import { z } from "@hono/zod-openapi";
  * (SPEC.md §12's M6).
  *
  * Core keys, by contrast, stay closed and validated where they always were.
- * The view keys (`pinned`, `order`, `query`, `column`) are deliberately
- * **not** in here — they graduated to first-class core fields (see `doc.ts`),
- * because two of them are server semantics (`pinned` is a filter, `order` is a
- * sort, and a key the server filters and sorts on is by definition not opaque)
- * and because keeping them out preserves this object's one absolute rule:
- * nothing in it ever means anything to the server.
+ * The view keys (`pinned`, `order`, `query`) are deliberately **not** in here —
+ * they graduated to first-class core fields (see `doc.ts`), because two of them
+ * are server semantics (`pinned` is a filter, `order` is a sort, and a key the
+ * server filters and sorts on is by definition not opaque) and because keeping
+ * them out preserves this object's one absolute rule: nothing in it ever means
+ * anything to the server.
  */
 
 /**
@@ -84,10 +84,17 @@ export const RESERVED_FRONTMATTER_KEYS = [
   // `PUT /api/docs/{id}` (see `./turn-model.ts`).
   "turnModels",
   // SPEC.md §10 — view documents (first-class core keys, see doc.ts)
+  //
+  // `column` is deliberately absent (SHARED-066). It named a plugin renderer,
+  // `<plugin>/<type>`, and with the plugin surface gone it names nothing — so
+  // it stopped being a core key rather than becoming a core key that means
+  // nothing. Absent from this list is what makes an old view's `column:` land
+  // here, in `extra`, preserved verbatim and never interpreted: a board written
+  // before the removal keeps working, and echoing the document back through an
+  // update writes the key out again unchanged.
   "pinned",
   "order",
   "query",
-  "column",
 ] as const;
 
 const RESERVED_KEY_SET: ReadonlySet<string> = new Set(RESERVED_FRONTMATTER_KEYS);

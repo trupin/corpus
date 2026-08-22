@@ -30,7 +30,6 @@ const frontmatter = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 
@@ -69,7 +68,6 @@ const row = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
   stale: null,
   parent: null,

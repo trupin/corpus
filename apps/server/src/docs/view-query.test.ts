@@ -60,8 +60,8 @@ beforeAll(() => {
     title: "Unordered",
     frontmatter: { pinned: true, query: { tag: "finance" } },
   });
-  // A pinned view naming a custom `column`, and an unpinned view that must stay
-  // out of the set.
+  // A pinned view carrying the `column:` key a pre-SHARED-066 workspace wrote,
+  // and an unpinned view that must stay out of the set.
   ws.doc({
     id: "doc_columnview",
     path: "data/docs/views/board.md",
@@ -152,14 +152,16 @@ describe("the board's one bounded query", () => {
       { id: "doc_columnview", order: 9, query: { type: "todo" } },
       { id: "doc_unordered", order: null, query: { tag: "finance" } },
     ]);
-    // No follow-up read is needed for anything the board renders.
-    expect(board.items.map((item) => item.column)).toEqual([
-      null,
-      null,
-      null,
-      null,
-      "board/kanban",
-      null,
+    // No follow-up read is needed for anything the board renders. A stale
+    // `column:` is not a board key any more (SHARED-066) — it rides in `extra`,
+    // and the view still holds its place and its query.
+    expect(board.items.map((item) => item.extra)).toEqual([
+      {},
+      {},
+      {},
+      {},
+      { column: "board/kanban" },
+      {},
     ]);
   });
 
@@ -188,7 +190,7 @@ describe("the view keys and `extra` on a row", () => {
 
   it("is `{}` and the documented defaults on a document with only core keys", () => {
     const row = run({ q: "escrow" }).items.find((item) => item.id === "doc_parent");
-    expect(row).toMatchObject({ pinned: false, order: null, query: null, column: null, extra: {} });
+    expect(row).toMatchObject({ pinned: false, order: null, query: null, extra: {} });
   });
 });
 

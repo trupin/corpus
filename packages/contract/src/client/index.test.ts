@@ -29,7 +29,6 @@ const frontmatter = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 
@@ -197,7 +196,6 @@ function createServer() {
             pinned: false,
             order: null,
             query: null,
-            column: null,
             extra: {},
             stale: "aging" as const,
             parent: null,

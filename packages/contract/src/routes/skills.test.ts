@@ -40,7 +40,6 @@ const CREATED_FRONTMATTER = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 

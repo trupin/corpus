@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { parseDocument } from "./document.js";
 import {
   MAX_EXTRA_READ_DEPTH,
-  readColumn,
   readExtraFrontmatter,
   readOrder,
   readPinned,
@@ -83,18 +82,30 @@ describe("readViewQuery", () => {
   });
 });
 
-describe("readColumn", () => {
-  it("reads a column reference verbatim", () => {
-    expect(readColumn(frontmatterOf("column: board/kanban"))).toBe("board/kanban");
+/**
+ * A view written before SHARED-066 still carries `column: "<plugin>/<type>"` on
+ * disk. There is no reader for it any more, and no build will ever put one
+ * back, so the thing to pin is where it lands instead: `extra`, verbatim, like
+ * every other key the core does not define (SPEC.md §9.1). A user's board must
+ * not break on an old view.
+ */
+describe("a stale `column:` from a workspace that predates the removal", () => {
+  it("becomes extra frontmatter, verbatim", () => {
+    expect(readExtraFrontmatter(frontmatterOf("column: todos/todos"))).toEqual({
+      column: "todos/todos",
+    });
   });
 
-  it("does not reject a malformed reference, so the view keeps its board place", () => {
-    // A column name this build does not recognise keeps the view's board
-    // place; silently demoting it to a plain list would hide the
-    // misconfiguration.
-    expect(readColumn(frontmatterOf("column: kanban"))).toBe("kanban");
-    expect(readColumn(frontmatterOf("column: null"))).toBeNull();
-    expect(readColumn(frontmatterOf("column: 7"))).toBeNull();
+  it("leaves the view keys the core still defines exactly as they were", () => {
+    const view = frontmatterOf(
+      "id: doc_v1\ntype: view\ntitle: Todos\npinned: true\norder: 2\ncolumn: todos/todos",
+    );
+    expect(readViewFrontmatter(view)).toEqual({
+      pinned: true,
+      order: 2,
+      query: null,
+      extra: { column: "todos/todos" },
+    });
   });
 });
 
@@ -164,17 +175,15 @@ describe("readViewFrontmatter", () => {
       pinned: true,
       order: 1,
       query: { needs: "me" },
-      column: null,
       extra: {},
     });
   });
 
-  it("gives a plain note the response defaults, all five present", () => {
+  it("gives a plain note the response defaults, all four present", () => {
     expect(readViewFrontmatter(frontmatterOf("id: doc_a1\ntype: note\ntitle: T"))).toEqual({
       pinned: false,
       order: null,
       query: null,
-      column: null,
       extra: {},
     });
   });

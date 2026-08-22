@@ -221,7 +221,6 @@ interface RawRow {
   readonly pinned: number;
   readonly sort_order: number | null;
   readonly query_json: string | null;
-  readonly column_ref: string | null;
   readonly extra_json: string;
   readonly snippets_json: string | null;
   readonly stale: string | null;
@@ -301,7 +300,6 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     pinned: row.pinned !== 0,
     order: row.sort_order,
     query: parseJsonObject(row.query_json) as DocRow["query"],
-    column: row.column_ref,
     extra: parseJsonObject(row.extra_json) ?? {},
     // Same reasoning as `status`: the tier is this module's own CASE over the
     // contract's closed enum, and `agent`/`last_author` are parsed with the
@@ -358,7 +356,7 @@ export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): Do
          d.due AS due, d.reviewed AS reviewed, d.evergreen AS evergreen, d.origin AS origin,
          d.body_excerpt AS excerpt,
          d.pinned AS pinned, d.sort_order AS sort_order, d.query_json AS query_json,
-         d.column_ref AS column_ref, d.extra_json AS extra_json,
+         d.extra_json AS extra_json,
          ${searching ? "m.snippets" : "NULL"} AS snippets_json,
          ${ROW_COLUMNS},
          ${REASON_COLUMNS}

@@ -294,8 +294,8 @@ function insertDocumentRow(
   db.prepare(
     `INSERT INTO documents
        (id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen,
-        origin, body_excerpt, pinned, sort_order, query_json, column_ref, extra_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        origin, body_excerpt, pinned, sort_order, query_json, extra_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     fields.type,
@@ -313,7 +313,6 @@ function insertDocumentRow(
     fields.view.pinned ? 1 : 0,
     fields.view.order,
     fields.view.query === null ? null : JSON.stringify(fields.view.query),
-    fields.view.column,
     // Always a JSON object, `{}` for a file with only core keys — the wire says
     // the field is present on every response, so the column is NOT NULL.
     JSON.stringify(fields.view.extra),
