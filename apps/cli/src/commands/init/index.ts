@@ -2,9 +2,8 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { UsageError } from "../../errors.js";
 import { plural } from "../../input.js";
-import { resolvePluginsRoot, resolveTemplateRoot, templateManifestPath } from "../../paths.js";
+import { resolveTemplateRoot, templateManifestPath } from "../../paths.js";
 import type { CommandContext, StandaloneCommandSpec } from "../../registry/types.js";
-import { WORKSPACE_TEMPLATES_DIR } from "../../template/install.js";
 import { CONFIG_DIR, CONFIG_FILE, findWorkspaceRoot } from "../../workspace.js";
 import { ensureMaintenanceSettings } from "../workspace/maintenance.js";
 import {
@@ -46,13 +45,6 @@ export const INITIAL_COMMIT_MESSAGE = "workspace: initialize corpus workspace by
 export interface InitDependencies {
   readonly git?: GitRunner;
   readonly templateRoot?: string;
-  /**
-   * The tool's bundled `plugins/` directory. Named to override (tests point it
-   * at a fixture tree; `undefined` means "no plugins"); absent, the real root
-   * is resolved from the install directory — never the workspace
-   * (SPEC.md §10, sprint-012 Adjudication 12).
-   */
-  readonly pluginsRoot?: string | undefined;
   readonly portProbe?: FindFreePortOptions;
 }
 
@@ -69,10 +61,6 @@ export interface InitReport {
    */
   readonly maintenanceSettings: readonly string[];
   readonly installed: readonly string[];
-  /** Plugin skill files copied into `.claude/skills/` (SPEC.md §10). */
-  readonly installedPluginSkills: readonly string[];
-  /** Plugin seed templates copied into `data/docs/templates/` (SPEC.md §10, §10). */
-  readonly installedPluginSeeds: readonly string[];
   readonly warnings: readonly string[];
 }
 
@@ -165,7 +153,6 @@ export async function runInit(
     const result = scaffoldWorkspace({
       root: target,
       templateRoot,
-      pluginsRoot: "pluginsRoot" in dependencies ? dependencies.pluginsRoot : resolvePluginsRoot(),
       port,
       token,
       toolVersion: context.version,
@@ -173,7 +160,6 @@ export async function runInit(
       // unwind together, or a failed commit leaves a half-workspace behind.
       created,
     });
-    warnings.push(...result.pluginWarnings);
     if (created.overwritten.length > 0) {
       warnings.push(
         `overwrote ${plural(created.overwritten.length, "pre-existing file")}, which cannot be ` +
@@ -212,8 +198,6 @@ export async function runInit(
       repository: reused ? "reused" : "initialized",
       maintenanceSettings,
       installed: result.installed.map((file) => file.to),
-      installedPluginSkills: result.installedPluginSkills,
-      installedPluginSeeds: result.installedPluginSeeds,
       warnings,
     };
   } catch (error) {
@@ -313,16 +297,6 @@ export const initCommand: StandaloneCommandSpec = {
     context.out.line(
       `  installed ${plural(report.installed.length, "template file")}, recorded in ${relative(report.workspace, report.manifestPath)}`,
     );
-    if (report.installedPluginSkills.length > 0) {
-      context.out.line(
-        `  installed ${plural(report.installedPluginSkills.length, "plugin skill file")} into .claude/skills/`,
-      );
-    }
-    if (report.installedPluginSeeds.length > 0) {
-      context.out.line(
-        `  installed ${plural(report.installedPluginSeeds.length, "plugin seed template")} into ${WORKSPACE_TEMPLATES_DIR}/`,
-      );
-    }
     context.out.line("Next: corpus server start");
   },
 };

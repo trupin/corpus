@@ -19,8 +19,9 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  *   reaction to that editing session ending, so a deferral that named no
  *   document could never come back. The event payload cannot supply it either —
  *   `comment.created` happens to carry `parentId`, `form.respond` names no
- *   document at all, and plugin payloads are their own shapes — so the party
- *   that saw the session names what it is waiting for. A missing `--blocked-on`
+ *   document at all, and an event type this build does not recognise carries
+ *   whatever shape its producer chose — so the party that saw the session names
+ *   what it is waiting for. A missing `--blocked-on`
  *   is refused here, before anything is sent: the server would answer `400`, but
  *   a usage error costs no round trip and says which flag.
  * - **There is no reverse verb.** Nothing asks for the event back; the person

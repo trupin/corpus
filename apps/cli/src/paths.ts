@@ -78,35 +78,6 @@ export function templateRootCandidates(packageRoot: string = cliPackageRoot()): 
 }
 
 /**
- * Where the bundled `plugins/` directory lives (SPEC.md §10, PLUGINS-001).
- * Same two-layout resolution as the workspace template: packaged first
- * (INFRA-008 stages `plugins/` into the tarball), monorepo dev second. The
- * root is the **tool's install directory**, never the operator's cwd — a
- * `plugins/` directory inside a workspace is deliberately not discovered
- * (sprint-012 Adjudication 12). Mirrored by `resolvePluginsRoot` in
- * `apps/server/src/plugins/discover.ts`, which cannot import this package.
- */
-export function pluginsRootCandidates(packageRoot: string = cliPackageRoot()): readonly string[] {
-  return [join(packageRoot, "plugins"), resolve(packageRoot, "..", "..", "plugins")];
-}
-
-/**
- * The bundled `plugins/` directory, or `undefined`. Unlike the template, a
- * missing plugins root is a normal state — a tool with no plugins — never an
- * error: every discovery mechanism just returns empty.
- */
-export function resolvePluginsRoot(
-  env: NodeJS.ProcessEnv = process.env,
-  packageRoot: string = cliPackageRoot(),
-): string | undefined {
-  const explicit = env["CORPUS_PLUGINS_DIR"]?.trim();
-  if (explicit !== undefined && explicit !== "") {
-    return resolve(packageRoot, explicit);
-  }
-  return pluginsRootCandidates(packageRoot).find((candidate) => existsSync(candidate));
-}
-
-/**
  * The bundled `assets/workspace/` directory, or a failure naming every place
  * that was looked at — a broken install must say which path it expected rather
  * than "ENOENT" from somewhere inside the copy.

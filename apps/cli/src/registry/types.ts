@@ -1,12 +1,4 @@
 import type { Actor } from "@corpus/contract";
-import type {
-  PluginArgSpec,
-  PluginCommandContext,
-  PluginCommandSpec,
-  PluginExample,
-  PluginFlagSpec,
-  PluginFlagType,
-} from "@corpus/contract/plugin";
 import type { CliClient } from "../client.js";
 import type { Output } from "../output.js";
 import type { ParsedArgs, ParsedFlags } from "../parse-args.js";
@@ -17,32 +9,44 @@ import type { Workspace } from "../workspace.js";
  * dispatcher, every level of `--help`, and the generated `docs/cli.md`, so help,
  * docs and behaviour cannot disagree — they have exactly one source.
  *
- * The *declarative* half of that data — flags, args, examples, and every field
- * of a command but its handler — is declared once in `@corpus/contract/plugin`
- * and aliased here (CONTRACT-015). A plugin's `cli/commands/*.ts` may import
- * only `@corpus/kit` and `@corpus/contract`, and its verbs go through this
- * registry unchanged, so a second declaration of these shapes would be a fork
- * of the surface the registry validates. What stays local is what a plugin
- * never declares: the CLI's own rich contexts, the standalone-command escape
- * hatch (`corpus init`), topics (derived from a plugin's directory name by the
- * scanner) and the registry itself.
+ * Every shape a command declares about itself lives here, and nowhere else:
+ * flags, args, examples, the two contexts a handler may be given, and the
+ * registry itself. One declaration, in the module the registry validates.
  */
 
-export type FlagType = PluginFlagType;
-export type FlagSpec = PluginFlagSpec;
-export type Example = PluginExample;
+export type FlagType = "boolean" | "string" | "number";
+
+export interface FlagSpec {
+  /** Long name without the leading dashes, kebab-case: `no-color`. */
+  readonly name: string;
+  /** Optional single-character alias, used as `-h`. */
+  readonly alias?: string;
+  readonly type: FlagType;
+  /** Repeatable flags collect every occurrence instead of last-one-wins. */
+  readonly repeated?: boolean;
+  /** Applied when the flag is absent. Booleans default to `false` regardless. */
+  readonly default?: boolean | string | number;
+  /** Placeholder shown in help for value-taking flags: `--workspace <path>`. */
+  readonly valueName?: string;
+  readonly description: string;
+}
+
+export interface Example {
+  /** A runnable command line, e.g. "corpus health --json". */
+  readonly command: string;
+  readonly description: string;
+}
 
 /**
- * The published positional shape plus one core-only refinement: the **last**
- * argument may be variadic and absorb every remaining token, which is what
- * `corpus doc check <id>…` needs (SPEC.md §11). It is deliberately not in
- * `@corpus/contract/plugin`: a plugin declares fixed positionals, and widening
- * the published shape for one core verb would put a field on the plugin surface
- * that nothing there uses. The widening is safe in the direction that matters —
- * a `PluginArgSpec` already satisfies this interface, so a plugin's spec still
- * enters the registry unchanged.
+ * One positional argument. The **last** one may be variadic and absorb every
+ * remaining token, which is what `corpus doc check <id>…` needs (SPEC.md §11);
+ * `validateRegistry` refuses the flag anywhere else, because a positional
+ * declared after a variadic one could never be bound.
  */
-export interface ArgSpec extends PluginArgSpec {
+export interface ArgSpec {
+  readonly name: string;
+  readonly required: boolean;
+  readonly description: string;
   readonly variadic?: true;
 }
 
@@ -75,11 +79,20 @@ export interface WorkspaceCommandContext extends CommandContext {
 }
 
 /**
- * Everything a command declares about itself, handler aside — the published
- * plugin shape minus the one member whose context differs per command kind.
+ * Everything a command declares about itself, handler aside — the one member
+ * whose context differs per command kind.
  */
-interface CommandSpecBase extends Omit<PluginCommandSpec, "handler" | "args"> {
+interface CommandSpecBase {
+  /** The verb, e.g. `add`. Invoked as `corpus <topic> <verb>`, or `corpus <verb>`. */
+  readonly name: string;
+  /** One line, shown in every listing. */
+  readonly summary: string;
+  /** Paragraph shown by `--help` and in `docs/cli.md`. */
+  readonly description?: string;
   readonly args: readonly ArgSpec[];
+  readonly flags: readonly FlagSpec[];
+  /** At least one — enforced by registry validation, which is what keeps docs useful. */
+  readonly examples: readonly Example[];
 }
 
 /** The normal case: the dispatcher resolves the workspace and builds the client first. */
@@ -106,8 +119,7 @@ export interface TopicSpec {
 
 /**
  * `commands` are invoked directly (`corpus health`); `topics` group verbs
- * (`corpus server start`). Plugin-contributed verbs register through the same
- * shapes, so nothing may assume a closed set.
+ * (`corpus server start`).
  */
 export interface Registry {
   /** One-line description of the tool, shown by `corpus --help` and in `docs/cli.md`. */
@@ -115,24 +127,3 @@ export interface Registry {
   readonly commands: readonly CommandSpec[];
   readonly topics: readonly TopicSpec[];
 }
-
-/**
- * The two compile-time adapter checks that make the published plugin surface
- * honest (CONTRACT-015, sprint-013 Adjudication 16). The CLI's internals are
- * *not* published — `ParsedArgs`/`ParsedFlags` are classes with `#private`
- * fields, `Workspace` comes from a module that reads `node:fs`, and `CliClient`
- * is bound to `@corpus/contract/client` — so the contract publishes narrowed
- * structural views instead, and these assertions are what keep the two in step:
- * no adapter object exists at runtime because none is needed, and the day
- * either side drifts, `apps/cli` stops compiling.
- */
-type AssertAssignable<Expected, Actual extends Expected> = Actual;
-
-/** The dispatcher hands a plugin verb this exact object (`run.ts`). */
-type _WorkspaceContextIsAPluginContext = AssertAssignable<
-  PluginCommandContext,
-  WorkspaceCommandContext
->;
-
-/** A plugin's default-exported spec enters the registry as an ordinary verb. */
-type _PluginSpecIsACommandSpec = AssertAssignable<CommandSpec, PluginCommandSpec>;

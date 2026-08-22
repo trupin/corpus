@@ -17,7 +17,7 @@ import { documentSections, selectSection, type DocumentSection } from "./section
  * reads first, the key a writer presents back, the anchored threads with their
  * resolution state — the context §7's comment skill needs before replying — and
  * then the body. Everything the endpoint returns, including the view keys and
- * the plugin `extra` block, is in `--json`; the human rendering is a summary and
+ * the `extra` block of non-core frontmatter, is in `--json`; the human rendering is a summary and
  * says so.
  *
  * Timestamps that the file genuinely lacks (a hand-written `SKILL.md` has none)
@@ -187,7 +187,8 @@ export const showCommand: WorkspaceCommandSpec = {
     "`corpus queue defer <event-id> --blocked-on <id>`, which returns to pending on its own when " +
     "the session ends.\n\n" +
     "The human rendering is a summary: the whole payload — including the §10 view keys and any " +
-    "plugin `extra` — is what `--json` emits, unchanged. An id that names no document is the " +
+    "non-core `extra` frontmatter — is what `--json` emits, unchanged. An id that names no " +
+    "document is the " +
     "server's `404`, which is exit 5.",
   args: [{ name: "id", required: true, description: "The document's id." }],
   flags: [

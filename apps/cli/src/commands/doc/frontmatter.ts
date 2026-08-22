@@ -60,7 +60,7 @@ import type { FlagSpec } from "../../registry/types.js";
  * **Objects and arrays are deliberately out of this grammar** (SPEC 38,
  * adjudicated by CLI-018): a `{`-leading value is stored as the string it looks
  * like, and `--extra-json` is the flag that means "parse this as JSON". Two
- * meanings for one syntax would make every plugin key ambiguous; a second flag
+ * meanings for one syntax would make every non-core key ambiguous; a second flag
  * is unambiguous and costs the caller three characters.
  */
 export function parseExtraValue(raw: string): string | number | boolean | null {
@@ -181,12 +181,11 @@ export function parseExtraFlags(entries: readonly string[]): Record<string, unkn
  * (sprint-018 TEST-639, outcome (a)).
  *
  * `extra` has carried objects and arrays on the wire since CONTRACT-011
- * (`EXTRA_MAX_DEPTH = 8`, and `todo.items` — an array of objects — is the
- * reference plugin's own shape), so the scalars-only limit was never the
- * contract's: it was `--extra`'s grammar, and a CLI-only agent stewarding a
- * plugin key that stores an object had no verb at all. Widening `--extra` to
- * parse `{`-leading values as JSON would have changed what a value already
- * stores today, so the escape hatch is a second flag instead.
+ * (`EXTRA_MAX_DEPTH = 8` is a depth no scalar needs), so the scalars-only limit
+ * was never the contract's: it was `--extra`'s grammar, and a CLI-only agent
+ * stewarding a non-core key that stores an object had no verb at all. Widening
+ * `--extra` to parse `{`-leading values as JSON would have changed what a value
+ * already stores today, so the escape hatch is a second flag instead.
  *
  * **Nothing is bounded here.** Depth and size are the contract's
  * (`EXTRA_MAX_DEPTH`, `EXTRA_MAX_BYTES`), enforced server-side over the whole

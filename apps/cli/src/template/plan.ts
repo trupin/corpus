@@ -34,7 +34,12 @@ export const UPGRADE_ACTIONS = [
   "keep-silent",
   /** Deleted here → report; reinstall only under `--restore`. */
   "restore-candidate",
-  /** In the manifest, gone from the template → report, leave the copy, drop the entry. */
+  /**
+   * In the manifest, gone from the incoming set → report, leave the copy, drop
+   * the entry. This covers a file the tool stopped shipping *and* a file an
+   * older tool installed from a source this build no longer has at all: either
+   * way the workspace's copy is the user's, so it stays on disk untouched.
+   */
   "retired",
   /** Already identical to the incoming copy → nothing to do, nothing to say. */
   "current",
@@ -106,8 +111,6 @@ export function decide(input: UpgradeInput): UpgradeAction {
 
 export interface UpgradeDecision extends UpgradeInput {
   readonly action: UpgradeAction;
-  /** Where the incoming bytes come from: `undefined` for the template, `"plugin:<dir>"` otherwise. */
-  readonly source?: string;
 }
 
 /**
@@ -132,11 +135,7 @@ export function planUpgrade(
       workspace: workspaceSha(path),
       incoming: source?.sha256 ?? null,
     };
-    return {
-      ...input,
-      action: decide(input),
-      ...(source?.source === undefined ? {} : { source: source.source }),
-    };
+    return { ...input, action: decide(input) };
   });
 }
 
@@ -147,8 +146,6 @@ export interface IncomingFile {
   /** Absolute path of the bytes to copy. */
   readonly from: string;
   readonly sha256: string;
-  /** `"plugin:<dir>"` when the bytes come from a plugin; absent for the template. */
-  readonly source?: string;
 }
 
 /**
@@ -186,11 +183,7 @@ export function nextManifestFiles(
       ? decision.incoming
       : (decision.baseline ?? adoptable(decision));
     if (sha === null) continue;
-    files.push({
-      path: decision.path,
-      sha256: sha,
-      ...(decision.source === undefined ? {} : { source: decision.source }),
-    });
+    files.push({ path: decision.path, sha256: sha });
   }
   return files;
 }

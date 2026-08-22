@@ -214,8 +214,8 @@ export const listCommand: WorkspaceCommandSpec = {
     "A misspelled value for one of the enumerated filters (`--status`, `--sort`, `--needs`, " +
     "`--stale`, `--agent`, `--author`) is a usage error listing the alternatives, and no request " +
     "is sent. The open ones — `--type`, `--tag`, `--folder`, `--due` — are passed through " +
-    "verbatim, since plugins define their own types and the CLI does not know the workspace's " +
-    "tags or folders.",
+    "verbatim, since the CLI does not know the workspace's tags, its folders, or every `type:` " +
+    "its documents carry.",
   args: [],
   flags: [
     {

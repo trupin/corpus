@@ -93,8 +93,6 @@ const ACTION_ORDER: readonly UpgradeAction[] = [
 export interface ReportedChange {
   readonly path: string;
   readonly action: UpgradeAction;
-  /** Where the incoming bytes come from: `"template"` or `"plugin:<dir>"`. */
-  readonly source: string;
   /** One line of why, for the verdicts a person has to judge. */
   readonly detail?: string;
 }
@@ -451,7 +449,6 @@ function describe(
     .map((decision) => ({
       path: decision.path,
       action: decision.action,
-      source: decision.source ?? "template",
       ...detailFor(decision, root, sources.get(decision.path), withoutBaseline),
     }));
 }
@@ -610,10 +607,9 @@ function renderUpgradeReportBody(out: Output, report: UpgradeReport): void {
     `${report.dryRun ? "plan" : "upgrade"} (tool ${report.fromVersion ?? "unknown"} → ${report.toVersion}):`,
   );
   for (const change of report.changes) {
-    const provenance = change.source === "template" ? "" : ` [${change.source}]`;
     const detail = change.detail === undefined ? "" : ` — ${change.detail}`;
     out.line(
-      `  ${labelFor(change.action, report.withoutBaseline).padEnd(7)} ${change.path}${provenance}${detail}`,
+      `  ${labelFor(change.action, report.withoutBaseline).padEnd(7)} ${change.path}${detail}`,
     );
     // A conflict is unresolved work rather than a notice (SPEC.md §2.4), and
     // unresolved work needs the one thing this line cannot carry: what actually
@@ -707,10 +703,9 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "the workspace with git. A run with nothing to do prints `already up to date.` and makes no " +
     "commit.\n\n" +
     "Only template-provenance paths are touched — `.claude/` skills and personas, the workspace " +
-    "`README.md` and `.gitignore`, the seed documents under `data/docs/` the template and " +
-    "plugins install — and nothing under `.corpus/` except the manifest itself and a missing " +
-    "queue status directory. Plugin-installed skills **and seed templates** are refreshed from " +
-    "**their plugin**, not from the template.\n\n" +
+    "`README.md` and `.gitignore`, the seed documents under `data/docs/` the template installs " +
+    "— and nothing under `.corpus/` except the manifest itself and a missing queue status " +
+    "directory.\n\n" +
     "One thing is repaired rather than compared: a workspace initialized before a queue status " +
     "existed has no `.corpus/queue/<status>/.gitkeep` for it, so the directory does not survive " +
     "a clone and that state has nowhere to live on a fresh checkout. Any missing marker is " +
@@ -770,7 +765,7 @@ export const upgradeCommand: WorkspaceCommandSpec = {
       description:
         'One JSON value: `{"workspace":"/home/me/notes","fromVersion":"0.1.0","toVersion":"0.2.0",' +
         '"dryRun":false,"withoutBaseline":false,"changes":[{"path":".claude/skills/comment/SKILL.md",' +
-        '"action":"keep-modified","source":"template","detail":"modified here — 3 lines only here, 1 line only in the new copy"}],' +
+        '"action":"keep-modified","detail":"modified here — 3 lines only here, 1 line only in the new copy"}],' +
         '"written":[".claude/skills/orchestrate/SKILL.md"],"manifestWritten":true,"commit":"9f3c1ab"}`.',
     },
   ],

@@ -14,16 +14,8 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { QUEUE_EVENT_STATUSES, type QueueEventStatus } from "@corpus/contract";
 import { templateManifestPath } from "../../paths.js";
+import { planTemplateInstall, type PlannedTemplateFile } from "../../template/install.js";
 import {
-  planPluginSeedInstall,
-  planPluginSkillInstall,
-  planTemplateInstall,
-  templateSeedNames,
-  templateSkillNames,
-  type PlannedTemplateFile,
-} from "../../template/install.js";
-import {
-  pluginSourceMarker,
   serializeManifest,
   sha256,
   type ManifestEntry,
@@ -198,12 +190,6 @@ export function buildConfig(port: number, token: string): WorkspaceConfigFile {
 export interface ScaffoldOptions {
   readonly root: string;
   readonly templateRoot: string;
-  /**
-   * The tool's bundled `plugins/` directory, or `undefined` for none. Plugin
-   * skills (`plugins/<dir>/skills/*`) install into `.claude/skills/` beside
-   * the template's own (SPEC.md §10); a missing root installs nothing.
-   */
-  readonly pluginsRoot?: string | undefined;
   readonly port: number;
   readonly token: string;
   readonly toolVersion: string;
@@ -214,12 +200,6 @@ export interface ScaffoldOptions {
 export interface ScaffoldResult {
   readonly created: CreatedPaths;
   readonly installed: readonly PlannedTemplateFile[];
-  /** Plugin skill files installed, workspace-relative. */
-  readonly installedPluginSkills: readonly string[];
-  /** Plugin seed templates installed, workspace-relative (SPEC.md §10, §10). */
-  readonly installedPluginSeeds: readonly string[];
-  /** Skipped plugin assets (name collisions, missing declarations) — surfaced by `corpus init`. */
-  readonly pluginWarnings: readonly string[];
   readonly manifest: TemplateManifest;
   readonly configPath: string;
 }
@@ -244,26 +224,6 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
     const source = join(templateRoot, ...file.from.split("/"));
     created.copyFile(source, join(root, ...file.to.split("/")));
     files.push({ path: file.to, sha256: sha256(readFileSync(source)) });
-  }
-
-  // Plugin skills, after the template so the reserved-name rule is computed
-  // from what was actually installed. Entries land in the same manifest with a
-  // `source: "plugin:<dir>"` marker (sprint-012 Adjudication 11) so
-  // `corpus workspace upgrade` can tell the two provenances apart.
-  const pluginSkills = planPluginSkillInstall(options.pluginsRoot, templateSkillNames(installed));
-  // Plugin seed templates (CLI-012): a second asset kind through the same path
-  // — declared in the plugin's `types.yaml`, installed beside the workspace's
-  // own templates, and marked with the same `plugin:<dir>` provenance so an
-  // upgrade refreshes it from its plugin under CLI-005's never-clobber rules.
-  const pluginSeeds = planPluginSeedInstall(options.pluginsRoot, templateSeedNames(installed));
-  for (const file of [...pluginSkills.files, ...pluginSeeds.files]) {
-    const source = join(options.pluginsRoot ?? "", ...file.from.split("/"));
-    created.copyFile(source, join(root, ...file.to.split("/")));
-    files.push({
-      path: file.to,
-      sha256: sha256(readFileSync(source)),
-      source: pluginSourceMarker(file.plugin),
-    });
   }
 
   const configPath = join(root, CONFIG_DIR, CONFIG_FILE);
@@ -292,15 +252,7 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
   };
   created.writeFile(templateManifestPath(root), serializeManifest(manifest));
 
-  return {
-    created,
-    installed,
-    installedPluginSkills: pluginSkills.files.map((file) => file.to),
-    installedPluginSeeds: pluginSeeds.files.map((file) => file.to),
-    pluginWarnings: [...pluginSkills.warnings, ...pluginSeeds.warnings],
-    manifest,
-    configPath,
-  };
+  return { created, installed, manifest, configPath };
 }
 
 /**

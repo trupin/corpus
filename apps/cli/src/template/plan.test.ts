@@ -106,11 +106,11 @@ describe("decide", () => {
 describe("planUpgrade", () => {
   const incoming: readonly IncomingFile[] = [
     { path: ".claude/skills/comment/SKILL.md", from: "/t/comment", sha256: B },
-    { path: ".claude/skills/notes/SKILL.md", from: "/p/notes", sha256: B, source: "plugin:todos" },
+    { path: ".claude/skills/notes/SKILL.md", from: "/t/notes", sha256: B },
     { path: "README.md", from: "/t/readme", sha256: A },
   ];
 
-  it("decides one path at a time, sorted, and carries each file's provenance", () => {
+  it("decides one path at a time, sorted", () => {
     const workspace = new Map([
       [".claude/skills/comment/SKILL.md", A],
       [".claude/skills/notes/SKILL.md", A],
@@ -120,7 +120,7 @@ describe("planUpgrade", () => {
     const plan = planUpgrade(
       [
         { path: ".claude/skills/comment/SKILL.md", sha256: A },
-        { path: ".claude/skills/notes/SKILL.md", sha256: A, source: "plugin:todos" },
+        { path: ".claude/skills/notes/SKILL.md", sha256: A },
         { path: "README.md", sha256: A },
         { path: "data/docs/views/old.md", sha256: C },
       ],
@@ -134,9 +134,6 @@ describe("planUpgrade", () => {
       ["README.md", "current"],
       ["data/docs/views/old.md", "retired"],
     ]);
-    // The plugin entry is refreshed from the plugin's own copy, not the template's.
-    expect(plan[1]?.source).toBe("plugin:todos");
-    expect(plan[0]?.source).toBeUndefined();
   });
 
   it("unions the manifest's paths with the current sources", () => {
@@ -155,8 +152,7 @@ describe("nextManifestFiles", () => {
     path: string,
     action: UpgradeAction,
     shas: { baseline: string | null; workspace: string | null; incoming: string | null },
-    source?: string,
-  ): UpgradeDecision => ({ path, action, ...shas, ...(source === undefined ? {} : { source }) });
+  ): UpgradeDecision => ({ path, action, ...shas });
 
   /** What the run put on disk: the second argument is a fact, not a plan. */
   const NOTHING: ReadonlySet<string> = new Set();
@@ -255,14 +251,5 @@ describe("nextManifestFiles", () => {
         NOTHING,
       ),
     ).toEqual([]);
-  });
-
-  it("carries the plugin marker through", () => {
-    expect(
-      nextManifestFiles(
-        [decision("a", "update", { baseline: A, workspace: A, incoming: B }, "plugin:todos")],
-        WROTE_A,
-      ),
-    ).toEqual([{ path: "a", sha256: B, source: "plugin:todos" }]);
   });
 });

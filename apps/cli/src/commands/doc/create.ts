@@ -124,7 +124,7 @@ export const createCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "type",
       description:
-        "Document type: `note`, `view`, `template`, `skill`, `agent-def`, or a plugin's own. Required.",
+        "Document type: `note`, `view`, `template`, `skill`, `agent-def`, or any other value this workspace uses (SPEC.md §5 — the field is an open string). Required.",
     },
     {
       name: "title",
@@ -193,12 +193,6 @@ export const createCommand: WorkspaceCommandSpec = {
         'corpus doc create --type view --title "Unresolved finance" --folder views --evergreen true --pinned true --order 4 --query type=thread --query status=open --query tag=finance --from agent',
       description:
         "SPEC.md §10's “pin me a view of unresolved finance threads”, in one command: the view document lands in `data/docs/views/`, the board grows a fourth column live over SSE, and `git log` records the agent as its author.",
-    },
-    {
-      command:
-        'corpus doc create --type view --title "Todos" --folder views --evergreen true --pinned true --order 5 --column todos/todos',
-      description:
-        "A plugin column: the same pinned view document, rendered by the plugin's own column type (SPEC.md §10). An uninstalled plugin keeps the position and shows the plugin-missing card.",
     },
     {
       command: 'corpus doc create --type note --title "Notes" --file notes.md --json',

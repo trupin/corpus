@@ -74,8 +74,6 @@ export interface DiffSide {
 export interface WorkspaceDiffFile {
   /** Workspace-relative, POSIX-separated — the path `corpus workspace upgrade` prints. */
   readonly path: string;
-  /** `"template"`, or `"plugin:<dir>"` for a plugin-contributed file. */
-  readonly source: string;
   /** The upgrade's own verdict for this path, from `template/plan.ts`. */
   readonly action: UpgradeAction;
   /** Edited here **and** changed by the tool: unresolved work (SPEC.md §2.4). */
@@ -164,7 +162,6 @@ function describe(decision: UpgradeDecision): WorkspaceDiffFile {
   const { baseline, workspace, incoming } = decision;
   return {
     path: decision.path,
-    source: decision.source ?? "template",
     action: decision.action,
     conflict: conflicts(decision),
     baseline,
@@ -280,7 +277,7 @@ function list(context: WorkspaceCommandContext, report: WorkspaceConflictList): 
       `corpus ${report.toolVersion}:`,
   );
   for (const file of report.conflicts) {
-    context.out.line(`  ${file.path}${provenance(file)}`);
+    context.out.line(`  ${file.path}`);
   }
   context.out.line(
     "each is unresolved work: nothing is merged automatically. See what the tool changed with " +
@@ -292,7 +289,7 @@ function list(context: WorkspaceCommandContext, report: WorkspaceConflictList): 
 function show(context: WorkspaceCommandContext, report: WorkspaceDiffReport): void {
   context.out.emit(report);
 
-  context.out.line(`${report.path}${provenance(report)}`);
+  context.out.line(report.path);
   context.out.line(`  ${verdict(report)}`);
   context.out.line(`  baseline  ${identity(report.baseline)}${baselineNote(report)}`);
   context.out.line(`  workspace ${identity(report.workspace.sha256)}${sideNote(report.workspace)}`);
@@ -380,10 +377,6 @@ function sideNote(side: DiffSide): string {
   return side.matchesBaseline ? "unchanged since the baseline" : "moved since the baseline";
 }
 
-function provenance(file: WorkspaceDiffFile): string {
-  return file.source === "template" ? "" : ` [${file.source}]`;
-}
-
 /**
  * Said once, at the end, whenever there is no manifest: every verdict above was
  * reached without a baseline, so "edited here" is a guess rather than a fact.
@@ -454,7 +447,7 @@ export const workspaceDiffCommand: WorkspaceCommandSpec = {
       command: "corpus workspace diff .claude/skills/comment/SKILL.md --json",
       description:
         'One JSON value: `{"root":"/home/me/notes","toolVersion":"0.3.0","baselineRecordedBy":"0.2.0",' +
-        '"path":".claude/skills/comment/SKILL.md","source":"template","action":"keep-modified",' +
+        '"path":".claude/skills/comment/SKILL.md","action":"keep-modified",' +
         '"conflict":true,"baseline":"9c0d…","workspace":{"present":true,"sha256":"5e6f…","matchesBaseline":false},' +
         '"tool":{"present":true,"sha256":"1a2b…","matchesBaseline":false},"diff":{"from":"workspace",' +
         '"to":"tool","text":"--- workspace/…\\n+++ tool/…\\n@@ -1,4 +1,5 @@\\n…","added":3,"removed":1,"coarse":false}}`.',

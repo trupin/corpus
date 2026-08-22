@@ -449,7 +449,8 @@ export const editCommand: WorkspaceCommandSpec = {
       repeated: true,
       description:
         "Set one non-core frontmatter key, repeatably — the agent's way to steward a column's " +
-        "`width` (SPEC.md §10) or any plugin key. **The value grammar is total over scalars** — " +
+        "`width` (SPEC.md §10) or any other key the core does not define. **The value grammar is " +
+        "total over scalars** — " +
         "every input maps to exactly one JSON scalar, and `--extra-json` is the flag for an " +
         "object or an array: `null` deletes " +
         "the key (RFC 7386), `true`/`false` are booleans, a canonical **finite** JSON number " +
@@ -474,8 +475,8 @@ export const editCommand: WorkspaceCommandSpec = {
         "`--extra`'s scalar grammar deliberately does not have. The value is parsed as JSON, so " +
         "an object or an array reaches the file as YAML structure: " +
         '`--extra-json publish=\'{"target":"blog","draft":true}\'`, or ' +
-        '`--extra-json items=\'[{"text":"Ship it","done":false}]\'` for a plugin key shaped ' +
-        "like SPEC.md §12's. Same merge-patch semantics as `--extra` — named keys replace, " +
+        '`--extra-json items=\'[{"text":"Ship it","done":false}]\'` for a key whose value is a ' +
+        "list of objects. Same merge-patch semantics as `--extra` — named keys replace, " +
         "`null` deletes, unnamed keys are untouched — and the same core-key refusal. Depth and " +
         "size are the contract's (`EXTRA_MAX_DEPTH`, `EXTRA_MAX_BYTES`), checked server-side " +
         "over the whole object; the CLI only insists the text is JSON, so a shell-quoting slip " +
@@ -531,9 +532,9 @@ export const editCommand: WorkspaceCommandSpec = {
         "Reorder: a midpoint lands the column between the first and second without renumbering the rest of the board.",
     },
     {
-      command: 'corpus doc edit doc_t0d0s1 --extra-json publish=\'{"target":"blog"}\'',
+      command: 'corpus doc edit doc_a1b2c3 --extra-json publish=\'{"target":"blog"}\'',
       description:
-        "Store a plugin key whose value is an object; `--extra` stores scalars, and this is how the same merge patch carries structure.",
+        "Store a non-core key whose value is an object; `--extra` stores scalars, and this is how the same merge patch carries structure.",
     },
     {
       command: 'corpus doc edit doc_a1b2c3 --file revised.md --key "$key" --json',
