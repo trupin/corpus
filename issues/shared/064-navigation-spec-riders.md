@@ -4,7 +4,7 @@
 shared (orchestrator-handled)
 
 ## Status
-todo
+done
 
 ## Priority
 P0
@@ -26,13 +26,13 @@ fable — every rider is a judgment about the product's direction, read back to 
 Phase 41 replaces the board's navigation model. SPEC §11 today says "No sidebar", "a column IS a `type: view` document with `pinned: true` … and `order`", "clicking a row opens the document _in that column_ (column widens)", and focus mode is the only full-width surface. The prototype at `design/navigation.html` (agreed with the user on 2026-08-22, clickable copy published as an artifact) replaces those sentences with: a retractable explorer, boards that are `type: board` documents, paths of reader columns that open to the right of the row they came from, a column strip, kanban boards over a field with a transition graph, and `stage` as a core field beside `status`. This issue writes those riders into SPEC.md and gets each one signed. Nothing downstream starts before its rider is signed, because every other issue in the phase cites the rider text.
 
 ## Acceptance Criteria
-- [ ] Each rider below is in SPEC.md, marked `_(Rider signed <date>.)_`, after the user signed it on the quoted text — one rider per exchange, never batched (memory: a batched read-back hid a live §4/§7 contradiction once).
-- [ ] §11's "Visual reference" line names `design/navigation.html` as authoritative for navigation look and feel, beside `design/index.html` for everything else.
-- [ ] No sentence in §11 still says "No sidebar", "pinned: true", "column widens", or "order (board position)" about a view.
-- [ ] §9.2's `GET /api/docs` line no longer lists `pinned=`, and lists `stage=`.
-- [ ] §5 carries `stage` in the canonical frontmatter and the coupling rule.
-- [ ] §2.4 says an upgrade reports data migrations as commands.
-- [ ] §7 carries `workspace.reflect`, the quiet window, the clock and the digest thread (rider 9).
+- [x] Each rider below is in SPEC.md, marked `_(Rider signed <date>.)_`, after the user signed it on the quoted text — one rider per exchange, never batched (memory: a batched read-back hid a live §4/§7 contradiction once).
+- [x] §11's "Visual reference" line names `design/navigation.html` as authoritative for navigation look and feel, beside `design/index.html` for everything else.
+- [x] No sentence in §11 still says "No sidebar", "pinned: true", "column widens", or "order (board position)" about a view.
+- [x] §9.2's `GET /api/docs` line no longer lists `pinned=`, and lists `stage=`.
+- [x] §5 carries `stage` in the canonical frontmatter and the coupling rule.
+- [x] §2.4 says an upgrade reports data migrations as commands.
+- [x] §7 carries `workspace.reflect`, the quiet window, the clock and the digest thread (rider 9).
 
 ## Technical Design
 
@@ -86,7 +86,19 @@ None — prose. `npm run lint` covers formatting of the issue and plan files.
 2. Eight `_(Rider signed 2026-…)_` markers exist for the riders above.
 
 ## E2E Verification Log
-_Filled in by the orchestrator._
+Orchestrator, 2026-08-22, on fable. Nine riders read back one at a time, each signed by the user ("signed" / "sign it") on the quoted text, each written verbatim into SPEC.md in the same turn:
+
+1. §11 explorer — replaced "No sidebar."; the Shell sentence names the explorer; the Visual reference line names `design/navigation.html`.
+2. §11 boards as documents — replaced "Columns are pinned view documents" through "nothing hardwired"; the view's query/stewardship sentence kept and reworded.
+3. §11 paths — replaced "Per-column reader"; three phrases amended (creation "in a path off its column", console "loose path at the left edge", keyboard `↵`/`⌥↵`/`esc` order/`⇧esc`).
+4. §11 column strip — inserted in "The board."; the ghost column now "creates view documents and adds them to the board".
+5. §5 `stage` — frontmatter line added after `evergreen`; coupling paragraph after the 2026-08-12 unarchive rider.
+6. §11 kanban — new bullet after "Folder scoping".
+7. §9.2 — `pinned=` out, `stage=` in on `/api/docs` and `/api/search`; the 2026-08-08 amendment reworded; folder acts line after `GET /api/tree`; board fields in the `POST /api/docs` line. Consequences applied under it: §9.1 projection columns (`stage`, `board_json`, no `pinned`), §10 plugin column sentence, M4 milestone line.
+8. §2.4 migrations — appended.
+9. §7 `workspace.reflect` — in the core event types paragraph.
+
+Checks: `grep -c "No sidebar\|column widens\|pinned: true\|create pinned view" SPEC.md` → 0. Remaining `pinned` mentions are the riders saying it left, and "anchor quote pinned at top" (unrelated). Prettier clean. Prototype committed in `a720e6dd`.
 
 ## Completion Checklist (domain agent)
 - [ ] Riders signed one at a time, each written verbatim

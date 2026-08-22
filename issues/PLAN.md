@@ -1389,7 +1389,7 @@ path: SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |
-| SHARED-064 | SPEC riders for the navigation model: explorer, boards as documents, paths, kanban graphs | todo | P0 | fable | — |
+| SHARED-064 | SPEC riders for the navigation model: explorer, boards as documents, paths, kanban graphs, reflection | done | P0 | fable | — |
 | CONTRACT-074 | Board fields, `stage`, and the end of `pinned` | todo | P0 | opus | SHARED-064 |
 | CONTRACT-075 | Folder routes: rename, archive, unarchive, delete | todo | P1 | opus | SHARED-064 |
 | CONTRACT-076 | `workspace.reflect`: the event, the ask route, and the status route | todo | P1 | opus | SHARED-064 |
