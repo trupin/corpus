@@ -510,6 +510,20 @@ describe("skills", () => {
     expect(body).toMatch(/never (?:hand-)?edit(?:ed)?\b/i);
   });
 
+  /**
+   * SHARED-064 removed the plugin system from the product, so no skill may
+   * teach an agent to reach for one. The word itself is the pin: there is no
+   * installed `.claude/skills/<plugin>/` to route into, no `/api/x/` space to
+   * call, and a skill that named either would send a real workspace's agent
+   * after something that is not there. What the removal did **not** take with
+   * it is pinned in `orchestrate skill body` → *an event type with no row*.
+   */
+  it.each(coreSkills)("$name names no plugin surface", ({ relPath }) => {
+    const body = documentAt(relPath).body;
+    expect(body).not.toMatch(/\bplug-?ins?\b/i);
+    expect(body).not.toContain("/api/x/");
+  });
+
   it.each(coreSkills)("$name carries its required section headings", ({ name, relPath }) => {
     const headings = documentAt(relPath)
       .body.split("\n")
@@ -1597,7 +1611,10 @@ describe("orchestrate skill body", () => {
       ".corpus/HALT",
       '{"idle":true,"reason":"timeout"}',
       '{"idle":true,"reason":"halted"}',
-      "<plugin>.<action>",
+      // SHARED-064 deleted the `<plugin>.<action>` row that used to sit here.
+      // Its catch-all did not go with it: the loop still meets types it has no
+      // row for, and the command it fails them with is the pinned text now.
+      'corpus queue fail <id> --reason "unknown event type: <type>"',
       "terminal state",
     ];
     for (const rule of rules) expect(body, `missing "${rule}"`).toContain(rule);
@@ -2980,9 +2997,55 @@ describe("orchestrate skill body", () => {
     });
   });
 
-  it("hardwires no plugin name and hedges nothing", () => {
-    // The `<plugin>.<action>` routing row is a convention, never an example
-    // naming a shipped plugin (sprint-012 adjudication 1).
+  /**
+   * SHARED-064 removed the plugin system, and with it the `<plugin>.<action>`
+   * routing row, the handler-resolution bullet under *Routing*, and the touched
+   * set under *Concurrency and ordering*. The **rule** those passages carried
+   * outlived its cause and is pinned below rather than deleted with them: an
+   * event type this loop does not handle still arrives — a queue carried over
+   * from an older workspace, an event written by hand, a server newer than the
+   * skill — and it fails loudly, naming what arrived. What may not come back is
+   * the dispatch: a row that matches a *shape* of type rather than a named one,
+   * which is what routed `<plugin>.<action>` to a skill by its own first token.
+   */
+  describe("an event type with no row", () => {
+    const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
+
+    it("dispatches on a named type, never on the shape of one", () => {
+      const rows = routing.split("\n").filter((line) => line.startsWith("| "));
+      const types = rows
+        .map((row) => row.split("|")[1]?.trim() ?? "")
+        .filter((type) => type.startsWith("`"));
+      expect(types.length, "no routing rows — the guard would pass vacuously").toBeGreaterThan(0);
+      for (const type of types) {
+        expect(type, `\`${type}\` routes a shape of type rather than a named one`).not.toContain(
+          "<",
+        );
+      }
+      // And the catch-all is the last row, so nothing dispatches below it.
+      expect(rows.at(-1) ?? "").toContain(
+        'corpus queue fail <id> --reason "unknown event type: <type>"',
+      );
+    });
+
+    it("fails it loudly, and neither completes nor guesses at it", () => {
+      expect(routing).toMatch(/\*\*An event type with no row\.\*\*/);
+      // The reasons an unhandled type can still reach a claim, which is what
+      // makes the rule survive the plugin system that first motivated it.
+      expect(routing).toMatch(/a queue carried over from a workspace older\s+than this skill/);
+      expect(routing).toMatch(/somebody wrote into `pending\/` by hand/);
+      expect(routing).toMatch(/a server emitting\s+something this skill predates/);
+      expect(routing).toMatch(/--reason "unknown event type: ledger\.reconciled"/);
+      expect(routing).toMatch(/\*\*Never complete it\*\*/);
+      expect(routing).toMatch(/\*\*Never derive a handler from its name\*\*/);
+      expect(routing).toMatch(/names no skill/);
+    });
+  });
+
+  it("names no removed surface and hedges nothing", () => {
+    // `todos` was the shipped reference plugin and `_fixture` the test one;
+    // SHARED-064 deleted both, so a mention here is a leftover rather than a
+    // hardwired name (sprint-012 adjudication 1, kept for the same reason).
     expect(body).not.toMatch(/todos|_fixture/i);
     for (const hedge of [
       "use your judgment",
@@ -3405,9 +3468,26 @@ describe("comment skill body", () => {
     expect(body).toMatch(/you ask for the decision with a form/);
   });
 
-  it("routes plugin-domain work to the plugin's skill, naming no plugin", () => {
-    expect(body).toContain(".claude/skills/<plugin>/");
-    expect(body).toMatch(/never edit a\s+plugin's documents field by field/i);
+  /**
+   * SHARED-064 deleted *Route into a plugin* from the moves under *Doing the
+   * work*. Applying another skill did not go with it — it is what a `/<skill>`
+   * on the turn asks for — but it is a **directive the payload carries**, and
+   * *Routing directives* states it in full one section earlier. So the moves
+   * list is now the writes this skill makes itself, and the handing-off it
+   * still does is a mention or a skill the server parsed, never a domain a
+   * `<plugin>`-shaped path owns.
+   */
+  it("hands off only on a directive the payload carries", () => {
+    const directives = body.slice(body.indexOf("## Routing directives"), body.indexOf("## Doing"));
+    expect(directives).toMatch(
+      /A `\/<skill>` invocation is a directive to \*\*apply\*\* that skill/,
+    );
+    expect(directives).toMatch(/`@<subagent> \/<skill>` means/);
+    // The moves list writes through the CLI and delegates to a subagent; it
+    // names no installed path that would own a kind of document.
+    const doingTheWork = body.slice(body.indexOf("## Doing the work"), body.indexOf("## Inbox"));
+    expect(doingTheWork).toMatch(/\*\*Spawn a subagent\*\*/);
+    expect(doingTheWork).not.toMatch(/\.claude\/skills\/</);
     expect(body).not.toMatch(/todos|_fixture/i);
   });
 

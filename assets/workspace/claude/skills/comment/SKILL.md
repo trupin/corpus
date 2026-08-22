@@ -280,11 +280,6 @@ Pick the smallest shape that actually answers the request.
   through the CLI like you do and never touches queue accounting. When it finishes, the
   server's `agent.done` event wakes the orchestrate skill, which routes the result back so
   the thread gets its closing reply.
-- **Route into a plugin** when the request belongs to a plugin's domain. Invoke the skill
-  installed at `.claude/skills/<plugin>/` and let it own its document types; never edit a
-  plugin's documents field by field from here. The plugin's skill knows the shape; you know
-  the conversation.
-
 **Which of the two writes you are making: a change you can quote is a patch; a change you
 cannot quote is a whole body.** If you can point at the text that is wrong — a figure, a
 sentence, a paragraph that should go — quote it and say what belongs there instead, and
