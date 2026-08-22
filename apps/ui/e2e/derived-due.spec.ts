@@ -194,9 +194,10 @@ const hint = (page: Page) => dueCell(page).locator(".fm-hint");
 
 /**
  * Resolves once `locator`'s box has read the same three times running, 100ms
- * apart — UI-127's helper, for `derived-status.spec.ts`'s reason: the column
- * widens when a reader opens in it, over a transition, so a box measured too
- * early is a box of a column still moving.
+ * apart — UI-127's helper, for `derived-status.spec.ts`'s reason: the reader's
+ * form is sized against the column, so a box measured before everything in the
+ * reader has arrived is a box of a surface still moving. (The column's own
+ * widening stopped being a transition in UI-146.)
  *
  * A fixture concern and never an assertion — what is asserted is that two settled
  * boxes either side of a value change are identical.

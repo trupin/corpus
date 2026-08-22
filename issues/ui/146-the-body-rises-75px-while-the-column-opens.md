@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P0
@@ -113,13 +113,92 @@ stop exactly this class of movement.
 **Do not pick by cost.** Measure what a person actually sees at each, on a real
 document, and decide from that.
 
+## The decision, 2026-08-22 — option 3, and why the others lost on measurement
+
+**Chosen: the column does not animate its width while it is showing a
+document.** `.col.reading` drops `width` from the transition list, and the
+reading floor is applied in a **layout** effect rather than an effect, so the
+width is decided in the same commit the reader mounts in. Two halves, both
+load-bearing — each was disabled in turn and the specs went red for it.
+
+Every option below was measured on the same note, sampling `.doc-body` on every
+animation frame from the frame it first existed in.
+
+**Baseline, to have the numbers this decision is made against.** Frames from
+the body's first paint:
+
+```
+t=221  colW=336    bodyTop=444.5  bodyW=306    closing=990.4  formH=161.4
+t=241  colW=403.8  bodyTop=422.3  bodyW=373.8  closing=919.6  formH=146.9
+t=253  colW=466.4  bodyTop=361.3  bodyW=436.4  closing=858.7  formH=106.2
+t=286  colW=508.2  bodyTop=346.8  bodyW=478.2  closing=747.0  formH=91.7
+t=303  colW=523.3  bodyTop=346.8  bodyW=493.3  closing=722.7  formH=91.7
+```
+
+Body top **+97.7px**, measure **+211.2px**, and the closing paragraph —
+the body's *interior* — **267.7px**. Right-click on the second paragraph while
+the column was still easing: `scrollTop` 0 → **103**, body top 422.3 → 243.8.
+The same right-click on a settled column, twice over: `scrollTop` 0, nothing
+moved. The reported defect, entire.
+
+**Option 2 (the form reserves its widest row count) was rejected on
+measurement, not on cost.** The form's height is 69.7px of the 97.7px the body
+top moves. The other 28px, and **all 267.7px of the interior movement**, come
+from the body re-wrapping as its measure grows 306 → 517.2px — which pinning
+the form's rows cannot touch. It also cannot stop the 103px scroll, because
+that is Chromium reacting to a reflow the option leaves in place. So option 2
+buys a permanent 69.7px of dead space at the top of every wide reader and still
+leaves a person's text moving under them. It is a partial fix priced as a
+permanent one.
+
+**Option 1 (the body does not paint until the column settles) works, and costs
+the whole transition.** It removes the movement by removing the window, at the
+price of ~250ms of empty reader on every open — and it removes nothing that
+option 3 does not also remove, while adding a wait. Rejected: a delay is a cost
+paid on every open, and the movement it prevents can be prevented for free.
+
+**Option 4 (accept and amend §11) was rejected on the measurement above.** The
+right-click case is not a coordinate artifact — the document travels a quarter
+of the viewport at the instant a person opens a context menu on a word. That is
+the movement v0.15.0 was named for ruling out, on the ordinary path.
+
+**Option 3, measured after the change.** Every one of the ~110 sampled frames
+equals the first painted frame: `bodyTop` 346.8, `bodyW` 517.2, `closing`
+722.7, `scrollTop` 0. Same for a warm cache in a second column. Same across
+select-then-right-click with no settle between the steps.
+
+**What was checked before choosing it.**
+- **SHARED-061 is untouched.** `.fm-form` still derives its row count from the
+  room the column gives it. What changed is only that the room stops passing
+  through every intermediate value on its way to its own.
+- **A drag still behaves exactly as UI-113 signed it.** A drag never eased —
+  `.col.resizing` sets `transition: none` so the edge tracks the pointer — and
+  that rule is declared after the new one, so it still wins when a column is
+  doing both. `column-width.spec.ts`'s 11 tests, including "the edge can be
+  dragged while a reader is open" and "does not snap back on close", all pass
+  unchanged.
+- **What it does cost:** an arrow-key resize *of a column that has a reader
+  open* is now instant instead of eased, as is a width arriving from another
+  browser. A column with no reader open still eases both. Judged right: while a
+  document is on screen in a column, nothing about that column moves gradually.
+- **The appearance is already shipped and signed.** `design/index.html`'s own
+  `prefers-reduced-motion` guard turns this exact transition off, and
+  `app/global.css` carries it — an instant open is what every reduced-motion
+  user has always seen. Option 3 gives everyone the reduced-motion appearance
+  for the one case where the motion moves prose. This is a deliberate departure
+  from the mockup's eased open, on §11's own terms: the mockup is authoritative
+  for look and feel, and §11's rider is authoritative for what may move.
+
 ## Acceptance Criteria
-- [ ] A decision, with the rejected options and their costs, recorded here
-- [ ] Whatever is chosen, the body does not move under a reader who has begun
-      reading it — or §11 says why that is acceptable and a rider is signed
-- [ ] `image-geometry.spec.ts`'s local `settledReader` and `e2e/settle.ts`'s
-      shared one are reconciled — one helper, not two
-- [ ] No new pixel constant as a bound
+- [x] A decision, with the rejected options and their costs, recorded here
+- [x] Whatever is chosen, the body does not move under a reader who has begun
+      reading it — asserted per animation frame in
+      `apps/ui/e2e/column-open-geometry.spec.ts`, no rider needed
+- [x] `image-geometry.spec.ts`'s local `settledReader` and `e2e/settle.ts`'s
+      shared one are reconciled — one helper, in `e2e/settle.ts`, reading
+      `.doc-main` so it covers a document reader and a thread reader alike
+- [x] No new pixel constant as a bound — every assertion is "equal to the first
+      painted frame"
 
 ## Testing Strategy
 The per-frame sampler above, in a geometry spec: assert the body's top is
@@ -127,4 +206,83 @@ unchanged from the moment it is first painted. That is a stronger claim than any
 settle helper and is the thing a person cares about.
 
 ## E2E Verification Log
-_[Agent fills — state the model]_
+
+**Model: opus** (claude-opus-5, 1M context). ui-dev, 2026-08-22, branch
+`phase-40-derived-status`. Chromium via Playwright against the real Vite dev
+server, `CORPUS_UI_PORT=5273`, `--workers=1`, isolated from any workspace server
+(INFRA-028).
+
+**1. Reproduced before touching anything.** A throwaway probe spec sampled
+`.doc-body` on every animation frame, starting *before* the row click, so the
+first recorded frame is the first frame the body existed in:
+
+```
+PROBE open frames=109 moves=6
+t=221  colW=336    bodyTop=444.5  bodyW=306    closing=990.4  formH=161.4
+t=241  colW=403.8  bodyTop=422.3  bodyW=373.8  closing=919.6  formH=146.9
+t=253  colW=466.4  bodyTop=361.3  bodyW=436.4  closing=858.7  formH=106.2
+t=269  colW=489.3  bodyTop=361.3  bodyW=459.3  closing=761.5  formH=106.2
+t=286  colW=508.2  bodyTop=346.8  bodyW=478.2  closing=747.0  formH=91.7
+t=303  colW=523.3  bodyTop=346.8  bodyW=493.3  closing=722.7  formH=91.7
+settled  colW=560  bodyTop=346.8  bodyW=517.2  closing=722.7  formH=91.7
+```
+
+Body top **+97.7px**, measure **+211.2px**, closing paragraph **267.7px** —
+larger than the filed numbers because the filed table starts at 888ms, one
+sample after the first paint.
+
+**2. The P0 half, reproduced, three opens in one run:**
+
+```
+PROBE rightclick run=0 before={scrollTop:0,bodyTop:422.3,colW:370.2}
+                       after ={scrollTop:103,bodyTop:243.8,colW:560}
+PROBE rightclick run=1 before={scrollTop:0,bodyTop:346.8,colW:560}
+                       after ={scrollTop:0,bodyTop:346.8,colW:560}
+PROBE rightclick run=2 before={scrollTop:0,bodyTop:346.8,colW:560}
+                       after ={scrollTop:0,bodyTop:346.8,colW:560}
+```
+
+Run 0 opens into a narrow column and the reader scrolls **103px** under the
+pointer. Runs 1 and 2 reopen into the column the ratchet left wide, and nothing
+moves — the animation is the whole difference, exactly as filed.
+
+**3. A third failure mode the issue did not have.** With the transition off but
+the width still decided in a `useEffect`, a document **already in the query
+cache** (a second column, or a reopen) paints one frame at the old width:
+`bodyTop` 444.5 at `colW` 336, then 346.8 eleven milliseconds later at 560.
+That is why the fix has two halves.
+
+**4. Option 3 measured before choosing it, without writing it.**
+`design/index.html` and `app/global.css` already turn this transition off under
+`prefers-reduced-motion`, so `page.emulateMedia({ reducedMotion: "reduce" })`
+renders the proposed appearance on the unmodified build. It reported
+`moves=1` — the body's first painted frame already at `bodyTop` 346.8, `bodyW`
+517.2 — and `scrollTop: 0` on all three right-clicks. The decision was made
+against that reading, not against the option's cost.
+
+**5. After the change**, the same three probes: `moves=1` on a cold open,
+`moves=1` on a warm-cache open in a second column, `scrollTop: 0` on every
+right-click. The probe was then deleted and replaced by
+`apps/ui/e2e/column-open-geometry.spec.ts`, which asserts the same claim as a
+spec. Green 3×3 on `--repeat-each=3`.
+
+**6. Falsified, both halves, separately.**
+- CSS half disabled (`.col.reading` renamed): tests 1 and 2 fail, naming the
+  seven distinct frames and the 97.7px rise; test 3 fails with a trailing frame
+  at `scrollTop: 17`.
+- Layout-effect half reverted to `useEffect`: tests 2 and 3 fail, test 1 passes
+  — precisely the split the two halves predict.
+
+**7. The full Playwright suite**, `--workers=1`: **535 tests, 534 passed, 1
+failed** on the first run. The failure was `reader.spec.ts` asserting the
+prototype's eased open —
+`expect(styles[".col.reading"]["transition-property"]).toContain("width")` —
+which is the behaviour this issue removes. It was rewritten to assert the new
+rule in both directions: a reading column transitions `border-color` only, and
+a column with no reader still transitions `width` over 0.25s. Re-run: **535
+passed**. `tsc --noEmit`, ESLint and Prettier clean over every touched file.
+Scoped unit tests for `apps/ui/src/board` and `apps/ui/src/reader`: 597 passed.
+
+**8. Escalated, not fixed here.** `design/index.html` still draws the eased
+open, so the mockup and the app now disagree on this one transition. The mockup
+is outside `apps/ui`. Someone should either amend it or record the deviation.

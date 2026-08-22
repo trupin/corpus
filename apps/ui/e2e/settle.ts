@@ -3,34 +3,37 @@ import { expect, type Page } from "@playwright/test";
 /**
  * Waits until the reader's document half has stopped moving.
  *
- * **Opening a reader is an animation.** Clicking a row widens its column from
- * the view's own width to the reading width (`board/columnWidth.ts`), and
- * `Column.css` eases that over 0.25s. The body paints *inside* that window, so
- * a coordinate read the moment `.ProseMirror` appears is a coordinate of the
- * transition rather than of the document.
+ * **What it was for, and what changed.** Opening a reader widens its column
+ * (`board/columnWidth.ts`), and `Column.css` used to ease that over 0.25s. The
+ * body painted *inside* that window, so a coordinate read the moment the
+ * document appeared was a coordinate of the transition. It was worse than a
+ * stale coordinate: since UI-093 the frontmatter form renders at all times and
+ * its grid is `repeat(auto-fit, minmax(min(16ch, 100%), 1fr))` (SHARED-061), so
+ * the widening reflowed the form 3 rows → 2 → 1 and the body rose 97.7px under
+ * whoever was reading it. UI-146 removed the animation for the open — a column
+ * with a reader in it takes its reading width in one commit — and
+ * `column-open-geometry.spec.ts` now asserts per animation frame that the body
+ * never moves after its first paint.
  *
- * **What it costs, measured on this branch.** The frontmatter form is
- * `grid-template-columns: repeat(auto-fit, minmax(min(16ch, 100%), 1fr))`
- * (SHARED-061) and it is on screen at all times since UI-093 — so as the column
- * eases from 317px to 527px the three fields go from stacked to one row, the
- * form shrinks from 146.9px to 91.7px, and the body **rises 75.5px** over about
- * 210ms. Sampled every 40ms across an open: `bodyTop` 422.3 → 361.3 → 346.8,
- * then stationary. Before UI-093 the form rendered only while `editing`, so the
- * same animation moved nothing vertically and every spec could measure a
- * coordinate the instant the body appeared.
+ * **So why this still exists.** The reader's document half has other reasons to
+ * settle late, and they are the reasons the specs importing this were written
+ * for: images decoding into their reserved boxes, a plugin panel arriving after
+ * discovery, a thread's turns rendering. A spec that measures a point and then
+ * acts on it in the next round-trip is aiming at where the text *was*, and
+ * three separate failures on this branch were exactly that — a drag that
+ * selected nothing, a heading that "moved" across an unrelated click, and a
+ * caret click that missed its paragraph.
  *
- * That reflow is the responsive behaviour SHARED-061 asked for and it is not a
- * defect — but a spec that measures a point and then acts on it in the next
- * round-trip is aiming at where the text *was*. Three separate failures on this
- * branch were that: a drag that selected nothing, a heading that "moved" across
- * an unrelated click, and a caret click that missed its paragraph and sank a
- * whole list under an empty item on 4 runs in 10.
+ * **One helper, not two.** `image-geometry.spec.ts` carried its own copy for
+ * the same hazard on a thread reader ("a reader 345px wide at the first paint
+ * and 558px once settled", moving its sentinel 28px on roughly one run in
+ * three). Two helpers for one hazard is how they drift, so this is the only
+ * one, and it reads `.doc-main` — the wrapper `DocView` puts around a document
+ * body *and* around a thread's conversation, so both readers are covered.
  *
- * **Two identical consecutive readings is what separates the two events** —
- * the same test `image-geometry.spec.ts` already applies to the same hazard
- * ("a reader 345px wide at the first paint and 558px once settled"), kept there
- * in its own local form. `expect.poll` bounds the wait, so a surface that never
- * settles fails here loudly instead of being waited out.
+ * Two identical consecutive readings is what separates "settled" from "between
+ * two changes". `expect.poll` bounds the wait, so a surface that never settles
+ * fails here loudly instead of being waited out.
  */
 export async function settledReader(page: Page): Promise<void> {
   const main = page.locator(".reader .doc-main").first();
@@ -40,8 +43,6 @@ export async function settledReader(page: Page): Promise<void> {
       async () => {
         const box = await main.boundingBox();
         if (box === null) return false;
-        // Sub-pixel on purpose: an eased width is still changing by fractions
-        // in its last frames, and rounding would call that settled.
         const now = `${String(box.x)}:${String(box.y)}:${String(box.width)}:${String(box.height)}`;
         const stable = now === previous;
         previous = now;

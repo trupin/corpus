@@ -169,8 +169,8 @@ test.describe("the comment composer on a document selection", () => {
     const highlight = page.locator('.reader .doc-body .anchor-hl[data-provisional="true"]');
     const textBefore = await corner(highlight);
     // Aimed at the lit words themselves, read live: a point derived from
-    // anything measured earlier can miss, because `.col` transitions its width
-    // for 250 ms after a reader opens.
+    // anything measured earlier can miss. The column no longer eases open
+    // (UI-146), but the reader still has late arrivals of its own.
     const over = await highlight.boundingBox();
     await page.mouse.move((over?.x ?? 0) + 4, (over?.y ?? 0) + (over?.height ?? 0) / 2);
     await page.mouse.wheel(0, 320);

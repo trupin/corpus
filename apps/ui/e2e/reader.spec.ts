@@ -118,8 +118,34 @@ test.describe("the reader's shipped stylesheet", () => {
      * running board rather than by reading a constant back out of the CSS.
      */
     expect(styles[".col"]?.["width"]).toBe("336px");
-    expect(styles[".col.reading"]?.["transition-property"]).toContain("width");
-    expect(styles[".col.reading"]?.["transition-duration"]).toContain("0.25s");
+
+    /*
+     * **And a column showing a document does not ease its width** (UI-146).
+     *
+     * This assertion used to read the other way — `.col.reading` transitioning
+     * `width` over 0.25s, straight from the prototype. That eased open was free
+     * while the reader was a fixed stack, and stopped being free when `.fm-form`
+     * began rendering at all times (UI-093): the form's row count follows the
+     * column's width by design (SHARED-061), so the widening reflowed the
+     * document *while the document was on screen*. Measured per animation frame,
+     * the body rose 97.7px and its closing paragraph travelled 267.7px after the
+     * reader was already readable, and a right-click landing inside the window
+     * made Chromium scroll the reader 103px under the pointer.
+     * `column-open-geometry.spec.ts` holds the behavioural half of this.
+     *
+     * `border-color` stays — the `.col.flash` cue is a colour, and colour moves
+     * nothing.
+     */
+    expect(styles[".col.reading"]?.["transition-property"]).toBe("border-color");
+
+    // A column with no reader in it still eases, which is where the prototype's
+    // 0.25s went: an arrow-key step at the edge, and a width another browser
+    // wrote. Only the open case changed.
+    const listColumn = await measure(page, `<section class="col"></section>`, [
+      [".col", ["transition-property", "transition-duration"]],
+    ]);
+    expect(listColumn[".col"]?.["transition-property"]).toContain("width");
+    expect(listColumn[".col"]?.["transition-duration"]).toContain("0.25s");
     // The column is a list or a reader, never both.
     expect(styles[".col-list"]?.["display"]).toBe("none");
     expect(styles[".col-head .chips"]?.["display"]).toBe("none");

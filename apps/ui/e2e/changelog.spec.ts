@@ -112,8 +112,9 @@ async function openNote(page: Page): Promise<StubCorpus> {
   await page.locator(".board").waitFor();
   await page.locator('.row[data-row-doc="doc_note"]').click();
   await page.locator(".reader .ProseMirror").waitFor();
-  // Every test below measures a height or a `y`, and the column is still easing
-  // open when the body first paints — see `settledReader`.
+  // Every test below measures a height or a `y`. The column no longer eases
+  // open (UI-146), so this is now a guard against the reader's *other* late
+  // arrivals rather than against the widening — see `settledReader`.
   await settledReader(page);
   return corpus;
 }

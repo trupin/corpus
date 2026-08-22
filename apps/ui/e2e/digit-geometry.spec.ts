@@ -255,10 +255,10 @@ test.describe("the reader's thread count", () => {
    * test. A confound the fixture introduced is still a confound.
    *
    * The heads are also measured **once they have stopped moving**. A column
-   * runs a 250ms `width` transition when a reader opens in it
-   * (`board/Column.css`), and the second reader's head was being read part-way
-   * up that ramp — 347px climbing to 398px, with the id and the back label
-   * shrinking against it the whole way. That is what made this assertion's
+   * used to run a 250ms `width` transition when a reader opened in it
+   * (`board/Column.css`, until UI-146), and the second reader's head was being
+   * read part-way up that ramp — 347px climbing to 398px, with the id and the
+   * back label shrinking against it the whole way. That is what made this assertion's
    * failure move between runs (0.75px, 0.94px and 3.9px were all observed on
    * the same build): it was not measuring a count, it was measuring how far a
    * transition had got. Hence the head's own width is asserted equal below,
@@ -329,9 +329,8 @@ test.describe("the reader's thread count", () => {
         `.col[data-col="doc_view_${subject}"] .reader[data-reader-doc="doc_${subject}"] .reader-head`,
       );
       await expect(reader.locator(".comments-count")).toHaveText(count);
-      // The column is still widening at this point — opening a reader in it
-      // starts a 250ms `width` transition — and every item in this head is
-      // sized against that width.
+      // Every item in this head is sized against the column's width, and the
+      // head has arrivals of its own after the reader mounts.
       return {
         head: await settledBox(reader),
         id: await boxOf(reader.locator(".reader-id")),

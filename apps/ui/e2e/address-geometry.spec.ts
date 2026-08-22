@@ -1022,9 +1022,10 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
 
     const line = page.locator('[data-address-line="th_host"]');
     await expect(line).toContainText(`· ${HEAVY_KEY}`);
-    // The column grows to its reading floor on open, and that transition is a
-    // movement of the *column* — settle it, or the measurement is of the wrong
-    // thing. `settled` is UI-127's, and it exists for exactly this reason.
+    // The column grows to its reading floor on open. That growth is now one
+    // commit rather than a 250ms ramp (UI-146), but the reply surface has late
+    // arrivals of its own, so settle it — `settled` is UI-127's, and it exists
+    // for exactly this reason.
     await settled(page, page.locator(REPLY_SEND));
     const before = await slotBoxes(page, "th_host", REPLY_SEND);
 

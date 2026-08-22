@@ -182,10 +182,11 @@ const hint = (page: Page) => statusCell(page).locator(".fm-hint");
 /**
  * Resolves once `locator`'s box has read the same three times running, 100ms
  * apart. UI-127's helper, for UI-127's reason, and this file needs it for one of
- * its own: **the column widens when a reader opens in it**, over a transition,
- * so a box measured too early is a box of a column still moving. Measured that
- * way the flip below appeared to resize the form by 82px, all of which was the
- * column arriving.
+ * its own: **the form is sized against the column**, so a box measured before
+ * the reader has finished arriving is a box of a surface still moving. Measured
+ * that way the flip below appeared to resize the form by 82px, all of which was
+ * the column arriving — over the 250ms transition UI-146 has since removed from
+ * the open.
  *
  * A fixture concern and never an assertion — what is asserted is that two
  * settled boxes either side of a value change are identical.

@@ -258,10 +258,12 @@ test.describe("a plugin arriving after the reader opened", () => {
    * `settledReader` is what supplies the second half of that condition, and it
    * takes nothing away from the first: discovery is held by the route
    * throughout, so releasing it is still the only thing left that could move
-   * the words. Without it the drag starts inside the column's own 0.25s opening
-   * transition — the body rises 75.5px while the frontmatter grid reflows — and
-   * the selection came back empty, which is the animation being measured rather
-   * than the arrival this file is about.
+   * the words. When this was written the drag also started inside the column's
+   * own 0.25s opening transition — the body rose 75.5px while the frontmatter
+   * grid reflowed — and the selection came back empty, which was the animation
+   * being measured rather than the arrival this file is about. UI-146 removed
+   * that transition, so the helper's remaining job here is the panel's own
+   * arrival.
    *
    * There is exactly one attempt on purpose. Re-measuring after a shift is what
    * makes a drag *recoverable*; it is not what makes it correct.
