@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: SHARED-064 (signed and applied)
+- Depends on: SHARED-067 (signed and applied)
 
 ## Spec References
 - SPEC.md — §10, §12 and §13 are deleted; the plugin concept is gone from §1, §3, §4, §5, §7, §9 and §12
@@ -82,7 +82,7 @@ confirm it does not re-add them. The diff is now exactly three hunks and nothing
 `plugins/*` package entries.
 
 **One pre-existing break fixed in passing.** `scripts/spec-refs.test.ts` expected section
-`"11"` from an input string SHARED-064's renumber had already rewritten to `§10`. The
+`"11"` from an input string SHARED-067's renumber had already rewritten to `§10`. The
 expectation was a bare `"11"` with no `§`, so the sweep could not see it.
 
 **`docs/cli.md` regenerated, not hand-edited.** `npm run build` re-ran the generator and it
@@ -104,7 +104,7 @@ the regeneration is what clears `check-generated-artifacts`.
 - **`issues/plugins/` was left intact** — it is the decision record, and
   `design/index.html` still cites `PLUGINS-017` for a live design choice (why no lock
   banner is drawn). Deleting the citation would delete the reason.
-- **`issues:check` reports a bookkeeping mismatch** unrelated to this issue: UI-150 is
+- **`issues:check` reports a bookkeeping mismatch** unrelated to this issue: UI-155 is
   `todo` in PLAN.md and `done` in its own file.
 
 ### UI-141 / UI-147, checked as asked

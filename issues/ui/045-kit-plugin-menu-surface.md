@@ -4,9 +4,9 @@
 ui
 
 ## Status
-closed — obsoleted by SHARED-064 (Phase 41): every item here exists to make a core affordance reachable from a plugin, and there are no plugins.
+closed — obsoleted by SHARED-067 (Phase 41): every item here exists to make a core affordance reachable from a plugin, and there are no plugins.
 
-**Closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-064 removed the plugin
+**Closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-067 removed the plugin
 surface on the user's instruction — *"I want it fully gone, no trace of it in the
 codebase or the specs."* Every one of this issue's five items exists to make a
 core affordance **reachable from a plugin**: the selector rule, the reveal

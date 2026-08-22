@@ -8,7 +8,7 @@ todo
 
 ## Phase 41 triage — the plugin items, struck one at a time (2026-08-22)
 
-**SHARED-065 swept this ledger for plugin and todos items.** SHARED-064 removed
+**SHARED-065 swept this ledger for plugin and todos items.** SHARED-067 removed
 the plugin surface and the todos plugin on the user's instruction — *"I want it
 fully gone, no trace of it in the codebase or the specs"* — and `todo` is not a
 document type.
@@ -47,7 +47,7 @@ judgment is auditable:
 
 **One item is retained deliberately even though its subject is gone**: Draft 1 of
 the PR #12 spec amendments, `corpus todos migrate`. It is a **sign-off record** —
-the user signed it on 2026-07-30 and it was applied. A note marks what SHARED-064
+the user signed it on 2026-07-30 and it was applied. A note marks what SHARED-067
 has since done to it. The signature is not edited.
 
 ## Priority
@@ -79,7 +79,7 @@ holds the rest for triage into domain issues — do not let them silently expire
 - ~~(5, infra) `scripts/pack-audit.ts:40` — no positive `REQUIRED_PACK_ENTRIES` entry for the todos plugin; if `npm run build` stops invoking `build-plugins.ts`, the tarball ships without the §12 reference plugin while `pack:check` stays green.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: there is no reference plugin to ship, and INFRA-031 deletes `build-plugins.ts` with the workspace. The *general* rule this instance illustrated — every artifact the installed tool resolves needs a positive `REQUIRED_PACK_ENTRIES` entry — is already `scripts/pack-audit.ts`'s stated contract and needs no ledger item.
 - ~~(6, infra) `.github/workflows/release.yml:78-82` — only the absent `NPM_TOKEN` bars a `v*` tag from publishing; an `environment:` with required reviewers would make the no-publish decision structural. (User decision on record: no publish, ever — consider deleting the publish job instead.)~~ **CLOSED by INFRA-014** (sprint-020 Adjudication 1): the `publish` job is repurposed into a `release` job — `npm publish` and `id-token: write` are gone, and the tag flow now attaches the tarball to a GitHub Release. Nothing in `.github/` can publish.
 - ~~(7, infra) `eslint.config.js:116-120` — core→plugin import ban enumerates only relative depths 3–5; shallower/deeper files slip through; boundary test probes depth 3 only.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: INFRA-031 deletes the core→plugin ban and its boundary test. A rule with nothing to ban cannot be under-enforced.
-- ~~(8, kit) `packages/kit/src/client/createCorpusClient.ts:655-660` — `pluginRequest` claims plugin-namespace-only but only strips leading slashes; `../../` escapes with the bearer token attached. Reject dot segments or soften the claim.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: `pluginRequest` is deleted; it survives only in stale `apps/ui/dist` build output. **Verified this is not a live traversal hole elsewhere** — the finding was specific to the `/api/x/` path builder, and there is no `/api/x/` route space any more (SHARED-064 amendment 8).
+- ~~(8, kit) `packages/kit/src/client/createCorpusClient.ts:655-660` — `pluginRequest` claims plugin-namespace-only but only strips leading slashes; `../../` escapes with the bearer token attached. Reject dot segments or soften the claim.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: `pluginRequest` is deleted; it survives only in stale `apps/ui/dist` build output. **Verified this is not a live traversal hole elsewhere** — the finding was specific to the `/api/x/` path builder, and there is no `/api/x/` route space any more (SHARED-067 amendment 8).
 - ~~(9, kit) `packages/kit/src/query/usePluginQuery.ts:26-30` — a query string in the path breaks cache-key matching against `broadcastInvalidate`, silently losing SSE invalidation; docblock promises "byte-identical" keys without that precondition.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: `usePluginQuery` is deleted, and so is `broadcastInvalidate` — the other half of the pairing the finding was about. Neither name appears in `packages/kit/src` or `apps/ui/src` any more. Whether any surviving kit query hook keys on a caller-supplied path string was **not** re-checked here, and is the one thing worth a look if this mechanism is ever suspected again.
 - (10, ui) `apps/ui/src/editor/useAutosave.ts:346-349` — `beforeunload` guard calls `preventDefault()` but never sets `event.returnValue`; pre-119 Chromium/WebViews show no dialog and the parked buffer (only copy of user text) is destroyed unprompted.
 - (11, agent-runtime) `assets/workspace/claude/skills/comment/SKILL.md:31,394-395` — documented `unresolved` payload examples strip the `@` sigil the server actually sends (`threads/mentions.ts:170`); sigil is the discriminator vs. skill invocations; file internally inconsistent (137-138 keeps it).
@@ -93,9 +93,9 @@ holds the rest for triage into domain issues — do not let them silently expire
 - (23, infra) `scripts/merge-coverage.ts:149-156` — INFRA-009 guard wiring untested (deleting the call site keeps the suite green).
 - (25, infra) `scripts/package-staging.ts:153` — `externalizeThirdParty` would externalize Node `#subpath` imports into a confusing (but loud) `PackagingError`.
 - (26, infra) `scripts/check-pack.ts:70-80` — staged-name assertion inside the zero-violations branch; combined failures under-report; name-only mismatch prints success before failure (exit codes correct).
-- ~~(27, server/cli) `apps/server/src/plugins/discover.ts:159` / `apps/cli/src/registry/plugins.ts:118` — `isDirectory()` false for symlinked plugin dirs while the UI glob matches them; three discovery surfaces disagree.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: all three discovery surfaces are deleted (SERVER-136, CLI-060, UI-150). Confirmed on disk: neither `apps/server/src/plugins/` nor `apps/cli/src/registry/plugins.ts` exists.
+- ~~(27, server/cli) `apps/server/src/plugins/discover.ts:159` / `apps/cli/src/registry/plugins.ts:118` — `isDirectory()` false for symlinked plugin dirs while the UI glob matches them; three discovery surfaces disagree.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: all three discovery surfaces are deleted (SERVER-136, CLI-060, UI-155). Confirmed on disk: neither `apps/server/src/plugins/` nor `apps/cli/src/registry/plugins.ts` exists.
 - ~~(28, plugins) `plugins/todos/ui/TodoView.tsx:153` — React key `${item.ts}:${item.text}` collides for identical texts in the same millisecond.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: INFRA-031 deletes `plugins/`. The collision was in that component's own item list and no core list is keyed that way.
-- ~~(29, ui) `apps/ui/src/plugins/slots.tsx` — wrapped-component cache never observes a registry swap outside tests; fine until manifest hot-reload.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: UI-150 deletes the slot dispatch and the registry. `apps/ui/src/plugins/` no longer exists, and the hot-reload it was waiting on will never arrive.
+- ~~(29, ui) `apps/ui/src/plugins/slots.tsx` — wrapped-component cache never observes a registry swap outside tests; fine until manifest hot-reload.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: UI-155 deletes the slot dispatch and the registry. `apps/ui/src/plugins/` no longer exists, and the hot-reload it was waiting on will never arrive.
 - (30, cli) `apps/cli/src/commands/workspace/upgrade.ts:161-167` — version-only bump early-returns without refreshing the manifest's `tool` field (stale `fromVersion` later).
 - (31, cli) `apps/cli/src/commands/init/git.ts` — `commitPaths` docstring overclaims ("index left alone"); `git add -- <paths>` does update those index entries.
 
@@ -113,9 +113,9 @@ holds the rest for triage into domain issues — do not let them silently expire
 - (server+contract) FormSchema accepts non-trim-stable/multi-line options; answeredOption compares first-line-trimmed → permanently unclearable needs=form badge. Pin options single-line trim-stable (rider) or match the composed line.
 - (agent-runtime) audit SPEC 35/36 remain open: the archived-collision 409 carries name not id while comment/SKILL.md instructs `doc unarchive <id>`; both skills' "reversible" clauses still name no verb. One skill-text pass.
 - (agent-runtime) orchestrate/SKILL.md:428 worked example labels a Haiku-criterion dispatch "(Sonnet …)" — trains mis-tiering.
-- ~~(plugins) blockquoted task items (`> - [ ]`) render as live checkboxes but are invisible to the plugin (same family as audit FIX 7/8); ISO_DATE_PATTERN accepts non-calendar dates (2026-02-30) with lexicographic overdue compare; `list --open --json` lacks an index field for machine consumers.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: all three are todos-plugin behaviour — an item parser, a due-date pattern and a `corpus todos list` flag. SHARED-064 removed the derived `status`/`due` reading entirely, with the loss named and accepted by the user, so there is no parser left to be blind to a blockquoted checkbox. **The checkboxes themselves are core and unaffected** — SPEC §12's M6 requires a document of an unrecognised type to render with working checkboxes.
+- ~~(plugins) blockquoted task items (`> - [ ]`) render as live checkboxes but are invisible to the plugin (same family as audit FIX 7/8); ISO_DATE_PATTERN accepts non-calendar dates (2026-02-30) with lexicographic overdue compare; `list --open --json` lacks an index field for machine consumers.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: all three are todos-plugin behaviour — an item parser, a due-date pattern and a `corpus todos list` flag. SHARED-067 removed the derived `status`/`due` reading entirely, with the loss named and accepted by the user, so there is no parser left to be blind to a blockquoted checkbox. **The checkboxes themselves are core and unaffected** — SPEC §12's M6 requires a document of an unrecognised type to render with working checkboxes.
 - (cli, NITs) ~~template symlink install (v1-trusted, textual `escapesPlugin`);~~ archived refusal drains a piped body before refusing. **Half struck by SHARED-065 (Phase 41), 2026-08-22**: CLI-060 deletes plugin template install and `escapesPlugin` with it. **The archived-refusal half is core `corpus` behaviour and stands.**
-- (server/plugins, NITs) ~~status-alongside-body-edit refusal untested; drifted half-state PUT {status:open} 200-no-ops;~~ `\r\r\n` on an all-blank-CRLF body. **Two of three struck by SHARED-065 (Phase 41), 2026-08-22**: the first two are the todos item routes' status semantics, under the `/api/x/` space SHARED-064 amendment 8 deleted. **The CRLF item is kept**: body normalisation is core and has nothing to do with the label's `plugins` half. The split was a judgment call and is recorded as one.
+- (server/plugins, NITs) ~~status-alongside-body-edit refusal untested; drifted half-state PUT {status:open} 200-no-ops;~~ `\r\r\n` on an all-blank-CRLF body. **Two of three struck by SHARED-065 (Phase 41), 2026-08-22**: the first two are the todos item routes' status semantics, under the `/api/x/` space SHARED-067 amendment 8 deleted. **The CRLF item is kept**: body normalisation is core and has nothing to do with the label's `plugins` half. The split was a judgment call and is recorded as one.
 - (ui, NIT residue) docActions Delete Esc-mid-flight notice; abandon registry pristine-map session leak (unless closed in the fix round).
 
 **From sprint-016 contracting (2026-07-30)**
@@ -144,7 +144,7 @@ Three SPEC.md amendments from the PR #12 review.
 ### Draft 1 (APPLIED, then removed with its section) — §12 (~line 405): the shipped `corpus todos migrate` verb
 
 **Note added 2026-08-22 by SHARED-065 (Phase 41), and the signed text below is
-left exactly as it was.** SHARED-064 deleted §12 (*Reference plugin: todos*)
+left exactly as it was.** SHARED-067 deleted §12 (*Reference plugin: todos*)
 entirely, so the sentence this amendment produced is no longer in SPEC.md and
 `corpus todos migrate` is no longer a verb. **The record is retained unedited
 because it is a signature**: the user approved these three drafts on 2026-07-30
@@ -408,7 +408,7 @@ _n/a until triage._
   frontmatter-ONLY legacy doc succeeds and silently self-migrates it (dual and
   malformed correctly refuse) — decide whether silent self-migration is a
   feature or should refuse like its siblings;~~ **(a) STRUCK by SHARED-065 (Phase
-  41), 2026-08-22**: the `/api/x/` route space is deleted (SHARED-064 amendment
+  41), 2026-08-22**: the `/api/x/` route space is deleted (SHARED-067 amendment
   8), and with it the item routes and the legacy `items:` migration. **(b) is
   core and stands**: the editor schema normalises a list mixing a plain bullet
   with a task item into a full task list, giving the plain bullet a checkbox —
@@ -436,7 +436,7 @@ _n/a until triage._
   because the asymmetry is a fair question and the next reviewer will ask it
   again. Revisit if the editor ever gains grammar of its own.
   **Note (SHARED-065, Phase 41, 2026-08-22)**: one of the four cited precedents,
-  plugin-contributed menus, no longer exists — SHARED-064 removed it along with
+  plugin-contributed menus, no longer exists — SHARED-067 removed it along with
   the §10 sentence it added. **The ruling is unaffected and stays as written.**
   It turns on what UI-039 did, not on what the four comparators were, and the
   four are named as history rather than as live examples.
@@ -449,6 +449,6 @@ _n/a until triage._
   **STRUCK by SHARED-065 (Phase 41), 2026-08-22.** The deviation is a fact and
   the CSS is still in the kit, but the *harm* was that editor-shaped selectors
   shipped to plugins that could never emit that markup. `packages/kit` is kept
-  (SHARED-064 amendment 3) with exactly one consumer, `apps/ui`, which does run
+  (SHARED-067 amendment 3) with exactly one consumer, `apps/ui`, which does run
   the TipTap editor. Nothing is shipped to a consumer that cannot use it, so
   there is no split left to confirm.

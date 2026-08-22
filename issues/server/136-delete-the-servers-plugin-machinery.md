@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: SHARED-064 (signed and applied)
+- Depends on: SHARED-067 (signed and applied)
 
 ## Spec References
 - SPEC.md — §10, §12 and §13 are deleted; the plugin concept is gone from §1, §3, §4, §5, §7, §9 and §12
@@ -91,4 +91,4 @@ items:
 **The accepted loss, observed.** A `PUT` naming `status: resolved` and
 `due: 2026-10-01` on that document now answers `200` and both values land, with
 no relation to the items. Before this issue that was a `400`. This is the
-deletion SHARED-064 records the user accepting, not a regression.
+deletion SHARED-067 records the user accepting, not a regression.

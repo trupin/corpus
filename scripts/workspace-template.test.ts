@@ -110,7 +110,7 @@ const templatePlan = planTemplateInstall(TEMPLATE_ROOT);
  *
  * This used to read two trees: the template's own and a plugin's
  * `skills/<name>/`. INFRA-031 deleted `plugins/`, so the template is now the
- * whole of it — which is the point of SHARED-064, that the core is the whole of
+ * whole of it — which is the point of SHARED-067, that the core is the whole of
  * the product. The rules in "every installed skill" still run over one list.
  */
 const installedSkills: readonly InstalledSkill[] = templatePlan
@@ -494,7 +494,7 @@ describe("skills", () => {
   });
 
   /**
-   * SHARED-064 removed the plugin system from the product, so no skill may
+   * SHARED-067 removed the plugin system from the product, so no skill may
    * teach an agent to reach for one. The word itself is the pin: there is no
    * installed `.claude/skills/<plugin>/` to route into, no `/api/x/` space to
    * call, and a skill that named either would send a real workspace's agent
@@ -1592,7 +1592,7 @@ describe("orchestrate skill body", () => {
       ".corpus/HALT",
       '{"idle":true,"reason":"timeout"}',
       '{"idle":true,"reason":"halted"}',
-      // SHARED-064 deleted the `<plugin>.<action>` row that used to sit here.
+      // SHARED-067 deleted the `<plugin>.<action>` row that used to sit here.
       // Its catch-all did not go with it: the loop still meets types it has no
       // row for, and the command it fails them with is the pinned text now.
       'corpus queue fail <id> --reason "unknown event type: <type>"',
@@ -2977,7 +2977,7 @@ describe("orchestrate skill body", () => {
   });
 
   /**
-   * SHARED-064 removed the plugin system, and with it the `<plugin>.<action>`
+   * SHARED-067 removed the plugin system, and with it the `<plugin>.<action>`
    * routing row, the handler-resolution bullet under *Routing*, and the touched
    * set under *Concurrency and ordering*. The **rule** those passages carried
    * outlived its cause and is pinned below rather than deleted with them: an
@@ -3023,7 +3023,7 @@ describe("orchestrate skill body", () => {
 
   it("names no removed surface and hedges nothing", () => {
     // `todos` was the shipped reference plugin and `_fixture` the test one;
-    // SHARED-064 deleted both, so a mention here is a leftover rather than a
+    // SHARED-067 deleted both, so a mention here is a leftover rather than a
     // hardwired name (sprint-012 adjudication 1, kept for the same reason).
     expect(body).not.toMatch(/todos|_fixture/i);
     for (const hedge of [
@@ -3448,7 +3448,7 @@ describe("comment skill body", () => {
   });
 
   /**
-   * SHARED-064 deleted *Route into a plugin* from the moves under *Doing the
+   * SHARED-067 deleted *Route into a plugin* from the moves under *Doing the
    * work*. Applying another skill did not go with it — it is what a `/<skill>`
    * on the turn asks for — but it is a **directive the payload carries**, and
    * *Routing directives* states it in full one section earlier. So the moves

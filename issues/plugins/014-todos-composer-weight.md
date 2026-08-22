@@ -6,9 +6,9 @@ plugins
 
 ## Status
 
-closed — obsoleted by SHARED-064 (Phase 41): the todos plugin, and the composer this issue is about, are deleted.
+closed — obsoleted by SHARED-067 (Phase 41): the todos plugin, and the composer this issue is about, are deleted.
 
-**Closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-064 removed the plugin
+**Closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-067 removed the plugin
 surface and the todos plugin on the user's instruction — *"I want it fully gone,
 no trace of it in the codebase or the specs"* — and `todo` is not a document
 type. The whole subject of this issue is

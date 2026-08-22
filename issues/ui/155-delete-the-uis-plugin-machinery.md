@@ -1,4 +1,4 @@
-# [UI-150] Delete the UI's plugin registry, slot dispatch and plugin columns
+# [UI-155] Delete the UI's plugin registry, slot dispatch and plugin columns
 
 ## Domain
 ui
@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: SHARED-064 (signed and applied)
+- Depends on: SHARED-067 (signed and applied)
 
 ## Spec References
 - SPEC.md — §10, §12 and §13 are deleted; the plugin concept is gone from §1, §3, §4, §5, §7, §9 and §12
@@ -77,7 +77,7 @@ So the spec is measuring the rule, not passing vacuously.
 
 ### Gates
 
-- `tsc --noEmit -p apps/ui/tsconfig.json` — clean (from 5 errors at UI-149).
+- `tsc --noEmit -p apps/ui/tsconfig.json` — clean (from 5 errors at UI-154).
 - `eslint apps/ui/src apps/ui/e2e packages/kit/src` — 0 errors, 0 warnings.
 - `prettier --check` — clean.
 - `vitest run apps/ui/src packages/kit/src` — **210 files, 4231 tests, all pass.**

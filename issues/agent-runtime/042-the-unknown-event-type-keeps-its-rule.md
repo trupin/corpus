@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: SHARED-064
+- Depends on: SHARED-067
 
 ## Spec References
 - SPEC.md **§7** — the queue and the agent loop

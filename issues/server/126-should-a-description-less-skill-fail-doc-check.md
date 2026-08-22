@@ -10,7 +10,7 @@ todo
 
 **Amended 2026-08-22 by SHARED-065 (Phase 41), and kept open.** Two clauses cited
 plugins. The *"Against"* case said skills arrive from three places, one of them a
-plugin — SHARED-064 removed that source, so it now says two, and **the argument
+plugin — SHARED-067 removed that source, so it now says two, and **the argument
 is unweakened**: the point was always that a hand-edited skill is not our defect.
 The design note said an open `DocTypeSchema` means "a plugin type is not a
 fault"; the rule outlives its cause and now names an unrecognised type. The
@@ -100,7 +100,7 @@ Read SERVER-124's decision record first. It settled three edge cases that apply
 here unchanged: a field present but `null` is treated as absent and waived;
 `anchors` gets no special case; and `DocTypeSchema` is deliberately open, so **a
 type the core does not recognise is not a fault** (SPEC §12's M6 — it was written
-against plugin types, and SHARED-064 kept the rule while removing that cause).
+against plugin types, and SHARED-067 kept the rule while removing that cause).
 
 Note that `description` was the field whose only repair was an `--extra` flag the
 error text did not name. If this is extended, check that the repair is expressible

@@ -1,4 +1,4 @@
-# [SHARED-064] The plugin system is removed, and the core is the whole of it
+# [SHARED-067] The plugin system is removed, and the core is the whole of it
 
 ## Domain
 shared (orchestrator)

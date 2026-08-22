@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: SHARED-064 (signed and applied)
+- Depends on: SHARED-067 (signed and applied)
 
 ## Spec References
 - SPEC.md — §10, §12 and §13 are deleted; the plugin concept is gone from §1, §3, §4, §5, §7, §9 and §12
@@ -53,12 +53,12 @@ uses, because `AGENT-*` does not live under `issues/agent-runtime/` for every
 number.
 
 **21 of the 86 matched `plugin|todos|@corpus/kit|/api/x/`.** Six are Phase 41's
-own deletion issues (CLI-060, INFRA-031, SHARED-065, SHARED-066, UI-149, UI-150),
+own deletion issues (CLI-060, INFRA-031, SHARED-065, SHARED-066, UI-154, UI-155),
 which must name what they delete. The other 15 are the survey's 15 — the sweep
 found no open issue the survey had missed on this axis. A second, wider pass over
 `type: todo`, `` `todo` ``, `PLUGINS-[0-9]`, `packages/kit`, `corpus todos` and
 `/api/x` added nothing: every extra hit was a `packages/kit` path, and the kit is
-kept by SHARED-064 amendment 3.
+kept by SHARED-067 amendment 3.
 
 **Four closed, eleven rewritten.** One reclassification against the brief:
 **SERVER-065 was retargeted rather than closed.** Its headline was
@@ -88,7 +88,7 @@ resolved.
   rows and 568 issue files agree`. It failed first on all four closures with
   `is closed with no reason`, because the checker reads the gloss from the status
   **line** and this file's prose sat a paragraph below. Each now carries a
-  same-line `closed — obsoleted by SHARED-064 (Phase 41): …`.
+  same-line `closed — obsoleted by SHARED-067 (Phase 41): …`.
 - `npx prettier --check "issues/**/*.md"` → `All files formatted correctly`.
 - No file was deleted, and no code was touched. `git diff --stat` reports 16
   files, all under `issues/`.

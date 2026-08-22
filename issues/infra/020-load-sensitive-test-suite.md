@@ -8,7 +8,7 @@ todo
 
 **Amended 2026-08-22 by SHARED-065 (Phase 41), and kept open.** One of the two
 tabled tests was `apps/ui/e2e/todos.spec.ts`, deleted with the plugin surface
-(SHARED-064, UI-150). It is struck below rather than erased, because the table is
+(SHARED-067, UI-155). It is struck below rather than erased, because the table is
 a record of what was actually observed.
 
 **The issue survives its cause, and the reason is the whole point of it.** It was

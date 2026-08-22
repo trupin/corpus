@@ -8,7 +8,7 @@ todo
 
 **Halved 2026-08-22 by SHARED-065 (Phase 41), and kept open.** This issue carried
 two independent NITs from PR #54. The second was
-`plugins/todos/ui/dismiss.ts:66` — a ref assigned during render — and SHARED-064
+`plugins/todos/ui/dismiss.ts:66` — a ref assigned during render — and SHARED-067
 removed the plugin surface, so INFRA-031 deletes that file with the rest of
 `plugins/`. It is struck below rather than erased, so the PR #54 record still
 reads true.
@@ -57,7 +57,7 @@ sentence than as the nearest of two.
 
 ## ~~2. `plugins/todos/ui/dismiss.ts:66` — a ref assigned during render~~
 
-**MOOT — closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-064 removed the
+**MOOT — closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-067 removed the
 plugin surface, and INFRA-031 deletes `plugins/` including `dismiss.ts` and the
 `TodoItemComposer.test.tsx` churn test that guarded it. The render-time ref
 assignment goes with the file. Nothing generalises: the finding was one line in

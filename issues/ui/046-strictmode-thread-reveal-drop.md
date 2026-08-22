@@ -9,7 +9,7 @@ todo
 **Retargeted 2026-08-22 by SHARED-065 (Phase 41), and deliberately not closed.**
 The bug was *found* by PLUGINS-009's item menu, which was the first caller that
 reliably had the document warm in the cache. **The defect is core**, in
-`apps/ui/src/reader/useReaderSurface.ts`, and it is unchanged by SHARED-064's
+`apps/ui/src/reader/useReaderSurface.ts`, and it is unchanged by SHARED-067's
 removal of the plugin surface. Only the discovery route was plugin-shaped, and
 losing a bug because its witness was a plugin is exactly what this sweep was told
 not to do. The plugin attribution below is replaced by the core producers, which

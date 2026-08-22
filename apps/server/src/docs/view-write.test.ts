@@ -5,7 +5,7 @@
 // The extra-frontmatter cases deliberately carry `type: todo` — a type this
 // build has never heard of. §5 leaves `type` an open string and §12's M6 makes
 // that a promise, so these are also the guarantee that a workspace's own
-// leftover types still create, save, project and list (SHARED-064).
+// leftover types still create, save, project and list (SHARED-067).
 //
 // Every case goes through the real app, writes a real file into a real git
 // repository, and is asserted on the three real surfaces — the file's bytes,

@@ -8,7 +8,7 @@ in_progress — surface 1 (the published contract) is **done** in PR #55; surfac
 2 (`packages/kit`) and 3 (`apps/ui/e2e`) remain
 
 **Amended 2026-08-22 by SHARED-065 (Phase 41). Not closed, and not rewritten
-blind.** Surfaces 2 and 3 survive Phase 41 whole: `packages/kit` is kept (SHARED-064
+blind.** Surfaces 2 and 3 survive Phase 41 whole: `packages/kit` is kept (SHARED-067
 amendment 3 rewords it as *"the shared UI kit"*) and `apps/ui/e2e/stubCorpus.ts`
 is core test infrastructure. So the remaining work stands exactly as filed.
 

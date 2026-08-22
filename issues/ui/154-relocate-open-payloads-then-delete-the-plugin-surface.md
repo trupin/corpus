@@ -1,4 +1,4 @@
-# [UI-149] Relocate the reader's open payloads out of the plugin surface, then delete it
+# [UI-154] Relocate the reader's open payloads out of the plugin surface, then delete it
 
 ## Domain
 ui
@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: SHARED-064 (signed and applied)
+- Depends on: SHARED-067 (signed and applied)
 
 ## Spec References
 - SPEC.md — §10, §12 and §13 are deleted; the plugin concept is gone from §1, §3, §4, §5, §7, §9 and §12

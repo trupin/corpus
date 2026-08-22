@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: SHARED-064, UI-150, SERVER-136, CLI-060, CONTRACT-074
+- Depends on: SHARED-067, UI-155, SERVER-136, CLI-060, CONTRACT-074
 
 ## Spec References
 - SPEC.md **§9.1** — the projection's `documents` columns

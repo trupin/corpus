@@ -10,7 +10,7 @@ todo
 
 **Amended 2026-08-22 by SHARED-065 (Phase 41).** Two references to
 `apps/ui/e2e/todos-menu.spec.ts` are removed — the file is deleted with the
-plugin surface (SHARED-064, UI-150). It appeared only in the *"Already correct —
+plugin surface (SHARED-067, UI-155). It appeared only in the *"Already correct —
 do not touch"* inventory and in an acceptance criterion asking that it stay
 green, so nothing this issue asks anyone to fix has changed. **The sixteen-site
 arithmetic below is unaffected**: the deleted site was never one of the fourteen
