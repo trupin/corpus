@@ -167,9 +167,17 @@ async function openDoc(page: Page, docId: string): Promise<void> {
   await page.locator(`.reader[data-reader-doc="${docId}"] .fm-form`).waitFor();
 }
 
-const statement = (page: Page) => page.locator(".reader .fm-form .fm-statement");
-const statusSelect = (page: Page) => page.locator(".reader .fm-form select");
-const hint = (page: Page) => page.locator(".reader .fm-form .fm-hint");
+/**
+ * **Scoped to the `status` cell, and it has to be.** Since the review of PR #55
+ * the `due` field is a statement on a todo too (`derived-due.spec.ts`), so
+ * `.fm-statement` alone names two elements and `.fm-hint` names two sentences.
+ * `data-field` is the form's own name for a cell — the `<label>`'s text — so
+ * this narrows without introducing a second identity for the field.
+ */
+const statusCell = (page: Page) => page.locator('.reader .fm-form [data-field="status"]');
+const statement = (page: Page) => statusCell(page).locator(".fm-statement");
+const statusSelect = (page: Page) => statusCell(page).locator("select");
+const hint = (page: Page) => statusCell(page).locator(".fm-hint");
 
 /**
  * Resolves once `locator`'s box has read the same three times running, 100ms

@@ -4,7 +4,7 @@ import type { PluginManifest } from "@corpus/kit/plugin";
 import { describe, expect, it } from "vitest";
 import { buildRegistry, EMPTY_REGISTRY } from "../plugins/registry";
 import { docFixture } from "../testing/readerFixture";
-import { formStatusLock, statusLock, type StatusSubject } from "./statusLock";
+import { dueLock, formDueLock, formStatusLock, statusLock, type FieldSubject } from "./fieldLock";
 
 /**
  * The one predicate behind two surfaces (UI-094).
@@ -44,7 +44,7 @@ function registryWith(type: string, manifest: Partial<PluginManifest["docTypes"]
   return registry;
 }
 
-const NOTE: StatusSubject = { type: "note", status: "open" };
+const NOTE: FieldSubject = { type: "note", status: "open" };
 
 describe("statusLock", () => {
   it("leaves an ordinary document's status the person's to set", () => {
@@ -215,5 +215,157 @@ describe("formStatusLock", () => {
 
   it("leaves the field editable when the plugin is gone (§15 M6)", () => {
     expect(formStatusLock(todo(), EMPTY_REGISTRY)).toBeNull();
+  });
+});
+
+/**
+ * The **`due`** member of the same seam (PLUGINS-018, SERVER-134).
+ *
+ * Read against the predicate rather than the form, exactly as the status cases
+ * are: the form's rendering of the answer lives in
+ * `reader/FrontmatterForm.test.tsx`. What is pinned here is the shape — a
+ * declaration-level lock and a form-level narrowing of it — and the one place
+ * `due` is genuinely not `status`: `deriveDue` has **three** answers, and the
+ * middle one (`{due: null}`) means the derivation applies and there is no
+ * deadline. A composition that read it as "does not apply" would hand back the
+ * control on precisely the document whose deadline the server is about to clear.
+ */
+describe("dueLock", () => {
+  it("leaves an ordinary document's deadline the person's to set", () => {
+    expect(dueLock(NOTE, EMPTY_REGISTRY)).toBeNull();
+    expect(dueLock({ type: "note", status: "resolved" }, EMPTY_REGISTRY)).toBeNull();
+  });
+
+  it("locks a type whose plugin derives its due, naming where the value comes from", () => {
+    const registry = registryWith("todo", { deriveDue: () => ({ due: "2026-08-04" }) });
+    const lock = dueLock({ type: "todo", status: "open" }, registry);
+    expect(lock?.kind).toBe("derived");
+    expect(lock?.reason).toContain("derived");
+    expect(lock?.reason).not.toContain("items");
+  });
+
+  it("reads the declaration, not the derived value", () => {
+    const registry = registryWith("todo", { deriveDue: () => null });
+    expect(dueLock({ type: "todo", status: "open" }, registry)).not.toBeNull();
+  });
+
+  it("does not lock a type that derives only its status", () => {
+    const registry = registryWith("todo", { deriveStatus: () => "open" as const });
+    expect(dueLock({ type: "todo", status: "open" }, registry)).toBeNull();
+    expect(statusLock({ type: "todo", status: "open" }, registry)).not.toBeNull();
+  });
+
+  it("does not lock a type that derives only its due", () => {
+    const registry = registryWith("todo", { deriveDue: () => ({ due: null }) });
+    expect(statusLock({ type: "todo", status: "open" }, registry)).toBeNull();
+    expect(dueLock({ type: "todo", status: "open" }, registry)).not.toBeNull();
+  });
+
+  it("hands an archived document's deadline back — archiving is a fact about status", () => {
+    // `PluginDocType` rule 2: an archived document is one of the two states in
+    // which every derivation declines, and where one declines the stored value
+    // stands. So `due` is settable there exactly as it is on a note — which is
+    // where this member parts company with `statusLock`, which locks it.
+    const registry = registryWith("todo", { deriveDue: () => ({ due: "2026-08-04" }) });
+    expect(dueLock({ type: "todo", status: "archived" }, registry)).toBeNull();
+    expect(statusLock({ type: "todo", status: "archived" }, registry)?.kind).toBe("archived");
+  });
+
+  it("locks nothing while discovery is still empty", () => {
+    expect(dueLock({ type: "todo", status: "open" }, EMPTY_REGISTRY)).toBeNull();
+  });
+});
+
+describe("formDueLock", () => {
+  const todo = (overrides: { status?: DocStatus; body?: string } = {}): Doc =>
+    docFixture({
+      body: overrides.body ?? "- [ ] pay the deposit (due: 2026-08-04)\n",
+      frontmatter: {
+        id: "doc_t",
+        type: "todo",
+        status: overrides.status ?? "open",
+        due: "2026-08-04",
+      },
+    });
+
+  /** A derivation shaped like the todos plugin's, with all three answers. */
+  const derivingRegistry = () =>
+    registryWith("todo", {
+      deriveDue: (doc: Doc) => {
+        if (doc.frontmatter.status === "archived") return null;
+        if (doc.body === "") return null;
+        const dates = [...doc.body.matchAll(/- \[ \] .*\(due: (\d{4}-\d{2}-\d{2})\)/g)].map(
+          (match) => String(match[1]),
+        );
+        return { due: dates.sort()[0] ?? null };
+      },
+    });
+
+  it("keeps the lock where the derivation has a date", () => {
+    const lock = formDueLock(todo(), derivingRegistry());
+    expect(lock?.kind).toBe("derived");
+    expect(lock?.reason).toContain("derived");
+  });
+
+  it("keeps the lock where the derivation applies and there is no deadline", () => {
+    // `DerivedDocDue`'s middle answer. `{due: null}` is not "does not apply": it
+    // is the answer that has to CLEAR the field, so the control it belongs to
+    // stays locked and says so. A `?? stored` composition collapses this case,
+    // and a finished list would keep a deadline forever.
+    const lock = formDueLock(todo({ body: "- [x] paid (due: 2026-08-04)\n" }), derivingRegistry());
+    expect(lock?.kind).toBe("derived");
+  });
+
+  it("hands the field back where the content cannot be read", () => {
+    expect(formDueLock(todo({ body: "" }), derivingRegistry())).toBeNull();
+    expect(dueLock({ type: "todo", status: "open" }, derivingRegistry())).not.toBeNull();
+  });
+
+  it("hands an archived document's deadline back, at both altitudes", () => {
+    expect(formDueLock(todo({ status: "archived" }), derivingRegistry())).toBeNull();
+  });
+
+  it("contains a derivation that throws, and leaves the field editable", () => {
+    const registry = registryWith("todo", {
+      deriveDue: () => {
+        throw new Error("plugin fell over");
+      },
+    });
+    expect(() => formDueLock(todo(), registry)).not.toThrow();
+    expect(formDueLock(todo(), registry)).toBeNull();
+  });
+
+  it("reads an answer of the wrong shape as declining", () => {
+    // `plugins/validate.ts` establishes that a `deriveDue` is a function and can
+    // establish nothing about what it returns. A malformed answer lands where a
+    // throw lands — the direction that leaves the field the person's.
+    for (const answer of ["2026-08-04", 20260804, {}, { due: 3 }, [], true]) {
+      const registry = registryWith("todo", { deriveDue: () => answer as never });
+      expect(formDueLock(todo(), registry), JSON.stringify(answer)).toBeNull();
+    }
+  });
+
+  it("locks nothing the shared predicate left open — it narrows, it does not rival", () => {
+    const registry = derivingRegistry();
+    const docs: readonly Doc[] = [
+      todo(),
+      todo({ body: "- [x] paid (due: 2026-08-04)\n" }),
+      todo({ body: "- [ ] undated\n" }),
+      todo({ body: "" }),
+      todo({ status: "archived" }),
+      todo({ status: "resolved" }),
+      docFixture({ frontmatter: { id: "doc_n", type: "note", status: "open" } }),
+      docFixture({ frontmatter: { id: "doc_n", type: "note", status: "archived" } }),
+    ];
+    for (const doc of docs) {
+      const where = `${doc.frontmatter.type}/${doc.frontmatter.status}/${doc.body}`;
+      const form = formDueLock(doc, registry);
+      if (form === null) continue;
+      expect(dueLock(doc.frontmatter, registry), where).toBe(form);
+    }
+  });
+
+  it("leaves the field editable when the plugin is gone (§15 M6)", () => {
+    expect(formDueLock(todo(), EMPTY_REGISTRY)).toBeNull();
   });
 });

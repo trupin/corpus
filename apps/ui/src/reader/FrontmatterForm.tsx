@@ -13,7 +13,7 @@ import {
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
-import { useFormStatusLock, type FieldLock } from "../doc/statusLock";
+import { useFormDueLock, useFormStatusLock, type FieldLock } from "../doc/fieldLock";
 import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
 import { SaveChipView } from "../editor/SaveChip";
 import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
@@ -125,7 +125,7 @@ export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
  * edit mode, it is a field that was never the person's to set."* So a control
  * has three states here, not two: absent, live, or shown-with-a-reason.
  *
- * Both the shape and the predicate moved to `doc/statusLock.ts` in UI-094: the
+ * Both the shape and the predicate moved to `doc/fieldLock.ts` in UI-094: the
  * row context menu asks the same question of a subject that is **not** a `Doc`,
  * and the only two honest ways to serve both callers were one predicate over the
  * fields they share or two predicates that would eventually disagree. This form
@@ -139,6 +139,14 @@ export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
  * items", and a disabled dropdown says something else — that there is an act
  * here, currently unavailable. There is no act here. An `archived` lock keeps
  * the control, because there *is* one and it lives on another route (UI-020).
+ *
+ * **`due` asks the same question of the same module** (`useFormDueLock`,
+ * PLUGINS-018 / SERVER-134), and draws the answer the same way. It has to: the
+ * server converges a derived `due` on every write it makes, so the live date
+ * control this form shipped in UI-093 offered a change the write path undid in
+ * the same request — pick a date, `200`, and the control snaps back to the
+ * derived value with nothing said. UI-092's own summary warned against exactly
+ * that, "offering a change the write path would immediately undo".
  */
 
 /** The options a select must offer: the editable set, plus its own value. */
@@ -186,8 +194,17 @@ export function isDeliberate(field: FieldName, value: string): boolean {
  * the wire: leaving the document, rebinding the reader and `pagehide` all flush
  * through this function, and guarding the control alone would ship a refusal the
  * user could not connect to anything they did.
+ *
+ * **A derived `due` never leaves here either**, and `dueLocked` is that guard —
+ * the same rule for the same reason, one field over. The failure it prevents is
+ * quieter than a `400`: the server converges a derived `due` on the very write
+ * that carries one (SERVER-134), so a stale draft flushed from an unmount would
+ * be accepted, discarded and never mentioned. The control is not rendered while
+ * the lock is on, so this only ever fires for a value typed **before** it engaged
+ * — a date picked in the second or so before plugin discovery settles — which is
+ * exactly the case a control-side guard cannot see.
  */
-export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
+export function changedFields(doc: Doc, draft: Draft, dueLocked = false): UpdateDocRequest {
   const current = draftOf(doc);
   const changes: UpdateDocRequest = {};
   const title = draft.title.trim();
@@ -196,7 +213,7 @@ export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
   if (draft.status !== current.status && draft.status !== ARCHIVED && current.status !== ARCHIVED) {
     changes.status = draft.status;
   }
-  if (draft.due !== current.due) changes.due = draft.due === "" ? null : draft.due;
+  if (!dueLocked && draft.due !== current.due) changes.due = draft.due === "" ? null : draft.due;
   return changes;
 }
 
@@ -290,7 +307,11 @@ interface FieldProps {
 function Field({ label, lock, hint, children }: FieldProps): ReactElement {
   const note = lock?.reason ?? hint;
   return (
-    <label className="fm-field">
+    // `data-field` names the cell for anything addressing one from outside the
+    // form — the e2e suite, which since two fields can be statements can no
+    // longer say "the statement" and mean one thing. The label text is the
+    // field's identity here already, so this introduces no second name for it.
+    <label className="fm-field" data-field={label}>
       <span>{label}</span>
       {children}
       {note === undefined ? null : <span className="fm-hint">{note}</span>}
@@ -328,6 +349,39 @@ function StatusStatement({ status }: { readonly status: DocStatus }): ReactEleme
   return <output className="fm-statement">{status}</output>;
 }
 
+/**
+ * What a locked, empty `due` says. It is a **reading of the document**, not a
+ * placeholder: `DerivedDocDue`'s middle answer (`{due: null}`) means the
+ * derivation applies and this document has no deadline, which is a fact the
+ * person is being told rather than a blank waiting to be filled.
+ *
+ * A `—` or an empty box would say the other thing, and on this control the other
+ * thing is false.
+ */
+const NO_DEADLINE = "no deadline";
+
+/**
+ * A **derived** `due`: {@link StatusStatement}'s element, one field over, for the
+ * reasons that comment gives — an `<output>` because the application computed the
+ * value, labelable so the `due` label still names it, and `role="status"` so a
+ * deadline that changes under a screen reader is announced.
+ *
+ * **The value is the server's**, exactly as the status statement's is (SERVER-134
+ * writes the derived `due` into the frontmatter on every write). Nothing here
+ * re-derives it, and nothing here composes anything: `DerivedDocDue`'s three
+ * answers are a trap for a surface that combines a derived value with a stored
+ * one, and this surface never holds both.
+ *
+ * SHARED-057 / SHARED-061: the box is the grid cell's (`.fm-statement` is
+ * `width: 100%`), so a date **appearing and disappearing** — which is what
+ * checking the last dated item does — moves nothing on the form. `no deadline`
+ * is a good deal wider than `2026-08-04`, which is precisely why the width may
+ * not follow the text.
+ */
+function DueStatement({ due }: { readonly due: string }): ReactElement {
+  return <output className="fm-statement">{due === "" ? NO_DEADLINE : due}</output>;
+}
+
 export function FrontmatterForm({
   doc,
   selectTitle,
@@ -357,6 +411,15 @@ export function FrontmatterForm({
   const localRef = useRef<Local>(local);
   const docRef = useRef(doc);
   docRef.current = doc;
+  /**
+   * The `due` lock as of the last render, for {@link changedFields}' guard.
+   *
+   * A ref rather than a dependency because every write path here reads its inputs
+   * from refs, for the reason stated above: a flush armed several keystrokes ago
+   * must send what the form holds *now*. It is assigned where the lock is read,
+   * further down — every caller runs after a render has completed.
+   */
+  const dueLockRef = useRef<FieldLock | null>(null);
   const inFlight = useRef(false);
   /** A change arrived while a `PUT` was on the wire; send it when that lands. */
   const queued = useRef(false);
@@ -449,7 +512,11 @@ export function FrontmatterForm({
     const outgoing = docRef.current;
     const id = outgoing.frontmatter.id;
     if (isAbandoned(id)) return null;
-    const changes = changedFields(outgoing, valueOf(outgoing, localRef.current));
+    const changes = changedFields(
+      outgoing,
+      valueOf(outgoing, localRef.current),
+      dueLockRef.current !== null,
+    );
     if (Object.keys(changes).length === 0) return null;
     return { id, changes };
   }, []);
@@ -580,6 +647,8 @@ export function FrontmatterForm({
 
   const value = valueOf(doc, local);
   const lock = useFormStatusLock(doc);
+  const dueLock = useFormDueLock(doc);
+  dueLockRef.current = dueLock;
   const folder = folderOf(doc.path);
 
   return (
@@ -695,16 +764,30 @@ export function FrontmatterForm({
             </select>
           )}
         </Field>
-        <Field label="due" lock={null}>
-          <input
-            className="fm-input"
-            type="date"
-            value={value.due}
-            onKeyDown={leaveOnEscape}
-            onChange={(event) => {
-              patch("due", event.target.value);
-            }}
-          />
+        <Field label="due" lock={dueLock}>
+          {/*
+           * The `status` field's shape, deliberately unchanged — a `derived`
+           * lock is a statement, anything else is the control. `useFormDueLock`
+           * never returns an `archived` lock (an archived document's derivation
+           * declines, so its deadline is the person's again), so the second
+           * branch is the live control today. It is written this way rather than
+           * as `dueLock === null` so that the two fields answer a lock by its
+           * `kind` and not by which field it came from.
+           */}
+          {dueLock?.kind === "derived" ? (
+            <DueStatement due={value.due} />
+          ) : (
+            <input
+              className="fm-input"
+              type="date"
+              value={value.due}
+              disabled={dueLock !== null}
+              onKeyDown={leaveOnEscape}
+              onChange={(event) => {
+                patch("due", event.target.value);
+              }}
+            />
+          )}
         </Field>
       </div>
     </>

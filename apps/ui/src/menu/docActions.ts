@@ -9,7 +9,7 @@ import {
   type RowNotice,
   type StalenessLevel,
 } from "@corpus/kit";
-import { useStatusLock } from "../doc/statusLock";
+import { useStatusLock } from "../doc/fieldLock";
 import { threadStatusNotice } from "../thread/resolveNotice";
 import type { MenuAction } from "./menuModel";
 

@@ -126,7 +126,7 @@ describe("isDeliberate", () => {
 });
 
 /*
- * `statusLock`'s own cases moved with it to `doc/statusLock.test.ts` (UI-094).
+ * `statusLock`'s own cases moved with it to `doc/fieldLock.test.ts` (UI-094).
  * What stays here is what this form does with the answer — see the archived
  * cases below, which render the control and read its hint.
  */
@@ -830,5 +830,190 @@ describe("the document's edit session", () => {
     unmount();
     vi.advanceTimersByTime(EDIT_SESSION_SETTLE_MS * 4);
     expect(flushEditSession).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A derived `due` is a **statement** too (PR #55 review, finding 1).
+ *
+ * UI-093 made this form always live, and the date control it made live is one
+ * the write path undoes: SERVER-134 converges a derived `due` on every write the
+ * server makes, so picking a date on a todo sent `PUT {"due":"2030-01-01"}`, got
+ * a `200`, and snapped back to the derived value with no error and nothing said.
+ * §11 (SHARED-030) — *"editable by nobody"* — and `PluginDocType`'s own contract
+ * — *"a surface that would offer a `due` edit renders it locked"* — both rule it
+ * out.
+ *
+ * The **value** is the document's, exactly as the server sent it. The fixture
+ * derivation decides only whether the field is settable.
+ */
+describe("a derived due", () => {
+  /** Discovery, with one plugin declaring `todo`'s due derived. */
+  function install(deriveDue: ((doc: Doc) => { due: string | null } | null) | undefined): void {
+    const registry = buildRegistry([
+      {
+        dir: "todos",
+        loaded: {
+          module: {
+            default: {
+              id: "todos",
+              name: "Todos",
+              docTypes: [{ type: "todo", ...(deriveDue === undefined ? {} : { deriveDue }) }],
+              columns: [],
+            },
+          },
+        },
+      },
+    ]);
+    expect(registry.warnings, "the fixture manifest must survive validation").toEqual([]);
+    setPluginRegistry(registry);
+  }
+
+  /**
+   * The todos plugin's three answers: `null` for content it cannot read, an
+   * object carrying the earliest open item's date, and an object carrying `null`
+   * when nothing open is dated.
+   */
+  const fromBody = (doc: Doc): { due: string | null } | null => {
+    if (doc.frontmatter.status === "archived") return null;
+    if (doc.body === "") return null;
+    const dates = [...doc.body.matchAll(/- \[ \] .*\(due: (\d{4}-\d{2}-\d{2})\)/g)].map((match) =>
+      String(match[1]),
+    );
+    return { due: dates.sort()[0] ?? null };
+  };
+
+  const todo = (overrides: { status?: DocStatus; body?: string; due?: string | null } = {}): Doc =>
+    docFixture({
+      body: overrides.body ?? "- [ ] call the plumber (due: 2026-08-04)\n",
+      path: "data/docs/todos/week.md",
+      frontmatter: {
+        id: "doc_todo_due",
+        type: "todo",
+        title: "Week of Jul 20",
+        status: overrides.status ?? "open",
+        due: overrides.due === undefined ? "2026-08-04" : overrides.due,
+      },
+    });
+
+  const dueCell = (): HTMLElement => document.querySelector("[data-field='due']") as HTMLElement;
+  const dueStatement = (): HTMLOutputElement =>
+    dueCell().querySelector("output.fm-statement") as HTMLOutputElement;
+
+  it("states the date where the control was, and names where it came from", () => {
+    install(fromBody);
+    mount({ doc: todo() });
+
+    expect(dueStatement().textContent).toBe("2026-08-04");
+    expect(dueCell().querySelector("input[type='date']")).toBeNull();
+    expect(dueCell().querySelector(".fm-hint")?.textContent).toContain(
+      "derived from this document’s own content",
+    );
+    // `<output>` is labelable, so the `due` field is still what anything walking
+    // the form finds — exactly as it found the date input.
+    expect(screen.getByLabelText(/^due/)).toBe(dueStatement());
+  });
+
+  it("says there is no deadline where the derivation applies and answers none", () => {
+    // `DerivedDocDue`'s middle answer, and the case a `?? stored` composition
+    // collapses. The field is locked and *states* that there is no deadline —
+    // it is a reading of the document, not a blank waiting to be filled.
+    install(fromBody);
+    mount({ doc: todo({ body: "- [ ] call the plumber\n", due: null }) });
+
+    expect(dueStatement().textContent).toBe("no deadline");
+    expect(dueCell().querySelector("input[type='date']")).toBeNull();
+  });
+
+  it("follows the document when the last dated item is checked", () => {
+    install(fromBody);
+    const { rerender } = mount({ doc: todo() });
+    const before = dueStatement();
+    expect(before.textContent).toBe("2026-08-04");
+
+    // What an SSE invalidation and its refetch hand the form: the same document,
+    // with the `due` the server derived and wrote (SERVER-134).
+    rerender(todo({ body: "- [x] call the plumber (due: 2026-08-04)\n", due: null }));
+
+    // Same element, same class — the value changed and the box did not
+    // (SHARED-057). The Playwright case measures the box; this pins that nothing
+    // swapped the element out from under it.
+    expect(dueStatement()).toBe(before);
+    expect(dueStatement().textContent).toBe("no deadline");
+    expect(dueStatement().className).toBe("fm-statement");
+  });
+
+  it("issues no write of a due nobody set", async () => {
+    install(fromBody);
+    const { wire } = mount({ doc: todo() });
+
+    fireEvent.change(tags(), { target: { value: "home" } });
+    await waitFor(() => {
+      expect(wire.of("PUT")).toHaveLength(1);
+    });
+    expect(Object.keys(wire.of("PUT")[0]?.body as object)).not.toContain("due");
+  });
+
+  it("drops a date typed before the lock engaged, on every path to the wire", () => {
+    // The one case the missing control cannot cover: plugin discovery settles
+    // *after* the person picked a date. `changedFields` is where every write
+    // path — the debounce, the exit flush and `pagehide` — passes through.
+    const draft = { title: "Week of Jul 20", tags: "", status: "open" as const, due: "2030-01-01" };
+    expect(changedFields(todo(), draft).due).toBe("2030-01-01");
+    expect(changedFields(todo(), draft, true).due).toBeUndefined();
+    expect(Object.keys(changedFields(todo(), draft, true))).not.toContain("due");
+  });
+
+  it("leaves every other control live", () => {
+    install(fromBody);
+    mount({ doc: todo() });
+    expect(title().readOnly).toBe(false);
+    expect(tags().disabled).toBe(false);
+    expect(status().disabled).toBe(false);
+  });
+
+  it("hands the field back where the items cannot be read", () => {
+    install(fromBody);
+    mount({ doc: todo({ body: "" }) });
+
+    expect(dueCell().querySelector("output.fm-statement")).toBeNull();
+    expect(due().disabled).toBe(false);
+    expect(due().value).toBe("2026-08-04");
+  });
+
+  it("hands an archived list's deadline back — archiving is a fact about status", () => {
+    install(fromBody);
+    mount({ doc: todo({ status: "archived" }) });
+
+    expect(dueCell().querySelector("output.fm-statement")).toBeNull();
+    expect(due().disabled).toBe(false);
+  });
+
+  it("is an ordinary control when the plugin is gone (§15 M6)", () => {
+    setPluginRegistry(EMPTY_REGISTRY);
+    mount({ doc: todo() });
+    expect(dueCell().querySelector("output.fm-statement")).toBeNull();
+    expect(due().disabled).toBe(false);
+  });
+
+  it("is an ordinary control for a type that declares no derivation", () => {
+    install(undefined);
+    mount({ doc: todo() });
+    expect(dueCell().querySelector("output.fm-statement")).toBeNull();
+    expect(due().disabled).toBe(false);
+  });
+
+  it("leaves the date live and writable on a type nothing derives", async () => {
+    install(fromBody);
+    const note = docFixture({
+      frontmatter: { id: "doc_n", type: "note", title: "Mortgage options", status: "open" },
+    });
+    const { wire } = mount({ doc: note });
+
+    fireEvent.change(due(), { target: { value: "2026-12-24" } });
+    await waitFor(() => {
+      expect(wire.of("PUT")).toHaveLength(1);
+    });
+    expect(wire.of("PUT")[0]?.body).toEqual({ due: "2026-12-24" });
   });
 });
