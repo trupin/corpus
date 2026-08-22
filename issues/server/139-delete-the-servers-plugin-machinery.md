@@ -1,4 +1,4 @@
-# [SERVER-136] Delete the server's plugin discovery, registry and derived-field seam
+# [SERVER-139] Delete the server's plugin discovery, registry and derived-field seam
 
 ## Domain
 server

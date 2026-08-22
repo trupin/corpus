@@ -1,4 +1,4 @@
-# [CONTRACT-074] Delete the contract's plugin types and the /api/x route note
+# [CONTRACT-077] Delete the contract's plugin types and the /api/x route note
 
 ## Domain
 contract
@@ -142,7 +142,7 @@ command.
    nullability and the four route sites are byte-identical. The description is
    the honest interim, and it is written so SHARED-066 can delete it without
    contradicting anything published in between.
-   `issues/PLAN.md` line 1271 still reads `todo` for CONTRACT-074 — I left
+   `issues/PLAN.md` line 1271 still reads `todo` for CONTRACT-077 — I left
    shared tracker state to the orchestrator, so `npm run issues:check` reports
    the two halves out of step until that cell is flipped.
 2. **SPEC.md still carries two todo references I did not touch**: §5's status

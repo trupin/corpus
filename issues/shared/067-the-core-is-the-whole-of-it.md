@@ -114,6 +114,14 @@ in the spec is repointed or removed.
 - A todo list's `status` stops reading its items, and its `due` stops rolling up
   — **the 18-days-overdue report that motivated v0.17.0 returns.**
 - The stats panel, the item routes and `corpus todos` verbs go.
+- **A pre-PLUGINS-005 todo, whose items live in an `items:` frontmatter key
+  rather than as checkbox lines, opens as near-empty prose.** Its items are
+  preserved verbatim in `extra` and reachable through the file itself or
+  `doc show --json`, but nothing renders them, and `corpus todos migrate` — the
+  only converter — goes with the plugin. **This was not in the loss the user
+  accepted**; it was found by PR #57's cold reviewer, which noticed that the
+  deleted `todos-legacy.spec.ts` had been guarding exactly this state. Named
+  here rather than left to be discovered.
 - Existing `type: todo` documents keep working as ordinary markdown, checkboxes
   included. This is not a guess: v0.17.0's subtractive check was run twice
   against a real server, and the board rendered a todo document in the core

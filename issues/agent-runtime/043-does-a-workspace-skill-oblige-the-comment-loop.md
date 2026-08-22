@@ -14,7 +14,7 @@ fable
 
 ## Dependencies
 - Depends on: SHARED-067
-- Related: AGENT-042 (which stopped on it rather than filling it)
+- Related: AGENT-044 (which stopped on it rather than filling it)
 
 ## Spec References
 - SPEC.md **§1** — *"a domain gets its shape from the templates, views and skills a workspace holds"* (SHARED-067)
@@ -22,7 +22,7 @@ fable
 
 ## Summary
 
-Raised by AGENT-042 and deliberately not answered there, which was right.
+Raised by AGENT-044 and deliberately not answered there, which was right.
 
 SHARED-067's replacement premise says a domain *"gets its shape from the
 templates, views and skills a workspace holds"*. Read plainly, that says a

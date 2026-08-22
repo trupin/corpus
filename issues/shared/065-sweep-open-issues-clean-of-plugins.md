@@ -53,7 +53,7 @@ uses, because `AGENT-*` does not live under `issues/agent-runtime/` for every
 number.
 
 **21 of the 86 matched `plugin|todos|@corpus/kit|/api/x/`.** Six are Phase 41's
-own deletion issues (CLI-060, INFRA-031, SHARED-065, SHARED-066, UI-154, UI-155),
+own deletion issues (CLI-062, INFRA-031, SHARED-065, SHARED-066, UI-154, UI-155),
 which must name what they delete. The other 15 are the survey's 15 — the sweep
 found no open issue the survey had missed on this axis. A second, wider pass over
 `type: todo`, `` `todo` ``, `PLUGINS-[0-9]`, `packages/kit`, `corpus todos` and

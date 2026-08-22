@@ -1,4 +1,4 @@
-# [CLI-060] Delete the CLI's plugin discovery, command topics and template install
+# [CLI-062] Delete the CLI's plugin discovery, command topics and template install
 
 ## Domain
 cli

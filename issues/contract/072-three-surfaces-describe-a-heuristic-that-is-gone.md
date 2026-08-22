@@ -14,7 +14,7 @@ is core test infrastructure. So the remaining work stands exactly as filed.
 
 **One correction to the copy this issue tells the next agent to make.** The
 landed surface-1 prose named a *plugin-event-type consequence* — the E2E log below
-records that verbatim, and it was true when written. CONTRACT-074 (`06afcb61`,
+records that verbatim, and it was true when written. CONTRACT-077 (`06afcb61`,
 *"The published contract forgets plugins existed"*) has since removed that clause;
 `packages/contract/src/schemas/query.ts` now greps to zero for `plugin`, verified
 2026-08-22. **So surfaces 2 and 3 must be written from the contract's text as it

@@ -1,4 +1,4 @@
-# [AGENT-042] The unknown event type keeps its rule, without plugins
+# [AGENT-044] The unknown event type keeps its rule, without plugins
 
 ## Domain
 agent-runtime

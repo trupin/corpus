@@ -11,7 +11,7 @@ todo
 **Retargeted 2026-08-22 by SHARED-065 (Phase 41), and deliberately not closed.**
 This issue was filed against `apps/server/src/plugins/discover.ts`, whose docblock
 said *"Never throws"* in front of an unguarded `readdirSync`, killing boot.
-SHARED-067 removed the plugin surface and SERVER-136 deleted that file, so the
+SHARED-067 removed the plugin surface and SERVER-139 deleted that file, so the
 headline defect has no subject.
 
 **The rest of the issue is core and survives untouched.** Its *"Also worth
@@ -45,7 +45,7 @@ It guards with `existsSync(pluginsRoot)`, which returns **true** for a `chmod 00
 directory (measured, not assumed), and then calls `readdirSync` unguarded. It runs
 from `lifecycle.ts:186` during boot, so the failure is the same user-visible one
 SERVER-063 and SERVER-064 describe.~~ **MOOT — SHARED-067 removed the plugin
-surface and SERVER-136 deleted `apps/server/src/plugins/`.**
+surface and SERVER-139 deleted `apps/server/src/plugins/`.**
 
 What is left is the opposite failure, and it is the half with the higher blast
 radius anyway: **three projection readers lose data with no trace.** Each wraps a

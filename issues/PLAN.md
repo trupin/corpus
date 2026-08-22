@@ -1239,7 +1239,7 @@ left in a report.
 | UI-147 | The mockup still draws the eased column open that UI-146 removed | done | P2 | UI-146 |
 | SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | closed | P2 | — |
 
-## Phase 41 — The core is the whole of it (2026-08-22, v0.18.0 scope)
+## Phase 42 — The core is the whole of it (2026-08-22, v0.18.0 scope)
 
 **The plugin surface and the todos plugin are removed entirely**, on the user's
 instruction: *"I want it fully gone, no trace of it in the codebase or the
@@ -1263,15 +1263,15 @@ was written for.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-067 | The plugin system is removed, and the core is the whole of it (SIGNED 2026-08-22, applied) | done | P0 | — |
-| AGENT-042 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-067 |
+| AGENT-044 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-067 |
 | UI-154 | Relocate the reader's open payloads out of the plugin surface, then delete it | done | P0 | SHARED-067 |
-| SERVER-136 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-067 |
+| SERVER-139 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-067 |
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
-| CLI-060 | Delete the CLI's plugin discovery, command topics and template install | todo | P0 | SHARED-067 |
-| CONTRACT-074 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-060 |
-| INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-136, CLI-060, CONTRACT-074 |
+| CLI-062 | Delete the CLI's plugin discovery, command topics and template install | todo | P0 | SHARED-067 |
+| CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
+| INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
-| SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-136, CLI-060, CONTRACT-074 |
+| SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | AGENT-043 | Does a workspace skill covering a domain oblige the comment loop to apply it? | todo | P2 | SHARED-067 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
@@ -1376,3 +1376,68 @@ any `apps/ui` bound that ties with a `packages/kit` bound loses silently.
 issue, with PLUGINS-018 and UI-092 behind it. If it slips, UI-092 and UI-094 are
 dropped and the rest ships — a derived status you can see is worth having
 without the control that displays its provenance.
+
+## Phase 41 — Boards are documents, a row opens a path, the explorer is column zero (2026-08-22, user design session)
+
+One phase, one PR, by the user's decision ("I want this whole thing to be in a
+single phase so it can be implemented all at once"). Branch
+`worktree-navigation-rework` off `main` at v0.16.0. The model was agreed on a
+clickable prototype, `design/navigation.html`, which is authoritative for
+navigation look and feel; `design/index.html` stays authoritative for the rest.
+
+**What changes, in one paragraph.** A board is a `type: board` document listing
+its columns; `pinned` and a view's `order` go away, and an existing workspace is
+told how to migrate by `corpus upgrade` rather than migrated silently. A row no
+longer widens its column into a reader: it opens a **path**, a chain of reader
+columns to its right, with no document twice in a path, replaceable from its
+origin, closable all at once. An **explorer** at the left edge lists the tree
+and opens onto the default-open board. A **column strip** above the board maps
+every column. A **kanban** is a board over `status` or the new core field
+`stage`, its columns derived from its stages, a drag following the board's
+**transition graph** (linear funnel by default), and a stage deciding a status
+through an explicit map on the board. Full screen stays the overlay it is.
+
+**Decisions the user made, so nobody re-litigates them here:** boards as
+documents the agent can build · one path per origin row, replaced on a new pick
+· no loops, re-centre instead · restart-here and new-path-right from any path
+column · full screen unchanged · the explorer is column zero and the Files board
+is just a board with no query columns · one board always open · board tabs drag
+to reorder (`order` on the board document) · `pinned`/`order` removed, not
+deprecated, with `corpus upgrade` naming the migration · `stage` beside
+`status`, never instead of it · coupling by an explicit `kanban.status` map,
+not by stage name · a drag follows a transition only; skipping is done by
+setting the field; the server does not enforce transitions, it enforces the
+status map · **reflection is an act over the whole corpus** (rider 9, added
+the same day when the user asked whether a stage change triggers the agent):
+no frontmatter flip enqueues anything; `workspace.reflect` carries one
+timestamp, is asked for from the board bar or `corpus reflect`, or is enqueued
+by the server when the corpus has been quiet for `reflect.quiet` (30 minutes by
+default, `0` disables) after an unreflected change; the agent gathers the
+window itself, writes changelog entries and one digest thread; the board marks
+what is unreflected.
+
+**Order of work.** SHARED-064 first, rider by rider. Then CONTRACT-074,
+CONTRACT-075 and CONTRACT-076 together. Then SERVER-138, SERVER-136, SERVER-137
+and UI-148 (three at a time on this machine). Then CLI-060, UI-149 and UI-152.
+Then AGENT-042, CLI-061, UI-150, UI-151, UI-153 and PLUGINS-019. Critical path:
+SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
+
+| ID | Title | Status | Priority | Model | Dependencies |
+| --- | --- | --- | --- | --- | --- |
+| SHARED-064 | SPEC riders for the navigation model: explorer, boards as documents, paths, kanban graphs, reflection | done | P0 | fable | — |
+| CONTRACT-074 | Board fields, `stage`, and the end of `pinned` | todo | P0 | opus | SHARED-064 |
+| CONTRACT-075 | Folder routes: rename, archive, unarchive, delete | todo | P1 | opus | SHARED-064 |
+| CONTRACT-076 | `workspace.reflect`: the event, the ask route, and the status route | todo | P1 | opus | SHARED-064 |
+| AGENT-042 | Seed boards and a kanban; the skills and template say "a board is a document"; the skill handles `workspace.reflect` | todo | P0 | opus | SHARED-064, CLI-060, SERVER-137 |
+| SERVER-138 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | todo | P0 | opus | CONTRACT-074 |
+| SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | todo | P1 | opus | CONTRACT-075 |
+| SERVER-137 | Reflect on demand and when the dust settles: the event, the clock, the quiet window | todo | P1 | opus | CONTRACT-076 |
+| CLI-060 | Board flags, `--stage`, `--unset`, `corpus folder` and `corpus reflect`; `--pinned` and view `--order` go | todo | P1 | opus | CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-138, SERVER-136, SERVER-137 |
+| CLI-061 | `corpus upgrade` and `corpus workspace upgrade` report the data migrations a workspace needs, as commands an agent can run | todo | P0 | opus | CONTRACT-074, CLI-060 |
+| UI-148 | Boards: the board bar, columns read from the board document, order and pin writes go to the board, one board always open | todo | P0 | opus | CONTRACT-074, SERVER-138 |
+| UI-149 | Paths: a row opens a column to the right, no loops, open here, restart, new path right, keep, close, close all — and every `open()` caller lands in a path | todo | P0 | fable | UI-148 |
+| UI-152 | Kanban boards: derived stage columns, a drag follows the transition graph, stage and status chips, the graph drawn | todo | P1 | opus | UI-148, SERVER-138 |
+| UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | todo | P0 | opus | UI-149, CONTRACT-075 |
+| UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | todo | P1 | opus | UI-149 |
+| UI-153 | The Reflect control, and what changed since the agent last looked | todo | P1 | opus | UI-148, SERVER-137 |
+| PLUGINS-019 | A plugin column lives on a board, and its `onOpen` opens a path | todo | P2 | opus | UI-149, AGENT-042 |
