@@ -1,12 +1,18 @@
-// The write path's CONTRACT-011 surface: §10's view keys and §12's plugin keys
-// through `POST /api/docs` and `PUT /api/docs/{id}`.
+// The write path's CONTRACT-011 surface: §7's view keys, and every frontmatter
+// key the core does not define, through `POST /api/docs` and
+// `PUT /api/docs/{id}`.
+//
+// The extra-frontmatter cases deliberately carry `type: todo` — a type this
+// build has never heard of. §5 leaves `type` an open string and §12's M6 makes
+// that a promise, so these are also the guarantee that a workspace's own
+// leftover types still create, save, project and list (SHARED-064).
 //
 // Every case goes through the real app, writes a real file into a real git
 // repository, and is asserted on the three real surfaces — the file's bytes,
 // the response, and the row the collection query answers with. The byte
 // assertions are the point of the issue: `extra` is a **shallow merge patch**,
-// so a plugin writing its key must leave every other key's line exactly as it
-// found it (SPEC.md §4's honest diff).
+// so a writer touching its own key must leave every other key's line exactly as
+// it found it (SPEC.md §4's honest diff).
 
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -54,7 +60,7 @@ describe("POST /api/docs with view keys", () => {
       pinned: true,
       order: 20,
       query: { folder: "finance", type: ["note", "thread"] },
-      column: "todos/board",
+      column: "board/kanban",
     });
 
     const text = ws.read(created.path);
@@ -80,14 +86,14 @@ describe("POST /api/docs with view keys", () => {
       "  type:",
       "    - note",
       "    - thread",
-      "column: todos/board",
+      "column: board/kanban",
     ]);
 
     const frontmatter = (created.body["frontmatter"] ?? {}) as Record<string, unknown>;
     expect(frontmatter["pinned"]).toBe(true);
     expect(frontmatter["order"]).toBe(20);
     expect(frontmatter["query"]).toEqual({ folder: "finance", type: ["note", "thread"] });
-    expect(frontmatter["column"]).toBe("todos/board");
+    expect(frontmatter["column"]).toBe("board/kanban");
     expect(frontmatter["extra"]).toEqual({});
 
     const row = rowOf(await list("pinned=true&type=view&sort=order"), created.id);
@@ -95,7 +101,7 @@ describe("POST /api/docs with view keys", () => {
       pinned: true,
       order: 20,
       query: { folder: "finance", type: ["note", "thread"] },
-      column: "todos/board",
+      column: "board/kanban",
       extra: {},
     });
   });
@@ -137,7 +143,7 @@ describe("POST /api/docs with view keys", () => {
 });
 
 describe("POST /api/docs with extra frontmatter", () => {
-  it("writes plugin keys beside the core ones, flat, and projects them onto the row", async () => {
+  it("writes extra keys beside the core ones, flat, and projects them onto the row", async () => {
     ws = createWriteWorkspace("extra-create", { sprint: "s026" });
     const items = [
       { text: "Call the broker", done: false, ts: "2026-07-27T09:00:00Z" },
@@ -208,9 +214,9 @@ describe("POST /api/docs with extra frontmatter", () => {
 
   it("refuses a malformed column reference and an unusable query with 400", async () => {
     ws = createWriteWorkspace("view-reject", { sprint: "s026" });
-    expect((await ws.post("/api/docs", { type: "view", title: "T", column: "todos" })).status).toBe(
-      400,
-    );
+    expect(
+      (await ws.post("/api/docs", { type: "view", title: "T", column: "kanban" })).status,
+    ).toBe(400);
     expect(
       (await ws.post("/api/docs", { type: "view", title: "T", query: { needs: { deep: 1 } } }))
         .status,
@@ -277,7 +283,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
   });
 
   // SERVER-029 (PR #10 finding 15). `ExtraFrontmatterSchema` bounds *one
-  // request*; `extra` is a merge patch, so a plugin writing 20 KiB under a fresh
+  // request*; `extra` is a merge patch, so a writer landing 20 KiB under a fresh
   // key each time walked a document past the 64 KiB the contract advertises,
   // one legal request at a time. The bound belongs to the document, so it is
   // checked against what the file will hold.
@@ -412,7 +418,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       folder: "views",
       pinned: true,
       order: 30,
-      column: "todos/board",
+      column: "board/kanban",
     });
     ws.advance(60_000);
     expect((await putDoc(ws, created.id, { order: null, column: null, due: null })).status).toBe(

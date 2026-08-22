@@ -8,7 +8,6 @@
 import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { silentLogger, type Logger } from "../logger.js";
-import type { DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import {
   cacheDbPath,
   carryOverEmbeddings,
@@ -33,14 +32,6 @@ export interface RebuildOptions {
    */
   readonly into?: string;
   readonly logger?: Logger;
-  /**
-   * §12's derived statuses (SERVER-085). A rebuild projects into a *throwaway*
-   * handle, so it does not inherit the live one's registry — and a rebuild that
-   * forgot it would answer `POST /api/db/rebuild` by replacing every correct
-   * todo status with whatever its file happens to state, which is the one call
-   * an operator makes when the board already looks wrong.
-   */
-  readonly derivedFields?: DerivedFieldsRegistry;
 }
 
 export type RebuildReport = PopulateReport & {
@@ -79,13 +70,8 @@ export function rebuild(config: ProjectionConfig, options: RebuildOptions = {}):
   let report: PopulateReport;
   let embeddingsCarriedOver: number;
   const sqlite = openProjectionDatabase(target, logger);
-  const db = createProjectionDb(
-    sqlite,
-    config,
-    target,
-    logger,
-    () => openProjectionDatabase(target, logger),
-    options.derivedFields,
+  const db = createProjectionDb(sqlite, config, target, logger, () =>
+    openProjectionDatabase(target, logger),
   );
   try {
     report = populateFromFiles(db);

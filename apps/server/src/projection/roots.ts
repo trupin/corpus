@@ -168,9 +168,10 @@ type WalkState = {
 
 /**
  * `readdirSync(..., { recursive: true })` does not descend through symlinked
- * directories, and plugin skills are symlinked into `.claude/skills` (§10) — so
- * the walk is explicit, resolving each entry and de-duplicating by real path so
- * one file reachable through two links is indexed once.
+ * directories, and a workspace may legitimately reach a skill or a document
+ * folder through a link — so the walk is explicit, resolving each entry and
+ * de-duplicating by real path so one file reachable through two links is
+ * indexed once.
  */
 function walk(state: WalkState, dir: string, depth: number): void {
   let entries: Dirent<string>[];

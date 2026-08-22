@@ -1598,29 +1598,29 @@ describe("awaitingAgent — the pending-agent dot is the queue's answer", () => 
     expect(attention).not.toContain("th_deferred");
   });
 
-  it("lights a thread named by a plugin's own payload key", () => {
+  it("lights a thread named under a payload key this query has never heard of", () => {
     // The matching rule is `FAILED_JOB_SQL`'s — every top-level payload value,
     // never a fixed key list — because payload shapes belong to whoever defines
-    // the event type (SPEC.md §7, §10).
-    const plugin = createWorkspace("awaiting-plugin");
+    // the event type (SPEC.md §7).
+    const oddKey = createWorkspace("awaiting-unknown-key");
     try {
-      plugin.doc({ id: "doc_home", path: "data/docs/notes/home.md" });
-      plugin.thread({
-        id: "th_plugin01",
-        title: "Plugin work",
+      oddKey.doc({ id: "doc_home", path: "data/docs/notes/home.md" });
+      oddKey.thread({
+        id: "th_oddkey01",
+        title: "Work named oddly",
         parent: "doc_home",
         agent: "none",
         turns: [{ author: "user", ts: daysAgo(1), body: "Note." }],
       });
-      plugin.queuedEvent("pending", "evt_plugin01", { todoId: "th_plugin01" });
-      plugin.reproject();
-      const found = queryDocs(plugin.db, DocsQuerySchema.parse({ limit: "200" }), NOW).items.find(
-        (item) => item.id === "th_plugin01",
+      oddKey.queuedEvent("pending", "evt_oddkey01", { errandId: "th_oddkey01" });
+      oddKey.reproject();
+      const found = queryDocs(oddKey.db, DocsQuerySchema.parse({ limit: "200" }), NOW).items.find(
+        (item) => item.id === "th_oddkey01",
       );
       // `agent: none` and all: the queue is the authority, not the thread field.
       expect(found).toMatchObject({ agent: "none", awaitingAgent: true });
     } finally {
-      plugin.close();
+      oddKey.close();
     }
   });
 });

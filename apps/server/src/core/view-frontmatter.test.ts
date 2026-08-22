@@ -84,14 +84,15 @@ describe("readViewQuery", () => {
 });
 
 describe("readColumn", () => {
-  it("reads a plugin column reference verbatim", () => {
-    expect(readColumn(frontmatterOf("column: todos/board"))).toBe("todos/board");
+  it("reads a column reference verbatim", () => {
+    expect(readColumn(frontmatterOf("column: board/kanban"))).toBe("board/kanban");
   });
 
   it("does not reject a malformed reference, so the view keeps its board place", () => {
-    // SPEC.md §12: an unknown column renders a plugin-missing card; silently
-    // demoting the view to a plain list would hide the misconfiguration.
-    expect(readColumn(frontmatterOf("column: todos"))).toBe("todos");
+    // A column name this build does not recognise keeps the view's board
+    // place; silently demoting it to a plain list would hide the
+    // misconfiguration.
+    expect(readColumn(frontmatterOf("column: kanban"))).toBe("kanban");
     expect(readColumn(frontmatterOf("column: null"))).toBeNull();
     expect(readColumn(frontmatterOf("column: 7"))).toBeNull();
   });

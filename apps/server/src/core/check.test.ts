@@ -592,9 +592,9 @@ describe("§5's waiver under a `.claude/` root (SERVER-124)", () => {
 
   /**
    * The issue's own reproduction, in full. `type` is deliberately absent from
-   * the findings: `DocTypeSchema` is an open `z.string().min(1)` so that "plugins
-   * declare their own types", which makes `not-a-real-type` a well-formed plugin
-   * type here exactly as it is under `data/`.
+   * the findings: `DocTypeSchema` is an open `z.string().min(1)` (SPEC.md §5),
+   * which makes `not-a-real-type` a well-formed type here exactly as it is
+   * under `data/`.
    */
   it("reports every malformed field of the issue's `bogus.md`", () => {
     const findings = blockFindings(ROOTS[0], {
@@ -612,7 +612,9 @@ describe("§5's waiver under a `.claude/` root (SERVER-124)", () => {
     ]);
   });
 
-  it("leaves a legal plugin type alone", () => {
+  it("leaves a type this build has never heard of alone", () => {
+    // §12's M6: a workspace's own history may have left this behind, and the
+    // check must not turn it into a finding.
     expect(blockFindings(ROOTS[0], { type: "todo" })).toEqual([]);
   });
 

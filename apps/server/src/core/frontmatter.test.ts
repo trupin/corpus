@@ -58,7 +58,7 @@ describe("FileFrontmatterSchema", () => {
     for (const [key, value] of Object.entries(defaulted)) expect(parsed[key]).toEqual(value);
   });
 
-  it("keeps plugin and Claude Code keys through validation", () => {
+  it("keeps extra and Claude Code keys through validation", () => {
     const result = FileFrontmatterSchema.parse({
       ...CORE,
       type: "skill",
@@ -71,7 +71,7 @@ describe("FileFrontmatterSchema", () => {
     expect(result["description"]).toBe("Steward the corpus.");
   });
 
-  it("accepts a plugin-defined type", () => {
+  it("accepts a type this build has never heard of", () => {
     expect(FileFrontmatterSchema.parse({ ...CORE, type: "todo" }).type).toBe("todo");
   });
 
@@ -161,7 +161,7 @@ describe("FileThreadFrontmatterSchema", () => {
     if (!result.ok) expect(result.issues.some((issue) => issue.path === "agent")).toBe(true);
   });
 
-  it("keeps passthrough for plugin keys", () => {
+  it("keeps passthrough for keys the core does not define", () => {
     expect(FileThreadFrontmatterSchema.parse({ ...THREAD_CORE, extra: 1 })["extra"]).toBe(1);
   });
 });

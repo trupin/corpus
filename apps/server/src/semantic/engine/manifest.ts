@@ -20,8 +20,8 @@
  * Nothing downloaded here is code. Both artifacts are data files: an ONNX graph
  * (protobuf) parsed by `onnxruntime-web`, a dependency already in this
  * package's `node_modules`, and a tokenizer vocabulary (JSON) parsed by `zod`.
- * No script is fetched, no native module is fetched, nothing is `eval`ed, and
- * no plugin is loaded — see `runtime.ts` and `tokenizer.ts`.
+ * No script is fetched, no native module is fetched and nothing is `eval`ed —
+ * see `runtime.ts` and `tokenizer.ts`.
  *
  * Changing the model is deliberately a code change, reviewed like any other: it
  * moves the identity string (`local/<model>@<dim>`), which §9.1 makes an

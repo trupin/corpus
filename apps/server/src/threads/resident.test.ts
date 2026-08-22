@@ -825,8 +825,9 @@ describe("DELETE /api/threads/{id}/resident", () => {
     expect(pendingEvents(ws)).toHaveLength(before);
   });
 
-  // The `resident:` key can be present without being a designation — a plugin's,
-  // or one hand-written onto a parented thread. Such a thread was never a lane:
+  // The `resident:` key can be present without being a designation — one
+  // hand-written onto a parented thread, or one that meant something else to
+  // whoever wrote it. Such a thread was never a lane:
   // no event was ever routed to it and no listener was ever launched for it, so
   // there is no departure to announce. The stray key is still cleared.
   it("clears a `resident:` key that was never a designation, announcing nothing", async () => {

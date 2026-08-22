@@ -137,13 +137,7 @@ export function mountDbRoutes(app: OpenAPIHono, deps: DbRoutesDeps): void {
     // document routes, the job service, the watcher — follows,
     // because the handle object never changed.
     const report = deps.projection.reopenAround(() =>
-      // The live handle's registry, carried into the throwaway one the rebuild
-      // projects with: a rebuild re-derives §12's statuses exactly as the boot
-      // scan did, or it would answer this call by making them stale.
-      rebuild(deps.config, {
-        logger: deps.logger,
-        derivedFields: deps.projection.derivedFields,
-      }),
+      rebuild(deps.config, { logger: deps.logger }),
     );
 
     // The queue's own reader has the last word on the table it mirrors, exactly

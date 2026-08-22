@@ -23,9 +23,7 @@ import {
   serializeDocument,
   setBody,
   setFrontmatterFields,
-  type ParsedDocument,
 } from "../core/index.js";
-import { overwrittenDerivedFields } from "./derived-fields.js";
 import { badRequest, forbidden } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { assertDocumentKey } from "./key.js";
@@ -243,7 +241,7 @@ export function changedFields(
   // **`extra` is a shallow merge patch** (RFC 7386 at the top level): a named
   // key replaces the file's key wholesale, `null` removes it, and a key the
   // request does not name is left alone byte-for-byte — which is what lets two
-  // plugins write different keys of one document without racing each other.
+  // writers touch different keys of one document without racing each other.
   // Never a read-modify-write of the whole object, and never a nested merge.
   for (const [key, value] of Object.entries(patch.extra ?? {})) {
     applyPatchEntry(changed, current, key, value);
@@ -448,70 +446,6 @@ function assertNotUnarchivingByPut(
   ]);
 }
 
-/**
- * **A field §12 makes the document's own answer is not a caller's to set**
- * (PR #55 review, MINOR) — {@link assertNotUnarchivingByPut}'s sibling, and the
- * same shape of rule: this write would report a success it is not going to
- * deliver, so it is refused instead.
- *
- * Before this, a `PUT` naming `status` or `due` on a derived type answered `200`
- * while `convergeDerivedFields` put the derived value straight back, so the only
- * thing that reached disk was the `updated` stamp. Three costs, and the third is
- * what makes a refusal the right shape rather than a quiet drop: a caller could
- * not tell a refused write from an applied one; a write that changed nothing a
- * person asked for landed a commit; and `updated` moving feeds §5's staleness
- * ramp, so an ignored request aged a document out of the Attention view.
- *
- * **The two options, and why this one.** Dropping the field before the plan
- * would be quieter, but a caller still could not tell their date was ignored
- * unless the response said so — and saying so means a new §11 warning code,
- * which is a contract change this could not make. A refusal needs no new
- * vocabulary (the route already declares `400`, this is genuinely a statement
- * about the request body, and it is where SERVER-039 already says "this field is
- * not yours to set" on this route), and it tells the caller at the moment they
- * asked.
- *
- * **An echo is not a request**, which is the whole risk of refusing: the board
- * publishes whole documents, so a `PUT` carrying an unchanged `status` beside a
- * genuine `title` edit must not fail the write. Two filters make that true and
- * neither is a special case. `changedFields` has already dropped a value equal
- * to the file's, and every server write converges the file — so the value a
- * reader was shown is normally the stored one and never reaches here. What
- * survives is asked of {@link overwrittenDerivedFields}, which puts the question
- * to the convergence itself over the document this patch would produce: a value
- * the convergence agrees with is not being ignored, whatever made the file
- * disagree with it.
- *
- * Costs the autosave path nothing: a body save names neither field, and the
- * caller checks that before asking.
- */
-function assertDerivedFieldsNotSet(
-  workspace: DocsWorkspace,
-  loaded: { readonly path: string; readonly row: { readonly id: string; readonly type: string } },
-  next: ParsedDocument,
-  fields: Readonly<Record<string, unknown>>,
-): void {
-  const overwritten = overwrittenDerivedFields(
-    loaded.path,
-    next,
-    fields,
-    workspace.projection.derivedFields,
-  );
-  if (overwritten.length === 0) return;
-  validationError(
-    `\`${overwritten[0] ?? "status"}\` is derived from the document itself and is not a value ` +
-      "a save may set (SPEC.md §12)",
-    overwritten.map((field) => ({
-      path: `body.${field}`,
-      message:
-        `${loaded.row.id} is a \`${loaded.row.type}\` document, whose \`${field}\` is read from ` +
-        "its own content rather than from its frontmatter, so the value you sent would be " +
-        "replaced by the derived one before it reached disk. Change what the field is read " +
-        "from — for a todo list, its items — and the field follows.",
-    })),
-  );
-}
-
 export async function updateDocument(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,
@@ -526,9 +460,9 @@ export async function updateDocument(
  * The save itself, with the caller already holding the document's lane.
  *
  * Split out for the same reason `deleteDocumentLocked` is: a caller that has to
- * do something *else* inside the lane — the plugin context's atomic
- * read-modify-write, whose callback must see the document this save is about to
- * overwrite (CONTRACT-019, SERVER-034) — cannot re-enter a mutex it is already
+ * do something *else* inside the lane — `docs/patch.ts`, which scans the stored
+ * body for the passage it is replacing and must do that scan against the bytes
+ * this save is about to overwrite — cannot re-enter a mutex it is already
  * holding without deadlocking it. Everything the verb does — §7's key check
  * included — lives here, so no caller can reach the write pipeline having
  * skipped a step.
@@ -587,10 +521,6 @@ export async function updateDocumentLocked(
     ...(reconciled === null ? {} : { anchors: reconciled.anchors }),
     ...(stampUpdated ? { updated: formatInstant(workspace.now()) } : {}),
   });
-  // Before anything is written, and after the frontmatter this save would leave
-  // on disk exists to ask the convergence about — which is why it sits here
-  // rather than beside `assertNotUnarchivingByPut`.
-  assertDerivedFieldsNotSet(workspace, loaded, nextParsed, fields);
   // Before anything is written, and only when the patch can move `extra` at
   // all — the autosave path carries no `extra` and must not pay for the walk.
   if (patch.extra !== undefined) {

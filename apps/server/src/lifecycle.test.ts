@@ -151,26 +151,27 @@ describe("runServerProcess — boot", () => {
     }
   });
 
-  it("discovers plugins before the projection, so the boot scan derives §12's fields", async () => {
-    // SERVER-085, SERVER-134. The scan runs inside `openWorkspaceProjection`, so
-    // a registry that arrived afterwards would leave every derived-field
-    // document on the board under the values its file happens to state until
-    // something edited it. Asserted here rather than assumed: the two calls are
-    // one line apart and nothing else would notice if they swapped.
-    const workspace = makeWorkspace("ordering");
+  it("projects a document whose `type:` this build has never heard of", async () => {
+    // SPEC.md §5 leaves `type` an open string and §12's M6 turns that into a
+    // promise: a workspace may hold a type from its own history or written by
+    // hand, and the boot scan must still give it a row. Asserted at the
+    // lifecycle level because the boot scan is what writes every row — a reader
+    // that refused an unknown type would leave the document off the board with
+    // nothing to point at.
+    const workspace = makeWorkspace("unknown-type");
     mkdirSync(join(workspace, "data", "docs"), { recursive: true });
     writeFileSync(
       join(workspace, "data", "docs", "errands.md"),
       [
         "---",
-        "id: doc_ordering1",
-        "type: derivedbyplugin",
+        "id: doc_unknown1",
+        "type: todo",
         "title: Errands",
         "status: open",
-        "due: null",
+        "due: 2026-07-09",
         "---",
         "",
-        "- [x] renew the passport (due: 2026-07-09)",
+        "- [x] renew the passport",
         "",
       ].join("\n"),
       "utf8",
@@ -183,34 +184,21 @@ describe("runServerProcess — boot", () => {
       cwd: root,
       hooks: h.hooks,
       logger: h.logger,
-      discoverPluginsFn: () =>
-        Promise.resolve([
-          {
-            dir: "stand-in",
-            root: join(workspace, "plugins", "stand-in"),
-            routes: null,
-            deriveStatus: () => "resolved",
-            deriveDue: () => ({ due: "2026-07-09" }),
-            types: [
-              {
-                type: "derivedbyplugin",
-                label: "Derived",
-                derivedStatus: true as const,
-                derivedDue: true as const,
-              },
-            ],
-            warnings: [],
-          },
-        ]),
     });
 
     try {
       const row = server?.projection
-        ?.prepare("SELECT status, due FROM documents WHERE id = ?")
-        .get("doc_ordering1") as { status: string; due: string | null } | undefined;
-      expect(row?.status).toBe("resolved");
-      // Both members of the seam, from one registry built at one moment.
-      expect(row?.due).toBe("2026-07-09");
+        ?.prepare("SELECT type, title, status, due FROM documents WHERE id = ?")
+        .get("doc_unknown1") as
+        { type: string; title: string; status: string; due: string | null } | undefined;
+      // The type reaches the row verbatim, and every core field is the one the
+      // file states — nothing derives, nothing rewrites.
+      expect(row).toEqual({
+        type: "todo",
+        title: "Errands",
+        status: "open",
+        due: "2026-07-09",
+      });
     } finally {
       await server?.close();
     }
@@ -292,8 +280,6 @@ describe("runServerProcess — boot", () => {
       cwd: root,
       hooks: h.hooks,
       logger: h.logger,
-      // No plugin discovery noise: this test pins the FIRST log line.
-      discoverPluginsFn: () => Promise.resolve([]),
       createServerFn: () => {
         throw new TypeError("something unexpected");
       },
@@ -318,8 +304,6 @@ describe("runServerProcess — boot", () => {
       cwd: root,
       hooks: h.hooks,
       logger: h.logger,
-      // No plugin discovery noise: this test pins the FIRST log line.
-      discoverPluginsFn: () => Promise.resolve([]),
     });
 
     expect(server).toBeUndefined();

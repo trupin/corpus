@@ -464,7 +464,7 @@ export async function designateResident(
  *
  * **"Releases somebody" is `thread.resident !== null`, not the key's presence.**
  * The two differ exactly where the key is not a designation — a parented
- * thread's, or a plugin's `resident:` meaning something else — and those are
+ * thread's, or a hand-written `resident:` meaning something else — and those are
  * cleared without an announcement because nothing was ever a lane there: no
  * event was ever routed to it, and no listener was ever launched for it. What is
  * *written* still turns on the key, so a stray one is still removed.

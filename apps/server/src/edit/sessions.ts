@@ -90,9 +90,8 @@ export interface ObservedCommit {
   readonly paths: readonly string[];
   /**
    * The workspace-relative path of the document when — and only when — this
-   * write is the **editor's save** (`PUT /api/docs/{id}`, which is also where
-   * the plugin read-modify-write lands). `null` for every other mutation: a
-   * create, a move, an archive, a delete, a thread turn.
+   * write is the **editor's save** (`PUT /api/docs/{id}`). `null` for every
+   * other mutation: a create, a move, an archive, a delete, a thread turn.
    * §4's sessions are the reader's editor, so none of those opens a session or
    * extends one — though any of them can still *seal* one (see
    * {@link OpenSession.sealed}).

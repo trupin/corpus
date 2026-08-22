@@ -49,7 +49,7 @@ export type DocumentRow = {
   readonly path: string;
   readonly status: DocStatus;
   readonly title: string;
-  /** §5's deadline, as {@link resolveDocumentDue} answered it — derived or stored. */
+  /** §5's optional deadline, normalized to a calendar date. */
   readonly due: string | null;
 };
 
@@ -223,11 +223,9 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === "string") : [],
     status: row.status,
     anchors: readAnchorsMap(data["anchors"]),
-    // From the row, like `status` and for the same reason: for a type that
-    // derives its deadline the row is the answer and the file's line is a
-    // shadow of it, and for every other type the row holds exactly what this
-    // used to read off the file — normalized once, at projection time
-    // (`resolveDocumentDue`).
+    // From the row, like `status` and for the same reason: the row holds
+    // exactly what this would read off the file, normalized once at projection
+    // time, so a list row and a single-document read cannot answer differently.
     due: row.due,
     reviewed: reviewed === null ? null : normalizeInstant(reviewed),
     evergreen: data["evergreen"] === true,
@@ -236,8 +234,8 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     // because `origin` was a legal `extra` key before it was reserved and a
     // corpus that predates the field must stay readable.
     origin: originOrNull(data["origin"]),
-    // §10's view keys and §12's plugin keys, read by the same functions the
-    // projection uses for the list row (CONTRACT-011). Shared rather than
+    // §7's view keys, plus every frontmatter key the core does not define, read
+    // by the same functions the projection uses for the list row (CONTRACT-011). Shared rather than
     // restated for the reason the nullable timestamps above document: one file
     // read through two routes must not answer two different things.
     ...readViewFrontmatter(data),

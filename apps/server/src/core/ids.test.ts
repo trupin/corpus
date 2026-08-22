@@ -128,6 +128,8 @@ describe("idPrefixForDocType", () => {
     ["note", "doc"],
     ["view", "doc"],
     ["skill", "doc"],
+    // A type this build has never heard of gets the ordinary `doc_` prefix
+    // rather than a refusal (§5's open string, §12's M6).
     ["todo", "doc"],
   ])("maps type %s to %s_*", (type, prefix) => {
     expect(idPrefixForDocType(type)).toBe(prefix);

@@ -37,8 +37,8 @@ export const MAX_EXTRA_READ_DEPTH = 8;
 
 /**
  * A converted value, or the fact that there is none. A sentinel *value* would
- * be indistinguishable from a legitimate one at the type level (everything a
- * plugin may store is `unknown`), so the answer is carried in the shape.
+ * be indistinguishable from a legitimate one at the type level (extra
+ * frontmatter is all `unknown`), so the answer is carried in the shape.
  */
 type Converted = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
 
@@ -93,8 +93,9 @@ function toJsonValue(value: unknown, depth: number): Converted {
 
 /**
  * Every frontmatter key that is not a core key, flat and verbatim — the wire's
- * `extra` object (CONTRACT-011), mirroring the file, which carries a plugin's
- * keys beside the core ones with no sub-namespacing of its own (SPEC.md §12).
+ * `extra` object (CONTRACT-011), mirroring the file, which carries extra keys
+ * beside the core ones with no sub-namespacing of its own (SPEC.md §9's opaque
+ * passthrough: the server never interprets what is in here).
  *
  * `{}` when the file has nothing but core keys; the object is always present on
  * a response, never optional.
@@ -141,11 +142,10 @@ export function readViewQuery(data: Readonly<Record<string, unknown>>): ViewQuer
 }
 
 /**
- * The plugin column reference, or `null`. Not pattern-checked on read: the
- * `<plugin>/<type>` format earns its `400` at the write boundary, and a view
- * whose `column` names something uninstalled or misspelled must keep its board
- * position and render a plugin-missing card (SPEC.md §12) rather than silently
- * become a plain list.
+ * A view's `column` reference (§9's `column_ref`), or `null`. Read verbatim and
+ * never pattern-checked here: the format earns its `400` at the write boundary,
+ * and a view whose `column` names something this build does not recognise must
+ * keep its board position rather than silently become a plain list.
  */
 export function readColumn(data: Readonly<Record<string, unknown>>): string | null {
   const value = data["column"];

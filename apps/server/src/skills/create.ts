@@ -70,7 +70,7 @@ export type CreateSkillOutcome = { readonly doc: Doc; readonly result: MutationR
  * even a broken one.
  *
  * `lstatSync` rather than `existsSync` because the two disagree about exactly
- * the cases that matter here. §10 symlinks a plugin's skill into
+ * the cases that matter here. A workspace may reach a skill through a symlink at
  * `.claude/skills/<name>`, so the name is taken by a link whose target may be
  * anywhere; and a *broken* link is invisible to `existsSync` while still being
  * an entry `mkdir` cannot create through. Both are "that name is already

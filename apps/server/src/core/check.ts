@@ -350,10 +350,14 @@ export function claudeCodeFrontmatterIssues(
  * which `null` and absent already mean the same thing.
  *
  * There is deliberately no case for `type`: `DocTypeSchema` is an open
- * `z.string().min(1)` because "plugins declare their own types … a closed enum
- * would make every plugin a contract change", so `type: not-a-real-type` is a
- * well-formed plugin type and is reported by nothing, here or under `data/`.
- * `type: []` and `type: ""` are reported, being not a non-empty string.
+ * `z.string().min(1)` (SPEC.md §5), so `type: not-a-real-type` is reported by
+ * nothing, here or under `data/`. **That openness is a promise, not an
+ * oversight** — a workspace may hold a type this build has never heard of,
+ * written by hand or left behind by the workspace's own history, and §12's M6
+ * requires such a document to open, render and search like any other. Closing
+ * the enum would turn every one of them into a finding about a value the
+ * document is entitled to carry. `type: []` and `type: ""` are reported, being
+ * not a non-empty string.
  */
 const waivedAsAbsent = (
   data: Readonly<Record<string, unknown>>,

@@ -308,17 +308,17 @@ describe("readJobRow", () => {
     expect(JobSchema.parse(row)).toEqual(row);
   });
 
-  it("carries a plugin's own event type through untouched", () => {
+  it("carries an event type this build has never heard of through untouched", () => {
     // `Job.type` is open rather than enumerated for exactly this reason: the
-    // console must name a plugin's work, not fall back to a core type
-    // (SPEC.md §7, §10, CONTRACT-012).
+    // console must name the work as the event named it, not fall back to a core
+    // type (SPEC.md §7, CONTRACT-012).
     ws.db
       .prepare("INSERT INTO events (id, type, status, created, payload_json) VALUES (?,?,?,?,?)")
-      .run("evt_plugin000", "todos.rollup", "pending", "2026-07-27T09:00:00Z", "{}");
+      .run("evt_unknown000", "errands.rollup", "pending", "2026-07-27T09:00:00Z", "{}");
 
-    const row = readJobRow(ws.db, "evt_plugin000");
+    const row = readJobRow(ws.db, "evt_unknown000");
 
-    expect(row?.type).toBe("todos.rollup");
+    expect(row?.type).toBe("errands.rollup");
     expect(JobSchema.parse(row)).toEqual(row);
   });
 

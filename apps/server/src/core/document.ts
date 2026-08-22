@@ -7,7 +7,7 @@ import * as YAML from "yaml";
  * The hard guarantee is **byte stability**: parsing a document and serializing
  * it back without touching anything reproduces the original bytes exactly —
  * line endings, trailing newline, BOM, key order, comments, quoting style, and
- * plugin keys the core knows nothing about. That is what lets the server be the
+ * every frontmatter key the core does not define. That is what lets the server be the
  * sole writer without churning files it merely read, and what keeps `git diff`
  * an honest record of what a mutation actually changed.
  *

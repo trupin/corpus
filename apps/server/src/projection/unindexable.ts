@@ -184,10 +184,9 @@ function isDocument(file: Finding): boolean {
 /**
  * Symlinked directories are not descended into (`entry.isDirectory()` is false
  * for a link), the conservative half of a deliberate asymmetry with
- * `enumerateDocuments`: that walk resolves links because plugin skills are
- * symlinked into `.claude/skills` (§10), while a finding here is about a file
- * *committed* under `data/docs` — and git tracks the link, not what it points
- * at.
+ * `enumerateDocuments`: that walk resolves links because a workspace may reach a
+ * document folder through one, while a finding here is about a file *committed*
+ * under `data/docs` — and git tracks the link, not what it points at.
  */
 function walkUnindexed(state: WalkState, dir: string): void {
   let entries: Dirent<string>[];

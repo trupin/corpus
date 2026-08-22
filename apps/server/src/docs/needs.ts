@@ -102,9 +102,9 @@ const OUTSTANDING_EVENT_STATUS_LIST = OUTSTANDING_EVENT_STATUSES.map(
  * **The matching rule is {@link FAILED_JOB_SQL}'s, deliberately** — every
  * top-level payload value, not a fixed key list. Two sibling predicates in one
  * file may not read a payload two ways, and the reason that rule was chosen
- * holds here unchanged: payload shapes belong to whoever defines the event type,
- * so a plugin's event naming its document under its own key still lights the row
- * without a server change (SPEC.md §7, §10).
+ * holds here unchanged: payload shapes belong to whoever defines the event
+ * type, so an event naming its document under a key this predicate has never
+ * heard of still lights the row without a server change (SPEC.md §7).
  *
  * **How this relates to the client's own scan, since both read the queue.**
  * `packages/kit`'s `useAgentActivity` asks a *different* question of the same
@@ -209,8 +209,9 @@ export const UNANSWERED_FORM_COUNT_SQL = `(CASE WHEN t.id IS NOT NULL AND t.stat
 /**
  * Any failed queue event whose payload *names* this row. Matching every
  * top-level payload value rather than a fixed key list (`threadId`,
- * `parentId`, …) keeps plugin event types working without a server change —
- * payload shapes belong to whoever defines the event type (SPEC.md §7, §10).
+ * `parentId`, …) keeps an event type this predicate has never heard of working
+ * without a server change — payload shapes belong to whoever defines the event
+ * type (SPEC.md §7).
  */
 const FAILED_JOB_SQL = `(EXISTS (
   SELECT 1 FROM events e, json_each(e.payload_json) je

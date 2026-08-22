@@ -593,7 +593,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     ["a status", { status: "resolved" }],
     ["a still-current mark", { reviewed: "2026-07-27T09:00:00Z" }],
     ["a view query", { query: { type: "thread", status: "open" } }],
-    ["a board position", { order: 3, pinned: true, column: "todos/todo" }],
+    ["a board position", { order: 3, pinned: true, column: "board/kanban" }],
     ["a due date", { due: "2026-09-01" }],
     ["nothing at all — a save that names no change (§9.2)", {}],
   ];

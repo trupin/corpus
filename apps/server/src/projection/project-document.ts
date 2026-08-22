@@ -24,7 +24,6 @@ import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/
 import { readThreadForms } from "../core/form.js";
 import { documentTitle } from "../core/title.js";
 import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
-import { EMPTY_DERIVED_FIELDS, type DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { turnModelsOf } from "../core/turn-model.js";
@@ -139,9 +138,9 @@ type DocumentFields = {
   readonly origin: string | null;
   readonly anchors: Record<string, TextQuoteSelector>;
   /**
-   * §10's view keys and §12's plugin keys, read by the same functions
-   * `docs/read.ts` uses — so a row and a single-document read can never
-   * describe one file's frontmatter differently (CONTRACT-011).
+   * §7's view keys, plus every frontmatter key the core does not define, read by
+   * the same functions `docs/read.ts` uses — so a row and a single-document read
+   * can never describe one file's frontmatter differently (CONTRACT-011).
    */
   readonly view: ViewFrontmatter;
 };
@@ -157,7 +156,6 @@ function readDocumentFields(
   root: DocumentRoot,
   relativePath: string,
   parsed: ParsedDocument,
-  derivedFields: DerivedFieldsRegistry = EMPTY_DERIVED_FIELDS,
 ): DocumentFields | null {
   const data = parsed.data;
   const declaredId = asString(data["id"]);
@@ -172,27 +170,16 @@ function readDocumentFields(
   const tags = TagsSchema.safeParse(data["tags"]);
   const type = resolveDocumentType(root, data);
   const view = readViewFrontmatter(data);
-  // One input, one per derived field: the two ladders ask the same question of
-  // the same document, so a row cannot report a status derived from one reading
-  // and a deadline derived from another.
-  const fieldInput: DocumentFieldInput = {
-    root,
-    type,
-    data,
-    body: parsed.body,
-    extra: view.extra,
-    derivedFields,
-  };
 
   return {
     id,
     type,
     title: documentTitle(data, titleFromPath(root, relativePath)),
-    status: resolveDocumentStatus(fieldInput),
+    status: resolveDocumentStatus(root, data),
     tags: tags.success ? tags.data : [],
     created: asInstant(data["created"]),
     updated: asInstant(data["updated"]),
-    due: resolveDocumentDue(fieldInput),
+    due: asCalendarDate(data["due"]),
     reviewed: asInstant(data["reviewed"]),
     evergreen: data["evergreen"] === true,
     origin: originOrNull(data["origin"]),
@@ -203,114 +190,32 @@ function readDocumentFields(
 
 /**
  * A document's `type`: the one its root fixes (§7's threads, skills and
- * personas), else the one its frontmatter states, else `note`. Exported because
- * the write path has to ask the same question about the bytes it is about to
- * write — a type resolved one way here and another way there would derive one
- * document's status from two different rules.
+ * personas), else the one its frontmatter states, else `note`. The frontmatter's
+ * answer is taken verbatim and never checked against a list — §5 leaves `type`
+ * an open string, so a workspace may hold a value this build has never heard of.
  */
-export function resolveDocumentType(
-  root: DocumentRoot,
-  data: Readonly<Record<string, unknown>>,
-): string {
+function resolveDocumentType(root: DocumentRoot, data: Readonly<Record<string, unknown>>): string {
   return root.type ?? asString(data["type"]) ?? "note";
 }
 
 /**
- * What either derived-field ladder needs: the document, and the registry to ask.
- * One input type rather than one per field, because a `status` and a `due`
- * resolved from different readings of one file would be two answers about one
- * document.
+ * §5's `status`: the one its root fixes (§7), else the one its frontmatter
+ * states, else `open`.
+ *
+ * The root outranks the file because a `SKILL.md` under
+ * `.claude/skills-archived/` is archived because of where it sits, whatever its
+ * frontmatter says. The projection is where this belongs — `docs/read.ts` takes
+ * the row's status for the wire document, so a single-document read, a
+ * collection query, a saved view and the board all get this one answer and
+ * cannot differ.
  */
-export interface DocumentFieldInput {
-  readonly root: DocumentRoot;
-  readonly type: string;
-  readonly data: Readonly<Record<string, unknown>>;
-  readonly body: string;
-  readonly extra: Readonly<Record<string, unknown>>;
-  readonly derivedFields: DerivedFieldsRegistry;
-}
-
-/**
- * The status a derivation is *told* about — never the one it answers.
- *
- * It is the field's own carve-out (§12): a document that is `archived` says
- * where it is kept rather than what is left to do, so every derivation of every
- * field declines for one. The root outranks the file here for the same reason it
- * does in {@link resolveDocumentStatus} — an archived skill is archived because
- * of where it sits — so a root that fixes a status hands the derivations that
- * one.
- */
-function storedStatusOf(input: DocumentFieldInput): DocStatus {
-  if (input.root.status !== null) return input.root.status;
-  const parsed = DocStatusSchema.safeParse(input.data["status"]);
-  return parsed.success ? parsed.data : "open";
-}
-
-/**
- * §5's `status`, from the three things that can answer for it, in the order
- * they outrank each other.
- *
- * 1. **The root**, when it has an opinion (§7): a `SKILL.md` under
- *    `.claude/skills-archived/` is archived because of where it sits, whatever
- *    its frontmatter says and whatever its content would derive.
- * 2. **The type**, when §12 makes the field the document's own answer rather
- *    than anyone's to set — a todo list's status is its items. The derivation
- *    owns both of its own carve-outs and answers `null` for either, so the rule
- *    here is the one rule every caller composes: `derive(...) ?? stored`.
- * 3. **The file**, which is the answer for every other document, and the
- *    fallback for the two above.
- *
- * Written as a ladder rather than as a special case beside `root.status`
- * because that override is the same kind of thing: a status the file does not
- * own. The projection is where the ladder belongs — `docs/read.ts` takes the
- * row's status for the wire document, so a single-document read, a collection
- * query, a saved view and the board all get this one answer and cannot differ.
- *
- * **The write path calls this too** (`docs/derived-fields.ts`), which is what
- * makes "the file never disagrees with what is shown" a property rather than a
- * coincidence: the status converged into a document's frontmatter and the status
- * projected into its row are the same function's answer, so the only way they
- * could differ is if the bytes differed.
- */
-export function resolveDocumentStatus(input: DocumentFieldInput): DocStatus {
-  const { root, type, body, extra, derivedFields } = input;
-  const stored = storedStatusOf(input);
+function resolveDocumentStatus(
+  root: DocumentRoot,
+  data: Readonly<Record<string, unknown>>,
+): DocStatus {
   if (root.status !== null) return root.status;
-  return derivedFields.status.derive({ type, status: stored, body, extra }) ?? stored;
-}
-
-/**
- * §5's `due` — the optional deadline Attention, `--due overdue`, `--needs due`
- * and `--needs me` all read — from the two things that can answer for it.
- *
- * 1. **The type**, when §12 makes the deadline the document's own answer rather
- *    than anyone's to set: a todo list's deadline is its earliest open item's
- *    (PLUGINS-018). The derivation owns its carve-outs and declines for them.
- * 2. **The file**, which is the answer for every other document, and the
- *    fallback when the derivation declines.
- *
- * **Three answers, and the middle one is why this is not `?? stored`.** A
- * derivation that answers `{ due: null }` says *this document has no deadline*,
- * which is a different statement from *I have nothing to say*, and composing it
- * with `??` would collapse the two: a list whose last dated item was just
- * checked would keep the deadline it no longer has, forever. So the outer answer
- * is tested for `null`, and the inner value is taken exactly as given.
- *
- * The clock is deliberately not an input. The derivation answers the *earliest*
- * deadline and never whether it has passed — a projection that read the time of
- * day would give two answers for one document in one day, and `overdue` is the
- * query's comparison to make, not the row's.
- */
-export function resolveDocumentDue(input: DocumentFieldInput): string | null {
-  const { type, data, body, extra, derivedFields } = input;
-  const stored = asCalendarDate(data["due"]);
-  const derived = derivedFields.due.derive({
-    type,
-    status: storedStatusOf(input),
-    body,
-    extra,
-  });
-  return derived === null ? stored : derived.due;
+  const parsed = DocStatusSchema.safeParse(data["status"]);
+  return parsed.success ? parsed.data : "open";
 }
 
 /**
@@ -319,13 +224,6 @@ export function resolveDocumentDue(input: DocumentFieldInput): string | null {
  * from a duplicate id from a genuinely missing row. It goes through the same
  * {@link readDocumentFields} the projector uses, so the two can never disagree
  * about which file owns an id.
- *
- * It passes no derivation registry, and needs none: the only field it reads is
- * the id, and `doctor` compares a file's **bytes** against the hash recorded for
- * them, never a row's fields against the frontmatter. That is what keeps a todo
- * document whose stored status has not yet been converged out of the drift
- * report — the row is right, the file is the source of truth for everything the
- * check compares, and there is no disagreement to name (SERVER-085).
  */
 export type DocumentIdentity =
   | { readonly kind: "id"; readonly id: string }
@@ -692,7 +590,7 @@ export function projectDocument(db: ProjectionDb, absPath: string): ProjectionOu
     throw error;
   }
 
-  const fields = readDocumentFields(root, relativePath, parsed, db.derivedFields);
+  const fields = readDocumentFields(root, relativePath, parsed);
   if (fields === null) {
     return { kind: "skipped", path: relativePath, reason: noIdReason(relativePath) };
   }

@@ -11,10 +11,6 @@ import { basename, dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { CorpusError } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
-// The leaf module rather than `../plugins/index.js`: discovery imports the
-// document write path, which imports this file, and a barrel import would make
-// that a runtime cycle. This one imports nothing but the contract and the logger.
-import { EMPTY_DERIVED_FIELDS, type DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { populateFromFiles } from "./populate.js";
 import { META_SCHEMA_VERSION, PROJECTION_DDL, SCHEMA_VERSION } from "./schema.js";
 
@@ -53,17 +49,6 @@ export interface ProjectionDb {
   readonly config: ProjectionConfig;
   readonly path: string;
   readonly logger: Logger;
-  /**
-   * Which doc types answer for their own `status`, and how (SPEC.md §12,
-   * SERVER-085). It rides the projection handle because every projector takes
-   * this object and nothing else — `projectDocument(db, path)` is the whole
-   * signature, and the boot scan, the watcher, `db rebuild` and every write's
-   * re-projection all reach it through the same handle, so a rebuild that swaps
-   * the connection cannot lose it. {@link EMPTY_DERIVED_FIELDS} when no plugin
-   * declares one, which is every test that does not care and every workspace
-   * whose `plugins/` directory is gone (§12 M6).
-   */
-  readonly derivedFields: DerivedFieldsRegistry;
   prepare(sql: string): SqliteStatement;
   /** Runs `fn` inside a transaction, nesting safely via savepoints. */
   transaction<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R;
@@ -358,7 +343,6 @@ export function createProjectionDb(
   path: string,
   logger: Logger = silentLogger,
   reopen: () => SqliteDatabase = () => openProjectionDatabase(path, logger),
-  derivedFields: DerivedFieldsRegistry = EMPTY_DERIVED_FIELDS,
 ): ProjectionDb {
   const statements = new Map<string, SqliteStatement>();
   // Mutable, and read through a getter, so a subsystem that captured this handle
@@ -377,7 +361,6 @@ export function createProjectionDb(
     config,
     path,
     logger,
-    derivedFields,
     prepare(sql) {
       const cached = statements.get(sql);
       if (cached !== undefined) return cached;
@@ -408,13 +391,6 @@ export interface OpenProjectionOptions {
    * edited while the server was down.
    */
   readonly populate?: boolean;
-  /**
-   * §12's derived statuses, as discovery found them. Passed at open because the
-   * boot scan runs *inside* this call: a handle that learned about its plugins
-   * afterwards would have already projected every todo document under the
-   * status its file happens to state.
-   */
-  readonly derivedFields?: DerivedFieldsRegistry;
 }
 
 /**
@@ -433,13 +409,8 @@ export function openProjection(
   mkdirSync(config.corpusDir, { recursive: true });
   const path = cacheDbPath(config);
   const sqlite = openProjectionDatabase(path, logger);
-  const db = createProjectionDb(
-    sqlite,
-    config,
-    path,
-    logger,
-    () => openProjectionDatabase(path, logger),
-    options.derivedFields,
+  const db = createProjectionDb(sqlite, config, path, logger, () =>
+    openProjectionDatabase(path, logger),
   );
   if (options.populate !== false) populateFromFiles(db);
   return db;

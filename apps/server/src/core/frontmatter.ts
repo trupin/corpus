@@ -20,7 +20,7 @@ import { residentOrNull } from "./resident.js";
  *
  * `@corpus/contract` owns the post-defaults form every core field is required
  * in; a file legitimately omits optional fields, so this is the *pre-defaults*
- * form plus passthrough for plugin keys. Everything the two do share — id
+ * form plus passthrough for every key the core does not define. Everything the two do share — id
  * patterns, the selector shape, the status and agent enums — is imported, never
  * restated: two definitions of one shape is the drift Architecture Decision 3
  * exists to prevent.
@@ -98,8 +98,8 @@ export const FileFrontmatterSchema = z.looseObject({
    * parse, and its whole job is to make the absent case explicit.
    *
    * **Anything that is not a thread id reads as `null` rather than failing.**
-   * `origin` was a perfectly legal `extra` key before this existed — §5 and §12
-   * make frontmatter the plugin extension point — so a workspace may already
+   * `origin` was a perfectly legal `extra` key before this existed — §5 lets a
+   * document carry any key the core does not define — so a workspace may already
    * hold documents whose `origin:` means something else entirely. Validating it
    * strictly would make every save of such a document a `400`, including the
    * reader's autosave, until somebody hand-edited the file: a corpus that

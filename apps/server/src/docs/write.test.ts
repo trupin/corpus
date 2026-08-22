@@ -812,6 +812,7 @@ describe("resolveFolder", () => {
       // but one no ordinary `*.md` is indexed from, and `note` has none at all.
       expect(resolveFolder(undefined, "skill")).toBe("data/docs/inbox");
       expect(resolveFolder(undefined, "note")).toBe("data/docs/inbox");
+      // And a type this build has never heard of files like any other (§12 M6).
       expect(resolveFolder(undefined, "todo")).toBe("data/docs/inbox");
     });
 

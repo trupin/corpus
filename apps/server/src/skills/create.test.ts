@@ -227,9 +227,9 @@ describe("refusing a name that is taken", () => {
   });
 
   it("refuses a name occupied by a symlink, broken or not", async () => {
-    // §10 symlinks a plugin's skill into `.claude/skills/<name>`, and a link
-    // whose target has gone is invisible to `existsSync` while still being an
-    // entry no `mkdir` can create through.
+    // A workspace may reach a skill through a symlink at
+    // `.claude/skills/<name>`, and a link whose target has gone is invisible to
+    // `existsSync` while still being an entry no `mkdir` can create through.
     mkdirSync(join(ws.root, ".claude", "skills"), { recursive: true });
     symlinkSync(join(ws.root, "nowhere"), join(ws.root, ".claude", "skills", NAME));
 

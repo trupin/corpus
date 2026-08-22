@@ -57,8 +57,8 @@ agent: engaged
 Checked current averages; 6.4% is more representative.
 `;
 
-const PLUGIN_KEYS = `---
-id: doc_plugin01
+const EXTRA_KEYS = `---
+id: doc_extra01
 type: note
 title: Published note
 created: 2026-07-19T10:00:00Z
@@ -81,7 +81,7 @@ title: 'Single quoted title'
 updated: 2026-07-19T10:00:00Z
 created: 2026-07-19T10:00:00Z
 
-# Plugin fields live below the core block.
+# Extra fields live below the core block.
 tags:
   - finance # the only tag that matters
 ---
@@ -179,7 +179,7 @@ const FIXTURES: readonly (readonly [string, string])[] = [
   ["minimal frontmatter", MINIMAL],
   ["full frontmatter", FULL],
   ["thread with turns", THREAD],
-  ["plugin + Claude Code keys", PLUGIN_KEYS],
+  ["extra + Claude Code keys", EXTRA_KEYS],
   ["comments and non-default key order", COMMENTED],
   ["irregular inline formatting", IRREGULAR_FORMATTING],
   ["duplicate top-level keys", DUPLICATE_KEYS],

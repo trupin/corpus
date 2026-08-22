@@ -153,17 +153,16 @@ function claudeCodeFields(path: string, input: CreateDocRequest): Record<string,
 }
 
 /**
- * §10's view keys and §12's plugin keys, as frontmatter keys of a brand-new
- * document (CONTRACT-011).
+ * §7's view keys, plus every frontmatter key the core does not define, as
+ * frontmatter keys of a brand-new document (CONTRACT-011).
  *
  * Two rules, both the contract's own. **A key whose value is absent is not
  * written**: `order: null` "is the same as omitting it: no `order` key",
  * `pinned` defaults to `false` and an absent `pinned` reads as `false`, so a
  * plain note's frontmatter stays §5's canonical block and nothing else. And
- * **`extra` is flat, mirroring the file** — a plugin key is a YAML key beside
- * the core ones (§12's `todo` carries a top-level `items:`), so each key is
- * spread in as itself rather than nested under an `extra:` mapping the file
- * format has never had. A `null` extra value is a no-op on create, since there
+ * **`extra` is flat, mirroring the file** — an extra key is a YAML key beside
+ * the core ones, so each key is spread in as itself rather than nested under an
+ * `extra:` mapping the file format has never had. A `null` extra value is a no-op on create, since there
  * is nothing yet to remove.
  *
  * A key here can never shadow a core one: `ExtraFrontmatterSchema` rejects all
