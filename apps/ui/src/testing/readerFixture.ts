@@ -13,7 +13,7 @@ import type {
 } from "@corpus/contract";
 import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
-import { unknownRecipientBody } from "./serverRefusals";
+import { derivedFieldRefusalBody, unknownRecipientBody } from "./serverRefusals";
 
 /**
  * A recording transport for the reader's suites.
@@ -345,7 +345,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     const route = `${request.method} ${url.pathname}`;
     const failure = options.failing?.[route];
     if (failure !== undefined) {
-      return json(refusal(route, failure), failure);
+      return json(refusal(route, failure, call), failure);
     }
 
     if (url.pathname.startsWith("/attachments/")) {
@@ -752,10 +752,28 @@ function threadSummary(id: string, resolved: boolean): unknown {
  * caller, which is exactly why the board has to translate it (UI-068). Every
  * other route keeps the shapeless refusal the failure paths were written
  * against.
+ *
+ * `PUT /api/docs/{id}` is route-specific for the same reason: its `400` is
+ * SERVER-085's *this field is derived*, and the form branches on the `issues`
+ * that refusal names. A shapeless body there would let a test certify a
+ * behaviour — a refused `status` leaving the local map — that the real refusal
+ * would never trigger. The body carries whichever derived fields the request
+ * actually sent, exactly as the server's does.
  */
-function refusal(route: string, status: number): unknown {
+function refusal(route: string, status: number, call: ReaderCall): unknown {
   if (status === 413) {
     return { code: "payload_too_large", message: "the upload is over the per-file limit" };
+  }
+  if (status === 400 && route.startsWith("PUT /api/docs/")) {
+    const sent = call.body;
+    const carried =
+      typeof sent === "object" && sent !== null
+        ? ["status", "due"].filter((field) => field in sent)
+        : [];
+    return derivedFieldRefusalBody(carried, {
+      id: route.slice("PUT /api/docs/".length),
+      type: "todo",
+    });
   }
   if (status === 400 && route === "POST /api/threads") {
     const message =

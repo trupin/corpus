@@ -17,8 +17,10 @@ import { usePluginRegistry, type PluginRegistry } from "../plugins/registry";
  * purpose and for a reason each states — so this file holds two named predicates
  * rather than one parameterised by field name, which would be the same `if` with
  * the reasoning deleted. What is genuinely common lives in one place:
- * {@link FieldLock}, {@link DERIVED_LOCK}, and the rule that a derivation which
- * declines hands the field back.
+ * {@link FieldLock}, {@link DERIVED_LOCK}, the rule that a derivation which
+ * declines hands the field back, and {@link DERIVED_FIELDS} — the list of fields
+ * a type may take away, which is what lets a writer guard *every* one of them
+ * with one expression instead of one parameter per field.
  *
  * **Do not carry any other symmetry across.** `deriveStatus` has two answers and
  * `deriveDue` has three (`{due: null}` — *applies, no deadline* — is the middle
@@ -254,17 +256,30 @@ function declaresDerivedDue(type: string, registry: PluginRegistry): boolean {
  * `PluginDocType` says a surface that would offer such an edit renders it locked.
  *
  * **The archived case is where this parts company with {@link statusLock}, and
- * the difference is the point.** Archiving is a fact about `status` — it *is* a
- * status, set on another route, so the status field stays locked and says so. It
- * is nothing at all about `due`: `PluginDocType` rule 2 makes an archived
- * document one of the two states in which every derivation declines, and where a
- * derivation declines "the stored value stands", which leaves the deadline the
- * person's to set exactly as it is on a note. So this returns `null` there, and
- * an archived todo keeps an ordinary date control.
+ * the difference is still the point — it just is not the difference this
+ * predicate first shipped with** (PR #55 re-review, finding 2, orchestrator
+ * decision 2026-08-22). Archiving is a fact about `status`: it *is* a status,
+ * set on another route, so the status field stays locked, keeps its control and
+ * says where the act lives. It is nothing at all about `due` — there is no act
+ * on `due` anywhere, archived or not — so this locks the field the same way on
+ * both sides of the archive door and the divergence is in the *kind* of lock,
+ * never in whether there is one.
+ *
+ * This first read `PluginDocType` rule 2 the other way: an archived document is
+ * one of the two states in which every derivation declines, "the stored value
+ * stands", so the deadline looked like the person's again. It is not, and the
+ * reason is what the rest of this PR is about. §12's rider is categorical —
+ * *"the field is **not editable** for this type"* — and a live control on an
+ * archived list writes a date that stands only until the document is unarchived,
+ * at which point the very convergence this PR locked the control against
+ * discards it without a word. That is the silent-discard defect surviving
+ * through the archive door. Nothing is lost by locking: an archived document
+ * neither ages nor appears in Attention, so a deadline on one changes nothing.
  *
  * A registry that has not loaded yet locks nothing, for {@link statusLock}'s
  * reason: a momentarily editable control corrects itself when discovery settles,
- * and a permanently uneditable one has no way back.
+ * and a permanently uneditable one has no way back. What a momentarily editable
+ * control must not do is *write* — see {@link DERIVED_FIELDS}.
  *
  * There is deliberately no `useDueLock` beside {@link useStatusLock}: the row
  * menu offers Resolve and Reopen and no act on `due` at all, so nothing asks this
@@ -274,7 +289,6 @@ function declaresDerivedDue(type: string, registry: PluginRegistry): boolean {
  * same `if` again.
  */
 export function dueLock(subject: FieldSubject, registry: PluginRegistry): FieldLock | null {
-  if (subject.status === ARCHIVED) return null;
   return declaresDerivedDue(subject.type, registry) ? DERIVED_LOCK : null;
 }
 
@@ -320,10 +334,18 @@ function derivationApplies(answer: unknown): boolean {
  * derivations are two chances to disagree — the same rule the status statement
  * follows. That is also what keeps `DerivedDocDue`'s `??` trap out of this file:
  * nothing here composes a derived value with a stored one.
+ *
+ * **An archived document is asked nothing**, exactly as {@link formStatusLock}
+ * never touches an archived lock. Rule 2 makes every derivation decline for one,
+ * so putting the question would release the field on every archived list — and
+ * that decline is a fact about the *archive*, not about this document's content,
+ * which is the only fact this narrowing is allowed to act on. See
+ * {@link dueLock} for why the field stays locked there.
  */
 export function formDueLock(doc: Doc, registry: PluginRegistry): FieldLock | null {
   const lock = dueLock(doc.frontmatter, registry);
   if (lock === null) return null;
+  if (doc.frontmatter.status === ARCHIVED) return lock;
   const derive = registry.docTypes.get(doc.frontmatter.type)?.docType.deriveDue;
   try {
     // Contained the way the server contains the same call
@@ -341,4 +363,60 @@ export function formDueLock(doc: Doc, registry: PluginRegistry): FieldLock | nul
 /** {@link formDueLock} against the live registry — see {@link useStatusLock}. */
 export function useFormDueLock(doc: Doc): FieldLock | null {
   return formDueLock(doc, usePluginRegistry());
+}
+
+/**
+ * **The fields a doc type may take away** — one member per `deriveX` on
+ * `PluginDocType`, and the list a *writer* guards itself against.
+ *
+ * This exists because of a wedge PR #55's re-review found, and the shape of the
+ * fix matters more than the fix (finding 1, 2026-08-22). `changedFields` had
+ * grown a `dueLocked` boolean for the one race a control-side guard cannot see —
+ * a value set in the window before plugin discovery settles, flushed to the wire
+ * after it has — and `status`, which has the identical race, had no such
+ * parameter. It also has a harsher failure: SERVER-085's write path answers a
+ * derived `status` with a `400`, the local map keeps the refused value, the
+ * settling registry replaces the `<select>` with a statement, and from then on
+ * **every** save of **any** field carries the refused `status` and is refused
+ * too. A title typed afterwards could not be saved until the page was reloaded.
+ * Measured against a real server — see UI-092's log.
+ *
+ * A second boolean beside the first would have shipped the same gap one field
+ * later. So the rule got a home instead of a parameter: a writer takes
+ * {@link FieldLocks}, and filters **the whole list** through it in one place. A
+ * third derived field is one entry here, and it is guarded by construction.
+ *
+ * The members are also `UpdateDocRequest` keys, and that is deliberate rather
+ * than incidental: what a lock governs is what a request may carry.
+ */
+export const DERIVED_FIELDS = ["status", "due"] as const;
+
+/** One member of {@link DERIVED_FIELDS}. */
+export type DerivedField = (typeof DERIVED_FIELDS)[number];
+
+/**
+ * Every derived field's lock, together — the whole answer as one value, so a
+ * caller cannot be handed half of it.
+ *
+ * A mapped type over {@link DERIVED_FIELDS} rather than a hand-written pair: the
+ * compiler is then what makes {@link fieldLocks} answer for a field added to
+ * that list, which is the only reason one list is safer than two parameters.
+ */
+export type FieldLocks = { readonly [K in DerivedField]: FieldLock | null };
+
+/**
+ * Nothing is locked. The default for a caller with no registry to consult, and
+ * the value that keeps a lock-taking writer usable from a test that is not about
+ * locks at all.
+ */
+export const NO_FIELD_LOCKS: FieldLocks = { status: null, due: null };
+
+/** Every `form…` predicate above, asked at once, of one document. */
+export function fieldLocks(doc: Doc, registry: PluginRegistry): FieldLocks {
+  return { status: formStatusLock(doc, registry), due: formDueLock(doc, registry) };
+}
+
+/** {@link fieldLocks} against the live registry — see {@link useStatusLock}. */
+export function useFieldLocks(doc: Doc): FieldLocks {
+  return fieldLocks(doc, usePluginRegistry());
 }

@@ -1,5 +1,6 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
+import { settledBox } from "./settledBox";
 import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
@@ -77,7 +78,11 @@ const TODO: StubRow = {
   due: "2026-09-30",
 };
 
-/** The same list, put away. An archived document derives nothing (rule 2). */
+/**
+ * The same list, put away. Rule 2 makes every derivation decline for it — and
+ * the field stays locked anyway, because that decline is a fact about the
+ * archive rather than about this document's content (decision of 2026-08-22).
+ */
 const ARCHIVED_TODO: StubRow = {
   id: "doc_todo_archived",
   type: "todo",
@@ -192,29 +197,6 @@ const statement = (page: Page) => dueCell(page).locator(".fm-statement");
 const dateInput = (page: Page) => dueCell(page).locator('input[type="date"]');
 const hint = (page: Page) => dueCell(page).locator(".fm-hint");
 
-/**
- * Resolves once `locator`'s box has read the same three times running, 100ms
- * apart — UI-127's helper, for `derived-status.spec.ts`'s reason: the reader's
- * form is sized against the column, so a box measured before everything in the
- * reader has arrived is a box of a surface still moving. (The column's own
- * widening stopped being a transition in UI-146.)
- *
- * A fixture concern and never an assertion — what is asserted is that two settled
- * boxes either side of a value change are identical.
- */
-async function settled(page: Page, locator: Locator): Promise<void> {
-  let last = "";
-  let same = 0;
-  for (let tick = 0; tick < 60; tick += 1) {
-    const box = JSON.stringify(await locator.boundingBox());
-    same = box !== "null" && box === last ? same + 1 : 0;
-    if (same >= 3) return;
-    last = box;
-    await page.waitForTimeout(100);
-  }
-  throw new Error("the frontmatter form never stopped moving");
-}
-
 test.describe("a due date its document derives", () => {
   test("states the date where the control was, and says where it came from", async ({ page }) => {
     const corpus = await stubCorpus(page, [VIEW, TODO]);
@@ -254,7 +236,7 @@ test.describe("a due date its document derives", () => {
     await page.locator(".reader .ProseMirror").waitFor();
 
     await expect(statement(page)).toHaveText("2026-09-30");
-    await settled(page, page.locator(".reader .fm-form"));
+    await settledBox(page, page.locator(".reader .fm-form"));
     const before = await statement(page).boundingBox();
     const formBefore = await page.locator(".reader .fm-form").boundingBox();
     const hintBefore = await hint(page).boundingBox();
@@ -271,7 +253,7 @@ test.describe("a due date its document derives", () => {
     // SHARED-057: the value changed and the box did not. `no deadline` is the
     // wider string, so a box that followed its text would move the hint under it
     // every time an item was checked.
-    await settled(page, page.locator(".reader .fm-form"));
+    await settledBox(page, page.locator(".reader .fm-form"));
     expect(await statement(page).boundingBox()).toEqual(before);
     expect(await page.locator(".reader .fm-form").boundingBox()).toEqual(formBefore);
     expect(await hint(page).boundingBox()).toEqual(hintBefore);
@@ -304,10 +286,15 @@ test.describe("a due date its document derives", () => {
     expect((writes.at(-1)?.body as { due?: string } | undefined)?.due).toBe("2030-01-01");
   });
 
-  test("keeps an ordinary date control on an archived list", async ({ page }) => {
-    // Archiving is a fact about `status`, not about `due`: rule 2 makes an
-    // archived document one of the two states every derivation declines, so the
-    // deadline is the person's again — where the `status` control stays locked.
+  test("states an archived list's deadline too, and offers no control", async ({ page }) => {
+    // The decision of 2026-08-22 (PR #55 re-review, finding 2). §12's rider is
+    // categorical — *the field is not editable for this type* — and this shipped
+    // handing the control back on an archived list, on the strength of rule 2's
+    // decline. A date typed there writes and stands, then is converged away
+    // without a word the moment the document is unarchived: the same silent
+    // discard this whole file was written against, one door along. Nothing is
+    // lost by locking, because an archived document neither ages nor appears in
+    // Attention.
     const corpus = await stubCorpus(page, [VIEW, ARCHIVE_VIEW, ARCHIVED_TODO]);
     await stubTodosAggregate(
       page,
@@ -316,8 +303,14 @@ test.describe("a due date its document derives", () => {
     );
     await openDoc(page, ARCHIVED_TODO.id);
 
-    await expect(statement(page)).toHaveCount(0);
-    await expect(dateInput(page)).toBeEnabled();
+    await expect(statement(page)).toHaveText("2026-09-30");
+    await expect(dateInput(page)).toHaveCount(0);
+    // The two fields still part company here — `status` keeps a control, because
+    // archiving *is* an act and it lives on another route. What changed is the
+    // kind of lock, never whether there is one.
     await expect(page.locator('.reader .fm-form [data-field="status"] select')).toBeDisabled();
+
+    // And nothing was written on the way: a locked field reaches no wire.
+    expect(await corpus.of("PUT", `/api/docs/${ARCHIVED_TODO.id}`)).toHaveLength(0);
   });
 });

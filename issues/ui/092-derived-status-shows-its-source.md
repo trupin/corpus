@@ -469,6 +469,258 @@ nothing keep an ordinary, writable date control.
 Scratch server stopped, Vite killed, ports **5373 / 5273 / 8791 free**. 8765 is
 still held by the user's own server and was never touched.
 
+## Decision — an archived todo's `due` is locked, like any other todo's
+
+**Made by the orchestrator, 2026-08-22, on PR #55's re-review (finding 2).**
+
+`dueLock` returned `null` for an archived document, so an archived todo kept a
+live date control. The argument was `PluginDocType` rule 2: an archived document
+is one of the two states in which every derivation declines, and where a
+derivation declines "the stored value stands", so the deadline looked like the
+person's again.
+
+**Chosen: lock it.** An archived todo's `due` is a statement, exactly as an
+unarchived one's is. Three reasons, in order of weight:
+
+1. **§12's rider is categorical.** *"The field is **not editable** for this
+   type."* It says nothing about the document's status, and reading a
+   status-shaped exception into it is reading something that is not there.
+2. **The surprise lands at unarchive.** A date hand-typed on an archived list
+   writes and stands — until the document is unarchived, at which point the
+   derivation resumes and the very convergence this PR spent a CRITICAL locking
+   the control against discards it without a word. That is the silent-discard
+   defect surviving through the archive door, and it is worse than the original
+   because the discard happens minutes or months after the act.
+3. **Nothing is lost.** An archived document neither ages nor appears in
+   Attention, so a deadline on one changes nothing a person can see. There is no
+   act being withheld here.
+
+**What does not change: `statusLock`'s archived branch.** Archiving *is* a fact
+about status — it is a status, set on another route — so the status field keeps
+a control, keeps `ARCHIVED_OVER_DERIVED_LOCK`'s wording, and keeps saying which
+of the two rules put the word there. The two members still part company on the
+archived case. What moved is *what* they disagree about: it used to be whether
+there is a lock at all, and it is now the **kind** of lock. `archived` where
+there is an act on another route, `derived` where there is no act anywhere.
+
+`formDueLock` needed the mirror of `formStatusLock`'s guard to make this hold:
+it asks the derivation only about a document that is **not** archived. Rule 2's
+decline is a fact about the archive, not about the document's content, and the
+narrowing may only act on content.
+
+## Decision — one home for "a locked field must not reach the wire"
+
+**Made by the ui-dev agent, 2026-08-22, on PR #55's re-review (finding 1); the
+reviewer required a single home and rejected a second boolean in advance.**
+
+`changedFields(doc, draft, dueLocked)` guarded `due` alone. `status` has the
+identical race and a harsher ending, and had no guard at all.
+
+**Chosen: `changedFields` takes the locks, and filters the whole list.**
+
+- `doc/fieldLock.ts` gained `DERIVED_FIELDS` (`["status", "due"]` — one member
+  per `deriveX` on `PluginDocType`), the mapped type `FieldLocks` over it,
+  `NO_FIELD_LOCKS`, and `fieldLocks(doc, registry)` / `useFieldLocks(doc)`.
+- `changedFields(doc, draft, locks)` computes what the form would have sent and
+  then passes it through **one** filter, `withoutLocked`, which loops over
+  `DERIVED_FIELDS`. A third derived field is one entry in that list and is
+  guarded without anybody remembering to guard it.
+- The form holds `locksRef` where it held `dueLockRef`, and renders both fields
+  from the same value, so the thing the controls draw and the thing the writer
+  consults can no longer disagree.
+
+**Rejected: a `statusLocked` parameter beside `dueLocked`.** Two ad-hoc booleans
+for one rule is what produced the defect, and a third field would have added a
+third.
+
+**Rejected: gating writes on `PluginDiscoveryPhase`.** The tempting reading of
+the rule is *"nothing derivable reaches the wire until discovery has settled"*.
+It is not implementable honestly here. `DocView` already refuses to render this
+form while the phase is `pending`, so a phase gate would be a rule written twice
+with no reachable path. And the window the defect actually lives in is
+`abandoned` — discovery took longer than `DISCOVERY_BUDGET_MS`, the reader paints
+without plugin chrome, and the client genuinely does not know whether the field
+is derived. Withholding the write there would drop the person's pick **in
+silence**, where sending it produces the server's own refusal, which names the
+field and explains itself. Silence is the worse of the two.
+
+**Added, because the gate alone does not un-wedge the form:** a refused derived
+field leaves the local map. See below.
+
+## Decision — a refusal may not outlive its own request
+
+**Made by the ui-dev agent, 2026-08-22 (finding 1's second half).**
+
+`onError` deliberately kept every value the person had set, so the chip's retry
+could re-send the lot. That is right for a save that **failed** and wrong for a
+value the server said was never the person's: it rides on every later patch and
+is refused again, so one refusal made every subsequent save of every field fail.
+
+**Chosen: drop exactly the derived fields the refusal *named*.**
+`CorpusRequestError.issues` carries `path: "body.status"` — structured, from the
+only party that knows — so `refusedFields` reads the contract's own error shape
+and never the prose. A `500`, a dropped connection or a refusal about any other
+field names nothing, nothing is dropped, and the existing "keeps every typed
+value" behaviour is untouched.
+
+**Rejected: dropping every derived field a failed request carried.** It needs no
+error shape at all, and it loses a status pick to a passing network failure.
+
+**Rejected: auto-retrying the surviving fields after a refusal.** The chip
+already offers a retry, and an automatic one risks a loop against a server that
+keeps refusing.
+
+## Decision — the statements read the document, never the overlay
+
+`StatusStatement` and `DueStatement` both rendered `valueOf(doc, local)` while
+their own doc comments promised *"the value is the server's"*. Measured live: the
+statement read `resolved` over a file reading `open`. They now read
+`draftOf(doc)`. That is the same sentence, read strictly.
+
+## E2E Verification Log — PR #55 re-review, findings 1, 2 and 3
+
+**Model: Opus 5 (1M context).** Branch `phase-40-derived-status`. Nothing was
+committed by this agent.
+
+### The wedge, reproduced first, against a real server
+
+Workspace `init`ed in a scratch directory on port **8793** (the user's live
+server on 8765 was never touched), Vite dev on **5273** proxying to it, Chromium
+via Playwright. The reviewer's window was held open by delaying the todos
+manifest's module request by 8s, so plugin discovery exceeded
+`DISCOVERY_BUDGET_MS` and the reader painted with an empty registry — which is
+what makes the status `<select>` live on a todo.
+
+```
+corpus init ws --port 8793            → Initialized Corpus workspace, port 8793
+corpus server start                   → corpus 0.16.0 listening on 127.0.0.1:8793 (pid 84448)
+corpus doc create --type todo --title "Reproduction chores" \
+  -m "- [ ] call the plumber (due: 2026-09-30)\n- [ ] rinse the filter"
+                                      → created doc_343eyaq7
+data/docs/inbox/reproduction-chores.md → status: open   due: 2026-09-30
+```
+
+```
+--- BEFORE — the reader painted while discovery was still in flight ---
+status select count : 1
+status select value : open
+status select live  : true        ← live, on a field the server derives
+due   input count   : 1
+
+--- the person picks `resolved` ---
+PUT {"status":"resolved"} → 400
+  `status` is derived from the document itself and is not a value a save may
+  set (SPEC.md §12)   issues: [{path: "body.status", …}]
+
+--- AFTER the status pick ---
+status select value : resolved    ← the refused value, kept
+file status         : open
+
+--- AFTER discovery settled — the control is gone ---
+status statement    : "resolved"  ← the statement prints a value the file
+file status         : open           does not have (finding 1, second half)
+
+--- a title typed afterwards ---
+PUT {"title":"Reproduction chores — renamed","status":"resolved"} → 400
+save chip           : "save failed — retry"
+file title          : Reproduction chores      ← unchanged. Wedged.
+```
+
+**No control left to reset it, and every later save of every field refused** —
+exactly as reported.
+
+### What was built
+
+- `apps/ui/src/doc/fieldLock.ts` — `DERIVED_FIELDS`, `DerivedField`,
+  `FieldLocks`, `NO_FIELD_LOCKS`, `fieldLocks`, `useFieldLocks`. `dueLock` no
+  longer releases an archived document, and `formDueLock` no longer puts the
+  narrowing question to one.
+- `apps/ui/src/reader/FrontmatterForm.tsx` — `changedFields(doc, draft, locks)`
+  with the single `withoutLocked` filter; `locksRef` replacing `dueLockRef`;
+  `refusedFields` / `dropRefused` on the error path; both statements reading
+  `draftOf(doc)`.
+- `apps/ui/src/testing/serverRefusals.ts` — `derivedFieldRefusalBody`, the
+  transcription of SERVER-085's refusal, so a double can answer what the server
+  answers and the drop path is exercised against the real shape.
+- `apps/ui/src/testing/readerFixture.ts` — a `400` on `PUT /api/docs/{id}` now
+  carries that body, naming whichever derived fields the request sent.
+- `apps/ui/e2e/settledBox.ts` — **new**, finding 3: the byte-identical private
+  `settled()` helpers in `derived-due.spec.ts` and `derived-status.spec.ts` moved
+  into one module. It is locator-scoped, so `settle.ts`'s `settledReader` (fixed
+  target, no argument) is not its home; the two are cross-referenced.
+- `apps/ui/e2e/derived-due.spec.ts` — the archived case inverted per finding 2.
+
+### Unit tests
+
+```
+vitest run apps/ui/src/doc/fieldLock.test.ts             → 40 passed
+vitest run apps/ui/src/reader/FrontmatterForm.test.tsx   → 71 passed
+vitest run apps/ui/src/{doc,reader,menu,plugins,testing} → 32 files, 541 passed
+tsc --noEmit -p apps/ui                                  → clean
+eslint + prettier over apps/ui/src and apps/ui/e2e       → clean
+```
+
+### Falsification — six mutations, each caught
+
+| Mutation | What failed |
+| --- | --- |
+| `changedFields` stops filtering through the locks | 6 tests, incl. all five `a locked field never reaches the wire` cases and the pre-existing `drops a date typed before the lock engaged` |
+| `dropRefused` keeps everything (the wedge restored) | `lets go of it, so the next save of another field lands` |
+| `StatusStatement` reads the local overlay again | `states the document's value, never a value the local map is still holding` |
+| `DueStatement` reads the local overlay again | `states the document's deadline, never one the local map is still holding` |
+| `dueLock` releases an archived document again (the pre-fix state) | 3 tests, incl. the e2e-adjacent `states an archived list's deadline too` |
+| `formDueLock` puts the narrowing question to an archived document | 2 tests — the trap that made finding 2's fix two changes rather than one |
+
+### Real-app drill — the fix, on the same running server
+
+The same script, the same document, the same held-open discovery window:
+
+```
+--- the person picks `resolved` (still refused — the client cannot know) ---
+PUT {"status":"resolved"} → 400
+
+--- AFTER the status pick ---
+status select value : open        ← the refused value let go of
+file status         : open
+
+--- AFTER discovery settled ---
+status statement    : "open"      ← the statement agrees with the file
+due   statement     : "2026-09-30"
+
+--- a title typed afterwards ---
+PUT {"title":"Reproduction chores — renamed"} → 200
+save chip           : "committed · git ✓"
+file title          : Reproduction chores — renamed      ← it lands
+```
+
+Finding 2, on the same server, with a real archived todo and a real note:
+
+```
+1. archived todo (doc_2osluijg, file: status=archived due=2026-11-01)
+   status : control ×1, hint "archived — where this document is kept, not a
+            reading of its content. Unarchive in the ⋯ menu brings it back"
+   due    : statement "2026-11-01", controls 0, hint "derived from this
+            document’s own content, so it is nobody’s to set"
+
+2. note (doc_hrssu753) — nothing derives, so nothing is locked
+   due    : control ×1, no statement, no hint
+   typed 2026-12-24 → PUT {"due":"2026-12-24"} → 200 → file due: 2026-12-24
+```
+
+### Playwright, the whole suite
+
+```
+CORPUS_UI_PORT=5273 npm run e2e -- --workers=1   → 535 passed (10.7m), exit 0
+```
+
+Run whole rather than scoped, because the last two rounds each broke a spec
+elsewhere. Nothing outside `derived-due.spec.ts` moved.
+
+### Teardown
+
+Scratch server stopped, Vite killed, ports **5273 / 8793 free**. 8765 is still
+held by the user's own server and was never touched.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

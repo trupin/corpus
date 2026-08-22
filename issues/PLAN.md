@@ -1237,6 +1237,7 @@ left in a report.
 | SHARED-062 | A todo list's `due` is its items, and a hand-written date does not survive (SIGNED 2026-08-22, applied) | done | P0 | — |
 | SHARED-063 | §11's reader menu offers Resolve on every document that has one (SIGNED 2026-08-22, applied) | done | P1 | — |
 | UI-147 | The mockup still draws the eased column open that UI-146 removed | todo | P2 | UI-146 |
+| SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | todo | P2 | — |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |

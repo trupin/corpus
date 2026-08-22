@@ -1,5 +1,6 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
+import { settledBox } from "./settledBox";
 import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
@@ -179,31 +180,6 @@ const statement = (page: Page) => statusCell(page).locator(".fm-statement");
 const statusSelect = (page: Page) => statusCell(page).locator("select");
 const hint = (page: Page) => statusCell(page).locator(".fm-hint");
 
-/**
- * Resolves once `locator`'s box has read the same three times running, 100ms
- * apart. UI-127's helper, for UI-127's reason, and this file needs it for one of
- * its own: **the form is sized against the column**, so a box measured before
- * the reader has finished arriving is a box of a surface still moving. Measured
- * that way the flip below appeared to resize the form by 82px, all of which was
- * the column arriving — over the 250ms transition UI-146 has since removed from
- * the open.
- *
- * A fixture concern and never an assertion — what is asserted is that two
- * settled boxes either side of a value change are identical.
- */
-async function settled(page: Page, locator: Locator): Promise<void> {
-  let last = "";
-  let same = 0;
-  for (let tick = 0; tick < 60; tick += 1) {
-    const box = JSON.stringify(await locator.boundingBox());
-    same = box !== "null" && box === last ? same + 1 : 0;
-    if (same >= 3) return;
-    last = box;
-    await page.waitForTimeout(100);
-  }
-  throw new Error("the frontmatter form never stopped moving");
-}
-
 test.describe("a status its document derives", () => {
   test("states the value where the control was, and says where it came from", async ({ page }) => {
     const corpus = await stubCorpus(page, [VIEW, TODO]);
@@ -254,7 +230,7 @@ test.describe("a status its document derives", () => {
     const panel = page.locator(`[data-todo-panel="${TODO.id}"]`);
     await expect(panel.locator("[data-stat-open]")).toHaveText("1");
     await expect(statement(page)).toHaveText("open");
-    await settled(page, page.locator(".reader .fm-form"));
+    await settledBox(page, page.locator(".reader .fm-form"));
     const before = await statement(page).boundingBox();
     const formBefore = await page.locator(".reader .fm-form").boundingBox();
     const hintBefore = await hint(page).boundingBox();
@@ -273,7 +249,7 @@ test.describe("a status its document derives", () => {
     expect(writeBack.written.at(-1)).toBe("resolved");
 
     // SHARED-057: the value changed and nothing moved.
-    await settled(page, page.locator(".reader .fm-form"));
+    await settledBox(page, page.locator(".reader .fm-form"));
     expect(await statement(page).boundingBox()).toEqual(before);
     expect(await page.locator(".reader .fm-form").boundingBox()).toEqual(formBefore);
     expect(await hint(page).boundingBox()).toEqual(hintBefore);

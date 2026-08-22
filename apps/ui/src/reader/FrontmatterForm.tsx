@@ -1,5 +1,11 @@
 import { DOC_STATUSES, type Doc, type DocStatus, type UpdateDocRequest } from "@corpus/contract";
-import { docKey as docQueryKey, folderOf, useUpdateDoc, type RowNotice } from "@corpus/kit";
+import {
+  CorpusRequestError,
+  docKey as docQueryKey,
+  folderOf,
+  useUpdateDoc,
+  type RowNotice,
+} from "@corpus/kit";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
@@ -13,7 +19,14 @@ import {
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
-import { useFormDueLock, useFormStatusLock, type FieldLock } from "../doc/fieldLock";
+import {
+  DERIVED_FIELDS,
+  NO_FIELD_LOCKS,
+  useFieldLocks,
+  type DerivedField,
+  type FieldLock,
+  type FieldLocks,
+} from "../doc/fieldLock";
 import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
 import { SaveChipView } from "../editor/SaveChip";
 import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
@@ -195,16 +208,32 @@ export function isDeliberate(field: FieldName, value: string): boolean {
  * through this function, and guarding the control alone would ship a refusal the
  * user could not connect to anything they did.
  *
- * **A derived `due` never leaves here either**, and `dueLocked` is that guard —
- * the same rule for the same reason, one field over. The failure it prevents is
- * quieter than a `400`: the server converges a derived `due` on the very write
- * that carries one (SERVER-134), so a stale draft flushed from an unmount would
- * be accepted, discarded and never mentioned. The control is not rendered while
- * the lock is on, so this only ever fires for a value typed **before** it engaged
- * — a date picked in the second or so before plugin discovery settles — which is
- * exactly the case a control-side guard cannot see.
+ * **No locked field ever leaves here**, and `locks` is that guard — the same
+ * rule for the same reason, one field over and then every field at once. The
+ * control is not rendered while a lock is on, so this only ever fires for a
+ * value set **before** the lock engaged — a status picked or a date typed in the
+ * window before plugin discovery settles — which is exactly the case a
+ * control-side guard cannot see.
+ *
+ * **Why it is a list and not a parameter per field** (PR #55 re-review, finding
+ * 1). This shipped as `dueLocked`, a boolean covering `due` alone, and the same
+ * race on `status` went unguarded — where it is worse, because the write path
+ * answers a derived `status` with a `400` rather than converging it silently, and
+ * a refused value left in the local map is then carried by every later save. Two
+ * ad-hoc booleans would have been the same gap waiting on a third field. So the
+ * filter runs over {@link DERIVED_FIELDS} and a field added there is guarded
+ * without anybody remembering to guard it.
+ *
+ * The archive-boundary guard on `status` stays where it is and is **not** this
+ * rule. It refuses a value in *both* directions across `archived` (UI-020,
+ * SERVER-039), which no lock expresses: `archived` is a place a document is kept,
+ * and the routes that move it are not this one.
  */
-export function changedFields(doc: Doc, draft: Draft, dueLocked = false): UpdateDocRequest {
+export function changedFields(
+  doc: Doc,
+  draft: Draft,
+  locks: FieldLocks = NO_FIELD_LOCKS,
+): UpdateDocRequest {
   const current = draftOf(doc);
   const changes: UpdateDocRequest = {};
   const title = draft.title.trim();
@@ -213,8 +242,74 @@ export function changedFields(doc: Doc, draft: Draft, dueLocked = false): Update
   if (draft.status !== current.status && draft.status !== ARCHIVED && current.status !== ARCHIVED) {
     changes.status = draft.status;
   }
-  if (!dueLocked && draft.due !== current.due) changes.due = draft.due === "" ? null : draft.due;
-  return changes;
+  if (draft.due !== current.due) changes.due = draft.due === "" ? null : draft.due;
+  return withoutLocked(changes, locks);
+}
+
+/**
+ * The one gate: whatever the form would have sent, minus every field a lock says
+ * is nobody's to set.
+ *
+ * Written as a loop over {@link DERIVED_FIELDS} rather than as a condition per
+ * field so that the set of guarded fields is the *list* and not this function's
+ * memory of it.
+ */
+function withoutLocked(changes: UpdateDocRequest, locks: FieldLocks): UpdateDocRequest {
+  const kept: { -readonly [K in keyof UpdateDocRequest]: UpdateDocRequest[K] } = { ...changes };
+  for (const field of DERIVED_FIELDS) {
+    if (locks[field] !== null) delete kept[field];
+  }
+  return kept;
+}
+
+/** Whether a form field is one a doc type may take away — see {@link DERIVED_FIELDS}. */
+function isDerivedField(name: FieldName): name is DerivedField {
+  return DERIVED_FIELDS.some((field) => field === name);
+}
+
+/**
+ * The **derived fields a refusal named**, read off the contract's own error
+ * shape rather than out of its prose.
+ *
+ * `assertDerivedFieldsNotSet` (SERVER-085) answers a `400 bad_request` whose
+ * `issues` carry `path: "body.status"` — the field, structured, said by the only
+ * party that knows. That is what makes this precise enough to act on: a `500`,
+ * a dropped connection or any other failure names nothing, so nothing is
+ * dropped and a save that merely failed still holds everything the person typed.
+ *
+ * Restricted to {@link DERIVED_FIELDS} on purpose. A refusal naming `title` says
+ * the value was malformed, not that the field is nobody's, and the person's own
+ * text is the last thing this form may throw away.
+ */
+function refusedFields(error: Error): readonly DerivedField[] {
+  if (!(error instanceof CorpusRequestError)) return [];
+  return DERIVED_FIELDS.filter((field) =>
+    error.issues.some((issue) => issue.path === `body.${field}`),
+  );
+}
+
+/**
+ * The local map, with the fields a refusal named removed.
+ *
+ * A refusal is the one place the server tells this form a field was never the
+ * person's to set, and a value that cannot be written is not an unsaved edit —
+ * it is a value that will ride on every later patch and be refused again, which
+ * is precisely the wedge PR #55's re-review measured: a `400` on `status`, then
+ * a title that could not be saved until the page was reloaded.
+ *
+ * Returns the map it was given when nothing was named, so the ordinary failure
+ * path re-renders nothing at all.
+ */
+function dropRefused(local: Local, refused: readonly DerivedField[]): Local {
+  if (refused.length === 0) return local;
+  let kept: Local = {};
+  for (const name of FIELD_NAMES) {
+    const value = local[name];
+    if (value === undefined) continue;
+    if (isDerivedField(name) && refused.includes(name)) continue;
+    kept = withField(kept, name, value);
+  }
+  return kept;
 }
 
 /** What the person is looking at: the document, overlaid with what they typed. */
@@ -341,6 +436,13 @@ function Field({ label, lock, hint, children }: FieldProps): ReactElement {
  * this UI's copy of the plugin would not have derived, what the server sent is
  * what the file says.
  *
+ * It is `doc.frontmatter.status` and pointedly **not** the local overlay, which
+ * is the same sentence read strictly (PR #55 re-review, finding 1). The overlay
+ * can hold a value the person picked in the window before the lock engaged and
+ * the server then refused — and a statement rendering that would print a status
+ * the file does not have, under a note claiming the value came from the
+ * document. Measured: `resolved` stated over a file reading `open`.
+ *
  * SHARED-057: the box is the grid cell's, not the value's, so `open` and
  * `resolved` occupy identical space and nothing on the form moves when one
  * becomes the other. That is `.fm-statement`'s whole job.
@@ -370,7 +472,9 @@ const NO_DEADLINE = "no deadline";
  * writes the derived `due` into the frontmatter on every write). Nothing here
  * re-derives it, and nothing here composes anything: `DerivedDocDue`'s three
  * answers are a trap for a surface that combines a derived value with a stored
- * one, and this surface never holds both.
+ * one, and this surface never holds both. It is read from `doc.frontmatter.due`
+ * and never from the local overlay, for the reason {@link StatusStatement}
+ * gives.
  *
  * SHARED-057 / SHARED-061: the box is the grid cell's (`.fm-statement` is
  * `width: 100%`), so a date **appearing and disappearing** — which is what
@@ -412,14 +516,15 @@ export function FrontmatterForm({
   const docRef = useRef(doc);
   docRef.current = doc;
   /**
-   * The `due` lock as of the last render, for {@link changedFields}' guard.
+   * Every derived field's lock as of the last render, for {@link changedFields}'
+   * guard.
    *
    * A ref rather than a dependency because every write path here reads its inputs
    * from refs, for the reason stated above: a flush armed several keystrokes ago
-   * must send what the form holds *now*. It is assigned where the lock is read,
+   * must send what the form holds *now*. It is assigned where the locks are read,
    * further down — every caller runs after a render has completed.
    */
-  const dueLockRef = useRef<FieldLock | null>(null);
+  const locksRef = useRef<FieldLocks>(NO_FIELD_LOCKS);
   const inFlight = useRef(false);
   /** A change arrived while a `PUT` was on the wire; send it when that lands. */
   const queued = useRef(false);
@@ -486,11 +591,23 @@ export function FrontmatterForm({
       queued.current = false;
       endEditWrite(docId, false);
       /*
-       * Nothing is cleared: the local map still holds every value the person
-       * set, the controls still show them, and the chip's retry re-sends the
-       * lot. A form that dropped them would have discarded an edit silently,
-       * which is worse than a form that says it could not save one.
+       * Nothing is cleared for a save that merely **failed**: the local map
+       * still holds every value the person set, the controls still show them,
+       * and the chip's retry re-sends the lot. A form that dropped them would
+       * have discarded an edit silently, which is worse than a form that says it
+       * could not save one.
+       *
+       * A field the server **named as not yours to set** is the other case, and
+       * it leaves — see {@link dropRefused}. Keeping one is what wedged the
+       * form: it rides on every later patch and is refused again, so one bad
+       * value made every subsequent save of every field fail (PR #55 re-review,
+       * finding 1).
        */
+      const kept = dropRefused(localRef.current, refusedFields(error));
+      if (kept !== localRef.current) {
+        localRef.current = kept;
+        setLocal(kept);
+      }
       setSave({ kind: "error", message: error.message });
       notify.current({ tone: "error", message: `Save failed — ${error.message}` });
     },
@@ -512,11 +629,7 @@ export function FrontmatterForm({
     const outgoing = docRef.current;
     const id = outgoing.frontmatter.id;
     if (isAbandoned(id)) return null;
-    const changes = changedFields(
-      outgoing,
-      valueOf(outgoing, localRef.current),
-      dueLockRef.current !== null,
-    );
+    const changes = changedFields(outgoing, valueOf(outgoing, localRef.current), locksRef.current);
     if (Object.keys(changes).length === 0) return null;
     return { id, changes };
   }, []);
@@ -646,9 +759,9 @@ export function FrontmatterForm({
   );
 
   const value = valueOf(doc, local);
-  const lock = useFormStatusLock(doc);
-  const dueLock = useFormDueLock(doc);
-  dueLockRef.current = dueLock;
+  const stored = draftOf(doc);
+  const locks = useFieldLocks(doc);
+  locksRef.current = locks;
   const folder = folderOf(doc.path);
 
   return (
@@ -741,16 +854,16 @@ export function FrontmatterForm({
         </Field>
         <Field
           label="status"
-          lock={lock}
+          lock={locks.status}
           hint="archive from the ⋯ menu — a status flip would not move a skill’s folder"
         >
-          {lock?.kind === "derived" ? (
-            <StatusStatement status={value.status} />
+          {locks.status?.kind === "derived" ? (
+            <StatusStatement status={stored.status} />
           ) : (
             <select
               className="fm-input"
               value={value.status}
-              disabled={lock !== null}
+              disabled={locks.status !== null}
               onKeyDown={leaveOnEscape}
               onChange={(event) => {
                 patch("status", event.target.value);
@@ -764,24 +877,24 @@ export function FrontmatterForm({
             </select>
           )}
         </Field>
-        <Field label="due" lock={dueLock}>
+        <Field label="due" lock={locks.due}>
           {/*
            * The `status` field's shape, deliberately unchanged — a `derived`
-           * lock is a statement, anything else is the control. `useFormDueLock`
-           * never returns an `archived` lock (an archived document's derivation
-           * declines, so its deadline is the person's again), so the second
+           * lock is a statement, anything else is the control. `dueLock` returns
+           * only `derived` locks (there is no act on `due` on any route, so
+           * there is nothing for an `archived` lock to point at), so the second
            * branch is the live control today. It is written this way rather than
-           * as `dueLock === null` so that the two fields answer a lock by its
+           * as `locks.due === null` so that the two fields answer a lock by its
            * `kind` and not by which field it came from.
            */}
-          {dueLock?.kind === "derived" ? (
-            <DueStatement due={value.due} />
+          {locks.due?.kind === "derived" ? (
+            <DueStatement due={stored.due} />
           ) : (
             <input
               className="fm-input"
               type="date"
               value={value.due}
-              disabled={dueLock !== null}
+              disabled={locks.due !== null}
               onKeyDown={leaveOnEscape}
               onChange={(event) => {
                 patch("due", event.target.value);

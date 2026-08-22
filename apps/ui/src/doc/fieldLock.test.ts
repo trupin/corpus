@@ -4,7 +4,16 @@ import type { PluginManifest } from "@corpus/kit/plugin";
 import { describe, expect, it } from "vitest";
 import { buildRegistry, EMPTY_REGISTRY } from "../plugins/registry";
 import { docFixture } from "../testing/readerFixture";
-import { dueLock, formDueLock, formStatusLock, statusLock, type FieldSubject } from "./fieldLock";
+import {
+  DERIVED_FIELDS,
+  dueLock,
+  fieldLocks,
+  formDueLock,
+  formStatusLock,
+  NO_FIELD_LOCKS,
+  statusLock,
+  type FieldSubject,
+} from "./fieldLock";
 
 /**
  * The one predicate behind two surfaces (UI-094).
@@ -261,14 +270,23 @@ describe("dueLock", () => {
     expect(dueLock({ type: "todo", status: "open" }, registry)).not.toBeNull();
   });
 
-  it("hands an archived document's deadline back — archiving is a fact about status", () => {
-    // `PluginDocType` rule 2: an archived document is one of the two states in
-    // which every derivation declines, and where one declines the stored value
-    // stands. So `due` is settable there exactly as it is on a note — which is
-    // where this member parts company with `statusLock`, which locks it.
+  it("keeps an archived list's deadline locked, and differs from status in kind", () => {
+    // The decision of 2026-08-22 (PR #55 re-review, finding 2). §12's rider is
+    // categorical — the field is not editable for this type — and a live control
+    // on an archived list writes a date the unarchive silently converges away.
+    // The two members still part company here, but on the *kind* of lock:
+    // `archived` on status, where there is an act on another route; `derived` on
+    // due, where there is no act anywhere.
     const registry = registryWith("todo", { deriveDue: () => ({ due: "2026-08-04" }) });
-    expect(dueLock({ type: "todo", status: "archived" }, registry)).toBeNull();
+    expect(dueLock({ type: "todo", status: "archived" }, registry)?.kind).toBe("derived");
     expect(statusLock({ type: "todo", status: "archived" }, registry)?.kind).toBe("archived");
+  });
+
+  it("still leaves an archived document nothing derives the person's", () => {
+    // Locking an archived list is the derivation's doing, never the archive's.
+    expect(dueLock({ type: "note", status: "archived" }, EMPTY_REGISTRY)).toBeNull();
+    const registry = registryWith("todo", { deriveStatus: () => "open" as const });
+    expect(dueLock({ type: "todo", status: "archived" }, registry)).toBeNull();
   });
 
   it("locks nothing while discovery is still empty", () => {
@@ -321,8 +339,14 @@ describe("formDueLock", () => {
     expect(dueLock({ type: "todo", status: "open" }, derivingRegistry())).not.toBeNull();
   });
 
-  it("hands an archived document's deadline back, at both altitudes", () => {
-    expect(formDueLock(todo({ status: "archived" }), derivingRegistry())).toBeNull();
+  it("keeps an archived list's deadline locked, though the derivation declines for it", () => {
+    // The trap this narrowing has to avoid, and the mirror of `formStatusLock`'s
+    // own archived case: rule 2 makes *every* derivation decline for an archived
+    // document, so a narrowing that simply asked would release the field on
+    // every archived list — on the strength of a decline that says nothing about
+    // this document's content.
+    const lock = formDueLock(todo({ status: "archived" }), derivingRegistry());
+    expect(lock?.kind).toBe("derived");
   });
 
   it("contains a derivation that throws, and leaves the field editable", () => {
@@ -367,5 +391,81 @@ describe("formDueLock", () => {
 
   it("leaves the field editable when the plugin is gone (§15 M6)", () => {
     expect(formDueLock(todo(), EMPTY_REGISTRY)).toBeNull();
+  });
+});
+
+/**
+ * The list a **writer** guards itself against (PR #55 re-review, finding 1).
+ *
+ * What these pin is not an answer but a shape: every field a type may take away
+ * is in one list, and one call answers for all of them. The wedge that made this
+ * necessary — a `due` guarded by a boolean parameter and a `status` guarded by
+ * nothing — is asserted where it bit, in `reader/FrontmatterForm.test.tsx`.
+ */
+describe("fieldLocks", () => {
+  const todo = (overrides: { status?: DocStatus; body?: string } = {}): Doc =>
+    docFixture({
+      body: overrides.body ?? "- [ ] pay the deposit (due: 2026-08-04)\n",
+      frontmatter: {
+        id: "doc_t",
+        type: "todo",
+        status: overrides.status ?? "open",
+        due: "2026-08-04",
+      },
+    });
+
+  const bothDerived = () =>
+    registryWith("todo", {
+      deriveStatus: (doc: Doc) => (doc.body.includes("- [ ]") ? "open" : "resolved"),
+      deriveDue: () => ({ due: "2026-08-04" }),
+    });
+
+  it("names every field a doc type may take away, and nothing else", () => {
+    // One member per `deriveX` on `PluginDocType`. A third one added there and
+    // forgotten here would be a field `changedFields` writes unguarded.
+    expect([...DERIVED_FIELDS]).toEqual(["status", "due"]);
+  });
+
+  it("answers for every one of them at once", () => {
+    const locks = fieldLocks(todo(), bothDerived());
+    expect(Object.keys(locks).sort()).toEqual([...DERIVED_FIELDS].sort());
+    expect(locks.status?.kind).toBe("derived");
+    expect(locks.due?.kind).toBe("derived");
+  });
+
+  it("gives each field its own predicate's answer, never one shared verdict", () => {
+    const statusOnly = registryWith("todo", { deriveStatus: () => "open" as const });
+    expect(fieldLocks(todo(), statusOnly).status).not.toBeNull();
+    expect(fieldLocks(todo(), statusOnly).due).toBeNull();
+
+    const dueOnly = registryWith("todo", { deriveDue: () => ({ due: "2026-08-04" }) });
+    expect(fieldLocks(todo(), dueOnly).status).toBeNull();
+    expect(fieldLocks(todo(), dueOnly).due).not.toBeNull();
+  });
+
+  it("agrees with the form predicates it composes, on every document", () => {
+    const registry = bothDerived();
+    const docs: readonly Doc[] = [
+      todo(),
+      todo({ body: "- [x] paid (due: 2026-08-04)\n" }),
+      todo({ body: "" }),
+      todo({ status: "archived" }),
+      docFixture({ frontmatter: { id: "doc_n", type: "note", status: "open" } }),
+    ];
+    for (const doc of docs) {
+      const where = `${doc.frontmatter.type}/${doc.frontmatter.status}/${doc.body}`;
+      expect(fieldLocks(doc, registry).status, where).toBe(formStatusLock(doc, registry));
+      expect(fieldLocks(doc, registry).due, where).toBe(formDueLock(doc, registry));
+    }
+  });
+
+  it("locks nothing while discovery has loaded nothing", () => {
+    // The window the wedge lives in: the controls are live, so a writer that
+    // consulted only this would send both fields. See `changedFields`.
+    expect(fieldLocks(todo(), EMPTY_REGISTRY)).toEqual(NO_FIELD_LOCKS);
+  });
+
+  it("locks nothing, as a value a caller with no registry can pass", () => {
+    for (const field of DERIVED_FIELDS) expect(NO_FIELD_LOCKS[field]).toBeNull();
   });
 });

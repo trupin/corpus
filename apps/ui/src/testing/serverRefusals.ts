@@ -1,4 +1,4 @@
-import type { UnknownRecipientError } from "@corpus/contract";
+import type { UnknownRecipientError, ValidationError } from "@corpus/contract";
 
 /**
  * The server's refusal bodies, transcribed **once** for every double in this
@@ -40,5 +40,45 @@ export function unknownRecipientBody(recipient: string): UnknownRecipientError {
       "post without a recipient to reach whoever owns the conversation you are posting in, or " +
       "pick a live agent from the roster.",
     recipient,
+  };
+}
+
+/**
+ * `400 bad_request` — **this field is derived, and a save may not set it**
+ * (SPEC.md §12, `assertDerivedFieldsNotSet` in `apps/server/src/docs/update.ts`).
+ *
+ * The refusal a `PUT /api/docs/{id}` gets when it carries a `status` or a `due`
+ * the document's type reads off the document itself. A double needs it because
+ * the client acts on it: the frontmatter form drops a named field out of its
+ * local map, so a refusal cannot ride on every later patch and wedge the form
+ * (UI-092, PR #55 re-review). What is load-bearing is the **shape** — `code`,
+ * and one `issues` entry per field, pathed `body.<field>` — because that is what
+ * the form reads. The prose is transcribed anyway, for {@link
+ * unknownRecipientBody}'s reason.
+ *
+ * **It has no parity test, and that is a known gap rather than an oversight.**
+ * The server builds this body inline inside `assertDerivedFieldsNotSet`, which
+ * is private to `docs/update.ts`; `scripts/stub-server-parity.test.ts` can only
+ * run a copy against an *exported* factory. Exporting it belongs to a server
+ * issue, not to a UI one — until then this was verified by reading a real
+ * refusal off a real server (UI-092's log, 2026-08-22).
+ */
+export function derivedFieldRefusalBody(
+  fields: readonly string[],
+  subject: { readonly id: string; readonly type: string },
+): ValidationError {
+  return {
+    code: "bad_request",
+    message:
+      `\`${fields[0] ?? "status"}\` is derived from the document itself and is not a value ` +
+      "a save may set (SPEC.md §12)",
+    issues: fields.map((field) => ({
+      path: `body.${field}`,
+      message:
+        `${subject.id} is a \`${subject.type}\` document, whose \`${field}\` is read from ` +
+        "its own content rather than from its frontmatter, so the value you sent would be " +
+        "replaced by the derived one before it reached disk. Change what the field is read " +
+        "from — for a todo list, its items — and the field follows.",
+    })),
   };
 }

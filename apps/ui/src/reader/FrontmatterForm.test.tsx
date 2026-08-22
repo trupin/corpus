@@ -9,6 +9,7 @@ import {
   resetEditSessionFlush,
   setEditSessionClient,
 } from "../editor/editSessionFlush";
+import { DERIVED_FIELDS, NO_FIELD_LOCKS, type FieldLock, type FieldLocks } from "../doc/fieldLock";
 import { AUTOSAVE_DEBOUNCE_MS } from "../editor/useAutosave";
 import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
@@ -46,6 +47,17 @@ const DOC = docFixture({
 const ARCHIVED = docFixture({
   frontmatter: { ...DOC.frontmatter, status: "archived" },
 });
+
+/**
+ * A lock, as `doc/fieldLock.ts` hands one over. These cases are about what a
+ * writer does with an answer, so they pass the answer rather than build a
+ * registry to produce it — `fieldLock.test.ts` owns which document gets which.
+ */
+const DERIVED: FieldLock = { kind: "derived", reason: "derived from this document’s own content" };
+const ARCHIVED_LOCKS: FieldLocks = {
+  status: { kind: "archived", reason: "archived" },
+  due: { kind: "archived", reason: "archived" },
+};
 
 interface Mounted {
   readonly wire: ReaderTransport;
@@ -201,6 +213,63 @@ describe("changedFields", () => {
           due: "",
         }),
       ).toEqual({ title: "Renamed while archived" });
+    });
+  });
+
+  /**
+   * **One gate over `DERIVED_FIELDS`, not one parameter per field** (PR #55
+   * re-review, finding 1).
+   *
+   * The window these guard is the one no control-side check can see: a value set
+   * while the registry had not loaded yet, carried to the wire by a debounce, an
+   * unmount flush or `pagehide` after the lock engaged. `due` shipped with a
+   * `dueLocked` boolean for exactly this and `status` — which has the same race
+   * and a `400` at the end of it — had nothing.
+   */
+  describe("a locked field never reaches the wire", () => {
+    const draft = {
+      title: "Mortgage options",
+      tags: "finance",
+      status: "resolved" as const,
+      due: "2030-01-01",
+    };
+
+    it("carries both fields when nothing is locked", () => {
+      expect(changedFields(DOC, draft)).toEqual({ status: "resolved", due: "2030-01-01" });
+    });
+
+    it("drops a status picked before the lock engaged", () => {
+      expect(changedFields(DOC, draft, { status: DERIVED, due: null })).toEqual({
+        due: "2030-01-01",
+      });
+    });
+
+    it("drops a date typed before the lock engaged", () => {
+      expect(changedFields(DOC, draft, { status: null, due: DERIVED })).toEqual({
+        status: "resolved",
+      });
+    });
+
+    it("guards every derived field from the one list, so a third is guarded too", () => {
+      // The property, not the pair: whatever `DERIVED_FIELDS` names is filtered.
+      // A field added there and forgotten in the filter would fail here.
+      for (const field of DERIVED_FIELDS) {
+        const locks = { ...NO_FIELD_LOCKS, [field]: DERIVED };
+        expect(Object.keys(changedFields(DOC, draft, locks)), field).not.toContain(field);
+      }
+      expect(changedFields(DOC, draft, { status: DERIVED, due: DERIVED })).toEqual({});
+    });
+
+    it("leaves the authored fields alone whatever is locked", () => {
+      expect(
+        changedFields(DOC, { ...draft, title: "Renamed", tags: "finance, tax" }, ARCHIVED_LOCKS),
+      ).toEqual({ title: "Renamed", tags: ["finance", "tax"] });
+    });
+
+    it("drops an archived lock's field too — the gate reads the lock, not its kind", () => {
+      // `dueLock` returns only `derived` locks today, but the gate must not care:
+      // what it acts on is that a lock exists, which is the whole question.
+      expect(changedFields(DOC, draft, ARCHIVED_LOCKS)).toEqual({});
     });
   });
 });
@@ -509,6 +578,57 @@ describe("what a failed save does", () => {
     mount();
     expect(screen.queryByRole("button", { name: /save failed/ })).toBeNull();
   });
+
+  /**
+   * **A refusal may not outlive its own request** (PR #55 re-review, finding 1).
+   *
+   * The wedge, measured against a real server before it was fixed: the reader
+   * paints before plugin discovery settles, the status `<select>` is live, the
+   * person picks `resolved`, SERVER-085 answers `400`, and the refused value
+   * stays in the local map. From then on **every** patch carries it and is
+   * refused too — a title typed afterwards could not be saved until the page was
+   * reloaded, and the registry had by then replaced the control with a statement,
+   * so nothing on screen could put the value back.
+   */
+  describe("a field the server says is nobody's to set", () => {
+    it("lets go of it, so the next save of another field lands", async () => {
+      // No registry: the window the wedge lives in, where the control is live
+      // because discovery has not answered yet.
+      const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 400 } });
+      mount({ wire });
+
+      fireEvent.change(status(), { target: { value: "resolved" } });
+      await waitFor(() => {
+        expect(chip().textContent).toContain("save failed");
+      });
+      expect(wire.of("PUT")[0]?.body).toEqual({ status: "resolved" });
+      // The control shows the document again: a value the server will not take
+      // is not an unsaved edit, and this form is not the place it survives.
+      expect(status().value).toBe("open");
+
+      fireEvent.change(title(), { target: { value: "Renamed afterwards" } });
+      fireEvent.keyDown(title(), { key: "Enter" });
+      await waitFor(() => {
+        expect(wire.of("PUT")).toHaveLength(2);
+      });
+      // The whole of the finding: the refused status is *not* riding along.
+      expect(wire.of("PUT")[1]?.body).toEqual({ title: "Renamed afterwards" });
+    });
+
+    it("keeps a value the refusal did not name", async () => {
+      // A `500`, a dropped connection, a refusal about some other field: the
+      // moment was wrong, not the value, and dropping it would be the silent
+      // discard this form refuses to make.
+      const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 500 } });
+      mount({ wire });
+
+      fireEvent.change(status(), { target: { value: "resolved" } });
+      await waitFor(() => {
+        expect(chip().textContent).toContain("save failed");
+      });
+      expect(status().value).toBe("resolved");
+    });
+  });
 });
 
 describe("archiving is the ⋯ menu's, not this form's", () => {
@@ -682,6 +802,36 @@ describe("a derived status", () => {
     mount({ doc: todo() });
     expect(screen.queryByRole("status")).toBeNull();
     expect(status().disabled).toBe(false);
+  });
+
+  it("states the document's value, never a value the local map is still holding", async () => {
+    // PR #55 re-review, finding 1, second half. The overlay holds what the person
+    // set until the server answers, and the lock can engage first — plugin
+    // discovery settling under an open reader. A statement rendering the overlay
+    // then prints a value the document does not have, under a note saying the
+    // value came from the document. Measured live: `resolved` stated over a file
+    // reading `open`.
+    const wire = readerTransport({
+      docs: [DOC],
+      // Never resolved: the write is genuinely outstanding for the whole case,
+      // which is what keeps the picked value in the local map.
+      holdWrites: new Promise<void>(() => undefined),
+    });
+    const { rerender } = mount({ wire, doc: todo() });
+    fireEvent.change(status(), { target: { value: "resolved" } });
+    await waitFor(() => {
+      expect(wire.of("PUT")).toHaveLength(1);
+    });
+    expect(status().value).toBe("resolved");
+
+    // Discovery settles under the open reader: the control becomes a statement.
+    install(fromBody);
+    rerender(todo());
+
+    // Scoped to the field rather than by role: the save chip is a `role=status`
+    // too, and it is mid-`saving…` for the whole of this case.
+    const statusCell = document.querySelector("[data-field='status']") as HTMLElement;
+    expect(statusCell.querySelector("output.fm-statement")?.textContent).toBe("open");
   });
 
   it("shows an archived todo as archived, and says that is not a reading of it", () => {
@@ -960,8 +1110,10 @@ describe("a derived due", () => {
     // path — the debounce, the exit flush and `pagehide` — passes through.
     const draft = { title: "Week of Jul 20", tags: "", status: "open" as const, due: "2030-01-01" };
     expect(changedFields(todo(), draft).due).toBe("2030-01-01");
-    expect(changedFields(todo(), draft, true).due).toBeUndefined();
-    expect(Object.keys(changedFields(todo(), draft, true))).not.toContain("due");
+    expect(changedFields(todo(), draft, { status: null, due: DERIVED }).due).toBeUndefined();
+    expect(Object.keys(changedFields(todo(), draft, { status: null, due: DERIVED }))).not.toContain(
+      "due",
+    );
   });
 
   it("leaves every other control live", () => {
@@ -981,12 +1133,41 @@ describe("a derived due", () => {
     expect(due().value).toBe("2026-08-04");
   });
 
-  it("hands an archived list's deadline back — archiving is a fact about status", () => {
+  it("states the document's deadline, never one the local map is still holding", async () => {
+    // {@link StatusStatement}'s case, one field over: the overlay holds a date
+    // typed before the lock engaged, and the statement must read the document.
+    const wire = readerTransport({
+      docs: [todo()],
+      holdWrites: new Promise<void>(() => undefined),
+    });
+    const { rerender } = mount({ wire, doc: todo() });
+    fireEvent.change(due(), { target: { value: "2030-01-01" } });
+    await waitFor(() => {
+      expect(wire.of("PUT")).toHaveLength(1);
+    });
+    expect(due().value).toBe("2030-01-01");
+
+    install(fromBody);
+    rerender(todo());
+
+    expect(dueStatement().textContent).toBe("2026-08-04");
+  });
+
+  it("states an archived list's deadline too — §12's sentence is categorical", () => {
+    // The decision of 2026-08-22 (PR #55 re-review, finding 2). A live control
+    // here would take a date that stands only until the document is unarchived,
+    // at which point the convergence discards it without a word — the very
+    // silent discard this field was locked against, one door along.
     install(fromBody);
     mount({ doc: todo({ status: "archived" }) });
 
-    expect(dueCell().querySelector("output.fm-statement")).toBeNull();
-    expect(due().disabled).toBe(false);
+    expect(dueCell().querySelector("input[type='date']")).toBeNull();
+    expect(dueStatement().textContent).toBe("2026-08-04");
+    // And the status control is still a control, because archiving is an act and
+    // it lives on another route. The two fields diverge in the kind of lock now,
+    // never in whether there is one.
+    expect(status().value).toBe("archived");
+    expect(status().disabled).toBe(true);
   });
 
   it("is an ordinary control when the plugin is gone (§15 M6)", () => {
