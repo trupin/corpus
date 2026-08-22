@@ -505,9 +505,9 @@ cheapest moment for that to happen.
 | SHARED-036 | A todo list says `open` after its last item is checked | done | P1 | SHARED-031 |
 | SHARED-030 | Frontmatter hides behind an edit mode the reader abolished | done | P1 | — |
 | SHARED-032 | Bulk actions are a mode, staged per row, the one edit/save left (SIGNED 2026-08-09, applied) | done | P1 | SHARED-030 |
-| UI-093 | Frontmatter controls are always live and save on change | todo | P1 | SHARED-030 |
-| PLUGINS-016 | A plugin doc type can derive its own status | todo | P1 | SHARED-036 |
-| SERVER-085 | The board, queries and the file all agree on a derived status | todo | P1 | SHARED-036, PLUGINS-016 |
+| UI-093 | Frontmatter controls are always live and save on change | done | P1 | SHARED-030 |
+| PLUGINS-016 | A plugin doc type can derive its own status | done | P1 | SHARED-036 |
+| SERVER-085 | The board, queries and the file all agree on a derived status | done | P1 | SHARED-036, PLUGINS-016 |
 | UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-016, SERVER-085, UI-093 |
 | PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | done | P1 | SHARED-036 |
 | UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
@@ -807,10 +807,10 @@ ones their own files carry.
 | --- | --- | --- | --- | --- |
 | SHARED-002 | Reconcile SPEC.md with adjudicated Phase 2 behavior (PR #9 findings 2–4) | done | P0 | — |
 | SHARED-011 | Structured filtering — arbitrary fields and glob matching (SIGNED 2026-08-04, applied at its phase kickoff) | todo | P1 | — |
-| SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | todo | P1 | UI-058 |
+| SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | done | P1 | UI-058 |
 | CONTRACT-029 | `Job.started` means two different instants | todo | P2 | — |
 | CLI-039 | A hung `git gc` leaves children the timeout does not kill | todo | P2 | — |
-| SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | todo | P2 | — |
+| SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | done | P2 | — |
 | SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
 
 ### Found in flight during Phase 33, deliberately not in v0.10.0 (2026-08-16)
@@ -1229,6 +1229,7 @@ left in a report.
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 | UI-144 | A deleted document's reveal names the wrong absence, and a ref is written in render (PR #54 re-review NITs) | todo | P3 | — |
+| UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | todo | P1 | SHARED-061 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
@@ -1319,6 +1320,14 @@ following the Phase 7b precedent. The scope, in dependency order:
 - **UI-094** — right-clicking a document offers Resolve _(independent)_
 - **SERVER-100** — a document with no `title:` wakes the agent on the save that adds one _(nearby debt)_
 - **SERVER-054** — the board row's pending-agent dot uses a replaced heuristic _(nearby debt)_
+
+**Filed mid-phase, 2026-08-21:** **UI-145** — the context menu's `max-height`
+never applies, because kit's `.ac-menu { max-height: 200px }` ties on
+specificity and loads last. The row menu already scrolls at five items with
+520px of viewport unused. UI-142 listed this as latent after reading the
+stylesheet rather than the cascade, so a signed rule has a live breach on the
+surface a person reaches by right-clicking anything. P1, and it generalises:
+any `apps/ui` bound that ties with a `packages/kit` bound loses silently.
 
 **Riskiest: SERVER-085.** Projection, write-back and doctor convergence in one
 issue, with PLUGINS-018 and UI-092 behind it. If it slips, UI-092 and UI-094 are
