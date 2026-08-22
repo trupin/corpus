@@ -60,10 +60,9 @@ describe("NewListPicker", () => {
   });
 
   /**
-   * The picker offered a fourth source until Phase 41: whatever column types the
-   * plugin registry had discovered. There is no registry (SHARED-064), so the
-   * menu is the workspace's folders, the presets and the current search, and
-   * nothing in it comes from anywhere but the corpus.
+   * Three sources and no fourth: the workspace's folders, the presets and the
+   * current search. Nothing in this menu is discovered at runtime, so what a
+   * person can start a list from is what the corpus holds.
    */
   it("offers folders, presets and the search — and nothing from anywhere else", async () => {
     const { container } = renderPicker("mortgage");

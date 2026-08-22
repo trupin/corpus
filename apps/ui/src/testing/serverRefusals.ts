@@ -44,41 +44,36 @@ export function unknownRecipientBody(recipient: string): UnknownRecipientError {
 }
 
 /**
- * `400 bad_request` — **this field is derived, and a save may not set it**
- * (SPEC.md §12, `assertDerivedFieldsNotSet` in `apps/server/src/docs/update.ts`).
+ * `400 bad_request` — **an archived document is not brought back by a `PUT`**
+ * (SERVER-039, `assertNotUnarchivingByPut` in `apps/server/src/docs/update.ts`).
  *
- * The refusal a `PUT /api/docs/{id}` gets when it carries a `status` or a `due`
- * the document's type reads off the document itself. A double needs it because
- * the client acts on it: the frontmatter form drops a named field out of its
- * local map, so a refusal cannot ride on every later patch and wedge the form
- * (UI-092, PR #55 re-review). What is load-bearing is the **shape** — `code`,
- * and one `issues` entry per field, pathed `body.<field>` — because that is what
- * the form reads. The prose is transcribed anyway, for {@link
+ * The one refusal `PUT /api/docs/{id}` still answers that names a field, and
+ * therefore the one a double needs: the frontmatter form drops the named field
+ * out of its local map so the refusal cannot ride on every later patch and wedge
+ * the form (UI-092, PR #55 re-review). What is load-bearing is the **shape** —
+ * `code`, and an `issues` entry pathed `body.status` — because that is what the
+ * form reads. The prose is transcribed anyway, for {@link
  * unknownRecipientBody}'s reason.
  *
  * **It has no parity test, and that is a known gap rather than an oversight.**
- * The server builds this body inline inside `assertDerivedFieldsNotSet`, which
+ * The server builds this body inline inside `assertNotUnarchivingByPut`, which
  * is private to `docs/update.ts`; `scripts/stub-server-parity.test.ts` can only
  * run a copy against an *exported* factory. Exporting it belongs to a server
- * issue, not to a UI one — until then this was verified by reading a real
- * refusal off a real server (UI-092's log, 2026-08-22).
+ * issue, not to a UI one.
  */
-export function derivedFieldRefusalBody(
-  fields: readonly string[],
-  subject: { readonly id: string; readonly type: string },
-): ValidationError {
+export function archivedStatusRefusalBody(id: string, next: string): ValidationError {
   return {
     code: "bad_request",
-    message:
-      `\`${fields[0] ?? "status"}\` is derived from the document itself and is not a value ` +
-      "a save may set (SPEC.md §12)",
-    issues: fields.map((field) => ({
-      path: `body.${field}`,
-      message:
-        `${subject.id} is a \`${subject.type}\` document, whose \`${field}\` is read from ` +
-        "its own content rather than from its frontmatter, so the value you sent would be " +
-        "replaced by the derived one before it reached disk. Change what the field is read " +
-        "from — for a todo list, its items — and the field follows.",
-    })),
+    message: "request failed validation",
+    issues: [
+      {
+        path: "body.status",
+        message:
+          `${id} is archived; \`status: ${next}\` would set the frontmatter without ` +
+          `bringing the document back. Use \`POST /api/docs/${id}/unarchive\` — it restores the ` +
+          "status and, for a skill, moves its folder back out of `.claude/skills-archived/` and " +
+          "frees the name.",
+      },
+    ],
   };
 }

@@ -304,9 +304,8 @@ describe("which documents get an editor", () => {
   });
 
   it("is decided by the type and by nothing else", () => {
-    // There is one gate. A registry could claim a type ahead of this until Phase
-    // 41 (SHARED-064), and `DocView` had to ask it first; nothing asks anything
-    // now, so this answer is the answer.
+    // There is one gate: nothing claims a type ahead of this predicate, so its
+    // answer is the answer, and no second gate can drift out of step with it.
     expect(editorHandlesType("todo")).toBe(editorHandlesType("note"));
   });
 });

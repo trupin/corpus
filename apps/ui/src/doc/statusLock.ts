@@ -9,14 +9,12 @@
  * (SERVER-039). A surface that offered the act anyway would be promising a
  * refusal.
  *
- * **This file was `doc/fieldLock.ts` and answered for two fields.** `due` had a
- * lock too, and `status` had a second reason — a plugin could declare either
- * field *derived* from the document's own content, in which case it was nobody's
- * to set. The plugin system is gone (SHARED-064), no type derives anything, and
- * both went with it: `due` is an ordinary date on every document, and `status`
- * is the person's everywhere except across the archive door. What survives is
- * the one rule that never depended on a plugin, kept at the altitude it was
- * written at.
+ * **One field and one reason, and the name says so.** Nothing computes a
+ * document's `status` or its `due` from its content: `due` is an ordinary date
+ * on every document, and `status` is the person's everywhere except across the
+ * archive door. The predicate is kept at the altitude it was written at anyway,
+ * because the archive boundary is a *server* rule and this file's job is to keep
+ * every surface's answer to it identical.
  *
  * The question has two askers and they do different things with the answer,
  * which is why it is asked here and not twice:

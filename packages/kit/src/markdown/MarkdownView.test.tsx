@@ -25,7 +25,6 @@ function docFixture(id: string, title: string): Doc {
       pinned: false,
       order: null,
       query: null,
-      column: null,
       extra: {},
     },
     body: "",

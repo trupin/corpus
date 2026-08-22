@@ -11,12 +11,10 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * parse, the same reader and the same flash as any open that names a place
  * inside a document.
  *
- * There was a producer half here until Phase 41, clicking a real item in the
- * todos plugin's column and letting the plugin build the payload (PLUGINS-010).
- * The plugin system is gone (SHARED-064) and nothing shipped produces a
- * `kind: "item"` reveal today — a thread reveal, which the comments list does
- * produce, is covered by `comments-tab.spec.ts`. So what is pinned here is the
- * **reader's** half: an instruction the reader must honour whoever writes it.
+ * **Nothing shipped produces a `kind: "item"` reveal**, so there is no producer
+ * half to drive — a thread reveal, which the comments list does produce, is
+ * covered by `comments-tab.spec.ts`. What is pinned here is the **reader's**
+ * half: an instruction the reader must honour whoever writes it.
  *
  * Per sprint-016 Adjudication 19 this is **half** the evidence:
  * `playwright.config.ts` starts no workspace server, so the disk, git and
@@ -125,7 +123,7 @@ async function openWithReveal(page: Page, reveal: Reveal | null): Promise<void> 
  * The gap between the flash box and the rendered line at `at`, measured in the
  * **same frame**, once that line has stopped moving.
  *
- * Both halves matter, and PLUGINS-010's drill is why. A cold open — which is
+ * Both halves matter, and a real-app drill (PLUGINS-010) is why. A cold open — which is
  * every open from a column, since the reader replaces the list — fires the
  * reveal against a layout that is still settling: on the next frame the chips
  * row un-wraps and the editor re-flows, moving the body up by ~50 px. Measuring
@@ -212,8 +210,8 @@ test.describe("an open that names an item", () => {
   });
 
   /**
-   * The defect PLUGINS-010's drill found, on the seeded path (it reproduces
-   * with no plugin anywhere: `flashY: 450` against a target line at `527`).
+   * The defect a real-app drill found (PLUGINS-010), on the seeded path, where
+   * it reproduces exactly: `flashY: 450` against a target line at `527`.
    *
    * The assertion above measures at draw time, and at draw time the box was
    * always right — that is what made this invisible to the suite and obvious to

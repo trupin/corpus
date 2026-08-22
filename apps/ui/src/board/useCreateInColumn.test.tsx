@@ -36,16 +36,15 @@ describe("creationRequest", () => {
   });
 
   /**
-   * Every column creates a `note`, whatever its query says. A column could name
-   * its own document type until Phase 41 (a plugin `column:` reference), and
-   * nothing can now: `＋` is zero-form creation, and the type is retyped in the
-   * document's own frontmatter if it should be something else.
+   * Every column creates a `note`, whatever its query says. No column names a
+   * document type of its own: `＋` is zero-form creation, and the type is
+   * retyped in the document's own frontmatter if it should be something else.
    */
   it("creates a note from every column, whatever the column queries for", () => {
-    expect(creationRequest({ folder: "todos" }, "Untitled")).toEqual({
+    expect(creationRequest({ folder: "chores" }, "Untitled")).toEqual({
       type: "note",
       title: "Untitled",
-      folder: "todos",
+      folder: "chores",
     });
   });
 });

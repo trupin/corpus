@@ -45,7 +45,6 @@ export function docRowFixture(overrides: Partial<DocRow> = {}): DocRow {
     pinned: false,
     order: null,
     query: null,
-    column: null,
     extra: {},
     ...overrides,
   };

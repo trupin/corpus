@@ -325,11 +325,10 @@ describe("Resolve is offered wherever a status is settable", () => {
   });
 
   /**
-   * The menu withheld Resolve from a type whose status a plugin **derived** from
-   * the document's content — `todo` was the only one. The plugin system is gone
-   * (SHARED-064), so every document's status is its own to set again, whatever
-   * its `type:` says, and a workspace's existing `type: todo` documents get the
-   * full action set like any other (SPEC.md §12's M6).
+   * Nothing computes a document's status from its content, so every document's
+   * status is its own to set whatever its `type:` says — and a workspace's
+   * `type: todo` documents, an unrecognised type real workspaces already hold,
+   * get the full action set like any other (SPEC.md §12's M6).
    */
   it("offers it on a type this build does not recognise, exactly as on a note", () => {
     expect(actionsOf(TODO).ids()).toContain("resolve");

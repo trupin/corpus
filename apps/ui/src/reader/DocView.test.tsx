@@ -23,18 +23,17 @@ import { resetEscapeLayers } from "./useEscapeStack";
  * calling the gate, because the whole finding was that the gate and the call
  * site disagreed about what "the core does not know this type" should mean.
  *
- * There was a third outcome until Phase 41: a plugin could register a `View` for
- * its type and replace the body wholesale, and the reader held its whole body
- * back until discovery had settled so a late panel could not move it. Both are
- * gone with the plugin system (SHARED-064), and **the rule that is left is the
- * one SPEC.md §12's M6 protects**: a document whose `type:` this build does not
- * recognise opens in the ordinary document view.
+ * **There is no third outcome**, and the rule that leaves is the one SPEC.md
+ * §12's M6 protects: a document whose `type:` this build does not recognise
+ * opens in the ordinary document view. Nothing may claim a type first, because
+ * the set of types on the wire is not the set any one build knows — an older
+ * workspace's documents, a hand-written file, or a server newer than this
+ * client (§5).
  */
 
 /**
  * The M6 document: a `type:` nothing in this build knows, holding a checkbox.
- * `todo` on purpose — it is the type real workspaces already hold, and the one
- * whose plugin was deleted in Phase 41.
+ * `todo` on purpose — it is the unrecognised type real workspaces already hold.
  */
 const UNKNOWN_DOC = docFixture({
   frontmatter: { id: "doc_x", type: "todo", title: "Inbox chores" },

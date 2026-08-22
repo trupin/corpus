@@ -288,8 +288,9 @@ const VIEW_DOC = docFixture({
 /**
  * And its opposite, which is the promise SPEC.md §12's M6 makes: a document
  * whose `type:` this build does not recognise gets the **editor**, so it places
- * its threads at their anchors like any note. It was the third case here until
- * Phase 41, when a plugin could claim such a type with a `View` of its own.
+ * its threads at their anchors like any note. Not a hypothetical case: the set
+ * of types on the wire is not the set any one build knows — an older workspace's
+ * documents, a hand-written file, or a server newer than this client (§5).
  */
 const UNKNOWN_TYPE_DOC = docFixture({
   frontmatter: { id: "doc_fx", type: "todo", title: "Inbox chores" },

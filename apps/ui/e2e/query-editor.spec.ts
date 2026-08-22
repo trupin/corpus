@@ -115,7 +115,6 @@ async function seedVocabulary(page: Page): Promise<void> {
             pinned: false,
             order: null,
             query: null,
-            column: null,
             extra: {},
           })),
           page: { total: 2, limit: 200, offset: 0 },

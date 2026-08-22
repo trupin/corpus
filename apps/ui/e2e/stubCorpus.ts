@@ -202,7 +202,6 @@ export interface StubRow {
   readonly order?: number | null;
   /** A view document's query — the contract's `ViewQuery`, not free-form JSON. */
   readonly query?: ViewQuery | null;
-  readonly column?: string | null;
   readonly parent?: string | null;
   readonly extra?: Readonly<Record<string, unknown>>;
   /** A staleness tier, or `null` for fresh — SPEC.md §5's ramp, never a string. */
@@ -287,7 +286,6 @@ interface StoredDoc {
   pinned: boolean;
   order: number | null;
   query: ViewQuery | null;
-  column: string | null;
   parent: string | null;
   extra: Record<string, unknown>;
   stale: StaleTier | null;
@@ -652,7 +650,6 @@ function seeded(row: StubRow): StoredDoc {
     pinned: row.pinned ?? false,
     order: row.order ?? null,
     query: row.query ?? null,
-    column: row.column ?? null,
     parent: row.parent ?? null,
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
@@ -1054,7 +1051,6 @@ export async function stubCorpus(
       pinned: doc.pinned,
       order: doc.order,
       query: doc.query,
-      column: doc.column,
       extra: doc.extra,
     };
   };
@@ -1144,7 +1140,6 @@ export async function stubCorpus(
       pinned: doc.pinned,
       order: doc.order,
       query: doc.query,
-      column: doc.column,
       extra: doc.extra,
     },
   });

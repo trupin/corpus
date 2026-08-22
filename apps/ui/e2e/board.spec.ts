@@ -71,9 +71,8 @@ test.describe("the board", () => {
     // Presets are the library; folders come from `GET /api/tree`, which has no
     // server to answer it here, so the menu correctly offers none.
     await expect(menu.getByRole("menuitem", { name: /Due this week/ })).toBeVisible();
-    // Folders, presets and the search — and nothing from anywhere else. There
-    // was a fourth source until Phase 41, whatever column types the plugin
-    // registry had discovered (SHARED-064).
+    // Folders, presets and the search — three sources and no fourth. Nothing
+    // in this menu is discovered at runtime.
     await expect(menu.locator("[data-newlist]")).toHaveCount(5);
     // "From current search" needs a search query, and UI-009 owns that.
     await expect(menu.locator("[data-newlist='search:current']")).toHaveCount(0);
@@ -177,6 +176,69 @@ test.describe("the board", () => {
     await expect(toast).toContainText("Pin failed", { timeout: 15_000 });
     // Nothing appeared on the board: the column exists only once the document does.
     await expect(page.locator(".col[data-col]")).toHaveCount(0);
+    expect(uncaught).toEqual([]);
+  });
+
+  /**
+   * **A view document a workspace already holds still opens, still pins and
+   * still renders its query** (SHARED-066), whatever extra keys its frontmatter
+   * carries.
+   *
+   * `column: "<something>/<something>"` is the concrete case, because a
+   * workspace's older view documents carry one and the key names nothing this
+   * build defines. SPEC.md §9.1 says what happens to any key the core does not
+   * define: it is extra frontmatter, preserved verbatim and never interpreted.
+   * So the column has to be indistinguishable from one whose file never carried
+   * the key — not a missing-renderer card, not a dropped column, and above all
+   * not a board that fails to paint.
+   *
+   * Asserted in a real browser against the shipped board, because the failure
+   * this guards against is a person's board coming up empty after an upgrade,
+   * and that is a rendering fact rather than a parsing one.
+   */
+  test("renders a view whose frontmatter carries a key this build does not define", async ({
+    page,
+  }) => {
+    const uncaught: string[] = [];
+    page.on("pageerror", (error) => uncaught.push(error.message));
+
+    const legacy: StubRow = {
+      id: "doc_view_legacy",
+      type: "view",
+      title: "Chores",
+      path: "data/docs/views/chores.md",
+      pinned: true,
+      order: 1,
+      query: { type: "todo" },
+      extra: { column: "todos/todos" },
+    };
+    const chore: StubRow = {
+      id: "doc_chore",
+      type: "todo",
+      title: "Call the plumber",
+      path: "data/docs/inbox/call-the-plumber.md",
+      body: "- [ ] Call the plumber\n",
+    };
+    await stubCorpus(page, [legacy, chore]);
+    await page.goto("/");
+
+    // It pinned: the board drew a column, and it is this view document's.
+    const column = page.locator('.col[data-col="doc_view_legacy"]');
+    await expect(column).toBeVisible();
+    // As an ordinary view, with its stored query shown as the chips any column
+    // shows — no card standing in for a renderer that was never found.
+    await expect(column.locator(".col-kind")).toHaveText("view");
+    await expect(column.locator(".col-card-error")).toHaveCount(0);
+    await expect(column.locator(".chips > .chip").first()).toHaveText("type: todo");
+    // And the query ran: the row it selects is in the column.
+    await expect(column.locator('.row[data-row-doc="doc_chore"]')).toBeVisible();
+    await expect(column.locator('.row[data-row-doc="doc_chore"] .row-title')).toHaveText(
+      "Call the plumber",
+    );
+    // It opens: clicking the row gives the ordinary reader.
+    await column.locator('.row[data-row-doc="doc_chore"]').click();
+    await expect(column.locator(".reader .ProseMirror")).toBeVisible();
+
     expect(uncaught).toEqual([]);
   });
 

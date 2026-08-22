@@ -22,11 +22,12 @@ import { useAgentActivity } from "./useRowSignals.js";
  * anchored-thread list — and it is why {@link RowProps} is exported: a host that
  * wraps a row, or builds its props before it has one, needs the type.
  *
- * **There is exactly one renderer, and no seam for a second.** A `ListItem`
- * delegate prop existed here for the plugin system, so a plugin could replace
- * the row wholesale for its own document type. The plugin system is gone
- * (SHARED-064) and the delegate went with it: a row is one layout, and every
- * list in the product draws it.
+ * **There is exactly one renderer, and no seam for a second.** No delegate prop
+ * swaps the layout out per document type, which is what makes the row safe
+ * against a `type:` it has never seen: the set of types on the wire is not the
+ * set any one build knows — an older workspace's documents, a hand-written file,
+ * or a server newer than this client can each name one (SPEC.md §5) — and a row
+ * that had to be claimed before it could be drawn would render those as nothing.
  *
  * Everything the row *derives* is derived from what the server already computed:
  * the staleness tier, the attention reasons, the unread and awaiting-agent

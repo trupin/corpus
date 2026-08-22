@@ -55,11 +55,9 @@ import type { ReaderDoc } from "./useReaderDoc";
  *    for a seventh, and they get the ordinary document view — editor, working
  *    checkboxes, comments, search — rather than a placeholder or a refusal.
  *
- * There was a third outcome until Phase 41: a plugin could register a `View` for
- * its own type and replace this whole surface. The plugin system is gone
- * (SHARED-064) and with it the branch, the discovery gate that held the body
- * back while it settled, and the `data-plugin-surface` stamp that told the menus
- * to keep off. What is left is one rule with no exception to it.
+ * **There is no third outcome, and no seam for one.** Nothing registers a
+ * surface of its own for a document type, so those two branches are the whole of
+ * what a document can open as, and the rule above has no exception.
  *
  * `MarkdownView` is left with exactly one document: a `view`, whose content is
  * its stored query rather than its prose.
@@ -233,9 +231,9 @@ export function DocView({
    *
    * A thread is its own conversation and hosts none. Everything else does, for
    * every type `editorHandlesType` answers for — which is every type but `view`,
-   * including one this build has never heard of. There is no second gate: a
-   * registry used to be able to claim a type ahead of the editor, and nothing
-   * can now.
+   * including one this build has never heard of. There is no second gate:
+   * nothing claims a type ahead of that predicate, so its answer is the answer
+   * here too.
    */
   const anchorsHost =
     doc !== undefined && !reader.isThread && editorHandlesType(doc.frontmatter.type);
@@ -353,15 +351,13 @@ export function DocView({
   /**
    * `Loading…` until the document itself has arrived, and nothing else gates it.
    *
-   * It used to also wait on plugin discovery (UI-073), because a plugin could
-   * register a `DocPanel` that renders *above* the body and lands after the
-   * editor has painted, dropping everything below it by its own height —
-   * measured at **77.86px** (306.69 → 384.55). That is gone with the plugin
-   * system (SHARED-064), and the gate with it.
-   *
-   * **The hazard it was guarding against is not gone, and belongs to whatever is
-   * added above the body next.** This is the surface where text is selected in
-   * order to comment on it, so a body that moves between mousedown and mouseup
+   * **One gate is the whole of it, and the hazard that bought the second one
+   * belongs to whatever is added above the body next** (UI-073). A panel that
+   * renders above the body and lands *after* the editor has painted drops
+   * everything below it by its own height — the last such panel this reader
+   * carried measured **77.86px** (306.69 → 384.55). This is the surface where
+   * text is selected in order to comment on it, so a body that moves between
+   * mousedown and mouseup
    * yields a selection over words nobody chose — silently, because the resulting
    * selection is perfectly valid. Driven deterministically, a drag aimed at one
    * list item came back holding a phrase from the item above it, and in UI-071 a
@@ -492,8 +488,8 @@ export function DocView({
            * markdown file behind them.
            *
            * **A type this build does not recognise falls through to the editor**,
-           * not to a static render (UI-014, and SPEC.md §12's M6 restated for a
-           * product with no plugins). A workspace holds whatever its owner and its
+           * not to a static render (UI-014, SPEC.md §12's M6). A workspace holds
+           * whatever its owner and its
            * agent have written, `type:` is an open string on the wire (§5), and the
            * promise is that such a document opens, renders its markdown with
            * working checkboxes, is searchable and is commentable — the same

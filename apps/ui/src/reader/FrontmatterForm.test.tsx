@@ -123,7 +123,7 @@ describe("isDeliberate", () => {
 
 /*
  * `statusLock` is a one-line predicate in `doc/statusLock.ts` and answers about
- * one status (UI-094, narrowed in Phase 41). What is asserted here is what this
+ * one status, `archived` (UI-094). What is asserted here is what this
  * form does with the answer — see the archived cases below, which render the
  * control and read its hint.
  */
@@ -205,14 +205,10 @@ describe("changedFields", () => {
    * Every field a document has is the person's, and `changedFields` sends what
    * changed.
    *
-   * `changedFields` took a third argument until Phase 41 — a map of locks — and
-   * stripped every locked field from the body on its way out. The window it
-   * guarded was one no control-side check could see: a plugin could declare
-   * `status` or `due` *derived* after the person had typed into the live
-   * control, and a debounce, an unmount flush or `pagehide` then carried the
-   * value to a wire that refused it. Nothing declares anything now
-   * (SHARED-064), so the only lock left is the archive door — read straight off
-   * the document above, in the guard this suite already pins.
+   * It takes no map of locks and strips nothing on the way out. The only lock
+   * is the archive door, it is read straight off the document `changedFields`
+   * already holds, and the guard above is where this suite pins it — so a
+   * second, later strip could only ever disagree with the first.
    */
   describe("a document whose type nothing recognises", () => {
     const draft = {
@@ -545,18 +541,16 @@ describe("what a failed save does", () => {
   /**
    * **A refusal may not outlive its own request** (PR #55 re-review, finding 1).
    *
-   * The wedge, measured against a real server before it was fixed: the reader
-   * paints before plugin discovery settles, the status `<select>` is live, the
-   * person picks `resolved`, SERVER-085 answers `400`, and the refused value
-   * stays in the local map. From then on **every** patch carries it and is
-   * refused too — a title typed afterwards could not be saved until the page was
-   * reloaded, and the registry had by then replaced the control with a statement,
-   * so nothing on screen could put the value back.
+   * The wedge, measured against a real server before it was fixed: the status
+   * `<select>` is live, the person picks `resolved`, the server answers `400`
+   * naming `body.status`, and the refused value stays in the local map. From
+   * then on **every** patch carries it and is refused too — a title typed
+   * afterwards could not be saved until the page was reloaded.
    */
   describe("a field the server says is nobody's to set", () => {
     it("lets go of it, so the next save of another field lands", async () => {
-      // No registry: the window the wedge lives in, where the control is live
-      // because discovery has not answered yet.
+      // The projection reports the document archived, which is the one refusal
+      // a live control cannot see coming (SERVER-039).
       const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 400 } });
       mount({ wire });
 
@@ -767,24 +761,17 @@ describe("the document's edit session", () => {
  * **Every field on a document whose type nothing recognises is that person's**
  * — SPEC.md §12's M6 at the frontmatter form.
  *
- * There were two long suites here until Phase 41, `a derived status` and `a
- * derived due`. A plugin could declare either field computed from the
- * document's own content, and the form then replaced the control with a
- * statement of the value: `<output>` in place of the `<select>` and the date
- * picker, a note saying where the value came from, and a gate on every write
- * path so a value typed before the declaration landed could never reach the
- * wire. `todo` was the only type that did it, the plugin system is gone
- * (SHARED-064), and both fields are ordinary controls on every document again.
- *
- * What is pinned here is that removal seen from the outside: a `type: todo`
- * document — the one real workspaces already hold — gets the same live form a
- * note gets, and its edits reach the wire.
+ * Nothing computes a `status` or a `due` from a document's content, so no
+ * control is ever replaced by a statement of a value and no write path is gated
+ * on one. What is pinned here is that seen from the outside: a `type: todo`
+ * document — an unrecognised type real workspaces already hold — gets the same
+ * live form a note gets, and its edits reach the wire.
  */
 describe("a document whose type nothing recognises", () => {
   const todo = (overrides: { status?: DocStatus } = {}): Doc =>
     docFixture({
       body: "- [ ] call the plumber (due: 2026-08-04)\n",
-      path: "data/docs/todos/week.md",
+      path: "data/docs/inbox/week.md",
       frontmatter: {
         id: "doc_m",
         type: "todo",
@@ -827,9 +814,9 @@ describe("a document whose type nothing recognises", () => {
   });
 
   /**
-   * The one lock that survived its plugin cause: archiving is a status set on
-   * another route (UI-020, SERVER-039), so the control is shown and switched
-   * off with the way out named. It applies by **status**, never by type.
+   * The one lock there is: archiving is a status set on another route (UI-020,
+   * SERVER-039), so the control is shown and switched off with the way out
+   * named. It applies by **status**, never by type.
    */
   it("locks its status only for being archived, and says where the act lives", () => {
     mount({ doc: todo({ status: "archived" }) });

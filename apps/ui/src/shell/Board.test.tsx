@@ -443,11 +443,10 @@ describe("Board", () => {
   });
 
   /**
-   * A `column:` reference used to name a plugin's own column renderer, and a
-   * view carrying one got that renderer or a "plugin missing" card in its place.
-   * The plugin system is gone (SHARED-064): a view document is a query, whatever
-   * else its frontmatter happens to say, so an old one still renders as the
-   * ordinary column it always was underneath.
+   * `column:` is not a key the core defines, so it is extra frontmatter the
+   * server preserves and nothing interprets (SPEC.md §9.1). A view document is a
+   * query whatever else its frontmatter happens to say, so a workspace's older
+   * view still opens, still pins and still renders its query (SHARED-066).
    */
   it("renders a view document carrying a stale `column:` as an ordinary column", async () => {
     const wire = boardTransport({
@@ -456,7 +455,7 @@ describe("Board", () => {
           id: "doc_todos",
           title: "Todos",
           order: 10,
-          column: "todos/board",
+          extra: { column: "todos/board" },
           query: { type: "todo" },
         }),
       ],

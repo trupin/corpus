@@ -92,10 +92,10 @@ describe("keepsNativeMenu", () => {
 });
 
 /**
- * UI-036, restated for a product with no plugin surfaces (SHARED-064). The rule
- * that survives is the one that was never about plugins: what menu a right-click
- * gets is decided by what is under the pointer, never by the document's `type`.
- * A row of a type this build does not recognise keeps the core menu.
+ * UI-036. What menu a right-click gets is decided by what is under the pointer,
+ * never by the document's `type` — so a row of a type this build does not
+ * recognise keeps the core menu, which matters because the set of types on the
+ * wire is not the set any one build knows (SPEC.md §5).
  */
 describe("a row of an unrecognised type", () => {
   it("gets Corpus's own menu, exactly as a note row does", () => {

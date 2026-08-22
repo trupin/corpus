@@ -478,11 +478,11 @@ describe("the reason line", () => {
 
   it("keeps an unknown reason code on a neutral chip", () => {
     const { container } = renderRow({
-      row: docRowFixture({ attention: ["todos/overdue"] as never }),
+      row: docRowFixture({ attention: ["x/overdue"] as never }),
     });
     const chip = container.querySelector(".reason .r-chip");
     expect(chip?.className).toBe("r-chip");
-    expect(chip?.textContent).toBe("todos/overdue");
+    expect(chip?.textContent).toBe("x/overdue");
   });
 
   it("renders no reason line at all when the row has no reasons", () => {

@@ -59,16 +59,20 @@ describe("toBoardColumn", () => {
   });
 
   /**
-   * A `column:` reference used to name a plugin's own column renderer, and a
-   * view carrying one became a third kind of column. The plugin system is gone
-   * (SHARED-064) and the field is not this file's business any more: whatever a
-   * hand-edited view document says there, it is still a query the board runs.
+   * `column:` is not a key the core defines, so it is extra frontmatter — the
+   * server preserves it verbatim and never interprets it (SPEC.md §9.1), and
+   * neither does this file. A workspace whose view documents still carry one
+   * keeps them, and they are still queries the board runs (SHARED-066).
    */
   it("ignores a `column:` reference, which no longer names anything", () => {
-    const column = toBoardColumn(view({ column: "todos/board", query: { type: "todo" } }));
+    const column = toBoardColumn(
+      view({ extra: { column: "todos/board" }, query: { type: "todo" } }),
+    );
     expect(column.kind).toBe("view");
     expect(column.filter).toEqual({ type: "todo" });
     expect(column.error).toBeNull();
+    // And it does not disturb the one key this file *does* read out of `extra`.
+    expect(column.width).toBeNull();
   });
 
   it("labels the sort the prototype's way, and defaults to the server's sort", () => {

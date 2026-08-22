@@ -58,10 +58,10 @@ const NOTE = { id: "doc_note", title: "Mortgage options", body: "6.4% this week.
 const OTHER = { id: "doc_other", title: "Rates" };
 
 /**
- * UI-036's subject, restated for Phase 41: a document whose `type:` this build
- * does not define. `todo` is the real case — workspaces already hold them, and
- * the plugin that used to claim the type is gone (SHARED-064). It is a core
- * document in a core column, and the row menu is core's.
+ * UI-036's subject: a document whose `type:` this build does not define. `todo`
+ * is the real case, because workspaces already hold them — the set of types on
+ * the wire is not the set any one build knows (SPEC.md §5). It is an ordinary
+ * document in an ordinary column, and it gets the ordinary row menu.
  */
 const TODO = {
   id: "doc_todo",
@@ -298,15 +298,14 @@ test.describe("the context menu", () => {
 
   /**
    * UI-036, and the regression it pins (sprint-023 TEST-1073, TEST-1078) —
-   * restated for a product with no plugins, which is SPEC.md §12's M6 at the
-   * row menu.
+   * SPEC.md §12's M6 at the row menu.
    *
-   * Core suppressed its own row menu for every document type a plugin painted,
-   * so a `todo` document — the shipped case — had **no** menu at all: no open,
-   * no open in focus, no archive, no delete, no staleness, from either input
-   * path. Nothing paints anything now (SHARED-064), and a document typed for
-   * something this build has never heard of is a core subject in a core
-   * surface: the menu's actions are built from the `DocRow` core already holds.
+   * **No document type suppresses this menu.** The failure it guards against is
+   * a row with no menu at all — no open, no open in focus, no archive, no
+   * delete, no staleness, from either input path — which is what a build that
+   * decided menus by `type:` would give a `todo` document. The actions are built
+   * from the `DocRow` the client already holds, so an unrecognised type changes
+   * nothing.
    */
   test("gives a row of an unrecognised type core's whole menu", async ({ page }) => {
     const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE, TODO]);
@@ -323,9 +322,8 @@ test.describe("the context menu", () => {
       .getByRole("menuitem")
       .evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset["act"]));
 
-    // Item for item the same set the note beside it gets — `resolve` included,
-    // which a plugin's `deriveStatus` used to take away (SPEC.md §10: every
-    // document's status is its own to set).
+    // Item for item the same set the note beside it gets — `resolve` included
+    // (SPEC.md §10: every document's status is its own to set).
     await page.keyboard.press("Escape");
     await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
     const noteActs = await page
@@ -692,11 +690,9 @@ test.describe("Resolve on any document", () => {
   });
 
   /**
-   * The menu withheld Resolve from a type whose status a plugin **derived** from
-   * the document's content, and `todo` was the only such type. The plugin system
-   * is gone (SHARED-064), so it is offered on every document again — which is
-   * what SPEC.md §10 now says, and what stops a workspace's existing `type: todo`
-   * documents losing an act they can perform.
+   * Resolve is offered on **every** document, because no document's status is
+   * computed from its content — which is what SPEC.md §10 says, and what stops a
+   * workspace's `type: todo` documents losing an act they can perform.
    */
   test("offers it on a document whose type this build does not recognise", async ({ page }) => {
     const corpus = await stubCorpus(page, [INBOX_VIEW, TODO]);

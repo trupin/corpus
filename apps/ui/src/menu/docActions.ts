@@ -185,11 +185,10 @@ export function useDocActions(
    * one case left is an archived document, whose `PUT` the server refuses
    * outright (SERVER-039), so offering the act would promise a refusal.
    *
-   * There was a second case until Phase 41 — a type whose status a plugin
-   * **derived** from the document's content. `todo` was the only such type and
-   * the mechanism is gone (SHARED-064), so **every** document's status is its
-   * own to set again, whatever its `type:` says, which is what SPEC.md §10 now
-   * describes.
+   * **It is the only case, and `type:` is not one of them.** Every document's
+   * status is its own to set, whatever its type says — including a type this
+   * build does not recognise, which SPEC.md §10 requires and §5's open `type`
+   * makes routine.
    */
   const settable = statusLock(subject) === null;
   const list: MenuAction[] = [];

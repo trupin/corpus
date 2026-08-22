@@ -23,13 +23,12 @@
 /**
  * Where the browser keeps its own menu — editable hosts, and nothing else.
  *
- * There used to be a sixth entry, `[data-plugin-surface]`: core painted no menu
- * over markup a plugin rendered. The plugin system is gone (SHARED-064), and so
- * is any region of this app core did not draw. **The half of that rule that
- * survives is the half that was never about plugins** — a menu is decided by
- * what is under the pointer and never by a document's `type`, which is what
- * keeps the full action set on a row whose type this build does not recognise
- * (UI-036).
+ * **The list names markup, never a document type** (UI-036). A menu is decided
+ * by what is under the pointer, so a row whose `type:` this build does not
+ * recognise keeps the full action set — which matters because the set of types
+ * on the wire is not the set any one build knows: an older workspace's
+ * documents, a hand-written file, or a server newer than this client can each
+ * name a type this client has never heard of (SPEC.md §5).
  */
 const NATIVE_HOSTS = [
   "input",

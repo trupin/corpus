@@ -230,12 +230,10 @@ test.describe("the strip's height is not its text", () => {
   /**
    * Clause 2: a value the strip cannot fit is **revealed, not accommodated**.
    *
-   * The subject was `.c-plugin-warn` — a skipped plugin's load reason, the one
-   * genuinely unbounded string the strip carried — until Phase 41 deleted the
-   * warning with the plugin system (SHARED-064). The rule outlives it, and
-   * `.c-status` is the string that tests it now: the version is the server's,
-   * `console.css` bounds the span at 24ch, and a long pre-release tag has to be
-   * reachable in place rather than allowed to widen the strip.
+   * `.c-status` is the string that tests it: the version is the server's, so its
+   * length is not this client's to bound at the source. `console.css` bounds the
+   * span at 24ch, and a long pre-release tag has to be reachable in place rather
+   * than allowed to widen the strip.
    */
   test("a truncated value keeps the whole of itself in reach", async ({ page }) => {
     await page.setViewportSize({ width: 620, height: 720 });

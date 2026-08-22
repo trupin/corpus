@@ -60,10 +60,8 @@ const REVEAL_MOUNT_MS = 2_000;
  * `Loading…` for, with no body at all on screen until it answers.
  *
  * Two seconds against a localhost server is not a slow read, it is a stalled
- * one. It was `DISCOVERY_BUDGET_MS` until Phase 41, borrowed from the plugin
- * registry because the same `Loading…` also covered plugin discovery. Discovery
- * is gone (SHARED-064) and the fetch is not, so the term is named for the wait
- * that is actually left rather than deleted with the mechanism that shared it.
+ * one. The name says which wait it covers because it covers exactly one: the
+ * fetch is the only thing between `Loading…` and a body on screen.
  */
 const REVEAL_FETCH_MS = 2_000;
 
@@ -385,7 +383,7 @@ export function flashRange(range: Range, host: HTMLElement): RevealFlash {
 /**
  * Keeps the flash on its line for as long as it is lit.
  *
- * **The defect this exists for** (found by PLUGINS-010's real-app drill): a
+ * **The defect this exists for** (found in a real-app drill, PLUGINS-010): a
  * reveal fires the moment the document has content, and the document is not
  * finished laying out at that moment. On a cold open — which is *every* open
  * from a column, since the reader replaces the list — the frame after

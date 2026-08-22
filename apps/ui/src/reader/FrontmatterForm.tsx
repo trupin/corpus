@@ -136,11 +136,9 @@ export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
  * honest ways to serve both callers were one predicate over the fields they
  * share or two predicates that would eventually disagree.
  *
- * **There used to be a second reason and a second locked field.** A plugin could
- * declare a type's `status` or `due` *derived* from the document's content, in
- * which case the control was replaced by a statement of the value — the third
- * state SHARED-030 describes. The plugin system is gone (SHARED-064), no type
- * derives anything, and both fields are ordinary again on every document.
+ * **One reason and one locked field.** Nothing computes a document's `status` or
+ * its `due` from its content, so both are ordinary controls on every document,
+ * whatever its `type:` says.
  */
 
 /** The options a select must offer: the editable set, plus its own value. */
@@ -189,13 +187,9 @@ export function isDeliberate(field: FieldName, value: string): boolean {
  * through this function, and guarding the control alone would ship a refusal the
  * user could not connect to anything they did.
  *
- * **The lock is not a second guard here** (Phase 41). `withoutLocked` used to
- * strip every locked field from the body before it went out, because a plugin
- * could declare `status` or `due` derived *after* the person had already typed
- * into the control — a window a control-side guard cannot see. Nothing declares
- * anything now (SHARED-064): the only lock left is the archive door, it is read
- * straight off the document this function already holds, and the guard above is
- * exactly it.
+ * **The lock is not a second guard here.** The only lock is the archive door, it
+ * is read straight off the document this function already holds, and the guard
+ * above is exactly it — so nothing strips a second time on the way out.
  */
 export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
   const current = draftOf(doc);
@@ -222,9 +216,8 @@ export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
  *
  * **`status` and nothing else.** A refusal naming `title` says the value was
  * malformed, not that the field is nobody's, and the person's own text is the
- * last thing this form may throw away. It read a *list* of derived fields until
- * Phase 41 — `status` and `due`, both of which a plugin could take away — and the
- * list is one entry now that nothing derives anything (SHARED-064).
+ * last thing this form may throw away. `status` is the only field a save can be
+ * told is not the person's, so it is the only one this drops.
  *
  * `changedFields` already refuses to send a status across the archive door, so
  * this fires for the one case it cannot see: the projection reports a document
@@ -745,11 +738,9 @@ export function FrontmatterForm({
           </select>
         </Field>
         {/*
-         * `due` is live on every document (Phase 41). A plugin could declare a
-         * type's deadline *derived* from its content, in which case this cell
-         * stated the value instead of offering a control — the whole of that is
-         * gone with the plugin system (SHARED-064), and a deadline is the
-         * person's to set on a `todo` document exactly as on a note.
+         * `due` is live on every document, and `lock={null}` says so with no
+         * branch: nothing computes a deadline from a document's content, so a
+         * deadline is the person's to set whatever the document's `type:` says.
          */}
         <Field label="due" lock={null}>
           <input

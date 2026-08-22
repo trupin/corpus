@@ -87,10 +87,10 @@ function asPmNode(content: JSONContent): PmNode {
  * render its markdown with working checkboxes, be searchable and be commentable.
  * Every one of those follows from returning `true` here.
  *
- * **There is one gate, and it is this one.** A plugin `View` could claim a type
- * ahead of the editor until Phase 41, so `DocView` asked a registry before
- * asking this — two gates that had to be kept in step. The plugin system is gone
- * (SHARED-064) and so is the second gate: `DocView` asks this and renders.
+ * **There is one gate, and it is this one.** Nothing claims a type ahead of the
+ * editor, so `DocView` asks this predicate and renders — no second gate to keep
+ * in step with it, and therefore no pair that can disagree about what "the core
+ * does not know this type" means.
  */
 export function editorHandlesType(type: string): boolean {
   return !NON_EDITABLE_TYPES.has(type);

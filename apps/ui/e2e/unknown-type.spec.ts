@@ -7,18 +7,15 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * document** — SPEC.md §12's M6, and the promise that protects a workspace's
  * existing files.
  *
- * `type` is an open string on the wire (SPEC.md §5). A workspace holds whatever
- * its owner and its agent have written, and this build defines six types: it
- * will meet files typed for a seventh, and the ones it will meet *first* are the
- * `type: todo` documents Phase 41 left behind when the plugin that defined them
- * was deleted (SHARED-064).
+ * `type` is an open string on the wire (SPEC.md §5), because the set of types on
+ * the wire is not the set any one build knows: an older workspace's documents, a
+ * hand-written file, or a server newer than this client can each name a type
+ * this client has never heard of. This build defines six, and the seventh it
+ * will meet first is `type: todo` — real workspaces already hold them.
  *
- * **This spec exists because every spec that used to prove it was deleted with
- * that plugin.** `todos.spec.ts`, `todos-legacy.spec.ts`, `derived-status.spec.ts`
- * and `derived-due.spec.ts` all opened a `type: todo` document, and the subtractive
- * check the milestone always carried — *delete the plugin, and the documents still
- * work* — had nothing left asserting it. So the four claims are pinned here,
- * against the shipped board, in a real browser:
+ * **This spec is where that promise is asserted**, because every assertion of it
+ * is here and nowhere else. The four claims are pinned against the shipped
+ * board, in a real browser:
  *
  * 1. it **opens**, in the ordinary document view, with the editor on it;
  * 2. its markdown **renders**, and its checkboxes are real controls whose ticks
@@ -172,8 +169,8 @@ test.describe("a document whose type this build does not recognise", () => {
     const corpus = await stubCorpus(page, [VIEW, TODO, NOTE]);
     await openTodo(page);
 
-    // Live controls, not statements of a value computed from the items — which
-    // is what a plugin's `deriveStatus`/`deriveDue` made them until Phase 41.
+    // Live controls, not statements of a value computed from the items: nothing
+    // in this build reads a status or a deadline off a document's own content.
     const form = page.locator(".reader .fm-form");
     const status = form.locator("[data-field='status'] select");
     const due = form.locator("[data-field='due'] input[type='date']");

@@ -211,12 +211,11 @@ describe("a row's context menu", () => {
   });
 
   /**
-   * UI-036, and SPEC.md §12's M6 at the menu. The menu used to be decided partly
-   * by the row's **type** — a type a plugin claimed lost its whole core action
-   * set in every column, no open, no archive, no delete, no staleness. Nothing
-   * claims a type now (SHARED-064), and a document typed for something this
-   * build has never heard of is a core subject like any other: `RowMenuItems`
-   * needs nothing but the `DocRow` core already holds.
+   * UI-036, and SPEC.md §12's M6 at the menu. **The menu is never decided by the
+   * row's `type:`.** A document typed for something this build has never heard
+   * of is a subject like any other, and `RowMenuItems` needs nothing but the
+   * `DocRow` it is already handed — which is what stops such a row losing its
+   * whole action set: no open, no archive, no delete, no staleness.
    */
   it("gives a row of an unrecognised type the whole core menu", async () => {
     renderBoard([UNKNOWN_TYPE]);
