@@ -1341,3 +1341,58 @@ any `apps/ui` bound that ties with a `packages/kit` bound loses silently.
 issue, with PLUGINS-018 and UI-092 behind it. If it slips, UI-092 and UI-094 are
 dropped and the rest ships — a derived status you can see is worth having
 without the control that displays its provenance.
+
+## Phase 41 — Boards are documents, a row opens a path, the explorer is column zero (2026-08-22, user design session)
+
+One phase, one PR, by the user's decision ("I want this whole thing to be in a
+single phase so it can be implemented all at once"). Branch
+`worktree-navigation-rework` off `main` at v0.16.0. The model was agreed on a
+clickable prototype, `design/navigation.html`, which is authoritative for
+navigation look and feel; `design/index.html` stays authoritative for the rest.
+
+**What changes, in one paragraph.** A board is a `type: board` document listing
+its columns; `pinned` and a view's `order` go away, and an existing workspace is
+told how to migrate by `corpus upgrade` rather than migrated silently. A row no
+longer widens its column into a reader: it opens a **path**, a chain of reader
+columns to its right, with no document twice in a path, replaceable from its
+origin, closable all at once. An **explorer** at the left edge lists the tree
+and opens onto the default-open board. A **column strip** above the board maps
+every column. A **kanban** is a board over `status` or the new core field
+`stage`, its columns derived from its stages, a drag following the board's
+**transition graph** (linear funnel by default), and a stage deciding a status
+through an explicit map on the board. Full screen stays the overlay it is.
+
+**Decisions the user made, so nobody re-litigates them here:** boards as
+documents the agent can build · one path per origin row, replaced on a new pick
+· no loops, re-centre instead · restart-here and new-path-right from any path
+column · full screen unchanged · the explorer is column zero and the Files board
+is just a board with no query columns · one board always open · board tabs drag
+to reorder (`order` on the board document) · `pinned`/`order` removed, not
+deprecated, with `corpus upgrade` naming the migration · `stage` beside
+`status`, never instead of it · coupling by an explicit `kanban.status` map,
+not by stage name · a drag follows a transition only; skipping is done by
+setting the field; the server does not enforce transitions, it enforces the
+status map.
+
+**Order of work.** SHARED-064 first, rider by rider. Then CONTRACT-074,
+CONTRACT-075 and AGENT-042 together. Then SERVER-135, SERVER-136, CLI-060 and
+UI-148 (four across three domains, three at a time on this machine). Then
+UI-149 and UI-152. Then UI-150, UI-151, CLI-061 and PLUGINS-019. Critical path:
+SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
+
+| ID | Title | Status | Priority | Model | Dependencies |
+| --- | --- | --- | --- | --- | --- |
+| SHARED-064 | SPEC riders for the navigation model: explorer, boards as documents, paths, kanban graphs | todo | P0 | fable | — |
+| CONTRACT-074 | Board fields, `stage`, and the end of `pinned` | todo | P0 | opus | SHARED-064 |
+| CONTRACT-075 | Folder routes: rename, archive, unarchive, delete | todo | P1 | opus | SHARED-064 |
+| AGENT-042 | Seed boards and a kanban; the skills and template say "a board is a document" | todo | P0 | opus | SHARED-064, CLI-060 |
+| SERVER-135 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | todo | P0 | opus | CONTRACT-074 |
+| SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | todo | P1 | opus | CONTRACT-075 |
+| CLI-060 | Board flags, `--stage`, `--unset`, and `corpus folder` verbs; `--pinned` and view `--order` go | todo | P1 | opus | CONTRACT-074, CONTRACT-075, SERVER-135, SERVER-136 |
+| CLI-061 | `corpus upgrade` and `corpus workspace upgrade` report the data migrations a workspace needs, as commands an agent can run | todo | P0 | opus | CONTRACT-074, CLI-060 |
+| UI-148 | Boards: the board bar, columns read from the board document, order and pin writes go to the board, one board always open | todo | P0 | opus | CONTRACT-074, SERVER-135 |
+| UI-149 | Paths: a row opens a column to the right, no loops, open here, restart, new path right, keep, close, close all — and every `open()` caller lands in a path | todo | P0 | fable | UI-148 |
+| UI-152 | Kanban boards: derived stage columns, a drag follows the transition graph, stage and status chips, the graph drawn | todo | P1 | opus | UI-148, SERVER-135 |
+| UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | todo | P0 | opus | UI-149, CONTRACT-075 |
+| UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | todo | P1 | opus | UI-149 |
+| PLUGINS-019 | A plugin column lives on a board, and its `onOpen` opens a path | todo | P2 | opus | UI-149, AGENT-042 |
