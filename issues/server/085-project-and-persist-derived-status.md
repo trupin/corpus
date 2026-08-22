@@ -332,6 +332,23 @@ after the out-of-band append, WITH THE FIX BROKEN: open
 
 Restored and restarted: `with the fix restored: resolved`.
 
+### The packaged tarball would not have shipped the derive module
+
+Found while checking the seam's *installed* path, and fixed:
+`scripts/package-staging.ts`'s `pluginEntryPoints` named `server/routes.js` and
+`cli/commands/*.js` and nothing else, and `stagePlugins` stages **only** entry
+points — so `dist/server/derive.js` would have been absent from the tarball,
+discovery would have contained the miss as a warning, and every todo document
+would have fallen back to the status its file states **in installed builds
+only**. That is the same quiet failure INFRA-008 escalation 3(b) found once for
+the routes module. `server/derive.js` is now an entry point of its own, bundled
+like the others, with the fabricated-plugin tests extended in all three places
+they name entry points. Verified against the **compiled** module too: with
+`plugins/todos/dist/server/derive.js` built, discovery preferred it
+(`"plugin":"todos","routes":true,"types":["todo"],"derives":["todo"]`), an
+out-of-band append still reprojected, and `rebuild && doctor` stayed clean.
+`scripts/` is infra-dev's tree — flagged to the orchestrator rather than assumed.
+
 ### `rebuild && doctor`, on all four states
 
 The workspace held `Errands` (completed), `Groceries` (incomplete — and carrying
@@ -414,6 +431,9 @@ user's live server — never touched.
   `watcher/watcher.ts` — the convergence rides the reconciliation's own rewrite
 - `apps/server/src/lifecycle.ts` (+ `lifecycle.test.ts`) — discovery before the
   projection, and the test that pins it
+- `scripts/package-staging.ts` (+ `package-staging.test.ts`) — **outside this
+  domain, flagged**: `server/derive.js` staged as a plugin entry point, without
+  which the seam works in dev and silently does not in an installed build
 
 ## Completion Checklist (domain agent)
 

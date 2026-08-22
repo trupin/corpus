@@ -22,6 +22,7 @@ import {
   populateFromFiles,
   type ProjectionDb,
 } from "../projection/index.js";
+import type { DerivedStatusRegistry } from "../plugins/derived-status.js";
 import { documentKey } from "./key.js";
 
 export const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
@@ -77,6 +78,12 @@ export interface WriteWorkspaceOptions {
    * no other fixture has to know the window exists.
    */
   readonly editAckIdleMs?: number | undefined;
+  /**
+   * §12's derived statuses (SERVER-085), as plugin discovery would have found
+   * them. Omitted, the workspace has no plugins at all — which is what every
+   * other suite wants, and is also §15 M6's subtractive state.
+   */
+  readonly derivedStatus?: DerivedStatusRegistry | undefined;
 }
 
 const serverConfig = (
@@ -146,7 +153,10 @@ export function createWriteWorkspace(
     options.attachments ?? DEFAULT_ATTACHMENT_LIMITS,
     options.editAckIdleMs,
   );
-  const db = openProjection(config, { populate: false });
+  const db = openProjection(config, {
+    populate: false,
+    ...(options.derivedStatus === undefined ? {} : { derivedStatus: options.derivedStatus }),
+  });
 
   const state = { clock: FIXTURE_NOW };
   const server = createServer(config, {

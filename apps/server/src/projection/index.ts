@@ -56,9 +56,16 @@ export {
   projectDocument,
   readDocumentIdentity,
   removeDocument,
+  resolveDocumentStatus,
+  resolveDocumentType,
   syntheticDocumentId,
 } from "./project-document.js";
-export type { DocumentCounts, DocumentIdentity, ProjectionOutcome } from "./project-document.js";
+export type {
+  DocumentCounts,
+  DocumentIdentity,
+  DocumentStatusInput,
+  ProjectionOutcome,
+} from "./project-document.js";
 export {
   JOBS_DIR,
   QUEUE_DIR,

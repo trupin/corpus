@@ -157,10 +157,23 @@ export const externalizeThirdParty: esbuild.Plugin = {
   },
 };
 
-/** A plugin's runtime entry points inside its `dist/`, relative and POSIX. */
+/**
+ * A plugin's runtime entry points inside its `dist/`, relative and POSIX.
+ *
+ * **Every module the server or the CLI reaches by dynamic import belongs here**,
+ * and each one is a separate entry because nothing else in `dist/` is staged: a
+ * module the tool imports by convention is reachable from no other entry, so it
+ * would simply not be in the tarball. `server/derive.js` is the second such
+ * module (SPEC.md §12's derived status, SERVER-085) — the failure it would have
+ * shipped is the quiet kind INFRA-008 escalation 3(b) already found once for
+ * `server/routes.js`: discovery contains a missing module as a warning, so every
+ * todo document would silently fall back to the status its file states, in
+ * installed builds only.
+ */
 export function pluginEntryPoints(distRoot: string): readonly string[] {
   const entries: string[] = [];
   if (existsSync(join(distRoot, "server", "routes.js"))) entries.push("server/routes.js");
+  if (existsSync(join(distRoot, "server", "derive.js"))) entries.push("server/derive.js");
   const commands = join(distRoot, "cli", "commands");
   if (existsSync(commands)) {
     entries.push(

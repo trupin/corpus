@@ -10,6 +10,7 @@ import type { DocsWorkspace, DocumentMutex } from "../docs/index.js";
 import { describeThrown } from "../errors.js";
 import type { Logger } from "../logger.js";
 import { createPluginContext, type PluginServerContext } from "./context.js";
+import type { PluginDeriveStatus } from "./derived-status.js";
 
 /**
  * Plugin discovery — the server's single entry point into `plugins/`
@@ -29,6 +30,14 @@ export interface PluginTypeDecl {
   readonly type: string;
   readonly label: string;
   readonly seedTemplate?: string | undefined;
+  /**
+   * This type's `status` is derived from the document itself (SPEC.md §12,
+   * PLUGINS-016) — the non-TS half of the manifest's `deriveStatus`, and what
+   * lets the server and the CLI know the field is not anyone's to set without
+   * executing a line of the plugin. `true` is the only spelling: absent means
+   * not derived, and `false` is not a way of saying so.
+   */
+  readonly derivedStatus?: true | undefined;
 }
 
 const TypesFileSchema = z.object({
@@ -37,6 +46,7 @@ const TypesFileSchema = z.object({
       type: z.string().min(1),
       label: z.string().min(1),
       seedTemplate: z.string().min(1).optional(),
+      derivedStatus: z.literal(true).optional(),
     }),
   ),
 });
@@ -55,6 +65,13 @@ export interface DiscoveredPlugin {
   readonly root: string;
   /** The routes factory, or `null` when the plugin ships no server half. */
   readonly routes: PluginRoutesFactory | null;
+  /**
+   * The `server/derive` default export, or `null` when the plugin declares no
+   * derived type or ships no such module (SPEC.md §12, PLUGINS-016). Loaded
+   * under the same containment as the routes module and typed just as loosely:
+   * `createDerivedStatusRegistry` validates every answer.
+   */
+  readonly deriveStatus: PluginDeriveStatus | null;
   /** Doc types declared in `types.yaml` — the server's whole view of them. */
   readonly types: readonly PluginTypeDecl[];
   /** Everything non-fatal that went wrong while discovering this plugin. */
@@ -103,10 +120,56 @@ export function excludedInProduction(dir: string, env: NodeJS.ProcessEnv): boole
  * ships no server half — a normal, silent state.
  */
 export function resolveRoutesModule(pluginRoot: string): string | null {
-  const compiled = join(pluginRoot, "dist", "server", "routes.js");
+  return resolveServerModule(pluginRoot, "routes");
+}
+
+/**
+ * The `server/derive` module — §12's derived status, executable half. Same
+ * convention as {@link resolveRoutesModule}, deliberately: a plugin's server
+ * half is one directory with one build, and a second discovery rule for a second
+ * module is a second thing to get wrong.
+ */
+export function resolveDeriveModule(pluginRoot: string): string | null {
+  return resolveServerModule(pluginRoot, "derive");
+}
+
+function resolveServerModule(pluginRoot: string, name: string): string | null {
+  const compiled = join(pluginRoot, "dist", "server", `${name}.js`);
   if (existsSync(compiled)) return compiled;
-  const source = join(pluginRoot, "server", "routes.ts");
+  const source = join(pluginRoot, "server", `${name}.ts`);
   return existsSync(source) ? source : null;
+}
+
+/**
+ * The default export of a dynamically imported module, when it is a function.
+ * `null` for every other outcome, with the reason pushed onto `warnings` — a
+ * plugin's server half is convention, so "no such module" and "not a factory"
+ * are both ordinary states of somebody's directory, never a boot failure.
+ */
+async function loadDefaultFunction(
+  modulePath: string,
+  module: { readonly describe: string; readonly noun: string; readonly skipped: string },
+  warnings: string[],
+  logger: Logger,
+  plugin: string,
+): Promise<((...args: never[]) => unknown) | null> {
+  try {
+    const loaded: unknown = await import(pathToFileURL(modulePath).href);
+    const exported =
+      typeof loaded === "object" && loaded !== null && "default" in loaded
+        ? loaded.default
+        : undefined;
+    if (typeof exported === "function") return exported as (...args: never[]) => unknown;
+    warnings.push(`its ${module.describe} module has no default-exported ${module.noun}`);
+    return null;
+  } catch (error) {
+    warnings.push(`its ${module.describe} module failed to load`);
+    logger.error(
+      `plugin ${plugin} ${module.describe} module failed to load — skipping ${module.skipped}`,
+      { plugin, module: modulePath, ...describeThrown(error) },
+    );
+    return null;
+  }
 }
 
 function readTypesFile(pluginRoot: string, warnings: string[]): readonly PluginTypeDecl[] {
@@ -168,26 +231,39 @@ export async function discoverPlugins(
     const types = readTypesFile(root, warnings);
 
     let routes: PluginRoutesFactory | null = null;
-    const modulePath = resolveRoutesModule(root);
-    if (modulePath !== null) {
-      try {
-        const module: unknown = await import(pathToFileURL(modulePath).href);
-        const exported =
-          typeof module === "object" && module !== null && "default" in module
-            ? module.default
-            : undefined;
-        if (typeof exported === "function") {
-          routes = exported as PluginRoutesFactory;
-        } else {
-          warnings.push("its server/routes module has no default-exported factory function");
-        }
-      } catch (error) {
-        warnings.push("its server/routes module failed to load");
-        logger.error(`plugin ${dir} routes module failed to load — skipping its routes`, {
-          plugin: dir,
-          module: modulePath,
-          ...describeThrown(error),
-        });
+    const routesPath = resolveRoutesModule(root);
+    if (routesPath !== null) {
+      routes = (await loadDefaultFunction(
+        routesPath,
+        { describe: "server/routes", noun: "factory function", skipped: "its routes" },
+        warnings,
+        logger,
+        dir,
+      )) as PluginRoutesFactory | null;
+    }
+
+    // Loaded only for a plugin that declares a derived type: importing a module
+    // nothing will ask anything of is boot latency spent on nothing, and a
+    // plugin shipping an unreferenced `server/derive.ts` should not be able to
+    // fail a boot with it.
+    let deriveStatus: PluginDeriveStatus | null = null;
+    const derivedTypes = types.filter((declared) => declared.derivedStatus === true);
+    if (derivedTypes.length > 0) {
+      const derivePath = resolveDeriveModule(root);
+      if (derivePath === null) {
+        warnings.push(
+          `its types.yaml declares a derived status for ${derivedTypes
+            .map((declared) => declared.type)
+            .join(", ")} but it ships no server/derive module (SPEC.md §12)`,
+        );
+      } else {
+        deriveStatus = (await loadDefaultFunction(
+          derivePath,
+          { describe: "server/derive", noun: "function", skipped: "its status derivation" },
+          warnings,
+          logger,
+          dir,
+        )) as PluginDeriveStatus | null;
       }
     }
 
@@ -198,8 +274,9 @@ export async function discoverPlugins(
       plugin: dir,
       routes: routes !== null,
       types: types.map((declared) => declared.type),
+      derives: derivedTypes.map((declared) => declared.type),
     });
-    plugins.push({ dir, root, routes, types, warnings });
+    plugins.push({ dir, root, routes, deriveStatus, types, warnings });
   }
   return plugins;
 }

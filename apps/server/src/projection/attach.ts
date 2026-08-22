@@ -9,6 +9,7 @@
 
 import type { CorpusServer } from "../app.js";
 import type { Logger } from "../logger.js";
+import { EMPTY_DERIVED_STATUS, type DerivedStatusRegistry } from "../plugins/derived-status.js";
 import { openProjection, type ProjectionConfig, type ProjectionDb } from "./db.js";
 import { createProjectionQueueMirror } from "./queue-mirror.js";
 
@@ -18,9 +19,19 @@ import { createProjectionQueueMirror } from "./queue-mirror.js";
  * `createServer`, whose `projection` dep this becomes — route handlers and the
  * watcher both need the handle, and inventing two ways to reach it is how two
  * seams end up in one file.
+ *
+ * `derivedStatus` is what plugin discovery found (SPEC.md §12, SERVER-085), and
+ * it has to arrive **here** rather than later: this call runs the scan, so a
+ * registry attached afterwards would leave every derived-status document
+ * projected under the status its file happens to state until something touched
+ * it. Defaulted for the callers — tests, mostly — that have no plugins at all.
  */
-export function openWorkspaceProjection(config: ProjectionConfig, logger: Logger): ProjectionDb {
-  return openProjection(config, { logger });
+export function openWorkspaceProjection(
+  config: ProjectionConfig,
+  logger: Logger,
+  derivedStatus: DerivedStatusRegistry = EMPTY_DERIVED_STATUS,
+): ProjectionDb {
+  return openProjection(config, { logger, derivedStatus });
 }
 
 /**

@@ -22,7 +22,9 @@ import { z } from "zod";
 import { resolveAnchorExact } from "../anchors/index.js";
 import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/document.js";
 import { readThreadForms } from "../core/form.js";
+import { documentTitle } from "../core/title.js";
 import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
+import { EMPTY_DERIVED_STATUS, type DerivedStatusRegistry } from "../plugins/derived-status.js";
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { turnModelsOf } from "../core/turn-model.js";
@@ -155,6 +157,7 @@ function readDocumentFields(
   root: DocumentRoot,
   relativePath: string,
   parsed: ParsedDocument,
+  derivedStatus: DerivedStatusRegistry = EMPTY_DERIVED_STATUS,
 ): DocumentFields | null {
   const data = parsed.data;
   const declaredId = asString(data["id"]);
@@ -167,13 +170,21 @@ function readDocumentFields(
   if (id === null) return null;
 
   const tags = TagsSchema.safeParse(data["tags"]);
-  const status = DocStatusSchema.safeParse(data["status"]);
+  const type = resolveDocumentType(root, data);
+  const view = readViewFrontmatter(data);
 
   return {
     id,
-    type: root.type ?? asString(data["type"]) ?? "note",
-    title: asString(data["title"]) ?? asString(data["name"]) ?? titleFromPath(root, relativePath),
-    status: root.status ?? (status.success ? status.data : "open"),
+    type,
+    title: documentTitle(data, titleFromPath(root, relativePath)),
+    status: resolveDocumentStatus({
+      root,
+      type,
+      data,
+      body: parsed.body,
+      extra: view.extra,
+      derivedStatus,
+    }),
     tags: tags.success ? tags.data : [],
     created: asInstant(data["created"]),
     updated: asInstant(data["updated"]),
@@ -182,8 +193,65 @@ function readDocumentFields(
     evergreen: data["evergreen"] === true,
     origin: originOrNull(data["origin"]),
     anchors: readAnchors(data["anchors"]),
-    view: readViewFrontmatter(data),
+    view,
   };
+}
+
+/**
+ * A document's `type`: the one its root fixes (§7's threads, skills and
+ * personas), else the one its frontmatter states, else `note`. Exported because
+ * the write path has to ask the same question about the bytes it is about to
+ * write — a type resolved one way here and another way there would derive one
+ * document's status from two different rules.
+ */
+export function resolveDocumentType(
+  root: DocumentRoot,
+  data: Readonly<Record<string, unknown>>,
+): string {
+  return root.type ?? asString(data["type"]) ?? "note";
+}
+
+export interface DocumentStatusInput {
+  readonly root: DocumentRoot;
+  readonly type: string;
+  readonly data: Readonly<Record<string, unknown>>;
+  readonly body: string;
+  readonly extra: Readonly<Record<string, unknown>>;
+  readonly derivedStatus: DerivedStatusRegistry;
+}
+
+/**
+ * §5's `status`, from the three things that can answer for it, in the order
+ * they outrank each other.
+ *
+ * 1. **The root**, when it has an opinion (§7): a `SKILL.md` under
+ *    `.claude/skills-archived/` is archived because of where it sits, whatever
+ *    its frontmatter says and whatever its content would derive.
+ * 2. **The type**, when §12 makes the field the document's own answer rather
+ *    than anyone's to set — a todo list's status is its items. The derivation
+ *    owns both of its own carve-outs and answers `null` for either, so the rule
+ *    here is the one rule every caller composes: `derive(...) ?? stored`.
+ * 3. **The file**, which is the answer for every other document, and the
+ *    fallback for the two above.
+ *
+ * Written as a ladder rather than as a special case beside `root.status`
+ * because that override is the same kind of thing: a status the file does not
+ * own. The projection is where the ladder belongs — `docs/read.ts` takes the
+ * row's status for the wire document, so a single-document read, a collection
+ * query, a saved view and the board all get this one answer and cannot differ.
+ *
+ * **The write path calls this too** (`docs/derived-status.ts`), which is what
+ * makes "the file never disagrees with what is shown" a property rather than a
+ * coincidence: the status converged into a document's frontmatter and the status
+ * projected into its row are the same function's answer, so the only way they
+ * could differ is if the bytes differed.
+ */
+export function resolveDocumentStatus(input: DocumentStatusInput): DocStatus {
+  const { root, type, data, body, extra, derivedStatus } = input;
+  if (root.status !== null) return root.status;
+  const parsed = DocStatusSchema.safeParse(data["status"]);
+  const stored: DocStatus = parsed.success ? parsed.data : "open";
+  return derivedStatus.derive({ type, status: stored, body, extra }) ?? stored;
 }
 
 /**
@@ -192,6 +260,13 @@ function readDocumentFields(
  * from a duplicate id from a genuinely missing row. It goes through the same
  * {@link readDocumentFields} the projector uses, so the two can never disagree
  * about which file owns an id.
+ *
+ * It passes no derivation registry, and needs none: the only field it reads is
+ * the id, and `doctor` compares a file's **bytes** against the hash recorded for
+ * them, never a row's fields against the frontmatter. That is what keeps a todo
+ * document whose stored status has not yet been converged out of the drift
+ * report — the row is right, the file is the source of truth for everything the
+ * check compares, and there is no disagreement to name (SERVER-085).
  */
 export type DocumentIdentity =
   | { readonly kind: "id"; readonly id: string }
@@ -558,7 +633,7 @@ export function projectDocument(db: ProjectionDb, absPath: string): ProjectionOu
     throw error;
   }
 
-  const fields = readDocumentFields(root, relativePath, parsed);
+  const fields = readDocumentFields(root, relativePath, parsed, db.derivedStatus);
   if (fields === null) {
     return { kind: "skipped", path: relativePath, reason: noIdReason(relativePath) };
   }
