@@ -13,7 +13,7 @@ P1
 opus
 
 ## Dependencies
-- Depends on: CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-135, SERVER-136, SERVER-137
+- Depends on: CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-138, SERVER-136, SERVER-137
 - Blocks: CLI-061, AGENT-042 (skill text cites the verbs)
 
 ## Spec References
@@ -45,7 +45,7 @@ The agent's whole surface is the CLI, and the agent must be able to build a boar
 
 ### Key Implementation Details
 - `--kanban` and `--query` take JSON because the shapes are nested and the agent writes JSON without ceremony; the help text shows one complete example each.
-- `--unset` goes through the update route as an explicit "remove key" — coordinate with SERVER-135 for the body form (`{ unset: ["pinned", "order"] }` beside `changes`).
+- `--unset` goes through the update route as an explicit "remove key" — coordinate with SERVER-138 for the body form (`{ unset: ["pinned", "order"] }` beside `changes`).
 - `folder delete --yes` is the CLI's own guard; the server has none (§11: deletion asks in the UI).
 
 ### Edge Cases

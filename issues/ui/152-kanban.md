@@ -13,7 +13,7 @@ P1
 opus
 
 ## Dependencies
-- Depends on: UI-148, SERVER-135
+- Depends on: UI-148, SERVER-138
 - Blocks: —
 
 ## Spec References
@@ -49,7 +49,7 @@ A board with `kanban` has no view columns: its columns are its stages, derived f
 - e2e `kanban.spec.ts`, `stubCorpus.ts` (stage filter, the coupling's response shape)
 
 ### Key Implementation Details
-- The UI never computes the status coupling; it sends the field and renders what the server reports. One rule, one place (SERVER-135).
+- The UI never computes the status coupling; it sends the field and renders what the server reports. One rule, one place (SERVER-138).
 - Derived columns get stable ids `<boardId>#<stage>` so local state (scroll, in-place reader, paths hanging off them) survives a re-render.
 - Drag uses the same pointer-capture pattern `columnDrag.ts` uses, not a library.
 

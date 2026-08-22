@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: CONTRACT-074, SERVER-135
+- Depends on: CONTRACT-074, SERVER-138
 - Blocks: UI-149, UI-152
 
 ## Spec References
@@ -26,7 +26,7 @@ Today `useColumns` asks for `GET /api/docs?pinned=true&type=view&sort=order` and
 ## Acceptance Criteria
 - [ ] `useBoards()` reads `GET /api/docs?type=board&sort=order` (archived excluded by default) and `useColumns(boardId)` resolves the board's `columns` against `GET /api/docs?type=view` by id, in the board's order; an id that resolves to nothing renders an error column card naming the id (the §11 "error card" pattern), never a crash.
 - [ ] The board bar: one tab per board in `order`, the showing board marked, `＋` creates an empty board document (`type: board`, `folder: boards`, `columns: []`, `order` = last + 1) and switches to it, `×` archives the board document (present only when more than one board shows; archiving the last is refused with a toast), right-click offers Rename, Move left/right, Make it the default open target, Archive, Delete (asks first).
-- [ ] Tabs drag to reorder; the drop writes `order` on every board, one `updateDocById` batch (or the server's multi-write if SERVER-135 exposes one), one toast. `⌘1`…`⌘9` switch boards in bar order.
+- [ ] Tabs drag to reorder; the drop writes `order` on every board, one `updateDocById` batch (or the server's multi-write if SERVER-138 exposes one), one toast. `⌘1`…`⌘9` switch boards in bar order.
 - [ ] Which board shows is browser-local and survives reload; an archived or deleted board falls back to the first.
 - [ ] Column reorder (`columnOrder.ts`, `useColumnOrder.ts`, `⇧←/⇧→`) rewrites the board's `columns`; `newList.ts`/`useSaveAsView.ts`/`useCreateInColumn.ts` create the view **without** `pinned`/`order` and append its id to the current board; "Remove from this board" filters `columns` and leaves the view document alone.
 - [ ] Column width keeps riding the view's `extra` (unchanged).

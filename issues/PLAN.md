@@ -1382,7 +1382,7 @@ window itself, writes changelog entries and one digest thread; the board marks
 what is unreflected.
 
 **Order of work.** SHARED-064 first, rider by rider. Then CONTRACT-074,
-CONTRACT-075, CONTRACT-076 and AGENT-042 together. Then SERVER-135, SERVER-136,
+CONTRACT-075, CONTRACT-076 and AGENT-042 together. Then SERVER-138, SERVER-136,
 SERVER-137, CLI-060 and UI-148 (three at a time on this machine). Then UI-149
 and UI-152. Then UI-150, UI-151, UI-153, CLI-061 and PLUGINS-019. Critical
 path: SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
@@ -1394,14 +1394,14 @@ path: SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | CONTRACT-075 | Folder routes: rename, archive, unarchive, delete | todo | P1 | opus | SHARED-064 |
 | CONTRACT-076 | `workspace.reflect`: the event, the ask route, and the status route | todo | P1 | opus | SHARED-064 |
 | AGENT-042 | Seed boards and a kanban; the skills and template say "a board is a document"; the skill handles `workspace.reflect` | todo | P0 | opus | SHARED-064, CLI-060, SERVER-137 |
-| SERVER-135 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | todo | P0 | opus | CONTRACT-074 |
+| SERVER-138 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | todo | P0 | opus | CONTRACT-074 |
 | SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | todo | P1 | opus | CONTRACT-075 |
 | SERVER-137 | Reflect on demand and when the dust settles: the event, the clock, the quiet window | todo | P1 | opus | CONTRACT-076 |
-| CLI-060 | Board flags, `--stage`, `--unset`, `corpus folder` and `corpus reflect`; `--pinned` and view `--order` go | todo | P1 | opus | CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-135, SERVER-136, SERVER-137 |
+| CLI-060 | Board flags, `--stage`, `--unset`, `corpus folder` and `corpus reflect`; `--pinned` and view `--order` go | todo | P1 | opus | CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-138, SERVER-136, SERVER-137 |
 | CLI-061 | `corpus upgrade` and `corpus workspace upgrade` report the data migrations a workspace needs, as commands an agent can run | todo | P0 | opus | CONTRACT-074, CLI-060 |
-| UI-148 | Boards: the board bar, columns read from the board document, order and pin writes go to the board, one board always open | todo | P0 | opus | CONTRACT-074, SERVER-135 |
+| UI-148 | Boards: the board bar, columns read from the board document, order and pin writes go to the board, one board always open | todo | P0 | opus | CONTRACT-074, SERVER-138 |
 | UI-149 | Paths: a row opens a column to the right, no loops, open here, restart, new path right, keep, close, close all — and every `open()` caller lands in a path | todo | P0 | fable | UI-148 |
-| UI-152 | Kanban boards: derived stage columns, a drag follows the transition graph, stage and status chips, the graph drawn | todo | P1 | opus | UI-148, SERVER-135 |
+| UI-152 | Kanban boards: derived stage columns, a drag follows the transition graph, stage and status chips, the graph drawn | todo | P1 | opus | UI-148, SERVER-138 |
 | UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | todo | P0 | opus | UI-149, CONTRACT-075 |
 | UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | todo | P1 | opus | UI-149 |
 | UI-153 | The Reflect control, and what changed since the agent last looked | todo | P1 | opus | UI-148, SERVER-137 |

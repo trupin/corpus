@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: SHARED-064 (riders 2, 5, 6, 7 signed)
-- Blocks: SERVER-135, CLI-060, CLI-061, UI-148, UI-152
+- Blocks: SERVER-138, CLI-060, CLI-061, UI-148, UI-152
 
 ## Spec References
 - SPEC.md §5 — "The document model" (`stage`, the coupling rule)
@@ -58,7 +58,7 @@ export const KanbanSchema = z.object({
 - Key names on the wire are camelCase (`defaultOpen`); the frontmatter key is `default-open` — the server maps, as it does for every field today.
 
 ### Edge Cases
-- A `type: view` document that still carries `pinned`/`order` in its file: not the contract's problem; the server puts unknown keys in `extra` (SERVER-135) and CLI-061 names the migration.
+- A `type: view` document that still carries `pinned`/`order` in its file: not the contract's problem; the server puts unknown keys in `extra` (SERVER-138) and CLI-061 names the migration.
 - `transitions` missing a stage means that stage leads nowhere by drag; `transitions` absent altogether means the linear funnel (a UI rule; the contract only validates shape).
 
 ## Testing Strategy

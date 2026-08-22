@@ -1,4 +1,4 @@
-# [SERVER-135] Project boards and `stage`, keep one default-open board, and let a stage decide a status
+# [SERVER-138] Project boards and `stage`, keep one default-open board, and let a stage decide a status
 
 ## Domain
 server
@@ -80,4 +80,4 @@ _Filled in by the implementing agent._
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0, cross-domain)
 - [ ] `/evaluate` passes
-- [ ] Committed with `[SERVER-135]` prefix
+- [ ] Committed with `[SERVER-138]` prefix
