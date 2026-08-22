@@ -1,6 +1,8 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
+import { settledReader } from "./settle";
 import { stubCorpus, type StubRow } from "./stubCorpus";
+import { POPOVER_DRAG_STEP_COARSE, POPOVER_EDGE_MARGIN } from "../src/anchors/popoverDrag";
 
 /**
  * UI-112 in a real browser: **the composer moves, and what it is about stays
@@ -52,6 +54,13 @@ async function openMemo(page: Page): Promise<void> {
   await page.locator(".board").waitFor();
   await page.locator('.row[data-row-doc="doc_note"]').click();
   await page.locator(".reader .ProseMirror").waitFor();
+  // Every coordinate below is read off the document, and the document is still
+  // moving for ~210ms after `.ProseMirror` appears (`settle.ts`, UI-146).
+  // Measured here it is worse than a stale coordinate: a right-click that lands
+  // while the column is still easing open makes Chromium scroll the reader
+  // **188px** to bring the focused body into view, so the composer opens under
+  // a paragraph that is no longer where it was aimed at.
+  await settledReader(page);
 }
 
 /** Opens the composer on the memo's first paragraph, as a person does. */
@@ -75,6 +84,31 @@ async function corner(target: Locator): Promise<Box> {
   const box = await target.boundingBox();
   if (box === null) throw new Error("no box");
   return { x: Math.round(box.x), y: Math.round(box.y) };
+}
+
+/**
+ * How far down this composer may still be put, from where it opened.
+ *
+ * `popoverDrag`'s clamp keeps the whole box inside the viewport with
+ * `POPOVER_EDGE_MARGIN` to spare, so a box that opened at `top` has
+ * `height - POPOVER_EDGE_MARGIN - boxHeight - top` of travel left underneath it
+ * and not one pixel more.
+ *
+ * **It has to be measured, because it is not a constant.** The composer opens
+ * under the words it is about, so where those words sit decides how much room
+ * is beneath it — and what sits above them decides where they sit. This spec
+ * used to drag a flat 220px, which was room the layout offered until UI-093 put
+ * the frontmatter form on screen at all times: the form pushed the first
+ * paragraph ~75px down the page, the composer opened ~75px lower with it, and
+ * 220px stopped fitting. CI failed it deterministically at 46px short — the
+ * clamp doing its job, on a drag the viewport no longer had room for. Asserting
+ * a distance the layout does not offer tests the clamp, not the landing.
+ */
+async function roomBelow(page: Page, composer: Locator): Promise<number> {
+  const box = await composer.boundingBox();
+  const viewport = page.viewportSize();
+  if (box === null || viewport === null) throw new Error("no box");
+  return viewport.height - POPOVER_EDGE_MARGIN - box.height - box.y;
 }
 
 /** Picks the composer up by its grip and puts it down `dx, dy` away. */
@@ -111,18 +145,32 @@ test.describe("the comment composer on a document selection", () => {
     const composer = await commentOnTheFirstParagraph(page);
     const before = await corner(composer);
 
-    await dragBy(page, composer, 60, 220);
+    /*
+     * Half the room the layout actually offers underneath the box.
+     *
+     * Half rather than all of it, so the box is put down **inside** the clamp:
+     * a drag the clamp refused would land on the floor instead, tens of pixels
+     * from where it was asked for, and fail below. The tolerance stays at the
+     * two pixels a rounded `top` costs — this is an exact landing, not an
+     * approximate one.
+     */
+    const down = Math.round((await roomBelow(page, composer)) / 2);
+    expect(down, "the composer opens with no room left to be moved into").toBeGreaterThan(
+      POPOVER_DRAG_STEP_COARSE,
+    );
+
+    await dragBy(page, composer, 60, down);
     const dropped = await corner(composer);
     // Within a pixel of the displacement: this is a real gesture, not a jump.
     expect(Math.abs(dropped.x - (before.x + 60))).toBeLessThanOrEqual(2);
-    expect(Math.abs(dropped.y - (before.y + 220))).toBeLessThanOrEqual(2);
+    expect(Math.abs(dropped.y - (before.y + down))).toBeLessThanOrEqual(2);
 
     // Scroll the surface underneath: the words move, the composer does not.
     const highlight = page.locator('.reader .doc-body .anchor-hl[data-provisional="true"]');
     const textBefore = await corner(highlight);
     // Aimed at the lit words themselves, read live: a point derived from
-    // anything measured earlier can miss, because `.col` transitions its width
-    // for 250 ms after a reader opens.
+    // anything measured earlier can miss. The column no longer eases open
+    // (UI-146), but the reader still has late arrivals of its own.
     const over = await highlight.boundingBox();
     await page.mouse.move((over?.x ?? 0) + 4, (over?.y ?? 0) + (over?.height ?? 0) / 2);
     await page.mouse.wheel(0, 320);

@@ -32,7 +32,40 @@
    column the user made narrow does not jump to a fixed 560px on open. A column
    with no chosen width still lands on exactly 560. */
 
-/* A drag has to track the pointer, not ease toward it. */
+/*
+ * A column showing a document does not ease its width (UI-146).
+ *
+ * The eased open is `design/index.html`'s, and it was free while the reader was
+ * a fixed stack: the width crossed 224px over 0.25s and nothing inside it
+ * changed shape. It stopped being free when `.fm-form` began rendering at all
+ * times (UI-093), because the form's row count follows the column's width by
+ * design (SHARED-061) — so the animation now reflows the document while the
+ * document is on screen. Measured on an ordinary note, per animation frame from
+ * the body's first paint: the body rose 97.7px, its measure grew 306→517.2px,
+ * and its closing paragraph travelled 267.7px. A right-click landing inside
+ * that window made Chromium scroll `.reader-scroll` by 103px to keep the caret
+ * in view — the document jumping a quarter of the viewport at the instant a
+ * person opens a context menu on a specific word, which is the movement
+ * §11 was named for ruling out.
+ *
+ * So the width change that the *app* makes on the person's behalf is instant,
+ * and the ones a person makes at the edge keep their easing: a drag never eased
+ * (`.col.resizing` below — it tracks the pointer), and an arrow-key step on a
+ * column with no reader open still does. This is the appearance the mockup
+ * already ships for anyone who asked for less motion (`global.css`'s
+ * `prefers-reduced-motion` guard, which turns the same transition off), applied
+ * to the one case where the motion moves prose somebody is reading.
+ *
+ * SHARED-061 is untouched: the form still derives its row count from the room
+ * the column gives it. What changes is only that the room stops passing through
+ * every intermediate value on the way to its own.
+ */
+.col.reading {
+  transition: border-color 0.3s ease;
+}
+
+/* A drag has to track the pointer, not ease toward it. Declared after
+   `.col.reading` so it still wins on a column that is doing both. */
 .col.resizing {
   transition: none;
   user-select: none;

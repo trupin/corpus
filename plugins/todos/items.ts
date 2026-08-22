@@ -740,6 +740,105 @@ export function openItems(items: readonly TodoItem[]): readonly TodoItem[] {
   return items.filter((item) => !item.done);
 }
 
+/** What {@link deriveStatus} may choose between — never `archived` (SPEC.md §12). */
+export type DerivedTodoStatus = "open" | "resolved";
+
+/**
+ * **A todo document's status is its items** (SPEC.md §12, rider signed
+ * 2026-08-12; PLUGINS-016): at least one item and no open items reads
+ * `resolved`; every other list reads `open`, including an empty one, which has
+ * completed nothing.
+ *
+ * `null` means the derivation does not apply and the **stored** value stands,
+ * in exactly two states, both owned here so no caller can apply them
+ * differently:
+ *
+ * - `stored === "archived"` — archiving says where a document is kept, which
+ *   no checkbox can imply; an archived list reads `archived` whatever its
+ *   items say, and unarchiving returns it to whichever of the two its items
+ *   say at that moment (which this function then answers).
+ * - Items that cannot be read — a malformed legacy `extra.items` key. The
+ *   DocPanel renders no stats over that state because a number over a broken
+ *   list is a quiet claim about a broken state, and a derived status is the
+ *   same claim in one word, so it follows the same rule: derive nothing.
+ *
+ * Everything else derives from **the same {@link readItems} the stats panel
+ * counts** — a not-yet-migrated document derives from its legacy frontmatter
+ * items, a dual-storage document from its body — which is what makes the
+ * rider's "the two can therefore never disagree" true by construction rather
+ * than by coincidence. This is also why the derivation is the plugin's and not
+ * a core task-list read: `readItems` and core's own parse (remark-gfm, the
+ * editor's) demonstrably diverge on blockquoted task lines, unclosed fences
+ * and ordered-list task items, and none of the legacy-frontmatter states is
+ * visible to any body parse at all (PLUGINS-016's recorded evidence).
+ *
+ * Callers compose the fallback themselves: `deriveStatus(...) ?? stored`.
+ */
+export function deriveStatus(
+  source: ItemsSource | undefined,
+  stored: string,
+): DerivedTodoStatus | null {
+  if (stored === "archived") return null;
+  const read = readItems(source);
+  if (!read.ok) return null;
+  return read.items.length > 0 && read.items.every((item) => item.done) ? "resolved" : "open";
+}
+
+/** What {@link deriveDue} answers — see the kit's `DerivedDocDue`. */
+export interface DerivedTodoDue {
+  /** An ISO calendar date, or `null` for "this list has no deadline". */
+  readonly due: string | null;
+}
+
+/**
+ * **A todo document's deadline is its earliest open item's** (PLUGINS-018).
+ *
+ * SPEC.md §5 puts `due` on every document and reads it in Attention, in
+ * `--due overdue`, in `--needs due` and in `--needs me`. SPEC.md §12 puts a
+ * deadline on an *item*, as `(due: YYYY-MM-DD)` at the end of its line. Before
+ * this function the two never met: an item eighteen days overdue left its
+ * document's `due` empty, so all four of those surfaces answered "nothing is
+ * late" while something was. This is the rollup that joins them, and it is the
+ * {@link deriveStatus} seam one field over — same input, same two
+ * not-applicable states, same `parity.test.ts`.
+ *
+ * **Open items only.** A checked item that was due yesterday is finished work,
+ * not a deadline: counting it would leave a completed list permanently overdue
+ * and fill Attention with things nobody has to do. So checking the earliest
+ * dated item moves the document's deadline to the next one, and checking the
+ * last dated item clears it — which is the same act, because "clears it" is
+ * just "the next one is nobody".
+ *
+ * **Three answers, and the middle one matters most.** `{ due: <date> }` is a
+ * deadline. `{ due: null }` says this list has none, and the field must then
+ * be **absent** from the document rather than present-and-empty — an undated
+ * list is not due today. `null` says the derivation does not apply and the
+ * stored value stands, in the same two states {@link deriveStatus} owns: a
+ * stored status of `archived` (a document put away makes no claim about what
+ * is left to do, and unarchiving returns it to whatever its items say at that
+ * moment), and items that cannot be read (a date over a broken list is a quiet
+ * claim about a broken state, exactly as a count over one would be).
+ *
+ * `stored` is the stored **status**, not the stored due date, and it is read
+ * for the `archived` guard alone — the derived date owns the `due` field
+ * outright, so what that field already holds never affects the answer.
+ *
+ * No clock: this is the *earliest* deadline, not a judgment about whether it
+ * has passed. `isOverdue` is where today comes in, and it stays out here so
+ * that reprojecting a document twice in one day cannot give two answers.
+ */
+export function deriveDue(source: ItemsSource | undefined, stored: string): DerivedTodoDue | null {
+  if (stored === "archived") return null;
+  const read = readItems(source);
+  if (!read.ok) return null;
+  const deadlines = openItems(read.items)
+    .map((item) => item.due)
+    .filter((due): due is string => due !== undefined);
+  // ISO calendar dates sort as strings, which is why `isOverdue` compares them
+  // the same way — the format is the ordering.
+  return { due: deadlines.length === 0 ? null : deadlines.reduce((a, b) => (a < b ? a : b)) };
+}
+
 /** How many open items carry a deadline — the design's `2 due` row badge. */
 export function dueCount(items: readonly TodoItem[]): number {
   return openItems(items).filter((item) => item.due !== undefined).length;

@@ -11,6 +11,8 @@ import type { PluginManifest } from "./types.js";
 
 export type {
   ColumnComponentProps,
+  DerivedDocDue,
+  DerivedDocStatus,
   DocPanelProps,
   DocViewProps,
   ListItemProps,

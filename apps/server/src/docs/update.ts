@@ -17,12 +17,15 @@ import { EXTRA_MAX_BYTES } from "@corpus/contract";
 import { reconcileAnchors } from "../anchors/index.js";
 import {
   claudeCodeFrontmatterIssues,
+  documentTitle,
   formatInstant,
   readExtraFrontmatter,
   serializeDocument,
   setBody,
   setFrontmatterFields,
+  type ParsedDocument,
 } from "../core/index.js";
+import { overwrittenDerivedFields } from "./derived-fields.js";
 import { badRequest, forbidden } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { assertDocumentKey } from "./key.js";
@@ -131,18 +134,47 @@ export const CLEARABLE_FRONTMATTER_KEYS = [
  * removing `extra` entry reach the file. Removals of keys the file does not
  * carry are dropped here rather than passed on, so a `null` that clears nothing
  * does not make the save stamp `updated`.
+ *
+ * **`title` is compared against the name the document goes by, not against the
+ * raw key** (SERVER-100). Frontmatter need not carry `title:` at all — §7's
+ * hand-written skills carry `name:`, a hand-dropped file carries neither — and
+ * every reader still shows such a document under the name {@link documentTitle}
+ * resolves. The reader autosaves the title it is displaying, so comparing that
+ * against `current["title"]` reported a rename the first time any such document
+ * was opened: `title:` was written, `updated` moved, a commit landed and §4's
+ * acknowledgment woke the agent to reflect on an edit nobody made. Asked against
+ * the resolved name the answer is "identical", and §4's "a save re-sending a
+ * title identical to the stored one changes nothing and opens nothing" holds
+ * without a special case anywhere downstream. This is the same rule
+ * {@link currentOrigin} follows below, for the same reason: a write must ask the
+ * question the reader answered, or it disagrees with what the caller was shown.
+ *
+ * `goesBy` is that resolved name — the caller passes the projection row's title
+ * as the last rung. A caller with no row omits it and gets the plain comparison,
+ * which is the old behaviour and is right for a caller that has no document to
+ * derive a name from.
  */
 export function changedFields(
   current: Readonly<Record<string, unknown>>,
   patch: UpdateDocRequest,
   actor: Actor = "user",
   stamp: string | null = null,
+  goesBy: string | null = null,
 ): Record<string, unknown> {
   const changed: Record<string, unknown> = {};
   for (const key of UPDATABLE_FRONTMATTER_KEYS) {
     const value = patch[key];
     if (value === undefined) continue;
     if (sameValue(current[key], value)) continue;
+    // The one key whose stored value is not the key (see the note above): a
+    // `title` equal to the name the document already goes by renames nothing.
+    // Written as a second skip rather than as a substituted left-hand side so a
+    // value the raw key already holds is still recognised — a document whose
+    // `title:` is blank goes by its filename, and re-sending that blank must
+    // stay the no-op it has always been.
+    if (key === "title" && goesBy !== null && documentTitle(current, goesBy) === patch.title) {
+      continue;
+    }
     changed[key] = value;
   }
   // SPEC.md §7's canonical keyless write, made true of this route as well as of
@@ -416,6 +448,70 @@ function assertNotUnarchivingByPut(
   ]);
 }
 
+/**
+ * **A field §12 makes the document's own answer is not a caller's to set**
+ * (PR #55 review, MINOR) — {@link assertNotUnarchivingByPut}'s sibling, and the
+ * same shape of rule: this write would report a success it is not going to
+ * deliver, so it is refused instead.
+ *
+ * Before this, a `PUT` naming `status` or `due` on a derived type answered `200`
+ * while `convergeDerivedFields` put the derived value straight back, so the only
+ * thing that reached disk was the `updated` stamp. Three costs, and the third is
+ * what makes a refusal the right shape rather than a quiet drop: a caller could
+ * not tell a refused write from an applied one; a write that changed nothing a
+ * person asked for landed a commit; and `updated` moving feeds §5's staleness
+ * ramp, so an ignored request aged a document out of the Attention view.
+ *
+ * **The two options, and why this one.** Dropping the field before the plan
+ * would be quieter, but a caller still could not tell their date was ignored
+ * unless the response said so — and saying so means a new §14 warning code,
+ * which is a contract change this could not make. A refusal needs no new
+ * vocabulary (the route already declares `400`, this is genuinely a statement
+ * about the request body, and it is where SERVER-039 already says "this field is
+ * not yours to set" on this route), and it tells the caller at the moment they
+ * asked.
+ *
+ * **An echo is not a request**, which is the whole risk of refusing: the board
+ * publishes whole documents, so a `PUT` carrying an unchanged `status` beside a
+ * genuine `title` edit must not fail the write. Two filters make that true and
+ * neither is a special case. `changedFields` has already dropped a value equal
+ * to the file's, and every server write converges the file — so the value a
+ * reader was shown is normally the stored one and never reaches here. What
+ * survives is asked of {@link overwrittenDerivedFields}, which puts the question
+ * to the convergence itself over the document this patch would produce: a value
+ * the convergence agrees with is not being ignored, whatever made the file
+ * disagree with it.
+ *
+ * Costs the autosave path nothing: a body save names neither field, and the
+ * caller checks that before asking.
+ */
+function assertDerivedFieldsNotSet(
+  workspace: DocsWorkspace,
+  loaded: { readonly path: string; readonly row: { readonly id: string; readonly type: string } },
+  next: ParsedDocument,
+  fields: Readonly<Record<string, unknown>>,
+): void {
+  const overwritten = overwrittenDerivedFields(
+    loaded.path,
+    next,
+    fields,
+    workspace.projection.derivedFields,
+  );
+  if (overwritten.length === 0) return;
+  validationError(
+    `\`${overwritten[0] ?? "status"}\` is derived from the document itself and is not a value ` +
+      "a save may set (SPEC.md §12)",
+    overwritten.map((field) => ({
+      path: `body.${field}`,
+      message:
+        `${loaded.row.id} is a \`${loaded.row.type}\` document, whose \`${field}\` is read from ` +
+        "its own content rather than from its frontmatter, so the value you sent would be " +
+        "replaced by the derived one before it reached disk. Change what the field is read " +
+        "from — for a todo list, its items — and the field follows.",
+    })),
+  );
+}
+
 export async function updateDocument(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,
@@ -456,7 +552,13 @@ export async function updateDocumentLocked(
 
   const nextBody = patch.body ?? parsed.body;
   const bodyChanged = nextBody !== parsed.body;
-  const fields = changedFields(parsed.data, patch, actor, stampedOrigin(workspace, patch.job));
+  const fields = changedFields(
+    parsed.data,
+    patch,
+    actor,
+    stampedOrigin(workspace, patch.job),
+    loaded.row.title,
+  );
   // Before anything is reconciled or written, and after `changedFields` has
   // decided the patch really moves `status` at all.
   assertNotUnarchivingByPut(id, parsed.data, loaded.row.status, fields);
@@ -485,6 +587,10 @@ export async function updateDocumentLocked(
     ...(reconciled === null ? {} : { anchors: reconciled.anchors }),
     ...(stampUpdated ? { updated: formatInstant(workspace.now()) } : {}),
   });
+  // Before anything is written, and after the frontmatter this save would leave
+  // on disk exists to ask the convergence about — which is why it sits here
+  // rather than beside `assertNotUnarchivingByPut`.
+  assertDerivedFieldsNotSet(workspace, loaded, nextParsed, fields);
   // Before anything is written, and only when the patch can move `extra` at
   // all — the autosave path carries no `extra` and must not pay for the walk.
   if (patch.extra !== undefined) {
@@ -517,7 +623,11 @@ export async function updateDocumentLocked(
       project: [loaded.path],
       unproject: [],
       commit: {
-        subject: `doc edit: ${titleOf(nextParsed.data, loaded.row.title)} (${id}) by ${actor}`,
+        // The name the reader was shown and the name `changedFields` compared
+        // against — one derivation, so a `git log` line, a board row and the
+        // save's own comparison cannot call one document three things
+        // (SERVER-100).
+        subject: `doc edit: ${documentTitle(nextParsed.data, loaded.row.title)} (${id}) by ${actor}`,
         anchors: report,
         // SPEC.md §4 lists "a document ... marked still current (§5)" among the
         // acts that close a window, and lists "an ordinary save of a document
@@ -565,9 +675,14 @@ export async function updateDocumentLocked(
       // the reader and renames a document has plainly edited it, and was
       // silently never acknowledged. §4 now draws the line at what the document
       // **says** — its body, or the title it goes by — against how it is *held*.
-      // `changedFields` has already dropped a title equal to the file's, so the
-      // same "a re-sent identical value is not a change" rule covers it without
-      // a second comparison.
+      // `changedFields` has already dropped a title equal to the one the
+      // document goes by, so the same "a re-sent identical value is not a
+      // change" rule covers it without a second comparison. **The name it goes
+      // by is the comparison, and the raw `title:` key is not** (SERVER-100):
+      // a document that carries `name:` or no name at all still shows one, the
+      // reader autosaves the one it is showing, and pinning that name into the
+      // frontmatter is a change to how the document is held rather than to what
+      // it says.
       //
       // **Sealing is unaffected**, which is why this can be conditional at all:
       // `observeCommit` seals through `touches(commit, session)`, which compares
@@ -585,6 +700,3 @@ export async function updateDocumentLocked(
     result,
   };
 }
-
-const titleOf = (data: Readonly<Record<string, unknown>>, fallback: string): string =>
-  typeof data["title"] === "string" && data["title"].trim() !== "" ? data["title"] : fallback;

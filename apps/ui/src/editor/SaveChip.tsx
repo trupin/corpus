@@ -157,6 +157,23 @@ export function saveChipClass(state: SaveState): string {
 }
 
 /**
+ * Which of the document's writers a chip reports on.
+ *
+ * The document has two — the body's autosave and the frontmatter form — and
+ * each reports its own saves, in its own place, because one shared slot is
+ * last-writer-wins: a body save landing after a frontmatter refusal would erase
+ * the only report that some of the person's text is not on disk.
+ */
+export type SaveChipSurface = "body" | "frontmatter";
+
+export interface SaveChipViewProps {
+  readonly state: SaveState;
+  /** `null` when there is nothing to retry — the chip then renders as text. */
+  readonly onRetry: (() => void) | null;
+  readonly surface: SaveChipSurface;
+}
+
+/**
  * **The chip is always the same element**, and the retry lives inside it.
  *
  * It used to *become* a `<button>` when a failure offered a retry, and that one
@@ -167,9 +184,13 @@ export function saveChipClass(state: SaveState): string {
  * whole file was corrected for (UI-135). Nesting the control keeps the flex item
  * one element for the row's whole life, and costs nothing: the button is still a
  * real button, still carries the failure's message, and still calls `retry`.
+ *
+ * The state arrives as props rather than from the context below, because the
+ * frontmatter form (UI-093) holds its own save state and renders this same chip
+ * beside its own controls. One implementation, two mounting points — the copy,
+ * the reserved box and the nested retry cannot drift between the two surfaces.
  */
-export function SaveChip(): ReactElement {
-  const { state, onRetry } = useContext(SaveStatusContext);
+export function SaveChipView({ state, onRetry, surface }: SaveChipViewProps): ReactElement {
   const text = saveChipText(state);
   const retry =
     state.kind === "error" && onRetry !== null ? { message: state.message, run: onRetry } : null;
@@ -177,7 +198,7 @@ export function SaveChip(): ReactElement {
   return (
     <span
       className={saveChipClass(state)}
-      data-save-chip
+      data-save-chip={surface}
       data-reserve={RESERVED_SAVE_CHIP_TEXT}
       role={state.kind === "idle" ? undefined : "status"}
       // The failure's own sentence beats the chip's three words, so an error
@@ -200,4 +221,10 @@ export function SaveChip(): ReactElement {
       )}
     </span>
   );
+}
+
+/** The head's chip: the same element, fed by the editor's published state. */
+export function SaveChip(): ReactElement {
+  const { state, onRetry } = useContext(SaveStatusContext);
+  return <SaveChipView state={state} onRetry={onRetry} surface="body" />;
 }

@@ -188,6 +188,16 @@ export interface StubRow {
    * cannot occur (UI-102).
    */
   readonly status?: DocStatus;
+  /**
+   * SPEC.md §5's optional deadline, as the file holds it.
+   *
+   * Seeded rather than flatly `null`, which is what it was until the review of
+   * PR #55: nothing read it, so nothing noticed, and no spec could put a **date**
+   * in front of a surface that shows one. `derived-due.spec.ts` is the surface —
+   * a `due` a plugin derives is stated rather than offered — and it needs a
+   * document whose deadline is not null to say anything about it at all.
+   */
+  readonly due?: string | null;
   readonly pinned?: boolean;
   readonly order?: number | null;
   /** A view document's query — the contract's `ViewQuery`, not free-form JSON. */
@@ -272,6 +282,8 @@ interface StoredDoc {
   /** The frontmatter record of which model wrote which turn, keyed by `ts`. */
   turnModels: Record<string, string>;
   status: DocStatus;
+  /** See {@link StubRow.due}. */
+  due: string | null;
   pinned: boolean;
   order: number | null;
   query: ViewQuery | null;
@@ -636,6 +648,7 @@ function seeded(row: StubRow): StoredDoc {
     body: row.body ?? "",
     turnModels: { ...(row.turnModels ?? {}) },
     status: row.status ?? "open",
+    due: row.due ?? null,
     pinned: row.pinned ?? false,
     order: row.order ?? null,
     query: row.query ?? null,
@@ -1001,7 +1014,7 @@ export async function stubCorpus(
       tags: [],
       created: SEEDED_AT,
       updated: doc.updated,
-      due: null,
+      due: doc.due,
       reviewed: null,
       evergreen: false,
       origin: null,
@@ -1124,7 +1137,7 @@ export async function stubCorpus(
        * document the server can produce.
        */
       anchors: Object.fromEntries(doc.anchors.map((anchor) => [anchor.anchorId, anchor.selector])),
-      due: null,
+      due: doc.due,
       reviewed: null,
       evergreen: false,
       origin: null,
@@ -2396,6 +2409,13 @@ export async function stubCorpus(
         // ever store, so an unrecognised one is ignored rather than written
         // through — the same refusal `UpdateDocRequest`'s enum makes (UI-102).
         if (isDocStatus(changes["status"])) doc.status = changes["status"];
+        // `due` is cleared with an explicit `null` and left alone by omission —
+        // the distinction `UpdateDocRequest` draws and the form relies on, and
+        // a stub that stored neither could not tell a deadline that was removed
+        // from one that was never sent.
+        if (typeof changes["due"] === "string" || changes["due"] === null) {
+          doc.due = changes["due"];
+        }
         if (typeof changes["body"] === "string") doc.body = changes["body"];
         if (changes["extra"] !== undefined && changes["extra"] !== null) {
           // RFC 7386 shallow merge, exactly as the server applies it.

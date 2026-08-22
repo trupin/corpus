@@ -5,9 +5,11 @@ import {
   useRowActions,
   useSetDocArchived,
   useSetThreadStatus,
+  useUpdateDoc,
   type RowNotice,
   type StalenessLevel,
 } from "@corpus/kit";
+import { useStatusLock } from "../doc/fieldLock";
 import { threadStatusNotice } from "../thread/resolveNotice";
 import type { MenuAction } from "./menuModel";
 
@@ -43,6 +45,25 @@ const ARCHIVED = "archived";
  */
 export function unarchivedMessage(title: string): string {
   return `Restored “${title}” — committed. It is back in the default lists.`;
+}
+
+/**
+ * What resolving or reopening an ordinary document narrates.
+ *
+ * The second sentence is the one thing a user cannot see for themselves and is
+ * most likely to fear: SHARED-031 makes `resolved` "a statement about what is
+ * left to do, not a way to tidy the board", so the document **keeps its place in
+ * every list already showing it**. Saying so is what stops Resolve being read as
+ * a quiet Archive.
+ *
+ * Keyed on what was **sent** rather than on the render's own status, for
+ * `threadStatusNotice`'s reason: the callback outlives the menu that started the
+ * write (UI-012).
+ */
+export function docStatusNotice(title: string, resolved: boolean): string {
+  return resolved
+    ? `Resolved “${title}” — committed. It stays where it is.`
+    : `Reopened “${title}” — committed.`;
 }
 
 /** The unarmed Delete copy, and the copy the first activation replaces it with. */
@@ -109,6 +130,31 @@ export function useDocActions(
       });
     },
   });
+  /**
+   * The **other** status write — an ordinary document's, which has no route of
+   * its own (SPEC.md §9.2's `PUT /api/docs/{id}`).
+   *
+   * Not the thread mutation, and not a unification of the two. Resolving a
+   * thread does things a document write must not: `POST …/resolve` rewrites and
+   * commits the thread file (SPEC.md §6), releases a designated resident
+   * (SPEC.md §7) and invalidates the thread's own key alongside the document's.
+   * The menu picks the mutation its subject needs.
+   */
+  const setDocStatus = useUpdateDoc(subject.id, {
+    onSuccess: (_response, changes) => {
+      onNotify({
+        tone: "info",
+        message: docStatusNotice(subject.title, changes.status === "resolved"),
+      });
+    },
+    onError: (error, changes) => {
+      onNotify({
+        tone: "error",
+        message: `${changes.status === "resolved" ? "Resolve" : "Reopen"} failed — ${error.message}`,
+      });
+    },
+  });
+
   const deleteDoc = useDeleteDoc();
 
   /*
@@ -129,6 +175,20 @@ export function useDocActions(
   const archived = subject.status === ARCHIVED;
   const resolved = subject.status === "resolved";
   const stale = hasStaleActions(subject.staleLevel ?? 0);
+  /**
+   * Whether this document's status is anyone's to set — the same question the
+   * frontmatter form asks, from the one function that answers it.
+   *
+   * The form renders the control locked with the reason; this menu **omits** the
+   * action instead, because §11's context menu lists "exactly that item's
+   * existing actions" and an item nothing could ever arm is not one of them. The
+   * two cases it covers: an archived document, whose `PUT` the server refuses
+   * outright (SERVER-039) so offering the act would promise a refusal; and a
+   * type that **derives** its status (SPEC.md §12), where SHARED-031 part 2 says
+   * in signed text that it "offers no Resolve, because there is nothing there
+   * for anyone to set".
+   */
+  const settable = useStatusLock(subject) === null;
   const list: MenuAction[] = [];
 
   if (surface === "row" && onOpen !== undefined) {
@@ -171,6 +231,26 @@ export function useDocActions(
     });
   }
 
+  /**
+   * Resolve / Reopen — on **every** document, not only a thread (UI-094).
+   *
+   * `status` is one vocabulary and not per-type (SPEC.md §5, rider signed
+   * 2026-08-12): every document is `open`, `resolved` or `archived`, and each
+   * word means the same thing whatever the document is. The gate here used to be
+   * `isThread`, which made this menu the only surface in the product that
+   * disagreed — the frontmatter form has always offered `resolved` on a note,
+   * and the write path gates only on leaving `archived`.
+   *
+   * **One branch, both menus.** The reader's ⋯ sheet and the row context menu
+   * are the same array (`DocMenu` and `RowMenuItems`), so they were wrong
+   * together and are right together. There was never a divergence *between* them
+   * to fix, and adding a second gate to either is how one would start.
+   *
+   * The **subject** picks the mutation, and the two are not interchangeable —
+   * see {@link setDocStatus}. What is identical is the label, which flips to
+   * Reopen on an already-resolved subject either way, and the meta, which says
+   * the same true thing about both.
+   */
   if (isThread) {
     list.push({
       id: "resolve",
@@ -179,6 +259,16 @@ export function useDocActions(
       disabled: setThreadStatus.isPending,
       run: () => {
         setThreadStatus.mutate({ id: subject.id, resolved: !resolved });
+      },
+    });
+  } else if (settable) {
+    list.push({
+      id: "resolve",
+      label: resolved ? "Reopen" : "Resolve",
+      meta: "status flip, committed",
+      disabled: setDocStatus.isPending,
+      run: () => {
+        setDocStatus.mutate({ status: resolved ? "open" : "resolved" });
       },
     });
   }

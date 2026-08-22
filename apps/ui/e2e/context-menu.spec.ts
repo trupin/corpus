@@ -121,9 +121,12 @@ test.describe("the context menu", () => {
 
     const menu = page.getByRole("menu", { name: "Actions for Mortgage options" });
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitem")).toHaveCount(4);
+    await expect(menu.getByRole("menuitem")).toHaveCount(5);
     await expect(menu.locator('[data-act="open"]')).toBeVisible();
     await expect(menu.locator('[data-act="open-focus"]')).toBeVisible();
+    // UI-094: `resolve` is a note's action too — SPEC.md §5's three statuses are
+    // one vocabulary, not a per-type one (rider signed 2026-08-12).
+    await expect(menu.locator('[data-act="resolve"]')).toBeVisible();
     await expect(menu.locator('[data-act="archive"]')).toBeVisible();
     await expect(menu.locator('[data-act="delete"]')).toBeVisible();
   });
@@ -343,7 +346,7 @@ test.describe("the context menu", () => {
    * column is a core subject in a core surface, and the menu's actions are
    * built from the `DocRow` core already holds.
    */
-  test("gives a todo document row the same menu a note row gets", async ({ page }) => {
+  test("gives a todo document row core's own menu, plugin paint and all", async ({ page }) => {
     const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE, TODO]);
     await stubTodoLists(page);
     await page.goto("/");
@@ -364,14 +367,20 @@ test.describe("the context menu", () => {
       .evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset["act"]));
     expect(acts).toEqual(["open", "open-focus", "archive", "delete"]);
 
-    // The same set the note row in the same column offers.
+    // The note row in the same column offers core's set, and the **one**
+    // difference between them is `resolve` (UI-094): the todos plugin declares
+    // `deriveStatus`, so a todo document's status is a reading of its items and
+    // "there is nothing there for anyone to set" (SPEC.md §12, SHARED-031 part
+    // 2). Asserted as a difference of exactly one named item rather than as two
+    // hand-written lists, so a menu that quietly lost something else fails here.
     await page.keyboard.press("Escape");
     await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
     const noteActs = await page
       .getByRole("menu")
       .getByRole("menuitem")
       .evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset["act"]));
-    expect(noteActs).toEqual(acts);
+    expect(noteActs.filter((act) => act !== "resolve")).toEqual(acts);
+    expect(noteActs).toContain("resolve");
 
     // And an action taken from it acts on the document, through the core route.
     await page.keyboard.press("Escape");
@@ -699,5 +708,108 @@ test.describe("the context menu", () => {
 
     await expect.poll(async () => (await corpus.doc("doc_note"))?.status).toBe("archived");
     await expect(menu).toHaveCount(0);
+  });
+});
+
+/**
+ * UI-094 in a real browser: right-clicking an ordinary document offers Resolve,
+ * and taking it changes the corpus.
+ *
+ * The corpus half is what makes these more than a render assertion — the stub
+ * stores what the write left behind, so "resolved" here is the document's own
+ * status and not a class on a row. The real-workspace drill (the file on disk
+ * and the commit) is in the issue's E2E log.
+ */
+test.describe("Resolve on any document", () => {
+  const ARCHIVED_NOTE = {
+    id: "doc_shelved",
+    title: "Old plan",
+    path: "data/docs/inbox/old-plan.md",
+    status: "archived" as const,
+    body: "Superseded.",
+  };
+
+  test("resolves a note from its row menu, and the note keeps its place", async ({ page }) => {
+    const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    const row = page.locator('.row[data-row-doc="doc_note"]');
+    await row.click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Actions for Mortgage options" });
+    await expect(menu.locator('[data-act="resolve"]')).toContainText("Resolve");
+    await menu.locator('[data-act="resolve"]').click();
+
+    await expect.poll(async () => (await corpus.doc("doc_note"))?.status).toBe("resolved");
+    // SHARED-031: resolving is a statement about what is left to do, never a way
+    // to tidy the board. The row is still in the column it was in.
+    await expect(row).toBeVisible();
+
+    // And the way back is where you found it: the same menu now reads Reopen.
+    await row.click({ button: "right" });
+    await expect(menu.locator('[data-act="resolve"]')).toContainText("Reopen");
+    await menu.locator('[data-act="resolve"]').click();
+    await expect.poll(async () => (await corpus.doc("doc_note"))?.status).toBe("open");
+    await expect(row).toBeVisible();
+  });
+
+  test("resolves through PUT /api/docs/{id}, never the thread route", async ({ page }) => {
+    const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page
+      .getByRole("menu", { name: "Actions for Mortgage options" })
+      .locator('[data-act="resolve"]')
+      .click();
+
+    await expect.poll(async () => (await corpus.of("PUT", "/api/docs/doc_note")).length).toBe(1);
+    expect((await corpus.of("PUT", "/api/docs/doc_note"))[0]?.body).toEqual({
+      status: "resolved",
+    });
+    expect(await corpus.of("POST")).toHaveLength(0);
+    expect(await corpus.unhandled()).toEqual([]);
+  });
+
+  test("offers the reader's ⋯ sheet the same act, on the same terms", async ({ page }) => {
+    const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await page.locator(".reader [data-doc-menu]").click();
+    const sheet = page.getByRole("menu", { name: "Document actions" });
+    await expect(sheet.locator('[data-act="resolve"]')).toContainText("Resolve");
+    await sheet.locator('[data-act="resolve"]').click();
+
+    await expect.poll(async () => (await corpus.doc("doc_note"))?.status).toBe("resolved");
+  });
+
+  /**
+   * SHARED-031 part 2, signed: "A type whose status is **derived** rather than
+   * set (§12) is such a case: it offers no Resolve, because there is nothing
+   * there for anyone to set." The todos plugin's manifest declares
+   * `deriveStatus`, and that declaration is the whole gate.
+   */
+  test("withholds it from a todo document, whose plugin derives the status", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, TODO]);
+    await stubTodoLists(page);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_todo"]').click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Actions for Inbox chores" });
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('[data-act="resolve"]')).toHaveCount(0);
+    // Not vacuous: the rest of the row set is there.
+    await expect(menu.locator('[data-act="archive"]')).toBeVisible();
+  });
+
+  /** SERVER-039 refuses `PUT {status}` on an archived document (§5's top rung). */
+  test("withholds it from an archived document, and offers Unarchive instead", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, ARCHIVE_VIEW, ARCHIVED_NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_shelved"]').click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Actions for Old plan" });
+    await expect(menu.locator('[data-act="resolve"]')).toHaveCount(0);
+    await expect(menu.locator('[data-act="unarchive"]')).toBeVisible();
   });
 });

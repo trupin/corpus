@@ -3,6 +3,7 @@ import type {
   AgentRoster,
   Doc,
   DocRow,
+  DocStatus,
   Job,
   QueueStatus,
   RelatedDoc,
@@ -12,7 +13,7 @@ import type {
 } from "@corpus/contract";
 import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
-import { unknownRecipientBody } from "./serverRefusals";
+import { derivedFieldRefusalBody, unknownRecipientBody } from "./serverRefusals";
 
 /**
  * A recording transport for the reader's suites.
@@ -344,7 +345,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     const route = `${request.method} ${url.pathname}`;
     const failure = options.failing?.[route];
     if (failure !== undefined) {
-      return json(refusal(route, failure), failure);
+      return json(refusal(route, failure, call), failure);
     }
 
     if (url.pathname.startsWith("/attachments/")) {
@@ -427,7 +428,14 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       const doc = docs.get(id);
       if (doc === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
       if (request.method === "PUT") {
-        const changes = (call.body ?? {}) as { body?: string; key?: string };
+        const changes = (call.body ?? {}) as {
+          body?: string;
+          key?: string;
+          title?: string;
+          tags?: string[];
+          status?: DocStatus;
+          due?: string | null;
+        };
         /*
          * SPEC.md §7's check, in the shape the server performs it: a write that
          * replaces the body presents the key of the version it read, and a key
@@ -445,8 +453,30 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
             409,
           );
         }
-        const written: Doc =
-          changes.body === undefined ? doc : { ...doc, body: changes.body, key: nextDocumentKey() };
+        /*
+         * **The frontmatter delta is applied**, not echoed back unchanged. A
+         * live control reads its value from the document the response carries
+         * (UI-093's read-your-write), so a stub that answered with the document
+         * as it was would make every landed save look like it had been reverted
+         * — and would let a form that dropped the person's value pass.
+         *
+         * The key moves only for a body write, which is narrower than the
+         * server (where the key names the whole file). That is deliberate: the
+         * conflict suites choose their own keys through `writeAsOther`, and a
+         * key that also moved on a title edit would refuse body saves those
+         * tests never asked about.
+         */
+        const written: Doc = {
+          ...doc,
+          ...(changes.body === undefined ? {} : { body: changes.body, key: nextDocumentKey() }),
+          frontmatter: {
+            ...doc.frontmatter,
+            ...(changes.title === undefined ? {} : { title: changes.title }),
+            ...(changes.tags === undefined ? {} : { tags: changes.tags }),
+            ...(changes.status === undefined ? {} : { status: changes.status }),
+            ...(changes.due === undefined ? {} : { due: changes.due }),
+          },
+        };
         docs.set(id, written);
         return json({ doc: written, anchors: { remapped: [], orphaned: [] }, warnings: [] });
       }
@@ -722,10 +752,28 @@ function threadSummary(id: string, resolved: boolean): unknown {
  * caller, which is exactly why the board has to translate it (UI-068). Every
  * other route keeps the shapeless refusal the failure paths were written
  * against.
+ *
+ * `PUT /api/docs/{id}` is route-specific for the same reason: its `400` is
+ * SERVER-085's *this field is derived*, and the form branches on the `issues`
+ * that refusal names. A shapeless body there would let a test certify a
+ * behaviour — a refused `status` leaving the local map — that the real refusal
+ * would never trigger. The body carries whichever derived fields the request
+ * actually sent, exactly as the server's does.
  */
-function refusal(route: string, status: number): unknown {
+function refusal(route: string, status: number, call: ReaderCall): unknown {
   if (status === 413) {
     return { code: "payload_too_large", message: "the upload is over the per-file limit" };
+  }
+  if (status === 400 && route.startsWith("PUT /api/docs/")) {
+    const sent = call.body;
+    const carried =
+      typeof sent === "object" && sent !== null
+        ? ["status", "due"].filter((field) => field in sent)
+        : [];
+    return derivedFieldRefusalBody(carried, {
+      id: route.slice("PUT /api/docs/".length),
+      type: "todo",
+    });
   }
   if (status === 400 && route === "POST /api/threads") {
     const message =

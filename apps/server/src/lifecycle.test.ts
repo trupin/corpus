@@ -151,6 +151,71 @@ describe("runServerProcess — boot", () => {
     }
   });
 
+  it("discovers plugins before the projection, so the boot scan derives §12's fields", async () => {
+    // SERVER-085, SERVER-134. The scan runs inside `openWorkspaceProjection`, so
+    // a registry that arrived afterwards would leave every derived-field
+    // document on the board under the values its file happens to state until
+    // something edited it. Asserted here rather than assumed: the two calls are
+    // one line apart and nothing else would notice if they swapped.
+    const workspace = makeWorkspace("ordering");
+    mkdirSync(join(workspace, "data", "docs"), { recursive: true });
+    writeFileSync(
+      join(workspace, "data", "docs", "errands.md"),
+      [
+        "---",
+        "id: doc_ordering1",
+        "type: derivedbyplugin",
+        "title: Errands",
+        "status: open",
+        "due: null",
+        "---",
+        "",
+        "- [x] renew the passport (due: 2026-07-09)",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      discoverPluginsFn: () =>
+        Promise.resolve([
+          {
+            dir: "stand-in",
+            root: join(workspace, "plugins", "stand-in"),
+            routes: null,
+            deriveStatus: () => "resolved",
+            deriveDue: () => ({ due: "2026-07-09" }),
+            types: [
+              {
+                type: "derivedbyplugin",
+                label: "Derived",
+                derivedStatus: true as const,
+                derivedDue: true as const,
+              },
+            ],
+            warnings: [],
+          },
+        ]),
+    });
+
+    try {
+      const row = server?.projection
+        ?.prepare("SELECT status, due FROM documents WHERE id = ?")
+        .get("doc_ordering1") as { status: string; due: string | null } | undefined;
+      expect(row?.status).toBe("resolved");
+      // Both members of the seam, from one registry built at one moment.
+      expect(row?.due).toBe("2026-07-09");
+    } finally {
+      await server?.close();
+    }
+  });
+
   it("prefers the explicit argument over CORPUS_WORKSPACE", async () => {
     const fromArg = makeWorkspace("from-arg");
     const fromEnv = makeWorkspace("from-env");

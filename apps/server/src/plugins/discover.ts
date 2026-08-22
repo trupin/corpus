@@ -10,6 +10,7 @@ import type { DocsWorkspace, DocumentMutex } from "../docs/index.js";
 import { describeThrown } from "../errors.js";
 import type { Logger } from "../logger.js";
 import { createPluginContext, type PluginServerContext } from "./context.js";
+import type { PluginDerive } from "./derived-fields.js";
 
 /**
  * Plugin discovery — the server's single entry point into `plugins/`
@@ -29,6 +30,47 @@ export interface PluginTypeDecl {
   readonly type: string;
   readonly label: string;
   readonly seedTemplate?: string | undefined;
+  /**
+   * This type's `status` is derived from the document itself (SPEC.md §12,
+   * PLUGINS-016) — the non-TS half of the manifest's `deriveStatus`, and what
+   * lets the server and the CLI know the field is not anyone's to set without
+   * executing a line of the plugin. `true` is the only spelling: absent means
+   * not derived, and `false` is not a way of saying so.
+   */
+  readonly derivedStatus?: true | undefined;
+  /**
+   * This type's `due` is derived from the document itself in the same way
+   * (PLUGINS-018: a todo document's deadline is its earliest open item's) — the
+   * non-TS half of the manifest's `deriveDue`, answered by the same module's
+   * named `deriveDue` export. One flag per derived field, so a field is declared
+   * where it is read and adding one is never a change to what the others mean.
+   */
+  readonly derivedDue?: true | undefined;
+}
+
+/** The core fields a plugin may answer for, and how each one is declared. */
+type DerivedFieldName = "status" | "due";
+
+interface DerivedFieldDescriptor {
+  readonly name: DerivedFieldName;
+  /** Its flag on a `types.yaml` entry. */
+  readonly flag: "derivedStatus" | "derivedDue";
+  /**
+   * Its export on `server/derive`. `status` is the **default** export because it
+   * is the field the seam shipped with; every field after it is named, which is
+   * the convention `plugins/todos/server/derive.ts` documents on the other side.
+   */
+  readonly exportName: string;
+}
+
+const DERIVED_FIELDS: readonly DerivedFieldDescriptor[] = [
+  { name: "status", flag: "derivedStatus", exportName: "default" },
+  { name: "due", flag: "derivedDue", exportName: "deriveDue" },
+];
+
+interface DerivedFieldLoad {
+  readonly field: DerivedFieldDescriptor;
+  readonly declared: readonly PluginTypeDecl[];
 }
 
 const TypesFileSchema = z.object({
@@ -37,6 +79,8 @@ const TypesFileSchema = z.object({
       type: z.string().min(1),
       label: z.string().min(1),
       seedTemplate: z.string().min(1).optional(),
+      derivedStatus: z.literal(true).optional(),
+      derivedDue: z.literal(true).optional(),
     }),
   ),
 });
@@ -55,6 +99,22 @@ export interface DiscoveredPlugin {
   readonly root: string;
   /** The routes factory, or `null` when the plugin ships no server half. */
   readonly routes: PluginRoutesFactory | null;
+  /**
+   * The `server/derive` **default** export — §12's derived `status` — or `null`
+   * when the plugin declares no such type or ships no such module (SPEC.md §12,
+   * PLUGINS-016). Loaded under the same containment as the routes module and
+   * typed just as loosely: `createDerivedFieldsRegistry` validates every answer.
+   */
+  readonly deriveStatus: PluginDerive | null;
+  /**
+   * The same module's named `deriveDue` export — the seam's second field
+   * (PLUGINS-018, SERVER-134) — or `null` on the same terms. **One module, two
+   * exports, one import**: a plugin's server half is one directory with one
+   * build, and a second discovery rule for a second field would be a second
+   * thing to get wrong (and a second entry point to forget in
+   * `scripts/package-staging.ts`, where `server/derive.js` is already staged).
+   */
+  readonly deriveDue: PluginDerive | null;
   /** Doc types declared in `types.yaml` — the server's whole view of them. */
   readonly types: readonly PluginTypeDecl[];
   /** Everything non-fatal that went wrong while discovering this plugin. */
@@ -103,10 +163,83 @@ export function excludedInProduction(dir: string, env: NodeJS.ProcessEnv): boole
  * ships no server half — a normal, silent state.
  */
 export function resolveRoutesModule(pluginRoot: string): string | null {
-  const compiled = join(pluginRoot, "dist", "server", "routes.js");
+  return resolveServerModule(pluginRoot, "routes");
+}
+
+/**
+ * The `server/derive` module — §12's derived status, executable half. Same
+ * convention as {@link resolveRoutesModule}, deliberately: a plugin's server
+ * half is one directory with one build, and a second discovery rule for a second
+ * module is a second thing to get wrong.
+ */
+export function resolveDeriveModule(pluginRoot: string): string | null {
+  return resolveServerModule(pluginRoot, "derive");
+}
+
+function resolveServerModule(pluginRoot: string, name: string): string | null {
+  const compiled = join(pluginRoot, "dist", "server", `${name}.js`);
   if (existsSync(compiled)) return compiled;
-  const source = join(pluginRoot, "server", "routes.ts");
+  const source = join(pluginRoot, "server", `${name}.ts`);
   return existsSync(source) ? source : null;
+}
+
+/**
+ * One exported function of a dynamically imported module. `null` for every other
+ * outcome, with the reason pushed onto `warnings` — a plugin's server half is
+ * convention, so "no such module" and "not a factory" are both ordinary states
+ * of somebody's directory, never a boot failure.
+ *
+ * `exportName` is `"default"` for the routes factory and for the seam's first
+ * derived field, and a named export for every field after it (SERVER-134). The
+ * import is memoized by `importModule` so one module read once serves every
+ * export a plugin declares.
+ */
+async function loadExportedFunction(
+  modulePath: string,
+  exportName: string,
+  module: { readonly describe: string; readonly noun: string; readonly skipped: string },
+  warnings: string[],
+  logger: Logger,
+  plugin: string,
+  importModule: (path: string) => Promise<unknown>,
+): Promise<((...args: never[]) => unknown) | null> {
+  const describeExport =
+    exportName === "default"
+      ? `default-exported ${module.noun}`
+      : `\`${exportName}\` ${module.noun}`;
+  try {
+    const loaded: unknown = await importModule(modulePath);
+    const exported =
+      typeof loaded === "object" && loaded !== null && exportName in loaded
+        ? (loaded as Record<string, unknown>)[exportName]
+        : undefined;
+    if (typeof exported === "function") return exported as (...args: never[]) => unknown;
+    warnings.push(`its ${module.describe} module has no ${describeExport}`);
+    return null;
+  } catch (error) {
+    warnings.push(`its ${module.describe} module failed to load`);
+    logger.error(
+      `plugin ${plugin} ${module.describe} module failed to load — skipping ${module.skipped}`,
+      { plugin, module: modulePath, ...describeThrown(error) },
+    );
+    return null;
+  }
+}
+
+/**
+ * Imports each module path at most once per discovery. The derive module carries
+ * one export per derived field, and importing it once per field would run a
+ * plugin's top-level code twice for a document type that declares two.
+ */
+function memoizedImport(): (path: string) => Promise<unknown> {
+  const loaded = new Map<string, Promise<unknown>>();
+  return (path) => {
+    const held = loaded.get(path);
+    if (held !== undefined) return held;
+    const loading: Promise<unknown> = import(pathToFileURL(path).href);
+    loaded.set(path, loading);
+    return loading;
+  };
 }
 
 function readTypesFile(pluginRoot: string, warnings: string[]): readonly PluginTypeDecl[] {
@@ -162,32 +295,64 @@ export async function discoverPlugins(
     .sort();
 
   const plugins: DiscoveredPlugin[] = [];
+  const importModule = memoizedImport();
   for (const dir of dirs) {
     const root = join(pluginsRoot, dir);
     const warnings: string[] = [];
     const types = readTypesFile(root, warnings);
 
     let routes: PluginRoutesFactory | null = null;
-    const modulePath = resolveRoutesModule(root);
-    if (modulePath !== null) {
-      try {
-        const module: unknown = await import(pathToFileURL(modulePath).href);
-        const exported =
-          typeof module === "object" && module !== null && "default" in module
-            ? module.default
-            : undefined;
-        if (typeof exported === "function") {
-          routes = exported as PluginRoutesFactory;
-        } else {
-          warnings.push("its server/routes module has no default-exported factory function");
+    const routesPath = resolveRoutesModule(root);
+    if (routesPath !== null) {
+      routes = (await loadExportedFunction(
+        routesPath,
+        "default",
+        { describe: "server/routes", noun: "factory function", skipped: "its routes" },
+        warnings,
+        logger,
+        dir,
+        importModule,
+      )) as PluginRoutesFactory | null;
+    }
+
+    // One export per derived field, all from one module, loaded only for a
+    // plugin that declares at least one derived type: importing a module nothing
+    // will ask anything of is boot latency spent on nothing, and a plugin
+    // shipping an unreferenced `server/derive.ts` should not be able to fail a
+    // boot with it. A plugin declaring both fields imports the module once.
+    const derivedFields: DerivedFieldLoad[] = [];
+    for (const field of DERIVED_FIELDS) {
+      const declared = types.filter((entry) => entry[field.flag] === true);
+      if (declared.length > 0) derivedFields.push({ field, declared });
+    }
+    const loaded: Record<DerivedFieldName, PluginDerive | null> = {
+      status: null,
+      due: null,
+    };
+    if (derivedFields.length > 0) {
+      const derivePath = resolveDeriveModule(root);
+      for (const { field, declared } of derivedFields) {
+        if (derivePath === null) {
+          warnings.push(
+            `its types.yaml declares a derived ${field.name} for ${declared
+              .map((entry) => entry.type)
+              .join(", ")} but it ships no server/derive module (SPEC.md §12)`,
+          );
+          continue;
         }
-      } catch (error) {
-        warnings.push("its server/routes module failed to load");
-        logger.error(`plugin ${dir} routes module failed to load — skipping its routes`, {
-          plugin: dir,
-          module: modulePath,
-          ...describeThrown(error),
-        });
+        loaded[field.name] = (await loadExportedFunction(
+          derivePath,
+          field.exportName,
+          {
+            describe: "server/derive",
+            noun: "function",
+            skipped: `its ${field.name} derivation`,
+          },
+          warnings,
+          logger,
+          dir,
+          importModule,
+        )) as PluginDerive | null;
       }
     }
 
@@ -198,8 +363,22 @@ export async function discoverPlugins(
       plugin: dir,
       routes: routes !== null,
       types: types.map((declared) => declared.type),
+      // Every type deriving *any* field, deduped and in declaration order — one
+      // line an operator reads as "these types answer for themselves", which is
+      // what it meant when `status` was the only field.
+      derives: [
+        ...new Set(derivedFields.flatMap(({ declared }) => declared.map((entry) => entry.type))),
+      ],
     });
-    plugins.push({ dir, root, routes, types, warnings });
+    plugins.push({
+      dir,
+      root,
+      routes,
+      deriveStatus: loaded.status,
+      deriveDue: loaded.due,
+      types,
+      warnings,
+    });
   }
   return plugins;
 }

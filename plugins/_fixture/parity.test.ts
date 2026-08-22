@@ -19,13 +19,19 @@ const TypesFileSchema = z.object({
       type: z.string().min(1),
       label: z.string().min(1),
       seedTemplate: z.string().min(1).optional(),
+      derivedStatus: z.literal(true).optional(),
+      derivedDue: z.literal(true).optional(),
     }),
   ),
 });
 
-function declaredInYaml(): readonly string[] {
+function declaredTypes(): z.infer<typeof TypesFileSchema>["types"] {
   const raw = readFileSync(join(import.meta.dirname, "types.yaml"), "utf8");
-  return TypesFileSchema.parse(YAML.parse(raw)).types.map((entry) => entry.type);
+  return TypesFileSchema.parse(YAML.parse(raw)).types;
+}
+
+function declaredInYaml(): readonly string[] {
+  return declaredTypes().map((entry) => entry.type);
 }
 
 describe("types.yaml ↔ manifest.ts parity", () => {
@@ -44,4 +50,27 @@ describe("types.yaml ↔ manifest.ts parity", () => {
       expect(declared, `types.yaml declares "${type}" but the manifest does not`).toContain(type);
     }
   });
+
+  /**
+   * PLUGINS-016 (`status`) and PLUGINS-018 (`due`): every derived field is
+   * declared twice — `derive<Field>` in the manifest, `derived<Field>: true` in
+   * types.yaml — and the two must agree per type and per field, in both
+   * directions. The fixture declares neither field, which is a state this
+   * invariant covers exactly like todos' both.
+   */
+  it.each([
+    { field: "status", manifest: "deriveStatus", flag: "derivedStatus" },
+    { field: "due", manifest: "deriveDue", flag: "derivedDue" },
+  ] as const)(
+    "declares derived $field in both files or in neither, per type",
+    ({ manifest: fn, flag }) => {
+      const flagged = new Map(declaredTypes().map((entry) => [entry.type, entry[flag] === true]));
+      for (const docType of manifest.docTypes) {
+        expect(
+          flagged.get(docType.type),
+          `"${docType.type}": manifest ${fn} and types.yaml ${flag} disagree`,
+        ).toBe(typeof docType[fn] === "function");
+      }
+    },
+  );
 });

@@ -9,6 +9,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import type { QueueEventStatus } from "@corpus/contract";
 import {
   openProjection,
   populateFromFiles,
@@ -127,6 +128,17 @@ export interface Workspace {
   doc(spec: DocSpec): string;
   thread(spec: ThreadSpec): string;
   seen(marks: Readonly<Record<string, string>>): void;
+  /**
+   * Writes one event file into `.corpus/queue/<status>/`, which is where the
+   * queue's own state lives (SPEC.md §7) — the projection reads the directory,
+   * so a fixture that wants an event in a given state puts it in that directory
+   * rather than writing the row.
+   */
+  queuedEvent(
+    status: QueueEventStatus,
+    id: string,
+    payload: Readonly<Record<string, unknown>>,
+  ): void;
   /** Fails an event through the real queue directories, as `POST /api/queue/{id}/fail` leaves them. */
   failedEvent(id: string, payload: Readonly<Record<string, unknown>>): void;
   reproject(): void;
@@ -151,6 +163,23 @@ export function createWorkspace(prefix: string): Workspace {
     writeFileSync(abs, content, "utf8");
   };
 
+  const queuedEvent = (
+    status: QueueEventStatus,
+    id: string,
+    payload: Readonly<Record<string, unknown>>,
+  ): void => {
+    write(
+      `.corpus/queue/${status}/${id}.json`,
+      JSON.stringify({
+        id,
+        type: "comment.created",
+        created: DEFAULT_INSTANT,
+        source: "cli",
+        payload,
+      }),
+    );
+  };
+
   return {
     root,
     config,
@@ -167,17 +196,9 @@ export function createWorkspace(prefix: string): Workspace {
     seen(marks) {
       write(".corpus/seen.json", JSON.stringify(marks, null, 2));
     },
+    queuedEvent,
     failedEvent(id, payload) {
-      write(
-        `.corpus/queue/failed/${id}.json`,
-        JSON.stringify({
-          id,
-          type: "comment.created",
-          created: DEFAULT_INSTANT,
-          source: "cli",
-          payload,
-        }),
-      );
+      queuedEvent("failed", id, payload);
     },
     reproject() {
       populateFromFiles(db);

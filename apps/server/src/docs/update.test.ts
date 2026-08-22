@@ -299,6 +299,129 @@ describe("PUT /api/docs/{id}", () => {
   });
 });
 
+// SERVER-100. A document's frontmatter need not carry `title:`: §7's
+// hand-written skills carry Claude Code's `name:`, and a file dropped into
+// `data/docs/` by hand carries neither. Every reader still shows such a document
+// under a name, and the reader autosaves the name it is showing — so the save
+// compares the incoming title against the name the document **goes by**, never
+// against the raw key. Compared against the key, the first save after any such
+// document was opened wrote `title:`, moved `updated`, landed a commit and woke
+// the agent to reflect on an edit nobody made.
+describe("PUT /api/docs/{id} — a title equal to the name the document goes by", () => {
+  const NO_TITLE = [
+    "---",
+    "id: doc_untitled1",
+    "type: note",
+    "created: 2026-07-01T00:00:00Z",
+    "updated: 2026-07-01T00:00:00Z",
+    "---",
+    "",
+    "The prose, written by hand outside the server.",
+    "",
+  ].join("\n");
+
+  const NAMED = [
+    "---",
+    "id: doc_named001",
+    "type: note",
+    "name: Rate review",
+    "created: 2026-07-01T00:00:00Z",
+    "updated: 2026-07-01T00:00:00Z",
+    "---",
+    "",
+    "The prose, written by hand outside the server.",
+    "",
+  ].join("\n");
+
+  /** A workspace holding one hand-written document, committed and projected. */
+  function handWritten(prefix: string, path: string, content: string): WriteWorkspace {
+    ws = createWriteWorkspace(prefix);
+    ws.write(path, content);
+    ws.git("add", "-A", "--", "data");
+    ws.git("commit", "-m", "seed the hand-written document");
+    ws.reproject();
+    ws.advance(60_000);
+    return ws;
+  }
+
+  /** The title `GET /api/docs/{id}` reports — what a reader displays and echoes back. */
+  async function displayedTitle(id: string): Promise<string> {
+    const response = await ws.request(`/api/docs/${id}`);
+    expect(response.status).toBe(200);
+    return DocSchema.parse(await response.json()).frontmatter.title;
+  }
+
+  it("writes nothing when the title was only ever derived from the filename", async () => {
+    handWritten("update-title-derived", "data/docs/quarterly-plan.md", NO_TITLE);
+    const head = ws.head();
+    const before = ws.read("data/docs/quarterly-plan.md");
+    expect(await displayedTitle("doc_untitled1")).toBe("quarterly-plan");
+
+    const response = await putDoc(ws, "doc_untitled1", { title: "quarterly-plan" });
+    expect(response.status).toBe(200);
+
+    // Nothing moved: not the bytes, not `updated`, not the history.
+    expect(ws.read("data/docs/quarterly-plan.md")).toBe(before);
+    expect(ws.read("data/docs/quarterly-plan.md")).not.toContain("title:");
+    expect(ws.head()).toBe(head);
+  });
+
+  it("writes nothing when the title was derived from Claude Code's `name:`", async () => {
+    handWritten("update-title-named", "data/docs/rate.md", NAMED);
+    const head = ws.head();
+    const before = ws.read("data/docs/rate.md");
+    expect(await displayedTitle("doc_named001")).toBe("Rate review");
+
+    expect((await putDoc(ws, "doc_named001", { title: "Rate review" })).status).toBe(200);
+
+    // No `title:` duplicating the `name:` beside it — writing one would be the
+    // server authoring a second answer to "what is this document called".
+    expect(ws.read("data/docs/rate.md")).toBe(before);
+    expect(ws.head()).toBe(head);
+  });
+
+  it("still writes a genuine rename of a document that carried no title", async () => {
+    // The half the fix must not reach: renaming a title-less document in the
+    // reader is a change to what it says, and it lands like any other.
+    handWritten("update-title-rename", "data/docs/quarterly-plan.md", NO_TITLE);
+    const head = ws.head();
+
+    expect((await putDoc(ws, "doc_untitled1", { title: "Annual plan" })).status).toBe(200);
+
+    expect(ws.read("data/docs/quarterly-plan.md")).toContain("title: Annual plan");
+    expect(ws.head()).not.toBe(head);
+    expect(ws.git("log", "-1", "--format=%s").trim()).toContain("Annual plan");
+    expect(await displayedTitle("doc_untitled1")).toBe("Annual plan");
+  });
+
+  it("still writes a rename that only replaces a derived `name:`", async () => {
+    handWritten("update-title-rename-named", "data/docs/rate.md", NAMED);
+    const head = ws.head();
+
+    expect((await putDoc(ws, "doc_named001", { title: "Rate review 2027" })).status).toBe(200);
+
+    expect(ws.read("data/docs/rate.md")).toContain("title: Rate review 2027");
+    expect(ws.head()).not.toBe(head);
+  });
+
+  it("leaves a blank `title:` alone when the save re-sends the derived name", async () => {
+    // A `title:` the server did not author and cannot read as a name. The
+    // document goes by its filename, so the reader echoes the filename back —
+    // and the comparison must not treat that as a rename *to* the filename,
+    // which would stamp `updated` on every autosave of a file nobody is editing.
+    const blank = NO_TITLE.replace("type: note", 'type: note\ntitle: ""');
+    handWritten("update-title-blank", "data/docs/quarterly-plan.md", blank);
+    const head = ws.head();
+    const before = ws.read("data/docs/quarterly-plan.md");
+    expect(await displayedTitle("doc_untitled1")).toBe("quarterly-plan");
+
+    expect((await putDoc(ws, "doc_untitled1", { title: "quarterly-plan" })).status).toBe(200);
+
+    expect(ws.read("data/docs/quarterly-plan.md")).toBe(before);
+    expect(ws.head()).toBe(head);
+  });
+});
+
 // SERVER-039 (wave-3 audit FIX 5). `PUT` writes frontmatter and nothing else,
 // so `status: open` on an archived skill reported success while the folder sat
 // in `.claude/skills-archived/` — disabled, invisible to Claude Code, still

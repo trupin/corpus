@@ -39,6 +39,30 @@ const DocTypeSchema = z.object({
       message: "docTypes[].validate must be a function",
     })
     .optional(),
+  // PLUGINS-016: the derived-status declaration. A manifest carrying anything
+  // but a function here is refused whole at discovery (plugin skipped, logged
+  // warning) — a declaration a surface would call must be callable, and half
+  // a manifest is worse than none.
+  /*
+   * **Every derived-field member is checked, or none of them is.** `deriveStatus`
+   * and `deriveDue` are one seam with one member per core field (`PluginDocType`
+   * in `@corpus/kit/plugin`), and their presence *is* the declaration that the
+   * field is nobody's to set — so a manifest carrying `deriveDue: "x"` would be
+   * half-refused: discovery would accept it, `dueLock` would read a declaration
+   * off it and lock the control, and `formDueLock` would then find nothing it
+   * could call. Half a manifest is worse than none, which is this seam's own
+   * rule. A member added here without a line below is that bug again.
+   */
+  deriveStatus: z
+    .custom<(doc: never) => unknown>((value) => typeof value === "function", {
+      message: "docTypes[].deriveStatus must be a function",
+    })
+    .optional(),
+  deriveDue: z
+    .custom<(doc: never) => unknown>((value) => typeof value === "function", {
+      message: "docTypes[].deriveDue must be a function",
+    })
+    .optional(),
 });
 
 const ColumnTypeSchema = z.object({

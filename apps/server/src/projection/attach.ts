@@ -9,6 +9,7 @@
 
 import type { CorpusServer } from "../app.js";
 import type { Logger } from "../logger.js";
+import { EMPTY_DERIVED_FIELDS, type DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { openProjection, type ProjectionConfig, type ProjectionDb } from "./db.js";
 import { createProjectionQueueMirror } from "./queue-mirror.js";
 
@@ -18,9 +19,19 @@ import { createProjectionQueueMirror } from "./queue-mirror.js";
  * `createServer`, whose `projection` dep this becomes — route handlers and the
  * watcher both need the handle, and inventing two ways to reach it is how two
  * seams end up in one file.
+ *
+ * `derivedFields` is what plugin discovery found (SPEC.md §12, SERVER-085), and
+ * it has to arrive **here** rather than later: this call runs the scan, so a
+ * registry attached afterwards would leave every derived-field document
+ * projected under the status its file happens to state until something touched
+ * it. Defaulted for the callers — tests, mostly — that have no plugins at all.
  */
-export function openWorkspaceProjection(config: ProjectionConfig, logger: Logger): ProjectionDb {
-  return openProjection(config, { logger });
+export function openWorkspaceProjection(
+  config: ProjectionConfig,
+  logger: Logger,
+  derivedFields: DerivedFieldsRegistry = EMPTY_DERIVED_FIELDS,
+): ProjectionDb {
+  return openProjection(config, { logger, derivedFields });
 }
 
 /**

@@ -340,6 +340,21 @@ CREATE TABLE threads (
   id TEXT PRIMARY KEY,
   parent_id TEXT,
   status TEXT NOT NULL,
+  -- SPEC.md §8's participation state, and it ONLY EVER CLIMBS: none ->
+  -- requested -> engaged, never back down. Nothing lowers it -- not the agent's
+  -- reply, not resolving the thread, not a requestsAgent:false turn. That is
+  -- intentional, not an omission (threads/participation.ts owns the
+  -- transitions): engaged is the fact that the agent took part, and it is what
+  -- SPEC.md §8's automatic re-trigger reads, so unwinding it would make a
+  -- conversation stop working the moment its last exchange settled.
+  --
+  -- The consequence, written here because it has cost two issues (UI-058,
+  -- SERVER-054): THIS COLUMN CANNOT ANSWER "is a reply outstanding now". A
+  -- thread that ever engaged the agent reads engaged forever, so any predicate
+  -- built on it reports every later turn as a pending request -- including a
+  -- "note only" turn, which §8 exists so a person can write without summoning
+  -- anybody. What is outstanding is a queue question: an unsettled event that
+  -- names the thread (AWAITING_AGENT_SQL in docs/needs.ts).
   agent TEXT NOT NULL,
   anchor_id TEXT,
   title TEXT NOT NULL,

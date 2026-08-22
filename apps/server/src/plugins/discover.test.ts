@@ -166,6 +166,224 @@ describe("discoverPlugins", () => {
     ).toBe(true);
   });
 
+  it("reads `derivedStatus: true` and loads the type's server/derive module", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "derived", "server"), { recursive: true });
+    writeFileSync(
+      join(root, "derived", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedStatus: true\n",
+    );
+    writeFileSync(
+      join(root, "derived", "server", "derive.ts"),
+      "export default (input) => (input.body.includes('- [ ]') ? 'open' : 'resolved');\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.types).toEqual([{ type: "todo", label: "Todo", derivedStatus: true }]);
+    expect(typeof plugin?.deriveStatus).toBe("function");
+    expect(plugin?.warnings).toEqual([]);
+    expect(plugin?.deriveStatus?.({ type: "todo", status: "open", body: "- [x] a\n" })).toBe(
+      "resolved",
+    );
+  });
+
+  it("loads no derive module for a plugin that declares no derived type", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "plain", "server"), { recursive: true });
+    writeFileSync(join(root, "plain", "types.yaml"), "types:\n  - type: todo\n    label: Todo\n");
+    writeFileSync(
+      join(root, "plain", "server", "derive.ts"),
+      "throw new Error('nobody should import me');\n",
+    );
+
+    // Not imported at all: a module nothing will ask anything of must not be
+    // able to fail a boot, and its import is latency spent on nothing.
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.deriveStatus).toBeNull();
+    expect(plugin?.warnings).toEqual([]);
+  });
+
+  it("warns when a declared derived type ships no server/derive module", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "halfseam"));
+    writeFileSync(
+      join(root, "halfseam", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedStatus: true\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.deriveStatus).toBeNull();
+    expect(plugin?.warnings.some((warning) => warning.includes("no server/derive module"))).toBe(
+      true,
+    );
+  });
+
+  it("contains a derive module that throws at import, and keeps the plugin's routes", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "brokenderive", "server"), { recursive: true });
+    writeFileSync(
+      join(root, "brokenderive", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedStatus: true\n",
+    );
+    writeFileSync(join(root, "brokenderive", "server", "derive.ts"), "throw new Error('boom');\n");
+    writeFileSync(
+      join(root, "brokenderive", "server", "routes.ts"),
+      "export default function routes() { return { fetch() {} }; }\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.deriveStatus).toBeNull();
+    expect(typeof plugin?.routes).toBe("function");
+    expect(
+      plugin?.warnings.some((warning) => warning.includes("server/derive module failed to load")),
+    ).toBe(true);
+  });
+
+  it("warns when the derive module default-exports something that is not a function", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "notafunction", "server"), { recursive: true });
+    writeFileSync(
+      join(root, "notafunction", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedStatus: true\n",
+    );
+    writeFileSync(
+      join(root, "notafunction", "server", "derive.ts"),
+      "export default 'resolved';\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.deriveStatus).toBeNull();
+    expect(
+      plugin?.warnings.some((warning) =>
+        warning.includes("server/derive module has no default-exported function"),
+      ),
+    ).toBe(true);
+  });
+
+  it("reads `derivedDue: true` and loads the same module's named `deriveDue` export", async () => {
+    // SERVER-134: one module, one export per field, one import. The default
+    // export answers `status` because that is the field the seam shipped with;
+    // every field after it is named.
+    const root = tempDir();
+    mkdirSync(join(root, "twofields", "server"), { recursive: true });
+    writeFileSync(
+      join(root, "twofields", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedStatus: true\n    derivedDue: true\n",
+    );
+    writeFileSync(
+      join(root, "twofields", "server", "derive.ts"),
+      [
+        "globalThis.__corpusDeriveImports = (globalThis.__corpusDeriveImports ?? 0) + 1;",
+        "export const deriveDue = (input) => ({ due: input.body.trim() === '' ? null : '2026-07-09' });",
+        "export default (input) => (input.body.includes('- [ ]') ? 'open' : 'resolved');",
+        "",
+      ].join("\n"),
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.types).toEqual([
+      { type: "todo", label: "Todo", derivedStatus: true, derivedDue: true },
+    ]);
+    expect(typeof plugin?.deriveStatus).toBe("function");
+    expect(typeof plugin?.deriveDue).toBe("function");
+    expect(plugin?.warnings).toEqual([]);
+    expect(plugin?.deriveDue?.({ type: "todo", status: "open", body: "- [ ] a\n" })).toEqual({
+      due: "2026-07-09",
+    });
+    // Imported once for both fields: a plugin's top-level code runs on import,
+    // and running it twice for one directory is a side effect nobody asked for.
+    expect((globalThis as { __corpusDeriveImports?: number }).__corpusDeriveImports).toBe(1);
+  });
+
+  it("loads `due` alone for a plugin that declares only that field", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "dueonly", "server"), { recursive: true });
+    writeFileSync(
+      join(root, "dueonly", "types.yaml"),
+      "types:\n  - type: deadline\n    label: Deadline\n    derivedDue: true\n",
+    );
+    writeFileSync(
+      join(root, "dueonly", "server", "derive.ts"),
+      "export const deriveDue = () => ({ due: null });\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.deriveStatus).toBeNull();
+    expect(typeof plugin?.deriveDue).toBe("function");
+    // No default export, and no complaint about one: this plugin never claimed a
+    // derived status, so nothing looked for the export that answers it.
+    expect(plugin?.warnings).toEqual([]);
+  });
+
+  it("warns per field when the module is missing the export that field needs", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "halfexport", "server"), { recursive: true });
+    writeFileSync(
+      join(root, "halfexport", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedStatus: true\n    derivedDue: true\n",
+    );
+    writeFileSync(
+      join(root, "halfexport", "server", "derive.ts"),
+      "export default () => 'resolved';\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    // The field it shipped still works; the field it forgot is named, and costs
+    // nothing else.
+    expect(typeof plugin?.deriveStatus).toBe("function");
+    expect(plugin?.deriveDue).toBeNull();
+    expect(
+      plugin?.warnings.some((warning) =>
+        warning.includes("server/derive module has no `deriveDue` function"),
+      ),
+    ).toBe(true);
+  });
+
+  it("names every field a declared type ships no module for", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "nomodule"));
+    writeFileSync(
+      join(root, "nomodule", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedStatus: true\n    derivedDue: true\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.deriveStatus).toBeNull();
+    expect(plugin?.deriveDue).toBeNull();
+    expect(
+      plugin?.warnings.filter((warning) => warning.includes("no server/derive module")),
+    ).toEqual([
+      "its types.yaml declares a derived status for todo but it ships no server/derive module (SPEC.md §12)",
+      "its types.yaml declares a derived due for todo but it ships no server/derive module (SPEC.md §12)",
+    ]);
+  });
+
+  it("rejects `derivedDue: false` as a spelling, exactly as it rejects it for status", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "falseydue"));
+    writeFileSync(
+      join(root, "falseydue", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedDue: false\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.types).toEqual([]);
+    expect(plugin?.warnings.some((warning) => warning.includes("types.yaml"))).toBe(true);
+  });
+
+  it("rejects `derivedStatus: false` as a spelling — the key is present or it is not", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "falsey"));
+    writeFileSync(
+      join(root, "falsey", "types.yaml"),
+      "types:\n  - type: todo\n    label: Todo\n    derivedStatus: false\n",
+    );
+
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.types).toEqual([]);
+    expect(plugin?.warnings.some((warning) => warning.includes("types.yaml"))).toBe(true);
+  });
+
   it("excludes underscore plugins in production, includes them otherwise", async () => {
     const root = tempDir();
     mkdirSync(join(root, "_fix"));

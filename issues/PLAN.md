@@ -505,12 +505,12 @@ cheapest moment for that to happen.
 | SHARED-036 | A todo list says `open` after its last item is checked | done | P1 | SHARED-031 |
 | SHARED-030 | Frontmatter hides behind an edit mode the reader abolished | done | P1 | — |
 | SHARED-032 | Bulk actions are a mode, staged per row, the one edit/save left (SIGNED 2026-08-09, applied) | done | P1 | SHARED-030 |
-| UI-093 | Frontmatter controls are always live and save on change | todo | P1 | SHARED-030 |
-| PLUGINS-016 | A plugin doc type can derive its own status | todo | P1 | SHARED-036 |
-| SERVER-085 | The board, queries and the file all agree on a derived status | todo | P1 | SHARED-036, PLUGINS-016 |
-| UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-016, SERVER-085, UI-093 |
+| UI-093 | Frontmatter controls are always live and save on change | done | P1 | SHARED-030 |
+| PLUGINS-016 | A plugin doc type can derive its own status | done | P1 | SHARED-036 |
+| SERVER-085 | The board, queries and the file all agree on a derived status | done | P1 | SHARED-036, PLUGINS-016 |
+| UI-092 | A derived status shows its value and its source, uneditable | done | P2 | PLUGINS-016, SERVER-085, UI-093 |
 | PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | done | P1 | SHARED-036 |
-| UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
+| UI-094 | Right-clicking a document offers no Resolve, though every document has one | done | P2 | SHARED-031 |
 | SHARED-038 | `--unstable` reaches §2.4 before it reaches the code | done | P1 | — |
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
 | CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
@@ -807,10 +807,10 @@ ones their own files carry.
 | --- | --- | --- | --- | --- |
 | SHARED-002 | Reconcile SPEC.md with adjudicated Phase 2 behavior (PR #9 findings 2–4) | done | P0 | — |
 | SHARED-011 | Structured filtering — arbitrary fields and glob matching (SIGNED 2026-08-04, applied at its phase kickoff) | todo | P1 | — |
-| SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | todo | P1 | UI-058 |
+| SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | done | P1 | UI-058 |
 | CONTRACT-029 | `Job.started` means two different instants | todo | P2 | — |
 | CLI-039 | A hung `git gc` leaves children the timeout does not kill | todo | P2 | — |
-| SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | todo | P2 | — |
+| SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | done | P2 | — |
 | SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
 
 ### Found in flight during Phase 33, deliberately not in v0.10.0 (2026-08-16)
@@ -1229,6 +1229,15 @@ left in a report.
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 | UI-144 | A deleted document's reveal names the wrong absence, and a ref is written in render (PR #54 re-review NITs) | todo | P3 | — |
+| UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | todo | P1 | SHARED-061 |
+| CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
+| CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
+| SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
+| UI-146 | The document body rises 75px after it is on screen, and a right-click jumps it 188px (UI-093 consequence) | done | P0 | — |
+| SHARED-062 | A todo list's `due` is its items, and a hand-written date does not survive (SIGNED 2026-08-22, applied) | done | P0 | — |
+| SHARED-063 | §11's reader menu offers Resolve on every document that has one (SIGNED 2026-08-22, applied) | done | P1 | — |
+| UI-147 | The mockup still draws the eased column open that UI-146 removed | todo | P2 | UI-146 |
+| SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | todo | P2 | — |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
@@ -1273,5 +1282,62 @@ that nothing tells you your skills are stale until the agent tries the verb.
 | CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | todo | P1 | — |
 | CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | todo | P2 | — |
 | SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
-| PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | todo | P1 | PLUGINS-016 |
+| PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | done | P1 | PLUGINS-016 |
 | CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | todo | P2 | — |
+
+
+## Phase 40 — Your documents stop lying about their status (2026-08-21, v0.17.0 scope)
+
+**Two signed riders have been half-built for thirteen days.** SHARED-030
+(frontmatter hides behind an edit mode §11 abolished) and SHARED-036 (a todo
+list says `open` after its last item is checked) were both signed 2026-08-08.
+Their vocabulary half landed — SHARED-031 settled `status` as one vocabulary,
+PLUGINS-015 fixed the column's checkbox — and the mechanism half did not.
+
+**The missing half is why the user stopped using the todos plugin.** PLUGINS-018
+records it in their words: an item **18 days overdue** answered `no documents
+match` to `--due overdue`, to `--needs due` and to `--needs me`. Three separate
+ways of asking what is late, and all three said no while something was late.
+They wrote that this *"decided against the plugin for personal tasks"* and that
+a document-level rollup would make that decision worth reopening. This phase is
+that rollup.
+
+**One adjudication, made at kickoff so nobody re-litigates it.** SHARED-036's
+summary says the user chose *derived-and-read-only* over *an auto-flipped stored
+field*, on the ground that "a stored value that something else keeps in sync is
+a value that can drift". SERVER-085 then writes the derived value into the
+file's frontmatter, which reads like the rejected option. **It is not, and the
+signed text settles it**: *"The file never disagrees with what is shown: the
+derived value is written into the document's frontmatter whenever the server
+writes the document."* The field is a **shadow of the derivation**, rewritten
+from the body on every server write — nobody sets it and it cannot drift through
+any path the server owns. The one path it can drift through is an out-of-band
+edit, which SERVER-085 names as its own open problem and must answer.
+
+**Critical path**: PLUGINS-016 → SERVER-085 → { PLUGINS-018, UI-092 }. UI-093,
+UI-094, SERVER-100 and SERVER-054 are independent and run beside it.
+
+**Rows live in their original phase tables** (Phase 14, Phase 29, Phase 6),
+following the Phase 7b precedent. The scope, in dependency order:
+
+- **PLUGINS-016** — a plugin doc type derives its own status _(the seam; everything waits on it)_
+- **SERVER-085** — the board, queries and the file all agree on it _(the mechanism)_
+- **PLUGINS-018** — a todo item's due date reaches its document _(the user's report)_
+- **UI-092** — a derived status shows its value and its source, uneditable
+- **UI-093** — frontmatter controls are always live and save on change _(independent)_
+- **UI-094** — right-clicking a document offers Resolve _(independent)_
+- **SERVER-100** — a document with no `title:` wakes the agent on the save that adds one _(nearby debt)_
+- **SERVER-054** — the board row's pending-agent dot uses a replaced heuristic _(nearby debt)_
+
+**Filed mid-phase, 2026-08-21:** **UI-145** — the context menu's `max-height`
+never applies, because kit's `.ac-menu { max-height: 200px }` ties on
+specificity and loads last. The row menu already scrolls at five items with
+520px of viewport unused. UI-142 listed this as latent after reading the
+stylesheet rather than the cascade, so a signed rule has a live breach on the
+surface a person reaches by right-clicking anything. P1, and it generalises:
+any `apps/ui` bound that ties with a `packages/kit` bound loses silently.
+
+**Riskiest: SERVER-085.** Projection, write-back and doctor convergence in one
+issue, with PLUGINS-018 and UI-092 behind it. If it slips, UI-092 and UI-094 are
+dropped and the rest ships — a derived status you can see is worth having
+without the control that displays its provenance.

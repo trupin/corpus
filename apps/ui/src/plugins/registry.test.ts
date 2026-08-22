@@ -97,6 +97,30 @@ describe("buildRegistry", () => {
     expect(forward.warnings.some((warning) => warning.plugin === "alpha")).toBe(true);
   });
 
+  it("a derivation declared for a type another plugin owns never registers (PLUGINS-016)", () => {
+    const derive = (): "resolved" => "resolved";
+    const registry = buildRegistry([
+      {
+        dir: "owner",
+        ...manifestModule({ id: "owner", order: 1, docTypes: [{ type: "todo" }] }),
+      },
+      {
+        dir: "usurper",
+        ...manifestModule({
+          id: "usurper",
+          order: 2,
+          docTypes: [{ type: "todo", deriveStatus: derive }],
+        }),
+      },
+    ]);
+    // Containment, not a crash: the contested claim is refused with a logged
+    // warning, and with it every declaration riding on it — the derivation
+    // included. The owner's entry, which declares none, is what resolves.
+    expect(registry.docTypes.get("todo")?.plugin.dir).toBe("owner");
+    expect(registry.docTypes.get("todo")?.docType.deriveStatus).toBeUndefined();
+    expect(registry.warnings.some((warning) => warning.plugin === "usurper")).toBe(true);
+  });
+
   it("ties on order fall back to directory name, deterministically", () => {
     const modules = [
       { dir: "beta", ...manifestModule({ id: "beta", docTypes: [{ type: "todo" }] }) },

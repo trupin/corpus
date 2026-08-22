@@ -10,6 +10,7 @@ export {
   excludedInProduction,
   mountPluginRoutes,
   pluginsRootCandidates,
+  resolveDeriveModule,
   resolvePluginsRoot,
   resolveRoutesModule,
 } from "./discover.js";
@@ -20,5 +21,15 @@ export type {
   PluginRoutesFactory,
   PluginTypeDecl,
 } from "./discover.js";
+export { createDerivedFieldsRegistry, EMPTY_DERIVED_FIELDS } from "./derived-fields.js";
+export type {
+  DerivedDocDue,
+  DerivedDocStatus,
+  DerivedFieldRegistry,
+  DerivedFieldsDeclaration,
+  DerivedFieldsRegistry,
+  DeriveInput,
+  PluginDerive,
+} from "./derived-fields.js";
 export { createPluginContext, PLUGIN_KEY_PREFIX } from "./context.js";
 export type { PluginContextDeps, PluginServerContext } from "./context.js";

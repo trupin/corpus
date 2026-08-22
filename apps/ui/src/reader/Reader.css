@@ -307,13 +307,12 @@
   align-items: center;
 }
 
-.fm-edit-toggle {
-  cursor: pointer;
-}
-
-.fm-edit-toggle:hover {
-  color: var(--accent-ink);
-  border-color: var(--accent);
+/* The frontmatter's own save chip, where the `edit` chip used to be (UI-093).
+   `flex: none` because its box is already reserved by `data-reserve` and the
+   strip wraps rather than squeezing: what the chip says must never change how
+   wide it is, which is the whole of `.save-chip`'s design above. */
+.fm-chips .save-chip {
+  flex: none;
 }
 
 /*
@@ -416,9 +415,27 @@
   color: var(--ink-2);
 }
 
+/*
+ * ── The live controls (UI-093) ────────────────────────────────────────
+ *
+ * A grid rather than a flex row, and every cell an equal fraction of the
+ * reading measure. SHARED-057: *"nothing resizes because of what it holds"* —
+ * a `<select>`'s intrinsic width is its widest option and a text field's is its
+ * `size`, so a flex row of `auto` items changes width when a document offers
+ * `archived` as a third status and again when it does not. Equal fractions
+ * cannot: the cells are decided by the row, and the controls fill them.
+ *
+ * SHARED-061: the bound is the room, not a number. The row is the document's
+ * own measure (`--doc-measure`, which the width control moves), and the columns
+ * are `1fr` of whatever that is. The one written quantity is the floor a cell
+ * may not go below — `16ch`, which is what a date field needs to show a whole
+ * date in this face — and `auto-fit` drops to fewer columns rather than
+ * shrinking past it, so a narrow column wraps the fields instead of clipping
+ * them.
+ */
 .fm-form {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16ch, 100%), 1fr));
   gap: 10px;
   margin: 8px 0 14px;
   max-width: var(--doc-measure, 62ch);
@@ -436,6 +453,9 @@
 }
 
 .fm-input {
+  /* The cell decides the width, never the value inside it (SHARED-057). */
+  width: 100%;
+  min-width: 0;
   font-family: var(--sans);
   font-size: 12.5px;
   text-transform: none;
@@ -447,43 +467,50 @@
   padding: 4px 8px;
 }
 
-/* Where a field's act actually lives, when it is not this field (UI-020). */
+/* Where a field's act actually lives when it is not this field (UI-020), or why
+   the field is nobody's to set (SHARED-030). It is bounded by its own cell — a
+   `max-width` of its own would be a second bound competing with the grid's. */
 .fm-hint {
-  max-width: 34ch;
   font-size: 10px;
   text-transform: none;
   letter-spacing: normal;
   color: var(--ink-3);
 }
 
-.fm-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 14px;
-  max-width: var(--doc-measure, 62ch);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--sepia-ink);
-}
-
-.fm-save,
-.fm-revert {
-  font-family: var(--mono);
-  font-size: 11px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 3px 9px;
-}
-
-.fm-save {
-  color: var(--accent-ink);
-  border-color: var(--accent);
-}
-
-.fm-save:disabled {
-  opacity: 0.5;
+/* A locked control is shown, not hidden: the value is real and the reason
+   beneath it says whose it is (SHARED-030). Dimmed the way every other disabled
+   control in the app is, and no narrower — its cell has not changed. */
+.fm-input:disabled {
+  opacity: 0.6;
   cursor: default;
+}
+
+/* A **derived** value, where a control would have been (UI-092, SPEC.md §12).
+   It keeps the control's metrics — the same cell, the same padding, the same
+   face, and a transparent border rather than none — so a type that derives its
+   status does not shift the row it sits in or the hint beneath it. What it drops
+   is the chrome: no field background, no frame, nothing that reads as an act
+   somebody switched off.
+
+   SHARED-057: the width is the cell's, so `open` and `resolved` are the same
+   box and the form does not move when one becomes the other. The value comes
+   from a closed vocabulary of short words (§5), so the clip below is a
+   guarantee rather than a reading path — it exists so that a status this UI has
+   never heard of cannot widen anything either. */
+.fm-statement {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ink);
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .archived-banner {

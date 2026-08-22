@@ -97,10 +97,11 @@ async function settle(page: Page): Promise<void> {
 /**
  * Resolves once `target`'s box has read the same for three consecutive frames.
  *
- * `.col` transitions `width` over 250 ms, so a column keeps sliding for a
- * quarter of a second after its neighbour's reader closes. A box measured
- * during that names a place the column has already left, and a pointer aimed
- * there lands on the board's background — `expect`'s retries cannot help,
+ * A column with no reader in it transitions `width` over 250 ms (UI-146 took
+ * that transition away from a column that is *showing* a document, and left it
+ * everywhere else), and the board itself scrolls. A box measured during either
+ * names a place the column has already left, and a pointer aimed there lands on
+ * the board's background — `expect`'s retries cannot help,
  * because nothing is coming back under the cursor. Three identical frames is
  * the browser's own answer to "has it stopped", with no invented duration in
  * it: two would accept a transition that happens to hold still for one frame.

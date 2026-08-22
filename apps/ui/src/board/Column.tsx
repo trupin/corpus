@@ -1,7 +1,7 @@
 import type { DocRow } from "@corpus/contract";
 import { useDocs, type RowNotice } from "@corpus/kit";
 import type { OpenPayload } from "@corpus/kit/plugin";
-import { useEffect, useState, type DragEvent, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useState, type DragEvent, type ReactElement } from "react";
 import { PluginMissingCard } from "../plugins/PluginMissingCard";
 import { usePluginRegistry } from "../plugins/registry";
 import { resolveColumnType } from "../plugins/slots";
@@ -234,8 +234,17 @@ export function Column(props: ColumnProps): ReactElement {
   // Grow when a reader opens in a column too narrow to show it — the one
   // automatic width change the user asked to keep ("it can resize up
   // automatically but not down").
+  //
+  // **Before the browser paints, never after** (UI-146). `useEffect` runs after
+  // the paint, so the reader's first painted frame was the one at the *old*
+  // width — and where the document was already in the query cache (opening it
+  // in a second column, or reopening one) the body itself painted in that
+  // frame. Measured: body top 444.5 at the column's 336px, then 346.8 eleven
+  // milliseconds later at 560px — the document moving 97.7px under a reader who
+  // had already been shown it. A layout effect puts the width change in the
+  // same commit as the mount, so there is one paint and it is the settled one.
   const reading = open !== null;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!reading) return;
     const width = typeof window === "undefined" ? 0 : window.innerWidth;
     setGrownTo((current) => Math.max(current, readingFloor(size.width, width)));

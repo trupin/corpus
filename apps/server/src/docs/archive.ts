@@ -323,10 +323,13 @@ function ownedFields(
  * key says, and it is that half-state this route exists to repair.
  *
  * §5's other carve-out — a type whose status is **derived** (§12) returns to
- * whatever its record says at that moment — has no implementation to defer to:
- * no type derives its status today (the todos plugin reports the authored
- * frontmatter verbatim, and nothing recomputes it from body items). Whoever
- * implements §12's derivation branches here, where the rule already is.
+ * whatever its record says at that moment — needs no branch here, and
+ * deliberately does not get one (SERVER-085). This writes `resolved`, which is
+ * simply "no longer archived" as far as a derived type is concerned; the write
+ * pipeline then converges the file to whatever the document's own content says,
+ * in the same write and the same commit (`docs/derived-fields.ts`). Branching
+ * here as well would be the rule in two places, and the second copy would be the
+ * one that forgets that unarchiving is not the only verb this has to hold for.
  */
 function restoredStatus(loaded: LoadedDocument, archived: boolean): Record<string, unknown> {
   if (archived) return { status: "archived" };

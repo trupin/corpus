@@ -134,6 +134,14 @@ describe("stagePlugins", () => {
       'import { ACTOR_HEADER } from "@corpus/contract";\nexport default () => ({ ACTOR_HEADER });\n',
     );
     write(root, "todos/dist/server/routes.d.ts", "declare const _: unknown;\n");
+    // §12's derived status, the module the server imports by convention
+    // (SERVER-085). Reachable from no other entry point, so it ships only if it
+    // is named as one of its own.
+    write(
+      root,
+      "todos/dist/server/derive.js",
+      'import { ACTOR_HEADER } from "@corpus/contract";\nexport default () => ACTOR_HEADER && null;\n',
+    );
     write(
       root,
       "todos/dist/cli/commands/add.js",
@@ -164,6 +172,7 @@ describe("stagePlugins", () => {
     expect(staged.map((plugin) => plugin.dir)).toEqual(["todos"]);
     expect(listFiles(destination)).toEqual([
       "todos/dist/cli/commands/add.js",
+      "todos/dist/server/derive.js",
       "todos/dist/server/routes.js",
       "todos/seeds/todo-template.md",
       "todos/skills/todos/SKILL.md",
@@ -181,7 +190,11 @@ describe("stagePlugins", () => {
     const destination = join(scratch(), "plugins");
     await stagePlugins(fabricatePluginsRoot(), destination, { nodePaths });
 
-    for (const entry of ["todos/dist/server/routes.js", "todos/dist/cli/commands/add.js"]) {
+    for (const entry of [
+      "todos/dist/server/routes.js",
+      "todos/dist/server/derive.js",
+      "todos/dist/cli/commands/add.js",
+    ]) {
       const bundled = readFileSync(join(destination, entry), "utf8");
       expect(bundled, `${entry} still imports @corpus/* as a bare specifier`).not.toMatch(
         /from\s*["']@corpus\//,
@@ -195,6 +208,7 @@ describe("stagePlugins", () => {
     const root = fabricatePluginsRoot();
     expect(pluginEntryPoints(join(root, "todos", "dist"))).toEqual([
       "server/routes.js",
+      "server/derive.js",
       "cli/commands/add.js",
     ]);
     expect(pluginEntryPoints(join(root, "_fixture", "dist"))).toEqual(["server/routes.js"]);

@@ -3,6 +3,7 @@ import type { Locator, Page, Route } from "@playwright/test";
 import { Buffer } from "node:buffer";
 import { deflateSync } from "node:zlib";
 import { expect, test } from "./coverage";
+import { settledReader } from "./settle";
 import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
@@ -321,33 +322,6 @@ async function naturalWidths(page: Page, selector: string): Promise<number[]> {
   return page.$$eval(selector, (nodes) =>
     nodes.map((node) => (node instanceof HTMLImageElement ? node.naturalWidth : -1)),
   );
-}
-
-/**
- * Waits until the reader's own width has stopped changing.
- *
- * A column resolves its width asynchronously, and a `before` measurement taken
- * inside that window records a **narrower** column — in which the document's
- * title, its paragraphs and the prose beside an image all wrap differently. The
- * difference then shows up later as the sentinel "moving", for a reason that has
- * nothing to do with an image, and this spec would be reporting the column's
- * settling as an image defect.
- *
- * Measured while writing it: a reader 345px wide at the first paint and 558px
- * once settled, moving the sentinel 28px on roughly one run in three. Two
- * identical consecutive readings is what separates the two events.
- */
-async function settledReader(page: Page): Promise<void> {
-  const reader = page.locator(".reader").first();
-  let previous = Number.NaN;
-  await expect
-    .poll(async () => {
-      const width = (await reader.boundingBox())?.width ?? Number.NaN;
-      const stable = width === previous;
-      previous = width;
-      return stable;
-    })
-    .toBe(true);
 }
 
 test.describe("an image reserves its box before the bytes arrive", () => {

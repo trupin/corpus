@@ -3,11 +3,19 @@
 //
 // The **file** is the source of truth, so the body and frontmatter come from
 // disk on every read — the projection supplies only the id → path mapping and
-// the three fields a document root can override (`id`, `type`, `status`: a
-// hand-written `SKILL.md` carries none of them, and an archived skill's status
-// comes from which folder it sits in, not from its frontmatter). That is also
+// the fields the file does not get the last word on: `id`, `type` and `status`,
+// which a document root can override (a hand-written `SKILL.md` carries none of
+// them, and an archived skill's status comes from which folder it sits in), plus
+// `status` and `due` again for a type that **derives** them (§12). That is also
 // what makes read-your-write cheap: the write path projects synchronously, so
 // the path lookup is already current when the next request arrives.
+//
+// **Every derived field comes from the row, and for one reason** (SERVER-085 for
+// `status`, SERVER-134 for `due`): between an out-of-band edit and the next
+// server write the file's copy is a stale shadow, and a single-document read
+// that trusted it would show a deadline the board, the collection query and
+// every filter disagree with — on the one surface a person is looking at the
+// document. The row is the derivation's answer; the file's line is its shadow.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -23,12 +31,13 @@ import {
 } from "@corpus/contract";
 import { resolveAnchorExact } from "../anchors/index.js";
 import {
+  documentTitle,
   DocumentParseError,
   parseDocument,
   readViewFrontmatter,
   type ParsedDocument,
 } from "../core/index.js";
-import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
+import { normalizeInstant } from "../core/time.js";
 import { internalError, notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 import { documentKey } from "./key.js";
@@ -40,7 +49,11 @@ export type DocumentRow = {
   readonly path: string;
   readonly status: DocStatus;
   readonly title: string;
+  /** §5's deadline, as {@link resolveDocumentDue} answered it — derived or stored. */
+  readonly due: string | null;
 };
+
+const DOCUMENT_ROW_COLUMNS = "id, type, path, status, title, due";
 
 export type LoadedDocument = {
   readonly row: DocumentRow;
@@ -54,7 +67,7 @@ export type LoadedDocument = {
 
 export function findDocumentRow(projection: ProjectionDb, id: string): DocumentRow | null {
   const row = projection
-    .prepare("SELECT id, type, path, status, title FROM documents WHERE id = ?")
+    .prepare(`SELECT ${DOCUMENT_ROW_COLUMNS} FROM documents WHERE id = ?`)
     .get(id) as DocumentRow | undefined;
   return row ?? null;
 }
@@ -75,7 +88,7 @@ export function findDocumentRow(projection: ProjectionDb, id: string): DocumentR
  */
 export function findDocumentRowByPath(projection: ProjectionDb, path: string): DocumentRow | null {
   const row = projection
-    .prepare("SELECT id, type, path, status, title FROM documents WHERE path = ?")
+    .prepare(`SELECT ${DOCUMENT_ROW_COLUMNS} FROM documents WHERE path = ?`)
     .get(path) as DocumentRow | undefined;
   return row ?? null;
 }
@@ -193,7 +206,6 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
   const data = parsed.data;
   const created = asText(data["created"]);
   const updated = asText(data["updated"]);
-  const due = asText(data["due"]);
   const reviewed = asText(data["reviewed"]);
   const tags: unknown = data["tags"];
   return {
@@ -201,13 +213,22 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     // all three (§7's skills), and the row is what every list already agrees on.
     id: row.id,
     type: row.type,
-    title: asText(data["title"]) ?? asText(data["name"]) ?? row.title,
+    // §7's hand-written skills and personas carry Claude Code's `name:` rather
+    // than a `title:`, and a file may carry neither. `documentTitle` is that
+    // resolution, shared with the write path so a save can tell a rename from a
+    // reader echoing back the name it was shown (SERVER-100).
+    title: documentTitle(data, row.title),
     created: created === null ? null : normalizeInstant(created),
     updated: updated === null ? null : normalizeInstant(updated),
     tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === "string") : [],
     status: row.status,
     anchors: readAnchorsMap(data["anchors"]),
-    due: due === null ? null : normalizeCalendarDate(due),
+    // From the row, like `status` and for the same reason: for a type that
+    // derives its deadline the row is the answer and the file's line is a
+    // shadow of it, and for every other type the row holds exactly what this
+    // used to read off the file — normalized once, at projection time
+    // (`resolveDocumentDue`).
+    due: row.due,
     reviewed: reviewed === null ? null : normalizeInstant(reviewed),
     evergreen: data["evergreen"] === true,
     // Same tolerance the file parser applies (`core/frontmatter.ts`): anything
