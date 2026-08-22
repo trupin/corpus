@@ -23,6 +23,7 @@ import {
 } from "@corpus/contract";
 import { resolveAnchorExact } from "../anchors/index.js";
 import {
+  documentTitle,
   DocumentParseError,
   parseDocument,
   readViewFrontmatter,
@@ -201,7 +202,11 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     // all three (§7's skills), and the row is what every list already agrees on.
     id: row.id,
     type: row.type,
-    title: asText(data["title"]) ?? asText(data["name"]) ?? row.title,
+    // §7's hand-written skills and personas carry Claude Code's `name:` rather
+    // than a `title:`, and a file may carry neither. `documentTitle` is that
+    // resolution, shared with the write path so a save can tell a rename from a
+    // reader echoing back the name it was shown (SERVER-100).
+    title: documentTitle(data, row.title),
     created: created === null ? null : normalizeInstant(created),
     updated: updated === null ? null : normalizeInstant(updated),
     tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === "string") : [],

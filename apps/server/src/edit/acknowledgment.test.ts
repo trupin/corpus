@@ -14,7 +14,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseDocEditedPayload, type DocEditedPayload } from "@corpus/contract";
+import { DocSchema, parseDocEditedPayload, type DocEditedPayload } from "@corpus/contract";
 import {
   AUTH,
   createDoc,
@@ -672,6 +672,80 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     ws.advance(IDLE_MS * 4);
     await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
     expect(acknowledgments(ws)).toHaveLength(0);
+  });
+
+  it("does not wake the agent when a save pins down a title the file never carried", async () => {
+    // SERVER-100. §4's identical-value rule asked the wrong question: it
+    // compared the incoming title against the raw `title:` key, and a document
+    // whose frontmatter carries none still *goes by* a name — derived from
+    // `name:`, or from its filename — which is exactly what the reader displays
+    // and echoes back on its first autosave. So opening any hand-written
+    // document woke the agent once, for a change nobody made.
+    const ws = workspace("ack-title-derived", { editAckIdleMs: IDLE_MS });
+    ws.write(
+      "data/docs/quarterly-plan.md",
+      [
+        "---",
+        "id: doc_untitled1",
+        "type: note",
+        "created: 2026-07-01T00:00:00Z",
+        "---",
+        "",
+        "The prose.",
+        "",
+      ].join("\n"),
+    );
+    ws.git("add", "-A", "--", "data");
+    ws.git("commit", "-m", "seed a hand-written document");
+    ws.reproject();
+    pastTheSquashWindow(ws);
+    const before = ws.head();
+
+    // The reader reads, then autosaves what it read — title and body alike.
+    const read = await ws.request("/api/docs/doc_untitled1");
+    const shown = DocSchema.parse(await read.json());
+    expect(shown.frontmatter.title).toBe("quarterly-plan");
+    expect(
+      (await putDoc(ws, "doc_untitled1", { title: shown.frontmatter.title, body: shown.body }))
+        .status,
+    ).toBe(200);
+
+    // Nothing was written, so nothing is owed an acknowledgment.
+    expect(ws.head()).toBe(before);
+    ws.advance(IDLE_MS * 4);
+    await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
+    expect(acknowledgments(ws)).toHaveLength(0);
+  });
+
+  it("wakes the agent when a document that carried no title is genuinely renamed", async () => {
+    // The control for the case above: the fix narrows what counts as a rename
+    // and must not reach a real one.
+    const ws = workspace("ack-title-derived-rename", { editAckIdleMs: IDLE_MS });
+    ws.write(
+      "data/docs/quarterly-plan.md",
+      [
+        "---",
+        "id: doc_untitled2",
+        "type: note",
+        "created: 2026-07-01T00:00:00Z",
+        "---",
+        "",
+        "The prose.",
+        "",
+      ].join("\n"),
+    );
+    ws.git("add", "-A", "--", "data");
+    ws.git("commit", "-m", "seed a hand-written document");
+    ws.reproject();
+    pastTheSquashWindow(ws);
+
+    expect((await putDoc(ws, "doc_untitled2", { title: "Annual plan" })).status).toBe(200);
+
+    ws.advance(IDLE_MS * 2);
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+    expect(acknowledgments(ws)[0]).toMatchObject({ docId: "doc_untitled2", actor: "user" });
   });
 
   it("wakes the agent for a body change carrying frontmatter along with it", async () => {

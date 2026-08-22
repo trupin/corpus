@@ -17,6 +17,7 @@ import { EXTRA_MAX_BYTES } from "@corpus/contract";
 import { reconcileAnchors } from "../anchors/index.js";
 import {
   claudeCodeFrontmatterIssues,
+  documentTitle,
   formatInstant,
   readExtraFrontmatter,
   serializeDocument,
@@ -131,18 +132,47 @@ export const CLEARABLE_FRONTMATTER_KEYS = [
  * removing `extra` entry reach the file. Removals of keys the file does not
  * carry are dropped here rather than passed on, so a `null` that clears nothing
  * does not make the save stamp `updated`.
+ *
+ * **`title` is compared against the name the document goes by, not against the
+ * raw key** (SERVER-100). Frontmatter need not carry `title:` at all — §7's
+ * hand-written skills carry `name:`, a hand-dropped file carries neither — and
+ * every reader still shows such a document under the name {@link documentTitle}
+ * resolves. The reader autosaves the title it is displaying, so comparing that
+ * against `current["title"]` reported a rename the first time any such document
+ * was opened: `title:` was written, `updated` moved, a commit landed and §4's
+ * acknowledgment woke the agent to reflect on an edit nobody made. Asked against
+ * the resolved name the answer is "identical", and §4's "a save re-sending a
+ * title identical to the stored one changes nothing and opens nothing" holds
+ * without a special case anywhere downstream. This is the same rule
+ * {@link currentOrigin} follows below, for the same reason: a write must ask the
+ * question the reader answered, or it disagrees with what the caller was shown.
+ *
+ * `goesBy` is that resolved name — the caller passes the projection row's title
+ * as the last rung. A caller with no row omits it and gets the plain comparison,
+ * which is the old behaviour and is right for a caller that has no document to
+ * derive a name from.
  */
 export function changedFields(
   current: Readonly<Record<string, unknown>>,
   patch: UpdateDocRequest,
   actor: Actor = "user",
   stamp: string | null = null,
+  goesBy: string | null = null,
 ): Record<string, unknown> {
   const changed: Record<string, unknown> = {};
   for (const key of UPDATABLE_FRONTMATTER_KEYS) {
     const value = patch[key];
     if (value === undefined) continue;
     if (sameValue(current[key], value)) continue;
+    // The one key whose stored value is not the key (see the note above): a
+    // `title` equal to the name the document already goes by renames nothing.
+    // Written as a second skip rather than as a substituted left-hand side so a
+    // value the raw key already holds is still recognised — a document whose
+    // `title:` is blank goes by its filename, and re-sending that blank must
+    // stay the no-op it has always been.
+    if (key === "title" && goesBy !== null && documentTitle(current, goesBy) === patch.title) {
+      continue;
+    }
     changed[key] = value;
   }
   // SPEC.md §7's canonical keyless write, made true of this route as well as of
@@ -456,7 +486,13 @@ export async function updateDocumentLocked(
 
   const nextBody = patch.body ?? parsed.body;
   const bodyChanged = nextBody !== parsed.body;
-  const fields = changedFields(parsed.data, patch, actor, stampedOrigin(workspace, patch.job));
+  const fields = changedFields(
+    parsed.data,
+    patch,
+    actor,
+    stampedOrigin(workspace, patch.job),
+    loaded.row.title,
+  );
   // Before anything is reconciled or written, and after `changedFields` has
   // decided the patch really moves `status` at all.
   assertNotUnarchivingByPut(id, parsed.data, loaded.row.status, fields);
@@ -517,7 +553,11 @@ export async function updateDocumentLocked(
       project: [loaded.path],
       unproject: [],
       commit: {
-        subject: `doc edit: ${titleOf(nextParsed.data, loaded.row.title)} (${id}) by ${actor}`,
+        // The name the reader was shown and the name `changedFields` compared
+        // against — one derivation, so a `git log` line, a board row and the
+        // save's own comparison cannot call one document three things
+        // (SERVER-100).
+        subject: `doc edit: ${documentTitle(nextParsed.data, loaded.row.title)} (${id}) by ${actor}`,
         anchors: report,
         // SPEC.md §4 lists "a document ... marked still current (§5)" among the
         // acts that close a window, and lists "an ordinary save of a document
@@ -565,9 +605,14 @@ export async function updateDocumentLocked(
       // the reader and renames a document has plainly edited it, and was
       // silently never acknowledged. §4 now draws the line at what the document
       // **says** — its body, or the title it goes by — against how it is *held*.
-      // `changedFields` has already dropped a title equal to the file's, so the
-      // same "a re-sent identical value is not a change" rule covers it without
-      // a second comparison.
+      // `changedFields` has already dropped a title equal to the one the
+      // document goes by, so the same "a re-sent identical value is not a
+      // change" rule covers it without a second comparison. **The name it goes
+      // by is the comparison, and the raw `title:` key is not** (SERVER-100):
+      // a document that carries `name:` or no name at all still shows one, the
+      // reader autosaves the one it is showing, and pinning that name into the
+      // frontmatter is a change to how the document is held rather than to what
+      // it says.
       //
       // **Sealing is unaffected**, which is why this can be conditional at all:
       // `observeCommit` seals through `touches(commit, session)`, which compares
@@ -585,6 +630,3 @@ export async function updateDocumentLocked(
     result,
   };
 }
-
-const titleOf = (data: Readonly<Record<string, unknown>>, fallback: string): string =>
-  typeof data["title"] === "string" && data["title"].trim() !== "" ? data["title"] : fallback;
