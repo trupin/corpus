@@ -1233,6 +1233,7 @@ left in a report.
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | todo | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
+| UI-146 | The document body rises 75px after it is on screen, while the column opens (UI-093 consequence) | todo | P1 | — |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
