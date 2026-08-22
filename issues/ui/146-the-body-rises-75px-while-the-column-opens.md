@@ -7,7 +7,7 @@ ui
 todo
 
 ## Priority
-P1
+P0
 
 ## Model
 opus
@@ -47,6 +47,38 @@ Ruled out by the same agent: fonts (`document.fonts.status` was `loaded`
 throughout and `62ch` measured 527.2px the whole time), `--doc-measure` (unset,
 so the stylesheet's `62ch` was in force), and plugin discovery (panel and body
 still land in one commit, so UI-073's guarantee holds).
+
+## Promoted to P0, 2026-08-22 — it breaks an interaction, not only a coordinate
+
+Filed as P1 on the judgment that this was a transition artifact only test
+coordinates could see. **That judgment was wrong**, and PR #55's red CI is what
+showed it. The agent diagnosing that failure sampled the reader at each step of
+the ordinary path — open a note, select a sentence, right-click — over six runs:
+
+```
+after selectText   st=0    bodyTop=422  colW=436   <- column still easing open
+after right-click  st=188  bodyTop=159  colW=560   <- the document jumped 188px
+```
+
+**A right-click landing while the column is still animating makes Chromium
+scroll `.reader-scroll` by 188px** to bring the focused body into view. The
+document moves a quarter of the viewport under the pointer *at the instant a
+person opens a context menu on a specific word*. Where the column had already
+settled, the same right-click scrolls nothing.
+
+That is the ordinary path, not a test rig. And v0.15.0 was named **"nothing
+moves under your cursor"** — shipping this would contradict the previous
+release's headline on the surface it was named for.
+
+**It is also not CI-only.** The same agent measured the underlying race at
+**50/50 locally**: `.reader-scroll` lands at `scrollTop` 0 or 188 depending on
+timing. The suite passing here was one lucky draw; CI is deterministic only
+because it is slower.
+
+**One honesty caveat from that agent, carried rather than papered over:** it
+pinned the *trigger* — a right-click on the contenteditable, only while the
+column is narrow — not the full reason Chromium scrolls only in that state.
+That is this issue's to settle.
 
 ## The judgment this issue exists to settle
 

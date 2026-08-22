@@ -1230,10 +1230,10 @@ left in a report.
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 | UI-144 | A deleted document's reveal names the wrong absence, and a ref is written in render (PR #54 re-review NITs) | todo | P3 | — |
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | todo | P1 | SHARED-061 |
-| CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | todo | P2 | — |
+| CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
-| UI-146 | The document body rises 75px after it is on screen, while the column opens (UI-093 consequence) | todo | P1 | — |
+| UI-146 | The document body rises 75px after it is on screen, and a right-click jumps it 188px (UI-093 consequence) | todo | P0 | — |
 | SHARED-062 | A todo list's `due` is its items, and a hand-written date does not survive (SIGNED 2026-08-22, applied) | done | P0 | — |
 | SHARED-063 | §11's reader menu offers Resolve on every document that has one (SIGNED 2026-08-22, applied) | done | P1 | — |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
