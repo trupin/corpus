@@ -2,7 +2,7 @@ import { useCapture, useCreateThread, type RowNotice } from "@corpus/kit";
 import { useCallback } from "react";
 
 /**
- * The composer's two submits (SPEC.md §11), routed.
+ * The composer's two submits (SPEC.md §10), routed.
  *
  * Both are compositions of primitives that already exist, and that is the whole
  * design: **Ask** is `POST /api/threads` with no parent, **Capture** is
@@ -20,7 +20,7 @@ import { useCallback } from "react";
  * documents: it assigns the id, the path, the title and the timestamps, and the
  * capture result carries ids rather than a row. A provisional row assembled here
  * would be a document the corpus has never heard of (the reason `useCreateDoc`
- * gives for the same choice). What makes SPEC.md §11's "appear on the board
+ * gives for the same choice). What makes SPEC.md §10's "appear on the board
  * immediately" true is that the mutation invalidates `["docs"]` on success,
  * which refetches every mounted column at once rather than waiting for the SSE
  * frame to arrive.
@@ -32,12 +32,12 @@ export interface ComposeInput {
   readonly text: string;
   readonly files: readonly File[];
   /**
-   * The weight the request states (SPEC.md §11's rider) — `{}` when nothing is
+   * The weight the request states (SPEC.md §10's rider) — `{}` when nothing is
    * chosen, which is the ordinary case.
    *
    * Spread onto the body rather than passed as a `string | undefined`, so
    * "stated nothing" has exactly one spelling on the way out: the key is absent.
-   * §11 names both submits, so Capture carries it exactly as Ask does — "a
+   * §10 names both submits, so Capture carries it exactly as Ask does — "a
    * request is a request wherever it starts".
    */
   readonly weight: { readonly weight?: string };

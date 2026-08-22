@@ -12,12 +12,12 @@ import { memoryStorage } from "../testing/memoryStorage";
 import { COLUMN_RESIZE_STEP, MIN_COLUMN_WIDTH } from "./columnWidth";
 
 /**
- * Dragging a column's edge, through the real board (SPEC.md §11).
+ * Dragging a column's edge, through the real board (SPEC.md §10).
  *
  * The assertions that matter are about the **wire**: one completed drag is one
  * `PUT` carrying `{ extra: { width } }` and nothing else, because `extra` is
- * merged per RFC 7386 and sending the whole object is the easy way to destroy a
- * plugin's data (sprint-016 TEST-447).
+ * merged per RFC 7386 and sending the whole object is the easy way to destroy
+ * frontmatter the core does not define (sprint-016 TEST-447).
  */
 
 beforeEach(() => {
@@ -105,7 +105,7 @@ describe("resizing a column", () => {
     });
     expect(wire.writes("PUT")[0]?.path).toBe("/api/docs/doc_view");
     // Only the one key: `extra` is a shallow merge, and the whole object would
-    // take a plugin's data with it.
+    // take every undefined-by-core key with it.
     expect(wire.writes("PUT")[0]?.body).toEqual({ extra: { width: 436 } });
   });
 

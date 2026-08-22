@@ -70,7 +70,7 @@ export type CreateSkillOutcome = { readonly doc: Doc; readonly result: MutationR
  * even a broken one.
  *
  * `lstatSync` rather than `existsSync` because the two disagree about exactly
- * the cases that matter here. §10 symlinks a plugin's skill into
+ * the cases that matter here. A workspace may reach a skill through a symlink at
  * `.claude/skills/<name>`, so the name is taken by a link whose target may be
  * anywhere; and a *broken* link is invisible to `existsSync` while still being
  * an entry `mkdir` cannot create through. Both are "that name is already
@@ -195,7 +195,7 @@ export async function createSkill(
     const stamp = formatInstant(workspace.now());
     // Same rule `POST /api/docs` follows: an omitted body pre-fills from the
     // type's template document when the workspace defines one, and a workspace
-    // with none gets an empty body (SPEC.md §11 — "none → empty").
+    // with none gets an empty body (SPEC.md §10 — "none → empty").
     const body =
       input.body ??
       findTemplate(workspace.workspaceRoot, workspace.projection, SKILL_TYPE)?.body ??

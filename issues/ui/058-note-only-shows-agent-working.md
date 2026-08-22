@@ -18,7 +18,7 @@ opus
 
 ## Spec References
 - SPEC.md §8 (the honest pending indicator)
-- SPEC.md §11 Thread view (composer's "ask agent" toggle)
+- SPEC.md §10 Thread view (composer's "ask agent" toggle)
 
 ## Summary
 Live report 2026-08-03: _"Answering with 'note only' still shows the 'agent is

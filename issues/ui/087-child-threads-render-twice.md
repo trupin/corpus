@@ -23,9 +23,9 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** Thread view — "**Child threads shown per-turn.**" That is the
-  placement for a thread's children; §11 states no second listing for them
-- SPEC.md **§11** Document view — "Whole-document comments and orphaned threads
+- SPEC.md **§10** Thread view — "**Child threads shown per-turn.**" That is the
+  placement for a thread's children; §10 states no second listing for them
+- SPEC.md **§10** Document view — "Whole-document comments and orphaned threads
   remain listed below the body." The below-body list is for threads that have
   **no place in the body**, not for every thread
 - SPEC.md **§6** — recursion: commenting on a turn creates a child thread
@@ -65,7 +65,7 @@ a wrong decision.
 **Documents are not affected**, and the issue should not "fix" them: a document
 takes the `anchorsHost` branch, where anchored threads become chips or margin
 cards and `DetachedThreads` lists only `wholeDocument`, `orphaned` and
-`unplaced` — which is exactly what §11 specifies. A plugin-view or
+`unplaced` — which is exactly what §10 specifies. A plugin-view or
 non-markdown-typed document also falls to the catch-all, but nothing else
 renders its threads there, so that listing is the **only** render and must
 stay.
@@ -104,7 +104,7 @@ stay.
   "has something else already placed these", which is what actually differs
   between a thread and a plugin view.
 - **Do not fix this inside `ThreadCard` by suppressing its per-turn placement.**
-  §11 makes per-turn the specified placement for a thread's children; the
+  §10 makes per-turn the specified placement for a thread's children; the
   duplicate is the below-body copy.
 
 ## Testing Strategy

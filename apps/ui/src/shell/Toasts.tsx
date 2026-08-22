@@ -32,7 +32,7 @@ import "./Toasts.css";
  * single `.toast` child, which a `[class*="toast"]` probe matches both of, and
  * whose text is identical whenever exactly one toast is up.
  *
- * **Nothing in the stack moves** (SPEC.md §11's rider, signed 2026-08-20; the
+ * **Nothing in the stack moves** (SPEC.md §10's rider, signed 2026-08-20; the
  * defect is UI-132). The wrapper used to be a bottom-anchored flow with the
  * newest toast first, so the oldest — the one whose six seconds runs out first
  * — was the bottom child, and its departure dropped every survivor 47px toward
@@ -51,7 +51,7 @@ import "./Toasts.css";
  * slots there is always one to take.
  *
  * **A toast is a notice arriving, and the arrival is not the record**
- * (SPEC.md §11's Notices paragraph, rider authorized 2026-08-21; UI-139). The
+ * (SPEC.md §10's Notices paragraph, rider authorized 2026-08-21; UI-139). The
  * provider therefore keeps a second, longer-lived thing beside the stack: the
  * session's {@link NoticeLog}, which the console's Notices tab reads. It is a
  * *sibling* of the toast array rather than a view of it — a toast is gone six
@@ -111,7 +111,7 @@ export interface Notice extends ToastNotice {
 export const MAX_NOTICES = 50;
 
 export interface NoticeLog {
-  /** Newest first — the order the tab reads, and §11's stated order. */
+  /** Newest first — the order the tab reads, and §10's stated order. */
   readonly notices: readonly Notice[];
   /** How many the bound has discarded this session, 0 until it bites. */
   readonly dropped: number;
@@ -190,8 +190,8 @@ function displaced(
 }
 
 /**
- * Pushes a toast. Outside a provider this is a no-op rather than a throw: a
- * plugin's row rendered in isolation should not crash for narrating itself.
+ * Pushes a toast. Outside a provider this is a no-op rather than a throw: a row
+ * rendered in isolation should not crash for narrating itself.
  */
 export function useToast(): Notify {
   return useContext(ToastContext);

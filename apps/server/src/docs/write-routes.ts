@@ -6,7 +6,7 @@
 // invalidation — lives in `write.ts` and the verb modules, so no handler can
 // forget one.
 //
-// **Warnings are part of the declared response** (SPEC.md §14, CONTRACT-005):
+// **Warnings are part of the declared response** (SPEC.md §11, CONTRACT-005):
 // every mutation response carries a `warnings` array, empty when nothing went
 // wrong. The pipeline is the only thing that decides what goes in it — a handler
 // neither invents a warning nor drops one, it serializes what came back.
@@ -31,7 +31,7 @@ import {
 } from "./write.js";
 
 /**
- * §14 asks a warning to surface three ways — "a warning on the API response, a
+ * §11 asks a warning to surface three ways — "a warning on the API response, a
  * server log entry, and console visibility". This is the log half, and it is not
  * redundant with the response half: the log survives a client that ignores the
  * field, and it names the document, which a `Warning` on its own does not.
@@ -47,7 +47,7 @@ export function reportWarnings(
       code: warning.code,
       detail: warning.detail,
       // The mutation stands regardless; this is drift the operator has to see.
-      note: "the file mutation stands; a §14 warning never fails a write",
+      note: "the file mutation stands; a §11 warning never fails a write",
     });
   }
 }
@@ -56,7 +56,7 @@ export function reportWarnings(
  * The response half. Copied rather than passed through because the pipeline
  * holds its warnings readonly while the wire schema infers a mutable array.
  *
- * Both halves are exported because the **thread** surface owes §14 the same two
+ * Both halves are exported because the **thread** surface owes §11 the same two
  * (CONTRACT-006 put `warnings` on its four response shapes): one definition of
  * what a warning is and one of how it reaches the operator, rather than a second
  * copy in `threads/` that drifts the first time the shape changes.
@@ -95,7 +95,7 @@ export function mountDocWriteRoutes(
   app.openapi(contractRoutes.applyBulkAction, async (c) => {
     const actor = actorOf(c.req.valid("header"));
     const result = await applyBulkAction(workspace, mutex, actor, c.req.valid("json"));
-    // §14's log half, scoped to the **act**: its warnings belong to one commit
+    // §11's log half, scoped to the **act**: its warnings belong to one commit
     // over a set, so repeating each of them once per changed document would say
     // the same thing seventeen times. Which file a validation warning came from
     // is already in `validateBeforeWrite`'s own path-scoped line.
@@ -107,7 +107,7 @@ export function mountDocWriteRoutes(
         changed: result.changed.map((outcome) => `${outcome.id}:${outcome.action}`),
         code: warning.code,
         detail: warning.detail,
-        note: "the file mutation stands; a §14 warning never fails a write",
+        note: "the file mutation stands; a §11 warning never fails a write",
       });
     }
     return c.json(result, 200);

@@ -56,13 +56,16 @@ describe("workspaceOf", () => {
   it("names the workspace a source file belongs to", () => {
     expect(workspaceOf("apps/ui/src/shell/theme.ts")).toBe("apps/ui");
     expect(workspaceOf("packages/contract/src/index.ts")).toBe("packages/contract");
-    expect(workspaceOf("plugins/todos/src/index.ts")).toBe("plugins/todos");
+    expect(workspaceOf("packages/kit/src/row/Row.tsx")).toBe("packages/kit");
   });
 
   it("puts anything outside a workspace in one bucket rather than inventing one", () => {
     expect(workspaceOf("scripts/merge-coverage.ts")).toBe(".");
     expect(workspaceOf("vitest.config.ts")).toBe(".");
     expect(workspaceOf("apps/ui")).toBe(".");
+    // `apps/*` and `packages/*` are the whole of it: a top-level directory the
+    // workspaces list does not name gets the same one bucket.
+    expect(workspaceOf("tools/probe/src/index.ts")).toBe(".");
   });
 });
 
@@ -72,7 +75,7 @@ describe("coverageScope", () => {
   it("accepts workspace sources", () => {
     expect(inScope("apps/ui/src/shell/theme.ts")).toBe(true);
     expect(inScope("packages/contract/src/schemas/doc.ts")).toBe(true);
-    expect(inScope("plugins/todos/src/index.ts")).toBe(true);
+    expect(inScope("packages/kit/src/row/Row.tsx")).toBe(true);
   });
 
   it("applies the same exclusions the unit run applies", () => {
@@ -80,25 +83,9 @@ describe("coverageScope", () => {
     expect(inScope("apps/ui/src/shell/Theme.test.tsx")).toBe(false);
     expect(inScope("apps/cli/src/bin/corpus.ts")).toBe(false);
     expect(inScope("packages/contract/src/client/schema.generated.ts")).toBe(false);
-  });
-
-  /**
-   * PLUGINS-002: a plugin's layout is its root (SPEC.md §10), so `plugins/*⁠/**`
-   * swept in the compiled copy of source it had just measured the moment a
-   * plugin was built. The **source** stays in scope — that is the gate
-   * sprint-014 Adjudication 18 insists on — and only `dist/` and declaration
-   * files, which have no runtime statements at all, drop out.
-   */
-  it("measures a plugin's source and not its build output", () => {
-    expect(inScope("plugins/todos/items.ts")).toBe(true);
-    expect(inScope("plugins/todos/ui/TodoListItem.tsx")).toBe(true);
-    expect(inScope("plugins/todos/server/routes.ts")).toBe(true);
-    expect(inScope("plugins/todos/cli/commands/add.ts")).toBe(true);
-
-    expect(inScope("plugins/todos/dist/server/routes.js")).toBe(false);
-    expect(inScope("plugins/todos/dist/items.d.ts")).toBe(false);
-    expect(inScope("packages/kit/src/plugin/types.d.ts")).toBe(false);
-    expect(inScope("plugins/_fixture/manifest.ts")).toBe(false);
+    // Naming `coverage.exclude` replaces Vitest's defaults, so the declaration
+    // files those defaults dropped have to be dropped here by name.
+    expect(inScope("packages/kit/src/testing/types.d.ts")).toBe(false);
   });
 
   it("rejects everything that is not a workspace source", () => {

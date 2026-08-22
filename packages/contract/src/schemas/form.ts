@@ -98,12 +98,12 @@ import { warningsField } from "./warning.js";
  *   submit: a form is unanswered until it is submitted, and submitting records
  *   every field's answer in one act. Answering an already-answered form is a
  *   `409` on the answer route — changing your mind is an ordinary reply, not a
- *   second answer to the same question (§6, §11).
+ *   second answer to the same question (§6, §10).
  * - **A form that cannot be read is never half-read.** Unparseable YAML, a
  *   fourth kind however spelled, an unknown key, a `write` field carrying
  *   `options`: all of them fail {@link FormSchema} whole, and a reader that
  *   cannot parse a fence renders it as the visibly broken code block it is,
- *   never as a subset of working controls (§6, §11). The two postures are not
+ *   never as a subset of working controls (§6, §10). The two postures are not
  *   alternatives but a pair, and the second is doing real work rather than
  *   standing by: the write-time refusal covers the **agent's** turn append,
  *   which is where §6 says forms are asked, and covers nothing else — not a
@@ -305,7 +305,7 @@ export function answerHeadingText(line: string): string | undefined {
  * a plain YAML scalar and needs no quoting.
  *
  * A fourth kind, however spelled, fails to parse — and a form that fails to
- * parse renders raw rather than partially (§11).
+ * parse renders raw rather than partially (§10).
  */
 export const FORM_FIELD_KINDS = ["choose one", "choose any", "write"] as const;
 
@@ -333,7 +333,7 @@ const nonBlank = z
  * time (`./form-answer.ts`). A newline in either makes the answer unreadable
  * *after* it has been written — the turn is on disk, `parseFormAnswerBody`
  * cannot pair it with its form, so the form counts as unanswered forever, no
- * second answer can clear it (§11 requires every attention reason to have an
+ * second answer can clear it (§10 requires every attention reason to have an
  * action that clears it), and the only recovery is hand-editing the file.
  *
  * Enforcing it **here**, in the grammar, rather than at the answer route, is
@@ -341,7 +341,7 @@ const nonBlank = z
  * a question or an option does not parse, so it is refused at write time on the
  * agent's turn append, and a copy that arrived some other way (a hand-edited
  * file, an older server) is not a form to any consumer — it renders as the
- * visibly broken code block §11 asks for, and never advertises an answer nobody
+ * visibly broken code block §10 asks for, and never advertises an answer nobody
  * can give. Refusing at answer time instead would have accepted the form and
  * then had nothing to offer the person holding it.
  */
@@ -687,7 +687,7 @@ export const FormAnswerRequestSchema = z
 /**
  * The answer's own mutation response. Same three parts every turn append reports
  * — the appended turn, the thread it changed and the event it enqueued — plus
- * §14's warnings, because appending a turn writes a workspace file and a rejected
+ * §11's warnings, because appending a turn writes a workspace file and a rejected
  * auto-commit has to surface here exactly as it does on every other mutation.
  */
 export const FormAnswerResponseSchema = z
@@ -752,9 +752,11 @@ export const FormFieldRecordSchema = z
  *
  * **Why this is a schema beside `QueueEventSchema` rather than a member of a
  * discriminated union on it.** SPEC.md §7 keeps the event `type` an open string
- * because plugins define their own event types and own their own payload shapes;
+ * because the set on the wire is not the set any one build knows — an older
+ * workspace's queue, a hand-written `pending/` file and a newer server all
+ * reach it — and the payload's shape belongs to whatever defines the type;
  * turning `payload` into a union keyed on `type` would close that set at the
- * three core types and make every plugin event unrepresentable on the wire. The
+ * core types and make every other event unrepresentable on the wire. The
  * core payload is therefore *declared and parseable* without the envelope
  * becoming exhaustive: a consumer that handles `form.respond` narrows with
  * {@link parseFormRespondPayload}, and one that does not is unaffected.

@@ -1,7 +1,7 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
 
 /**
- * The comments list's model (SPEC.md §11, rider signed 2026-08-04): which of a
+ * The comments list's model (SPEC.md §10, rider signed 2026-08-04): which of a
  * document's conversations are anchored, and what the two filter axes leave
  * standing.
  *
@@ -14,7 +14,7 @@ import type { DocRow, ResolvedAnchor } from "@corpus/contract";
 /**
  * Where a conversation sits relative to the document's text — three states,
  * because the rider's two labels are not enough to say *why* a row is unanchored
- * (§11: "an unanchored row opens its thread and **says why** it has no anchor").
+ * (§10: "an unanchored row opens its thread and **says why** it has no anchor").
  *
  * - `anchored` — an anchor entry that still resolves. It has a place in the body.
  * - `orphaned` — an anchor entry that no longer resolves: the document moved out
@@ -169,7 +169,7 @@ export function emptyCommentsNotice(counts: CommentCounts, filters: CommentFilte
 }
 
 /**
- * Why this row has no anchor, or what it is anchored to — §11's *"an unanchored
+ * Why this row has no anchor, or what it is anchored to — §10's *"an unanchored
  * row opens its thread and says why it has no anchor"*.
  *
  * Three sentences for three states, because the two unanchored ones mean

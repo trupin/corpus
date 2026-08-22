@@ -414,7 +414,7 @@ interface RelatedHalf {
  * eleventh in the graph is first semantically — and `fuseRankings` does the
  * cutting, after the ranking, at the contract's cap.
  *
- * §11's archived default reaches both graphs through **one** fragment:
+ * §10's archived default reaches both graphs through **one** fragment:
  * `notArchivedSql("d")` is the links statement's WHERE and the semantic scan's
  * scope, the shape `related.ts` established. The seeds — the thread and, when
  * there is one, its parent — are excluded in the same fragment on both sides,

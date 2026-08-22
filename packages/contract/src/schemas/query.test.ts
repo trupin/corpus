@@ -36,7 +36,6 @@ const row = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
   stale: null,
   parent: null,
@@ -54,7 +53,7 @@ const row = {
   snippets: [],
 };
 
-/** The same row as a thread: every thread-only field populated (SPEC.md §11). */
+/** The same row as a thread: every thread-only field populated (SPEC.md §10). */
 const threadRow = {
   ...row,
   id: "th_x9y8",
@@ -133,8 +132,9 @@ describe("DocsQuery filter grammar", () => {
     expect(DocsQuerySchema.safeParse({ q: "" }).success).toBe(false);
   });
 
-  it("leaves `type` open, because plugins define their own document types", () => {
-    expect(DocsQuerySchema.parse({ type: "todo" }).type).toBe("todo");
+  /** SPEC.md §12's M6: a document of a type this build never heard of is searchable like any other. */
+  it("leaves `type` open, so an unrecognised type can still be filtered on", () => {
+    expect(DocsQuerySchema.parse({ type: "ledger" }).type).toBe("ledger");
   });
 
   it.each([
@@ -240,7 +240,7 @@ describe("DocsQuery filter grammar", () => {
     expect("isParent" in DocsQuerySchema.parse({})).toBe(false);
   });
 
-  /** The board's one column-set query (SPEC.md §11; sprint-009 TEST-2). */
+  /** The board's one column-set query (SPEC.md §10; sprint-009 TEST-2). */
   it("composes the board query: pinned views sorted by order", () => {
     expect(DocsQuerySchema.parse({ pinned: "true", type: "view", sort: "order" })).toEqual({
       pinned: true,
@@ -253,7 +253,7 @@ describe("DocsQuery filter grammar", () => {
 });
 
 /**
- * SPEC.md §11's search overlay offers relevance ordering only alongside a query.
+ * SPEC.md §10's search overlay offers relevance ordering only alongside a query.
  * Falling back silently would show a list ordered by something the user did not
  * ask for and could not see; a declared `400` is the honest answer.
  */
@@ -446,7 +446,6 @@ describe("DocRow", () => {
     "awaitingAgent",
     "order",
     "query",
-    "column",
   ])("carries %s as null on a non-thread row rather than omitting it", (field) => {
     expect(DocRowSchema.parse(row)).toHaveProperty(field, null);
     const { [field]: _dropped, ...without } = row as Record<string, unknown>;
@@ -480,7 +479,7 @@ describe("DocRow", () => {
   });
 
   /**
-   * CONTRACT-011: the row carries the whole §11 view surface, so one
+   * CONTRACT-011: the row carries the whole §10 view surface, so one
    * `pinned=true&type=view&sort=order` query is the entire column set — no
    * per-view `GET /api/docs/{id}` follow-up (sprint-009 TEST-2).
    */
@@ -581,7 +580,7 @@ describe("DocRow.unreadThreads", () => {
 });
 
 /**
- * CONTRACT-040. §11's Attention sentence ends "a thread holding **more than
+ * CONTRACT-040. §10's Attention sentence ends "a thread holding **more than
  * one** unanswered form says how many are still open", and `attention` is a list
  * of bare codes carrying no number — so the count is a field of its own or the
  * clause is unimplementable without an N+1 per row.
@@ -634,7 +633,7 @@ describe("DocRow.unansweredForms", () => {
    */
   it("publishes the semantics the server and the chip both depend on", () => {
     const description = DocRowSchema.shape.unansweredForms.description ?? "";
-    expect(description).toContain("SPEC.md §6, §11");
+    expect(description).toContain("SPEC.md §6, §10");
     expect(description).toContain("both directions");
     expect(description).toContain("iff");
     expect(description).toContain("`needs=form`");

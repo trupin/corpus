@@ -2,7 +2,7 @@
 // belongs to, as it is stored in that thread's frontmatter.
 //
 // One reader, for the same reason `provenance.ts` is one reader of `origin`:
-// three paths ask this question of raw frontmatter — the file parser (§14
+// three paths ask this question of raw frontmatter — the file parser (§11
 // validation), the thread read that answers the wire, and the projection — and
 // three spellings of "is this a resident" is how they come to disagree about a
 // hand-written file.
@@ -10,8 +10,8 @@
 // **Lenient, like every other read of a file the server did not write.** A
 // `resident:` key that is not `{name, docId}` reads as *no resident* rather than
 // failing the document: `resident` was a legal frontmatter key before it meant
-// anything here (§5 and §12 make frontmatter the plugin extension point), so a
-// workspace may already hold a thread whose `resident:` means something else
+// anything here (§5 lets a document carry any key the core does not define), so
+// a workspace may already hold a thread whose `resident:` means something else
 // entirely, and a corpus that predates a field must not become unreadable
 // because of it. What the value cannot do is be *half* honoured: the wire
 // promises `{name, docId}` or null, so anything else is null.
@@ -24,7 +24,8 @@
 // Releasing still **removes the key**, which is why absence and this are
 // different states and why nothing here has to tell a third one apart. Both keys
 // are still required to be present: `{}` and `{name: null}` are not the shape,
-// so a bare mapping under `resident:` stays a plugin's business.
+// so a bare mapping under `resident:` stays whatever it already meant to the
+// workspace that wrote it.
 //
 // **`weight` is the one key whose absence is legal** (SERVER-129). Every
 // designation written before §7's weight rider has no such key, and none is what

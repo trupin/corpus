@@ -447,7 +447,7 @@ export async function designateResident(
  * **Idempotent**: releasing a thread that has no resident writes nothing,
  * commits nothing and announces nothing — the caller often cannot know, and a
  * release with nothing to release is a no-op rather than an error. It still
- * answers with the thread, because a release that *does* write can raise §14's
+ * answers with the thread, because a release that *does* write can raise §11's
  * warnings and a rejected auto-commit has to be visible somewhere.
  *
  * No refusal for a parented thread: the routes cannot put a resident on one, but
@@ -464,7 +464,7 @@ export async function designateResident(
  *
  * **"Releases somebody" is `thread.resident !== null`, not the key's presence.**
  * The two differ exactly where the key is not a designation — a parented
- * thread's, or a plugin's `resident:` meaning something else — and those are
+ * thread's, or a hand-written `resident:` meaning something else — and those are
  * cleared without an announcement because nothing was ever a lane there: no
  * event was ever routed to it, and no listener was ever launched for it. What is
  * *written* still turns on the key, so a stray one is still removed.

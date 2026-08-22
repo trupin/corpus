@@ -17,7 +17,7 @@ export type ResolveOptions = {
  * 2. `exact` alone, when it occurs exactly once (overlapping occurrences count).
  *
  * This is **the reader's resolver** — `docs/read.ts`, the projector's
- * `anchors.resolved_offset` and §14's `checkSeams` all stop here, and
+ * `anchors.resolved_offset` and §11's `checkSeams` all stop here, and
  * reconciliation's deleted-claim verification does too. Exact rungs prove
  * *verbatim* survival, which is the only evidence admissible when the caller
  * cannot see what the edit did (a reader never can) or must overrule the diff's
@@ -57,7 +57,7 @@ export function resolveAnchorExact(body: string, selector: TextQuoteSelectorInpu
  * uses it to locate a selector in `oldBody` — the body the selector was written
  * against, where a fuzzy hit means "the selector has drifted from its own text",
  * and where the answer is then checked against the diff before anything moves.
- * No reader may call this. `docs/read.ts`, the projector and §14's checker stop
+ * No reader may call this. `docs/read.ts`, the projector and §11's checker stop
  * at {@link resolveAnchorExact}.
  *
  * That split is not a performance choice, and it is not the accident SERVER-055

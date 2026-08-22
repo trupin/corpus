@@ -185,7 +185,7 @@ describe("a turn that would swallow the turns after it (SPEC.md §6)", () => {
     ]);
   });
 
-  it("accepts a turn that merely quotes a fence, however wide (SPEC.md §11's snippet)", async () => {
+  it("accepts a turn that merely quotes a fence, however wide (SPEC.md §10's snippet)", async () => {
     const created = await createThread(ws, { body: "first" });
     const quoting = "How to write one:\n\n````markdown\n```js\nconst x = 1;\n```\n````\n";
 

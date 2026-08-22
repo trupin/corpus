@@ -24,11 +24,11 @@ opus — layout and behaviors are fully specified by the prototype and §7; the 
 ## Spec References
 
 - SPEC.md §7 — **Job logs (the console feed)** (every queue event is a job; `.corpus/jobs/<eventId>.jsonl`; `corpus job log` and `POST /api/jobs/:id/log` append; the server tails and broadcasts over SSE so the UI shows each job's status with its live log stream), **queue halt/resume** (`.corpus/HALT` sentinel; while halted `idle` parks and `claim-all` returns empty), queue statuses `pending → in-progress → processed | failed`, `abandoned`
-- SPEC.md §11 — **Console** (the bottom drawer and the **single home of agent/queue status**; collapsed = one-line strip with agent-status pill (working/idle/halted dot) · queue depth · running/done/failed counts · HALT toggle; expanded **pushes the board up — never overlays**; height resizable by dragging its top edge; **master-detail** with a job list left and the selected job's **live log stream** right, newest job auto-selected; failed jobs offer retry/abandon in the detail header; every job's detail header **links to its originating document/thread** — click-through opens it in its home column; expanded state and height are sticky)
-- SPEC.md §11 — **Attention** is a seed view whose rows include failed jobs with a reason chip; handling the reason clears the row live via SSE
+- SPEC.md §10 — **Console** (the bottom drawer and the **single home of agent/queue status**; collapsed = one-line strip with agent-status pill (working/idle/halted dot) · queue depth · running/done/failed counts · HALT toggle; expanded **pushes the board up — never overlays**; height resizable by dragging its top edge; **master-detail** with a job list left and the selected job's **live log stream** right, newest job auto-selected; failed jobs offer retry/abandon in the detail header; every job's detail header **links to its originating document/thread** — click-through opens it in its home column; expanded state and height are sticky)
+- SPEC.md §10 — **Attention** is a seed view whose rows include failed jobs with a reason chip; handling the reason clears the row live via SSE
 - SPEC.md §9.2 — `GET /api/jobs?recent=`, `GET /api/jobs/:id/log`, `DELETE /api/queue/:id` (abandon), `GET /events` (SSE)
-- SPEC.md §15 M3 — Playwright check: "expand the console → job list + selected job's log detail render **and the drawer height persists after drag-resize**"
-- SPEC.md §15 M4 — check: "lines emitted via `corpus job log` stream into the console row for that job"
+- SPEC.md §12 M3 — Playwright check: "expand the console → job list + selected job's log detail render **and the drawer height persists after drag-resize**"
+- SPEC.md §12 M4 — check: "lines emitted via `corpus job log` stream into the console row for that job"
 - `design/index.html` — **authoritative look & feel** (`.console`/`.console-strip`/`.c-caret`/`.c-failed`/`.halt-btn` + `.halted`/`.console-resizer` + `.dragging`/`.console-body`, `.job-list`/`.job`/`.job.sel`/`.job-dot` variants with the pulsing `running` dot/`.job-title`/`.job-meta`, `.job-detail`/`.job-detail-head` with `↗ open` and Retry/Abandon buttons, `.job-log-lines` with `.err`, `.job-empty`, the `agent-pill` in the strip)
 
 ## Summary
@@ -43,7 +43,7 @@ Build the console: a bottom drawer that is the **single home of agent and system
 - [x] **HALT toggle** calls the halt/resume endpoints; while halted the button shows `HALT ●` with `.halted` styling (signal wash, signal text) and the agent pill reads `halted`. State is read from the server (SSE-driven), not local — a halt set by `corpus queue halt` from the CLI is reflected in the UI without a reload, and vice versa.
 - [x] **Expanded drawer pushes the board up.** The app shell is a column flex layout where the console is a sibling of the board — expanding shrinks the board's height. Assert there is no `position: fixed`/`absolute` overlay and no board content hidden behind the drawer (the topmost board row stays reachable).
 - [x] **Drag resize**: a 5 px `.console-resizer` (`cursor: ns-resize`, accent wash on hover/drag) on the drawer's top edge; dragging sets the body height clamped to `[120px, 60vh]`.
-- [x] **Sticky state**: the expanded/collapsed flag and the height persist in `localStorage` and are restored on reload (this is the §15 M3 "drawer height persists after drag-resize" check).
+- [x] **Sticky state**: the expanded/collapsed flag and the height persist in `localStorage` and are restored on reload (this is the §12 M3 "drawer height persists after drag-resize" check).
 - [x] **Master-detail**: a 380 px fixed-width `.job-list` (right hairline, scrollable) of `.job` rows — `.job-dot` (`running` pulsing accent / `pending` sepia / `done` good / `failed` signal), a sans `.job-title` (`<event type> · <title>`, ellipsized), and a right-aligned mono `.job-meta` state. The selected row takes `.job.sel` (accent wash). The **newest job is auto-selected**, and stays selected once the user picks another (a new arrival does not steal an explicit selection).
 - [x] **Detail header** (`.job-detail-head`): status dot, job title, an `↗ open` link when the job has an originating document/thread, mono meta (`<status> · started <time> · <eventId>`), and — for **failed** jobs only — `Retry` and `Abandon` buttons hitting the queue endpoints.
 - [x] `↗ open` **navigates to the originating document/thread in its home column**, reusing UI-009's `useOpenInColumn` (scroll + `.col.flash` + open in reader). Threads open to the thread view.
@@ -74,7 +74,7 @@ Build the console: a bottom drawer that is the **single home of agent and system
 
 ### Key Implementation Details
 
-**Push, not overlay.** The shell is `display: flex; flex-direction: column; height: 100vh` with `header`, `main.board { flex: 1; min-height: 0 }`, and `.console { flex: none }`. The drawer's body height is an inline style on `.console-body`; growing it shrinks the board because the board is the flex-grow child. Never introduce `position: fixed` on the console — that is the one thing §11 explicitly forbids.
+**Push, not overlay.** The shell is `display: flex; flex-direction: column; height: 100vh` with `header`, `main.board { flex: 1; min-height: 0 }`, and `.console { flex: none }`. The drawer's body height is an inline style on `.console-body`; growing it shrinks the board because the board is the flex-grow child. Never introduce `position: fixed` on the console — that is the one thing §10 explicitly forbids.
 
 **Resize.** Pointer events on `.console-resizer`: `pointerdown` captures `{ y, h }` and sets pointer capture; `pointermove` computes `h = clamp(startH + (startY - clientY), 120, window.innerHeight * 0.6)`; `pointerup` releases and persists. Clamp on window resize too (a 60 vh height must shrink when the window does). Persist `{ open, height }` under a single `localStorage` key (e.g. `corpus.console`), read once on mount with a schema guard so a corrupted value falls back to defaults.
 
@@ -126,15 +126,15 @@ Vitest + Testing Library in `apps/ui` and `packages/kit`:
 
 1. Start the real stack (`npm run watch`) against a `corpus init` workspace, plus a real agent loop (or `corpus thread reply --from agent` + `corpus job log` to drive jobs deterministically).
 2. Post an `@agent` comment in the UI → a `comment.created` event is enqueued. Observe the collapsed strip: the agent pill flips to `working` with a pulsing dot, queue depth increments, and the counts show `1 running`.
-3. **Expand the console** → confirm the board is **pushed up**, not covered: the topmost board row is still visible and clickable, and the console has no `position: fixed` in the computed styles. The job list shows the job (dot + `comment.created · <title>` + state) and its log detail renders — this is the §15 M3 console check.
-4. **Live log streaming (§15 M4)**: run `corpus job log <eventId> "reading thread context"` from a terminal → the line appears in the selected job's log pane within a second, and the job row's state updates. Emit a line containing `ERR` → it renders in signal red. Emit ~50 lines rapidly → the pane keeps up and stays pinned to the bottom.
+3. **Expand the console** → confirm the board is **pushed up**, not covered: the topmost board row is still visible and clickable, and the console has no `position: fixed` in the computed styles. The job list shows the job (dot + `comment.created · <title>` + state) and its log detail renders — this is the §12 M3 console check.
+4. **Live log streaming (§12 M4)**: run `corpus job log <eventId> "reading thread context"` from a terminal → the line appears in the selected job's log pane within a second, and the job row's state updates. Emit a line containing `ERR` → it renders in signal red. Emit ~50 lines rapidly → the pane keeps up and stays pinned to the bottom.
 5. Scroll the log pane up mid-stream → new lines arrive **without** yanking the viewport; scroll back to the bottom → pinning resumes.
-6. **Drag-resize** the drawer by its top edge → the board shrinks accordingly; try to drag past both clamps and confirm it stops at 120 px and 60 vh. **Reload the browser** → the drawer is still expanded at the dragged height (§15 M3 persistence check).
+6. **Drag-resize** the drawer by its top edge → the board shrinks accordingly; try to drag past both clamps and confirm it stops at 120 px and 60 vh. **Reload the browser** → the drawer is still expanded at the dragged height (§12 M3 persistence check).
 7. `↗ open` in the detail header → the board scrolls that document/thread's column into view, flashes it, and opens it in the reader.
 8. **Failed job**: fail one (`corpus queue fail <eventId>`) → the job row and dot turn signal red, the strip's failed count increments in red, and an **Attention row** appears with a `failed job` reason chip. Click **Retry** in the detail header → the job re-enters the queue **and the Attention row clears live** without a reload. Repeat with **Abandon** and confirm the same clearing.
 9. **HALT**: click `HALT ○` → it becomes `HALT ●` with signal styling, the pill reads `halted`, and `.corpus/HALT` exists on disk; `corpus queue claim-all` returns empty while halted. Click again to resume → the sentinel is gone and claiming works. Then run `corpus queue halt` from the CLI → the UI reflects `halted` via SSE **without a reload**.
 10. Collapse the drawer → confirm (devtools Network/EventSource) that no job-log stream is being consumed while collapsed.
-11. Playwright: `apps/ui/e2e/console.spec.ts` automating steps 3, 4, 6, and 8 against the real app (§15 M3 and M4 console checks).
+11. Playwright: `apps/ui/e2e/console.spec.ts` automating steps 3, 4, 6, and 8 against the real app (§12 M3 and M4 console checks).
 
 ## E2E Verification Log
 
@@ -340,7 +340,7 @@ drag to the top of the screen → 540px   (60vh of a 900px window = 540)
 drag to the bottom       → 120px
 settle                   → 259px
 localStorage["corpus.console"] = {"version":1,"open":true,"height":259}
-reload                   → class "console open", height 259px      ← §15 M3's named check
+reload                   → class "console open", height 259px      ← §12 M3's named check
 two ArrowUp presses      → 291px
 window shrunk to 400px   → 240px (60vh), board still 57.5px tall — re-clamped, not squeezed
 ```

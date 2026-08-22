@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — "An agent turn says which model wrote it"
+- SPEC.md **§10** — "An agent turn says which model wrote it"
 - SPEC.md **§7** — the deciding stage
 
 ## Summary

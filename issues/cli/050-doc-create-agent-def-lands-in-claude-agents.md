@@ -24,7 +24,7 @@ opus
 ## Spec References
 
 - SPEC.md **§7** line 397 — `.claude/agents/*.md` as the agent-def document root
-- SPEC.md **§11** line 539 — creating a subagent document makes it
+- SPEC.md **§10** line 539 — creating a subagent document makes it
   autocompletable with no separate registry
 
 ## Summary

@@ -27,7 +27,7 @@ opus
   sign-off; §9.2 currently documents whole-body `PUT` only)
 - SPEC.md §6 — anchors reconciled on every write
 - SPEC.md §4 — git auto-commit, author attribution, squashing
-- SPEC.md §14 — every server mutation validates before writing
+- SPEC.md §11 — every server mutation validates before writing
 
 ## Summary
 
@@ -46,7 +46,7 @@ write, not a second write path.
 - [ ] `all: true` replaces every occurrence, left-to-right, non-overlapping
 - [ ] The write is ordinary downstream: anchors reconciled (§6) — including
       remap/orphan reporting when the patch hits an anchored range — validation
-      before writing (§14), one attributed commit (§4), projection and SSE
+      before writing (§11), one attributed commit (§4), projection and SSE
       invalidation exactly as a `PUT` produces them
 - [ ] A patch against a document locked by the other party is refused naming
       the holder, as any edit is (§7)
@@ -85,7 +85,7 @@ cannot move between verification and write.
 - `old` containing the anchor-quoted text of a thread — the reconciliation
   reports `remapped`/`orphaned` in the response exactly as an equivalent `PUT`
   would; the patch adds nothing special
-- A patch whose `new` introduces an unterminated fence — refused by the §14
+- A patch whose `new` introduces an unterminated fence — refused by the §11
   validator like any write (SERVER-075's rule holds here too)
 - A patch to a document with unreadable frontmatter — same behaviour as `PUT`
   on that document today
@@ -183,7 +183,7 @@ an anchored thread `th_3b3ovtca` on the middle sentence (`anc_05e7823f`).
 
 7. **A patch that orphans an anchor.**
    `{"old":"The rate is fixed for five years.\n\n","new":""}` → `200`,
-   `anchors {remapped: [], orphaned: ["anc_05e7823f"]}`, and §14's warning
+   `anchors {remapped: [], orphaned: ["anc_05e7823f"]}`, and §11's warning
    `orphaned_anchor: anchor `anc_05e7823f` no longer resolves in the body; its
    thread is orphaned`. The selector on disk is preserved byte-for-byte
    (`exact: The rate is fixed for five years.`), and the change is one commit,

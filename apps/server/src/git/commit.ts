@@ -27,7 +27,7 @@
 //   therefore not a flush of buffered work — there is none — but "stop amending
 //   it", plus one final amend that rewrites the subject where no act named it.
 //   That is deliberate and adjudicated (SERVER-091): §5 says the file on disk is
-//   the truth and §14 says a mutation stands when its commit does not, so an
+//   the truth and §11 says a mutation stands when its commit does not, so an
 //   in-memory buffer would lose a crash's worth of commits, where the amend
 //   model loses at worst a *boundary* — which is exactly the cost §4 states.
 //
@@ -50,7 +50,7 @@
 //   change staged and then not committed is swept up by the *next* commit made
 //   by anything at all, the operator's own included. Every outcome that is not
 //   a landed commit restores the index to `HEAD` for the paths it staged. The
-//   working tree is never touched — the mutation stands (SPEC.md §14), it is
+//   working tree is never touched — the mutation stands (SPEC.md §11), it is
 //   simply not staged.
 
 import { existsSync, statSync } from "node:fs";
@@ -229,9 +229,9 @@ export interface CommitRequest {
 export type CommitOutcome =
   | { readonly kind: "committed"; readonly sha: string }
   | { readonly kind: "amended"; readonly sha: string }
-  /** No commit was possible or needed; the mutation still stands (SPEC.md §14). */
+  /** No commit was possible or needed; the mutation still stands (SPEC.md §11). */
   | { readonly kind: "skipped"; readonly reason: string }
-  /** git refused — most often a workspace hook (SPEC.md §14). The file mutation stands. */
+  /** git refused — most often a workspace hook (SPEC.md §11). The file mutation stands. */
   | { readonly kind: "failed"; readonly reason: string; readonly output: string };
 
 export interface AutoCommitter {
@@ -720,7 +720,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
    * answered `false`. `runCommit` has no try/catch, so an unreadable parent
    * directory would reject the commit instead of returning a `CommitOutcome` —
    * bypassing this module's contract that every failure is a `skipped` or
-   * `failed` outcome with §14's logging. A path we cannot stat is a path that is
+   * `failed` outcome with §11's logging. A path we cannot stat is a path that is
    * not there **as far as staging is concerned**, which is what `existsSync`
    * meant all along.
    */
@@ -878,7 +878,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     const repository = await git.exec(["rev-parse", "--git-dir"]);
     if (!repository.ok) {
       // Both are ordinary states of a usable workspace, and neither may cost the
-      // operator a mutation (SPEC.md §14: the file is the source of truth).
+      // operator a mutation (SPEC.md §11: the file is the source of truth).
       openWindow = null;
       return {
         kind: "skipped",
@@ -1032,7 +1032,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
       withGitLock(async () => {
         const outcome = await runCommit(request);
         if (outcome.kind === "failed") {
-          // SPEC.md §14: the failure surfaces loudly. The mutation stands; this
+          // SPEC.md §11: the failure surfaces loudly. The mutation stands; this
           // is the operator-facing half of "rather than silently leaving
           // uncommitted drift".
           logger.error("auto-commit failed — the file mutation stands, uncommitted", {

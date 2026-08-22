@@ -1,4 +1,4 @@
-# [SHARED-051] A persona is addressable by where it lives, and §11 says otherwise
+# [SHARED-051] A persona is addressable by where it lives, and §10 says otherwise
 
 ## Domain
 
@@ -25,7 +25,7 @@ fable
 
 ## Spec References
 
-- SPEC.md **§11** line 541 — *"Creating a new skill or subagent document
+- SPEC.md **§10** line 541 — *"Creating a new skill or subagent document
   instantly makes it autocompletable — there is no separate registry."*
 - SPEC.md **§8** line 409 — *"`@<subagent-name>` (a `type: agent-def` document's
   name) routes the work to that subagent"*
@@ -43,7 +43,7 @@ SERVER-125 and UI-123 together establish a rule: **a `type: agent-def` or
 mention resolves it, neither menu offers it, a designation naming it is a 404.
 That is user-observable behaviour, and SPEC.md does not carry it.
 
-Worse than not carrying it, **§11 line 541 now reads against it**:
+Worse than not carrying it, **§10 line 541 now reads against it**:
 
 > Creating a new skill or subagent document instantly makes it autocompletable —
 > there is no separate registry.
@@ -61,7 +61,7 @@ that subagent"*, with no mention of a root.
 **The default path is unaffected**, and that matters for judging this. Since
 SERVER-122 and CLI-050 shipped in v0.11.0, `corpus doc create --type agent-def`
 with **no** `--folder` lands in `.claude/agents/`, and such a document is
-autocompletable exactly as §11 promises. The sentence is false only for the
+autocompletable exactly as §10 promises. The sentence is false only for the
 explicit `--folder` opt-out.
 
 So this is a spec sentence that is unqualified rather than one that is
@@ -96,7 +96,7 @@ one.
 
 Two edits.
 
-**Edit 1 — §11, line 541.** Replace the sentence:
+**Edit 1 — §10, line 541.** Replace the sentence:
 
 > Creating a new skill or subagent document **in a shape its root names** (§7)
 > instantly makes it autocompletable — there is no separate registry. A skill is
@@ -129,7 +129,7 @@ Two edits.
 
 ## What the sign-off decides
 
-1. **Whether to sign at all, or to revert SERVER-125.** Reverting restores §11's
+1. **Whether to sign at all, or to revert SERVER-125.** Reverting restores §10's
    sentence and restores the name theft with it. The draft assumes signing.
 2. Whether Edit 2 belongs in §8 or in §7 beside the root declaration. The draft
    puts it in §8 because §8 is where resolution is specified, and §7 line 399
@@ -150,21 +150,21 @@ Batching riders is how a live §4/§7 contradiction survived a sign-off before
 ## Acceptance Criteria
 
 - [x] The user has signed the drafted text, verbatim, on its own — 2026-08-19
-- [x] SPEC.md §11 no longer states that creating a subagent document anywhere
+- [x] SPEC.md §10 no longer states that creating a subagent document anywhere
       makes it autocompletable
 - [x] SPEC.md §8 states the root gate, and says a document about a persona stays
       an ordinary document
 - [x] `npm run spec:check` passes — 5,862 citations
-- [x] No other §8 or §11 sentence is reworded to agree with it
+- [x] No other §8 or §10 sentence is reworded to agree with it
 - [x] n/a — signed after v0.12.0 shipped. The release notes already stated the gap honestly, which is what made this signable later without a re-release
-      that §11's sentence is stale, and the waiver is recorded as the
+      that §10's sentence is stale, and the waiver is recorded as the
       orchestrator's rather than described as unnecessary
 
 ## Technical Design
 
 ### Files to Create/Modify
 
-- `SPEC.md` — §11 line 541 and §8 after line 409
+- `SPEC.md` — §10 line 541 and §8 after line 409
 
 ### Key Implementation Details
 

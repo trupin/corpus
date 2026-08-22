@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — the composer, and *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
+- SPEC.md **§10** — the composer, and *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
 
 ## Summary
 
@@ -198,7 +198,7 @@ rather than assumed.
 
 - **It is said.** Beside the `to` lead, on the line the lead already occupies, the
   card writes `20 lanes · scroll for the rest` — so the note costs the card no
-  height and is inside SPEC.md §11's rider rather than an exception to it. It
+  height and is inside SPEC.md §10's rider rather than an exception to it. It
   appears only when the list really is short of its content (`scrollHeight >
   clientHeight`), and a three-lane roster that fits shows nothing. Both are
   pinned, because a note that always showed would be a decoration.

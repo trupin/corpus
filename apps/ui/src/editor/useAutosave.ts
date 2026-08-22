@@ -7,7 +7,7 @@ import { beginEditWrite, endEditWrite } from "./editSessionFlush.js";
 import { beginEditing, endEditing } from "./editingRegistry.js";
 
 /**
- * Autosave: the reason SPEC.md §11 can say "no edit mode" and mean it.
+ * Autosave: the reason SPEC.md §10 can say "no edit mode" and mean it.
  *
  * There is no save button anywhere in Corpus, so this is the only thing
  * standing between a typed sentence and the file on disk — and everything it
@@ -55,7 +55,7 @@ import { beginEditing, endEditing } from "./editingRegistry.js";
  * discarded edit.
  */
 
-/** SPEC.md §11's "autosave (debounced)". Long enough to coalesce a burst of typing. */
+/** SPEC.md §10's "autosave (debounced)". Long enough to coalesce a burst of typing. */
 export const AUTOSAVE_DEBOUNCE_MS = 700;
 
 /**
@@ -436,7 +436,7 @@ export function useAutosave({
     clearTimer(debounce);
     const job = pending.current;
     if (job === null || inFlight.current) return;
-    // The document is being removed for being empty (SPEC.md §11). Its buffer
+    // The document is being removed for being empty (SPEC.md §10). Its buffer
     // is by definition the emptiness that decided it, and sending it would be a
     // `PUT` racing the `DELETE` that follows.
     if (isAbandoned(job.docId)) return;

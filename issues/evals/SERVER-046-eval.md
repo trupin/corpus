@@ -30,7 +30,7 @@ results does not file the P0 that blocks its own phase PR.
 | 1 | Status counts live and accurate under a draining worker; rebuild fire-and-forget and observable | PASS | Live against the **embedded** engine now (SERVER-049 removed the substitution) |
 | 2 | `index rebuild` re-picks identity; `db rebuild` keeps identity and queues re-index | PASS | Both observed |
 | 3 | Doctor: seeded drift fails with a named reason; pending-only passes; mixed identity fails | PASS | Reproduced independently with my own `sqlite3` fixtures |
-| 4 | `rebuild && doctor` green while pending > 0 | PASS | The signed §14 invariant, reproduced |
+| 4 | `rebuild && doctor` green while pending > 0 | PASS | The signed §11 invariant, reproduced |
 
 ### Criterion 1 — status live under a real embedded-engine drain
 
@@ -56,7 +56,7 @@ POST /api/index/rebuild no-token  -> 401
 GET  /api/index/status  bad-token -> 401
 ```
 
-### Criterion 4 — the §14 invariant
+### Criterion 4 — the §11 invariant
 
 ```
 $ corpus index rebuild
@@ -93,7 +93,7 @@ corpus db rebuild && corpus db doctor                → exit 0, every fixture h
 
 Both drift classes fail by name and both heal by rebuild. Report-only warnings never move the exit
 code — the `semantic_index_unusable` warning (dead configured provider, 561 valid vectors) printed
-before a **clean** verdict at exit 0, which is §14's stated shape.
+before a **clean** verdict at exit 0, which is §11's stated shape.
 
 ### Criterion 2 — identity handling
 

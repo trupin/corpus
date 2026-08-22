@@ -103,7 +103,7 @@ export const patchDoc = createRoute({
     "key would refuse a well-anchored patch because an unrelated paragraph moved. **It is not the " +
     "key by another name**: it covers the text the patch quotes and nothing else, which is why the " +
     "insertion case above goes back whole under a key instead.\n\n" +
-    "**An ordinary write once applied**: validated before writing (SPEC.md §14), anchors " +
+    "**An ordinary write once applied**: validated before writing (SPEC.md §11), anchors " +
     "reconciled with remapped and orphaned anchors reported (§6), and one auto-commit attributed " +
     "to the acting party (§4) — the same response shape `PUT /api/docs/{id}` answers with, plus " +
     "`replaced`. **A patch whose result is the unchanged body is a no-op that writes nothing**: " +
@@ -123,7 +123,7 @@ export const patchDoc = createRoute({
     422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       PatchDocResponseSchema,
-      "The saved document — carrying a fresh `key` — the anchor reconciliation report, §14's " +
+      "The saved document — carrying a fresh `key` — the anchor reconciliation report, §11's " +
         "warnings, and how many occurrences were `replaced`.",
     ),
     400: VALIDATION_RESPONSE,

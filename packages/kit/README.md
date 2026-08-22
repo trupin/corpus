@@ -1,14 +1,14 @@
 # `@corpus/kit`
 
-The plugin contract (SPEC.md §10). Plugin UI imports **only** from `@corpus/kit`
-— never from `@corpus/contract`, never from `apps/ui`, never `fetch` directly.
+The shared UI kit (SPEC.md §10) — the components and data hooks `apps/ui` is
+built from. Board code reaches the workspace server through this package, never
+through `@corpus/contract` directly and never `fetch` directly.
 
-Three code entry points, and the stylesheets:
+Two code entry points, and the stylesheets:
 
 | Import                                                                                       | What it is                                                                                        |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `@corpus/kit`                                                                                | The runtime contract: client, provider, hooks, key builders, components, types                    |
-| `@corpus/kit/plugin`                                                                         | The manifest surface: `definePlugin`, `PluginManifest`, `ColumnComponentProps`, `DocPanelProps`   |
+| `@corpus/kit`                                                                                | The runtime surface: client, provider, hooks, key builders, components, types                     |
 | `@corpus/kit/testing`                                                                        | Test doubles: `FakeEventSource`, `createCorpusTestHarness`                                        |
 | `@corpus/kit/tokens.css`                                                                     | The design tokens (light/dark). CSS has no compile step, so it is a stylesheet, not an export     |
 | `@corpus/kit/row.css`, `/markdown.css`, `/autocomplete.css`, `/composer.css`, `/address.css` | The anatomy stylesheets for the components that need one — import the sheet next to the component |
@@ -47,29 +47,28 @@ this repo, `apps/ui/src/app/apiClient.ts`.
 
 ## What else is in here
 
-Beyond the data path, the kit ships the pieces that make a plugin column look
-native (SPEC.md §10) — each with its stylesheet as a subpath beside it:
+Beyond the data path, the kit ships the pieces every board surface is drawn
+from (SPEC.md §10) — each with its stylesheet as a subpath beside it:
 
-| Family                | Exports                                                                                                                                       | Stylesheet         |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| Rows                  | `Row` (and the `ListItem` seam a plugin replaces), `AgeChip`, `UnreadBadge`, `NeedsYouBadge`, `WorkingDot`, `stalenessLevel`, `useRowActions` | `row.css`          |
-| Markdown              | `MarkdownView`, the `[[ref]]` grammar (`parseRefs`, `remarkCorpusRefs`), `CorpusImage`, `ImageViewerProvider`                                 | `markdown.css`     |
-| Smart input           | `useAutocomplete`, `AutocompleteMenu`, `handleAutocompleteKeyDown` — the one `@` / `/` / `[[` implementation                                  | `autocomplete.css` |
-| Composer key contract | the `↵` / `⌘↵` / `⇧⌘↵` handling every composer obeys                                                                                          | —                  |
-| Composer attachments  | `useAttachmentIntake`, `PendingAttachments`, `AttachButton`, `releaseAttachments` — §6's three intake routes and the chips they preview as    | `composer.css`     |
-| Address               | `ComposerAddress`, `composerAddress`, `useComposerWeight`, `useComposerRecipient` — who answers, at what weight, one line and its popover     | `address.css`      |
+| Family                | Exports                                                                                                                                    | Stylesheet         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| Rows                  | `Row` (and its delegate `ListItem` seam), `AgeChip`, `UnreadBadge`, `NeedsYouBadge`, `WorkingDot`, `stalenessLevel`, `useRowActions`       | `row.css`          |
+| Markdown              | `MarkdownView`, the `[[ref]]` grammar (`parseRefs`, `remarkCorpusRefs`), `CorpusImage`, `ImageViewerProvider`                              | `markdown.css`     |
+| Smart input           | `useAutocomplete`, `AutocompleteMenu`, `handleAutocompleteKeyDown` — the one `@` / `/` / `[[` implementation                               | `autocomplete.css` |
+| Composer key contract | the `↵` / `⌘↵` / `⇧⌘↵` handling every composer obeys                                                                                       | —                  |
+| Composer attachments  | `useAttachmentIntake`, `PendingAttachments`, `AttachButton`, `releaseAttachments` — §6's three intake routes and the chips they preview as | `composer.css`     |
+| Address               | `ComposerAddress`, `composerAddress`, `useComposerWeight`, `useComposerRecipient` — who answers, at what weight, one line and its popover  | `address.css`      |
 
 `src/index.ts` is the authority on the surface and says why each export is on it;
 this table is a map, not a census.
 
 ## Every composer takes attachments
 
-SPEC.md §11's rider binds the whole class — "the global composer, a thread's
+SPEC.md §10's rider binds the whole class — "the global composer, a thread's
 reply box, a comment on a document selection, a comment on a turn or on a
-selection within one, **and any composer a plugin contributes**" — to §6's three
-intake routes and its chip previews. A plugin may import nothing but this
-package, so the trio that satisfies that sentence is published here and the
-board's own composers consume the same copy.
+selection within one" — to §6's three intake routes and its chip previews. One
+implementation is the only way a sentence about all of them holds, so the trio
+that satisfies it is published here and every composer consumes the same copy.
 
 ```tsx
 import { AttachButton, PendingAttachments, useAttachmentIntake, useCreateThread } from "@corpus/kit";
@@ -158,7 +157,6 @@ keys with the exported builders; never write a literal.
 | `["agents"]`                      | `AGENTS_KEY`            | designating or releasing a thread's resident, a thread's resolution releasing one with it, and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a lane lapsing past the grace window | `GET /api/agents` — the composer's recipient picker and every surface showing who is running |
 | `["health"]`                      | `HEALTH_KEY`            | **nothing server-side.** The SSE bridge invalidates it on every drop and every reconnect                                                                                                                              | `useHealth()` — the console strip                                                            |
 | `["attachments", "<target>"]`     | `attachmentKey(target)` | **nothing.** Attachment bytes are immutable once stored, so nothing ever invalidates them                                                                                                                             | `useAttachment(target)`                                                                      |
-| `["x", "<plugin>", …]`            | `pluginKey(plugin, …)`  | whatever the plugin's server routes emit                                                                                                                                                                              | the plugin's own queries                                                                     |
 
 There is no lock key, and there never will be one: the per-document edit lock is
 gone (SPEC.md §7 "A key, not a lock"), and with it `LOCKS_KEY`, `lockKey`,
@@ -170,9 +168,8 @@ its own.
 The eight core shapes come from `@corpus/contract`'s published
 vocabulary, whose set is closed and pinned by a test upstream, and are
 re-exported here rather than restated — a rename there is a compile error here,
-not a cache that silently stops updating. `["health"]` and the `x/` namespace
-are the kit's own, because the contract publishes what the _server_ emits and
-the server emits neither.
+not a cache that silently stops updating. `["health"]` is the kit's own, because
+the contract publishes what the _server_ emits and the server never emits it.
 
 The two retrieval shapes are the kit's own for a different reason: the contract's
 vocabulary is closed, and ranked search and a related set need no name of their
@@ -197,29 +194,25 @@ column re-rendering its filters in a different order must not double the
 request rate. Filters the kit does not recognise are **preserved and
 forwarded**, so the contract can grow a query parameter without a kit release.
 
-### Plugin keys
+### No allowlist
 
-```ts
-pluginKey("todos", "board"); // ["x", "todos", "board"]
-```
-
-Plugin keys travel through exactly the same invalidation path as core keys — the
-bridge does not allowlist the core shapes, so a server route that emits
-`["x","todos","board"]` refetches the plugin's query with no kit change.
+The bridge invalidates whatever key a frame names, recognised or not. A kit that
+honoured only the shapes it knows about would stop refetching the moment the
+server grew a key this build predates, and the staleness would be silent.
 
 ## Writes present a key
 
 Two writers share every document — the person at the board and the agent — and
 they are kept from overwriting each other by a **key**, not a lock (SPEC.md §7).
-A plugin that replaces a document's body is one of those writers and takes part
-in exactly the same mechanism.
+Every surface that replaces a document's body is one of those writers and takes
+part in exactly the same mechanism.
 
 - **Every document read carries its key.** `key` is a field of `Doc`, so a
   writer reads one off the document it read.
 - **A body replacement must present it.** `PUT /api/docs/{id}` requires `key`
   when — and only when — the patch carries `body` (the contract's
   `KEYED_UPDATE_FIELDS`, and a `400` if you omit it). A **delta** write names
-  what it changes — `tags`, `status`, `due`, `archived`, the §11 view keys — and
+  what it changes — `tags`, `status`, `due`, `archived`, the §10 view keys — and
   needs no key at all, because it merges instead of overwriting.
 - **A refusal is a `409` with `code: "stale_key"`, never a bare "no".** It
   carries the document _as it now stands_, whose own `key` is the fresh one.
@@ -245,8 +238,8 @@ try {
 `apps/ui/src/editor/useAutosave.ts` is the in-repo implementation of that loop,
 and the reason a conflict arriving mid-sentence costs a round trip rather than a
 sentence. There is nothing to acquire before writing and nothing to release
-after, so a plugin that crashes mid-edit wedges no document, and no surface ever
-renders read-only (SPEC.md §11).
+after, so a tab that crashes mid-edit wedges no document, and no surface ever
+renders read-only (SPEC.md §10).
 
 ## Live updates
 
@@ -302,10 +295,10 @@ in jsdom, so every test injects one:
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 
 const harness = createCorpusTestHarness({ fetch: myFetchDouble });
-render(<MyPluginPanel />, { wrapper: harness.Wrapper });
+render(<MyPanel />, { wrapper: harness.Wrapper });
 
 harness.eventSource.latest().emit("open");
-harness.eventSource.latest().invalidate(["x", "todos", "board"]);
+harness.eventSource.latest().invalidate(["docs", "doc_a1b2c3"]);
 ```
 
 `harness.eventSource.sources.length` is the number of connections opened — the

@@ -14,7 +14,7 @@ import type { SelectionRange } from "../editor/selection";
  * positions to markdown offsets through the serializer's trace. A *thread turn*
  * has no editor: it is `MarkdownView`, which is `react-markdown`, and what the
  * user selects there is a DOM range over rendered text. Anchoring that selection
- * (SPEC.md §6, §11's "Commenting on a selection") needs the same map in the same
+ * (SPEC.md §6, §10's "Commenting on a selection") needs the same map in the same
  * two directions, derived from the only thing both sides share — the markdown.
  *
  * So this module reads remark's own node positions and produces the projection a

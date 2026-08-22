@@ -56,8 +56,9 @@ const GLOB_META = /[*?[\]{}()!+@]/;
  * function is what stops the disk reader and the git reader selecting different
  * sets — and a real matcher would have to be paired with a directory walk on the
  * disk side, whose skip rules are their own silent-omission risk. The cost is
- * that `plugins/**`, `apps/{a,b}` and `!plugins/_fixture` are not understood;
- * the answer to that is to say so, loudly, not to drop them.
+ * that a deeper glob (`tools/**`), a brace list (`apps/{a,b}`) and a negation
+ * (`!apps/_fixture`) are not understood. The answer to that is to say so,
+ * loudly, not to drop them.
  */
 export function isSupportedWorkspaceGlob(glob: string): boolean {
   const literal = glob.endsWith("/*") ? glob.slice(0, -2) : glob;
@@ -96,7 +97,7 @@ export function selectWorkspaceManifests(
     for (const candidate of candidates) {
       if (!candidate.startsWith(prefix) || !candidate.endsWith("/package.json")) continue;
       // `<parent>/<workspace>/package.json` and nothing deeper — a nested
-      // package.json (a fixture, a plugin's own dependency) is not a workspace.
+      // package.json (a fixture, a vendored dependency) is not a workspace.
       if (candidate.slice(prefix.length).split("/").length === 2) selected.add(candidate);
     }
   }

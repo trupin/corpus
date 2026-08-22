@@ -90,9 +90,8 @@ export interface ObservedCommit {
   readonly paths: readonly string[];
   /**
    * The workspace-relative path of the document when — and only when — this
-   * write is the **editor's save** (`PUT /api/docs/{id}`, which is also where
-   * the plugin read-modify-write lands). `null` for every other mutation: a
-   * create, a move, an archive, a delete, a thread turn.
+   * write is the **editor's save** (`PUT /api/docs/{id}`). `null` for every
+   * other mutation: a create, a move, an archive, a delete, a thread turn.
    * §4's sessions are the reader's editor, so none of those opens a session or
    * extends one — though any of them can still *seal* one (see
    * {@link OpenSession.sealed}).
@@ -283,7 +282,7 @@ const landed = (outcome: CommitOutcome | null): { sha: string; amended: boolean 
   if (outcome === null) return null;
   if (outcome.kind === "committed") return { sha: outcome.sha, amended: false };
   if (outcome.kind === "amended") return { sha: outcome.sha, amended: true };
-  // `skipped` (SPEC.md §14 — no git in the workspace, nothing to commit) and
+  // `skipped` (SPEC.md §11 — no git in the workspace, nothing to commit) and
   // `failed` (a workspace hook refused): the file mutation stands, but there is
   // no revision to name. A session made only of these has no range and emits
   // nothing, exactly as CONTRACT-028 §3 requires — which falls out of never

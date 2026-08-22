@@ -42,8 +42,8 @@ export interface DocSpec {
   readonly anchors?: Readonly<Record<string, SelectorSpec>>;
   /**
    * Frontmatter keys written after the §5 block, exactly as a hand-written file
-   * carries them: §11's view keys (`pinned`, `order`, `query`, `column`) and
-   * §12's plugin keys (`items`, …) are both plain YAML keys beside the core
+   * carries them: §7's view keys (`pinned`, `order`, `query`) and any
+   * key the core does not define are alike plain YAML keys beside the core
    * ones, so one escape hatch seeds both (CONTRACT-011).
    */
   readonly frontmatter?: Readonly<Record<string, unknown>>;

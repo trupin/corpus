@@ -11,7 +11,7 @@ import { expect, test } from "./coverage";
 import { hexToRgb, token } from "./tokens";
 
 /**
- * UI-040's index pill (SPEC.md §11's index-pill rider, signed 2026-08-02),
+ * UI-040's index pill (SPEC.md §10's index-pill rider, signed 2026-08-02),
  * against the real Vite dev server.
  *
  * What needs a browser here — and what jsdom cannot answer — is the *live* half:

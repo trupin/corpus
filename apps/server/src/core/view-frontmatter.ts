@@ -1,5 +1,5 @@
-// Reading the §11 view keys and the open extra-frontmatter object out of a
-// frontmatter mapping (SPEC.md §5, §11, §12; CONTRACT-011).
+// Reading the §10 view keys and the open extra-frontmatter object out of a
+// frontmatter mapping (SPEC.md §5, §10; CONTRACT-011).
 //
 // One module, because two very different consumers must answer identically
 // about the same file: the projection (`documents` rows, and therefore
@@ -37,8 +37,8 @@ export const MAX_EXTRA_READ_DEPTH = 8;
 
 /**
  * A converted value, or the fact that there is none. A sentinel *value* would
- * be indistinguishable from a legitimate one at the type level (everything a
- * plugin may store is `unknown`), so the answer is carried in the shape.
+ * be indistinguishable from a legitimate one at the type level (extra
+ * frontmatter is all `unknown`), so the answer is carried in the shape.
  */
 type Converted = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
 
@@ -93,8 +93,9 @@ function toJsonValue(value: unknown, depth: number): Converted {
 
 /**
  * Every frontmatter key that is not a core key, flat and verbatim — the wire's
- * `extra` object (CONTRACT-011), mirroring the file, which carries a plugin's
- * keys beside the core ones with no sub-namespacing of its own (SPEC.md §12).
+ * `extra` object (CONTRACT-011), mirroring the file, which carries extra keys
+ * beside the core ones with no sub-namespacing of its own (SPEC.md §9's opaque
+ * passthrough: the server never interprets what is in here).
  *
  * `{}` when the file has nothing but core keys; the object is always present on
  * a response, never optional.
@@ -112,7 +113,7 @@ export function readExtraFrontmatter(
   return extra;
 }
 
-/** `pinned` is a two-state key: the file says `true` or it does not (SPEC.md §11). */
+/** `pinned` is a two-state key: the file says `true` or it does not (SPEC.md §10). */
 export const readPinned = (data: Readonly<Record<string, unknown>>): boolean =>
   data["pinned"] === true;
 
@@ -141,23 +142,18 @@ export function readViewQuery(data: Readonly<Record<string, unknown>>): ViewQuer
 }
 
 /**
- * The plugin column reference, or `null`. Not pattern-checked on read: the
- * `<plugin>/<type>` format earns its `400` at the write boundary, and a view
- * whose `column` names something uninstalled or misspelled must keep its board
- * position and render a plugin-missing card (SPEC.md §15) rather than silently
- * become a plain list.
+ * The wire fields CONTRACT-011 added, read off one frontmatter mapping.
+ *
+ * Four, not five (SHARED-066): a `column` reference named a plugin renderer,
+ * and with no plugin surface it names nothing. There is no reader for it here
+ * any more, and that is what routes an old view's `column:` into `extra` — the
+ * key is no longer reserved, so {@link readExtraFrontmatter} keeps it verbatim
+ * and the server never looks at it again.
  */
-export function readColumn(data: Readonly<Record<string, unknown>>): string | null {
-  const value = data["column"];
-  return typeof value === "string" && value.trim() !== "" ? value : null;
-}
-
-/** The five wire fields CONTRACT-011 added, read off one frontmatter mapping. */
 export type ViewFrontmatter = {
   readonly pinned: boolean;
   readonly order: number | null;
   readonly query: ViewQuery | null;
-  readonly column: string | null;
   readonly extra: Record<string, unknown>;
 };
 
@@ -165,6 +161,5 @@ export const readViewFrontmatter = (data: Readonly<Record<string, unknown>>): Vi
   pinned: readPinned(data),
   order: readOrder(data),
   query: readViewQuery(data),
-  column: readColumn(data),
   extra: readExtraFrontmatter(data),
 });

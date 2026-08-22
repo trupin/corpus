@@ -3,7 +3,7 @@ import { stubCorpus } from "./stubCorpus";
 
 /**
  * UI-017 in a real browser: an empty untitled document does not survive being
- * left (SPEC.md §11).
+ * left (SPEC.md §10).
  *
  * The UI-observable half of the evidence (sprint-016 Adjudication 19) — the row
  * is gone from the board and the corpus saw a real `DELETE` — against the real

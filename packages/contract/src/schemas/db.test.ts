@@ -222,7 +222,7 @@ describe("DoctorReport", () => {
 
   /**
    * CONTRACT-025. The pass/fail half of the rider: a clean projection carrying
-   * report-only findings is still clean, because §14's standing `rebuild &&
+   * report-only findings is still clean, because §11's standing `rebuild &&
    * doctor` invariant is about drift. A warning that moved `ok` would fail a
    * routine check on precisely the workspaces that need the report.
    */
@@ -292,8 +292,8 @@ describe("DoctorReport", () => {
     expect(DoctorReportSchema.safeParse(bad).success).toBe(false);
   });
 
-  /** The two families are separate vocabularies; a §14 mutation warning is not one of these. */
-  it("does not accept a §14 mutation warning in the doctor warnings list", () => {
+  /** The two families are separate vocabularies; a §11 mutation warning is not one of these. */
+  it("does not accept a §11 mutation warning in the doctor warnings list", () => {
     const wrongFamily = {
       ok: true,
       drift: [],

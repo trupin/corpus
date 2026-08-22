@@ -12,8 +12,6 @@ import {
   jobKey,
   JOBS_KEY,
   jobsListKey,
-  PLUGIN_KEY_PREFIX,
-  pluginKey,
   QUEUE_KEY,
   relatedKey,
   searchKey,
@@ -56,27 +54,10 @@ describe("the core vocabulary is the contract's, not the kit's", () => {
 
 describe("keys the kit owns because the contract's set is closed", () => {
   // TEST-12: the upstream shapes are closed and pinned by `query-keys.test.ts`.
-  // These two are needed here and may not be added there.
+  // This one is needed here and may not be added there.
   it("names the health probe, which no server mutation emits", () => {
     expect(HEALTH_KEY).toEqual(["health"]);
     expect(contract.QUERY_KEY_NAMES).not.toContain("health");
-  });
-
-  it("namespaces plugin keys under `x`", () => {
-    expect(pluginKey("todos", "board")).toEqual(["x", "todos", "board"]);
-    expect(PLUGIN_KEY_PREFIX).toBe("x");
-    expect(pluginKey("todos")).toEqual(["x", "todos"]);
-    expect(pluginKey("todos", "board", 3, { done: true })).toEqual([
-      "x",
-      "todos",
-      "board",
-      3,
-      { done: true },
-    ]);
-  });
-
-  it("cannot collide with a core shape, whatever the plugin is called", () => {
-    expect(pluginKey("docs")[0]).not.toBe(DOCS_KEY[0]);
   });
 });
 
@@ -146,9 +127,9 @@ describe("canonicalFilter", () => {
   });
 });
 
-// TEST-11: a plugin author reads the README, not this module. A divergence
-// between it and the contract's published vocabulary is the exact failure that
-// makes someone build against a key nothing emits.
+// TEST-11: whoever adds a surface reads the README, not this module. A
+// divergence between it and the contract's published vocabulary is the exact
+// failure that makes someone build against a key nothing emits.
 describe("packages/kit/README.md", () => {
   // A `|` inside a table cell is escaped in markdown; unescape before matching
   // so the assertion is about the shape, not about the table syntax.
@@ -165,10 +146,8 @@ describe("packages/kit/README.md", () => {
     },
   );
 
-  it("documents the two kit-owned shapes and the plugin namespace", () => {
+  it("documents the kit-owned health shape", () => {
     expect(readme).toContain('`["health"]`');
-    expect(readme).toContain('`["x", "<plugin>", …]`');
-    expect(readme).toContain("pluginKey");
   });
 
   it("states the rule that the kit is the only data path", () => {
@@ -177,11 +156,10 @@ describe("packages/kit/README.md", () => {
   });
 
   /**
-   * UI-070. The attachment trio is published *for a reader outside this repo* —
-   * the plugin author who cannot see `apps/ui`'s composers and has only this
-   * file to learn the shape from. An export the README does not name is an
-   * export nobody consumes, which is how the todos composer went a whole
-   * release without attachments while the code to give it some already existed.
+   * UI-070. The attachment trio is published so that every composer satisfies
+   * §10's rider from one copy. An export the README does not name is an export
+   * nobody consumes, which is how a composer goes a whole release without
+   * attachments while the code to give it some already exists.
    */
   it.each([
     "useAttachmentIntake",
@@ -189,7 +167,7 @@ describe("packages/kit/README.md", () => {
     "AttachButton",
     "releaseAttachments",
     "@corpus/kit/composer.css",
-  ])("documents `%s`, the attachment surface a plugin composer consumes", (symbol) => {
+  ])("documents `%s`, the attachment surface every composer consumes", (symbol) => {
     expect(readme).toContain(symbol);
   });
 

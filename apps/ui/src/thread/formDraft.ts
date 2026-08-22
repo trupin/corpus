@@ -2,7 +2,7 @@ import type { Form, FormAnswerRequest, FormField, FormFieldAnswer } from "@corpu
 
 /**
  * What has been filled into a form's controls, and what that adds up to
- * (SPEC.md §6, §11).
+ * (SPEC.md §6, §10).
  *
  * Pure, and separate from `FormBlock` on purpose: the required gate, the named
  * missing question and — most of all — **the rule that a blank field sends no
@@ -93,7 +93,7 @@ export function isBlank(field: FormField, draft: FieldDraft): boolean {
 }
 
 /**
- * The required fields still empty, in the form's order — what §11 means by "the
+ * The required fields still empty, in the form's order — what §10 means by "the
  * form says which question is still missing rather than letting the attempt fail
  * silently". Empty means submit is available, which is exactly the gate.
  */

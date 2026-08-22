@@ -1,6 +1,6 @@
 /**
  * Which `<img src>` values name a **workspace attachment**, and what target the
- * authenticated fetch wants for them (SPEC.md §11's "images anywhere in a body
+ * authenticated fetch wants for them (SPEC.md §10's "images anywhere in a body
  * that reference workspace attachments load through the same authenticated
  * path as turn attachments").
  *

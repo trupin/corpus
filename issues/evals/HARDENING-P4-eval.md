@@ -31,7 +31,7 @@ orchestrator (neither blocks the phase).
 | ------------ | ----------- | ----------------- | --------------------- | --------------- | ----------------- | -------------------- |
 | UI-012       | PASS        | PASS — timing table with ms figures | PASS — real server `9150`, Vite `5286`, Chromium | PASS | PASS — "opus (ui-dev)" | **PASS** — pre-fix `toast +8033ms "(NO TOAST)"` |
 | UI-013       | PASS        | PASS — rendered-DOM dumps, real request URLs | PASS — same real stack | PASS | PASS — "opus (ui-dev)" | **PASS** — "Observed with only fix 1 in place … ← wrong form" |
-| UI-014       | PASS        | PASS | PASS | PASS | PASS — "opus (ui-dev)" | N/A — behavior change + §11 clarification |
+| UI-014       | PASS        | PASS | PASS | PASS | PASS — "opus (ui-dev)" | N/A — behavior change + §10 clarification |
 | SERVER-029   | PASS        | PASS | PASS — real server, real workspaces | PASS | PASS — "opus" | PASS |
 | SERVER-031   | PASS        | PASS | PASS — real server from source | PASS | PASS — "opus" | PASS |
 | CLI-009      | PASS        | PASS — real pids, real ports | PASS — two real daemons | PASS | PASS — "opus" | **PASS** — pre-fix pidfile deleted, daemon orphaned |
@@ -180,7 +180,7 @@ doc_rwmjbcvg  type: todo (plugin registers a View)
 ```
 
 An unknown type gets the full editable editor exactly like a core note, and a plugin `View` still wins
-wholesale with its DocPanel slot intact. Zero page errors. The §11 clarification is correctly **drafted and
+wholesale with its DocPanel slot intact. Zero page errors. The §10 clarification is correctly **drafted and
 held for user sign-off** rather than applied to SPEC.md — the right call for an issue that is not the
 spec-writer. **PASS.**
 

@@ -56,7 +56,7 @@ export interface TurnUpload {
    */
   readonly requestsAgent?: boolean;
   /**
-   * The weight the work should be done at (SPEC.md §7, §11) — a level name from
+   * The weight the work should be done at (SPEC.md §7, §10) — a level name from
    * the workspace's own agent guidance. **Omit it to state no weight**, which
    * means the orchestrator decides; there is no default and no other spelling of
    * absence, so a picker nobody touched must send nothing rather than an empty

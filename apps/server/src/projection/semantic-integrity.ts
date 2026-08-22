@@ -1,5 +1,5 @@
 /**
- * `corpus db doctor`'s semantic half (SPEC.md §14, Retrieval Phase B):
+ * `corpus db doctor`'s semantic half (SPEC.md §11, Retrieval Phase B):
  *
  * > Doctor's coverage extends to the semantic index (§9.1): it fails on
  * > **drift** — a chunk whose recorded document, heading path, or content no
@@ -28,7 +28,7 @@
  * `doctor` exists for.
  *
  * **Pending is not here at all**, and neither is `failed` as a verdict. A
- * backlog is `corpus index status`'s business (§14, signed), and it is what
+ * backlog is `corpus index status`'s business (§11, signed), and it is what
  * makes `corpus db rebuild && corpus db doctor` clean the instant the rebuild
  * returns even though embeddings are still draining. `failed > 0` earns a
  * report-only **warning** instead (sprint-021 Open Conflict 9): it will never
@@ -209,7 +209,7 @@ function checkChunkPairing(db: ProjectionDb, drift: Drift[]): void {
  * `checkIndexIdentity` is the pure check and it is not re-implemented here; this
  * function only decides which of its five answers is drift:
  *
- * - **`mixed` — drift.** §14 names it verbatim, and it needs no resolution at
+ * - **`mixed` — drift.** §11 names it verbatim, and it needs no resolution at
  *   all: two identities in one table is a fact about the rows.
  * - **`mismatch` — drift.** Every vector was produced by a model that is not the
  *   effective one, so the index reports `indexed == total` while nothing in it
@@ -218,7 +218,7 @@ function checkChunkPairing(db: ProjectionDb, drift: Drift[]): void {
  * - **`unresolved` — a warning, not drift.** Nothing can embed right now, and
  *   the vectors are untouched and valid (`semantic/identity.ts`). It is an
  *   environment fact, not a disagreement between files and rows — and failing on
- *   it would break §14's standing `rebuild && doctor` invariant permanently,
+ *   it would break §11's standing `rebuild && doctor` invariant permanently,
  *   because `corpus db rebuild` carries embeddings over by design (Open Conflict
  *   5), so no rebuild could ever clear the verdict.
  * - **`no-index` / `match` — nothing.**

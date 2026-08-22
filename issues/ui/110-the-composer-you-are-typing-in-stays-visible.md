@@ -25,8 +25,8 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** Thread view — the reply box, and what the composers are
-- SPEC.md **§11** Document view — anchored thread placement, the comments list
+- SPEC.md **§10** Thread view — the reply box, and what the composers are
+- SPEC.md **§10** Document view — anchored thread placement, the comments list
 
 ## Summary
 
@@ -75,7 +75,7 @@ a half-written reply off-screen is the same complaint one move later.
 - [x] The stuck composer is opaque — conversation text never shows through it —
       and never covers the turn it is replying to at rest
 - [x] Nothing about the composer key contract, the ask-agent toggle, attachments,
-      snippets or the weight control changes (SPEC.md §11)
+      snippets or the weight control changes (SPEC.md §10)
 - [x] Verified against a real scrolling surface, not asserted from the class
       name: `position: sticky` fails **silently** when an ancestor clips it, and
       `Column.css` carries several `overflow: hidden` rules

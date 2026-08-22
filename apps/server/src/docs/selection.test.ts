@@ -1,4 +1,4 @@
-// Compiling §11's whole-result-set query (SERVER-087).
+// Compiling §10's whole-result-set query (SERVER-087).
 //
 // The act itself is exercised end-to-end in `bulk.test.ts`, against a real
 // workspace and real git output. What is asserted here is the translation on its

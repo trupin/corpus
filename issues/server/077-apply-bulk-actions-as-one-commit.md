@@ -30,7 +30,7 @@ opus
   containing "exactly the documents the action **changed**"; it never folds into
   a preceding editing session's squashed commit and no later save folds into it;
   its message names the action and the documents it changed
-- SPEC.md **§11** — the board's multi-select and the list of acts
+- SPEC.md **§10** — the board's multi-select and the list of acts
 - SPEC.md **§9.2** — deletion is user-only
 
 ## Summary
@@ -257,7 +257,7 @@ while the act continues; proved in `bulk.test.ts` by making a destination
 directory unwritable — the failing document stays byte-identical and leaves
 nothing in the commit. **Across** documents the guarantee is *no half-commit*,
 not *no half-write*: the writes precede the single `git commit`, so a process
-killed between them leaves changed files on disk uncommitted — the state §14
+killed between them leaves changed files on disk uncommitted — the state §11
 already defines for a hook-rejected commit ("the file is the source of truth").
 Git offers nothing stronger without writing the tree by hand; what it does give
 is that the commit is one object containing exactly what landed.
@@ -381,7 +381,7 @@ every test in the repo.
 `DestinationOccupiedError` (a typed `HttpError` subclass; the single-document
 `400` body is byte-identical), which the bulk act reports as `write-failed` —
 the one published reason both of whose clauses are true, where `not-applicable`
-means "refresh the board" and `invalid` claims a §14 failure that did not happen.
+means "refresh the board" and `invalid` claims a §11 failure that did not happen.
 The path, which lives in `issues` and has nowhere to go in a refusal row, is
 folded into the message:
 

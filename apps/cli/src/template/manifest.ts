@@ -10,28 +10,16 @@ import { InternalError } from "../errors.js";
  * The manifest is worthless if written after the fact: nothing can retroactively
  * learn what the first install contained, which is why `corpus init` writes it in
  * the same run (sprint-003 Open Conflict 10). It records a workspace-relative
- * **post-rename** path, the sha-256 of the bytes that were installed, and — for a
- * plugin-contributed skill — where those bytes came from, so an upgrade refreshes
- * each file from its own source (sprint-012 Adjudication 11).
+ * **post-rename** path and the sha-256 of the bytes that were installed.
  *
  * It is deliberately the only thing under `.corpus/` an upgrade may write: the
  * rest of that directory is runtime state the server owns.
  */
 
-/** Prefix of a {@link ManifestEntry.source} naming the plugin a file came from. */
-export const PLUGIN_SOURCE_PREFIX = "plugin:";
-
 export interface ManifestEntry {
   /** Workspace-relative, POSIX-separated, post-rename. */
   readonly path: string;
   readonly sha256: string;
-  /**
-   * Where the file came from when not the workspace template:
-   * `"plugin:<dir>"` for a plugin-installed skill (sprint-012 Adjudication
-   * 11), so `corpus workspace upgrade` can refresh it from the plugin rather
-   * than the template. Absent ⇒ template.
-   */
-  readonly source?: string;
 }
 
 export interface TemplateManifest {
@@ -43,11 +31,6 @@ export interface TemplateManifest {
 
 export function sha256(contents: Buffer): string {
   return createHash("sha256").update(contents).digest("hex");
-}
-
-/** `plugin:<dir>` for a plugin-sourced file, `undefined` for a template one. */
-export function pluginSourceMarker(plugin: string): string {
-  return `${PLUGIN_SOURCE_PREFIX}${plugin}`;
 }
 
 /**
@@ -99,12 +82,16 @@ function isManifest(value: unknown): value is TemplateManifest {
   );
 }
 
+/**
+ * Structural, never exhaustive: an entry is recognised by the two fields this
+ * tool reads, and any other key on it is carried along and ignored. That is what
+ * lets a manifest written by an older tool — which recorded a provenance marker
+ * beside the hash — still parse instead of being rejected as unrecognisable,
+ * which would break `corpus workspace upgrade` in the very workspaces it exists
+ * to protect.
+ */
 function isEntry(value: unknown): value is ManifestEntry {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<ManifestEntry>;
-  return (
-    typeof candidate.path === "string" &&
-    typeof candidate.sha256 === "string" &&
-    (candidate.source === undefined || typeof candidate.source === "string")
-  );
+  return typeof candidate.path === "string" && typeof candidate.sha256 === "string";
 }

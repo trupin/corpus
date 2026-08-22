@@ -5,7 +5,7 @@ import type { CaptureInput } from "../client/createCorpusClient.js";
 import { DOCS_KEY, QUEUE_KEY, TREE_KEY } from "./keys.js";
 
 /**
- * `POST /api/capture` — the global composer's *Capture* (SPEC.md §11).
+ * `POST /api/capture` — the global composer's *Capture* (SPEC.md §10).
  *
  * **One call, because it is one act.** The server creates the document in
  * `data/docs/inbox/`, the agent-requested whole-document filing thread that asks

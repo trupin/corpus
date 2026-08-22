@@ -37,11 +37,9 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
       description:
         "The HTTP surface of a Corpus workspace server. Generated from the `@hono/zod-openapi` route " +
         "definitions in `packages/contract` — regenerate with `npm run generate -w packages/contract` " +
-        "rather than editing this document. Plugin routes mount under `/api/x/<plugin>/...` and are " +
-        "discovered at runtime, so they are deliberately absent here (SPEC.md §10). The server also " +
-        "serves this document at `GET /api/openapi.json`, which is server-local introspection rather " +
-        "than client-facing API and is therefore likewise not declared here — no typed client method " +
-        "exists for it.",
+        "rather than editing this document. The server also serves this document at " +
+        "`GET /api/openapi.json`, which is server-local introspection rather than client-facing " +
+        "API and is therefore not declared here — no typed client method exists for it.",
     },
     servers: [
       { url: "http://127.0.0.1:8765", description: "Default workspace server (SPEC.md §3)." },

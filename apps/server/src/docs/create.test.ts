@@ -334,7 +334,7 @@ describe("POST /api/docs", () => {
       expect(ws.exists(".claude/agents/not-a-persona.md")).toBe(false);
     });
 
-    // §11: "creating a new skill or subagent document instantly makes it
+    // §10: "creating a new skill or subagent document instantly makes it
     // autocompletable — there is no separate registry". `resolveMentionTarget`
     // is the lookup both `@<name>` (§8) and a designation (§7) make, so this is
     // the same answer the mention parser and the designate route would give.
@@ -464,7 +464,7 @@ describe("POST /api/docs", () => {
       return { status: response.status, issues: payload.issues ?? [] };
     };
 
-    // §11's creation is zero-form — "a type and a title are the whole
+    // §10's creation is zero-form — "a type and a title are the whole
     // requirement, and everything else the server fills in" — and the CLI has no
     // `--extra` on create, so a hard requirement would make `--type agent-def` a
     // verb that always fails. Thin, and loadable, is the point.

@@ -45,7 +45,6 @@ const CURRENT_DOC: Doc = {
     pinned: false,
     order: null,
     query: null,
-    column: null,
     extra: {},
   },
   body: "Body.",

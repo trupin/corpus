@@ -53,7 +53,7 @@ export interface ComposeTransportOptions {
    * Documents `GET /api/docs/{id}` answers with, keyed by id.
    *
    * The composer reads one: the orchestrate skill, for the weight levels it may
-   * offer (SPEC.md §11's rider). With no entry the read answers `404`, the level
+   * offer (SPEC.md §10's rider). With no entry the read answers `404`, the level
    * set is empty, and the composer offers no control at all — which is exactly
    * what a workspace on an older template gets, and is why every suite written
    * before this feature still describes the composer correctly.

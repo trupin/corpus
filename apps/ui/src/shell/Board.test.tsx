@@ -442,21 +442,32 @@ describe("Board", () => {
     expect(await screen.findByText("A note")).toBeDefined();
   });
 
-  it("keeps a column whose plugin is not installed, with a card in its list", async () => {
+  /**
+   * `column:` is not a key the core defines, so it is extra frontmatter the
+   * server preserves and nothing interprets (SPEC.md §9.1). A view document is a
+   * query whatever else its frontmatter happens to say, so a workspace's older
+   * view still opens, still pins and still renders its query (SHARED-066).
+   */
+  it("renders a view document carrying a stale `column:` as an ordinary column", async () => {
     const wire = boardTransport({
-      views: [viewRow({ id: "doc_todos", title: "Todos", order: 10, column: "todos/board" })],
+      views: [
+        viewRow({
+          id: "doc_todos",
+          title: "Todos",
+          order: 10,
+          extra: { column: "todos/board" },
+          query: { type: "todo" },
+        }),
+      ],
+      rows: { "?type=todo": [docRowFixture({ id: "doc_t1", title: "Inbox chores" })] },
     });
     const { container } = renderBoard(wire);
 
     await waitFor(() => {
       expect(container.querySelectorAll(".col[data-col]")).toHaveLength(1);
     });
-    // PLUGINS-001's PluginMissingCard: the column body degrades, the column
-    // stays — header, kind chip and controls intact, frontmatter untouched.
-    expect(container.querySelector(".plugin-missing-card")?.textContent).toContain(
-      "Plugin missing",
-    );
-    expect(container.querySelector(".col-kind")?.textContent).toBe("plugin");
+    expect(container.querySelector(".col-kind")?.textContent).toBe("view");
+    expect(await screen.findByText("Inbox chores")).toBeDefined();
   });
 
   it("fails a column's query in place while its siblings keep rendering", async () => {
@@ -546,7 +557,7 @@ describe("Board", () => {
 });
 
 /**
- * SPEC.md §11's scheme, exercised through real key events over a real board.
+ * SPEC.md §10's scheme, exercised through real key events over a real board.
  *
  * Every assertion here is about what the *board* does with a binding; that the
  * binding exists, is documented and is suppressed inside writing surfaces is

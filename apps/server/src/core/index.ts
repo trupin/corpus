@@ -1,6 +1,6 @@
 /**
  * `core` — the document model: the single place in Corpus where the on-disk
- * formats are parsed, validated and serialized (SPEC.md §5, §6, §14).
+ * formats are parsed, validated and serialized (SPEC.md §5, §6, §11).
  *
  * Every write path, the projection and the validation surface build on this
  * library; nothing outside `core/` re-implements a parser, and nothing outside

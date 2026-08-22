@@ -168,7 +168,7 @@ export interface CommitOptions {
 export async function commitAll(options: CommitOptions): Promise<void> {
   const git = options.git ?? runGit;
 
-  // Hooks are deliberately not skipped: SPEC.md §14 has the workspace's own
+  // Hooks are deliberately not skipped: SPEC.md §11 has the workspace's own
   // hooks validate every commit, and the first one is no exception.
   await git(["add", "--all", "--", "."], options.dir);
   await git(

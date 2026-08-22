@@ -25,7 +25,7 @@ assets/workspace/
       orchestrate/SKILL.md               # the agent loop, on the orchestrator's lane (SPEC §7)
       comment/SKILL.md                   # handles comment.created / form.respond (SPEC §7-§8)
       converse/SKILL.md                  # a resident's own loop, on its conversation's lane (SPEC §7)
-      profile/SKILL.md                   # writes a subagent profile into agents/ (SPEC §7, §11)
+      profile/SKILL.md                   # writes a subagent profile into agents/ (SPEC §7, §10)
       asd-ste100/                        # vendored, MIT — controlled language (AGENT-037)
         SKILL.md                         #   the skill itself, byte-identical to .claude/skills/
         LICENSE                          #   the licence it ships under
@@ -35,7 +35,7 @@ assets/workspace/
     agents/.gitkeep                      # subagent personas — `type: agent-def` documents
   data/
     docs/
-      inbox/.gitkeep                     # quick creation always lands here (SPEC §11)
+      inbox/.gitkeep                     # quick creation always lands here (SPEC §10)
       templates/note.md                  # `type: template`, `for: note`
       views/
         attention.md                     # seed pinned view, order 1
@@ -55,7 +55,7 @@ directory name or Claude Code will not discover the skill.
 
 `claude/agents/` ships empty. It is the home of subagent personas — `type: agent-def`
 documents, one markdown file per persona — which the projection indexes alongside the skills
-and which become `@<subagent>` autocomplete targets in every composer (SPEC.md §7, §11).
+and which become `@<subagent>` autocomplete targets in every composer (SPEC.md §7, §10).
 A document in that root is addressable with no registry to enter it in; what a persona has to
 carry to be **loadable by Claude Code** as well as resolvable by Corpus is the `profile`
 skill's, which is why one ships. Because
@@ -101,7 +101,7 @@ and to the reader. Entries with a trailing `/` are directories, the rest are fil
 copied template files (`data/docs/templates/`, `data/docs/views/`, `.claude/skills/`, and
 their parents) arrive with the copy and are not listed here.
 
-- `data/docs/inbox/` — where quick creation always lands (SPEC.md §11). Its template
+- `data/docs/inbox/` — where quick creation always lands (SPEC.md §10). Its template
   counterpart holds nothing but a `.gitkeep`, which the copy filter drops, so the directory
   itself has to be created.
 - `data/threads/` — thread documents, flat, named `<thread-id>.md` (SPEC.md §4). Also a
@@ -152,28 +152,6 @@ init's own artifact rather than part of this template, and is gitignored under `
 It is worthless if written later: nothing can retroactively learn what the first install
 contained.
 
-## Installed from plugins
-
-After the template copy, `corpus init` also installs every bundled plugin's skills
-(SPEC.md §10, PLUGINS-001): each `plugins/<dir>/skills/<name>/` copies to
-`.claude/skills/<name>/`, beside the template's own skills. Rules:
-
-- A plugin skill whose name collides with a **template** skill (`orchestrate`, `comment`, …)
-  is skipped with a warning naming the collision — core wins, always; a plugin can never
-  replace the loop.
-- Two plugins shipping the same skill name: the first in plugin-directory order wins; the
-  loser is a warning.
-- Plugin-installed files are recorded in the same manifest with a provenance marker —
-  `{ "path": …, "sha256": …, "source": "plugin:<dir>" }` — so `corpus workspace upgrade`
-  can refresh them from the plugin rather than the template. Template entries keep the
-  two-key shape above; an absent `source` means template.
-- The plugins root is the **tool's install directory** (`resolvePluginsRoot()` in
-  `apps/cli/src/paths.ts`), never the workspace: a `plugins/` directory inside a workspace
-  is not discovered.
-
-This step is `corpus init`'s, not the template's: the template tree above never contains
-plugin files, and a tool with no plugins installs exactly the template.
-
 ## The install procedure
 
 1. `cp -R assets/workspace/. <workspace>/`
@@ -208,8 +186,8 @@ compared — the **baseline** the manifest recorded, the **workspace** copy now,
 
 Pairing happens **after** the rename table, so `claude/skills/comment/SKILL.md` compares
 against `.claude/skills/comment/SKILL.md`; filtered names (`.gitkeep`) are never installed
-and never compared. A `source: "plugin:<dir>"` entry is refreshed from **that plugin's**
-`skills/` directory, a template entry from `assets/workspace/`.
+and never compared. Every entry is refreshed from `assets/workspace/`, which is the whole
+of what the tool installs.
 
 Flags: `--dry-run` prints the plan and writes nothing at all; `--restore` also reinstalls
 deleted files; `--adopt` is for a workspace older than the manifest — without a baseline an

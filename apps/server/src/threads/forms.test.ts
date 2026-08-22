@@ -162,7 +162,7 @@ function onlyAddedEvent(thread: FormThread): Record<string, unknown> {
   return eventFile(names[0] ?? "");
 }
 
-/** A `pre-commit` hook that always refuses, with recognisable output (§14). */
+/** A `pre-commit` hook that always refuses, with recognisable output (§11). */
 function refuseCommits(): void {
   const hook = join(ws.root, ".git", "hooks", "pre-commit");
   mkdirSync(join(ws.root, ".git", "hooks"), { recursive: true });
@@ -642,7 +642,7 @@ describe("refusing an answer", () => {
   });
 });
 
-// SPEC.md §6, §14. A `write` answer and the note are the two places a person's
+// SPEC.md §6, §11. A `write` answer and the note are the two places a person's
 // arbitrary text reaches a thread file, where `## <author> · <ts>` is the turn
 // delimiter and an unterminated fence masks every heading after it. Either one
 // destroys turns rather than rendering oddly, so the answer is refused and the
@@ -970,7 +970,7 @@ describe("§8 decides whether the answer re-triggers the agent", () => {
 });
 
 describe("the answer is a mutation like any other", () => {
-  it("carries §14's `commit_failed` and leaves the turn standing", async () => {
+  it("carries §11's `commit_failed` and leaves the turn standing", async () => {
     const thread = await threadWithForm();
     const before = ws.log("%H").length;
     refuseCommits();
@@ -982,7 +982,7 @@ describe("the answer is a mutation like any other", () => {
     const commitFailed = payload.warnings.find((warning) => warning.code === "commit_failed");
     expect(commitFailed).toBeDefined();
     expect(commitFailed?.detail).toContain("refusing");
-    // SPEC.md §14: the file write is never rolled back because a commit failed.
+    // SPEC.md §11: the file write is never rolled back because a commit failed.
     expect(turnsOf(ws, thread.id)).toHaveLength(3);
     expect(ws.log("%H")).toHaveLength(before);
   });

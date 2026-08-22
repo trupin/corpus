@@ -1,5 +1,5 @@
 /**
- * Column width, as a property of the view document (SPEC.md §11).
+ * Column width, as a property of the view document (SPEC.md §10).
  *
  * *"Column width is part of the column: every column's width is user-adjustable
  * by dragging its edge… Like `order`, the chosen width lives in the view

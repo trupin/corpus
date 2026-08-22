@@ -24,13 +24,13 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11**, Attention — "a thread holding **more than one** unanswered
+- SPEC.md **§10**, Attention — "a thread holding **more than one** unanswered
   form says how many are still open"
 - SPEC.md **§9.1** — the projection is where a row's derived columns come from
 
 ## Summary
 
-UI-084 shipped every part of §11's Attention sentence except its last clause.
+UI-084 shipped every part of §10's Attention sentence except its last clause.
 `DocRow` carries `attention: NeedsReason[]` — a list of reason **codes** and
 nothing else — so the reason line can say "awaiting your answer" and cannot say
 "2 still open".
@@ -65,7 +65,7 @@ the class of defect this codebase has filed repeatedly").
       asymmetry UI-084's e2e guards
 - [x] (ui) The board's reason chip reads "2 awaiting your answer" (or the wording the
       mockup settles on) only when the count is greater than one, and stays
-      "awaiting your answer" at one — §11 says *more than one* says how many
+      "awaiting your answer" at one — §10 says *more than one* says how many
 
 ## Technical Design
 
@@ -117,7 +117,7 @@ Named `unansweredForms` rather than `openForms`: "open" is already this
 codebase's word for a thread's `status`, and the count's own SQL guard is
 literally `t.status = 'open'`, so `openForms` on a row that also carries a thread
 status invites exactly the conflation the field must not have. `unanswered` names
-the predicate (`turns.form_answered = 0`) and is §11's own adjective
+the predicate (`turns.form_answered = 0`) and is §10's own adjective
 ("unanswered form").
 
 **The invariant, stated in both directions** (and published in the description
@@ -142,7 +142,7 @@ published wording is that `needs=form` *filters on the same predicate*, with the
 rest of the query still applying.
 
 `POST /api/threads/{id}/seen` is documented as leaving it untouched, explicitly
-contrasted with `unread`/`unreadThreads`, which being read is what clears — §11's
+contrasted with `unread`/`unreadThreads`, which being read is what clears — §10's
 "an unanswered form's row is the one that survives being read".
 
 `attention` stays an array of bare reason codes; its description now says why the
@@ -153,7 +153,7 @@ SPEC.md §10).
 
 **Nothing held for sign-off.** No route is added or changed, so §9.2's route
 inventory needs no line — `DocRow`'s field list is not enumerated there. The
-behaviour this implements is already signed §11 text ("a thread holding more than
+behaviour this implements is already signed §10 text ("a thread holding more than
 one unanswered form says how many are still open", rider signed 2026-08-05).
 
 `packages/contract/src/routes/inventory.ts` was checked and left alone: its claim

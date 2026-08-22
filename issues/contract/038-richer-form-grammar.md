@@ -34,7 +34,7 @@ three consumers see.
 - SPEC.md **§7**, Core event types — the `form.respond` payload, rewritten by
   SHARED-021 Amendment 3 to "**one entry per field of that form**"
 - SPEC.md **§9.2** — `POST /api/threads/:id/turns/:ts/form`; `needs=form`
-- SPEC.md **§14** — mutations validate before writing; a mutation may succeed and
+- SPEC.md **§11** — mutations validate before writing; a mutation may succeed and
   still carry warnings
 
 ## Summary
@@ -152,7 +152,7 @@ rider, and a contract that needs one is the wrong contract.
 - `packages/contract/src/openapi.test.ts` — the forms-surface assertions
   (~L2362-2390) and any pinned component counts
 - `packages/contract/openapi.json`, `packages/contract/src/client/schema.generated.ts`
-  — regenerated, committed, drift-checked in pre-push per §14
+  — regenerated, committed, drift-checked in pre-push per §11
 
 Deliberately **not** in this issue: `packages/kit/src/client/createCorpusClient.ts`'s
 `FormAnswerInput` and `useRespondToForm` follow the generated types and belong
@@ -202,7 +202,7 @@ would not have been.
 
 1. **Answering an already-answered form.** Today it is legal, and the server's
    order-based pairing re-pairs afterwards. §6 now says a form is answered once
-   and §11 says "changing your mind is an ordinary reply, not a second answer to
+   and §10 says "changing your mind is an ordinary reply, not a second answer to
    the same question" — so the route should refuse a second answer. That is a
    **behaviour change** to something currently permitted, and it needs a status
    code chosen deliberately (a `409` reads as "already answered"; a `400` reads
@@ -232,7 +232,7 @@ would not have been.
    reading; `choose_one` or `choose-one` would be a second name for §6's words
    and a transformation to get wrong. The space needs no quoting in YAML. A
    near-miss spelling fails the discriminated union loudly, which degrades to a
-   visibly broken code block (§11) rather than to a silently different field.
+   visibly broken code block (§10) rather than to a silently different field.
 
 **Malformed forms: both, and they are a pair, not alternatives.** Write-time
 refusal is the primary defence — §6 says forms are written only through the
@@ -293,7 +293,7 @@ Unit tests, colocated in `packages/contract/src/schemas/form.test.ts`:
 
 1. `corpus init` a scratch workspace on a non-default port; start the real
    server; confirm `openapi.json` regenerates clean (`npm run build` then the
-   §14 drift check).
+   §11 drift check).
 2. Through the real API, append an agent turn carrying a three-field form (choose
    one, choose any, write, one of them optional) and read the thread back —
    `GET /api/threads/:id` returns the turn with the fence intact.

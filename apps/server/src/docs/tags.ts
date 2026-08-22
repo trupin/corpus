@@ -1,6 +1,6 @@
 /**
  * The one tag-delta rule in the server, applied by both writes that carry one:
- * `POST /api/docs/bulk`'s §11 `tag` act and `PUT /api/docs/{id}`'s
+ * `POST /api/docs/bulk`'s §10 `tag` act and `PUT /api/docs/{id}`'s
  * `addTags`/`removeTags` (SERVER-102).
  *
  * It exists as a shared function rather than as two matching implementations
@@ -14,7 +14,7 @@
  */
 
 /**
- * §11's rule, stated once: **a delta, never a replacement** — "adds or removes
+ * §10's rule, stated once: **a delta, never a replacement** — "adds or removes
  * the named tags and never replaces a document's tag set".
  *
  * Existing order is preserved and additions are appended, so tagging twenty

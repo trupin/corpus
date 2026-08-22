@@ -8,7 +8,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-129, in a real browser: **an image reserves its box before the bytes**
- * (SPEC.md §11, rider signed 2026-08-20 — "a value that arrives later than the
+ * (SPEC.md §10, rider signed 2026-08-20 — "a value that arrives later than the
  * box holding it" moves nothing else on the screen).
  *
  * **The delay is the test.** An `<img>` with no stated size occupies 0×0 until
@@ -482,7 +482,7 @@ test.describe("an image reserves its box before the bytes arrive", () => {
    * fix): a 900×600 screenshot in a document body used to render at the reading
    * measure and be legible there, and a universal 240×180 reservation made it a
    * thumbnail — turning the full-screen viewer into the ordinary way to read an
-   * image that carries content, which SPEC.md §11's third clause forbids
+   * image that carries content, which SPEC.md §10's third clause forbids
    * ("revealing is the uncommon case and not the ordinary reading path").
    *
    * So this measures the picture as well as the sentinel: the box must be both

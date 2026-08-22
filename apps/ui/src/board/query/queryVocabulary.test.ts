@@ -26,11 +26,11 @@ describe("docTypeOptions", () => {
   });
 
   /**
-   * `type` is an open string in the contract because plugins define their own
-   * (SPEC.md §5, §10). Reading it off the corpus is the only way `todo` can be
-   * offered at all — no hardcoded list knows about it.
+   * `type` is an open string in the contract so a workspace may hold a type this
+   * build does not define (SPEC.md §5). Reading it off the corpus is the only
+   * way `todo` can be offered at all — no hardcoded list knows about it.
    */
-  it("offers a plugin's type because the workspace uses it", () => {
+  it("offers an unrecognised type because the workspace uses it", () => {
     expect(docTypeOptions(rows).map((option) => option.value)).toContain("todo");
   });
 

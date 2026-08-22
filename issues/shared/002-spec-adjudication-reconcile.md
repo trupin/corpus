@@ -26,8 +26,8 @@ fable (spec-writer pinned)
 The recurring gap of Phase 2: sprint adjudications that changed user-observable behavior lived only in issue files and Domain Knowledge while SPEC.md kept the superseded claims. The pr-reviewer flagged three (MAJOR findings 2–4); the spec-writer amended SPEC.md to describe shipped, adjudicated behavior:
 
 1. **§7 + §9.2 — idle timeout is rejected, not clamped**: a >480 s ask is a 400 validation error (sprint-003 adjudication: validated input beats silent coercion).
-2. **§6 — reconciliation described behaviorally**: threads follow their text (in-place edits, cut-and-paste, reorders); orphans preserve the selector byte-for-byte; a visible orphan beats a silent misattachment (doppelgängers never capture threads, boundary-swallowing rewrites orphan, disjoint anchors never overlap); recomputed quotes are honest. §9.2 + §11: the `awaiting-reply` filter/chip is gone — form-awaiting threads are `needs=form`.
-3. **§11 — templates are body-only**: frontmatter comes from the create request, never the template.
+2. **§6 — reconciliation described behaviorally**: threads follow their text (in-place edits, cut-and-paste, reorders); orphans preserve the selector byte-for-byte; a visible orphan beats a silent misattachment (doppelgängers never capture threads, boundary-swallowing rewrites orphan, disjoint anchors never overlap); recomputed quotes are honest. §9.2 + §10: the `awaiting-reply` filter/chip is gone — form-awaiting threads are `needs=form`.
+3. **§10 — templates are body-only**: frontmatter comes from the create request, never the template.
 
 ## Acceptance Criteria
 

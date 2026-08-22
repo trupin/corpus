@@ -75,7 +75,7 @@ describe("the full-screen image viewer", () => {
     expect(screen.getByRole("dialog")).not.toBeNull();
   });
 
-  /** SPEC.md §11: "`esc` closes it and returns focus to the image". */
+  /** SPEC.md §10: "`esc` closes it and returns focus to the image". */
   it("closes on esc and gives focus back to the image that opened it", () => {
     render(<Host />);
     const opener = image();

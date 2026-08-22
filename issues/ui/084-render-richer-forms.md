@@ -26,14 +26,14 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11**, Thread view — "**A form is a set of controls, and once answered
+- SPEC.md **§10**, Thread view — "**A form is a set of controls, and once answered
   it is a record**": one control per field matched to what the field asks,
   required ones marked, a single submit naming its key, a place for the note,
   submit gated on the required fields with the missing one named, everything
   reachable from the keyboard, the answered form shown in place, and a form the
   app cannot read rendering as the visibly broken code block it is — **never as a
   partial set of controls**
-- SPEC.md **§11**, Attention — "**An unanswered form's row is the one that
+- SPEC.md **§10**, Attention — "**An unanswered form's row is the one that
   survives being read**", and a thread holding more than one says how many are
   still open
 - SPEC.md **§6**, "Forms in turns" — the three kinds, required by default,
@@ -55,7 +55,7 @@ becomes a list of controls: **choose one**, **choose any**, and **write**. Requi
 fields are marked, submit is available only once every required field has an
 answer, and when it is not the form **says which question is still missing**
 rather than letting the attempt fail silently. Everything is reachable from the
-keyboard — §11 adds no pointer-exclusive capability, and a form the person cannot
+keyboard — §10 adds no pointer-exclusive capability, and a form the person cannot
 answer without a mouse is a question they cannot answer.
 
 **The attention asymmetry, which is the point.** §7's read state clears when you
@@ -170,7 +170,7 @@ answer rather than each inventing it.
 
 **The answer turn's text is the only durable record of what was answered.** The
 `form.respond` payload lives in `.corpus/` — runtime state, reaped with its event
-— while §11 requires an answered form to render "each question beside what was
+— while §10 requires an answered form to render "each question beside what was
 given for it" after a reload. So the prose in the turn *is* the data.
 
 **Therefore the format and its parser are a pair, and the pair lives in
@@ -233,7 +233,7 @@ and breaking it would let someone anchor a comment to a control.
 **"Never a partial set of controls" is a real branch, not a sentiment.** The
 tempting implementation renders the fields it understood and drops the one it did
 not — which shows a person three of four questions as though they were the whole
-ask, and their submit then answers a form nobody asked. §11 chose the opposite
+ask, and their submit then answers a form nobody asked. §10 chose the opposite
 posture deliberately: the whole block falls back to the visibly broken code block
 it is. That means the parse is all-or-nothing at the block level, and the
 fallback path needs a test per failure mode (unparseable YAML, unknown kind),
@@ -458,7 +458,7 @@ contract defaults the actor to `user` — so this surface cannot produce a `403`
 and I deliberately did not write a message for it: a branch no test can honestly
 exercise is a claim about behaviour nobody has. If one ever arrived it renders
 through the generic `Answer failed — <message>` path. The `409` is the refusal
-§6 and §11 actually name for this UI, and it has its own wording and its own
+§6 and §10 actually name for this UI, and it has its own wording and its own
 test.
 
 #### Left open
@@ -724,13 +724,13 @@ The exact wording, which is the threshold and not a decoration:
 | `1`               | `awaiting your answer` |
 | `2`               | `2 awaiting your answer` |
 
-— exactly CONTRACT-040's worked example. §11 says *more than one* says how many,
+— exactly CONTRACT-040's worked example. §10 says *more than one* says how many,
 so one form reads as it always has; "1 awaiting your answer" would be a second
 wording for the ordinary case.
 
 **The `.needs-you` pill was left bare (`form`), on purpose.** `NeedsYouBadge`'s
 own contract is "short text only — the reason line carries the sentence", the
-mockup's form pill reads `form` with no number, and §11's "says how many" is one
+mockup's form pill reads `form` with no number, and §10's "says how many" is one
 statement: two places carrying the same count is two things to keep in step for
 no second reader. Asserted rather than assumed, in both the component test and
 the e2e.

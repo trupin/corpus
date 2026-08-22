@@ -4,16 +4,16 @@ import {
   useDoc,
   useSetDocArchived,
   useUpdateDocById,
+  type OpenPayload,
+  type RevealTarget,
   type RowNotice,
 } from "@corpus/kit";
-import type { OpenPayload, RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Column } from "../board/Column";
 import { measureColumns, previewOrder } from "../board/columnDrag";
 import { nextOrder, reinsert } from "../board/columnOrder";
 import { useRegisterBoardCommands, type BoardCommands } from "../keyboard/boardCommands";
 import { useContextMenu } from "../menu/ContextMenuHost";
-import { isPluginRendered } from "../menu/nativeMenu";
 import { RowMenuItems, subjectFromElement } from "../menu/RowMenuItems";
 import { focusReplyComposer, replyRoot } from "../keyboard/focusReply";
 import { useActiveColumn } from "../keyboard/useActiveColumn";
@@ -45,7 +45,7 @@ import "./Board.css";
 import "../board/Column.css";
 
 /**
- * The board (SPEC.md §11): a horizontally scrolling strip of columns with snap
+ * The board (SPEC.md §10): a horizontally scrolling strip of columns with snap
  * scrolling, and a trailing ghost column that never lets it be a blank screen.
  *
  * **Columns are documents.** Nothing here decides what the board holds — the
@@ -83,7 +83,7 @@ export function Board(): ReactElement {
   const [flashing, setFlashing] = useState<string | null>(null);
   /**
    * Focus mode is board-level and **not** persisted: the column readers behind
-   * it are the sticky state (SPEC.md §11's "open readers"), and restoring a
+   * it are the sticky state (SPEC.md §10's "open readers"), and restoring a
    * full-viewport overlay on load would hide the board a reload was meant to
    * show. Its own navigation stack lives inside the overlay.
    */
@@ -181,7 +181,7 @@ export function Board(): ReactElement {
   }, [flashing]);
 
   /**
-   * The board's half of the `useOpenInColumn` seam (SPEC.md §11).
+   * The board's half of the `useOpenInColumn` seam (SPEC.md §10).
    *
    * Resolution reads the *rendered* column set through a ref so the published
    * handlers keep a stable identity: the search overlay holds them across every
@@ -264,7 +264,7 @@ export function Board(): ReactElement {
 
   /**
    * The document the active column has open, if any — `e` and `f` act on it in
-   * preference to the row under the cursor (SPEC.md §11: "archive the open (or
+   * preference to the row under the cursor (SPEC.md §10: "archive the open (or
    * highlighted) document"). The fetch costs nothing: the reader below is
    * already asking for exactly this key.
    */
@@ -294,7 +294,7 @@ export function Board(): ReactElement {
   }, [active]);
 
   /**
-   * `⇧←`/`⇧→` — the keyboard drag (SPEC.md §11). Same `persistMove` the pointer
+   * `⇧←`/`⇧→` — the keyboard drag (SPEC.md §10). Same `persistMove` the pointer
    * drag ends in, so `order` is written through UI-003's one path; a silent
    * no-op at either end, with no wrap-around and no write.
    */
@@ -372,7 +372,7 @@ export function Board(): ReactElement {
   }, [cursor, openDoc.data, openInActive, setArchived, toast]);
 
   /**
-   * The menu key / `⇧F10` (SPEC.md §11): the same menu the pointer opens, on the
+   * The menu key / `⇧F10` (SPEC.md §10): the same menu the pointer opens, on the
    * row the keyboard is highlighting, with its first item focused.
    *
    * The subject is read off the painted row rather than from a result set the
@@ -382,12 +382,9 @@ export function Board(): ReactElement {
   const openRowMenu = useCallback(() => {
     const element = cursor.element();
     if (element === null) return;
-    // A plugin **column body** owns its surface, and since the 2026-08-02 §11
-    // amendment it may put its own menu on it through the kit — so core opens
-    // none there. Asked of the painted element, not of the row's type — a `todo`
-    // document row in an ordinary column is a core row with the core action set
-    // however it is painted (UI-036).
-    if (isPluginRendered(element)) return;
+    // The subject is read off the painted element, never from the row's type: a
+    // document whose `type:` this build does not recognise is a core row with
+    // the core action set (UI-036).
     const subject = subjectFromElement(element);
     if (subject === null) return;
     const rect = element.getBoundingClientRect();
@@ -419,7 +416,7 @@ export function Board(): ReactElement {
     });
   }, [activeColumn, activeColumnId, contextMenu, cursor, navigation, notify]);
 
-  /** The board's half of the keyboard seam: §11's bindings, phrased as acts. */
+  /** The board's half of the keyboard seam: §10's bindings, phrased as acts. */
   const commands = useMemo<BoardCommands>(
     () => ({
       moveRowCursor: cursor.move,
@@ -504,10 +501,7 @@ export function Board(): ReactElement {
   const addToColumn = useCallback(
     async (column: BoardColumn) => {
       try {
-        const docId = await createInColumn.create({
-          folder: column.folder,
-          plugin: column.plugin,
-        });
+        const docId = await createInColumn.create({ folder: column.folder });
         openInColumn(column.id, docId);
         setSelectTitleFor(docId);
         toast({

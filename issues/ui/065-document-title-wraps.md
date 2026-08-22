@@ -18,7 +18,7 @@ opus
 
 ## Spec References
 - `design/index.html` is authoritative for look and feel
-- SPEC.md §11 Document view
+- SPEC.md §10 Document view
 
 ## Summary
 Live report 2026-08-04: _"Document's title can only show on one line, meaning it

@@ -33,7 +33,7 @@ import { useState } from "react";
  * unfinished, and the server publishes every queue event as a job whose
  * `originId` is the document its payload names — a thread, for the
  * `comment.created` and `form.respond` events a conversation produces (SPEC.md
- * §7, §11). That is a fact the server maintains rather than an inference from who
+ * §7, §10). That is a fact the server maintains rather than an inference from who
  * spoke last: it survives a reload, and it is right in a tab that did not send
  * the turn.
  *
@@ -65,7 +65,7 @@ import { useState } from "react";
  * hook runs in an open thread reader, of which there are as many as the user has
  * columns open", was simply false: `ThreadCard` mounts once per **thread** —
  * `anchors/AnchoredThreads.tsx`'s margin column maps one card per anchored
- * thread, which is SPEC.md §11's placement for focus mode and wide readers, and
+ * thread, which is SPEC.md §10's placement for focus mode and wide readers, and
  * child threads mount recursively under their parent. A document with thirty
  * anchored comments therefore issued thirty concurrent `/api/jobs` requests,
  * each an unindexed scan over a `json_extract` `CASE`, all refetching on every

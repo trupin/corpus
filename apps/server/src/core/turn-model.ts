@@ -1,5 +1,5 @@
 /**
- * The `turnModels` map: which model wrote which turn (SPEC.md §6, §11 —
+ * The `turnModels` map: which model wrote which turn (SPEC.md §6, §10 —
  * CONTRACT-043's decision, rider signed 2026-08-08).
  *
  * A thread document records its turns' models in its **own frontmatter**, keyed
@@ -13,7 +13,7 @@
  * Three rules, and each is load-bearing:
  *
  * - **Record, never invent.** Nothing here manufactures a model. A turn with no
- *   entry reads as `null`, which is §11's "nothing rather than a guess": an
+ *   entry reads as `null`, which is §10's "nothing rather than a guess": an
  *   unknown that says so is worth more than a plausible attribution nobody can
  *   check. There is no default, no "current model", and no fallback to the
  *   weight a request was dispatched at (CONTRACT-039: a weight is what was asked
@@ -122,7 +122,7 @@ export const FileTurnModelsSchema = z.preprocess(withCanonicalKeys, TurnModelsSc
  *
  * Lenient in the way every *read* in this server is lenient (`threads/read.ts`
  * states the rule): a hand-edited entry nobody can interpret is skipped rather
- * than thrown over, because the conversation is still a conversation and §14 is
+ * than thrown over, because the conversation is still a conversation and §11 is
  * what reports the drift. Two spellings of one instant collapse to one entry,
  * last one winning — they named the same turn, and a turn has one model.
  */

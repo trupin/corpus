@@ -59,7 +59,7 @@ not a better translation but the removal of the translation:
   cannot hold different opinions about one turn. CONTRACT-014 may adjust the fence grammar later;
   when it does, both consumers follow it for free — nothing here restates it.
 
-The column means "carries a form somebody can *answer*", not merely "has a fence": §11's reason
+The column means "carries a form somebody can *answer*", not merely "has a fence": §10's reason
 exists to say an action is waiting, and a fence the route 404s is an action nobody can take. That
 closes the unparseable-YAML case, which is the same defect as the two the finding named.
 

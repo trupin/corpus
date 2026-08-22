@@ -1,12 +1,18 @@
-// The write path's CONTRACT-011 surface: §11's view keys and §12's plugin keys
-// through `POST /api/docs` and `PUT /api/docs/{id}`.
+// The write path's CONTRACT-011 surface: §7's view keys, and every frontmatter
+// key the core does not define, through `POST /api/docs` and
+// `PUT /api/docs/{id}`.
+//
+// The extra-frontmatter cases deliberately carry `type: todo` — a type this
+// build has never heard of. §5 leaves `type` an open string and §12's M6 makes
+// that a promise, so these are also the guarantee that a workspace's own
+// leftover types still create, save, project and list (SHARED-067).
 //
 // Every case goes through the real app, writes a real file into a real git
 // repository, and is asserted on the three real surfaces — the file's bytes,
 // the response, and the row the collection query answers with. The byte
 // assertions are the point of the issue: `extra` is a **shallow merge patch**,
-// so a plugin writing its key must leave every other key's line exactly as it
-// found it (SPEC.md §4's honest diff).
+// so a writer touching its own key must leave every other key's line exactly as
+// it found it (SPEC.md §4's honest diff).
 
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -54,7 +60,10 @@ describe("POST /api/docs with view keys", () => {
       pinned: true,
       order: 20,
       query: { folder: "finance", type: ["note", "thread"] },
-      column: "todos/board",
+      // The `column` key a pre-SHARED-066 board carried. It is no longer a core
+      // field, so it travels as extra frontmatter and lands as a plain YAML key
+      // beside the others — which is what makes an old view round-trip.
+      extra: { column: "board/kanban" },
     });
 
     const text = ws.read(created.path);
@@ -80,23 +89,22 @@ describe("POST /api/docs with view keys", () => {
       "  type:",
       "    - note",
       "    - thread",
-      "column: todos/board",
+      "column: board/kanban",
     ]);
 
     const frontmatter = (created.body["frontmatter"] ?? {}) as Record<string, unknown>;
     expect(frontmatter["pinned"]).toBe(true);
     expect(frontmatter["order"]).toBe(20);
     expect(frontmatter["query"]).toEqual({ folder: "finance", type: ["note", "thread"] });
-    expect(frontmatter["column"]).toBe("todos/board");
-    expect(frontmatter["extra"]).toEqual({});
+    expect(frontmatter["column"]).toBeUndefined();
+    expect(frontmatter["extra"]).toEqual({ column: "board/kanban" });
 
     const row = rowOf(await list("pinned=true&type=view&sort=order"), created.id);
     expect(row).toMatchObject({
       pinned: true,
       order: 20,
       query: { folder: "finance", type: ["note", "thread"] },
-      column: "todos/board",
-      extra: {},
+      extra: { column: "board/kanban" },
     });
   });
 
@@ -110,14 +118,13 @@ describe("POST /api/docs with view keys", () => {
       pinned: false,
       order: null,
       query: null,
-      column: null,
     });
     const text = ws.read(created.path);
-    for (const key of ["pinned", "order", "query", "column"]) {
+    for (const key of ["pinned", "order", "query"]) {
       expect(text).not.toContain(`${key}:`);
     }
     const row = rowOf(await list("type=note"), created.id);
-    expect(row).toMatchObject({ pinned: false, order: null, query: null, column: null });
+    expect(row).toMatchObject({ pinned: false, order: null, query: null });
   });
 
   it("keeps the shipped seed views round-tripping through the create route", async () => {
@@ -132,12 +139,14 @@ describe("POST /api/docs with view keys", () => {
       ["Inbox", 2, { folder: "inbox" }],
       ["Open threads", 3, { type: "thread", status: "open" }],
     ]);
-    expect(board.items.every((item) => item.pinned && item.column === null)).toBe(true);
+    expect(board.items.every((item) => item.pinned && Object.keys(item.extra).length === 0)).toBe(
+      true,
+    );
   });
 });
 
 describe("POST /api/docs with extra frontmatter", () => {
-  it("writes plugin keys beside the core ones, flat, and projects them onto the row", async () => {
+  it("writes extra keys beside the core ones, flat, and projects them onto the row", async () => {
     ws = createWriteWorkspace("extra-create", { sprint: "s026" });
     const items = [
       { text: "Call the broker", done: false, ts: "2026-07-27T09:00:00Z" },
@@ -206,11 +215,15 @@ describe("POST /api/docs with extra frontmatter", () => {
     expect(readdirSync(join(ws.root, "data", "docs", "inbox"))).toEqual([]);
   });
 
-  it("refuses a malformed column reference and an unusable query with 400", async () => {
+  it("refuses a top-level `column` and an unusable query with 400", async () => {
     ws = createWriteWorkspace("view-reject", { sprint: "s026" });
-    expect((await ws.post("/api/docs", { type: "view", title: "T", column: "todos" })).status).toBe(
-      400,
-    );
+    // `column` is not a core field any more (SHARED-066), and the create
+    // request is strict — so a caller written against the old contract gets a
+    // `400` naming the key rather than a silent no-op. `extra: { column }` is
+    // the way to write it, and that is exercised above.
+    expect(
+      (await ws.post("/api/docs", { type: "view", title: "T", column: "todos/todos" })).status,
+    ).toBe(400);
     expect(
       (await ws.post("/api/docs", { type: "view", title: "T", query: { needs: { deep: 1 } } }))
         .status,
@@ -277,7 +290,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
   });
 
   // SERVER-029 (PR #10 finding 15). `ExtraFrontmatterSchema` bounds *one
-  // request*; `extra` is a merge patch, so a plugin writing 20 KiB under a fresh
+  // request*; `extra` is a merge patch, so a writer landing 20 KiB under a fresh
   // key each time walked a document past the 64 KiB the contract advertises,
   // one legal request at a time. The bound belongs to the document, so it is
   // checked against what the file will hold.
@@ -412,22 +425,24 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       folder: "views",
       pinned: true,
       order: 30,
-      column: "todos/board",
+      extra: { column: "board/kanban" },
     });
     ws.advance(60_000);
-    expect((await putDoc(ws, created.id, { order: null, column: null, due: null })).status).toBe(
-      200,
-    );
+    // `order` is a core view key and clears with `null`; a stale `column` is an
+    // extra key, so it clears through the merge patch that owns it.
+    expect(
+      (await putDoc(ws, created.id, { order: null, due: null, extra: { column: null } })).status,
+    ).toBe(200);
 
     const text = ws.read(created.path);
     expect(text).not.toContain("order:");
     expect(text).not.toContain("column:");
-    // §5's canonical block keeps its `due: null`; only the §11 keys are cleared.
+    // §5's canonical block keeps its `due: null`; only the §10 keys are cleared.
     expect(text).toContain("due: null");
     expect(text).toContain("pinned: true");
 
     const row = rowOf(await list("pinned=true"), created.id);
-    expect(row).toMatchObject({ pinned: true, order: null, column: null });
+    expect(row).toMatchObject({ pinned: true, order: null, extra: {} });
   });
 
   it("writes `pinned: false` as itself, since the key has no null state", async () => {

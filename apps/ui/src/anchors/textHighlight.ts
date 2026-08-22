@@ -1,5 +1,5 @@
 /**
- * Anchor highlights on a **rendered** body (SPEC.md §11: a selection commented
+ * Anchor highlights on a **rendered** body (SPEC.md §10: a selection commented
  * on inside a turn "is highlighted in the turn the way an anchor is highlighted
  * in a document").
  *

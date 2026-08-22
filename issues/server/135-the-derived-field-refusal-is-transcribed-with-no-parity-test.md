@@ -4,7 +4,23 @@
 server
 
 ## Status
-todo
+closed — obsoleted by SHARED-067 (Phase 41): SERVER-139 deleted the refusal this issue asks for a parity test over.
+
+**Closed 2026-08-22 by SHARED-065 (Phase 41), and the ground was verified rather
+than assumed.** This issue asks for a parity test over a refusal the server no
+longer emits. SERVER-139 (`8835c102`, *"The server forgets plugins existed"*)
+deleted the derived-field seam: `assertDerivedFieldsNotSet` is gone from
+`apps/server/src/docs/update.ts`, and the repository now names it only inside
+`apps/ui/src/testing/serverRefusals.ts`'s own doc comment. The refusal existed
+because a plugin declared `status` and `due` derived for `type: todo`, and
+SHARED-067 removed that declaration along with the type.
+
+There is nothing to export a factory for, so acceptance criteria 1, 2 and 4 have
+no subject. **Decision 3 is not answered, and it is not lost**: whether other
+inline refusals (SERVER-039's archive refusal is the named sibling) carry the
+same missing-parity gap is a core question that never depended on plugins.
+SHARED-065 was told to file no new issues, so it is reported to the orchestrator
+instead.
 
 ## Priority
 P2
@@ -17,7 +33,7 @@ opus
 
 ## Spec References
 - SPEC.md **§9** — the server's error shape
-- SPEC.md **§14** — refusals
+- SPEC.md **§11** — refusals
 
 ## Summary
 

@@ -27,7 +27,7 @@ import {
  * replacement. What it changes is who finds out and how. Without it the refusal
  * arrives as an HTTP failure in a 360px toast that auto-dismisses after six
  * seconds, with nothing marking the field or the line; with it the form says
- * which question cannot be recorded and why, on the same terms §11 already
+ * which question cannot be recorded and why, on the same terms §10 already
  * promises for a missing required field — "the form says which question is still
  * missing rather than letting the attempt fail silently".
  *

@@ -112,7 +112,7 @@ in ~3–4 s with no restart (BUG-2's fix).
 | 70 | Every mutation re-projects before responding | PASS | Verified with no sleep for create, turn append, resolve, seen and delete. |
 | 71 | Invalidation keys published, never data | PASS | Frames for create/append/resolve/reopen/seen/delete all draw from the nine published shapes (`docs`, `docs/<id>`, `threads/<id>`, `tree`, `queue`, `jobs`); zero frames carry data. |
 | 72 | Enqueue wakes a parked long poll | PASS | With a genuinely empty queue: parked `GET /api/queue/idle?timeout=30`, posted an `@agent` turn at t+4.0 s, returned at t+4.165 s → ~0.16 s wake. Proves `server.queue.enqueue`, not a file drop. |
-| 73 | Hook rejection surfaces per §14 | PASS | `pre-commit` exiting 1 → 201 with `warnings:[{"code":"commit_failed","detail":"git commit failed: doc check: refusing"}]`, mutation **stands** on disk, 0 commits. Warnings ride **all four** CONTRACT-006 shapes: create, turn append, capture, delete-turn. |
+| 73 | Hook rejection surfaces per §11 | PASS | `pre-commit` exiting 1 → 201 with `warnings:[{"code":"commit_failed","detail":"git commit failed: doc check: refusing"}]`, mutation **stands** on disk, 0 commits. Warnings ride **all four** CONTRACT-006 shapes: create, turn append, capture, delete-turn. |
 | 74 | No-git workspace stays usable | PASS | Fresh workspace with `.git` removed: create and append both 201 with `warnings:[{"code":"commit_skipped","detail":"the workspace is not a git repository"}]`, both turns on disk. |
 | 75 | Squash window folds same-actor writes | PASS | user create + user turn within 30 s → **1** commit; a turn by the other actor → a fresh commit (`agent <agent@corpus.local>`). |
 | 76 | Latency budget | PASS | 10 iterations each: create median **58 ms** / p95 64 ms; append median **102 ms** / p95 111 ms; delete median **102 ms** / p95 117 ms. No call above 1 s (max 161 ms). |
@@ -158,6 +158,6 @@ but not enforced by the router), or file it as a follow-up if the 404 was the in
 producer half and it works: all three creation modes, the atomic two-file commit, the full
 tri-state enqueue matrix (every one of TEST-35…43 exact), mention/invocation parsing with real
 watcher-projected targets, the deletion cascade in all four shapes, capture, seen with
-out-of-band re-projection, §14 warnings on all four thread response shapes, and read-your-write
+out-of-band re-projection, §11 warnings on all four thread response shapes, and read-your-write
 on every mutation. Atomicity holds under a genuinely forced mid-write failure. Verdict: **PASS**,
 with the DISC-1 log line to be corrected.

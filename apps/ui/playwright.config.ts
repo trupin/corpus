@@ -18,7 +18,7 @@ const BASE_URL = `http://localhost:${PORT}`;
  * no proxy target, so `/api`, `/attachments` and `/events` are refused inside
  * the dev server rather than forwarded anywhere. Specs that need data stub the
  * transport in the browser; the rest assert what the shell does when nothing
- * answers (SPEC.md §11 — the console strip is where server state is reported).
+ * answers (SPEC.md §10 — the console strip is where server state is reported).
  *
  * That used to depend on `127.0.0.1:8765` happening to be free, which made a
  * local run and a CI run test different systems. The proxy paths themselves are

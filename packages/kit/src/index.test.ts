@@ -11,9 +11,9 @@ it("resolves @corpus/contract through its package entry point", () => {
 });
 
 /**
- * TEST-2. `index.ts` is the plugin contract (SPEC.md §10), so its surface is
- * pinned rather than described: a new export is a deliberate decision that
- * shows up here, and a removed one is a breaking change for every plugin.
+ * TEST-2. `index.ts` is the shared UI kit's whole surface (SPEC.md §10), so it
+ * is pinned rather than described: a new export is a deliberate decision that
+ * shows up here, and a removed one is a change every board surface feels.
  */
 const RUNTIME_SURFACE = [
   "PACKAGE_NAME",
@@ -42,7 +42,6 @@ const RUNTIME_SURFACE = [
   "capLogLines",
   "EMPTY_JOB_LOG",
   "MAX_BUFFERED_LOG_LINES",
-  "usePluginQuery",
   "useQueueStatus",
   "useAgentsRoster",
   "useIndexStatus",
@@ -86,8 +85,6 @@ const RUNTIME_SURFACE = [
   "jobKey",
   "jobsListKey",
   "JOBS_KEY",
-  "PLUGIN_KEY_PREFIX",
-  "pluginKey",
   "QUEUE_KEY",
   "relatedKey",
   "searchKey",
@@ -171,15 +168,15 @@ const RUNTIME_SURFACE = [
   "handleComposerKeyDown",
   // the attachment trio every composer obeys §6 with: the three intake routes,
   // the chip strip that previews them, and the 📎 that opens the picker. Here
-  // for the same reason the key contract is — §11's rider binds "any composer a
-  // plugin contributes", and a plugin may import nothing else (UI-070).
+  // for the same reason the key contract is — §10's rider binds every composer,
+  // and one copy is what makes them all obey it (UI-070).
   "useAttachmentIntake",
   "releaseAttachments",
   "PendingAttachments",
   "AttachButton",
-  // the weight a composer may state (SPEC.md §11's rider, signed 2026-08-06).
-  // Published here so a plugin's composer offers the same levels a first-party
-  // one does, with one import and no copy — the plugin row of §11's enumeration.
+  // the weight a composer may state (SPEC.md §10's rider, signed 2026-08-06).
+  // Published here so every composer offers the same levels, with one import and
+  // no copy.
   "WEIGHT_TABLE_HEADER",
   "useComposerWeight",
   "useWeightLevels",
@@ -191,8 +188,9 @@ const RUNTIME_SURFACE = [
   "weightChoice",
   "subscribeWeightChoices",
   // `resetWeightChoices` is deliberately absent: it is test support, and it lives
-  // on `@corpus/kit/testing`. SPEC.md §11 describes no "forget my weights"
-  // action, so publishing one to plugin authors would invent one (UI-082's PR #35 review).
+  // on `@corpus/kit/testing`. SPEC.md §10 describes no "forget my weights"
+  // action, so publishing one on the runtime surface would invent one (UI-082's
+  // PR #35 review).
   "threadWeightScope",
   "docWeightScope",
   "GLOBAL_COMPOSE_WEIGHT_SCOPE",
@@ -200,7 +198,7 @@ const RUNTIME_SURFACE = [
   // one line stating who answers and at what weight, opening to change either.
   // For a resident's lane the weight section is a sentence naming the
   // resident's weight, never a control whose choice would be discarded
-  // (SPEC.md §7 and §11, rider signed 2026-08-19).
+  // (SPEC.md §7 and §10, rider signed 2026-08-19).
   "ComposerAddress",
   "composerAddress",
   "answeringRow",
@@ -221,9 +219,9 @@ const RUNTIME_SURFACE = [
   "WEIGHT_LEAD",
   "WEIGHT_UNKNOWN_TITLE",
   // SPEC.md §7's recipient — the roster read, the scope walk, the one-message
-  // override, and the control. Published for `WeightPicker`'s reason: a
-  // composer a plugin contributes must be able to offer the same live roster.
-  // `useAgentsRoster` is beside the other read hooks above.
+  // override, and the control. Published for `WeightPicker`'s reason: every
+  // composer offers the same live roster from one copy. `useAgentsRoster` is
+  // beside the other read hooks above.
   "RECIPIENT_UNKNOWN_STATEMENT",
   "RECIPIENT_REFUSED_STATEMENT",
   "DEFAULT_ROW_NOTE",
@@ -281,12 +279,12 @@ const RUNTIME_SURFACE = [
   "DEFAULT_MAX_DELAY_MS",
 ] as const;
 
-describe("the plugin contract surface", () => {
+describe("the kit's published surface", () => {
   it("exports exactly the runtime symbols it declares", () => {
     expect(Object.keys(kit).sort()).toEqual([...RUNTIME_SURFACE].sort());
   });
 
-  // The omissions matter more than the exports: a plugin that can build its own
+  // The omissions matter more than the exports: a surface that can build its own
   // transport bypasses the kit's cache, keys and invalidation, and SPEC.md §10's
   // "the UI contract is @corpus/kit" stops meaning anything.
   it.each([

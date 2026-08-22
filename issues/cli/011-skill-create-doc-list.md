@@ -62,7 +62,7 @@ propose to create when this lands (AGENT rider), and §7's wording is reconciled
   call. Required `--description`; optional `--title`, `--tags a,b`, and the shared body sources
   (`-m` / `--file` / heredoc via `resolveBody`, which uses `stdinCarriesABody`'s `fstat` probe, so
   the verb cannot hang on an agent harness's fd-0 socket — CLI-007's class). Prints
-  `created <id> — <path>` with §14 warnings folded on; `--json` emits the server's `{doc, warnings}`
+  `created <id> — <path>` with §11 warnings folded on; `--json` emits the server's `{doc, warnings}`
   envelope unchanged.
 - `apps/cli/src/commands/doc/list.ts` — `corpus doc list`, a thin `GET /api/docs` call carrying the
   route's **entire** documented query grammar (19 flags), a padded columnar rendering, and a tally
@@ -216,7 +216,7 @@ a0fe0e2 agent :: skill create: triage (doc_hwy7rjjn) by agent
 ```
 
 `--json` create (no body → template pre-fill; the workspace has no `skill` template, so the body is
-empty as §11 prescribes):
+empty as §10 prescribes):
 `{"doc":{"frontmatter":{"id":"doc_hwy7rjjn","type":"skill",…,"extra":{"name":"triage","description":"Triage the inbox."}},"body":"","path":".claude/skills/triage/SKILL.md",…},"warnings":[]}`.
 Claude Code's two keys land in `extra` because the server never interprets them — noted, not a CLI
 concern.

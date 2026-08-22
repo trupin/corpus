@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — the form says what is wrong before it is sent
+- SPEC.md §10 — the form says what is wrong before it is sent
 - SPEC.md §6 — the fence rule
 
 ## Summary

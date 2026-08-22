@@ -17,11 +17,11 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — active column follows focus/hover; esc/⌫ close-back precedence
+- SPEC.md §10 — active column follows focus/hover; esc/⌫ close-back precedence
 
 ## Summary
 User decision (2026-07-31, sign-off round): after closing full screen, the column
-under the *resting* mouse becomes active (§11's hover-follows-active fires on the
+under the *resting* mouse becomes active (§10's hover-follows-active fires on the
 overlay unmount), which strands `esc` for keyboard-only flow until the mouse
 physically moves (UI-022 eval finding: 7 dead presses, survives reload; hovering
 restores). Signed rule: **on programmatic close, keep the origin column active and

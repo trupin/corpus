@@ -122,11 +122,11 @@ describe("findCitations", () => {
   });
 
   it("reports every citation on a line, with 1-based line numbers", () => {
-    const citations = findCitations("a.ts", "nothing here\n§7 and §9.2 and §11\n");
+    const citations = findCitations("a.ts", "nothing here\n§7 and §9.2 and §10\n");
     expect(citations.map((citation) => [citation.line, citation.section])).toEqual([
       [2, "7"],
       [2, "9.2"],
-      [2, "11"],
+      [2, "10"],
     ]);
   });
 
@@ -166,7 +166,7 @@ describe("isExcluded", () => {
     // The pack audit learned this one the hard way: an unanchored `**/data/**`
     // would have forbidden the workspace template's own `data/`.
     expect(isExcluded("apps/server/src/issues/reporter.ts")).toBe(false);
-    expect(isExcluded("plugins/todos/issues.ts")).toBe(false);
+    expect(isExcluded("packages/kit/src/issues.ts")).toBe(false);
   });
 
   it("spares the generated artefacts, which inherit their citations from source", () => {

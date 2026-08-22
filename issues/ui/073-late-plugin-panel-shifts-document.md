@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Document view (plugin `DocPanel`, plugin `View`)
+- SPEC.md §10 Document view (plugin `DocPanel`, plugin `View`)
 - SPEC.md §12 plugins (discovery)
 
 ## Summary

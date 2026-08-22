@@ -257,7 +257,7 @@ test.describe("the margin column", () => {
    * re-review, CRITICAL).
    *
    * `.t-chip` is the one collapsed representation a conversation has anywhere
-   * (SPEC.md §11), so a rule scoped at `.doc-main .t-chip` also hid every
+   * (SPEC.md §10), so a rule scoped at `.doc-main .t-chip` also hid every
    * whole-document, orphaned and unplaceable conversation the body still lists
    * while the margin is up — the moment one of them was folded it became a
    * `display: none` line with no card and no expander anywhere, and the fold is

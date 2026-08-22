@@ -23,13 +23,13 @@ opus — a one-field rider pinned by sprint-013 Adjudication 8.
 
 ## Spec References
 
-- SPEC.md §14 — "commit failed, file write stands, warn" path
+- SPEC.md §11 — "commit failed, file write stands, warn" path
 - issues/sprints/sprint-013.md — Open Conflict 4 + Adjudication 8
 
 ## Summary
 
 Filed from sprint-013 Open Conflict 4 (2026-07-28). CONTRACT-008 shipped
-`SkillRollbackResult.commit` as required-non-null, but §14's rollback path allows the file write to
+`SkillRollbackResult.commit` as required-non-null, but §11's rollback path allows the file write to
 stand when the auto-commit fails (rejected hook), with a warning — that outcome has no legal value
 on the wire. Make `commit: string | null` (`null` ⇔ commit failed, write stands; the rejected-hook
 warning rides `warnings`), regenerate artifacts idempotently, and keep every other CONTRACT-008
@@ -51,7 +51,7 @@ Implemented on: **opus** (contract-dev, worktree `agent-a8142f0fd7bc5db5a`, base
 `SkillRollbackResultSchema.commit` (`packages/contract/src/schemas/skill.ts`) gains `.nullable()`
 between the regex and the description, so it is `string | null` — required, never optional. The
 description now publishes the semantics: `null` ⇔ the file was restored but not committed (the
-auto-commit failed or was skipped), the write stands regardless (§14), and the reason is in
+auto-commit failed or was skipped), the write stands regardless (§11), and the reason is in
 `warnings` (`commit_failed` carries the workspace hook's own output, `commit_skipped` the git-less
 workspace). A code comment records why the tempting alternative — echoing the pre-existing HEAD —
 was rejected: it puts a commit that is not this restoration into the field the audit trail reads.
@@ -132,7 +132,7 @@ Type-level proof in the same file, checked with `tsc --noEmit` under the repo's 
 ```
 × SkillRollbackResult round-trips > accepts a null commit, meaning the restoration is uncommitted
 × SkillRollbackResult round-trips > accepts a null commit for the git-less workspace too
-× the validation and skill-rollback surface > lets `commit` be null, since §14 keeps the write when the commit fails
+× the validation and skill-rollback surface > lets `commit` be null, since §11 keeps the write when the commit fails
 Tests  3 failed | 192 passed (195)        # exit 1
 ```
 

@@ -17,7 +17,7 @@ opus
 - Blocks: CLI-020
 
 ## Spec References
-- SPEC.md §9.1 verbs bullet (SHARED-006 Edit 6), §9.2 index bullet (Edit 10), §14 doctor bullet (Edit 13), §2.2 rule 1 (Edit 2)
+- SPEC.md §9.1 verbs bullet (SHARED-006 Edit 6), §9.2 index bullet (Edit 10), §11 doctor bullet (Edit 13), §2.2 rule 1 (Edit 2)
 
 ## Summary
 Wire Phase B's operational surface:

@@ -1,5 +1,5 @@
 // Full rebuild: a brand-new database built from the workspace's files alone,
-// then swapped in atomically (SPEC.md §9.1, §15 M1).
+// then swapped in atomically (SPEC.md §9.1, §12 M1).
 //
 // The rename is the commit point. An interrupted rebuild therefore leaves the
 // previous `cache.db` intact and a leftover temp file, never a half-written
@@ -8,7 +8,6 @@
 import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { silentLogger, type Logger } from "../logger.js";
-import type { DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import {
   cacheDbPath,
   carryOverEmbeddings,
@@ -29,18 +28,10 @@ export interface RebuildOptions {
   /**
    * Build here and leave it here instead of replacing `cache.db`. This is the
    * mode the pre-push check uses to prove the projection is reconstructible
-   * from files alone (§14) without disturbing a running workspace.
+   * from files alone (§11) without disturbing a running workspace.
    */
   readonly into?: string;
   readonly logger?: Logger;
-  /**
-   * §12's derived statuses (SERVER-085). A rebuild projects into a *throwaway*
-   * handle, so it does not inherit the live one's registry — and a rebuild that
-   * forgot it would answer `POST /api/db/rebuild` by replacing every correct
-   * todo status with whatever its file happens to state, which is the one call
-   * an operator makes when the board already looks wrong.
-   */
-  readonly derivedFields?: DerivedFieldsRegistry;
 }
 
 export type RebuildReport = PopulateReport & {
@@ -79,13 +70,8 @@ export function rebuild(config: ProjectionConfig, options: RebuildOptions = {}):
   let report: PopulateReport;
   let embeddingsCarriedOver: number;
   const sqlite = openProjectionDatabase(target, logger);
-  const db = createProjectionDb(
-    sqlite,
-    config,
-    target,
-    logger,
-    () => openProjectionDatabase(target, logger),
-    options.derivedFields,
+  const db = createProjectionDb(sqlite, config, target, logger, () =>
+    openProjectionDatabase(target, logger),
   );
   try {
     report = populateFromFiles(db);

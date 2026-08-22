@@ -1,6 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import { folderOf } from "@corpus/kit";
-import type { OpenPayload, OpenRequest, RevealTarget } from "@corpus/kit/plugin";
+import { folderOf, type OpenPayload, type OpenRequest, type RevealTarget } from "@corpus/kit";
 import {
   createContext,
   useCallback,
@@ -15,7 +14,7 @@ import type { BoardColumn } from "./viewDoc";
 
 /**
  * "Open this document, wherever it lives" — the one implementation of scroll,
- * flash and open (SPEC.md §11).
+ * flash and open (SPEC.md §10).
  *
  * Three surfaces need it and none of them is inside the board: the search
  * overlay's `↵` (UI-009), the console's `↗ open` (UI-011), and UI-010's
@@ -49,7 +48,7 @@ export interface OpenTarget {
   /**
    * The column to open in, when the caller is *looking at* the document rather
    * than resolving where it lives — the keyboard's `↵` on a highlighted row
-   * (SPEC.md §11: "open the highlighted document **in its column**").
+   * (SPEC.md §10: "open the highlighted document **in its column**").
    *
    * Resolution is skipped when this is given, because a row's column is not a
    * guess: it is the column that fetched it, and a row visible in a narrower
@@ -72,9 +71,9 @@ export interface OpenTarget {
  * The one place a bare id and a full request are reconciled.
  *
  * Both spellings exist because both are honest: a row click knows a document
- * and nothing else, while a plugin that renders items knows exactly which one
- * was clicked. Normalising at the seam means every surface below it handles one
- * shape (SPEC.md §10's `onOpen`, sprint-023 OC5).
+ * and nothing else, while a comment, a backlink or a thread-context link knows
+ * exactly where inside it to land. Normalising at the seam means every surface
+ * below it handles one shape (SPEC.md §10's `onOpen`, sprint-023 OC5).
  */
 export function openRequest(payload: OpenPayload): OpenRequest {
   return typeof payload === "string" ? { docId: payload } : payload;
@@ -181,7 +180,7 @@ function listValues(raw: string | undefined): readonly string[] {
  * do not exclude it. Among the candidates:
  *
  * 1. **Folder** — the most specific folder column wins. Placement is the primary
- *    organization (SPEC.md §11), so a document in `finance/housing` belongs to
+ *    organization (SPEC.md §10), so a document in `finance/housing` belongs to
  *    the Housing column over the Finance one, and to either over a type filter
  *    that also happens to match.
  * 2. **Type / status** — a column filtering on both outranks one filtering on

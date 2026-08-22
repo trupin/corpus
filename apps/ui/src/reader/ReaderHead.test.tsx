@@ -126,7 +126,7 @@ describe("ReaderHead's back button", () => {
 });
 
 /**
- * The head is a fixed box holding text of unknown length (UI-135, SPEC.md §11).
+ * The head is a fixed box holding text of unknown length (UI-135, SPEC.md §10).
  * The geometry that makes that work is asserted in a real browser
  * (`e2e/reader-head-geometry.spec.ts`); what this file owes it is the pair of
  * `title`s, because a truncation with nothing behind it is a value quietly cut.

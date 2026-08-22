@@ -65,7 +65,7 @@ describe("handleAutocompleteKeyDown", () => {
     }
   });
 
-  // SPEC.md §11: "arrows move the highlight (wrapping at both ends)".
+  // SPEC.md §10: "arrows move the highlight (wrapping at both ends)".
   it.each([
     ["ArrowDown", 0, 3, 1],
     ["ArrowDown", 2, 3, 0],
@@ -133,7 +133,7 @@ describe("handleAutocompleteKeyDown", () => {
 
   /**
    * PR #20 review, MINOR: an open menu answered *any* `Enter`, so the composer's
-   * primary action (SPEC.md §11: "the primary action is always `⌘↵`") accepted a
+   * primary action (SPEC.md §10: "the primary action is always `⌘↵`") accepted a
    * completion instead of asking — and `⇧⇥`, the browser's reverse-focus key,
    * accepted one instead of moving focus back.
    */

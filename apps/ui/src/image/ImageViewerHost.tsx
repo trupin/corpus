@@ -24,7 +24,7 @@ export interface ImageViewerHostProps {
 export function ImageViewerHost({ children }: ImageViewerHostProps): ReactElement {
   const [image, setImage] = useState<ViewableImage | null>(null);
   /**
-   * The image that opened the viewer — SPEC.md §11: "`esc` closes it and
+   * The image that opened the viewer — SPEC.md §10: "`esc` closes it and
    * returns focus to the image".
    *
    * Held as the element rather than read back off `document.activeElement`: a

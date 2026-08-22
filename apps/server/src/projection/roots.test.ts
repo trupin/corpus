@@ -129,13 +129,13 @@ describe("enumerateDocuments", () => {
     expect(enumerateDocuments(ws).map((file) => file.path)).toEqual(["data/docs/a.md"]);
   });
 
-  it("indexes a symlinked plugin skill exactly once, under its link path", () => {
-    write("plugins/todos/SKILL.md", "plugin skill");
+  it("indexes a symlinked skill exactly once, under its link path", () => {
+    write("shared/errands/SKILL.md", "linked skill");
     mkdirSync(join(ws, ".claude", "skills"), { recursive: true });
-    symlinkSync(join(ws, "plugins", "todos"), join(ws, ".claude", "skills", "todos"), "dir");
+    symlinkSync(join(ws, "shared", "errands"), join(ws, ".claude", "skills", "errands"), "dir");
 
     const files = enumerateDocuments(ws);
-    expect(files.map((file) => file.path)).toEqual([".claude/skills/todos/SKILL.md"]);
+    expect(files.map((file) => file.path)).toEqual([".claude/skills/errands/SKILL.md"]);
   });
 
   it("does not loop on a symlink cycle", () => {

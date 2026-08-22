@@ -1,7 +1,7 @@
 import type { LaneRow } from "./laneRows.js";
 
 /**
- * The words a composer says about **who will answer** — SPEC.md §11's *"A
+ * The words a composer says about **who will answer** — SPEC.md §10's *"A
  * composer says who it will reach, before you send"* and §7's *"the default is
  * never a guess a person has to check"*, as one sentence.
  *

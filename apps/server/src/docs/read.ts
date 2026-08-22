@@ -5,17 +5,10 @@
 // disk on every read — the projection supplies only the id → path mapping and
 // the fields the file does not get the last word on: `id`, `type` and `status`,
 // which a document root can override (a hand-written `SKILL.md` carries none of
-// them, and an archived skill's status comes from which folder it sits in), plus
-// `status` and `due` again for a type that **derives** them (§12). That is also
-// what makes read-your-write cheap: the write path projects synchronously, so
-// the path lookup is already current when the next request arrives.
-//
-// **Every derived field comes from the row, and for one reason** (SERVER-085 for
-// `status`, SERVER-134 for `due`): between an out-of-band edit and the next
-// server write the file's copy is a stale shadow, and a single-document read
-// that trusted it would show a deadline the board, the collection query and
-// every filter disagree with — on the one surface a person is looking at the
-// document. The row is the derivation's answer; the file's line is its shadow.
+// them, and an archived skill's status comes from which folder it sits in).
+// That is also what makes read-your-write cheap: the write path projects
+// synchronously, so the path lookup is already current when the next request
+// arrives.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -49,7 +42,7 @@ export type DocumentRow = {
   readonly path: string;
   readonly status: DocStatus;
   readonly title: string;
-  /** §5's deadline, as {@link resolveDocumentDue} answered it — derived or stored. */
+  /** §5's optional deadline, normalized to a calendar date. */
   readonly due: string | null;
 };
 
@@ -100,7 +93,7 @@ export function isIdTaken(projection: ProjectionDb, id: string): boolean {
 
 /**
  * The ids of threads the projection records as claiming `<docId>#<anchorId>` —
- * §14's `anchor-unused` seam, the anchor-claim counterpart of {@link isIdTaken}.
+ * §11's `anchor-unused` seam, the anchor-claim counterpart of {@link isIdTaken}.
  *
  * Every thread counts, resolved ones included: resolving a thread keeps both its
  * `anchor` field and the parent's anchor entry (§6 removes the entry on
@@ -175,7 +168,7 @@ const asText = (value: unknown): string | null =>
  * The `anchors` map as the wire declares it, entry by entry. A single malformed
  * selector in a hand-edited file must not detach every other thread on the
  * document, so unreadable entries are dropped rather than failing the read —
- * `doc check` is what reports them (SPEC.md §14).
+ * `doc check` is what reports them (SPEC.md §11).
  */
 export function readAnchorsMap(value: unknown): Record<string, TextQuoteSelector> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
@@ -223,11 +216,9 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === "string") : [],
     status: row.status,
     anchors: readAnchorsMap(data["anchors"]),
-    // From the row, like `status` and for the same reason: for a type that
-    // derives its deadline the row is the answer and the file's line is a
-    // shadow of it, and for every other type the row holds exactly what this
-    // used to read off the file — normalized once, at projection time
-    // (`resolveDocumentDue`).
+    // From the row, like `status` and for the same reason: the row holds
+    // exactly what this would read off the file, normalized once at projection
+    // time, so a list row and a single-document read cannot answer differently.
     due: row.due,
     reviewed: reviewed === null ? null : normalizeInstant(reviewed),
     evergreen: data["evergreen"] === true,
@@ -236,8 +227,8 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     // because `origin` was a legal `extra` key before it was reserved and a
     // corpus that predates the field must stay readable.
     origin: originOrNull(data["origin"]),
-    // §11's view keys and §12's plugin keys, read by the same functions the
-    // projection uses for the list row (CONTRACT-011). Shared rather than
+    // §7's view keys, plus every frontmatter key the core does not define, read
+    // by the same functions the projection uses for the list row (CONTRACT-011). Shared rather than
     // restated for the reason the nullable timestamps above document: one file
     // read through two routes must not answer two different things.
     ...readViewFrontmatter(data),
@@ -272,7 +263,7 @@ type AnchorThreadRow = { readonly anchor_id: string; readonly id: string; readon
  * orphaned, visibly, with the selector intact.
  *
  * An anchor entry no thread claims is omitted rather than reported with a
- * fabricated thread id: `ResolvedAnchor` requires one. §14 already reports the
+ * fabricated thread id: `ResolvedAnchor` requires one. §11 already reports the
  * dangling entry as a hard `anchor-unused` failure.
  */
 export function resolveDocumentAnchors(

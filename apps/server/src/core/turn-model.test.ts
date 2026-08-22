@@ -20,7 +20,7 @@ import { parseThreadBody, appendTurn, deleteTurn } from "./turns.js";
  * reads back.
  *
  * Joining the map onto the parsed turns is SERVER-074's; until it lands every
- * turn this module produces names no model, which is §11's answer for a turn
+ * turn this module produces names no model, which is §10's answer for a turn
  * nobody recorded one for.
  */
 
@@ -222,7 +222,7 @@ describe("readTurnModels", () => {
 });
 
 describe("FileTurnModelsSchema", () => {
-  it("accepts a stringified `Date` key, so §14 does not report a file it can read", () => {
+  it("accepts a stringified `Date` key, so §11 does not report a file it can read", () => {
     const stringified = new Date(Date.parse(SECOND)).toString();
     expect(FileTurnModelsSchema.parse({ [stringified]: OPUS })).toEqual({ [SECOND]: OPUS });
   });
@@ -233,7 +233,7 @@ describe("FileTurnModelsSchema", () => {
     });
   });
 
-  it("refuses a key that names no instant, so §14 reports it", () => {
+  it("refuses a key that names no instant, so §11 reports it", () => {
     expect(FileTurnModelsSchema.safeParse({ yesterday: OPUS }).success).toBe(false);
   });
 

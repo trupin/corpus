@@ -103,7 +103,7 @@ describe("parseFormBlock", () => {
   });
 
   /**
-   * §11: a form the app cannot read renders as the broken block it is, **never**
+   * §10: a form the app cannot read renders as the broken block it is, **never**
    * as a partial set of controls. Each failure mode gets its own case, because
    * the tempting implementation fails differently for each: unparseable YAML
    * throws, a fourth kind falls through a `switch`, and an unknown key is
@@ -200,7 +200,7 @@ describe("parseFormBlock", () => {
      * The legacy `prompt` + `options` spelling fails on its own terms — it never
      * becomes a `fields` list to fail as — so the sentence names `options` and
      * not `fields.0.options`. A form offering nothing to choose is unanswerable,
-     * and §11 wants it visibly broken rather than rendered as an empty group.
+     * and §10 wants it visibly broken rather than rendered as an empty group.
      */
     it("rejects a legacy form offering no options, on the legacy key", () => {
       const reason = invalid(["```form", "prompt: pick", "options: []", "```"].join("\n"));

@@ -3,9 +3,9 @@ import { CheckReportSchema, CheckRequestSchema } from "../schemas/check.js";
 import { jsonContent, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./responses.js";
 
 /**
- * The validation surface behind `corpus doc check` (SPEC.md §14).
+ * The validation surface behind `corpus doc check` (SPEC.md §11).
  *
- * §14's requirement is not that a check exists but that there is **one** of
+ * §11's requirement is not that a check exists but that there is **one** of
  * them: "the same validator behind `corpus doc check` runs on every save".
  * Exposing it over HTTP is what makes that literally true rather than a claim
  * about two implementations that agree today — the server is the sole writer and
@@ -14,7 +14,7 @@ import { jsonContent, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./respo
  *
  * Read-only in the strictest sense: nothing is written, nothing is committed, no
  * acting party is declared (there is no author for a call that authors nothing),
- * and the response therefore carries no §14 commit `Warning` — only the
+ * and the response therefore carries no §11 commit `Warning` — only the
  * validator's own findings.
  */
 
@@ -22,10 +22,10 @@ export const checkDocuments = createRoute({
   method: "post",
   path: "/api/check",
   tags: ["check"],
-  summary: "Validate documents against the §14 rules",
+  summary: "Validate documents against the §11 rules",
   description:
     "Runs the corpus validator and reports what it found, separated into failures and warnings " +
-    "(SPEC.md §14). This is the same validator every server mutation runs before writing — hooks " +
+    "(SPEC.md §11). This is the same validator every server mutation runs before writing — hooks " +
     "and API share one implementation, which is the whole point of exposing it.\n\n" +
     "**Two request forms, exactly one per call.** `{ids}` names documents to read from the " +
     "workspace. `{documents: [{path, content}]}` supplies content that is not on disk — " +
@@ -38,10 +38,10 @@ export const checkDocuments = createRoute({
     "parents, anchor claims and `[[refs]]` are judged against the workspace, so checking one file " +
     "does not report every reference in it as unresolved merely because its target was not " +
     "submitted.\n\n" +
-    "**Severity is fixed by §14, not by the caller.** Warnings are exactly `anchor-unresolved` " +
+    "**Severity is fixed by §11, not by the caller.** Warnings are exactly `anchor-unresolved` " +
     "(a well-formed anchor whose quote no longer resolves — an orphaned thread, a normal outcome " +
     "of editing) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet — how a corpus " +
-    "grows). The other twelve codes are errors, `anchor-unused` among them: §14 requires every " +
+    "grows). The other twelve codes are errors, `anchor-unused` among them: §11 requires every " +
     "anchor to belong to an existing thread, so a highlight pointing at no conversation is " +
     "structural drift. `unterminated-fence` is one too — a fenced code block the body never " +
     "closes reads as code to the end of the document, so a thread's later turns disappear into " +

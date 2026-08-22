@@ -16,7 +16,7 @@ import { JobLog } from "./JobLog";
 export const NO_JOBS_MESSAGE = "No jobs yet — agent activity will stream here.";
 
 /**
- * The detail half of the master-detail (SPEC.md §11): a header naming the job,
+ * The detail half of the master-detail (SPEC.md §10): a header naming the job,
  * what it came from, what it is blocked on when it is deferred, the actions a
  * stalled job can take, and the live log below.
  *

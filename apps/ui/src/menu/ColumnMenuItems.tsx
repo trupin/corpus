@@ -3,7 +3,7 @@ import { MenuItems } from "./MenuItems";
 import type { MenuAction } from "./menuModel";
 
 /**
- * A column header's three acts (SPEC.md §11), each one an edit to the column's
+ * A column header's three acts (SPEC.md §10), each one an edit to the column's
  * own view document.
  *
  * **Unpin archives.** It is not a delete: SPEC.md §9.2 makes deletion user-only

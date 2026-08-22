@@ -18,7 +18,7 @@ Two unrelated bodies of work that happen to be ready at the same time.
 issues that touch the same plugin; it is a single storage change whose consequences were split so
 they could be verified separately. SHARED-005 is `done`, signed off by the user on 2026-07-30, and
 **every amendment is applied to `SPEC.md` on this branch** — §12's doc-type bullet (`SPEC.md:403`),
-§12's rendering bullet (`SPEC.md:404`), §15 M6 (`SPEC.md:460`), plus §7/§9.2's deferral rewords. So
+§12's rendering bullet (`SPEC.md:404`), §12 M6 (`SPEC.md:460`), plus §7/§9.2's deferral rewords. So
 the spec is ahead of the code in exactly the places this chain closes, and **`git diff SPEC.md` must
 be empty at the end of every session in this batch** (TEST-569). Anything §12 appears to be missing
 is an escalation, not an edit.
@@ -28,7 +28,7 @@ reviewer against the shipped product, two by a domain agent mid-verification. Th
 this branch and this machine. They are contracted individually and can land in any order.
 
 The one thing every issue in this batch shares: **it is fixing something the product currently
-claims and does not do.** §12 describes checkbox items in the body; they live in frontmatter. §11
+claims and does not do.** §12 describes checkbox items in the body; they live in frontmatter. §10
 promises the agent can widen a column; no CLI verb writes an `extra` key. §7 and a server 409 both
 tell the agent to "unarchive"; the verb does not exist. A plugin declares a `seedTemplate`; `init`
 never installs it. `POST /api/docs` commits documents nobody can ever read. That framing matters for
@@ -38,7 +38,7 @@ the evaluator: **the acceptance bar is the promise being kept, not the code bein
 
 ## The PLUGINS chain — the signed design, in one place
 
-Every agent on PLUGINS-005/006/007 reads this section, `SPEC.md` §12 + §15 M6 (as amended), and
+Every agent on PLUGINS-005/006/007 reads this section, `SPEC.md` §12 + §12 M6 (as amended), and
 `issues/plugins/003-item-level-commenting.md`'s **Technical Design** (Candidate 3, no-`View`
 variant) before writing a line. The design is long and it is load-bearing; the summary below exists
 to make the *staging* unambiguous, not to replace it.
@@ -112,7 +112,7 @@ Neither touches the other's files; `items.ts` is frozen after 005 lands (**Adjud
 Under body storage, **bodies do not ride list rows — only `excerpt` does.** The design records this
 for `TodosColumn` and proposes the aggregate-route + `(id, updated)` fingerprint fix, which is
 PLUGINS-007. It does **not** mention `TodoListItem`, which reads items from `itemsOrEmpty(row)` at
-`ui/TodoListItem.tsx:62` for exactly the same reason and breaks for exactly the same reason. §15 M6
+`ui/TodoListItem.tsx:62` for exactly the same reason and breaks for exactly the same reason. §12 M6
 as signed names "the todo list rows" as behavior that returns when the plugin is restored, so this
 is not a surface anyone may quietly drop.
 
@@ -471,7 +471,7 @@ TEST-493: The blast radius is `plugins/todos` and nothing else
 
 **Stage B, parallel with PLUGINS-007.** `plugins/todos/manifest.ts`, `plugins/todos/ui/TodoView.*`,
 and the batch's one new `apps/ui/e2e/` spec. Model: **opus**. Signed spec: `SPEC.md:404` (rendering
-and item comments) and `SPEC.md:460` (§15 M6), applied 2026-07-30. Ports: server `9182`, Vite `5290`
+and item comments) and `SPEC.md:460` (§12 M6), applied 2026-07-30. Ports: server `9182`, Vite `5290`
 — `CORPUS_SERVER_ORIGIN` exported and **proved** first.
 
 This is the issue where the design either pays off or is wrong, and it is deliberately tiny in code:
@@ -574,7 +574,7 @@ TEST-503: Whole-document commenting never stopped working
   floor and the behavior a user has today; the chain is not allowed to trade it for item comments
   even briefly.
 
-TEST-504: The §15 M6 drill matches its newly signed text
+TEST-504: The §12 M6 drill matches its newly signed text
   Given: `SPEC.md:460` as amended — delete `plugins/todos` → the app still boots and todo docs render
   as ordinary markdown **with working checkboxes**; the column shows a "plugin missing" card; restore
   → the DocPanel, the todo list rows and the Todos column return; **item-level commenting works
@@ -620,7 +620,7 @@ The problem in one line: **bodies do not ride list rows.** `extra` does, which i
 "the kit-only proof". Once items live in the body, list rows carry only `excerpt`, and that query
 returns nothing useful. **`TodoListItem.tsx:62` reads items exactly the same way and breaks for
 exactly the same reason** — the PLUGINS-003 design does not mention it, and **Adjudication 5**
-assigns it here, with the column, because it is one root cause with one fix. §15 M6 as signed names
+assigns it here, with the column, because it is one root cause with one fix. §12 M6 as signed names
 "the todo list rows" among the surfaces that return when the plugin is restored, so this is not a
 surface anyone may quietly drop.
 
@@ -721,7 +721,7 @@ TEST-516: The file split with PLUGINS-006 held
 ### CLI-012: declared plugin seed templates actually get installed
 
 **Stage D, independent.** `apps/cli/src/commands/init/`, `apps/cli/src/commands/workspace/upgrade.ts`,
-`apps/cli/src/template/`. Model: **opus**. Port `9186`. Spec: `SPEC.md` §10 (plugin assets), §11
+`apps/cli/src/template/`. Model: **opus**. Port `9186`. Spec: `SPEC.md` §10 (plugin assets), §10
 (template pre-fill).
 
 Found by PLUGINS-002: `plugins/todos/types.yaml:12` declares `seedTemplate: seeds/todo-template.md`
@@ -770,7 +770,7 @@ TEST-518: The installed template is byte-identical to the plugin's source
 TEST-519: `corpus doc create --type todo` uses it
   Given: The freshly initialized workspace
   When: `corpus doc create --type todo --title "Groceries"` is run
-  Then: The new document's body is pre-filled from the template, per §11's template pre-fill. The
+  Then: The new document's body is pre-filled from the template, per §10's template pre-fill. The
   created file is pasted. This is the issue's own acceptance criterion and the only end-to-end
   evidence that the install landed somewhere the system actually looks.
 
@@ -924,7 +924,7 @@ TEST-533: The server backstop still works and is not relied on for UX
   implementer who believes the CLI guard *is* the enforcement will be tempted to skip it "since the
   server checks anyway".
 
-TEST-534: The §11 promise is kept, in the agent's own vocabulary
+TEST-534: The §10 promise is kept, in the agent's own vocabulary
   Given: `SPEC.md:377` — "@agent make the finance column wider"
   When: The full path is walked: an agent, CLI-only, discovers the verb in `docs/cli.md`, finds the
   view document (`corpus doc list --type view`), and widens it
@@ -1083,7 +1083,7 @@ TEST-547: Blast radius, and no contract change
 ### SERVER-032: `needs=form` counts unanswered forms, not last speakers
 
 **Stage D, independent.** `apps/server/src/docs/needs.ts` (+ the projection if it needs a linkage)
-and colocated tests. Model: **opus**. Port `9192`. Spec: `SPEC.md` §6 (forms), §11 (Attention).
+and colocated tests. Model: **opus**. Port `9192`. Spec: `SPEC.md` §6 (forms), §10 (Attention).
 
 The Phase 4 evaluator's reproducible F-1 (`issues/evals/HARDENING-P4-eval.md`, 2026-07-29): a thread
 carrying **two** unanswered forms leaves `needs=form` as soon as **either** is answered, while the
@@ -1179,7 +1179,7 @@ TEST-555: If the projection grew, it still rebuilds clean
   Then: The log states which, and **if the projection schema changed**: `corpus db rebuild` followed
   by `corpus db doctor` is clean on a workspace built before the change, the rebuild reconstructs the
   new column from files alone, and no existing workspace needs manual repair. "`rebuild && doctor`
-  clean" is the standing invariant (`SPEC.md` §14) and a schema change that skips it is not done.
+  clean" is the standing invariant (`SPEC.md` §11) and a schema change that skips it is not done.
 
 TEST-556: Blast radius
   Given: `git status --porcelain`
@@ -1379,8 +1379,8 @@ TEST-572: No agent edited SPEC.md
   Given: `git diff SPEC.md` across all nine issues
   When: Inspected
   Then: **Empty.** Every spec sentence this batch implements was signed off and applied on
-  2026-07-30 (SHARED-005: §12 ×2, §15 M6, §7 ×5, §9.2 ×2); there is nothing left to add. Anything
-  §12 or §15 appears to be missing is an escalation to the orchestrator, routed to spec-writer with
+  2026-07-30 (SHARED-005: §12 ×2, §12 M6, §7 ×5, §9.2 ×2); there is nothing left to add. Anything
+  §12 or §12 appears to be missing is an escalation to the orchestrator, routed to spec-writer with
   user sign-off, never patched in passing.
 
 TEST-573: No workspace was scaffolded into the dev repo
@@ -1491,7 +1491,7 @@ TEST-580: The repo-wide gate passes at harvest
 ## Integration Points
 
 - **SHARED-005 → the whole PLUGINS chain.** The signed §12 doc-type bullet (`SPEC.md:403`), the
-  signed §12 rendering bullet (`:404`) and the signed §15 M6 clause (`:460`) are the text all three
+  signed §12 rendering bullet (`:404`) and the signed §12 M6 clause (`:460`) are the text all three
   issues implement, and the four closed design questions are its sign-off record.
   **Producer**: SHARED-005 (`done`). **Consumers**: PLUGINS-005, 006, 007.
 - **PLUGINS-005 → PLUGINS-006 and PLUGINS-007.** The body format is the interface: task-list lines in
@@ -1627,7 +1627,7 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
    spec (SHARED-005 A1(c)) — it is an implementation choice, not a product one.
 5. **`TodoListItem` belongs to PLUGINS-007**, with the column. It reads items off list rows
    (`TodoListItem.tsx:62`) for the same reason `TodosColumn` does and breaks for the same reason; the
-   PLUGINS-003 design does not mention it, and §15 M6 as signed names "the todo list rows" as
+   PLUGINS-003 design does not mention it, and §12 M6 as signed names "the todo list rows" as
    behavior that must return. One root cause, one fix, one fingerprint.
 6. **PLUGINS-006 and PLUGINS-007 have a hard file split.** 006: `manifest.ts`, `ui/TodoView.*`, the
    e2e spec. 007: `ui/TodosColumn.*`, `ui/TodoListItem.*`, `ui/queries.*`, `server/routes.ts`.

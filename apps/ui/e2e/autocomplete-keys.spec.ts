@@ -3,7 +3,7 @@ import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
- * UI-053: SPEC.md §11's one keyboard contract, in all three menus that answer
+ * UI-053: SPEC.md §10's one keyboard contract, in all three menus that answer
  * to it, in a real browser.
  *
  * A real browser is not optional here. The user's report is about `⇥`, and what

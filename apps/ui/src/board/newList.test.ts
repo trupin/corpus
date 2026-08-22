@@ -53,7 +53,7 @@ describe("folderChoices", () => {
 describe("the preset library", () => {
   it("never restates a column the seed workspace already ships", () => {
     // A picker that re-offered the seed columns would be the board's own column
-    // set written in TypeScript — the thing SPEC.md §11 forbids.
+    // set written in TypeScript — the thing SPEC.md §10 forbids.
     const text = JSON.stringify(PRESET_CHOICES);
     expect(text).not.toContain("Attention");
     expect(text).not.toContain("Open threads");
@@ -95,22 +95,6 @@ describe("columnRequest", () => {
       query: { folder: "finance" },
       evergreen: true,
     });
-  });
-
-  it("carries a plugin column reference when the choice has one", () => {
-    expect(
-      columnRequest(
-        {
-          key: "plugin:todos",
-          source: "plugin",
-          title: "Todos",
-          query: { type: "todo" },
-          column: "todos/board",
-          detail: "todos",
-        },
-        10,
-      ),
-    ).toMatchObject({ column: "todos/board", type: "view", pinned: true });
   });
 
   it("files new views where the seed workspace files its own", () => {

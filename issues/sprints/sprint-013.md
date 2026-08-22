@@ -27,7 +27,7 @@ the product of reading the shipped tree at `6e7e709` rather than the issue text.
   d.content)))` really is the body. But the write path calls that same function with **two injected
   seams** (`resolveAnchor`, `documentExists`) and a **leniency escape** for skill/agent-def
   frontmatter, and getting either wrong produces a validator that is not "the same implementation the
-  write path runs" (§14) — it produces one that reports every `[[ref]]` in the workspace as
+  write path runs" (§11) — it produces one that reports every `[[ref]]` in the workspace as
   unresolved, or that fails every hand-written `SKILL.md`. **Open Conflicts 2 and 3.** And the
   rollback half has **no API to build on at all**: `git grep` finds no `revert`, no `restore`, no
   ref-parameterised `git show` anywhere in `apps/server`. **Open Conflict 4.**
@@ -392,7 +392,7 @@ TEST-9: `ok` is derived, and is exactly `errors.length === 0`
   When: Comparing `ok` to `errors.length`
   Then: `ok === (errors.length === 0)` in both, **including** the case where `warnings` is non-empty and `errors` is empty → `ok: true`. Warnings never flip `ok`. (The server's own `CheckReport` has no `ok`; the handler adds it.)
 
-TEST-10: Warnings are exactly the two §14 carve-outs
+TEST-10: Warnings are exactly the two §11 carve-outs
   Given: A workspace with an orphaned anchor and a `[[ref]]` to a non-existent id
   When: `POST /api/check` over it
   Then: `warnings[].code` ⊆ `{anchor-unresolved, ref-unresolved}` and both appear; **neither** appears in `errors`. Every other emitted code appears only in `errors`.
@@ -494,7 +494,7 @@ TEST-28: The guard is load-bearing
 TEST-29: The warning split is guarded too
   Given: The same test file
   When: It runs
-  Then: It asserts the server's warning-emitting codes are exactly the contract's `CHECK_WARNING_CODES` (`anchor-unresolved`, `ref-unresolved`) — the severity split is §14's and is the half that a rename would silently invert.
+  Then: It asserts the server's warning-emitting codes are exactly the contract's `CHECK_WARNING_CODES` (`anchor-unresolved`, `ref-unresolved`) — the severity split is §11's and is the half that a rename would silently invert.
 
 **Scope and tests**
 
@@ -795,7 +795,7 @@ TEST-82: `README.md` exists and documents the operator loop
 TEST-83: `README.md` documents contributor setup
   Given: The same file
   When: Reading its Contributing section
-  Then: clone → `npm install` → **`npm run setup-hooks`** (the one-time step §15 makes a condition of v1) → `npm run build` → `npm test`, plus the per-phase-PR and squash-only merge policy. §15's definition of done names the README explicitly.
+  Then: clone → `npm install` → **`npm run setup-hooks`** (the one-time step §12 makes a condition of v1) → `npm run build` → `npm test`, plus the per-phase-PR and squash-only merge policy. §12's definition of done names the README explicitly.
 
 **The hook defect this issue walks into**
 
@@ -832,7 +832,7 @@ TEST-87: Errors exit 6
 TEST-88: Warnings do not fail
   Given: A document with an orphaned anchor and an unresolved `[[ref]]`, and no errors
   When: `corpus doc check <id>; echo $?`
-  Then: Exit **`0`**, with the warnings printed. §14 carves both out as normal states of a living corpus; failing on them would punish the operator for using the system as designed.
+  Then: Exit **`0`**, with the warnings printed. §11 carves both out as normal states of a living corpus; failing on them would punish the operator for using the system as designed.
 
 TEST-89: `--json` emits the server response unchanged
   Given: The drifted document
@@ -1452,7 +1452,7 @@ id for it; demanding §5's canonical block there would make archiving one imposs
 (§7, and TEST-92). If `/api/check` does not apply the same leniency, then in a freshly `corpus init`-ed
 workspace `corpus doc check` reports `frontmatter-invalid` for every skill, `ok: false`, exit 6 — and
 the workspace-side pre-commit hook that agent-runtime is about to build on exit 6 blocks every commit
-in every workspace. If it *does* apply the leniency, then §14's "`corpus doc check` exposes the same
+in every workspace. If it *does* apply the leniency, then §11's "`corpus doc check` exposes the same
 validator on demand over the whole workspace" is true in a slightly different sense than §7's "`corpus
 doc check` validates both sets [Claude Code's and Corpus's frontmatter]".
 
@@ -1468,7 +1468,7 @@ leniency; skills are checked structurally, not for §5's canonical block. (b) No
 **Recommendation: (a)**, with the leniency implemented in **one** named place shared by both call
 sites (a predicate, not a copied condition), and a test asserting a hand-written `SKILL.md` with only
 `name`/`description` yields `ok: true`. It preserves the "same validator" promise, keeps a fresh
-workspace committable, and matches the write path — which is the behaviour §14 actually names. If the
+workspace committable, and matches the write path — which is the behaviour §11 actually names. If the
 user prefers (b), AGENT-001's template must be re-verified and the workspace hook's exit-6 gate needs
 a carve-out, which is a bigger change than it looks.
 
@@ -1476,7 +1476,7 @@ a carve-out, which is a bigger change than it looks.
 
 The write path injects both `resolveAnchor` and `documentExists`. For `/api/check`:
 
-- **`resolveAnchor`** must be injected, or `anchor-unresolved` warnings are never produced and §14's
+- **`resolveAnchor`** must be injected, or `anchor-unresolved` warnings are never produced and §11's
   orphaned-thread reporting silently disappears from `corpus doc check`.
 - **`documentExists`** is subtler. `CheckOptions`' own docblock says *"`corpus doc check` hands the
   checker the whole workspace and needs none of this"* — because when the whole corpus is in the set,
@@ -1505,7 +1505,7 @@ timeout, and returns `null` on any failure. It is not parameterised by ref.
 
 **(ii) The response schema cannot describe a failed commit.** `SkillRollbackResultSchema.commit` is
 `z.string().regex(/^[0-9a-f]{7,64}$/)` — **required**. But `CommitOutcome` carries a sha only for
-`committed`/`amended`; `skipped` and `failed` carry none. §14 is explicit that a failing workspace git
+`committed`/`amended`; `skipped` and `failed` carry none. §11 is explicit that a failing workspace git
 hook must **not** roll back the file write — the mutation stands and the failure surfaces as a
 **warning on the API response**. `SkillRollbackResult` has a `warnings` field for exactly that
 (`commit_failed | commit_skipped`), so the intended path is `200` + warning — but then there is no
@@ -1521,7 +1521,7 @@ skills handler. (c) Add a general `git/restore.ts` module.
 SERVER-019, so it would need a CONTRACT rider issue. (y) Return the pre-existing `HEAD` sha when the
 commit was skipped/failed, with the warning explaining — satisfies the regex, but the field's own
 description says it is "the new HEAD", which would then be a lie. (z) Treat a failed commit as a 5xx
-— contradicts §14 ("the server never rolls back a file write because a commit failed") and the route
+— contradicts §11 ("the server never rolls back a file write because a commit failed") and the route
 declares no 500.
 
 **Recommendation: (i)(a) and (ii) a CONTRACT rider making `commit` nullable**, filed now and landed
@@ -1549,7 +1549,7 @@ written"* — so this is the check, done early. `@trupin/corpus` and `corpusd` r
 subject to scope ownership; `npm whoami` is unauthenticated here so scoped lookups are ambiguous).
 
 Every downstream artifact depends on the answer: the manifest's `name`, `publishConfig`, the release
-workflow's publish step, and **the README's install line**, which §15 makes a condition of v1.
+workflow's publish step, and **the README's install line**, which §12 makes a condition of v1.
 
 **Options**: (a) A scoped name under a user/org scope (`@trupin/corpus`, or a new org). The `bin` stays
 `corpus`, so the *operator's* experience is unchanged after install. (b) An unscoped alternative
@@ -1638,13 +1638,13 @@ commented exemption to the guard for that one import — keeping every other pro
 adding a positive assertion that the helper runs **only** read-only git subcommands. (b) Relax the
 guard's `\bgit\b` rule to a *state-changing*-git rule (an allowlist of `diff`/`show`/`rev-parse`),
 keeping the filesystem and child-process bans. (c) Give `doc check` its own topic (`corpus check`) so
-it is outside `WRITE_RESTRICTED_TOPICS` — but SPEC §14 names `corpus doc check` literally, and
+it is outside `WRITE_RESTRICTED_TOPICS` — but SPEC §11 names `corpus doc check` literally, and
 AGENT-002's shipped skill and the `CLI_COMMANDS_PENDING_CLI_006` allowlist both spell it `doc check`.
 (d) Have the CLI post file paths and let the **server** read the index — impossible: the staged
 content is not on disk, and the server is not in the user's git index.
 
 **Recommendation: (a).** It preserves every guarantee the guard was written to give, keeps the verb
-name §14 mandates, isolates the one dangerous capability in one reviewable file, and is testable in
+name §11 mandates, isolates the one dangerous capability in one reviewable file, and is testable in
 both directions (TEST-110/111). (c) contradicts the spec and three shipped artifacts. Whatever is
 chosen, the guard's comment must be **rewritten to state the new rule**, not quietly weakened — and
 the helper must set `maxBuffer` and `timeout`, which `runGit` does not.
@@ -1774,7 +1774,7 @@ default result set **excludes** `status: archived`"*, with `includeArchived=true
 
 So a literal reading of Adjudication 22 produces a "whole-workspace" check that silently skips every
 archived document — including everything under `.claude/skills-archived/`, which §7 makes a first-
-class indexed root. §14 says *"`corpus doc check` exposes the same validator on demand over the whole
+class indexed root. §11 says *"`corpus doc check` exposes the same validator on demand over the whole
 workspace"*, and a duplicate id between an archived document and a live one is exactly the kind of
 structural lie the checker exists to catch.
 
@@ -1782,7 +1782,7 @@ structural lie the checker exists to catch.
 workspace. (b) Default to non-archived with a `--all` flag. (c) Leave it as-is and document the
 limitation.
 
-**Recommendation: (a).** §14's word is "workspace", `duplicate-id` and `anchor-claimed-twice` are
+**Recommendation: (a).** §11's word is "workspace", `duplicate-id` and `anchor-claimed-twice` are
 cross-document rules that an archived document participates in, and a check that quietly skips a
 whole root is worse than no check. Confirm the pagination page size too: `MAX_PAGE_LIMIT` is 200, so
 the enumeration walks `limit=200` with `offset` until `offset + limit >= total`.
@@ -1857,7 +1857,7 @@ This sprint is complete when:
 - **Any user-observable behavior change carries its SPEC.md amendment**, drafted by spec-writer and
   held for user sign-off at the phase PR (SHARED-002). Candidates in this batch: §9.2's route list
   (CONTRACT-008's amendment is still pending from sprint-012 and SERVER-019 is what makes the routes
-  real), §2.1's install line if the package name changes (Open Conflict 5), and §14's wording if
+  real), §2.1's install line if the package name changes (Open Conflict 5), and §11's wording if
   Conflict 2 rules that `corpus doc check` is lenient for skill frontmatter.
 - **pr-reviewer verdict APPROVE** on the phase PR, with CRITICAL and MAJOR findings fixed or
   explicitly waived by the user.
@@ -1916,7 +1916,7 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
 
 8. **Conflict 4 → rider first, then SERVER-019.** (i) A contract rider (implemented by the
    contract-dev session ahead of CONTRACT-015, committed separately as `[CONTRACT-016]`) makes
-   `SkillRollbackResult.commit` `string | null` — `null` is §14's "commit failed, file write
+   `SkillRollbackResult.commit` `string | null` — `null` is §11's "commit failed, file write
    stands" value, with the rejected-hook warning in `warnings`. (ii) SERVER-019 builds the missing
    primitive in-domain: a ref-parameterised read (`git show <ref>:<path>` equivalent beside
    `readHeadVersion`), with the write going through `MutationPlan` → `runMutation` inside
@@ -1972,7 +1972,7 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
 
 18. **Conflict 15 → `includeArchived=true` on enumeration.** Whole-workspace `doc check`
     enumerates with `includeArchived=true` (and pagination) so archived docs — including
-    `.claude/skills-archived/` — are checked. §14's "whole workspace" means the whole workspace.
+    `.claude/skills-archived/` — are checked. §11's "whole workspace" means the whole workspace.
 
 ### Post-implementation rulings (orchestrator, 2026-07-28, harvest time)
 

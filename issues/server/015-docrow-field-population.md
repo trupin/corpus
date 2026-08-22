@@ -23,7 +23,7 @@ opus — mapping already-projected data into newly declared response fields; the
 
 ## Spec References
 
-- SPEC.md §11 — staleness ramp, thread-row affordances
+- SPEC.md §10 — staleness ramp, thread-row affordances
 - `issues/contract/005-board-contract-growth.md` — the field shapes (authoritative)
 - `issues/sprints/sprint-005.md` — Open Conflict 2 (why this issue exists: CONTRACT-005's DocRow growth reds merged SERVER-011)
 

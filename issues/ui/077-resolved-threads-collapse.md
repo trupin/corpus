@@ -26,12 +26,12 @@ opus
 
 - SPEC.md **§6**, the thread frontmatter table (the citation read `§5` until
   SHARED-018 corrected it): `status: open | resolved; a resolved thread is
-  collapsed by default wherever it is shown (§11)`
-- SPEC.md **§11**, Thread view — "Anything that can be shown can be collapsed,
+  collapsed by default wherever it is shown (§10)`
+- SPEC.md **§10**, Thread view — "Anything that can be shown can be collapsed,
   and it means the same thing everywhere" (rider signed 2026-08-05, SHARED-018):
   the collapsed line's contents, "every collapse expands again in place", the
   unread interlock, the precedence rules, browser-local per reader, no new key
-- SPEC.md **§11**, Document view — "Which placement a thread gets depends on the
+- SPEC.md **§10**, Document view — "Which placement a thread gets depends on the
   width; whether it can be collapsed does not"
 - SPEC.md §7, Read state — a collapsed conversation displays nothing and so
   reads nothing
@@ -88,7 +88,7 @@ standalone.
 ### The by-rule half (this issue as filed)
 
 - [x] A resolved thread renders collapsed by default in the document view, in
-      both the margin placement and the narrow-column placement §11 describes
+      both the margin placement and the narrow-column placement §10 describes
 - [x] Collapsed means *reachable*, not hidden: it can be expanded in place, and
       its existence is visible — a resolved conversation is part of the
       document's record, and silently removing it would be a different bug
@@ -96,7 +96,7 @@ standalone.
 - [x] An open thread is unaffected
 - [x] Resolving a thread while it is open on screen collapses it, and reopening
       expands it — the state follows the document, not a local toggle
-- [x] Operable from the keyboard, like every other affordance (§11 adds no
+- [x] Operable from the keyboard, like every other affordance (§10 adds no
       pointer-exclusive capability)
 - [x] A test that a document carrying both resolved and open threads shows the
       open one at full size and the resolved one collapsed
@@ -236,7 +236,7 @@ decides between them — focus mode's `[data-expand]`, asserted against a live
 unread interlock: opening a resolved-and-unread thread rendered its card, the
 `POST …/seen` round trip landed, the row came back `unread: false`, and the rule
 folded the conversation shut **while the reader was looking at it** — a direct
-violation of §11's "reading never collapses anything". Fixed by evaluating the
+violation of §10's "reading never collapses anything". Fixed by evaluating the
 rule against whether the conversation has held an unseen turn *since it was
 placed* (`ThreadPanel`'s `placedUnread`), which only ever re-arms and never
 disarms until the status changes. Re-verified green.
@@ -267,7 +267,7 @@ store as the server does.
 **A thread that *is* the open document does not get the by-rule collapse**
 (`ThreadPanel`'s `applyRule={false}`); it gets the on-demand fold like
 everything else, and a fold taken there still sticks. §6 says "wherever it is
-shown", but §11 also says the rule is applied "when a conversation is placed and
+shown", but §10 also says the rule is applied "when a conversation is placed and
 when its status changes, **never because you have just read it**", and its
 precedence is "the last thing that happened wins" — navigating to a thread is
 the reader's own act of opening it, and it is newer than the rule. Opening a
@@ -281,12 +281,12 @@ wants it the other literal way; it is one prop.
 the existing signed text, applied.
 
 **MAJOR — the judgment call above is overruled, and the exception is gone.**
-The reading was wrong on the merits: §11's precedence clause governs "collapsing
+The reading was wrong on the merits: §10's precedence clause governs "collapsing
 or expanding it **yourself**", an explicit gesture, while the rule applies "when
 a conversation is **placed**" — and opening a thread in a reader is a placement,
-which §11 enumerates by name ("a `type: thread` document open in a reader in a
+which §10 enumerates by name ("a `type: thread` document open in a reader in a
 column or in full screen"). §6 settles the rest in one line. The unarguable half
-was a live defect: §11 says "a change to the thread's status re-asserts the rule
+was a live defect: §10 says "a change to the thread's status re-asserts the rule
 … **so resolving a conversation collapses it even while it is open on screen**",
 and resolving a thread-as-document did nothing — `observe` dropped the override
 and `placedCollapsed` short-circuited on `ruled === false`. `ThreadCollapseSubject.ruled`,
@@ -300,7 +300,7 @@ query the reader that opened it already issued, so it shares that cache entry
 rather than adding a request); and, where there is no row to find, **whether
 this browser has displayed the conversation** (`hasSeenMark`, the kit's
 per-`(thread, last turn)` record of the `POST …/seen` it sent). Before it has
-been displayed that reads unread and §11's interlock holds it open; after, the
+been displayed that reads unread and §10's interlock holds it open; after, the
 rule takes over, which is what makes resolving a **standalone** thread on screen
 fold it. Two cases have no row and rely on the second source: a standalone
 thread (no parent to list) and a thread past the first page of a very busy
@@ -312,7 +312,7 @@ skipped a thread whose `row` was `undefined`. A document's anchors are not
 paginated and its thread rows are (`DEFAULT_PAGE_LIMIT = 50`), so past that page
 the conversation vanished from the margin **permanently** while its highlight
 stayed in the body, and clicking that highlight found nothing to scroll to —
-against §11's "the conversation is still reachable from it". Both now render
+against §10's "the conversation is still reachable from it". Both now render
 through `anchoredSummary`: the row when the list has it, the anchor until then
 (`summaryFromAnchor` — which thread, what passage, what status, and `unread:
 true` for the one thing an anchor cannot say, so the interlock places it
@@ -323,7 +323,7 @@ click. This also removes the transient version on every first paint.
 **MINOR — the interlock no longer defeats the depth clamp.** `placedCollapsed`
 returned `false` on `unread` *before* consulting `tooDeep`, so an unread
 conversation past `MAX_DRAWN_DEPTH` rendered a full card at a depth the surface
-has declared it cannot usefully draw. §11 binds the interlock to **the rule**
+has declared it cannot usefully draw. §10 binds the interlock to **the rule**
 ("never collapsed *by the rule*") and `threadDepth.ts` says depth is "not a
 second rule: it is what the surface can draw". Order reversed: the clamp first,
 then the rule with the interlock inside it. The clamped conversation still shows
@@ -390,7 +390,7 @@ ordinary case — an anchored or whole-document thread on a parent within one pa
 — and falls back to this session's seen record for a standalone thread or one
 past that page: such a conversation opens **expanded** on its first visit after
 a reload even when it was read long ago, then folds normally once displayed.
-That is the safe direction (§11 prefers an unnecessary card to a hidden turn),
+That is the safe direction (§10 prefers an unnecessary card to a hidden turn),
 but it is a derivation where a field would do. A `CONTRACT-*` issue adding
 `unread` to the thread resource would delete `openThreadUnread`'s second branch
 outright — flagged for the orchestrator, not fixed here.
@@ -443,7 +443,7 @@ eight. The tests naming `.t-collapse` failed on their closing
 `ThreadPanel.placedUnread` latches the placement inputs on its first render and
 only re-reads on a **status** change — deliberately, so that reading a
 conversation can never fold it. `summaryFromAnchor` answers `unread: true` for an
-anchored conversation whose row has not arrived — deliberately, so §11's
+anchored conversation whose row has not arrived — deliberately, so §10's
 interlock keeps it open rather than hiding a turn nobody has vouched for. Each is
 correct alone. Together:
 
@@ -485,7 +485,7 @@ The case PR #25 fixed is untouched, because it is *answered*, not pending: a
 thread past `DEFAULT_PAGE_LIMIT` still gets its panel from the anchor, expanded,
 with the interlock holding it open. What is withheld is only the beat before the
 list replies — and the **anchored highlight is in the body from the first paint
-regardless**, so §11's "the passage still says it has been discussed" never
+regardless**, so §10's "the passage still says it has been discussed" never
 lapses. On a normal load there is nothing to see: both queries are issued in the
 same tick and the body does not paint until the first returns.
 
@@ -573,13 +573,13 @@ each fix is verified in a real browser as well as in jsdom.
 
 `FocusMode.css`'s `.focus-inner.with-margin .doc-main .t-chip { display: none }`
 was written when `.t-chip` meant "the anchor's inline chip". Since this issue it
-is the **one collapsed representation a conversation has anywhere** (§11), and
+is the **one collapsed representation a conversation has anywhere** (§10), and
 `.doc-main` holds three placements the margin never takes over —
 `DetachedThreads`' whole-document threads, orphans, and anchors this view cannot
 point at, all rendered inside the body while the margin is up. Folded, by the
 rule or by hand, any of them became a `display: none` line with no card and no
 expander left on the surface; the fold is sticky in `localStorage` keyed `focus`,
-so a reload did not bring it back. §11 says the opposite twice: "collapsed is
+so a reload did not bring it back. §10 says the opposite twice: "collapsed is
 never hidden… the conversation stays in the document's record" and "every
 collapse expands again in place".
 
@@ -631,8 +631,8 @@ tri-state here, and the third value is named: `ThreadReadState = "read" | "unrea
 | "unknown"` (`threadCollapse.ts`). The rule asks for **knowledge** —
 `resolvedRuleCollapses` is `status === resolved && readState === "read"` — so
 `unknown` stands it down exactly as `unread` does. That is the direction the
-review preferred and the one §11 forces: a fold hides the turns (§7), so a
-surface that cannot vouch they have been read cannot make §11's promise about
+review preferred and the one §10 forces: a fold hides the turns (§7), so a
+surface that cannot vouch they have been read cannot make §10's promise about
 what the fold costs. The reader may still fold such a conversation by hand; the
 override binds the rule, not them.
 

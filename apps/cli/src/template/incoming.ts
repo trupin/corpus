@@ -1,14 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { resolvePluginsRoot, resolveTemplateRoot } from "../paths.js";
-import {
-  planPluginSeedInstall,
-  planPluginSkillInstall,
-  planTemplateInstall,
-  templateSeedNames,
-  templateSkillNames,
-} from "./install.js";
-import { pluginSourceMarker, sha256 } from "./manifest.js";
+import { resolveTemplateRoot } from "../paths.js";
+import { planTemplateInstall } from "./install.js";
+import { sha256 } from "./manifest.js";
 import type { IncomingFile } from "./plan.js";
 
 /**
@@ -25,49 +19,27 @@ import type { IncomingFile } from "./plan.js";
  */
 
 /**
- * The tool-side roots, named so tests can point them at a scratch tree.
- * Simulating "the operator ran `npm update`" means changing what the *tool*
- * carries, which is otherwise fixed by the installed package's own layout.
+ * The tool-side root, named so tests can point it at a scratch tree. Simulating
+ * "the operator ran `npm update`" means changing what the *tool* carries, which
+ * is otherwise fixed by the installed package's own layout.
  */
 export interface ToolRoots {
   readonly templateRoot?: string;
-  readonly pluginsRoot?: string | undefined;
 }
 
 /**
- * Every file the installed tool would put in a workspace today, hashed: the
- * bundled template, then the plugin skills, each carrying where it came from.
- * A plugin-sourced entry is refreshed from **its plugin**, not from the template
- * (sprint-012 Adjudication 11) — which falls out of building the source set the
- * same way `corpus init` does, rather than by special-casing the manifest marker.
+ * Every file the installed tool would put in a workspace today, hashed. A path
+ * the manifest knows and this set does not is `retired` by `planUpgrade` — the
+ * workspace keeps its copy and only the manifest entry is dropped — which is
+ * also how a file an older tool installed from a source this build no longer
+ * carries is left alone rather than deleted.
  */
 export function collectIncoming(roots: ToolRoots = {}): readonly IncomingFile[] {
   const templateRoot = roots.templateRoot ?? resolveTemplateRoot();
-  const installed = planTemplateInstall(templateRoot);
-
-  const files: IncomingFile[] = installed.map((file) => {
+  return planTemplateInstall(templateRoot).map((file) => {
     const from = join(templateRoot, ...file.from.split("/"));
     return { path: file.to, from, sha256: sha256(readFileSync(from)) };
   });
-
-  const pluginsRoot = "pluginsRoot" in roots ? roots.pluginsRoot : resolvePluginsRoot();
-  const pluginFiles = [
-    ...planPluginSkillInstall(pluginsRoot, templateSkillNames(installed)).files,
-    // Seed templates ride the same path as skills (CLI-012), which is what makes
-    // an installed plugin template refreshable from its plugin and protected by
-    // the same never-clobber compare — no special case anywhere.
-    ...planPluginSeedInstall(pluginsRoot, templateSeedNames(installed)).files,
-  ];
-  for (const file of pluginFiles) {
-    const from = join(pluginsRoot ?? "", ...file.from.split("/"));
-    files.push({
-      path: file.to,
-      from,
-      sha256: sha256(readFileSync(from)),
-      source: pluginSourceMarker(file.plugin),
-    });
-  }
-  return files;
 }
 
 /** A workspace-relative POSIX path as an absolute one on this platform. */

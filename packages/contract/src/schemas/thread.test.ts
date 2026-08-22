@@ -22,7 +22,7 @@ const turns = [
     author: "user",
     ts: "2026-07-19T10:05:00Z",
     body: "@agent is 6.1% still the right assumption?",
-    // A person's turn names no model (SPEC.md §11).
+    // A person's turn names no model (SPEC.md §10).
     model: null,
   },
   {
@@ -97,7 +97,7 @@ describe("ThreadSummary", () => {
   });
 
   /**
-   * The summary is a resource — every thread list row is one — so §14's warnings
+   * The summary is a resource — every thread list row is one — so §11's warnings
    * ride the mutation's own envelope instead. A warnings array on the row would
    * be empty on every read and would make "did this mutation warn?" unanswerable.
    */
@@ -197,7 +197,7 @@ describe("CreateThreadResponse", () => {
   /**
    * The case the field exists for: anchored creation writes the parent's
    * frontmatter, so a hook that refuses the commit leaves the parent uncommitted
-   * and the commenter has to be told (SPEC.md §14).
+   * and the commenter has to be told (SPEC.md §11).
    */
   it("carries a rejected auto-commit on an anchored creation", () => {
     const response = {
@@ -401,7 +401,7 @@ describe("DeleteTurnResult", () => {
  * a consumer is that the key is always there, so "no warnings" is an empty array
  * and never an absent field.
  */
-describe("§14 warnings travel on every thread mutation", () => {
+describe("§11 warnings travel on every thread mutation", () => {
   const shapes = [
     {
       name: "CreateThreadResponse",

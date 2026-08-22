@@ -217,7 +217,7 @@ are expected and pre-authorized:**
    (`DEFERRED → CONTRACT-006 / a follow-up SERVER issue`, Open Conflict 3). Nothing is
    implemented, nothing is stubbed; the deferral is recorded and the AC struck.
 3. **Thread warnings on the wire** — if the orchestrator defers Open Conflict 2 rather
-   than filing the CONTRACT-006 rider, SERVER-006 logs the §14 warning, records
+   than filing the CONTRACT-006 rider, SERVER-006 logs the §11 warning, records
    `DEFERRED → CONTRACT-006`, and TEST-73 asserts the log line instead of the field.
 4. **`corpus thread reply|resolve|reopen`** — CLI-003 is not in this batch. The
    integration block reaches thread endpoints over **HTTP** for those hops and says so
@@ -732,13 +732,13 @@ TEST-72: Enqueue goes through the one queue service, and wakes a parked long pol
          thread path used `server.queue.enqueue` (which notifies waiters) and not a
          file drop
 
-TEST-73: A hook that rejects the auto-commit surfaces per §14
+TEST-73: A hook that rejects the auto-commit surfaces per §11
   Given: A workspace whose `.git/hooks/pre-commit` exits non-zero
   When:  A thread is created
   Then:  The mutation STANDS on disk; the server logs a `commit_failed` warning; and the
          response carries it in a `warnings` array — OR, if Open Conflict 2 is deferred,
          the log line is the only evidence and the E2E log records `DEFERRED → CONTRACT-006`
-         with an explicit note that §14's response half is unmet for threads
+         with an explicit note that §11's response half is unmet for threads
 
 TEST-74: A workspace with no git stays fully usable
   Given: A workspace directory that is not a git repository
@@ -1345,7 +1345,7 @@ the **seam** (one call per verb, before any read or write, on the **parent's** i
 middleware, for consistency with every shipped write verb. If the middleware stays dead
 after this issue, say so.
 
-### 2. Thread mutation responses have nowhere to put §14's warnings
+### 2. Thread mutation responses have nowhere to put §11's warnings
 
 `warningsField` is shipped and spread into exactly three shapes, all documents:
 `DocMutationResponse`, `UpdateDocResponse`, `DeleteDocResult`. `CreateThreadResponse`
@@ -1363,7 +1363,7 @@ Add `warnings: warningsField` to those four response shapes. No routes, no reque
 no status codes — structurally the same additive change CONTRACT-005's rider already made
 and already proved safe against the inventory invariants. Reasons:
 
-- §14 is currently *selectively* true — document writes warn, thread writes cannot — and
+- §11 is currently *selectively* true — document writes warn, thread writes cannot — and
   both go through one pipeline. Deferring means revisiting every thread handler later.
 - **UI-008 (thread view) is the consumer and it is Phase 3.** The field has to exist before
   its consumer, not after.
@@ -1379,7 +1379,7 @@ prefers a one-purpose issue.
 
 **The coherent alternative** is to defer: SERVER-006 logs loudly, the mutation stands, the
 response keeps its declared shape, and the E2E log records `DEFERRED → CONTRACT-006` with
-an explicit note that §14's response half is unmet for threads. That keeps SERVER-006 free
+an explicit note that §11's response half is unmet for threads. That keeps SERVER-006 free
 of a contract dependency. **It must be decided either way, because TEST-73 is written from
 the adjudication and SERVER-006 cannot invent the field.**
 

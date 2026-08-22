@@ -2,10 +2,10 @@ import { z } from "@hono/zod-openapi";
 import { DocumentIdSchema } from "./id.js";
 
 /**
- * The wire form of the corpus validator (SPEC.md §14) — the shapes behind
+ * The wire form of the corpus validator (SPEC.md §11) — the shapes behind
  * `POST /api/check` and, through it, `corpus doc check`.
  *
- * §14's requirement is that "the same validator behind `corpus doc check` runs
+ * §11's requirement is that "the same validator behind `corpus doc check` runs
  * on every save": hooks and API share one implementation. That implementation
  * ships in `apps/server/src/core/check.ts`, and this module is deliberately a
  * transcription of its vocabulary rather than a second description of it:
@@ -23,7 +23,7 @@ import { DocumentIdSchema } from "./id.js";
  * validator, and a server that drifts from these codes fails its own tests
  * against the enum published here.
  *
- * **Not the §14 commit warning.** `CheckReport.warnings` is the validator's
+ * **Not the §11 commit warning.** `CheckReport.warnings` is the validator's
  * severity split — findings that do not fail the check. It is unrelated to
  * `Warning` (`./warning.ts`), which reports an auto-commit that a workspace git
  * hook rejected. `/api/check` writes nothing and produces no commit, so it can
@@ -54,12 +54,12 @@ export const CHECK_CODES = [
 ] as const;
 
 /**
- * Exactly the two states §14 carves out as warnings: an anchor that is
+ * Exactly the two states §11 carves out as warnings: an anchor that is
  * well-formed but no longer resolves (an orphaned thread — a normal outcome of
  * editing, §6), and a `[[ref]]` whose target does not exist *yet* (how a corpus
  * grows, §5). Every other code is an error.
  *
- * `anchor-unused` is deliberately **not** here: §14 lists "every anchor belongs
+ * `anchor-unused` is deliberately **not** here: §11 lists "every anchor belongs
  * to an existing thread" among the rules a mutation must satisfy, so a highlight
  * pointing at no conversation is structural drift, not an evolving-corpus state.
  * Nor is `unterminated-fence`: an unclosed fence swallows everything after it,
@@ -82,7 +82,7 @@ export const CHECK_SEVERITIES = ["error", "warning"] as const;
 
 export const CheckCodeSchema = z.enum(CHECK_CODES).openapi({
   description:
-    "Which §14 rule the finding reports. Warnings are exactly `anchor-unresolved` (an orphaned " +
+    "Which §11 rule the finding reports. Warnings are exactly `anchor-unresolved` (an orphaned " +
     "thread) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet); the other twelve " +
     "are errors, `anchor-unused` and `unterminated-fence` among them.",
   example: "ref-unresolved",
@@ -130,7 +130,7 @@ export const CheckReportSchema = z
     warnings: z
       .array(CheckFindingSchema)
       .describe(
-        "Findings that do not fail the check: orphaned anchors and unresolved `[[refs]]` (§14). " +
+        "Findings that do not fail the check: orphaned anchors and unresolved `[[refs]]` (§11). " +
           "Unrelated to the `Warning` shape mutation responses carry for a rejected auto-commit — " +
           "this route writes nothing and can produce none.",
       ),

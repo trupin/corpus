@@ -1,6 +1,6 @@
 // The collection query's CONTRACT-011 surface: the `pinned` filter, the `order`
 // sort and its tiebreak, the view keys and `extra` on every row, and the
-// `parentTitle` live join (SPEC.md §11, §12).
+// `parentTitle` live join (SPEC.md §10).
 //
 // Seeded from real files through the real projector, like every other query
 // suite — and the board's own case is seeded from the **shipped** seed views in
@@ -60,13 +60,14 @@ beforeAll(() => {
     title: "Unordered",
     frontmatter: { pinned: true, query: { tag: "finance" } },
   });
-  // A pinned *plugin* column, and an unpinned view that must stay out of the set.
+  // A pinned view carrying the `column:` key a pre-SHARED-066 workspace wrote,
+  // and an unpinned view that must stay out of the set.
   ws.doc({
-    id: "doc_pluginview",
+    id: "doc_columnview",
     path: "data/docs/views/board.md",
     type: "view",
-    title: "Todos board",
-    frontmatter: { pinned: true, order: 9, column: "todos/board", query: { type: "todo" } },
+    title: "Errands board",
+    frontmatter: { pinned: true, order: 9, column: "board/kanban", query: { type: "todo" } },
   });
   ws.doc({
     id: "doc_draftview",
@@ -76,10 +77,12 @@ beforeAll(() => {
     frontmatter: { query: { folder: "inbox" } },
   });
 
-  // §12's plugin document: `items` is a top-level YAML key beside the core ones.
+  // A document whose `type` this build has never heard of (§5's open string,
+  // §12's M6 — the open type), carrying `items` as a top-level YAML key beside
+  // the core ones.
   ws.doc({
-    id: "doc_todolist",
-    path: "data/docs/inbox/todos.md",
+    id: "doc_errandlist",
+    path: "data/docs/inbox/errands.md",
     type: "todo",
     title: "Groceries",
     frontmatter: { items: [{ text: "Milk", done: false, ts: "2026-07-27T09:00:00Z" }] },
@@ -104,7 +107,7 @@ describe("the `pinned` filter", () => {
     const pinned = run({ pinned: "true" });
     expect(pinned.items.every((item) => item.pinned)).toBe(true);
     expect(pinned.items.map((item) => item.id).sort()).toEqual([
-      "doc_pluginview",
+      "doc_columnview",
       "doc_seedattention",
       "doc_seedinbox",
       "doc_seedopenthreads",
@@ -115,7 +118,7 @@ describe("the `pinned` filter", () => {
     const rest = run({ pinned: "false" });
     expect(rest.items.every((item) => !item.pinned)).toBe(true);
     expect(rest.items.map((item) => item.id)).toContain("doc_draftview");
-    expect(rest.items.map((item) => item.id)).toContain("doc_todolist");
+    expect(rest.items.map((item) => item.id)).toContain("doc_errandlist");
   });
 
   it("is not thread-only: a thread with no `pinned` key is simply unpinned", () => {
@@ -137,7 +140,7 @@ describe("the board's one bounded query", () => {
       "Aaa tied",
       "Inbox",
       "Open threads",
-      "Todos board",
+      "Errands board",
       "Unordered",
     ]);
     expect(
@@ -147,17 +150,19 @@ describe("the board's one bounded query", () => {
       { id: "doc_tiedview", order: 2, query: { folder: "finance" } },
       { id: "doc_seedinbox", order: 2, query: { folder: "inbox" } },
       { id: "doc_seedopenthreads", order: 3, query: { type: "thread", status: "open" } },
-      { id: "doc_pluginview", order: 9, query: { type: "todo" } },
+      { id: "doc_columnview", order: 9, query: { type: "todo" } },
       { id: "doc_unordered", order: null, query: { tag: "finance" } },
     ]);
-    // No follow-up read is needed for anything the board renders.
-    expect(board.items.map((item) => item.column)).toEqual([
-      null,
-      null,
-      null,
-      null,
-      "todos/board",
-      null,
+    // No follow-up read is needed for anything the board renders. A stale
+    // `column:` is not a board key any more (SHARED-066) — it rides in `extra`,
+    // and the view still holds its place and its query.
+    expect(board.items.map((item) => item.extra)).toEqual([
+      {},
+      {},
+      {},
+      {},
+      { column: "board/kanban" },
+      {},
     ]);
   });
 
@@ -176,9 +181,9 @@ describe("the board's one bounded query", () => {
 });
 
 describe("the view keys and `extra` on a row", () => {
-  it("carries a plugin document's own frontmatter keys, flat", () => {
+  it("carries a document's own extra frontmatter keys, flat", () => {
     const row = run({ type: "todo" }).items[0];
-    expect(row?.id).toBe("doc_todolist");
+    expect(row?.id).toBe("doc_errandlist");
     expect(row?.extra).toEqual({
       items: [{ text: "Milk", done: false, ts: "2026-07-27T09:00:00Z" }],
     });
@@ -186,7 +191,7 @@ describe("the view keys and `extra` on a row", () => {
 
   it("is `{}` and the documented defaults on a document with only core keys", () => {
     const row = run({ q: "escrow" }).items.find((item) => item.id === "doc_parent");
-    expect(row).toMatchObject({ pinned: false, order: null, query: null, column: null, extra: {} });
+    expect(row).toMatchObject({ pinned: false, order: null, query: null, extra: {} });
   });
 });
 

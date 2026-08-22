@@ -10,7 +10,7 @@ import { MenuItems } from "./MenuItems";
 import type { MenuAction } from "./menuModel";
 
 /**
- * The menu frame's own contract (SPEC.md §11): *"`esc` dismisses, arrows
+ * The menu frame's own contract (SPEC.md §10): *"`esc` dismisses, arrows
  * navigate, `↵` activates"*, an outside click closes, and focus returns to
  * whatever opened it.
  *
@@ -223,7 +223,7 @@ describe("the context menu frame", () => {
   });
 
   /**
-   * SPEC.md §11's "`↵` activates", and UI-028's regression.
+   * SPEC.md §10's "`↵` activates", and UI-028's regression.
    *
    * The frame does not implement `↵` — a focused `<button>` activates on it
    * through its default action. What broke it was the board's own `↵` binding

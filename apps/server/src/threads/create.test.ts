@@ -147,7 +147,7 @@ describe("POST /api/threads — anchored creation", () => {
     expect(doc.anchors).toContainEqual(
       expect.objectContaining({ anchorId: created.anchorId, orphaned: true, range: null }),
     );
-    // …and the save said so, rather than letting it pass silently (§14).
+    // …and the save said so, rather than letting it pass silently (§11).
     expect(created.warnings.map((warning) => warning.code)).toContain("orphaned_anchor");
   });
 

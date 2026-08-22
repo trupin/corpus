@@ -24,8 +24,8 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
-- SPEC.md **§11** — the console strip, where all agent and system status lives
+- SPEC.md **§10** — *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
+- SPEC.md **§10** — the console strip, where all agent and system status lives
 
 ## Summary
 

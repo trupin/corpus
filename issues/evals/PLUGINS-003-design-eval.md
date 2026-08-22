@@ -62,7 +62,7 @@ Checking the design's claims against the spec as it now reads:
 | Gap B vanishes: the plugin stops registering a `View` | §12: "todo documents render in the **core document view**… The plugin registers no custom document renderer." | ✓ |
 | Open question 2 (toggling a box) | §12: "In the UI, toggling a box is an ordinary body edit saved like any other; the plugin's routes remain the item-level write path for the CLI and the agent, and the plugin remains the format owner behind them." | ✓ — exactly the restatement the design asked to have confirmed |
 | §12's `[TBD: PLUGINS-003]` retired | `grep "TBD: PLUGINS-003" SPEC.md` → **no matches** | ✓ |
-| Templates start working for todos | §12: "its type's template can ship starter items in its body like any template pre-fill (§11)" | ✓ |
+| Templates start working for todos | §12: "its type's template can ship starter items in its body like any template pre-fill (§10)" | ✓ |
 
 Every one of the design's open questions 1–3 has been answered in the signed spec, in the
 direction the design recommended. There is no daylight between the recorded design and the

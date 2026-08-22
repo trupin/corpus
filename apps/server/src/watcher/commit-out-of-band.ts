@@ -157,7 +157,7 @@ export interface OutOfBandCommitterOptions {
  *
  * Sequential and awaited: `AutoCommitter.commit` serializes on the git lock
  * anyway, and folding depends on each call seeing the window the previous one
- * left. Never throws — §14 already rules that a mutation stands when its commit
+ * left. Never throws — §11 already rules that a mutation stands when its commit
  * does not, and `AutoCommitter` logs a refusal itself.
  */
 export function createOutOfBandCommitter(

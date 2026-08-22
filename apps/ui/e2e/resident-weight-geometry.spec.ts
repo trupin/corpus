@@ -4,7 +4,7 @@ import { stubCorpus, type StubOptions, type StubRow } from "./stubCorpus";
 
 /**
  * UI-131 in a real browser: **a label that arrives late must not reflow the row
- * it lands in** (SPEC.md §11's rider, signed 2026-08-20 — "Nothing resizes
+ * it lands in** (SPEC.md §10's rider, signed 2026-08-20 — "Nothing resizes
  * because of what it holds", and "a value that arrives later than the box
  * holding it" is named in it).
  *

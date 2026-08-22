@@ -261,7 +261,7 @@ describe("release:prepare", () => {
           name: "scratch-root",
           private: true,
           version: "0.1.0",
-          workspaces: ["apps/*", "packages/*", "plugins/**"],
+          workspaces: ["apps/*", "packages/*", "tools/**"],
         },
         null,
         2,
@@ -272,7 +272,7 @@ describe("release:prepare", () => {
 
     const run = prepare("0.2.0");
     expect(run.status).toBe(1);
-    expect(run.stderr).toContain("plugins/**");
+    expect(run.stderr).toContain("tools/**");
     expect(run.stderr).toContain("neither staged nor version-checked");
     expect(git("status", "--porcelain", "--untracked-files=no")).toBe("");
     expect(versionOf("package.json")).toBe("0.1.0");

@@ -22,7 +22,6 @@ import {
   populateFromFiles,
   type ProjectionDb,
 } from "../projection/index.js";
-import type { DerivedFieldsRegistry } from "../plugins/derived-fields.js";
 import { documentKey } from "./key.js";
 
 export const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
@@ -78,12 +77,6 @@ export interface WriteWorkspaceOptions {
    * no other fixture has to know the window exists.
    */
   readonly editAckIdleMs?: number | undefined;
-  /**
-   * §12's derived fields (SERVER-085, SERVER-134), as plugin discovery would
-   * have found them. Omitted, the workspace has no plugins at all — which is
-   * what every other suite wants, and is also §15 M6's subtractive state.
-   */
-  readonly derivedFields?: DerivedFieldsRegistry | undefined;
 }
 
 const serverConfig = (
@@ -153,10 +146,7 @@ export function createWriteWorkspace(
     options.attachments ?? DEFAULT_ATTACHMENT_LIMITS,
     options.editAckIdleMs,
   );
-  const db = openProjection(config, {
-    populate: false,
-    ...(options.derivedFields === undefined ? {} : { derivedFields: options.derivedFields }),
-  });
+  const db = openProjection(config, { populate: false });
 
   const state = { clock: FIXTURE_NOW };
   const server = createServer(config, {
@@ -284,7 +274,7 @@ export async function putDoc(
 
 /**
  * `POST /api/docs`, returning the created document, failing loudly on anything
- * else. The response is §14's mutation envelope — `{ doc, warnings }` — so the
+ * else. The response is §11's mutation envelope — `{ doc, warnings }` — so the
  * document is unwrapped here and `warnings` handed back beside it for the tests
  * that assert on it.
  */

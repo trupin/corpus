@@ -30,7 +30,7 @@ export function createJobLookup(store: QueueStore, projection: ProjectionDb): Jo
         const found = store.readEventSync(status, job);
         if (found === undefined) continue;
         // A file that exists but does not parse is not a job anyone can serve.
-        // Treated as unknown rather than thrown: a corrupt event is §14's
+        // Treated as unknown rather than thrown: a corrupt event is §11's
         // problem, and a write should not fail because of one.
         if (!found.ok) return { ok: false, reason: "unknown" };
         // Settled work cannot acquire a scope: `processed`, `failed` and

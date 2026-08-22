@@ -405,7 +405,7 @@ Drift detection is a three-layer stat-then-hash: rows keyed by path; a `file_has
 short-circuit that skips reading the file entirely (`doctor.ts:115-140`); SHA-1 re-read only on
 mismatch (`doctor.ts:142-163`, `hashContent` at `project-document.ts:432`).
 
-**Therefore, per §14's signed rule**: pending-only is **not** drift and must not produce a `warnings`
+**Therefore, per §11's signed rule**: pending-only is **not** drift and must not produce a `warnings`
 entry either if it would confuse the operator — it is `corpus index status`'s business. Chunk drift
 (a chunk row whose recorded doc/heading-path/content no longer matches the files) and mixed identity
 are drift and must move `ok`. Which drift kind they reuse — or whether they need a new one and hence
@@ -1088,7 +1088,7 @@ TEST-900: `db rebuild` keeps the identity and queues re-indexing
 TEST-901: The §2.2 invariant — `rebuild && doctor` clean while indexing is in flight
   Given: a workspace with a large pending backlog and a deliberately slow provider
   When: `corpus db rebuild && corpus db doctor` runs
-  Then: doctor is **clean, exit 0**, immediately, with `pending > 0`. This is SPEC.md §14's signed
+  Then: doctor is **clean, exit 0**, immediately, with `pending > 0`. This is SPEC.md §11's signed
   rule ("treats pending asynchronous indexing as staleness, not drift, so `rebuild && doctor`
   remains immediately achievable") and it is the single most important test in this issue.
 
@@ -1329,7 +1329,7 @@ TEST-939: Coverage holds without a new exemption
 
 TEST-940: The generated artifacts drift checks are green
   Then: `openapi.json` regenerates with no diff, and `docs/cli.md` regenerates with no diff. Both are
-  §14 obligations and both are touched by this batch.
+  §11 obligations and both are touched by this batch.
 
 TEST-941: Every issue's E2E log states its model and its deferrals
   Then: each of the eight issue files carries `implemented on: opus | fable`, and every `STRUCK` or
@@ -1599,7 +1599,7 @@ This sprint is complete when:
   `similar` by `corpus doc related`, from the real bin, with the provider named. This is the only
   test that proves the sprint delivered a feature rather than a schema
 - **TEST-901 and TEST-931 pass** — `corpus db rebuild && corpus db doctor` is clean, exit 0, with
-  `pending > 0`. SPEC.md §14's signed drift-vs-staleness rule is the one thing in this sprint that a
+  `pending > 0`. SPEC.md §11's signed drift-vs-staleness rule is the one thing in this sprint that a
   plausible-looking implementation gets wrong by accident
 - **TEST-855, TEST-856, TEST-857 and TEST-858 pass** — kill mid-batch, clean shutdown ordering,
   cancellation across awaits, and survival of `db rebuild`'s rename. These four are the concurrency

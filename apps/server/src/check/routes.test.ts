@@ -427,7 +427,7 @@ describe("`ok` and the severity split", () => {
     expect(drifted.report.ok).toBe(false);
   });
 
-  it("keeps both §14 carve-outs in `warnings` and out of `errors`", async () => {
+  it("keeps both §11 carve-outs in `warnings` and out of `errors`", async () => {
     const created = await createDoc(ws, {
       type: "note",
       title: "Both",

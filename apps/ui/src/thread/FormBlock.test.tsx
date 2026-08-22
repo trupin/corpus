@@ -140,7 +140,7 @@ describe("a form in an agent turn", () => {
     const missing = container.querySelector(".form-missing");
     expect(missing?.textContent).toContain("Which quote should I file?");
     expect(missing?.textContent).toContain("Which riders do you want?");
-    // The submit points at the message rather than failing silently (§11).
+    // The submit points at the message rather than failing silently (§10).
     expect(submitButton(container).getAttribute("aria-describedby")).toBe(missing?.id);
 
     fireEvent.click(
@@ -208,7 +208,7 @@ describe("a form in an agent turn", () => {
   });
 
   /**
-   * §11: "everything is reachable from the keyboard: no answer is available only
+   * §10: "everything is reachable from the keyboard: no answer is available only
    * to a pointer". Asserted rather than assumed — the mockup's `hidden` radios
    * would pass every click test above and be unreachable by tab.
    */
@@ -408,7 +408,7 @@ describe("an optional choose-one can be returned to blank", () => {
 
   /**
    * A member of the group, not a button beside it: that is what puts it under
-   * the same arrow keys as every other option (SPEC.md §11 — no answer is
+   * the same arrow keys as every other option (SPEC.md §10 — no answer is
    * available only to a pointer).
    */
   it("is a member of the same radio group as the options", async () => {
@@ -496,7 +496,7 @@ describe("an answered form is a record", () => {
     expect(record?.textContent).toContain("cheapest one");
 
     // There is no way to submit a second answer: the controls are gone, not
-    // disabled (SPEC.md §11).
+    // disabled (SPEC.md §10).
     expect(container.querySelector(".form-submit")).toBeNull();
     expect(container.querySelectorAll(".form-opt")).toHaveLength(0);
     expect(container.querySelector(".form-comment textarea")).toBeNull();
@@ -536,7 +536,7 @@ describe("an answered form is a record", () => {
    * A form answered by another column or another browser between render and
    * submit. `409` says the *state* refused a well-formed request, and a message
    * reading like a validation failure would send someone hunting for a bad
-   * option (SPEC.md §6, §11).
+   * option (SPEC.md §6, §10).
    */
   it("reports a refused re-answer as already answered, not as an error to retry", async () => {
     const notify = vi.fn();
@@ -605,7 +605,7 @@ describe("an answered form is a record", () => {
  * PR #28 re-review, MAJOR. An answer whose own text would make the record
  * unreadable is refused by the server; `**Note:**` on its own line is ordinary
  * markdown in a documents app, and AGENT-017 pushes the agent toward `write`
- * fields, so this is a mainline typo rather than an exotic one. §11's posture
+ * fields, so this is a mainline typo rather than an exotic one. §10's posture
  * for a form that cannot be submitted is that the form says which question is
  * the problem — not that the attempt fails and a toast explains it afterwards.
  */
@@ -697,7 +697,7 @@ describe("an answer that would not read back is refused in the form", () => {
 });
 
 /**
- * §11: a form the app cannot read renders as the visibly broken code block it
+ * §10: a form the app cannot read renders as the visibly broken code block it
  * is — **never as a partial set of controls**. One case per failure mode: the
  * tempting implementation renders the fields it understood and drops the one it
  * did not, which shows a person three of four questions as though they were the

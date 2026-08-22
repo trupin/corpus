@@ -1,7 +1,7 @@
 import type { DocRow } from "@corpus/contract";
 
 /**
- * What a *thread* row shows that a document row does not (SPEC.md §11 —
+ * What a *thread* row shows that a document row does not (SPEC.md §10 —
  * type-aware rows): the anchor quote it hangs off, the attributed last turn, and
  * an honest context line.
  *

@@ -72,7 +72,6 @@ const frontmatter = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 
@@ -222,7 +221,7 @@ describe("an edit that names the text it changes", () => {
   });
 
   /** A patch is an ordinary write once applied: §6's report rides on it like any save. */
-  it("reports anchor reconciliation and §14 warnings, like every other write", async () => {
+  it("reports anchor reconciliation and §11 warnings, like every other write", async () => {
     const body = await applied(
       await patch("doc_a1b2c3", { old: "Rate:  4.25%", new: "Rate:  3.90%" }),
     );
@@ -510,7 +509,7 @@ describe("the published operation", () => {
     "without overlap",
     "no key",
     "no-op",
-    "§14",
+    "§11",
     "§6",
     "§4",
   ])("says %s in its own description", (phrase) => {

@@ -12,8 +12,8 @@
 // down, where it is harder to see. So a missing key on a keyed write is refused
 // exactly as a stale one is: `packages/contract`'s `.refine()` answers it before
 // any handler runs, and {@link assertDocumentKey} answers it again for the
-// callers that never cross the HTTP boundary (the plugin context's `updateDoc`
-// and `mutateDoc`, and any future in-process verb).
+// callers that never cross the HTTP boundary (`docs/patch.ts`, and any future
+// in-process verb that replaces a body without going through a route).
 //
 // The derivation is CONTRACT-049's, recorded at `packages/contract/src/schemas/
 // key.ts` with the five constraints it was measured against and everything that

@@ -15,7 +15,7 @@ import { CommentsTab } from "./CommentsTab";
 import { ALL_COMMENTS, type CommentFilters } from "./commentsModel";
 
 /**
- * The Comments tab as a surface (SPEC.md §11's rider, signed 2026-08-04).
+ * The Comments tab as a surface (SPEC.md §10's rider, signed 2026-08-04).
  *
  * The model's own arithmetic is pinned in `commentsModel.test.ts`; what is here
  * is what only a mounted tab can answer — that a row reaches the reveal seam,
@@ -240,7 +240,7 @@ describe("what a row leads to", () => {
   });
 
   /**
-   * SPEC.md §11: "every thread in the list can be replied to in place". It is
+   * SPEC.md §10: "every thread in the list can be replied to in place". It is
    * the panel's own reply box rather than a second one — the assertion is that
    * the list reaches it, and that a reply goes to *that* thread.
    */
@@ -301,12 +301,12 @@ describe("the composer at the foot", () => {
       expect(transport.of("POST", "/api/threads")).toHaveLength(2);
     });
     // Two creations, no turn appended to the first: topics stay separately
-    // resolvable (SPEC.md §11, rider signed 2026-08-04).
+    // resolvable (SPEC.md §10, rider signed 2026-08-04).
     expect(transport.of("POST").filter((call) => call.path.endsWith("/turns"))).toHaveLength(0);
   });
 
   /**
-   * The signed key contract (SPEC.md §11, SHARED-009 Amendment 1): `↵` is a
+   * The signed key contract (SPEC.md §10, SHARED-009 Amendment 1): `↵` is a
    * newline, `⌘↵` sends. It comes from the kit's `handleComposerKeyDown`, and
    * this is what would catch a sixth composer hand-rolling it.
    */

@@ -1,23 +1,20 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-037's reveal seam, in a real browser.
  *
- * **How the payload is driven, and why.** When this spec was written the seam
- * had no producer, so nothing shipped passed a reveal to `onOpen`; the first
- * two describes below seed the instruction directly, and the last one — added
- * by PLUGINS-010 — clicks a todo item in the real plugin column and lets the
- * plugin build the payload. Both halves are worth keeping: the seeded ones pin
- * the reader against an instruction no producer has to be able to make, and the
- * clicked ones pin that a producer makes one the reader understands.
+ * **How the payload is driven, and why.** The instruction is seeded directly,
+ * at exactly one place: the column's navigation entry. A board that restores an
+ * entry carrying a reveal enters the reader at the same hop, through the same
+ * parse, the same reader and the same flash as any open that names a place
+ * inside a document.
  *
- * The seeded path is entered at exactly one place: the column's navigation
- * entry. A board that restores an entry carrying a reveal is the *same* open a
- * plugin makes, at the same hop, through the same parse, the same reader and
- * the same flash; the only difference is which side of a page load the
- * instruction was written on.
+ * **Nothing shipped produces a `kind: "item"` reveal**, so there is no producer
+ * half to drive — a thread reveal, which the comments list does produce, is
+ * covered by `comments-tab.spec.ts`. What is pinned here is the **reader's**
+ * half: an instruction the reader must honour whoever writes it.
  *
  * Per sprint-016 Adjudication 19 this is **half** the evidence:
  * `playwright.config.ts` starts no workspace server, so the disk, git and
@@ -126,7 +123,7 @@ async function openWithReveal(page: Page, reveal: Reveal | null): Promise<void> 
  * The gap between the flash box and the rendered line at `at`, measured in the
  * **same frame**, once that line has stopped moving.
  *
- * Both halves matter, and PLUGINS-010's drill is why. A cold open — which is
+ * Both halves matter, and a real-app drill (PLUGINS-010) is why. A cold open — which is
  * every open from a column, since the reader replaces the list — fires the
  * reveal against a layout that is still settling: on the next frame the chips
  * row un-wraps and the editor re-flows, moving the body up by ~50 px. Measuring
@@ -213,8 +210,8 @@ test.describe("an open that names an item", () => {
   });
 
   /**
-   * The defect PLUGINS-010's drill found, on the seeded path (it reproduces
-   * with no plugin anywhere: `flashY: 450` against a target line at `527`).
+   * The defect a real-app drill found (PLUGINS-010), on the seeded path, where
+   * it reproduces exactly: `flashY: 450` against a target line at `527`.
    *
    * The assertion above measures at draw time, and at draw time the box was
    * always right — that is what made this invisible to the suite and obvious to
@@ -378,294 +375,5 @@ test.describe("an open that names a thread", () => {
     await page.reload();
     await page.locator(".reader .ProseMirror").waitFor();
     await expect(page.locator(".thread-card.flash")).toHaveCount(0);
-  });
-});
-
-/* ------------------------------------------------------------------------- *
- * The producer half (PLUGINS-010): a real click, in the real todos plugin
- * column, through `onOpen`.
- *
- * Everything above seeds the navigation entry, because when it was written
- * nothing shipped produced a reveal. The todos column does now — clicking an
- * item is the act the dogfood report was about — so these tests never touch
- * `localStorage`: they click a row in a plugin column and assert what the
- * reader does, which is the whole path, producer included.
- * ------------------------------------------------------------------------- */
-
-interface ChoreItem {
-  readonly text: string;
-  readonly done: boolean;
-  readonly due?: string;
-}
-
-/**
- * The list, once — the column's aggregate and the document's body are both
- * generated from it, exactly as production keeps them in step (the plugin's
- * `GET /lists` parses the same body the editor renders).
- *
- * Two identical open items with a **checked** one between them: the ambiguity
- * of sprint-023 OC4, framed by a line the column does not display and the
- * reader does.
- *
- * **The duplicated item is the one carrying a deadline**, deliberately (PR #19
- * review, MAJOR 1). A deadline renders as part of its own line, so it sits
- * between the quote and the line below it; a payload whose frame ignored that
- * could never match, and the reader's fallback quietly flashed the *first*
- * "Call the plumber" instead. Putting the marker on a non-duplicated item —
- * which is what this fixture used to do — is precisely the arrangement in which
- * producer and consumer never meet.
- */
-const CHORE_ITEMS: readonly ChoreItem[] = [
-  { text: "Call the plumber", done: false, due: "2026-08-09" },
-  { text: "Book the passport appointment", done: false, due: "2026-08-01" },
-  { text: "Send the signed form", done: true },
-  { text: "Call the plumber", done: false, due: "2026-08-09" },
-  { text: "Rinse the filters", done: false },
-];
-
-const TODOS_VIEW: StubRow = {
-  id: "doc_view_todos",
-  type: "view",
-  title: "Todos",
-  path: "data/docs/views/todos.md",
-  pinned: true,
-  order: 1,
-  column: "todos/todos",
-};
-
-const CHORE_LIST: StubRow = {
-  id: "doc_chores_list",
-  type: "todo",
-  title: "Chores",
-  path: "data/docs/inbox/chores-list.md",
-  body: [
-    FILLER,
-    "",
-    ...CHORE_ITEMS.map(
-      (item) =>
-        `- [${item.done ? "x" : " "}] ${item.text}${item.due === undefined ? "" : ` (due: ${item.due})`}`,
-    ),
-    "",
-  ].join("\n"),
-};
-
-/**
- * A board whose one column is the todos plugin column, with the plugin's own
- * aggregate answered.
- *
- * The aggregate is the *only* thing stubbed beyond `stubCorpus` — the column,
- * its rows, the payload it builds and the reader that honours it are all the
- * shipped code, in a real browser.
- */
-async function openTodosBoard(page: Page): Promise<void> {
-  await stubCorpus(page, [TODOS_VIEW, CHORE_LIST]);
-  await page.route(EVENT_STREAM, (route) => route.abort("connectionrefused"));
-  // Registered after `stubCorpus`, whose `**\/api\/**` handler would otherwise
-  // swallow it: Playwright matches the most recently added route first.
-  await page.route("**/api/x/todos/**", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        lists: [
-          {
-            docId: CHORE_LIST.id,
-            title: CHORE_LIST.title,
-            path: CHORE_LIST.path,
-            status: "open",
-            open: CHORE_ITEMS.filter((item) => !item.done).length,
-            done: CHORE_ITEMS.filter((item) => item.done).length,
-            items: CHORE_ITEMS,
-          },
-        ],
-      }),
-    }),
-  );
-  await page.goto("/");
-  await page.locator(".todos-column .check").first().waitFor();
-}
-
-/** The column row for the item at `at` in the document's item list. */
-function itemRow(page: Page, at: number): Locator {
-  return page.locator(`.todos-column .check[data-todos-item="${String(at)}"]`);
-}
-
-/** The rendered lines of the open document, in body order. */
-function renderedItems(page: Page): Locator {
-  return page.locator(".reader .ProseMirror li");
-}
-
-/**
- * How far the flash box sits from the rendered line at `at`, **read in one
- * frame**.
- *
- * The single `evaluate` is the whole of it, and it is not a convenience. This
- * used to take two boundingBox round trips, and a cold open is still moving
- * between them: the reveal re-aims the reader through
- * `REVEAL_SETTLE_FRAMES`, so the scroller travels — measured at 52 px between
- * the two reads on one run and 584 px on another. Subtracting a `y` read before
- * that move from a `y` read after it reports a distance neither box was ever
- * at. It scored 23.06 px on a run where both rectangles, read together, were
- * 1.00 px apart.
- *
- * So the two rectangles are read in the same frame and the tolerance stays
- * where it was. What is asserted is unchanged — the flash is on its line — and
- * the measurement is now of one moment rather than of two.
- */
-async function distanceToItem(page: Page, at: number): Promise<number> {
-  const gap = await page.evaluate((index) => {
-    const flash = document.querySelector(".reveal-flash");
-    const line = document.querySelectorAll(".reader .ProseMirror li")[index];
-    if (flash === null || line === undefined) return null;
-    return Math.abs(flash.getBoundingClientRect().y - line.getBoundingClientRect().y);
-  }, at);
-  // `null` is the flash already gone or the line never rendered. Failing here
-  // rather than answering a distance keeps a "further than 12 px" assertion
-  // from passing because there was nothing to measure.
-  expect(gap, "there was no flash and line to measure in the same frame").not.toBeNull();
-  return gap ?? Number.MAX_SAFE_INTEGER;
-}
-
-test.describe("a click on a todo item", () => {
-  test("opens its document scrolled to that line, and flashes the line", async ({ page }) => {
-    await openTodosBoard(page);
-    await itemRow(page, 1).click();
-
-    await expect(page.locator(`.reader[data-reader-doc="${CHORE_LIST.id}"]`)).toHaveCount(1);
-    await expect(page.locator(".reveal-flash")).toHaveCount(1);
-    expect(await distanceToItem(page, 1)).toBeLessThan(12);
-
-    // The document is long, and the item was below the fold: the reader moved.
-    const scrolled = await page
-      .locator(".reader .reader-scroll")
-      .evaluate((element) => element.scrollTop);
-    expect(scrolled).toBeGreaterThan(0);
-    const box = await page.locator(".reveal-flash").boundingBox();
-    const viewport = page.viewportSize();
-    expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
-    expect(box?.y ?? Number.MAX_SAFE_INTEGER).toBeLessThan(viewport?.height ?? 0);
-  });
-
-  /**
-   * The drill's own case, pinned: a real click, measured on the frame the user
-   * sees rather than the frame the box was drawn on.
-   *
-   * Every open from this column is a cold open — the column list is replaced by
-   * the reader, so there is no "already rendered" click that would land on a
-   * settled layout. The reveal therefore always fires one frame early, and the
-   * flash has to follow the line to where it ends up.
-   */
-  test("holds the box on the clicked line once the document has settled", async ({ page }) => {
-    await openTodosBoard(page);
-    await itemRow(page, 1).click();
-    await expect(page.locator(".reveal-flash")).toHaveCount(1);
-
-    const gap = await settledGap(page, 1);
-    expect(gap).not.toBeNull();
-    expect(gap ?? Number.MAX_SAFE_INTEGER).toBeLessThan(12);
-  });
-
-  /**
-   * sprint-023 OC4, end to end, and the one place the producer's frame and the
-   * reader's occurrence rule actually meet. Both rows read "Call the plumber";
-   * the payload is what distinguishes them, and it has to survive two things
-   * the column never shows — the **checked** item above the second one, and the
-   * clicked item's **own deadline**, which the reader renders between the quote
-   * and the line below it.
-   */
-  test("reveals the duplicate that was clicked, not the first line with the same words", async ({
-    page,
-  }) => {
-    await openTodosBoard(page);
-    await itemRow(page, 3).click();
-
-    await expect(page.locator(".reveal-flash")).toHaveCount(1);
-    expect(await distanceToItem(page, 3)).toBeLessThan(12);
-    expect(await distanceToItem(page, 0)).toBeGreaterThan(12);
-  });
-
-  test("reveals the first of the duplicates when that is the one clicked", async ({ page }) => {
-    await openTodosBoard(page);
-    await itemRow(page, 0).click();
-
-    await expect(page.locator(".reveal-flash")).toHaveCount(1);
-    expect(await distanceToItem(page, 0)).toBeLessThan(12);
-    expect(await distanceToItem(page, 3)).toBeGreaterThan(12);
-  });
-
-  test("leaves the document alone: the flash is drawn over it and takes itself away", async ({
-    page,
-  }) => {
-    await openTodosBoard(page);
-    await itemRow(page, 1).click();
-
-    await expect(page.locator("[data-reveal-flash]")).toHaveCount(1);
-    await expect(page.locator("[data-reveal-flash]")).toHaveCount(0, { timeout: 4000 });
-    await expect(renderedItems(page)).toHaveCount(CHORE_ITEMS.length);
-    await expect(page.locator(".reader .ProseMirror [class*='reveal']")).toHaveCount(0);
-  });
-
-  /**
-   * The instruction is one-shot (UI-037), and a producer must not resurrect it:
-   * the reveal rides `localStorage`, so a leak would re-flash this document on
-   * every load of this board, forever.
-   */
-  test("spends the instruction — reopening the board flashes nothing", async ({ page }) => {
-    await openTodosBoard(page);
-    await itemRow(page, 1).click();
-    await expect(page.locator(".reveal-flash")).toHaveCount(1);
-
-    // Wait for the scroll capture's own footprint before reading the entry: it
-    // is debounced, and the entry it writes is the one the reload will read.
-    await expect
-      .poll(async () => (await storedEntry(page, TODOS_VIEW.id))?.scrollY ?? 0)
-      .toBeGreaterThan(0);
-    expect((await storedEntry(page, TODOS_VIEW.id))?.reveal ?? null).toBeNull();
-
-    await page.reload();
-    await page.locator(".reader .ProseMirror").waitFor();
-    await expect(page.locator(`.reader[data-reader-doc="${CHORE_LIST.id}"]`)).toHaveCount(1);
-    await expect(page.locator("[data-reveal-flash]")).toHaveCount(0, { timeout: 2000 });
-  });
-
-  test("opens the document at the top when the list heading is clicked instead", async ({
-    page,
-  }) => {
-    await openTodosBoard(page);
-    await page.locator(".todos-group-head").click();
-
-    await expect(page.locator(`.reader[data-reader-doc="${CHORE_LIST.id}"]`)).toHaveCount(1);
-    await expect(page.locator("[data-reveal-flash]")).toHaveCount(0);
-    const scrolled = await page
-      .locator(".reader .reader-scroll")
-      .evaluate((element) => element.scrollTop);
-    expect(scrolled).toBe(0);
-    expect((await storedEntry(page, TODOS_VIEW.id))?.reveal ?? null).toBeNull();
-  });
-
-  /**
-   * The full-screen host, from the same click.
-   *
-   * `useReaderSurface` is shared by the column reader and focus mode, and
-   * UI-037 pins both halves; what a *plugin* can reach is the column reader,
-   * because `Column.tsx` hands a plugin body `onOpen` and no focus seam. So the
-   * claim asserted here is the one that is actually reachable and the one that
-   * bites: expanding to full screen after a reveal shows the same document, and
-   * the instruction — already spent in the column — does not fire a second time
-   * in the other host.
-   */
-  test("carries into full screen as an open, with the instruction already spent", async ({
-    page,
-  }) => {
-    await openTodosBoard(page);
-    await itemRow(page, 1).click();
-    await expect(page.locator(".reveal-flash")).toHaveCount(1);
-    await expect(page.locator("[data-reveal-flash]")).toHaveCount(0, { timeout: 4000 });
-
-    await page.locator(`.reader[data-reader-doc="${CHORE_LIST.id}"] [data-expand]`).click();
-    const focus = page.locator(".focus.open");
-    await expect(focus).toHaveCount(1);
-    await expect(focus.locator(".ProseMirror li")).toHaveCount(CHORE_ITEMS.length);
-    await expect(page.locator("[data-reveal-flash]")).toHaveCount(0, { timeout: 2000 });
   });
 });

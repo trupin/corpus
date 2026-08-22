@@ -188,8 +188,8 @@ describe("what needs a key (SPEC.md §7)", () => {
 
     // The `400` above is the contract's refinement, which answers before any
     // handler runs. This is the same refusal from the other side: a caller that
-    // never crosses the HTTP boundary — the plugin context's `updateDoc` and
-    // `mutateDoc` today, an in-process verb written tomorrow — reaches
+    // never crosses the HTTP boundary — `docs/patch.ts` today, an in-process
+    // verb written tomorrow — reaches
     // `updateDocumentLocked` directly, and **required means required there too**.
     // A check only the wire enforces is the lock again, one layer down.
     const workspace: DocsWorkspace = {

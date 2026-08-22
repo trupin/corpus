@@ -7,8 +7,8 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * `anchors.spec.ts` declines to assert because it is a stylesheet suite.
  *
  * UI-027 is why this file exists. Every anchor assertion the suite had was
- * either a computed style over hand-written markup or, in `todos.spec.ts`, a
- * highlight the page had just *created*. Nothing anywhere loaded a document
+ * either a computed style over hand-written markup or a highlight the page had
+ * just *created*. Nothing anywhere loaded a document
  * that already had an anchor on it, and that is the state that shipped broken:
  * `offsetsComparable` rejected any body whose final newline the serializer
  * would have added, so a document created without one — which is most of them —
@@ -164,10 +164,10 @@ test.describe("a document that arrives with an anchor already on it", () => {
   /**
    * The highlight is the way back to a conversation that has been folded — which
    * is what "collapsed is never hidden … its anchored highlight stays in the
-   * body" buys (SPEC.md §11, UI-077). So the thread is folded by hand first, and
+   * body" buys (SPEC.md §10, UI-077). So the thread is folded by hand first, and
    * the click is what brings it back.
    */
-  test("opens the thread when the highlight is clicked (SPEC.md §11)", async ({ page }) => {
+  test("opens the thread when the highlight is clicked (SPEC.md §10)", async ({ page }) => {
     await openNote(page, [VIEW, NOTE, THREAD]);
     const slot = page.locator('.thread-slot[data-slot-thread="th_1"]');
     await expect(slot).toHaveClass(/expanded/);
@@ -543,7 +543,7 @@ test.describe("a comment captured on a file the editor prints differently", () =
 });
 
 /**
- * **§15 M4's milestone check, asserted rather than assumed** (UI-099): "select
+ * **§12 M4's milestone check, asserted rather than assumed** (UI-099): "select
  * text → comment ('note only') → **highlight + chip appear without reload**".
  *
  * The suite had every half of this except the one that shipped broken. UI-068's
@@ -592,7 +592,7 @@ test.describe("commenting on a selection, on a file the printer restructures", (
 
     const composer = page.getByRole("dialog", { name: "New comment" });
     await composer.getByLabel("Comment").fill("Is this still true?");
-    // "note only": §15 M4 names the note case, and an explicit `false` is what
+    // "note only": §12 M4 names the note case, and an explicit `false` is what
     // keeps a note from being enqueued as a job.
     await composer.getByRole("button", { name: /note only|ask agent/i }).click();
     await composer.locator("[data-comment-send]").click();
@@ -607,7 +607,7 @@ test.describe("commenting on a selection, on a file the printer restructures", (
      * view could not place.
      *
      * **These three carry the test; do not trim them as redundant** (PR #39
-     * review, MINOR 6). §15 M4's "highlight" half is satisfiable with no
+     * review, MINOR 6). §12 M4's "highlight" half is satisfiable with no
      * server-derived placement at all: `useAnchorLayer` paints an *optimistic*
      * `.anchor-hl` from the range the composer was opened on, and it survives
      * until the server's own anchor replaces it. Reverting `rebaseRange`'s

@@ -13,7 +13,7 @@ import { z } from "@hono/zod-openapi";
  * There is deliberately no rollback shape. §7's loop safety is a write whose
  * content came from history: the caller reads the history, works out the content
  * it wants back, and sends it to `PUT /api/docs/{id}` with the key of the
- * version it read — reconciling anchors (§6), validating (§14), committing under
+ * version it read — reconciling anchors (§6), validating (§11), committing under
  * the acting party (§4) and refusing a stale key (§7) exactly as every other
  * write does. _(Rider signed 2026-08-12 — replaced `POST /api/skills/{name}/rollback`,
  * which restored a whole file from a revision and so silently discarded anything

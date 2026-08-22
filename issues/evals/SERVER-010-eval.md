@@ -152,7 +152,7 @@ with `curl --path-as-is`. Every row asserts status, `nosniff`, and bait-absence.
 | 55 | Middle-turn deletion removes only its attachments | PASS | 200 `{"deletedTurn":true,"deletedThread":false,…}`; `…/17:47:21Z/` gone; turns 1 and 3 intact (`cmp` silent); `f2.png` reference count in markdown = 0, `f1`/`f3` = 1 each. |
 | 56 | Thread deletion removes the whole tree | PASS | 200 `{"deletedId":"th_h7rz65s7",…}`; `.corpus/attachments/th_h7rz65s7` gone; the sibling capture thread's bytes untouched; git clean. |
 | 57 | Last-turn cascade cleans up too | PASS | 200 `{"deletedTurn":true,"deletedThread":true,"removedAnchor":"anc_09b6ab24","parentId":"doc_arzivte5"}`; thread file gone; parent frontmatter `anchors: {}`; `.corpus/attachments/<T>/` gone — one path, all three effects. |
-| 58 | Cleanup follows the commit; no-attachment thread deletes cleanly | PASS | (a) A thread with no attachments deletes with 200 and no error. (b) With a `pre-commit` hook exiting 1: **200 + `warnings:[{code:"commit_failed",…}]`**, the turn is gone from disk (§14: the file mutation stands), and the bytes went with it. The forbidden outcome — losing bytes for a turn that *failed* to delete — did not occur, because a write failure aborts before cleanup (TEST-53/54). |
+| 58 | Cleanup follows the commit; no-attachment thread deletes cleanly | PASS | (a) A thread with no attachments deletes with 200 and no error. (b) With a `pre-commit` hook exiting 1: **200 + `warnings:[{code:"commit_failed",…}]`**, the turn is gone from disk (§11: the file mutation stands), and the bytes went with it. The forbidden outcome — losing bytes for a turn that *failed* to delete — did not occur, because a write failure aborts before cleanup (TEST-53/54). |
 
 ### Struck / not applicable
 

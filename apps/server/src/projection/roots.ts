@@ -168,9 +168,10 @@ type WalkState = {
 
 /**
  * `readdirSync(..., { recursive: true })` does not descend through symlinked
- * directories, and plugin skills are symlinked into `.claude/skills` (§10) — so
- * the walk is explicit, resolving each entry and de-duplicating by real path so
- * one file reachable through two links is indexed once.
+ * directories, and a workspace may legitimately reach a skill or a document
+ * folder through a link — so the walk is explicit, resolving each entry and
+ * de-duplicating by real path so one file reachable through two links is
+ * indexed once.
  */
 function walk(state: WalkState, dir: string, depth: number): void {
   let entries: Dirent<string>[];
@@ -240,7 +241,7 @@ function walk(state: WalkState, dir: string, depth: number): void {
 /**
  * Every document file under every root, sorted by workspace-relative path.
  * Sorted because path order is the tie-break for duplicate ids and the thing
- * that makes two rebuilds byte-identical (§15 M1).
+ * that makes two rebuilds byte-identical (§12 M1).
  */
 export function enumerateDocuments(workspaceRoot: string): EnumeratedFile[] {
   const absoluteRoot = resolve(workspaceRoot);

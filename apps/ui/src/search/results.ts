@@ -2,7 +2,7 @@ import type { SearchHit } from "@corpus/contract";
 
 /**
  * What the overlay renders, derived from the one response it already has
- * (SPEC.md §11 — "snippet-highlighted results grouped by type").
+ * (SPEC.md §10 — "snippet-highlighted results grouped by type").
  *
  * Everything here is a pure function of the returned `hits`. Grouping is a
  * partition, the counts are the partition's sizes, and the create row's
@@ -39,9 +39,9 @@ const THREAD_ID_PREFIX = "th_";
 /**
  * Which kind a hit is.
  *
- * A plugin's document type is a `doc`: it is a document on disk and in the
- * projection, and inventing a third group for it would need the plugin manifest,
- * which is PLUGINS-001's.
+ * A type this build does not recognise is a `doc`: it is a document on disk and
+ * in the projection, and there is nothing else for it to be. Only the id prefix
+ * the contract reserves decides (SPEC.md §5).
  */
 export function resultKind(hit: Pick<SearchHit, "id">): ResultKind {
   return hit.id.startsWith(THREAD_ID_PREFIX) ? "thread" : "doc";

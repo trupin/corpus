@@ -12,7 +12,7 @@
 /**
  * ## Why the format did not change under SHARED-057
  *
- * SPEC.md §11's rider (signed 2026-08-20) forbids a component resizing because
+ * SPEC.md §10's rider (signed 2026-08-20) forbids a component resizing because
  * of what it holds, and this function has three shapes of different widths by
  * construction: `18m`, `2h 05m`, `1d 03h`. The `padStart(2, "0")` already here
  * says the author was thinking about the digits; it does not make the three

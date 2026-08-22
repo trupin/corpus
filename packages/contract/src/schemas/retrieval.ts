@@ -254,7 +254,7 @@ export const RelatedQuerySchema = z.object({
       type: "boolean",
       description:
         "Lift the default archived exclusion. Archived documents are left out of the related set " +
-        "by default, like every list (SPEC.md §11); `true` widens it into the **union**. Archiving " +
+        "by default, like every list (SPEC.md §10); `true` widens it into the **union**. Archiving " +
         "is organizational rather than deletion, so an archived neighbour is still a real relation " +
         "— it is just not what an agent expanding from a live document usually wants first.",
     }),

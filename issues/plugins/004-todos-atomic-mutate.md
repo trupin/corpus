@@ -18,7 +18,7 @@ opus
 
 ## Spec References
 - SPEC.md §12 — todos plugin behavior
-- SPEC.md §15 — plugins write only through the core write path
+- SPEC.md §12 — plugins write only through the core write path
 
 ## Summary
 PR #11 review (finding 2, MAJOR): `mutateItems`
@@ -201,7 +201,7 @@ Server stopped (`stopped (pid 90392)`), ports 9181/9182 free, no vitest workers 
   CONTRACT-019 / SERVER-034 / PLUGINS-004 trio now typechecks as a whole.
 - `npm run format:check` → one pre-existing warning on `.claude/agents/server-dev.md`,
   untouched by this issue and outside this domain; not fixed here.
-- The SPEC §15/M5 plugin-deletion drill was **not** re-run: this change touches no
+- The SPEC §12/M5 plugin-deletion drill was **not** re-run: this change touches no
   discovery code path, only the body of one route helper.
 
 ## Completion Checklist (domain agent)

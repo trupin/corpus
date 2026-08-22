@@ -4,7 +4,7 @@ import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * The comments list and its composer, in a real browser (UI-063, UI-067 —
- * SPEC.md §11's rider, signed 2026-08-04).
+ * SPEC.md §10's rider, signed 2026-08-04).
  *
  * **Why a browser and not only component tests.** Three of the claims are about
  * things jsdom has no notion of. The switch is in a head UI-135 measured as
@@ -144,7 +144,7 @@ test.describe("the Document / Comments switch", () => {
   });
 
   /**
-   * 💬 keeps its own condition, and that is a **measured** deviation from §11's
+   * 💬 keeps its own condition, and that is a **measured** deviation from §10's
    * unconditional wording rather than a preference: at 560px with a parent title
    * at its cap the row has 13px of slack and the toggle needs 61px
    * (`comments/CommentsSwitch` carries the numbers). A document with no
@@ -258,7 +258,7 @@ test.describe("the list", () => {
     await row.locator("[data-resolve]").click();
 
     /*
-     * Resolving re-asserts §11's one rule, so the conversation folds where it
+     * Resolving re-asserts §10's one rule, so the conversation folds where it
      * stands — the card and its status chip are gone, and the collapsed line
      * that replaces them says what it is. That is the assertion: the list
      * repainted from the mutation, with no reload.

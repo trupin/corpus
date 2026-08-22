@@ -103,8 +103,6 @@ export const INSTALL_TIMEOUT_MS = 15 * 60_000;
 export interface UpgradeConflict {
   /** Workspace-relative, exactly as `corpus workspace diff` accepts it. */
   readonly path: string;
-  /** `"template"`, or `"plugin:<dir>"` when the file comes from a plugin. */
-  readonly source: string;
   /** How far apart the two copies are, in the upgrade's own words. */
   readonly detail: string | null;
   /** The command that shows the difference — runnable as printed. */
@@ -779,7 +777,6 @@ function conflictsFrom(template: UpgradeReport | null): readonly UpgradeConflict
   if (template === null) return [];
   return conflictsOf(template).map((change) => ({
     path: change.path,
-    source: change.source,
     detail: change.detail ?? null,
     resolve: conflictResolutionCommand(change.path),
   }));
@@ -934,7 +931,7 @@ export const upgradeCommand: StandaloneCommandSpec = {
         '"upgradeAvailable":true,"verifiable":true,…}`), `tool` what was installed, `template` the ' +
         "sync report, `server` whether it was restarted, `reportPath` where the written report is — " +
         'and `conflicts` the unresolved work: `[{"path":".claude/skills/comment/SKILL.md",' +
-        '"source":"template","detail":"modified here — 3 lines only here, 1 line only in the new copy",' +
+        '"detail":"modified here — 3 lines only here, 1 line only in the new copy",' +
         '"resolve":"corpus workspace diff .claude/skills/comment/SKILL.md"}]`.',
     },
   ],

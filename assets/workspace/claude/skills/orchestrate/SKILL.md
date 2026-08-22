@@ -278,7 +278,6 @@ row below is failed with a reason and is never silently completed.
 | `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident`, at the model that `resident`'s `weight` names (Launching a listener below). It is one of the two rows that are not jobs. |
 | `resident.released`   | A conversation's resident has gone. Nothing is dispatched and nothing is launched: log who left and the payload's `reason`, then complete (Losing a listener below). It is the other row that is not a job. |
 | `agent.done`          | A finished piece of background work. Nothing produces this event today — reports reach you directly (Delegation below) — but an arriving one is handled like a report: verify the work its payload identifies and settle it. |
-| `<plugin>.<action>`   | A subagent applying the skill named `<plugin>` — the part before the first dot.               |
 | anything else         | `corpus queue fail <id> --reason "unknown event type: <type>"`                                |
 
 Thread handling itself — reading context, honoring mentions, filing inbox captures, wording
@@ -505,11 +504,16 @@ switch.
   directive to apply that skill; the two combine. A missing or archived target is never
   silently ignored: do the work as well as you can and state in the reply that the named
   target was not found. A generic `@agent` names no target — triage it yourself.
-- **Plugin skills.** The handler for `<plugin>.<action>` is the skill installed at
-  `.claude/skills/<plugin>/`. If no skill of that name is installed, or it sits in
-  `.claude/skills-archived/`, fail the event with a reason naming the skill —
-  `corpus queue fail evt_2e4f8b --reason "no installed skill named <plugin>"` — so the
-  console row says exactly what is missing.
+- **An event type with no row.** The Routing table is the whole of what this loop dispatches,
+  and a type outside it can still reach a claim: a queue carried over from a workspace older
+  than this skill, an event somebody wrote into `pending/` by hand, a server emitting
+  something this skill predates. Fail it with the type quoted in the reason —
+  `corpus queue fail evt_2e4f8b --reason "unknown event type: ledger.reconciled"` — so the
+  console row says exactly what arrived and nothing sits pending on a handler that does not
+  exist. Two things you never do with such an event. **Never complete it**: a completed event
+  is work somebody is entitled to think was done. **Never derive a handler from its name** — a type
+  you do not recognise names no skill, and dispatching on the shape of the string answers
+  somebody with work nobody asked for.
 - **Gone context.** If an event's thread or parent document no longer exists (the user
   deleted it), fail with a reason naming the missing id. Never recreate deleted content.
 - **A report after resolution.** If the originating thread was resolved while the subagent
@@ -1462,7 +1466,6 @@ Compute, for every event in the batch, the set of documents its work touches:
 - `doc.edited`: the payload's `docId`. Its reflection may go on to write documents no payload
   names, so it is dispatched after any overlapping thread work in the batch rather than
   beside it.
-- `<plugin>.<action>`: every document id in the payload.
 - `agent.done`: the documents of the work it reports.
 - An event whose touched set you cannot compute from its payload touches everything: run it
   serially, after the rest of the batch.

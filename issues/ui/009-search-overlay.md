@@ -21,15 +21,15 @@ opus — a single-endpoint composition problem with the UX fully pinned by the p
 - Depends on: UI-003
 - Blocks: UI-010
 
-> **Spec refresh (SHARED-002, 2026-07-27):** the `awaiting-reply` filter/chip was dropped in favor of `needs=form` (SPEC.md §9.2/§11 amended with PR #9). The quotes below are updated to match.
+> **Spec refresh (SHARED-002, 2026-07-27):** the `awaiting-reply` filter/chip was dropped in favor of `needs=form` (SPEC.md §9.2/§10 amended with PR #9). The quotes below are updated to match.
 
 ## Spec References
 
-- SPEC.md §11 — **Search overlay** (one query input composing FTS with filter chips: type, tag, status, folder, date, due, unread, `references:`, and for threads agent participation / awaiting a form answer (`needs=form`) / parent; default excludes `status: archived`, an "archived" chip brings them back; snippet-highlighted results grouped by type; **"Save as view"** pins the current query as a new board column; **all through the single `GET /api/docs` endpoint**)
-- SPEC.md §11 — **Creating documents — zero-form, inbox-first** (omnibox create: no exact title match → **Create "\<query\>"**; lands in `data/docs/inbox/`; the new document opens immediately in its column, title selected, ready to type)
-- SPEC.md §11 — **Columns are pinned view documents** (save-as-view creates a `type: view` document with `pinned: true` holding the query and `order`)
+- SPEC.md §10 — **Search overlay** (one query input composing FTS with filter chips: type, tag, status, folder, date, due, unread, `references:`, and for threads agent participation / awaiting a form answer (`needs=form`) / parent; default excludes `status: archived`, an "archived" chip brings them back; snippet-highlighted results grouped by type; **"Save as view"** pins the current query as a new board column; **all through the single `GET /api/docs` endpoint**)
+- SPEC.md §10 — **Creating documents — zero-form, inbox-first** (omnibox create: no exact title match → **Create "\<query\>"**; lands in `data/docs/inbox/`; the new document opens immediately in its column, title selected, ready to type)
+- SPEC.md §10 — **Columns are pinned view documents** (save-as-view creates a `type: view` document with `pinned: true` holding the query and `order`)
 - SPEC.md §9.2 — `GET /api/docs?q=&type=&status=&tag=&folder=&parent=&references=&agent=&author=&since=&due=&stale=&unread=&needs=&sort=`, `GET /api/tree`, `POST /api/docs`
-- SPEC.md §15 M3 — Playwright check: "omnibox-create a doc (lands in `inbox/`, opens title-selected)"; "save a search as a view → new column appears AND its view document exists on disk"
+- SPEC.md §12 M3 — Playwright check: "omnibox-create a doc (lands in `inbox/`, opens title-selected)"; "save a search as a view → new column appears AND its view document exists on disk"
 - `design/index.html` — **authoritative look & feel** (`.overlay` blurred scrim, `.search-panel`, `.search-input-row` with serif 19px input, `#save-view-chip` (`.chip.ghost`), `.search-filters` chip row incl. `.chip.on` and `.chip.warn` for "include archived", `.search-results`/`.sr-group`/`.sr`/`.sr-title`/`.sr-snippet mark`/`.sr-path`, `.sr.kbd` outline, `.sr-create`, `.search-foot` kbd legend, `.col.flash`)
 
 ## Summary
@@ -49,7 +49,7 @@ Build the search overlay: the top-bar search bar (click or ⌘K) expands into a 
 - [x] `↵` on a highlighted result closes the overlay and **opens the document in its home column**: the board `scrollIntoView({ behavior: "smooth", inline: "center" })`s that column, applies `.col.flash` (accent border) for 1.5 s, and opens the document in that column's reader. A document with no home column opens in the nearest column that would match it, falling back to the first column.
 - [x] `⇧↵` creates a **new list from the current search** — the same effect as `save as view`, executed from the keyboard.
 - [x] **Save as view** creates a `type: view` document with `pinned: true` whose frontmatter holds the current query (filters + search text + sort) and an `order` placing it at the end of the board; the overlay closes and the new column appears (and is scrolled to). The view document is verifiable on disk.
-- [x] **Omnibox create**: when the query is ≥2 characters and **no** document title matches it exactly (case-insensitive), a `.sr-create` row renders first reading `＋ Create "<query>" — opens ready to edit, in inbox/` (query in serif bold). Activating it `POST /api/docs` into `data/docs/inbox/` with the query as title and an empty body (or the type's template body per §11), closes the overlay, scrolls the inbox column into view with the flash, and opens the new document in that column **with its title field focused and selected**, ready to type. No form, no dialog.
+- [x] **Omnibox create**: when the query is ≥2 characters and **no** document title matches it exactly (case-insensitive), a `.sr-create` row renders first reading `＋ Create "<query>" — opens ready to edit, in inbox/` (query in serif bold). Activating it `POST /api/docs` into `data/docs/inbox/` with the query as title and an empty body (or the type's template body per §10), closes the overlay, scrolls the inbox column into view with the flash, and opens the new document in that column **with its title field focused and selected**, ready to type. No form, no dialog.
 - [x] The `.search-foot` legend renders `↑↓ navigate`, `↵ open in its list`, `⇧↵ new list from search`, and right-aligned `@ agents · / skills · [[ refs`.
 - [x] `esc` closes the overlay and restores focus to the search bar; clicking the scrim closes it; clicking inside the panel does not.
 - [x] The overlay is a `role="dialog"` with an accessible label, traps Tab focus, and returns focus on close.
@@ -129,9 +129,9 @@ Vitest + Testing Library in `apps/ui`:
 4. Toggle `folder:` (options sourced from `GET /api/tree`), `type`, and `status` chips → each toggle produces one new request with the corresponding parameter; results narrow accordingly.
 5. Archive a document (`corpus doc archive <id>`), search for it → absent by default; toggle `include archived` → it appears with its archived chip.
 6. Press ↓↓ then ↵ → the overlay closes, the board smooth-scrolls that document's column into view, the column border flashes accent for ~1.5 s, and the document opens in that column's reader.
-7. Press ⌘K again, refine the query, click **save as view** → a new column appears at the end of the board **and** the view document exists on disk: `ls <workspace>/data/docs/**/*.md` shows it, `cat` confirms `type: view`, `pinned: true`, the query fields, and an `order`. Reload the browser → the column persists (it is a document, not local state). This is the §15 M3 save-as-view check.
+7. Press ⌘K again, refine the query, click **save as view** → a new column appears at the end of the board **and** the view document exists on disk: `ls <workspace>/data/docs/**/*.md` shows it, `cat` confirms `type: view`, `pinned: true`, the query fields, and an `order`. Reload the browser → the column persists (it is a document, not local state). This is the §12 M3 save-as-view check.
 8. Press ⌘K, type a title that exists exactly → the create row is **absent**. Change one character → `＋ Create "<query>" — opens ready to edit, in inbox/` appears at the top.
-9. Activate the create row → the overlay closes, the Inbox column flashes and scrolls into view, and the new document opens **with its title selected**. Type immediately and confirm the typed text replaces the title. On disk: the file is under `data/docs/inbox/` with the query as its title and an auto-commit in `git log`. This is the §15 M3 omnibox-create check.
+9. Activate the create row → the overlay closes, the Inbox column flashes and scrolls into view, and the new document opens **with its title selected**. Type immediately and confirm the typed text replaces the title. On disk: the file is under `data/docs/inbox/` with the query as its title and an auto-commit in `git log`. This is the §12 M3 omnibox-create check.
 10. Press ⌘K, then `⇧↵` → a new list is created from the current search (same verification as step 7).
 11. Press esc → overlay closes and focus returns to the search bar; press ⌘K while a document is open in a reader → the overlay opens above it and board shortcuts do not fire.
 12. Playwright: `apps/ui/e2e/search.spec.ts` automating steps 3, 6, 7, and 9 against the real app.

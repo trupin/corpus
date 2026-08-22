@@ -7,7 +7,7 @@ import { resolveSelectedLane } from "./residentsModel";
 
 /**
  * **Who is resident, and what they own** — the console's Residents tab
- * (SPEC.md §7's roster and scope, §11's console; UI-125, asked for by the user
+ * (SPEC.md §7's roster and scope, §10's console; UI-125, asked for by the user
  * on 2026-08-19).
  *
  * It answers in one place the question the board answers a conversation at a
@@ -16,7 +16,7 @@ import { resolveSelectedLane } from "./residentsModel";
  *
  * ## Why it is in the console at all
  *
- * §11 splits the surface: the board is the corpus, and the console is the
+ * §10 splits the surface: the board is the corpus, and the console is the
  * agent's own machinery — jobs, logs, the queue. A roster of running agents is
  * that machinery, and a lane's scope is what that machinery is pointed at, so
  * the pair belongs here rather than on a board column. What each *member* of a

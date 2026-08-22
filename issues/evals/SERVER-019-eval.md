@@ -46,7 +46,7 @@ honesty-audit table.
 | 7   | Whole-corpus rules NOT filtered to LOCAL codes   | PASS                            | Two pairs sharing `id: doc_dupe01` → `ok:false`, `duplicate-id`, "id `doc_dupe01` is also used by data/docs/one.md".                                |
 | 8   | A drifted corpus is a 200, not a throw           | PASS                            | `HTTP/1.1 200 OK` with non-empty `errors` on every drifted request (duplicate-id, frontmatter-unparseable, anchor-unused).                          |
 | 9   | `ok` is derived, exactly `errors.length === 0`   | PASS                            | Held on every response observed, including warning-only (`ok:true` with a non-empty `warnings`).                                                    |
-| 10  | Warnings are exactly the two §14 carve-outs      | PASS                            | Observed `ref-unresolved` and `anchor-unresolved` only ever in `warnings`; never in `errors`; no other code ever in `warnings`.                     |
+| 10  | Warnings are exactly the two §11 carve-outs      | PASS                            | Observed `ref-unresolved` and `anchor-unresolved` only ever in `warnings`; never in `errors`; no other code ever in `warnings`.                     |
 | 11  | `{ids}` resolves via projection, reads real file | PASS                            | `doc_h36zalhe` clean; body rewritten **on disk**; next check (no restart) returned `ref-unresolved` at the real path with the real `docId`.         |
 | 12  | `{documents}` validates without touching disk    | PASS                            | `data/docs/nope.md` → `200` + `frontmatter-unparseable`; `ls` still fails; `git status --porcelain` byte-identical.                                  |
 | 13  | Unknown ids are silent                           | PASS                            | `{"ids":["doc_zzzzzz"]}` → `200 {"ok":true,"errors":[],"warnings":[]}`. No 404, no synthetic finding.                                                |
@@ -144,7 +144,7 @@ so every document with a comment thread fails a subset check.
    ```
 7. The same corpus, checked whole, is clean:
    `corpus doc check` → `checked 10 documents — 2 warnings, no errors.` exit `0`
-8. The identical failure through the §14 pre-commit path — stage the document and run
+8. The identical failure through the §11 pre-commit path — stage the document and run
    `corpus doc check --staged` → `error anchor-unused data/docs/inbox/anchored-subject.md: anchor
    \`anc_d4fa0218\` has no thread referencing it` … `exit=6`
 9. Adding the threads to the request makes it clean, proving the cause:

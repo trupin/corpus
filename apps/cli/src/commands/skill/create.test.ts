@@ -37,7 +37,6 @@ const SKILL: Doc = {
     pinned: false,
     order: null,
     query: null,
-    column: null,
     extra: {},
   },
   body: "# Weekly review\n",

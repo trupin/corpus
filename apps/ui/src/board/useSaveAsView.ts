@@ -6,7 +6,7 @@ import { nextOrder } from "./columnOrder";
 import { useColumns } from "./useColumns";
 
 /**
- * "Save as view" — pinning the current search as a board column (SPEC.md §11).
+ * "Save as view" — pinning the current search as a board column (SPEC.md §10).
  *
  * There is no board-layout API to call: a column **is** a `type: view` document
  * with `pinned: true`, so saving a search is one `POST /api/docs` writing the
@@ -17,7 +17,7 @@ import { useColumns } from "./useColumns";
  *
  * The request body is built by UI-003's `columnRequest`, the same function the
  * new-list picker uses. Two ways to create a column would be two places for the
- * §11 view keys to drift.
+ * §10 view keys to drift.
  */
 
 export interface SaveAsViewResult {

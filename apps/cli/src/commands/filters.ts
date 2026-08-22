@@ -80,8 +80,10 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
     type: "string",
     valueName: "a,b",
     description:
-      "Comma-separated document types; values OR together. Core types: `note`, `thread`, " +
-      "`view`, `template`, `skill`, `agent-def`, plus whatever a plugin defines.",
+      "Comma-separated document types; values OR together. The types the core knows: `note`, " +
+      "`thread`, `view`, `template`, `skill`, `agent-def`. Any other value is sent as given — a " +
+      "document may carry a `type:` this build has never heard of, and it is still listed and " +
+      "still searchable (SPEC.md §5).",
   },
   {
     name: "tag",
@@ -114,7 +116,7 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
     name: "needs",
     type: "string",
     valueName: "reason",
-    description: `The Attention filter (SPEC.md §11): ${NEEDS_FILTERS.join(", ")}. \`me\` is the union of every reason.`,
+    description: `The Attention filter (SPEC.md §10): ${NEEDS_FILTERS.join(", ")}. \`me\` is the union of every reason.`,
   },
   {
     name: "parent",
@@ -197,8 +199,8 @@ export function insertFlagAfter(
  * misspelled enum is a usage error naming the alternatives, not a `400` the
  * server had to be asked for. Open-valued parameters — `type`, `tag`, `folder`,
  * `due`, ids — are passed through verbatim, because the CLI does not know the
- * plugin types, the workspace's tags or its folders, and pretending otherwise
- * would refuse valid queries.
+ * workspace's tags, its folders, or every `type:` its documents carry, and
+ * pretending otherwise would refuse valid queries.
  */
 export function collectDocFilters(context: FlagSource): DocFilters {
   const { flags } = context;

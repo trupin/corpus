@@ -4,7 +4,7 @@
 shared
 
 ## Status
-done — all three amendments applied to SPEC.md §11 on 2026-08-05.
+done — all three amendments applied to SPEC.md §10 on 2026-08-05.
 
 ## Priority
 P1
@@ -17,7 +17,7 @@ fable
 - Blocks: UI-063, UI-066
 
 ## Spec References
-- §6 Anchoring (orphaned anchors), §11 Document view
+- §6 Anchoring (orphaned anchors), §10 Document view
 
 ## Summary
 Two live reports on 2026-08-04, both asking for control over surfaces the spec
@@ -37,14 +37,14 @@ comments should be available in full screen and in column view."_
 **Shape chosen:** _"A tab beside the document"_ — the column header carries a
 Document / Comments switch, so the list gets the full column width.
 
-Today §11 says only that "whole-document comments and orphaned threads listed
+Today §10 says only that "whole-document comments and orphaned threads listed
 below the body". That is a passive tail: no filters, no anchored comments in it,
 and no way to answer "what is outstanding on this document?" The
 **open-and-unanchored** comment is the one that most needs attention — the
 document moved out from under a question nobody answered — and it is currently
 the hardest state to find.
 
-REPLACE, in §11 Document view, the clause "Whole-document comments and orphaned
+REPLACE, in §10 Document view, the clause "Whole-document comments and orphaned
 threads listed below the body":
 
 > A document's comments are also available as a **list**, reached by a
@@ -74,14 +74,14 @@ The body is capped at a `62ch` reading measure today. That is a defensible
 default for prose and a poor fit for what people put in documents — wide tables,
 fenced prompts, pasted output. The cap stays; who sets it changes.
 
-APPEND to §11 Document view:
+APPEND to §10 Document view:
 
 > The document body has a comfortable default width, and the reader can
 > **change it** — in column view and in full screen — with the width persisting
 > across navigation and reload the way the rest of the app's navigation state is
 > sticky. Widening applies to the whole body uniformly, prose included. Anchored
 > thread placement follows the body when it moves, and the control is operable
-> from the keyboard like every other affordance (§11 adds no exclusive-pointer
+> from the keyboard like every other affordance (§10 adds no exclusive-pointer
 > capability).
 
 ---
@@ -95,11 +95,11 @@ question of what a second comment does: _"a new thread per comment but I want to
 be able to leave follow up comments on each thread from the document itself."_
 
 The object already exists — §6 defines a whole-document comment as a thread with
-`anchor: null`, and §11 already lists them below the body. What the spec never
+`anchor: null`, and §10 already lists them below the body. What the spec never
 says is that a user can **make** one: every commenting path it describes starts
 from a text selection. This closes that.
 
-APPEND to §11 Document view, after the comments-list sentence from Amendment 1:
+APPEND to §10 Document view, after the comments-list sentence from Amendment 1:
 
 > A comment does not require a selection. The comments list carries a composer,
 > so a remark about the document as a whole starts a thread with no anchor (§6) —
@@ -119,7 +119,7 @@ APPEND to §11 Document view, after the comments-list sentence from Amendment 1:
 
 ## Technical Design
 ### Files to Create/Modify
-- `SPEC.md` §11
+- `SPEC.md` §10
 
 ## Testing Strategy
 None — spec text. The domain issues carry the tests.

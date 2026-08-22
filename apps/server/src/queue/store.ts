@@ -115,7 +115,7 @@ export type StoredEvent = z.infer<typeof StoredEventSchema> & {
  * `pending` (SERVER-099). It is supplied by the caller that just tried the edit rather than
  * inferred from the payload, because the payload cannot always carry it —
  * `comment.created` has `parentId`, `form.respond` names no document at all,
- * and plugin event types own their own shapes.
+ * and every event type owns its own payload shape.
  *
  * Named `deferReason` rather than `reason` so it can never be confused with
  * `error`, which is what a *failure* records: the two live side by side in the

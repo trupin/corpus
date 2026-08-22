@@ -16,7 +16,7 @@ import {
 } from "./commentsModel";
 
 /**
- * The comments list's two axes (SPEC.md §11's rider, signed 2026-08-04).
+ * The comments list's two axes (SPEC.md §10's rider, signed 2026-08-04).
  *
  * The case that matters most is the **orphan**, because it is the one a
  * plausible implementation gets wrong: `DocRow.anchorQuote` survives an anchor

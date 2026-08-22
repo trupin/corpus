@@ -30,7 +30,7 @@ fable
   either direction"*, and *"travels to whatever actually does the work"*
 - SPEC.md **§7** — the resident rider (signed 2026-08-13): *"a resident works its
   conversation inline"*
-- SPEC.md **§11** — the composer's weight control, *"live exactly when the
+- SPEC.md **§10** — the composer's weight control, *"live exactly when the
   composer says sending will reach the agent"*
 
 ## Summary
@@ -122,7 +122,7 @@ Two edits.
 > than offering a control whose choice is discarded in silence.
 > _(Rider signed 2026-08-\_\_.)_
 
-**Edit 2 — §11, appended to the composer's weight paragraph** (the one signed
+**Edit 2 — §10, appended to the composer's weight paragraph** (the one signed
 2026-08-06, ending *"…the composer key contract is untouched."*):
 
 > Where the composer's recipient is a **resident's lane** (§7), the control is not
@@ -147,7 +147,7 @@ Two edits.
 
 - [x] The user has signed the drafted text, verbatim, on its own
 - [x] §7 states that a resident's weight is set at designation
-- [x] §11 states that the composer's weight control is not live for a resident's
+- [x] §10 states that the composer's weight control is not live for a resident's
       lane, and says what it shows instead
 - [x] Neither the weight rider nor the resident rider is reworded — the new text
       names the boundary between them rather than editing either
@@ -157,7 +157,7 @@ Two edits.
 
 ### Files to Create/Modify
 
-- `SPEC.md` — §7's resident rider, §11's weight paragraph
+- `SPEC.md` — §7's resident rider, §10's weight paragraph
 
 ### Key Implementation Details
 
@@ -183,7 +183,7 @@ UI-126's and AGENT-038's, each with its own pins.
 
 - 2026-08-19 — the user signed both edits as drafted, in the `/goal` that started v0.14.0.
 - Applied verbatim, dated 2026-08-19. `git diff SPEC.md`: 3 insertions, 1 line extended.
-- **Placement call.** The draft's §7 anchor (*"…nothing rewritten."*) does not exist in SPEC.md. The resident rider (§7, the *"Three rules of this section are per lane"* paragraph) sits before the weight rider (the *"Orchestrator skill"* paragraph), and the drafted text says *"the weight rider above"*. So the §7 text stands as its own paragraph after the Orchestrator-skill block, where both riders are above it and neither is reworded. The §11 text is appended to the weight paragraph, as drafted.
+- **Placement call.** The draft's §7 anchor (*"…nothing rewritten."*) does not exist in SPEC.md. The resident rider (§7, the *"Three rules of this section are per lane"* paragraph) sits before the weight rider (the *"Orchestrator skill"* paragraph), and the drafted text says *"the weight rider above"*. So the §7 text stands as its own paragraph after the Orchestrator-skill block, where both riders are above it and neither is reworded. The §10 text is appended to the weight paragraph, as drafted.
 - `npm run spec:check` — 5863 citations, pass.
 
 ## Completion Checklist (domain agent)

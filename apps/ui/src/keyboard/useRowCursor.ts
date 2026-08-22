@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type RefObject } from "react";
 
 /**
- * The row cursor (SPEC.md §11: `↑`/`↓`, or `j`/`k`, move rows in the active
+ * The row cursor (SPEC.md §10: `↑`/`↓`, or `j`/`k`, move rows in the active
  * column) — the prototype's `.row.kbd` outline.
  *
  * **The rows are read from the DOM, and that is the honest source here.** The

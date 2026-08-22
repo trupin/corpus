@@ -88,8 +88,8 @@ Typecheck across consumers; drift check green.
    neither answer needs a later contract change. Stated in the route description and pinned by
    `openapi.test.ts` ("leaves the archived-name collision to the server without a third outcome").
 7. **Response is `DocMutationResponse`, not a bespoke `SkillCreateResult`.** A skill is an
-   ordinary document (§7), and the created file's `path`, `frontmatter.id` and §14 `warnings` are
-   exactly what that shape carries. Reusing it also means the existing "§14 warnings reach every
+   ordinary document (§7), and the created file's `path`, `frontmatter.id` and §11 `warnings` are
+   exactly what that shape carries. Reusing it also means the existing "§11 warnings reach every
    mutation response" sweep already covers this route.
 
 ### Tests

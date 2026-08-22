@@ -24,10 +24,10 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — the persistent toolbar, as added by SHARED-034
-- SPEC.md §11 — "the editor serializes to clean markdown"
-- SPEC.md §11 — the existing selection toolbar (formatting + Comment)
-- SPEC.md §11 — "§11 adds no exclusive-pointer capability"
+- SPEC.md §10 — the persistent toolbar, as added by SHARED-034
+- SPEC.md §10 — "the editor serializes to clean markdown"
+- SPEC.md §10 — the existing selection toolbar (formatting + Comment)
+- SPEC.md §10 — "§10 adds no exclusive-pointer capability"
 - `design/index.html` — authoritative for look & feel
 
 ## Summary
@@ -65,9 +65,11 @@ agreed list and nothing beyond it.
 - [ ] Column readers are **unaffected** (per SHARED-034) — the floating toolbar
       alone there
 - [ ] The toolbar does not appear for surfaces that are not the markdown editor:
-      a `thread`, a `view`, or a type a plugin claims with its own `View`
-      (`anchorsHost` / `editorHandlesType` already answer this — reuse them,
-      do not re-derive)
+      a `thread` or a `view` (`anchorsHost` / `editorHandlesType` already answer
+      this — reuse them, do not re-derive). **An unrecognised `type:` gets the
+      toolbar like any other document**, because `editorHandlesType` answers true
+      for every type but `view`, and SPEC §12's M6 requires such a document to
+      open and edit normally
 - [ ] Under a lock held by the other party, the toolbar is disabled with the
       document, not hidden — consistent with §7's read-only banner
 - [ ] Checked against `design/index.html`

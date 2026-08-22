@@ -164,7 +164,7 @@ length-capped slug. The unspecified-folder note lands under `data/docs/inbox/`. 
 first two parse inputs return a structured result naming their root and folder; the
 last three are rejected — none produces a path escaping the workspace.
 
-TEST-15: The validator produces an error for each §14 hard-failure rule
+TEST-15: The validator produces an error for each §11 hard-failure rule
 Given: For each rule below, a corpus fixture that violates exactly that rule and
 nothing else: unparseable frontmatter; a missing required field; an `id` prefix that
 disagrees with `type`; two documents sharing an `id`; a malformed anchor entry (key

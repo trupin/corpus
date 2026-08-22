@@ -5,7 +5,7 @@
 // publishes here, and the SSE hub is one subscriber among possible others.
 // There is deliberately **one** emitter: a write path that broadcast on its own
 // channel would be invisible to anything that later wants to observe
-// invalidation (a debug endpoint, a test, a plugin), and the watcher would have
+// invalidation (a debug endpoint, a test, a future subscriber), and the watcher would have
 // to round-trip through the filesystem to reach the same clients.
 //
 // The bus carries keys and nothing else. Attaching data to an invalidation is

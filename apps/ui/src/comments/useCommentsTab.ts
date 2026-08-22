@@ -10,13 +10,13 @@ import { ALL_COMMENTS, type CommentFilters } from "./commentsModel";
  * **The tab resets to the document on every navigation.** It is a view of *this*
  * document's comments, and arriving at a `[[ref]]` on the Comments tab would
  * hide the body you followed the link to reach. That is a different lifetime
- * from a fold, which §11 makes sticky across navigation precisely because a fold
+ * from a fold, which §10 makes sticky across navigation precisely because a fold
  * belongs to the conversation rather than to the reader.
  *
  * It is derived at render rather than reset in an effect: an effect would paint
  * one frame of the outgoing tab over the incoming document, which on this
  * surface is a body appearing and then being replaced — the class of movement
- * §11's reading surface is written against.
+ * §10's reading surface is written against.
  *
  * **The filters are not persisted at all**, and that is deliberate rather than
  * unfinished. Both axes default to *all*, which hides nothing; a filter that

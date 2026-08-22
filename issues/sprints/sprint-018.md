@@ -29,7 +29,7 @@ issues sit on top of security-relevant code — a path-traversal advisory in one
 advisory in the other. Each gets a **named list of specs that must stay green** below, because
 "the suite passed" is not evidence when the suite is what you were allowed to edit.
 
-**The other four are promises the shipped product makes and does not keep.** §11 says
+**The other four are promises the shipped product makes and does not keep.** §10 says
 "@agent pin me a view of unresolved finance threads just works" — no CLI verb writes a view key
 (CLI-018). §7 says an archived skill is "restorable" — the reader menu offers Archive with no
 inverse, and the only inverse the UI could reach is the one SERVER-039 just closed (UI-020).
@@ -355,7 +355,7 @@ TEST-592: `corpus server start` still boots a browsable board
   Given: A fresh workspace on `8792`, from a cwd outside this repository
   When: `corpus init --port 8792 && corpus server start` is run, then `corpus server status`, then
   `corpus server stop`
-  Then: §15 M3's check still passes end to end — the URL is printed and browsable, a second `start`
+  Then: §12 M3's check still passes end to end — the URL is printed and browsable, a second `start`
   says "already running" with exit 0, `status` gates on running state, and `stop` leaves `8792`
   free. The adapter is what binds the socket; the CLI lifecycle verbs are its only real consumer.
 
@@ -393,7 +393,7 @@ Nothing in `packages/kit`, `packages/contract`, `plugins/`, `apps/cli`, `apps/se
 behave identically (Back, scroll restoration, stack-empty exit)" describes
 `apps/ui/src/reader/useNavStack.ts` + `apps/ui/src/board/useBoardLocalState.ts` +
 `apps/ui/src/reader/useReaderSurface.ts` — a hand-rolled stack persisted in `localStorage`, with
-**zero** react-router involvement, exactly as SPEC §11 requires ("Only browser-local state stays
+**zero** react-router involvement, exactly as SPEC §10 requires ("Only browser-local state stays
 local: scroll positions, open readers, and per-reader navigation stacks"). The migration cannot
 break it, and proving it unbroken proves nothing about the migration.
 
@@ -494,7 +494,7 @@ TEST-602: Nothing outside `apps/ui` moved
 ### SERVER-038: the documents nobody can see get named
 
 `apps/server/src/projection/` (the doctor pass) + colocated tests; CLI output passthrough only if
-the wire shape changes. Model: **opus**. Port `8794`. Spec: `SPEC.md` §5 (the document tree), §14
+the wire shape changes. Model: **opus**. Port `8794`. Spec: `SPEC.md` §5 (the document tree), §11
 (`corpus db doctor` fails when files and projection rows drift).
 
 SERVER-037 fixed creation and said, in its own TEST-564: *"This fix prevents creation. It cleans up
@@ -585,14 +585,14 @@ TEST-608: A healthy workspace pays nothing
   When: `corpus db doctor` is run before and after
   Then: `stats.durationMs` is not materially worse, and **no `git log` subprocess runs at all** — the
   commit lookup happens per finding, and a healthy workspace has none. Doctor is a routine check
-  (`rebuild && doctor` clean is the standing §14 invariant); a recovery pass that shells out once per
+  (`rebuild && doctor` clean is the standing §11 invariant); a recovery pass that shells out once per
   markdown file turns it into something nobody runs.
 
 TEST-609: `ok`, the exit code, and the standing invariant
   Given: (a) a healthy workspace, (b) a workspace carrying invisible files
   When: `corpus db doctor` is run on each, and `corpus db rebuild && corpus db doctor` on each
   Then: (a) is clean, `ok: true`, **exit 0** — `rebuild && doctor` clean is unchanged for every
-  healthy workspace, which is §14's invariant and §15's definition of done. For (b), whichever of
+  healthy workspace, which is §11's invariant and §12's definition of done. For (b), whichever of
   the two answers the implementer chooses — a reported finding that sets `ok: false` and exit 6, or
   a warning that leaves `ok: true` and exit 0 — is **stated with its reasoning in the issue file**,
   in terms of what a user with an affected workspace experiences, and is consistent between the
@@ -653,7 +653,7 @@ TEST-614: The contract question is answered, not improvised
 
 `apps/ui/src/menu/docActions.ts`, `apps/ui/src/reader/FrontmatterForm.tsx`, **and the kit client**
 (see below). Model: **opus**. Port `8797`, Vite `5276`. Spec: `SPEC.md` §7 (archived skills are
-"restorable"; folder moves to `.claude/skills-archived/`), §11 (the reader ⋯ menu; the context menu
+"restorable"; folder moves to `.claude/skills-archived/`), §10 (the reader ⋯ menu; the context menu
 offers "exactly that item's existing actions… nothing invented").
 
 Shipped state, confirmed at contract time:
@@ -706,7 +706,7 @@ TEST-616: The menu item calls the route that owns the transition
 TEST-617: Archive moves onto its own route too (Adjudication 7)
   Given: `useRowActions.archive`, today `useUpdateDoc(...).mutate({status: "archived"})`
   When: Archive is activated from any surface — reader ⋯ menu, context menu, row menu, and the `e`
-  keyboard shortcut (§11)
+  keyboard shortcut (§10)
   Then: **`POST /api/docs/{id}/archive`**. Every surface that archives goes through the one route,
   the optimistic/`isBusy`/toast behavior is unchanged from the user's side, and the shipped toast
   wording is untouched.
@@ -754,10 +754,10 @@ TEST-622: A non-skill archives and unarchives with no folder move
   When: Archived and unarchived from the UI
   Then: `status` flips both ways, the file **does not move**, the id never changes, and it leaves
   and re-enters the default (non-archived) lists live over SSE. The "include archived" search chip
-  still shows it as a union member while archived (§11), and the archived chip renders on the row.
+  still shows it as a union member while archived (§10), and the archived chip renders on the row.
 
 TEST-623: The context menu invented nothing
-  Given: §11 — the context menu lists "exactly that item's existing actions — the same set its ⋯ /
+  Given: §10 — the context menu lists "exactly that item's existing actions — the same set its ⋯ /
   header menu offers, nothing invented"
   When: Both menus are compared on the same subject
   Then: Identical action sets, including the new item, because both read `useDocActions`. A test
@@ -791,7 +791,7 @@ TEST-626: Both halves of the UI evidence rule
 ### UI-021: the renderer stops disagreeing with the detector
 
 `apps/ui/src/thread/parseFormBlock.ts` + its test. Model: **opus**. Port `8798` (only if the agent
-wants a live thread; the fixture path needs no server). Spec: `SPEC.md` §6 (forms), §14
+wants a live thread; the fixture path needs no server). Spec: `SPEC.md` §6 (forms), §11
 (`needs=form`).
 
 The bug is one `continue`. `mapFormAnswers` (`parseFormBlock.ts:145-169`) closes the earliest open
@@ -819,7 +819,7 @@ TEST-628: Answering the newly-opened form clears it
   `form.test.ts:211` fixture
   When: The renderer maps it
   Then: **Both** forms are answered and no live control remains. This is the issue's criterion 2 and
-  the reason the server rejected the `answered: false` alternative: §11's reasons must have an action
+  the reason the server rejected the `answered: false` alternative: §10's reasons must have an action
   that clears them.
 
 TEST-629: The paired test mirrors the server's block, case for case
@@ -864,10 +864,10 @@ TEST-632: The fixture round-trips against the real detector
 
 ---
 
-### CLI-018: §11's "pin me a view" becomes a thing the agent can actually do
+### CLI-018: §10's "pin me a view" becomes a thing the agent can actually do
 
 `apps/cli` (`doc create` / `doc edit`, or a new `view` topic) + tests + `docs/cli.md`. Model:
-**opus**. Ports `8799`–`8800`, Vite `5278`. Spec: `SPEC.md` §11 — *"Adding, removing, reordering…
+**opus**. Ports `8799`–`8800`, Vite `5278`. Spec: `SPEC.md` §10 — *"Adding, removing, reordering…
 or reconfiguring a column edits that document — auto-committed and agent-stewardable ('@agent pin me
 a view of unresolved finance threads' just works)"*.
 
@@ -891,16 +891,16 @@ already works, exactly as CLI-016 was. And SPEC 38's premise needs correcting: `
 scalars-only limit is a **CLI value-grammar** decision, not a contract limitation. The contract has
 accepted nested objects since CONTRACT-011.
 
-TEST-633: The §11 sentence, walked end to end as the agent, with nothing but documented verbs
+TEST-633: The §10 sentence, walked end to end as the agent, with nothing but documented verbs
   Given: A real server on `8799`, a workspace outside this repository, and only commands
   `docs/cli.md` documents — no `curl`, no file edit
-  When: The agent does what §11 promises: creates a view of unresolved finance threads, pins it, and
+  When: The agent does what §10 promises: creates a view of unresolved finance threads, pins it, and
   gives it a board position
   Then: A `type: view` document exists on disk carrying `pinned: true`, an `order`, and a `query`
   mapping equivalent to `{type: thread, status: open, tag: finance}`; `git log` shows the
   auto-commit **authored by `agent`**; and `corpus doc list --type view --json` shows it. The exact
   command sequence is pasted. This is the issue's criterion 1 and the sprint's headline: if a CLI-only
-  agent cannot type this, §11 is still a lie.
+  agent cannot type this, §10 is still a lie.
 
 TEST-634: The board renders it live, in a browser, without a reload
   Given: The document from TEST-633, a real server on `8799`, and
@@ -918,7 +918,7 @@ TEST-634: The board renders it live, in a browser, without a reload
 TEST-635: Unpin and reorder are reachable too
   Given: The pinned view
   When: The agent unpins it, then re-pins it with a different `order`
-  Then: The column leaves and re-enters the board live, and lands in the new position. §11's
+  Then: The column leaves and re-enters the board live, and lands in the new position. §10's
   promise is "adding, removing, reordering, or reconfiguring", and a verb that can only ever add is
   half a feature. `order` accepts a midpoint (e.g. `1.5`) so a reorder need not renumber every
   column — the shipped tiebreak's whole rationale.
@@ -954,7 +954,7 @@ TEST-638: `column` is validated, and the plugin-missing path still works
   When: `--column todos/board` and `--column nonsense` are each written
   Then: The first succeeds and renders the plugin column; the second is refused naming the
   `<plugin>/<type>` shape. A reference to an **uninstalled** plugin is accepted and the board shows
-  the plugin-missing card, keeping its position (§15 M6) — the refusal is about the *shape*, never
+  the plugin-missing card, keeping its position (§12 M6) — the refusal is about the *shape*, never
   about whether the plugin happens to be installed. Note the asymmetry the agent must not "fix":
   `readColumn` (`apps/server/src/core/view-frontmatter.ts:150`) does **not** pattern-check on read,
   so the regex is a request-side guard only. Tightening the reader is a different issue.
@@ -990,7 +990,7 @@ TEST-641: The view is a document like any other
   Then: `corpus doc edit` on it works, `corpus doc archive` removes its column from the board (the
   board's filter is `pinned=true&type=view`, and an archived view is excluded by default — check
   which of unpin-vs-archive the board actually honors and state it), `corpus doc unarchive` restores
-  it, and `corpus db doctor` is clean throughout. §11: "deletable like any document, nothing
+  it, and `corpus db doctor` is clean throughout. §10: "deletable like any document, nothing
   hardwired."
 
 TEST-642: A CLI-created view is indistinguishable from one the board itself creates
@@ -1006,7 +1006,7 @@ TEST-642: A CLI-created view is indistinguishable from one the board itself crea
   `evergreen: true` is set (the board sets it; a column that goes stale and asks to be reviewed is
   not what §5's staleness ramp is for). Note there is **no `type: view` template document** in
   `assets/workspace/data/docs/templates/` — only `note.md` — so nothing pre-fills a view's body, and
-  §11's "a `view` … is one of the two exceptions" to the editable document view still holds.
+  §10's "a `view` … is one of the two exceptions" to the editable document view still holds.
 
 TEST-643: `docs/cli.md` is regenerated, never hand-edited
   Given: The new flags or verb
@@ -1052,8 +1052,8 @@ TEST-647: No agent amended `SPEC.md`
   Given: `git diff SPEC.md`
   When: Inspected
   Then: **Empty.** Phase 6 has had no spec pass, and none of these six issues needs one. Two places
-  invite a passing edit and neither is taken: §11's ⋯-menu sentence enumerates "Archive, Delete, and
-  Resolve/Reopen" and does not name Unarchive (UI-020), and §14's `db doctor` sentence does not
+  invite a passing edit and neither is taken: §10's ⋯-menu sentence enumerates "Archive, Delete, and
+  Resolve/Reopen" and does not name Unarchive (UI-020), and §11's `db doctor` sentence does not
   contemplate a warning pass (SERVER-038). If an agent believes either must change, that is a
   **spec rider escalated to the orchestrator** for the phase PR with user sign-off — routed to
   spec-writer, never patched in passing.
@@ -1144,7 +1144,7 @@ TEST-656: The repo-wide gate passes at harvest
   dependency major, not a routing redesign; the app has two routes and a dev probe. Adding `/doc/:id`
   or `/thread/:id` routes — which `App.tsx`'s own docblock anticipates — is a separate issue nobody
   has filed.
-- **Making the reader navigation stack router-backed.** SPEC §11 says browser-local state stays
+- **Making the reader navigation stack router-backed.** SPEC §10 says browser-local state stays
   local; the stack is `localStorage`, deliberately (TEST-598).
 - **A recovery pass over the other four document roots** (`data/threads`, `.claude/skills`,
   `.claude/skills-archived`, `.claude/agents`). SERVER-038 walks `data/docs/` only, for the reasons
@@ -1257,7 +1257,7 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
    they exercise the pure functions directly. TEST-583 and TEST-584 are not satisfiable by a passing
    suite.
 5. **UI-016's "no behavior change" bar is the named spec list, not the suite total.** The reader
-   navigation stack is not react-router (SPEC §11 — browser-local state), so the issue's third
+   navigation stack is not react-router (SPEC §10 — browser-local state), so the issue's third
    acceptance criterion is restated as a no-diff claim (TEST-598). The genuine surface is
    `App.tsx`'s route table, `devRoutes`'s `<Route>`-as-child pattern, `useSearchParams`, and
    `MemoryRouter` — plus `smoke.spec.ts:255`, the **only** e2e test in the repository that navigates
@@ -1324,7 +1324,7 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
 1. **UI-021 first — it is the smallest thing here.** One `continue`, one paired test block, one
    docblock. Landing it early frees a slot and puts a clean commit on the branch.
 2. **SERVER-038 and CLI-018 in parallel** — different domains, no shared files, neither runs
-   `npm install`. CLI-018 is the higher-value one (it closes a §11 promise) and the more likely to
+   `npm install`. CLI-018 is the higher-value one (it closes a §10 promise) and the more likely to
    need a browser drill, so give it the Vite port.
 3. **UI-020 next**, once one of the above frees a slot. It is the widest of the four (kit + menu +
    frontmatter form + the Archive re-route) and it wants a real workspace on `8797` for TEST-618's
@@ -1344,7 +1344,7 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
    (cross-package, changes a shipped write path). UI-016 qualifies if the router change reached
    beyond the four files.
 9. **Evaluate**, then route the wave's spec riders — this batch is expected to surface at least the
-   §11 ⋯-menu enumeration (UI-020) and possibly §14's doctor sentence (SERVER-038) — to spec-writer
+   §10 ⋯-menu enumeration (UI-020) and possibly §11's doctor sentence (SERVER-038) — to spec-writer
    for the phase PR, with user sign-off. Neither is patched in passing.
 
 ---
@@ -1360,7 +1360,7 @@ This sprint is complete when:
   the single gate that separates UI-020 from a menu item, and no combination of passing unit tests
   substitutes for it
 - **TEST-634 passes** — the board renders an agent-created, agent-pinned view live in a real
-  browser, with the SSE frame and the proxy proof pasted. §11's "just works" is a claim about a
+  browser, with the SSE frame and the proxy proof pasted. §10's "just works" is a claim about a
   browser, not about a frontmatter key
 - **TEST-605 passes with every named near-miss enumerated individually** — `my.notes`, `v1.2`,
   `notes/2026.07`, `a.b/c.d`, `finance/2026`, `archive.2026`, `node_modules.md`, the seeded folders,

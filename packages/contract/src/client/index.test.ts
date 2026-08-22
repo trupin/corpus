@@ -29,7 +29,6 @@ const frontmatter = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 
@@ -127,7 +126,7 @@ function createServer() {
   });
 
   // CONTRACT-037, restaged for SHARED-032 by CONTRACT-048. The handler echoes
-  // every row with the verb it carried and splits them across §11's three parts,
+  // every row with the verb it carried and splits them across §10's three parts,
   // so the typed call proves both directions: the per-row discriminated act
   // reaches the wire, and the three-part result comes back narrowed rather than
   // as an opaque blob. A `wholeResultSet` entry resolves to one synthetic id.
@@ -197,7 +196,6 @@ function createServer() {
             pinned: false,
             order: null,
             query: null,
-            column: null,
             extra: {},
             stale: "aging" as const,
             parent: null,
@@ -324,7 +322,7 @@ function createServer() {
         threadId: "th_x9y8",
         eventId: c.req.valid("form").requestsAgent === false ? null : "evt_7c1d",
         // A capture writes a document, a thread and the parent's frontmatter, so
-        // §14's warnings ride back with it like any other mutation.
+        // §11's warnings ride back with it like any other mutation.
         warnings: [{ code: "commit_skipped" as const, detail: "no `git` on PATH" }],
       },
       201,
@@ -783,7 +781,7 @@ describe("the typed collection query", () => {
  * have to infer from.
  */
 describe("the typed bulk act", () => {
-  it("sends a staged set and gets §11's three parts back", async () => {
+  it("sends a staged set and gets §10's three parts back", async () => {
     const { data, error } = await createTestClient().api.POST("/api/docs/bulk", {
       body: {
         entries: [
@@ -832,7 +830,7 @@ describe("the typed bulk act", () => {
     expect(data?.commit).toBe("9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456");
   });
 
-  /** §11's whole-result-set selection: one entry carrying a query, no ids. */
+  /** §10's whole-result-set selection: one entry carrying a query, no ids. */
   it("stages a whole result set as one entry beside the enumerated rows", async () => {
     const { data } = await createTestClient().api.POST("/api/docs/bulk", {
       body: {
@@ -862,7 +860,7 @@ describe("the typed bulk act", () => {
   /**
    * Compile-time assertions, checked by `tsc --noEmit` rather than by a run:
    * the tag act carries a delta and no replacement, a `move` without a folder is
-   * not a call anyone can write, each staged row carries its own verb, and §11's
+   * not a call anyone can write, each staged row carries its own verb, and §10's
    * "a whole-result-set selection cannot be deleted" is a *type* error rather
    * than something discovered at runtime on 412 documents.
    */
@@ -884,7 +882,7 @@ describe("the typed bulk act", () => {
   type WholeResultSetMayNotDelete =
     Extract<WholeResultSetAct, { action: "delete" }> extends never ? true : never;
 
-  it("types the staged set, the tag delta, and §11's delete restriction", () => {
+  it("types the staged set, the tag delta, and §10's delete restriction", () => {
     const delta: TagIsADelta = true;
     const folder: MoveNeedsAFolder = true;
     const perRow: EveryRowCarriesAVerb = true;
@@ -1092,7 +1090,7 @@ describe("the long-poll idle endpoint", () => {
 
 /**
  * The projection-maintenance pair behind `corpus db rebuild` / `corpus db
- * doctor` (SPEC.md §2.2, §14). Rebuild is the one `POST` in the surface that
+ * doctor` (SPEC.md §2.2, §11). Rebuild is the one `POST` in the surface that
  * takes no body at all, so the typed client must be able to call it with nothing
  * but a path — a generated `requestBody` would be a contract bug here.
  */

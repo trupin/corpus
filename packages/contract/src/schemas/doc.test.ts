@@ -39,7 +39,6 @@ const frontmatter = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 
@@ -82,8 +81,9 @@ describe("DocFrontmatter", () => {
     expect(DocFrontmatterSchema.parse(frontmatter)).toEqual(frontmatter);
   });
 
-  it("accepts a plugin-defined type, since plugins declare their own", () => {
-    expect(DocFrontmatterSchema.parse({ ...frontmatter, type: "todo" }).type).toBe("todo");
+  /** SPEC.md §12's M6: a type this build never heard of parses like any other. */
+  it("accepts an unrecognised type, since the core's six are not all there are", () => {
+    expect(DocFrontmatterSchema.parse({ ...frontmatter, type: "ledger" }).type).toBe("ledger");
   });
 
   it("rejects a status outside the lifecycle", () => {
@@ -141,9 +141,9 @@ describe("DocFrontmatter", () => {
 });
 
 /**
- * CONTRACT-011: the §11 view keys are first-class core fields on every
- * response surface, so the board reads its whole column set — query, order,
- * column type — from the list response with no per-view follow-up read.
+ * CONTRACT-011: the §10 view keys are first-class core fields on every
+ * response surface, so the board reads its whole column set — pinned, order,
+ * query — from the list response with no per-view follow-up read.
  */
 describe("view frontmatter keys", () => {
   it("round-trips the seed attention view's frontmatter", () => {
@@ -158,12 +158,22 @@ describe("view frontmatter keys", () => {
     expect(DocFrontmatterSchema.parse(withQuery)).toEqual(withQuery);
   });
 
-  it("round-trips a plugin column view", () => {
-    const pluginView = { ...viewFrontmatter, query: null, column: "todos/board" };
-    expect(DocFrontmatterSchema.parse(pluginView)).toEqual(pluginView);
+  /**
+   * `column` was a core view key until SHARED-066, when the plugin surface it
+   * named went away. A workspace that predates the removal still has it on
+   * disk, and it must survive the round trip — as `extra`, which is the whole
+   * point of `extra` (SPEC.md §9.1).
+   */
+  it("carries a pre-removal `column` key as extra frontmatter, verbatim", () => {
+    const columnView = { ...viewFrontmatter, query: null, extra: { column: "ledger/board" } };
+    expect(DocFrontmatterSchema.parse(columnView)).toEqual(columnView);
   });
 
-  it.each(["pinned", "order", "query", "column", "extra"] as const)(
+  it("no longer declares `column` as a core key of its own", () => {
+    expect(Object.keys(DocFrontmatterSchema.shape)).not.toContain("column");
+  });
+
+  it.each(["pinned", "order", "query", "extra"] as const)(
     "requires %s to be present — absent-on-disk is false/null/{}, never a missing key",
     (field) => {
       const { [field]: _dropped, ...without } = frontmatter as Record<string, unknown>;
@@ -171,7 +181,7 @@ describe("view frontmatter keys", () => {
     },
   );
 
-  it.each(["pinned", "order", "query", "column", "extra"] as const)(
+  it.each(["pinned", "order", "query", "extra"] as const)(
     "describes %s identically to the list row, since they describe the same file key",
     (field) => {
       expect(DocFrontmatterSchema.shape[field].meta()?.description).toBe(
@@ -190,7 +200,7 @@ describe("view frontmatter keys", () => {
   });
 
   it("carries extra frontmatter beside the core keys", () => {
-    const withExtra = { ...frontmatter, type: "todo", extra: { items: [{ done: false }] } };
+    const withExtra = { ...frontmatter, type: "ledger", extra: { items: [{ done: false }] } };
     expect(DocFrontmatterSchema.parse(withExtra)).toEqual(withExtra);
   });
 
@@ -245,7 +255,7 @@ describe("Doc", () => {
 
 describe("CreateDocRequest", () => {
   /**
-   * The zero-form create (SPEC.md §11). The schema deliberately does *not*
+   * The zero-form create (SPEC.md §10). The schema deliberately does *not*
    * materialise `tags`/`status`/`due`/`evergreen` at parse time: a Zod default
    * becomes a JSON Schema `default`, which `openapi-typescript` renders as a
    * required member of the client's request type — so the caller would be forced
@@ -304,7 +314,7 @@ describe("CreateDocRequest", () => {
   });
 
   /**
-   * The default is `inbox`, not the root: creation is inbox-first (SPEC.md §11)
+   * The default is `inbox`, not the root: creation is inbox-first (SPEC.md §10)
    * and the server's `documentPathFor` implements it. The schema leaves `folder`
    * absent so the server owns the default — what is asserted here is that the
    * published description says so, since that is the only place a client learns it.
@@ -344,7 +354,7 @@ describe("CreateDocRequest", () => {
   });
 
   it("accepts extra frontmatter on create", () => {
-    const request = { type: "todo", title: "Chores", extra: { items: [] } };
+    const request = { type: "ledger", title: "Chores", extra: { items: [] } };
     expect(CreateDocRequestSchema.parse(request)).toEqual(request);
   });
 
@@ -353,18 +363,17 @@ describe("CreateDocRequest", () => {
     expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
   });
 
-  it.each(["todos/board", "publish/status"])("accepts the column reference %s", (column) => {
-    const request = { type: "view", title: "T", pinned: true, column };
-    expect(CreateDocRequestSchema.parse(request).column).toBe(column);
+  it("takes a `column` key only through extra, since the core no longer defines one", () => {
+    const request = { type: "view", title: "T", pinned: true, extra: { column: "ledger/board" } };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
   });
 
-  it.each(["todos", "todos/", "/board", "todos/b/oard", "to dos/board"])(
-    "rejects the malformed column reference %s — the format is <plugin>/<type>",
-    (column) => {
-      const request = { type: "view", title: "T", column };
-      expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
-    },
-  );
+  it("refuses a top-level `column` outright — the request is strict and no such field exists", () => {
+    // Not a loosening: strictness is what turns a caller written against the
+    // old contract into a `400` naming the key, rather than a silent no-op.
+    const request = { type: "view", title: "T", column: "ledger/board" };
+    expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
+  });
 });
 
 describe("MoveDocRequest", () => {
@@ -425,7 +434,7 @@ describe("DeleteDocResult", () => {
     expect(DeleteDocResultSchema.parse(result)).toEqual(result);
   });
 
-  it("carries the §14 warnings of a deletion whose commit was refused", () => {
+  it("carries the §11 warnings of a deletion whose commit was refused", () => {
     const result = {
       deletedId: "doc_a1b2c3",
       orphanedThreadIds: [],
@@ -471,7 +480,7 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
     ["a status flip", { status: "archived" as const }],
     ['a "still current" mark', { reviewed: "2026-07-26T12:00:00Z" }],
     ["a view key", { pinned: true }],
-    ["an extra-frontmatter merge patch", { extra: { "todo.items": [] } }],
+    ["an extra-frontmatter merge patch", { extra: { "ledger.items": [] } }],
     ["a save that names no change at all", {}],
   ])("takes no key on %s, which names its own delta", (_label, patch) => {
     expect(UpdateDocRequestSchema.safeParse(patch).success).toBe(true);
@@ -511,10 +520,7 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
       query: { needs: "me" },
     });
     expect(UpdateDocRequestSchema.parse({ query: null })).toEqual({ query: null });
-    expect(UpdateDocRequestSchema.parse({ order: null, column: null })).toEqual({
-      order: null,
-      column: null,
-    });
+    expect(UpdateDocRequestSchema.parse({ order: null })).toEqual({ order: null });
   });
 
   it("accepts a per-key extra merge patch, null removing the named key", () => {
@@ -538,7 +544,7 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
 });
 
 describe("DocMutationResponse", () => {
-  it("wraps the document so §14 warnings have somewhere to travel", () => {
+  it("wraps the document so §11 warnings have somewhere to travel", () => {
     const response = {
       doc,
       warnings: [{ code: "commit_skipped" as const, detail: "workspace is not a git repository" }],
@@ -561,8 +567,8 @@ describe("document type vocabulary", () => {
     expect(CoreDocTypeSchema.parse(type)).toBe(type);
   });
 
-  it("does not treat a plugin type as a core type", () => {
-    expect(CoreDocTypeSchema.safeParse("todo").success).toBe(false);
+  it("does not treat an unrecognised type as a core type", () => {
+    expect(CoreDocTypeSchema.safeParse("ledger").success).toBe(false);
   });
 
   it.each(["open", "resolved", "archived"])("recognises the status %s", (status) => {

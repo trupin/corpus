@@ -26,7 +26,7 @@ opus
 
 - SPEC.md §12 — as amended by SHARED-036: "the status control shows the derived
   value and says it comes from the items"
-- SPEC.md §11 — as amended by SHARED-030: a derived field "is editable by
+- SPEC.md §10 — as amended by SHARED-030: a derived field "is editable by
   nobody — that is not an edit mode, it is a field that was never the person's
   to set"
 
@@ -60,7 +60,7 @@ is worth its own issue because it is the one place where "always editable" and
       status control — there is nothing to derive from, so the field is the
       person's again
 - [x] With `plugins/todos/` deleted, a todo document's status control is an
-      ordinary editable one (§15 M6) — covered by unit tests against
+      ordinary editable one (§12 M6) — covered by unit tests against
       `EMPTY_REGISTRY`, which is exactly the registry a deleted plugin leaves
 - [x] The frontmatter form's other controls are unaffected and stay live
 

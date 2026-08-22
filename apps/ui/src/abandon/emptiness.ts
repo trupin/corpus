@@ -2,7 +2,7 @@ import { UNTITLED_DOCUMENT_TITLE } from "../board/useCreateInColumn";
 import { canonicalizeMarkdown } from "../editor/markdown/serialize";
 
 /**
- * What "empty" means, for the one rule that destroys a document (SPEC.md §11):
+ * What "empty" means, for the one rule that destroys a document (SPEC.md §10):
  * *"a document that is empty — no title and no body content — when you exit it
  * is automatically deleted, whatever the exit route"*.
  *
@@ -15,7 +15,7 @@ import { canonicalizeMarkdown } from "../editor/markdown/serialize";
  * user wrote the rule for — start typing, change your mind, remove what you
  * wrote, leave — so nothing here remembers what a document once held.
  *
- * **A template's skeleton is not content the user wrote.** SPEC.md §11's
+ * **A template's skeleton is not content the user wrote.** SPEC.md §10's
  * "Templates are documents" means a new `note` in a seeded workspace is born
  * holding `## Context / ## Notes / ## Open questions` — so a rule that only
  * asked "is the body blank?" would exempt the `＋` path from the whole issue in
@@ -59,7 +59,7 @@ export function isBlankBody(body: string): boolean {
  * rule therefore never applies to.
  *
  * A `thread` is its conversation (SPEC.md §6) and a `view` is its stored query
- * (SPEC.md §11) — both are routinely "empty" in the body sense while being
+ * (SPEC.md §10) — both are routinely "empty" in the body sense while being
  * entirely full of what the user made. `DocEditor` draws the same line for the
  * same reason.
  */
@@ -78,22 +78,16 @@ export interface DocSnapshot {
    */
   readonly pristineBody: string | null;
   /**
-   * True when the document carries plugin frontmatter (`extra`).
+   * True when the document carries frontmatter the core does not define
+   * (`extra`).
    *
-   * `extra` is **opaque passthrough the core never interprets** (SPEC.md §8's
-   * `extra_json`, §12), so a blank body is not evidence about a document that
-   * has any: whatever a plugin put there is content this rule cannot read, and
-   * deleting the document would destroy it unseen. Consulting `extra` rather
-   * than the plugin registry keeps the guard true even for a document whose
-   * plugin has been uninstalled, which is precisely when nothing else would
+   * `extra` is **opaque passthrough the core never interprets** (SPEC.md §9's
+   * `extra_json`), so a blank body is not evidence about a document that has
+   * any: whatever is in there is content this rule cannot read, and deleting
+   * the document would destroy it unseen. Asking the *document* rather than
+   * asking what wrote those keys is what keeps the guard true when nothing in
+   * this build recognises them, which is precisely when nothing else would
    * notice.
-   *
-   * The reference plugin is **not** the case this guards any more: SPEC.md §12
-   * puts todo items in the **body** as markdown task-list lines, so a todo
-   * document with items has a non-blank body and never reaches the guard, and a
-   * brand-new one with no items, no title and no `extra` is genuinely empty and
-   * is correctly removed like any other note (the comment here used to cite the
-   * old `extra.items` model — corrected, PR #12 review, MINOR 15).
    */
   readonly hasExtra: boolean;
 }
@@ -108,8 +102,8 @@ export interface DocSnapshot {
  *   — a thread is content the user deliberately created about this document,
  *   and removing the document would orphan it, which the same spec sentence
  *   forbids;
- * - a document carrying **plugin frontmatter** persists, because the core
- *   cannot read what a plugin put in `extra` and must not delete it unseen.
+ * - a document carrying frontmatter the core does not define persists, because
+ *   the core cannot read what is in `extra` and must not delete it unseen.
  */
 export function isAbandonable(snapshot: DocSnapshot): boolean {
   if (NON_ABANDONABLE_TYPES.has(snapshot.type)) return false;

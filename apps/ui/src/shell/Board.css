@@ -1,4 +1,4 @@
-/* The board: a horizontal strip of columns with snap scrolling (SPEC.md §11).
+/* The board: a horizontal strip of columns with snap scrolling (SPEC.md §10).
    Columns themselves arrive with UI-003. */
 
 .board {

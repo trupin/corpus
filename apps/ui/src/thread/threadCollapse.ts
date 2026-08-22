@@ -1,5 +1,5 @@
 /**
- * Whether a conversation is folded, and who decided (SPEC.md §11, rider signed
+ * Whether a conversation is folded, and who decided (SPEC.md §10, rider signed
  * 2026-08-05; §6's `status` line).
  *
  * The whole model is three sentences of the spec, and they are kept here as
@@ -24,7 +24,7 @@
  * **Nothing here is ever written to the corpus.** Every write in this product
  * goes through the server and auto-commits (SPEC.md §4, §7), so a collapse
  * stored in the thread or the document would mean *reading a document produces
- * git commits*. §11 already draws the line — "only browser-local state stays
+ * git commits*. §10 already draws the line — "only browser-local state stays
  * local: scroll positions, open readers, and per-reader navigation stacks" — and
  * a reading posture belongs in exactly that set, beside the console's height and
  * the reader's chosen width.
@@ -48,7 +48,7 @@ export const RESOLVED_STATUS = "resolved";
  * A guess in either direction is a defect with a spec clause attached: guessing
  * `unread` makes §6's "a resolved thread is collapsed by default wherever it is
  * shown" untrue for those placements forever, and guessing `read` folds a
- * conversation this browser cannot vouch has been read, against §11's "never
+ * conversation this browser cannot vouch has been read, against §10's "never
  * collapsed by the rule". So the third answer is spelled out instead, and the
  * rule stands down when it is the answer: **the rule applies only where the read
  * state is known.** Naming it is what stops the two clauses being traded off
@@ -108,7 +108,7 @@ export interface ThreadCollapseSubject {
   /**
    * True when this surface cannot usefully draw the conversation where it
    * stands — nesting past {@link MAX_DRAWN_DEPTH}. Not a second rule: it is what
-   * the surface can draw, and SPEC.md §11 spells the consequence out ("a
+   * the surface can draw, and SPEC.md §10 spells the consequence out ("a
    * conversation nested deeper than a surface can usefully draw is collapsed
    * rather than dropped").
    */
@@ -116,13 +116,13 @@ export interface ThreadCollapseSubject {
 }
 
 /**
- * SPEC.md §11's **single** rule, alone and nameable.
+ * SPEC.md §10's **single** rule, alone and nameable.
  *
  * Kept separate from {@link placedCollapsed} so the closed set stays visible in
  * the code: this function is the whole of it, and a second rule would have to be
  * written into this one body rather than added beside it.
  *
- * **It asks for `read`, not for "not unread"** (PR #25 re-review, MAJOR). §11's
+ * **It asks for `read`, not for "not unread"** (PR #25 re-review, MAJOR). §10's
  * interlock is a promise about what a fold can cost — a collapsed conversation
  * displays nothing and so reads nothing (§7), so folding one that might hold an
  * unseen turn is a way to lose it. A surface that does not know cannot make that
@@ -140,7 +140,7 @@ export function resolvedRuleCollapses(subject: ThreadCollapseSubject): boolean {
  * Two things decide it, and they are not the same kind of thing.
  *
  * **What the surface can draw comes first, and the interlock does not bind it**
- * (PR #25 review, MINOR). §11 binds the interlock to *the rule* — "a
+ * (PR #25 review, MINOR). §10 binds the interlock to *the rule* — "a
  * conversation carrying a turn you have not seen is never collapsed **by the
  * rule**" — and depth is not a rule: `threadDepth.ts` says so in as many words,
  * "not a second rule: it is what the surface can draw". An unread conversation
@@ -189,7 +189,7 @@ export const EMPTY_COLLAPSE_STATE: CollapseState = {
 
 const NO_OVERRIDES: SurfaceOverrides = {};
 
-/** The surface key for a column's reader — one per column, as §11 requires. */
+/** The surface key for a column's reader — one per column, as §10 requires. */
 export function columnSurface(columnId: string): string {
   return `col:${columnId}`;
 }
@@ -343,7 +343,7 @@ export function writeCollapseState(
  *
  * For the jsdom suites' `afterEach`: folds outlive a component and a document by
  * design, so without this one test's gesture is the next one's starting state.
- * Nothing in the app calls it — there is no "forget my folds" action, and §11
+ * Nothing in the app calls it — there is no "forget my folds" action, and §10
  * does not describe one.
  */
 export function clearCollapseState(storage: Storage | null = storageOrNull()): void {

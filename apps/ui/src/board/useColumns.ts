@@ -4,7 +4,7 @@ import { compareColumns, toBoardColumn, type BoardColumn } from "./viewDoc";
 
 /**
  * The board's column set: every pinned `type: view` document, in board order
- * (SPEC.md §11).
+ * (SPEC.md §10).
  *
  * **One bounded request, whatever the board holds.** `pinned=true&type=view&
  * sort=order` returns each view's `query`, `order` and `column` on the row

@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — context-menu conventions ("adds no exclusive capability"; arrows/↵); reader ⋯ menu
+- SPEC.md §10 — context-menu conventions ("adds no exclusive capability"; arrows/↵); reader ⋯ menu
 
 ## Summary
 Evaluator finding (2026-07-31, Phase 6 LEDGER-P6-1): the reader's ⋯ *button* popover

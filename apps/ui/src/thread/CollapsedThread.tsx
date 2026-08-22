@@ -5,7 +5,7 @@ import { readStateOf, RESOLVED_STATUS, type ThreadReadState } from "./threadColl
 /**
  * A collapsed conversation: one line that still says what it is.
  *
- * SPEC.md §11 fixes the contents, and every clause of it is load-bearing —
+ * SPEC.md §10 fixes the contents, and every clause of it is load-bearing —
  * **collapsed is never hidden**, so the line reports that the conversation
  * exists, what it is about, who spoke last, how many turns are inside and
  * whether it holds anything unseen. A fold that dropped any of those would be a
@@ -14,7 +14,7 @@ import { readStateOf, RESOLVED_STATUS, type ThreadReadState } from "./threadColl
  * it, whether it is the one they are looking for.
  *
  * **The turn count is the whole size, not a remainder.** That is the same
- * instinct the fence clipping already ships ("Show all 60 lines"), and §11 makes
+ * instinct the fence clipping already ships ("Show all 60 lines"), and §10 makes
  * it the rule for a fold: the difference between a collapse and a truncation is
  * whether the thing tells you how big it is.
  *
@@ -29,7 +29,7 @@ import { readStateOf, RESOLVED_STATUS, type ThreadReadState } from "./threadColl
 /**
  * What a placement knows about a conversation without opening it.
  *
- * It is the projection's thread row, narrowed to the fields §11's collapsed line
+ * It is the projection's thread row, narrowed to the fields §10's collapsed line
  * needs plus the two the expanded card renders before its own fetch lands. One
  * shape for both states is deliberate: a fold must not change what the reader is
  * told the conversation is, and two shapes are how a chip and a card quietly
@@ -71,7 +71,7 @@ export function summaryFromRow(row: DocRow): ThreadSummary {
   };
 }
 
-/** What the conversation is about — the third thing §11 requires the line to say. */
+/** What the conversation is about — the third thing §10 requires the line to say. */
 export function summarySubject(summary: ThreadSummary): string {
   if (summary.quote !== "") return `“${summary.quote}”`;
   return summary.parent === null ? "standalone" : "whole document";
@@ -81,7 +81,7 @@ export function summarySubject(summary: ThreadSummary): string {
  * The line itself.
  *
  * `💬 3 turns · agent · resolved · “lender spreads”`, which is the shipped chip
- * label with the two things §11 added to it: the count says its unit, and the
+ * label with the two things §10 added to it: the count says its unit, and the
  * conversation says what it is about.
  */
 export function collapsedLabel(summary: ThreadSummary): string {
@@ -107,7 +107,7 @@ export function CollapsedThread({
       type="button"
       className={summary.status === RESOLVED_STATUS ? "t-chip resolved-chip" : "t-chip"}
       /*
-       * An ordinary focusable control, which is the whole of §11's keyboard
+       * An ordinary focusable control, which is the whole of §10's keyboard
        * requirement here: the fold claims **no new key**, so being a button —
        * reachable by Tab, activated by `↵` and by Space — is what makes it
        * operable without a pointer.

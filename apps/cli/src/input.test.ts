@@ -173,7 +173,7 @@ describe("resolveTurnModel", () => {
     resolveTurnModel({ flags: flagsOf(model === undefined ? {} : { model }), actor });
 
   it("is undefined when the flag is absent, so the request carries no field at all", () => {
-    // The distinction the whole feature rests on (SPEC.md §11): a turn nobody
+    // The distinction the whole feature rests on (SPEC.md §10): a turn nobody
     // recorded a model for must show nothing rather than a guess, and `undefined`
     // is what lets the caller *omit* the key instead of sending an empty one.
     expect(resolve(undefined)).toBeUndefined();
@@ -204,7 +204,7 @@ describe("resolveTurnModel", () => {
 
   it("refuses a model on anyone but the agent, and explains rather than just failing", () => {
     // The server's `400` stays the backstop; this is the same answer one round
-    // trip earlier, with the reason attached (SPEC.md §11).
+    // trip earlier, with the reason attached (SPEC.md §10).
     let thrown: unknown;
     try {
       resolve("claude-opus-4-1", "user");

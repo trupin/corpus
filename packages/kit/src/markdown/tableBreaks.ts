@@ -20,7 +20,7 @@
  * typed rather than a break the format forced.
  *
  * **Both surfaces run this.** `MarkdownView` renders threads, focus-mode content
- * and plugin bodies; `apps/ui/src/editor/markdown/parse.ts` renders the document
+ * and `view` bodies; `apps/ui/src/editor/markdown/parse.ts` renders the document
  * body through TipTap and imports this same plugin. A document must not read
  * differently depending on which of the two is drawing it, and the editor's
  * serializer writes `<br>` back for a break in a cell, so the file is unchanged

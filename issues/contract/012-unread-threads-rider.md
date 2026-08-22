@@ -23,7 +23,7 @@ opus — mirrors the parentTitle/originTitle rider pattern.
 
 ## Spec References
 
-- SPEC.md §11 — document rows' unread indicator
+- SPEC.md §10 — document rows' unread indicator
 - `issues/ui/004-type-aware-rows.md` — deferral 2 (discovery: no wire data; per-row `?parent=&type=thread&unread=true` is the N+1 sprint-009 TEST-66 forbids)
 
 ## Summary
@@ -231,10 +231,10 @@ not the word "standalone". Correct the description to match (one line) while tou
 ## Riders (orchestrator, 2026-07-28 — sprint-010 adjudications)
 
 1. **`Job.type`** — add the event type to `JobSchema` (the projection already stores
-   `events.type`); the console's job rows are `<event type> · <title>` per the prototype and §11.
+   `events.type`); the console's job rows are `<event type> · <title>` per the prototype and §10.
    SERVER-027 populates it in the coupled commit.
 2. **`DocsQuerySchema.includeArchived`** — stringbool (the `pinned` precedent). When true, the
    default `status <> 'archived'` exclusion is lifted (union — archived rows appear alongside
    open ones); absent/false keeps today's behavior; `status=archived` alone still means "archived
-   only". SERVER-027 implements the query change. SPEC §11 clarification goes to the phase-end
+   only". SERVER-027 implements the query change. SPEC §10 clarification goes to the phase-end
    spec pass.

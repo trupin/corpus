@@ -7,7 +7,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-134 in a real browser: **a count reaching two digits moves nothing**
- * (SPEC.md §11's rider, signed 2026-08-20 — "Nothing resizes because of what it
+ * (SPEC.md §10's rider, signed 2026-08-20 — "Nothing resizes because of what it
  * holds", where "a count reaching two digits" is named by clause 1).
  *
  * ## What is measured, and why it is never the number itself
@@ -20,8 +20,8 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  *
  * ## Two shapes of evidence
  *
- * Where a surface can show both values **at once** — two columns, two rows, two
- * todo groups — the assertion compares them in one frame. That is stronger than
+ * Where a surface can show both values **at once** — two columns, two rows —
+ * the assertion compares them in one frame. That is stronger than
  * a reload: it removes every question about what else settled between the two
  * measurements, and it is what a person actually sees, since a board holds a
  * one-digit count and a two-digit one side by side all day.
@@ -438,78 +438,6 @@ test.describe("the console's failed-chunk count", () => {
       few.width,
       "the sentence was re-cut to make room for two more digits",
     );
-  });
-});
-
-test.describe("the todos plugin's group count", () => {
-  const items = (count: number): string =>
-    [
-      "Chores.",
-      "",
-      ...Array.from({ length: count }, (_, at) => `- [ ] Item ${String(at)}`),
-      "",
-    ].join("\n");
-
-  test("does not re-cut the list's name when it crosses into two digits", async ({ page }) => {
-    await page.setViewportSize(VIEWPORT);
-    await stubCorpus(page, [
-      {
-        id: "doc_view_todos",
-        type: "view",
-        title: "Todos",
-        path: "data/docs/views/todos.md",
-        pinned: true,
-        order: 1,
-        column: "todos/todos",
-      },
-      {
-        id: "doc_nine",
-        type: "todo",
-        title: LONG_TITLE,
-        path: "data/docs/inbox/nine.md",
-        body: items(9),
-      },
-      {
-        id: "doc_twelve",
-        type: "todo",
-        title: LONG_TITLE,
-        path: "data/docs/inbox/twelve.md",
-        body: items(12),
-      },
-    ]);
-    /*
-     * The plugin's own aggregate. Its routes are not in the generated contract,
-     * so `stubCorpus` knows nothing about them and its `{}` fallback answers a
-     * shape the plugin validates and refuses — the column then draws its error
-     * card and no group at all (`todos-menu.spec.ts` answers it the same way,
-     * after the stub, so Playwright's most-recent-first matching lets it win).
-     */
-    await page.route("**/api/x/todos/lists/**", async (route) => {
-      const list = (docId: string, count: number): unknown => ({
-        docId,
-        title: LONG_TITLE,
-        open: count,
-        done: 0,
-        items: Array.from({ length: count }, (_, at) => ({
-          text: `Item ${String(at)}`,
-          done: false,
-        })),
-      });
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ lists: [list("doc_nine", 9), list("doc_twelve", 12)] }),
-      });
-    });
-    await page.goto("/");
-
-    const group = (id: string): Locator => page.locator(`.todos-group[data-todos-group="${id}"]`);
-    await expect(group("doc_nine").locator(".todos-group-count")).toHaveText("9");
-    await expect(group("doc_twelve").locator(".todos-group-count")).toHaveText("12");
-
-    const nine = await boxOf(group("doc_nine").locator(".todos-group-title"));
-    const twelve = await boxOf(group("doc_twelve").locator(".todos-group-title"));
-    expectSameWidth(twelve.width, nine.width, "the list's name paid for the extra digit");
   });
 });
 

@@ -1,5 +1,5 @@
 // The one document mutation pipeline (Architecture Decision 2 — "the server is
-// the sole writer"; SPEC.md §4, §9.1, §14).
+// the sole writer"; SPEC.md §4, §9.1, §11).
 //
 // Create, edit, move, archive, unarchive and delete each build a
 // {@link MutationPlan} and hand it here, so the invariants live in exactly one
@@ -16,7 +16,7 @@
 // - **A multi-file plan is all-or-nothing.** Anchored thread creation writes two
 //   files; if the second fails, the first is restored before the error
 //   propagates, so an anchor entry can never outlive the thread it names (§6).
-// - **The commit is allowed to fail.** SPEC.md §14: a workspace hook that
+// - **The commit is allowed to fail.** SPEC.md §11: a workspace hook that
 //   rejects the commit does not roll back the file, because the file is the
 //   source of truth. The failure surfaces loudly instead.
 // - **Projection is synchronous and happens before the response.** That is
@@ -73,12 +73,11 @@ import {
 } from "../projection/index.js";
 import type { DocumentRoot, ProjectionDb } from "../projection/index.js";
 import type { SelfWriteRegistry } from "../watcher/index.js";
-import { convergeDocumentText } from "./derived-fields.js";
 import { anchorClaimantIds, isIdTaken } from "./read.js";
 import { folderTreeSignature } from "./tree.js";
 
 /**
- * The §14 rules a **single** document decides on its own. The rest of the
+ * The §11 rules a **single** document decides on its own. The rest of the
  * checker's rules — duplicate ids across the corpus, a thread's parent, whether
  * some thread claims each anchor entry — are cross-document, and running them
  * over one file would reject every save of an anchored document because its
@@ -95,7 +94,7 @@ const LOCAL_CHECK_CODES: ReadonlySet<CheckCode> = new Set([
 ]);
 
 /**
- * The §14 errors a single file *also* decides on its own but that a save
+ * The §11 errors a single file *also* decides on its own but that a save
  * deliberately does not refuse — reported to the log by
  * {@link validateBeforeWrite} instead of thrown (SERVER-066 review, finding B).
  *
@@ -214,9 +213,9 @@ function isClaudeRootFrontmatter(finding: CheckFinding): boolean {
 }
 
 /**
- * Which check findings become §14 response warnings, and under which code.
+ * Which check findings become §11 response warnings, and under which code.
  *
- * The checker already produces both halves of §14's validation family while
+ * The checker already produces both halves of §11's validation family while
  * validating the bytes about to be written, so the mapping is a rename rather
  * than a second pass: an anchor whose quote no longer resolves is
  * `orphaned_anchor`, a `[[ref]]` naming no document is `unresolved_ref`. Every
@@ -229,10 +228,10 @@ const WARNING_CODE_BY_CHECK: Partial<Record<CheckCode, WarningCode>> = {
 };
 
 /**
- * The seams §14's validator is given on this server, in one expression because
+ * The seams §11's validator is given on this server, in one expression because
  * there are two call sites for it and they must not drift: this file's
  * {@link checkSave}, which validates the bytes a mutation is about to write, and
- * `POST /api/check`, which validates whatever a caller submits. §14's promise is
+ * `POST /api/check`, which validates whatever a caller submits. §11's promise is
  * that they are "the same validator", and a seam supplied by one and forgotten by
  * the other is precisely how that stops being true — without the resolver no
  * orphaned anchor is ever reported, without `documentExists` every `[[ref]]` to
@@ -248,7 +247,7 @@ const WARNING_CODE_BY_CHECK: Partial<Record<CheckCode, WarningCode>> = {
  */
 export const checkSeams = (projection: ProjectionDb): CheckOptions => ({
   // The §6 exactness tier — the same call `docs/read.ts` and the projector
-  // make. §14's `orphaned_anchor` warning has to mean what the reader means by
+  // make. §11's `orphaned_anchor` warning has to mean what the reader means by
   // orphaned, or a save reports a detached thread the board then draws a
   // highlight for (and, wired the other way round, warns about none while the
   // board draws the highlight on a lookalike).
@@ -417,8 +416,7 @@ export type MutationPlan = {
    * save** of (SPEC.md §4's edit acknowledgment; SERVER-052). Set by
    * `PUT /api/docs/{id}`, and only when that save changes the **body** — a user
    * save of a document's prose is what §4 means by an edit session, and that
-   * verb is where the reader's autosave and the plugin read-modify-write both
-   * land.
+   * verb is where the reader's autosave lands.
    *
    * Left unset by every other verb on purpose. A create, a move, an archive, a
    * delete and a thread turn are all things that *happen to* a document rather
@@ -439,7 +437,7 @@ export type MutationResult = {
   /** False for a save that named no change: nothing written, nothing committed, nothing announced. */
   readonly changed: boolean;
   /**
-   * SPEC.md §14's warnings, in the order they were noticed: what validation saw
+   * SPEC.md §11's warnings, in the order they were noticed: what validation saw
    * in the bytes it let through, then what the auto-commit did or could not do.
    * Never a reason to fail the mutation — every one of them describes a write
    * that already stands on disk.
@@ -541,11 +539,11 @@ export function destinationOccupied(message: string, issues: readonly Validation
 }
 
 /**
- * Run the §14 validator over the document a mutation is about to write, and
+ * Run the §11 validator over the document a mutation is about to write, and
  * return the warnings its response must carry. Only the single-document rules
  * can *block* (see {@link LOCAL_CHECK_CODES}); an anchor that no longer resolves
  * and a `[[ref]]` to a document that does not exist are warnings and never block
- * the save, because §14 carves both out explicitly as normal states of a living
+ * the save, because §11 carves both out explicitly as normal states of a living
  * corpus.
  *
  * The `[[ref]]` rule is why this needs the projection. The checker is handed one
@@ -558,7 +556,7 @@ export type SaveCheck = {
   readonly blocking: readonly CheckFinding[];
   /**
    * What this save is letting through and still reporting, verbatim and at the
-   * severity §14 gives it: the two warnings, **and the errors in
+   * severity §11 gives it: the two warnings, **and the errors in
    * {@link REPORTED_CHECK_CODES}**.
    *
    * That second half used to be dropped here (this field was literally
@@ -571,7 +569,7 @@ export type SaveCheck = {
    */
   readonly findings: readonly CheckFinding[];
   /**
-   * Those findings translated into the §14 response warnings a mutation carries
+   * Those findings translated into the §11 response warnings a mutation carries
    * — the two-member set and nothing else. An error the save let through has no
    * `WarningCode` to be reported under, and inventing one would put an
    * error-severity finding into the wire's *warning* channel; it reaches the
@@ -581,7 +579,7 @@ export type SaveCheck = {
 };
 
 /**
- * The §14 validator, run over the bytes a save would write, without throwing.
+ * The §11 validator, run over the bytes a save would write, without throwing.
  *
  * Split out of {@link validateBeforeWrite} because callers legitimately need to
  * ask "would saving these bytes be accepted?" without a save being underway, and
@@ -627,7 +625,7 @@ export function validateBeforeWrite(
   }
   // The two families are logged apart, and the error one is logged through
   // `logger.error` on purpose: that is the level the logger never gates, and a
-  // §14 *error* the save let through is precisely what must not be silenced —
+  // §11 *error* the save let through is precisely what must not be silenced —
   // an unterminated fence in a thread is destroying turns as it is written, and
   // "silence is why a user had to notice their own reply had vanished". The
   // response cannot carry it (see {@link SaveCheck.warnings}), so this line is
@@ -1269,73 +1267,6 @@ export function runInLanes<T>(
 }
 
 /**
- * **The file never disagrees with what is shown** (SPEC.md §12, rider signed
- * 2026-08-12; SERVER-085 for `status`, SERVER-134 for `due`): a document whose
- * type derives its own core fields gets the derived values written into its
- * frontmatter by every server write of it, **all of them in one patch** — so a
- * save that resolves a list and clears its deadline is one write, one commit and
- * one `updated` stamp, not one per field.
- *
- * Here, and not in each verb, for the reason the pipeline exists at all. §12
- * says "whenever the server writes the document", and the writes are a create, a
- * body save, the plugin's own item routes, an unarchive, a bulk field edit and
- * whatever verb is added next. Six call sites composing one rule is six chances
- * to compose it differently, and the seventh would simply forget. This is the
- * single point every one of them already passes through, so the guarantee is
- * structural rather than remembered.
- *
- * Four properties worth stating, because each of them is a way this could have
- * gone wrong:
- *
- * - **It never opens a write.** Only the content of a write already planned is
- *   converged, so a save that changed nothing stays the no-op §4 requires — it
- *   returns before it ever reaches the pipeline. The convergence therefore costs
- *   no extra commit, no extra `updated` stamp and no second write, and it lands
- *   in the same commit as the change that occasioned it.
- * - **The derivation and the projection cannot disagree**, because they are one
- *   function over one input: this converges the exact bytes about to be written,
- *   and the re-projection at the end of this same mutation derives from the file
- *   those bytes became. Threading the value from here into `projectDocument`
- *   would be the weaker guarantee — it would make the row a report of what this
- *   function decided rather than a reading of what is on disk, and the row would
- *   then agree with the file by assertion instead of by construction.
- * - **`archived` is never overwritten**, and not by a rule stated here: the
- *   derivation is handed the stored status and answers `null` for an archived
- *   document (§12), so the same one-rule composition every reader uses is what
- *   protects it. An unarchive is the same mechanism read the other way — it
- *   writes `resolved`, this sees a document that is no longer archived, and §5's
- *   "a derived type returns to whatever its record says at that moment" happens
- *   without a branch anywhere.
- * - **Nothing is parsed that cannot be a derived document.** A root that fixes
- *   its own type (threads, skills, personas) is dismissed on the type alone, so
- *   the turn path — the busiest write in the system — pays one map lookup.
- *
- * A `renameFile` operation is deliberately left alone: it moves bytes without
- * rewriting them (its `content` is only what an undo would restore), and a move
- * changes neither a body nor anything read out of one.
- */
-function convergeDerivedFields(
-  workspace: DocsWorkspace,
-  operations: readonly FileOperation[],
-): readonly FileOperation[] {
-  const registry = workspace.projection.derivedFields;
-  if (registry.types.size === 0) return operations;
-
-  let converged: FileOperation[] | null = null;
-  operations.forEach((operation, index) => {
-    if (operation.kind !== "write") return;
-    const content = convergeDocumentText(operation.path, operation.content, registry);
-    if (content === null) return;
-    workspace.logger.debug("converged the derived fields into the document being written", {
-      path: operation.path,
-    });
-    converged ??= [...operations];
-    converged[index] = { ...operation, content };
-  });
-  return converged ?? operations;
-}
-
-/**
  * Put a plan's file operations on disk, all-or-nothing, having first checked
  * that none of them escapes the workspace.
  *
@@ -1360,13 +1291,6 @@ export function applyOperations(
     }
   }
 
-  // §12's derived fields, converged into the bytes about to land — see
-  // {@link convergeDerivedFields}. Before `registerSelfWrites`, necessarily:
-  // the watcher decides a write is the server's own by comparing content, so
-  // text converged after that comparison was recorded would come back as an
-  // out-of-band edit and be reconciled and committed as the user's.
-  const operations = convergeDerivedFields(workspace, planned);
-
   // A group that touches more than one path is all-or-nothing. Anchored thread
   // creation writes the parent's frontmatter *and* the new thread file
   // (SPEC.md §6, SERVER-006); a failure between the two would leave an anchor
@@ -1375,7 +1299,7 @@ export function applyOperations(
   // here is a rename over the target, so it either landed whole or not at all.
   const undo: Undo[] = [];
   try {
-    for (const operation of operations) {
+    for (const operation of planned) {
       registerSelfWrites(workspace, operation);
       undo.push(applyOperation(workspace, operation));
     }
@@ -1472,7 +1396,7 @@ export async function finishMutation(
 
   // §4: "the act's own change is the last thing in the window's commit, and the
   // commit's subject names the act" — so the close comes **after** the commit,
-  // and unconditionally. An act whose commit git skipped or refused (§14) still
+  // and unconditionally. An act whose commit git skipped or refused (§11) still
   // happened, and a close that finds no window open is a no-op; making it
   // conditional on the commit landing would leave a window open across an act
   // for exactly the workspaces whose hooks already make history unreliable.

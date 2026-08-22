@@ -546,7 +546,7 @@ describe("POST /api/docs/{id}/edit-session/flush", () => {
     expect(acknowledgments(ws)).toHaveLength(0);
   });
 
-  it("answers 204 and emits nothing when the session's commits were all skipped (§14)", async () => {
+  it("answers 204 and emits nothing when the session's commits were all skipped (§11)", async () => {
     // A workspace with no git: every auto-commit is `skipped`, so there is no
     // revision to name and no session to end. The postcondition still holds, so
     // the answer is still `204` — the route reports the state, not the work.
@@ -593,7 +593,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     ["a status", { status: "resolved" }],
     ["a still-current mark", { reviewed: "2026-07-27T09:00:00Z" }],
     ["a view query", { query: { type: "thread", status: "open" } }],
-    ["a board position", { order: 3, pinned: true, column: "todos/todo" }],
+    ["a board position", { order: 3, pinned: true }],
     ["a due date", { due: "2026-09-01" }],
     ["nothing at all — a save that names no change (§9.2)", {}],
   ];

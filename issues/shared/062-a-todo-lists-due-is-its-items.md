@@ -24,7 +24,7 @@ fable
 PR #55's cold reviewer returned MAJOR on this and the reasoning is worth keeping:
 shipping the behaviour without the rider does not "run ahead" of a future
 signature, it **contradicts signed text**. §5 says `due` is an *"optional
-deadline (ISO date) on ANY type"*, and §11's form clause listed `due` among the
+deadline (ISO date) on ANY type"*, and §10's form clause listed `due` among the
 fields a person edits. This release makes `due` nobody's to set on a todo — a
 hand-written one does not survive a write.
 

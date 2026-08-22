@@ -5,7 +5,7 @@ import type { CorpusClient } from "./createCorpusClient.js";
 
 /**
  * What every kit hook reads. Held on context rather than in a module singleton
- * so a test harness — or a plugin rendered in isolation — can mount its own,
+ * so a test harness — or a component rendered in isolation — can mount its own,
  * and so two providers can never silently share one connection.
  */
 export interface CorpusContextValue {
@@ -24,7 +24,7 @@ function useCorpusContext(hook: string): CorpusContextValue {
   return value;
 }
 
-/** The configured client. Exported so a plugin can issue a read the hooks don't cover. */
+/** The configured client. Exported so a surface can issue a read the hooks don't cover. */
 export function useCorpusClient(): CorpusClient {
   return useCorpusContext("useCorpusClient").client;
 }

@@ -30,11 +30,12 @@ import { META_SCHEMA_VERSION, PROJECTION_TABLES, SCHEMA_VERSION } from "./schema
  * a test that read the same constant the code did would only prove the code
  * agrees with itself.
  *
- * `documents` carries five columns past §9.1's list, retyped from CONTRACT-011
- * for the same reason: §11 makes a board column a pinned view document, so
+ * `documents` carries four columns past §9.1's list, retyped from CONTRACT-011
+ * for the same reason: §7 makes a board column a pinned view document, so
  * `pinned` is a `GET /api/docs` filter and `order` one of its sorts, and the
- * board reads every view's `query`, `column` and plugin keys off the same
- * bounded response rather than one follow-up read per column.
+ * board reads every view's `query` and extra keys off the same bounded response
+ * rather than one follow-up read per column. A fifth, `column_ref`, was dropped
+ * with the plugin surface that gave it a meaning (SHARED-066).
  */
 const SPEC_COLUMNS: Record<string, readonly string[]> = {
   documents: [
@@ -54,7 +55,6 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "pinned",
     "sort_order",
     "query_json",
-    "column_ref",
     "extra_json",
   ],
   threads: [
@@ -138,6 +138,12 @@ function makeConfig(): ProjectionConfig {
   return { workspaceRoot, corpusDir: join(workspaceRoot, ".corpus") };
 }
 
+/** A table's column names, in declaration order. */
+const columnsOf = (sqlite: Database.Database, table: string): string[] =>
+  (sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+    (row) => row.name,
+  );
+
 const writeDoc = (config: ProjectionConfig, id: string): void => {
   writeFileSync(
     join(config.workspaceRoot, "data", "docs", `${id}.md`),
@@ -153,7 +159,10 @@ const writeDoc = (config: ProjectionConfig, id: string): void => {
  * never touched, and one derived from today's constant would follow every future
  * change and stop being one. `turns` has no `form_answered`; `events` already
  * has `blocked_on` (that was 5 → 6). Never edit it — a v6 database is a fact
- * about the past.
+ * about the past. That covers `documents.column_ref`, which this build dropped
+ * (SHARED-066) and a v6 build certainly wrote: a sweep that took it out of here
+ * would be editing history, and would delete the only fixture that proves an
+ * upgrade drops the column.
  */
 const V6_DDL = `
 CREATE TABLE documents (
@@ -516,6 +525,49 @@ describe("openProjection", () => {
       expect([...PROJECTION_TABLES]).not.toContain("locks");
       // Everything derived from files is back, so the drop cost the workspace
       // nothing it could not rebuild.
+      expect(migrated.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
+    } finally {
+      migrated.close();
+    }
+  });
+
+  /**
+   * SHARED-066, decision 1, answered by running it rather than by assuming it.
+   *
+   * `documents.column_ref` held a view's `column` frontmatter key, which only
+   * ever named a plugin renderer. Dropping it needs no migration code — the
+   * column was nullable, so a v19 database would have gone on accepting the
+   * shorter INSERT while nothing read the column back. **The bump is what makes
+   * the drop reach a workspace that already has a `cache.db`**, and that is the
+   * claim under test here: stamp a database back to 19 with the column in
+   * place, reopen, and the column is gone and every row is back from the files.
+   *
+   * Built by re-adding the column to a current database rather than by pasting
+   * a second full DDL, for the reason the 13 → 14 case gives: what a v19
+   * database has that a v20 does not is exactly this column and this stamp.
+   */
+  it("drops `documents.column_ref` when a v19 database is opened (19 \u2192 20)", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_kept");
+
+    const v19 = openProjection(config);
+    v19.sqlite.exec("ALTER TABLE documents ADD COLUMN column_ref TEXT");
+    v19.sqlite.exec("UPDATE documents SET column_ref = 'todos/todos'");
+    expect(columnsOf(v19.sqlite, "documents")).toContain("column_ref");
+    v19.prepare("UPDATE meta SET value = ? WHERE key = ?").run("19", META_SCHEMA_VERSION);
+    v19.close();
+
+    const migrated = openProjection(config);
+    try {
+      expect(
+        (
+          migrated.prepare("SELECT value FROM meta WHERE key = ?").get(META_SCHEMA_VERSION) as {
+            value: string;
+          }
+        ).value,
+      ).toBe(String(SCHEMA_VERSION));
+      expect(columnsOf(migrated.sqlite, "documents")).not.toContain("column_ref");
+      // Repopulated from the files, so the drop cost the workspace nothing.
       expect(migrated.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
     } finally {
       migrated.close();

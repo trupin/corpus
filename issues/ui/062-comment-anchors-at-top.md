@@ -18,7 +18,7 @@ opus
 
 ## Spec References
 - SPEC.md §6 Anchoring (text-quote selectors, the resolution ladder)
-- SPEC.md §11 Document view — "Adaptive thread placement… aligned to their
+- SPEC.md §10 Document view — "Adaptive thread placement… aligned to their
   anchors with connectors"
 
 ## Summary
@@ -68,7 +68,7 @@ That sequence distinguishes the two candidate causes without guessing:
   no anchor position to align to — falling back to the top. If so, the fix is in
   placement, and the question is what an anchor that starts mid-markup should
   align to (the first content it *does* cover, most likely).
-- **(b) It did not resolve, and orphan placement is wrong.** SPEC §11 says
+- **(b) It did not resolve, and orphan placement is wrong.** SPEC §10 says
   orphaned threads are listed **below the body**, with whole-document comments.
   A card at the top would then be a second defect — orphans going to the wrong
   place — and the anchoring itself would be the first.
@@ -82,7 +82,7 @@ They call for different fixes, so establish which before writing code.
       selected text
 - [x] The highlight is drawn over the selected words — and specifically does not
       cover the markup characters the user never saw
-- [x] A genuinely orphaned thread still goes where §11 says: below the body, not
+- [x] A genuinely orphaned thread still goes where §10 says: below the body, not
       the top
 - [x] Whatever the placement rule is for a range that begins mid-markup, it is
       stated in the code — this is the second bug in this class (see UI-060) and

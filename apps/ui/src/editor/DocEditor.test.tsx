@@ -292,22 +292,21 @@ describe("which documents get an editor", () => {
   });
 
   /**
-   * UI-014. The gate used to be `CORE_DOC_TYPES`, so a plugin-typed document —
-   * and every document of a plugin that had since been deleted — rendered
-   * through the static `MarkdownView`. §11 has no read-only markdown body; §10's
-   * "renders as plain markdown" is about losing the plugin's chrome.
+   * UI-014, and SPEC.md §12's M6. The gate used to be `CORE_DOC_TYPES`, so a
+   * document typed for something this build did not define rendered through the
+   * static `MarkdownView` — a body a person could read and not correct. §10 has
+   * no read-only markdown body, and the whole promise of the open `type:` (§5)
+   * is that such a document opens like any other.
    */
   it("takes every other markdown body, core or not", () => {
     expect(editorHandlesType("todo")).toBe(true);
-    expect(editorHandlesType("_fixture-note")).toBe(true);
     expect(editorHandlesType("a-type-nothing-has-ever-heard-of")).toBe(true);
   });
 
-  it("says nothing about plugin precedence, which the registry decides", () => {
-    // The answer is about the *type*, and does not change when a plugin claims
-    // it — `DocView` asks `resolveDocView` first, so there is one gate, not two.
-    // `DocView`'s own suite is where that precedence is pinned.
-    expect(editorHandlesType("fixture-note")).toBe(true);
+  it("is decided by the type and by nothing else", () => {
+    // There is one gate: nothing claims a type ahead of this predicate, so its
+    // answer is the answer, and no second gate can drift out of step with it.
+    expect(editorHandlesType("todo")).toBe(editorHandlesType("note"));
   });
 });
 
@@ -320,7 +319,7 @@ describe("the surface", () => {
 
     expect(prose().className).toContain("doc-body");
     expect(prose().getAttribute("contenteditable")).toBe("true");
-    // SPEC.md §11: no edit mode, no save button, anywhere.
+    // SPEC.md §10: no edit mode, no save button, anywhere.
     expect(document.querySelector("button[type=submit]")).toBeNull();
     expect(
       [...document.querySelectorAll("button")].filter((button) =>
@@ -397,12 +396,12 @@ describe("references (SPEC.md §5)", () => {
 });
 
 /**
- * SPEC.md §11, amended by SHARED-041: **the board is never read-only**, and §7
+ * SPEC.md §10, amended by SHARED-041: **the board is never read-only**, and §7
  * has nothing to acquire or release. Both halves are asserted, because the
  * second one is the quiet regression — a surface can be editable and still be
  * chattering at a lock endpoint that no longer exists.
  */
-describe("the surface has one state, and it is editable (SPEC.md §11)", () => {
+describe("the surface has one state, and it is editable (SPEC.md §10)", () => {
   it("renders an editable body with no read-only affordance", async () => {
     render(<Host transport={wire()} />);
     await waitFor(() => {
@@ -525,7 +524,7 @@ describe("editing", () => {
   });
 });
 
-describe("the `[[` autocomplete (SPEC.md §11)", () => {
+describe("the `[[` autocomplete (SPEC.md §10)", () => {
   const RATES = docFixture({ frontmatter: { id: "doc_z9y8x7", title: "Rates" } });
   const MORTGAGE = docFixture({ frontmatter: { id: "doc_m1n2o3", title: "Mortgage options" } });
 

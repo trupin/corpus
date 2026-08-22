@@ -4,7 +4,7 @@ import { InternalError, UsageError } from "./errors.js";
 import { sanitizeGitEnv } from "./git-env.js";
 
 /**
- * The staged half of `corpus doc check --staged` (SPEC.md §14) — and the CLI's
+ * The staged half of `corpus doc check --staged` (SPEC.md §11) — and the CLI's
  * only read-only git plumbing.
  *
  * **Why this file exists at the src root** (sprint-013 Adjudication 12, Open

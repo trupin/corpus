@@ -1,4 +1,20 @@
 <title>Corpus — UI Mockup</title>
+<!--
+  Living mockup — authoritative for look and feel (CLAUDE.md).
+
+  Nothing generates this file and nothing checks it, so drift from the app is
+  caught by a person or not at all. Record what it was last matched against, and
+  against what, so the next reader can tell drift from intent.
+
+  Last reconciled 2026-08-22 (INFRA-031, UI-147):
+    - the plugin surface and the todos column are gone (SHARED-067) — a document
+      whose `type:` the core does not know now renders in the ordinary reader
+    - `.col.reading` no longer eases its width, matching UI-146
+
+  Known stale, filed as UI-141: the reader head still draws the 💬 popover that
+  UI-063 replaced with a Document / Comments toggle, and there is no comments
+  list here at all.
+-->
 <style>
   :root {
     --bg: #F7F6F3;
@@ -124,7 +140,11 @@
     border-radius: 12px; box-shadow: var(--shadow-soft);
     overflow: hidden; transition: width 0.25s ease, border-color 0.3s ease;
   }
-  .col.reading { width: 560px; }
+    /* A column showing a document does not ease its width (UI-146, UI-147). The
+     form's row count follows the column's width, so easing the open reflows the
+     document while somebody is reading it. A width step the *person* makes with
+     no reader open still eases — that is `.col` above. */
+  .col.reading { width: 560px; transition: border-color 0.3s ease; }
   .col.flash { border-color: var(--accent); }
   .col.dragging { opacity: 0.55; border-style: dashed; }
   .col-head { cursor: grab; }
@@ -144,7 +164,7 @@
   .focus-inner { max-width: 76ch; margin: 0 auto; }
   .focus .doc-title { font-size: 30px; }
   .focus .doc-body { font-size: 16.5px; line-height: 1.7; max-width: 66ch; }
-  .focus .thread-card, .focus .backlinks, .focus .doc-panel, .focus .check-list, .focus .skill-fm { max-width: 66ch; }
+  .focus .thread-card, .focus .backlinks, .focus .skill-fm { max-width: 66ch; }
 
   /* ── Editing (always-on, Docs-like) ──────────────── */
   [contenteditable] { outline: none; caret-color: var(--accent); }
@@ -164,7 +184,7 @@
      re-sent (SPEC.md §7). It says the one thing the person cannot otherwise see:
      their save went on top of a change they never read. It grants nobody a claim,
      disables nothing, and can always be dismissed — the document stays editable
-     underneath it, because the board is never read-only (SPEC.md §11). */
+     underneath it, because the board is never read-only (SPEC.md §10). */
   .change-notice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px 9px; border: 1px solid var(--sepia-wash-2); background: var(--sepia-wash); color: var(--sepia-ink); border-radius: 10px; padding: 9px 13px; margin-bottom: 14px; font-size: 12.5px; font-family: var(--sans); max-width: 62ch; }
   .change-notice .cn-mark { font-family: var(--mono); font-size: 11px; color: var(--sepia); margin-right: 4px; }
   /* The sentence gets the full width and the actions sit under it, right-aligned:
@@ -261,11 +281,6 @@
   .r-chip.r-form { background: var(--signal-wash); color: var(--signal); }
   .r-chip.r-stale { background: var(--sepia-wash-2); color: var(--sepia-ink); }
 
-  .todo-items { margin-top: 5px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-2); }
-  .todo-items .t { display: flex; gap: 7px; align-items: baseline; }
-  .todo-items .box { font-family: var(--mono); color: var(--ink-3); }
-  .todo-items .done { text-decoration: line-through; color: var(--ink-3); }
-
   /* ── Reader ──────────────────────────────────────── */
   .reader { display: none; flex-direction: column; flex: 1; min-height: 0; }
   .col.reading .reader { display: flex; }
@@ -318,7 +333,7 @@
 
   .composer { margin-top: 9px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
   /* A reply is prose, and prose has paragraphs: `↵` inserts a newline, so the
-     field is multi-line (SPEC.md §11's composer key contract, SHARED-009
+     field is multi-line (SPEC.md §10's composer key contract, SHARED-009
      Amendment 1). */
   .composer textarea { border: none; background: none; font: inherit; color: var(--ink); width: 100%; resize: none; min-height: 2.6em; }
   .composer textarea::placeholder { color: var(--ink-3); }
@@ -335,23 +350,8 @@
   .form-submit { align-self: flex-start; margin-top: 3px; background: var(--accent); color: var(--bg); border-radius: 7px; padding: 5px 12px; font-weight: 600; font-size: 12px; }
 
   .backlinks { margin-top: 22px; padding-top: 12px; border-top: 1px solid var(--line); font-family: var(--sans); max-width: 62ch; }
-  .backlinks h3, .doc-panel h3 { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); margin: 0 0 8px; }
+  .backlinks h3 { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); margin: 0 0 8px; }
   .backlink { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 12.5px; }
-
-  .doc-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 10px 14px; margin-bottom: 16px; display: flex; gap: 18px; align-items: center; font-family: var(--sans); }
-  .doc-panel .stat { display: flex; flex-direction: column; }
-  .doc-panel .stat b { font-size: 17px; font-family: var(--mono); }
-  .doc-panel .stat span { font-size: 10.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; }
-  .doc-panel .plugin-tag { margin-left: auto; }
-
-  .check-list { font-family: var(--sans); max-width: 62ch; display: flex; flex-direction: column; gap: 2px; }
-  .check { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: 8px; font-size: 13.5px; cursor: pointer; }
-  .check:hover { background: var(--surface-2); }
-  .check .box { font-family: var(--mono); color: var(--accent-ink); flex: none; }
-  .check.done { color: var(--ink-3); text-decoration: line-through; }
-  .check.done .box { color: var(--good); }
-  .check .due { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--signal); white-space: nowrap; }
-  .check.done .due { color: var(--ink-3); }
 
   .skill-fm { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); background: var(--surface-2); max-width: 62ch; }
   .skill-fm b { color: var(--accent-ink); }
@@ -796,37 +796,6 @@ const DOCS = {
     backlinks: ["doc_criteria", "th_rent"],
   },
   th_rate_doc: null, // thread docs generated below
-  todo_week: {
-    type: "todo", title: "Week of Jul 20", folder: "todos/", tags: [], status: "open",
-    updated: "today", excerpt: "Renew passport · Call plumber about garage leak",
-    items: [
-      { t: "Renew passport — appointment window opens today", due: "today", done: false },
-      { t: "Call plumber about garage leak", due: "today", done: false },
-      { t: "Send lease renewal notice", done: true },
-      { t: "Book dentist (both)", due: "Fri", done: false },
-      { t: "Return library books", done: true },
-    ],
-  },
-  todo_house: {
-    type: "todo", title: "House purchase — paperwork", folder: "finance/housing", tags: ["housing"], status: "open",
-    updated: "3d ago", excerpt: "Pull credit reports · Pre-approval refresh · Insurance floor check",
-    items: [
-      { t: "Pull credit reports (all three)", done: false },
-      { t: "Pre-approval letter refresh", due: "Aug 1", done: false },
-      { t: "Cost-basis export from legacy custodian", done: false },
-      { t: "Verify insurance quotes clear wildfire floor", done: false },
-      { t: "Gift-letter template for parents' contribution", done: true },
-    ],
-  },
-  todo_maint: {
-    type: "todo", title: "Home maintenance", folder: "home/", tags: [], status: "open", age: 2,
-    updated: "2mo ago", excerpt: "Gutters · HVAC filter · Water heater flush (overdue)",
-    items: [
-      { t: "Clear gutters before rainy season", done: false },
-      { t: "HVAC filter swap", due: "monthly", done: false },
-      { t: "Water heater flush — overdue since May", done: false },
-    ],
-  },
   skill_comment: {
     type: "skill", title: "skill: comment", folder: ".claude/skills/", tags: [], status: "open",
     updated: "2d ago · agent", excerpt: "How the agent handles comment.created events — reply, edit, file, steward.",
@@ -861,12 +830,11 @@ delete DOCS.th_rate_doc;
 
 const COLUMNS = [
   {
-    id: "attention", title: "Attention", kind: "view", count: "6",
+    id: "attention", title: "Attention", kind: "view", count: "5",
     chips: ['<span class="chip on">needs: me</span>', '<span class="chip on">status: open</span>'], sort: "last activity ↓",
     rows: [
       { doc: "th_rate", clearOn: "seen", badges: '<span class="unread">1</span>', reason: '<span class="r-chip r-reply">agent replied</span> on Mortgage options', meta: ["finance/", "12m ago"] },
       { doc: "th_carrier", clearOn: "form", badges: '<span class="needs-you">form</span>', reason: '<span class="r-chip r-form">awaiting your answer</span>', meta: ["home/", "2h ago"] },
-      { doc: "todo_week", clearOn: "due", badges: '<span class="needs-you">2 due</span>', reason: '<span class="r-chip r-form">due today</span>', meta: ["todos/", "today"] },
       { doc: "th_efund", clearOn: "seen", badges: '<span class="unread">1</span>', reason: '<span class="r-chip r-reply">agent asked back</span>', meta: ["finance/", "1d ago"] },
       { doc: "doc_taxchecklist", stale: true, badges: '<span class="age">stale · 8mo</span>', reason: '<span class="r-chip r-stale">review: archive or act</span>' },
       { doc: "doc_insurance", badges: '<span class="age">4mo</span>', reason: '<span class="r-chip r-stale">getting stale</span>', meta: ["home/", "updated Mar 12"] },
@@ -884,7 +852,7 @@ const COLUMNS = [
     ],
   },
   {
-    id: "finance", title: "Finance", kind: "folder", count: "11",
+    id: "finance", title: "Finance", kind: "folder", count: "10",
     chips: ['<span class="chip on">folder: finance/</span>', '<span class="chip">tag: housing</span>'], sort: "updated ↓",
     rows: [
       { doc: "doc_mortgage", badges: '<span class="unread">2</span>' },
@@ -894,7 +862,6 @@ const COLUMNS = [
       { doc: "doc_ips" },
       { doc: "doc_brokerage" },
       { doc: "doc_efund", badges: '<span class="age">3mo</span>' },
-      { doc: "todo_house" },
       { doc: "doc_insurance", badges: '<span class="age">4mo</span>' },
       { doc: "doc_criteria" },
       { doc: "doc_taxchecklist", stale: true, badges: '<span class="age">stale · 8mo</span>' },
@@ -911,15 +878,6 @@ const COLUMNS = [
       { doc: "th_skilltone", meta: ["on skill: comment", "2d"] },
       { doc: "th_split", meta: ["on Brokerage consolidation", "1w"] },
       { doc: "th_pmi", badges: '<span class="chip" style="font-size:10px">resolved</span>', meta: ["on Mortgage options", "5d"] },
-    ],
-  },
-  {
-    id: "todos", title: "Todos", kind: "plugin", count: "3 lists",
-    chips: ['<span class="chip on">type: todo</span>', '<span class="chip">due soon</span>'], sort: "due ↑",
-    rows: [
-      { doc: "todo_week", badges: '<span class="needs-you">2 due</span>' },
-      { doc: "todo_house" },
-      { doc: "todo_maint", badges: '<span class="age">2mo</span>' },
     ],
   },
   {
@@ -965,7 +923,7 @@ function renderRefs(text) {
 
 function ageClass(doc) { return doc.age ? ` age-${doc.age}` : ""; }
 
-function rowHTML(colId, r) {
+function rowHTML(r) {
   const d = DOCS[r.doc];
   const meta = r.meta || [d.folder, d.updated];
   const excerpt = d.excerpt || (d.type === "thread" ? threadExcerpt(d.thread) : "");
@@ -978,17 +936,9 @@ function rowHTML(colId, r) {
   }
   const rth = d.thread ? THREADS[d.thread] : null;
   if (rth && rth.answered) badges = badges.replace(/<span class="needs-you">[^<]*<\/span>/, "");
-  if (d.type === "todo" && d.items) {
-    const nDue = d.items.filter(i => i.due && !i.done).length;
-    badges = badges.replace(/<span class="needs-you">[^<]*<\/span>/, nDue ? `<span class="needs-you">${nDue} due</span>` : "");
-  }
   r = { ...r, badges };
   let extra = "";
   if (r.reason) extra += `<div class="reason">${r.reason}</div>`;
-  if (d.type === "todo" && colId === "todos") {
-    extra += `<div class="todo-items">` + d.items.slice(0, 3).map(i =>
-      `<div class="t${i.done ? " done" : ""}"><span class="box">${i.done ? "☑" : "☐"}</span><span class="${i.done ? "done" : ""}">${esc(i.t)}</span></div>`).join("") + `</div>`;
-  }
   if (r.stale) extra += `<div class="stale-actions"><button data-act="archive">Archive</button><button class="keep" data-act="keep">Still current</button><button class="keep" data-act="triage">@agent triage</button></div>`;
   return `<div class="row${ageClass(d)}" data-row-doc="${r.doc}" role="button" tabindex="0">
     <div class="row-top"><span class="type-glyph">${d.type}</span><span class="row-title">${esc(d.title)}</span>
@@ -1056,7 +1006,7 @@ function turnHTML(t, tid, idx) {
 }
 
 function bodyHTML(doc) {
-  // Unconditional: no document is ever rendered read-only (SPEC.md §11) — not
+  // Unconditional: no document is ever rendered read-only (SPEC.md §10) — not
   // while the agent is writing it, not while a save is in flight.
   const ed = ` contenteditable="true" spellcheck="false"`;
   return doc.body.map(block => {
@@ -1075,7 +1025,7 @@ function bodyHTML(doc) {
   }).join("");
 }
 
-/* ── The change notice (SPEC.md §7 "A key, not a lock", §11 "never read-only") ──
+/* ── The change notice (SPEC.md §7 "A key, not a lock", §10 "never read-only") ──
  *
  * There is no lock, so there is nothing to hold, break or announce. What the
  * person still cannot see for themselves is a *collision*: the agent wrote the
@@ -1121,16 +1071,6 @@ function readerHTML(docId) {
     return fm + `<h1 class="doc-title">${esc(d.title)}</h1>
       <div class="doc-body">${threadCardHTML(d.thread, { context: true, bare: true })}</div>`;
   }
-  if (d.type === "todo") {
-    const open = d.items.filter(i => !i.done).length, done = d.items.filter(i => i.done).length;
-    return fm + `
-      <h1 class="doc-title">${esc(d.title)}</h1>
-      <div class="doc-panel" data-panel="${docId}"><div class="stat"><b data-stat-open>${open}</b><span>open</span></div>
-        <div class="stat"><b data-stat-done>${done}</b><span>done</span></div>
-        <span class="chip plugin-tag">plugin: todos</span></div>
-      <div class="check-list">${d.items.map((i, idx) =>
-        `<div class="check${i.done ? " done" : ""}" data-check="${docId}:${idx}"><span class="box">${i.done ? "☑" : "☐"}</span><span>${esc(i.t)}</span>${i.due ? `<span class="due">${esc(i.due)}</span>` : ""}</div>`).join("")}</div>`;
-  }
   if (d.type === "skill") {
     return fm + changeNoticeHTML(docId) + `<h1 class="doc-title" contenteditable="true" spellcheck="false">${esc(d.title)}</h1>
       <div class="skill-fm"><b>name:</b> ${d.skillMeta.name} · <b>description:</b> ${esc(d.skillMeta.description)}</div>
@@ -1153,7 +1093,7 @@ function colHTML(col) {
         <span class="col-count">${col.count}</span><button class="col-add" data-col-add aria-label="New document in this list" title="New document in this list">＋</button><button class="col-menu" aria-label="List options">⋯</button></div>
       <div class="chips">${col.chips.join("")}<span class="sort">${col.sort}</span></div>
     </div>
-    <div class="col-list">${visibleRows(col).map(r => rowHTML(col.id, r)).join("")}</div>
+    <div class="col-list">${visibleRows(col).map(r => rowHTML(r)).join("")}</div>
     <div class="reader">
       <div class="reader-head"><button class="back" data-close-reader>‹ ${col.title}</button><span class="reader-id"></span><span class="save-chip" data-save-chip></span><button class="comments-btn" data-comments hidden>💬</button><button class="expand" data-doc-menu aria-label="Document actions" title="Document actions">⋯</button><button class="expand" data-expand aria-label="Read full screen" title="Read full screen">⤢</button></div>
       <div class="reader-scroll"></div>
@@ -1177,8 +1117,7 @@ if (state.focus && !state.focusNav.length) state.focusNav = [{ d: state.focus, y
 
 const visibleRows = (col) => col.rows.filter(r =>
   !(r.clearOn === "seen" && state.seen[r.doc]) &&
-  !(r.clearOn === "form" && (THREADS[DOCS[r.doc]?.thread]?.answered)) &&
-  !(r.clearOn === "due" && !(DOCS[r.doc]?.items || []).some(i => i.due && !i.done)));
+  !(r.clearOn === "form" && (THREADS[DOCS[r.doc]?.thread]?.answered)));
 
 $board.innerHTML = COLUMNS.map(colHTML).join("") +
   `<button class="col ghost-col"><span class="plus">＋</span><p>New list — a folder, a view, or any filter</p></button>`;
@@ -1326,7 +1265,6 @@ const COL_CREATE = {
   inbox: { kind: "note", folder: "inbox/" },
   finance: { kind: "note", folder: "finance/" },
   threads: { kind: "ask" },
-  todos: { kind: "todo", folder: "todos/" },
   system: { kind: "none" },
 };
 let newDocN = 0, newAskN = 0, newCapN = 0;
@@ -1336,7 +1274,7 @@ function renderColList(colId) {
   const $col = document.getElementById("col-" + colId);
   if (!col || !$col) return;
   const rows = visibleRows(col);
-  $col.querySelector(".col-list").innerHTML = rows.map(r => rowHTML(col.id, r)).join("");
+  $col.querySelector(".col-list").innerHTML = rows.map(r => rowHTML(r)).join("");
   $col.querySelector(".col-count").textContent = rows.length;
 }
 function renderAllLists() { COLUMNS.forEach(c => renderColList(c.id)); }
@@ -1354,16 +1292,6 @@ function createNote(title, colId, folder) {
   });
   toast(`Created in ${folder} — no template for type "note", starting empty. Title it and just type (autosave).`);
   return id;
-}
-
-function createTodoDoc(colId, folder) {
-  const id = "doc_new" + (++newDocN);
-  DOCS[id] = { type: "todo", title: "Untitled list", folder, tags: [], status: "open", updated: "just now", excerpt: "", items: [{ t: "First item — click to toggle", done: false }] };
-  const col = COLUMNS.find(c => c.id === colId);
-  col.rows.unshift({ doc: id, meta: [folder, "just now"] });
-  renderColList(colId);
-  openDoc(colId, id);
-  toast(`Todo document created from the todos plugin's template.`);
 }
 
 function doAsk(text) {
@@ -1640,7 +1568,7 @@ function docMenuAction(el) {
 
 /* ── New list picker + extra column defs ── */
 const EXTRA_COLS = {
-  home: { id: "home", title: "Home", kind: "folder", count: "3", chips: ['<span class="chip on">folder: home/</span>'], sort: "updated ↓", rows: [{ doc: "doc_insurance", badges: '<span class="age">4mo</span>' }, { doc: "doc_criteria" }, { doc: "todo_maint", badges: '<span class="age">2mo</span>' }] },
+  home: { id: "home", title: "Home", kind: "folder", count: "2", chips: ['<span class="chip on">folder: home/</span>'], sort: "updated ↓", rows: [{ doc: "doc_insurance", badges: '<span class="age">4mo</span>' }, { doc: "doc_criteria" }] },
   resolved: { id: "resolved", title: "Resolved", kind: "view", count: "1", chips: ['<span class="chip on">type: thread</span>', '<span class="chip on">status: resolved</span>'], sort: "resolved ↓", rows: [{ doc: "th_pmi", meta: ["on Mortgage options", "5d"] }] },
   searchm: { id: "searchm", title: "Search: mortgage", kind: "view · saved search", count: "4", chips: ['<span class="chip on">q: mortgage</span>', '<span class="chip">folder: finance/</span>'], sort: "relevance", rows: [{ doc: "doc_mortgage" }, { doc: "doc_payoff" }, { doc: "doc_criteria" }, { doc: "th_rate", meta: ["on Mortgage options", "12m"] }] },
 };
@@ -1668,10 +1596,9 @@ function addColumn(key, opts = {}) {
 const newlistMenu = document.getElementById("newlist-menu");
 function showNewListMenu(e) {
   newlistMenu.innerHTML = [
-    `<button class="ac-item" data-newlist="home">📁 Folder: home/<span class="d">3 docs</span></button>`,
+    `<button class="ac-item" data-newlist="home">📁 Folder: home/<span class="d">2 docs</span></button>`,
     `<button class="ac-item" data-newlist="resolved">🧵 View: resolved threads</button>`,
     `<button class="ac-item" data-newlist="searchm">🔎 From search: "mortgage"</button>`,
-    `<div class="ac-item" style="cursor:default"><span class="d">plugin column types appear here too (e.g. a todos board)</span></div>`,
   ].join("");
   newlistMenu.style.left = Math.min(window.innerWidth - 280, Math.max(8, e.clientX - 40)) + "px";
   newlistMenu.style.top = Math.min(window.innerHeight - 220, e.clientY - 10) + "px";
@@ -1873,7 +1800,6 @@ document.addEventListener("click", (e) => {
     const colId = addBtn.closest(".col").id.replace("col-", "");
     const cr = COL_CREATE[colId] || { kind: "note", folder: "docs/" };
     if (cr.kind === "ask") openCompose();
-    else if (cr.kind === "todo") createTodoDoc(colId, cr.folder);
     else if (cr.kind === "none") toast("New skills are usually born from threads — ask the agent, or drop a SKILL.md.");
     else createNote("", colId, cr.folder);
     return;
@@ -1905,23 +1831,6 @@ document.addEventListener("click", (e) => {
       toast("Queued: agent will review this document and propose archive / update / split.");
     }
     e.stopPropagation(); return;
-  }
-
-  const check = e.target.closest("[data-check]");
-  if (check) {
-    const [docId, idx] = check.dataset.check.split(":");
-    const item = DOCS[docId].items[+idx];
-    item.done = !item.done;
-    check.classList.toggle("done", item.done);
-    check.querySelector(".box").textContent = item.done ? "☑" : "☐";
-    const panel = check.closest(".reader-scroll, .focus-inner").querySelector("[data-panel]");
-    if (panel) {
-      panel.querySelector("[data-stat-open]").textContent = DOCS[docId].items.filter(i => !i.done).length;
-      panel.querySelector("[data-stat-done]").textContent = DOCS[docId].items.filter(i => i.done).length;
-    }
-    renderAllLists();
-    toast(item.done ? `Done: "${item.t}" — committed (git ✓)` : `Reopened: "${item.t}"`);
-    return;
   }
 
   const opt = e.target.closest(".form-opt");
@@ -2322,7 +2231,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.getElementById("btn-compose").addEventListener("click", openCompose);
-/* The signed key contract (SPEC.md §11, SHARED-009 Amendment 1): `↵` inserts a
+/* The signed key contract (SPEC.md §10, SHARED-009 Amendment 1): `↵` inserts a
    newline everywhere, `⌘↵` is the primary action and `⇧⌘↵` the secondary one.
    The prototype binds it here so the mockup cannot disagree with the app about
    what a key does, as it did until UI-055. */
@@ -2420,7 +2329,7 @@ document.addEventListener("change", (e) => {
   inp.value = "";
 });
 /* The reply box's keys, delegated because the cards are re-rendered from
-   `threadCardHTML` (SPEC.md §11's composer key contract, SHARED-009 Amendment 1):
+   `threadCardHTML` (SPEC.md §10's composer key contract, SHARED-009 Amendment 1):
    `↵` inserts a newline, `⌘↵` sends. `#compose-text` has its own handler above,
    because its two actions need `⇧⌘↵` as well. */
 document.addEventListener("keydown", (e) => {

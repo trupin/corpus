@@ -430,7 +430,7 @@ TEST-31: `folder` scopes to a prefix, includes descendants, and pulls in threads
 Given: `data/docs/finance/mortgage.md`, `data/docs/finance/2026/q1.md`,
 `data/docs/legal/nda.md`, and a thread whose `parent` is `mortgage.md`.
 When: `?folder=finance`, then `?folder=finance/2026`, then `?folder=` on the root.
-Then: The first returns both finance documents **and** the thread (§11 folder scoping); the
+Then: The first returns both finance documents **and** the thread (§10 folder scoping); the
 second returns only `q1.md`; the root returns everything under `data/docs/`. A folder that
 does not exist returns `{"items":[],"page":{"total":0,...}}` — **not** a 404. A trailing
 slash (`?folder=finance/`) behaves identically to `?folder=finance`.
@@ -1168,7 +1168,7 @@ TEST-71's list is written from the adjudication.
 `DocRow` is `docRowBaseShape + attention + snippets`. It carries **no staleness tier** and
 **no thread fields** — no `parent`, `agent`, `anchor` quote, `turnCount`, `lastAuthor`,
 `lastTs` or `unread`. But SERVER-011's ACs require "every row carries its staleness tier" and
-"thread fields when `type = thread`", and SPEC §11 says thread rows render an anchor quote,
+"thread fields when `type = thread`", and SPEC §10 says thread rows render an anchor quote,
 a last-turn preview and unread/pending indicators.
 
 **Recommendation: implement the contract, and file the gap as a CONTRACT issue now.**

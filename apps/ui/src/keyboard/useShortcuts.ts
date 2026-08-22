@@ -9,7 +9,7 @@ import {
 } from "./shortcuts";
 
 /**
- * Binds {@link SHORTCUTS} to one global listener (SPEC.md §11).
+ * Binds {@link SHORTCUTS} to one global listener (SPEC.md §10).
  *
  * One listener, from one list. The prototype scatters `document.onkeydown`
  * branches across its surfaces, and the shipped tree had already grown two of
@@ -51,9 +51,8 @@ export function isWritingSurface(element: Element | null): boolean {
 /**
  * The board's own row control, exempted below **by name**.
  *
- * `@corpus/kit`'s `Row` is a `role="button"`, `tabindex="0"` element, and a
- * plugin `ListItem` may render a real `<button>` — either way it carries these
- * two attributes, because that pair is what the row cursor already reads
+ * `@corpus/kit`'s `Row` is a `role="button"`, `tabindex="0"` element carrying
+ * these two attributes, because that pair is what the row cursor already reads
  * (`useRowCursor.columnRows`). So the exemption is expressed in the same terms
  * the rest of the board expresses a row in, rather than in a marker a row could
  * be written without.
@@ -147,7 +146,7 @@ export function useShortcuts(context: ShortcutContext): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       // An IME commit arrives as a keystroke that was never a keystroke
-      // (SPEC.md §11 says nothing about it; every text surface does). `keyCode`
+      // (SPEC.md §10 says nothing about it; every text surface does). `keyCode`
       // 229 is the pre-`isComposing` spelling browsers still emit.
       if (event.isComposing || event.keyCode === 229) return;
       if (event.defaultPrevented) return;

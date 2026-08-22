@@ -1,5 +1,5 @@
 /**
- * The `@` / `/` / `[[` trigger grammar of SPEC.md §11's "smart input everywhere".
+ * The `@` / `/` / `[[` trigger grammar of SPEC.md §10's "smart input everywhere".
  *
  * **One implementation, three callers** — the thread composer, the document
  * editor's `[[` menu and the global composer. Detection is a pure function of

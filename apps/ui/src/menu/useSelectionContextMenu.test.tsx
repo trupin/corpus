@@ -14,7 +14,7 @@ import {
 } from "./useSelectionContextMenu";
 
 /**
- * The routing half of SPEC.md §11's right-click rule, at the document view.
+ * The routing half of SPEC.md §10's right-click rule, at the document view.
  *
  * Two things have to hold at once and neither used to: a selection in the body
  * opens Corpus's own menu, and it does so **instead of** the reader's document
@@ -124,7 +124,7 @@ describe("the document body's selection menu", () => {
   /**
    * PR #13 review, MAJOR. Declining here dropped the event on the reader's
    * handler, so a selection in a thread's conversation opened the **document's**
-   * menu — neither Copy nor the browser's own. §11 says Copy always.
+   * menu — neither Copy nor the browser's own. §10 says Copy always.
    */
   it("opens a Copy-only menu where nothing else is on offer", () => {
     // A thread's conversation, a `view`, or a document under someone else's lock.

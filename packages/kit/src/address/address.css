@@ -1,5 +1,5 @@
 /*
- * The composer's address (SPEC.md §11, UI-126) — `ComposerAddress`: the one
+ * The composer's address (SPEC.md §10, UI-126) — `ComposerAddress`: the one
  * line stating who answers and at what weight, and the popover it opens to
  * change either. It replaces the two always-expanded rows the weight and
  * recipient controls used to be, and carries their row anatomy with it
@@ -23,7 +23,7 @@
   /*
    * ── The line's slot ──────────────────────────────────────────────────────
    *
-   * SPEC.md §11's rider signed 2026-08-20: *"A component's size is a property
+   * SPEC.md §10's rider signed 2026-08-20: *"A component's size is a property
    * of its place in the layout, never of the text that happens to be in it —
    * so … a value that arrives later than the box holding it … move[s] nothing
    * else on the screen."* This is that box (UI-137).
@@ -123,7 +123,7 @@
   flex: 0 1 var(--address-slot);
 
   /*
-   * The recipient statement's reserved box — SPEC.md §11's rider signed
+   * The recipient statement's reserved box — SPEC.md §10's rider signed
    * 2026-08-20, "Nothing resizes because of what it holds". Declared here, on
    * the control, rather than beside `.recipient-says`, because the line height
    * and the line count are one measurement and have to be changed together:
@@ -249,7 +249,7 @@ button.address-line:focus-visible {
 
 /*
  * **The card is as large as its place allows, in both directions** — SPEC.md
- * §11's rider authorized 2026-08-21 (SHARED-061), which completes the rider of
+ * §10's rider authorized 2026-08-21 (SHARED-061), which completes the rider of
  * 2026-08-20 this file already answers everywhere else.
  *
  * ## What UI-130 got right, and what UI-142 found it had left
@@ -382,7 +382,7 @@ button.address-line:focus-visible {
 }
 
 /* The lead and, when the list is capped, what says so — one line either way, so
-   the note costs the card no height (SPEC.md §11's rider, 2026-08-20). */
+   the note costs the card no height (SPEC.md §10's rider, 2026-08-20). */
 .address-head {
   display: flex;
   align-items: baseline;
@@ -556,7 +556,7 @@ button.address-line:focus-visible {
  * statement that added a line moved every row above it — including the row
  * under the cursor, which un-hovered, which shortened the statement, which
  * brought the row back: the surface oscillated until the pointer gave up
- * (UI-127, and the loop SPEC.md §11's rider names in so many words).
+ * (UI-127, and the loop SPEC.md §10's rider names in so many words).
  *
  * The height is fixed and the clamp holds the text to the same count, so the
  * two agree whichever way the sentence is short of or over the reserve. See

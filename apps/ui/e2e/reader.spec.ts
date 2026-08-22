@@ -111,7 +111,7 @@ test.describe("the reader's shipped stylesheet", () => {
      * The default column width is still the prototype's, and it is still the
      * **stylesheet's** — but the reader-open widening stopped being a second
      * hard constant in UI-019. `.col.reading` no longer declares a width at all:
-     * a column's base is its view document's (`extra.width`, SPEC.md §11) and
+     * a column's base is its view document's (`extra.width`, SPEC.md §10) and
      * the widening is a ratio applied to *that* base, so `Column.tsx` computes
      * the result as an inline width. The prototype's 560 px is still exactly
      * what a default-width column lands on, and the test below proves it in the

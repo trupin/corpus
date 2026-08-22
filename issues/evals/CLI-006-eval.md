@@ -121,7 +121,7 @@ corpus: 1 error in 1 document.
   Fix the findings above; warnings alone would not have failed the check.
 6
 
-$ corpus doc check --staged ; echo $?          # the §14 pre-commit path
+$ corpus doc check --staged ; echo $?          # the §11 pre-commit path
 … error anchor-unused data/docs/inbox/anchored-subject.md: anchor `anc_d4fa0218` has no thread referencing it
 6
 
@@ -138,7 +138,7 @@ document set, not to the corpus.
 **Ownership**: the finding is produced by `POST /api/check`; the CLI posts what the mode requires and
 renders the response unchanged (TEST-89/161 prove byte-identity). **CLI-006 needs no change if the
 server grows the missing seam.** It is scored here because it is CLI-006's advertised behaviour that
-fails at the user-visible boundary, and because `--staged` — the mode SPEC §14 exists for — is
+fails at the user-visible boundary, and because `--staged` — the mode SPEC §11 exists for — is
 structurally a subset and therefore always affected.
 
 **Impact on the next issue**: the workspace-side pre-commit hook that agent-runtime is about to build
@@ -158,7 +158,7 @@ checked 1 document — no findings.
 0                                                     ← was exit 6 + 1 × anchor-unused
 
 $ git -C "$WS" add -- data/docs/inbox/anchored-subject.md
-$ corpus doc check --staged ; echo $?                 # the §14 pre-commit path
+$ corpus doc check --staged ; echo $?                 # the §11 pre-commit path
 checked 1 document — no findings.
 0                                                     ← was exit 6
 

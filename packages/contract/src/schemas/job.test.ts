@@ -91,8 +91,8 @@ describe("Job", () => {
     expect(JobSchema.parse({ ...job, type }).type).toBe(type);
   });
 
-  it("leaves the type open, because plugins define their own event types", () => {
-    expect(JobSchema.parse({ ...job, type: "todos.sync" }).type).toBe("todos.sync");
+  it("leaves the type open, because the wire's set of types is not this build's", () => {
+    expect(JobSchema.parse({ ...job, type: "ledger.reconciled" }).type).toBe("ledger.reconciled");
   });
 
   it("requires a non-empty type: a job always has one, and it is never blank", () => {

@@ -26,7 +26,7 @@ fable — the skill text IS the product agent's judgment; prompt design quality 
 - SPEC.md §7 (event queue and agent loop) — queue contract and event types, CLI queue verbs, **orchestrator skill**, document locks, job logs, HALT, agent stewardship, skills-as-documents including loop safety (`corpus skill rollback`)
 - SPEC.md §8 (agent participation semantics) — structured `mentions`/`skills` in the event payload, the honest pending indicator the loop must not leave hanging
 - SPEC.md §10, extension point 2 (agent skills) — plugin event types `<plugin>.*` route to plugin skills by convention
-- SPEC.md §15 M4 — the executable check this skill must satisfy end to end
+- SPEC.md §12 M4 — the executable check this skill must satisfy end to end
 - CLAUDE.md — Architecture Decision 2 (server is sole writer; the agent interacts only through the CLI)
 
 ## Summary
@@ -144,7 +144,7 @@ Real workspace, real server, real `claude` session — no simulation of the loop
 11. **Stewardship**: in a thread, tell the agent a durable preference → confirm it lands in a document (created or updated) via the CLI, that `git log` shows the commit authored by the agent, and that the reply states the change.
 12. `corpus queue reap-stale` after killing the session mid-event → the stranded `in-progress` event is recovered.
 
-Record exact commands and observed output for each step; §15 M4's check is the bar.
+Record exact commands and observed output for each step; §12 M4's check is the bar.
 
 ## E2E Verification Log
 

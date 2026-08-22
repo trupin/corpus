@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 Thread view — "An agent turn says which model wrote it" (rider signed 2026-08-07)
+- SPEC.md §10 Thread view — "An agent turn says which model wrote it" (rider signed 2026-08-07)
 - SPEC.md §7 — the amended console line
 
 ## Summary
@@ -36,7 +36,7 @@ recorded; this writes it, projects it, and keeps it honest.
 - [x] An agent turn written through the server carries the model that produced it
 - [x] **The server records and never invents.** If the writer did not say which
       model it was, the turn says nothing — the server must not substitute a
-      default, a "current model", or the weight it dispatched at. §11 requires an
+      default, a "current model", or the weight it dispatched at. §10 requires an
       unknown to say so rather than show a plausible attribution nobody can check
 - [x] A **person's** turn never carries one, on any path
 - [~] Where a request ran in stages, what lands is the **deciding** stage's model
@@ -143,7 +143,7 @@ map, not a default, not the tier it was dispatched at.
 ```
 $ curl -X POST …/api/threads/th_24ratbo3/turns -d '{"body":"…","model":"claude-opus-4-1"}'
 400 {"code":"bad_request","message":"only an agent turn names the model that wrote it",
-     "issues":[{"path":"model","message":"a turn authored by `user` names no model (SPEC.md §11)"}]}
+     "issues":[{"path":"model","message":"a turn authored by `user` names no model (SPEC.md §10)"}]}
 ```
 
 `POST /api/threads` with `model` as `user` → `400` likewise. The file was

@@ -17,7 +17,7 @@ fable — spec authorship is judgment work; spec-writer is pinned fable regardle
 - Blocks: AGENT-005, UI-017, UI-018, UI-019
 
 ## Spec References
-- SPEC.md §7 (agent loop), §10 (board), §11 (documents/editor), §12 (todos), §2.1 (CLI lifecycle)
+- SPEC.md §7 (agent loop), §10 (board), §10 (documents/editor), §12 (todos), §2.1 (CLI lifecycle)
 
 ## Summary
 One spec-writer pass covering everything Phase 5 needs signed off, so the user reviews a
@@ -27,11 +27,11 @@ single coherent set of SPEC.md amendments:
    subagents by default and returns to parking, so it stays open to new events;
    failure/deferral surfacing, trace + CLI-only invariants inside subagents,
    concurrency bounds. (User request 2026-07-29.)
-2. **§11 — no empty untitled documents (UI-017)**: exiting a still-empty new document
+2. **§10 — no empty untitled documents (UI-017)**: exiting a still-empty new document
    must leave nothing behind; specify create-then-delete vs. defer-creation semantics
    and the git-audit-trail consequences. (User request; the user's own workspace log
    shows the create-Untitled-then-delete-Untitled annoyance live.)
-3. **§10/§11 — right-click context menu (UI-018)**: which surfaces, action parity with
+3. **§10/§10 — right-click context menu (UI-018)**: which surfaces, action parity with
    existing menus, native-menu preservation (text selection), keyboard accessibility.
    (User request.)
 4. **§10 — view width (UI-019)**: user-adjustable view/column width; where the
@@ -54,9 +54,9 @@ single coherent set of SPEC.md amendments:
 ## Drafts for sign-off
 
 _Drafted 2026-07-29 by spec-writer (fable). DRAFT text only — SPEC.md is untouched until
-the user signs off. Note on numbering: the summary above says "§10 (board), §11
+the user signs off. Note on numbering: the summary above says "§10 (board), §10
 (documents/editor)"; in the current SPEC.md the board **and** the document view/editor are
-both **§11**, plugins are §10, todos §12. Drafts below cite the file's actual numbering._
+both **§10**, plugins are §10, todos §12. Drafts below cite the file's actual numbering._
 
 ### 1. §7 — Orchestrator delegates jobs to subagents by default (AGENT-005)
 
@@ -80,9 +80,9 @@ both **§11**, plugins are §10, todos §12. Drafts below cite the file's actual
 - [DECISION NEEDED] **Concurrency bound N.** Recommendation: **3** (matches this project's own machine-load discipline; the skill states the number so the operator can tune it). Confirm the default.
 - [DECISION NEEDED] **Inline-handling rule.** The draft allows a narrow inline path ("faster than delegating, doesn't delay re-parking"). Alternative: delegate unconditionally — simpler invariant, slightly wasteful for trivial replies. Confirm the narrow-inline rule or force delegate-everything.
 
-### 2. §11 — Never persist an empty untitled document (UI-017)
+### 2. §10 — Never persist an empty untitled document (UI-017)
 
-**(a) Extends** — §11, the "Creating documents — zero-form, inbox-first" bullet, whose last sentence is currently:
+**(a) Extends** — §10, the "Creating documents — zero-form, inbox-first" bullet, whose last sentence is currently:
 
 > The new document opens immediately in its column, title selected, ready to type — the agent files inbox arrivals per its skill.
 
@@ -97,9 +97,9 @@ both **§11**, plugins are §10, todos §12. Drafts below cite the file's actual
   - *Create-then-delete*: the doc exists immediately (today's model, id available at once), and the UI deletes it on empty exit. Costs: every abandoned blank writes a create commit + a delete commit into the audit trail; tab-close/crash paths can miss the cleanup and leave the blank behind (needs a sweep); and it introduces an automatic deletion into a system where deletion is otherwise an explicit user act (§7: "deletion is user-only" — arguably still user-intent, but it is the spec's only non-explicit delete).
 - [DECISION NEEDED] **Typed, then fully deleted, then exited.** Under defer-creation the document was created at first content; if the user blanks it again and leaves, does it persist (empty doc, deletable via ⋯) or is the rule "blank when the editing session ends → gone" (requires a real delete for this one sub-case, with the create/delete commit pair)? Recommendation: the strict rule — "a document created in this session that is blank when the session ends does not persist" — it matches the stated intent ("never persist an empty + untitled document from the UI create flow"); the commit-pair noise applies only to this rare path.
 
-### 3. §11 — Right-click context menu (UI-018)
+### 3. §10 — Right-click context menu (UI-018)
 
-**(a) Insertion point** — §11, a new bullet inserted immediately before the "Keyboard scheme (v1)" bullet.
+**(a) Insertion point** — §10, a new bullet inserted immediately before the "Keyboard scheme (v1)" bullet.
 
 **(b) Proposed text**
 
@@ -110,9 +110,9 @@ both **§11**, plugins are §10, todos §12. Drafts below cite the file's actual
 - [DECISION NEEDED] **Plugin-rendered surfaces (e.g. rows inside the todos column) in v1 scope?** Recommendation: **out** for v1 — core surfaces only; a kit-provided affordance for plugin views is a follow-up, so plugins are not half-covered by accident. Confirm.
 - [DECISION NEEDED] **Keyboard opening.** Should the menu key / `⇧F10` open the context menu on the highlighted row (true keyboard parity for the menu itself, not just for its actions)? Recommendation: yes — it is the platform-native expectation and costs one binding in the `?` cheat-sheet. Confirm or drop.
 
-### 4. §11 — User-adjustable view/column width (UI-019)
+### 4. §10 — User-adjustable view/column width (UI-019)
 
-**(a) Insertion point** — §11, appended to the "**Columns are pinned view documents**" bullet (whose current text ends "…The seed data ships starter columns (Attention, Inbox, Open threads) — deletable like any document, nothing hardwired.").
+**(a) Insertion point** — §10, appended to the "**Columns are pinned view documents**" bullet (whose current text ends "…The seed data ships starter columns (Attention, Inbox, Open threads) — deletable like any document, nothing hardwired.").
 
 **(b) Proposed text**
 
@@ -121,7 +121,7 @@ both **§11**, plugins are §10, todos §12. Drafts below cite the file's actual
 **(c) Open questions**
 
 - [DECISION NEEDED] **Per-view drag (recommended) vs a global width setting vs both.** Per-view fits the existing model exactly (columns are already documents whose frontmatter holds their board properties — `order` is the precedent) and needs no new settings surface. A global setting would require the settings panel that doesn't exist. If "both", the global default becomes a real settings-surface decision — recommendation: per-view only; revisit a global default if per-view proves tedious.
-- [DECISION NEEDED] **Where the preference lives: view-doc frontmatter (drafted) vs browser-local.** §11 currently draws the line at "only browser-local state stays local: scroll positions, open readers, per-reader navigation stacks". Frontmatter means cross-browser sync, agent adjustability, and server-sole-writer compliance for free — but every resize writes the corpus (mitigated by idle-squash). Browser-local means zero commits but no sync and no agent stewardship. Recommendation: frontmatter — width describes the view, not the viewer.
+- [DECISION NEEDED] **Where the preference lives: view-doc frontmatter (drafted) vs browser-local.** §10 currently draws the line at "only browser-local state stays local: scroll positions, open readers, per-reader navigation stacks". Frontmatter means cross-browser sync, agent adjustability, and server-sole-writer compliance for free — but every resize writes the corpus (mitigated by idle-squash). Browser-local means zero commits but no sync and no agent stewardship. Recommendation: frontmatter — width describes the view, not the viewer.
 - [DECISION NEEDED] **Confirm: this does not seed a settings panel.** The draft deliberately keeps v1 panel-free.
 
 ### 5. §12 — Item-level todo commenting: reconcile with shipped v1 (PR #11 MAJOR 3)
@@ -161,9 +161,9 @@ None — this records shipped, orchestrator-adjudicated behavior (CLI-014, mirro
 **Per-item verdicts:**
 
 1. **§7 delegation — MODIFIED, applied.** User modifications, verbatim in substance: (a) **delegate everything** — no inline-handling path at all; (b) concurrency bound **N = 10**; (c) **only non-overlapping tasks parallelize** — overlapping tasks run serially, with "overlap" generalized from same-document to same document(s) **or otherwise conflicting touched-sets**; (d) the skill picks the subagent **model by task size** — small/mechanical tasks to a smaller/faster model, larger judgment work to a stronger one, **with Opus 5 added to the available mix**. Applied to §7 as behavioral text: the spec states that model selection scales with task weight and that the skill carries the concrete tier guidance — exact model names (including Opus 5) belong in the skill, per the sign-off, so they do not appear in SPEC.md; AGENT-005's implementation adds Opus 5 to the skill's tier table.
-2. **§11 empty documents — MODIFIED, applied.** User's behavioral rule, verbatim: "if any doc is left empty, it is automatically deleted on exiting the doc. empty means: no title and no content. This means it works if I start typing but then change my mind, remove what I was typing and leave." Applied to §11 exactly so — auto-delete on exit whenever title and content are both empty, regardless of history, for **any** document; the defer-creation vs create-then-delete mechanism question is dropped from the spec (implementation's choice), while the no-orphans / no-leak-by-any-exit-route language is kept.
-3. **§11 view width — APPROVED as drafted, applied** (per-view edge drag, width in the view document's frontmatter, no settings panel).
-4. **§11 context menu — APPROVED as drafted, applied** (accept-all bundle, including the draft's recommendations: plugin-rendered surfaces out of v1 scope; menu key / ⇧F10 opens the menu on the keyboard highlight).
+2. **§10 empty documents — MODIFIED, applied.** User's behavioral rule, verbatim: "if any doc is left empty, it is automatically deleted on exiting the doc. empty means: no title and no content. This means it works if I start typing but then change my mind, remove what I was typing and leave." Applied to §10 exactly so — auto-delete on exit whenever title and content are both empty, regardless of history, for **any** document; the defer-creation vs create-then-delete mechanism question is dropped from the spec (implementation's choice), while the no-orphans / no-leak-by-any-exit-route language is kept.
+3. **§10 view width — APPROVED as drafted, applied** (per-view edge drag, width in the view document's frontmatter, no settings panel).
+4. **§10 context menu — APPROVED as drafted, applied** (accept-all bundle, including the draft's recommendations: plugin-rendered surfaces out of v1 scope; menu key / ⇧F10 opens the menu on the keyboard highlight).
 5. **§12 transitional note — APPROVED as drafted, applied** (`[TBD: PLUGINS-003]`, mechanism claim dropped).
 6. **§2.1 stale pidfiles — APPROVED as drafted, applied** (CLI-014's conservative shipped semantics).
 7. **§7 spent transitional clauses — APPROVED; APPLIED 2026-07-30 by the orchestrator** in the same commit round that lands CLI-011 and SERVER-030 (both implemented, tree-green). Original pending texts, now in SPEC.md verbatim:
@@ -198,7 +198,7 @@ n/a.
 _Filled by the spec-writer / orchestrator: drafts produced, sign-off record, application commit._
 
 - 2026-07-29 — spec-writer (fable): all six drafts produced under "Drafts for sign-off" above; SPEC.md untouched. Awaiting user sign-off in one round.
-- 2026-07-30 — spec-writer (fable): sign-off received; amendments applied to SPEC.md (§2.1, §7, §11 ×3, §12) on branch `phase-5-followups`; item 7's rewords held as pending texts (CLI-011/SERVER-030 unlanded). Full record in "Sign-off record" above. Commit pending (orchestrator).
+- 2026-07-30 — spec-writer (fable): sign-off received; amendments applied to SPEC.md (§2.1, §7, §10 ×3, §12) on branch `phase-5-followups`; item 7's rewords held as pending texts (CLI-011/SERVER-030 unlanded). Full record in "Sign-off record" above. Commit pending (orchestrator).
 
 ## Completion Checklist (orchestrator)
 - [ ] User sign-off recorded

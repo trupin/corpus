@@ -23,7 +23,7 @@ opus
 ## Spec References
 
 - SPEC.md **§7** "A key, not a lock", and its orchestrator-skill invariant
-- SPEC.md **§15** M3 — the CLI verb families, with `lock` struck
+- SPEC.md **§12** M3 — the CLI verb families, with `lock` struck
 
 ## Summary
 

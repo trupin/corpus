@@ -44,7 +44,7 @@ describe("readBoardLocalState", () => {
       storage,
     );
     const blob = storage.getItem(BOARD_STORAGE_KEY) ?? "";
-    // The review-blocking rule of SPEC.md §11: no query, no order, no column
+    // The review-blocking rule of SPEC.md §10: no query, no order, no column
     // identity beyond the id whose scroll this is, and no document content.
     expect(blob).toBe(
       '{"version":2,"columns":{"doc_a":{"scroll":40,"nav":[{"docId":"doc_x","scrollY":0}]}}}',

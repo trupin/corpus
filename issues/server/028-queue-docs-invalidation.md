@@ -25,7 +25,7 @@ opus — a two-line addition to established invalidation tables, plus tests.
 
 - SPEC.md §2.2 (SSE invalidation: any write that changes what a query would answer must
   invalidate that query's key)
-- SPEC.md §11 (needs=me / Attention)
+- SPEC.md §10 (needs=me / Attention)
 - `issues/evals/` sprint-010 (TEST-107 partial)
 
 ## Summary

@@ -10,10 +10,10 @@ import {
   useResidentLane,
   useSetThreadStatus,
   useThread,
+  type RevealTarget,
   type RowNotice,
   type ThreadTurn,
 } from "@corpus/kit";
-import type { RevealTarget } from "@corpus/kit/plugin";
 import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from "react";
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 import { summaryFromRow, type ThreadSummary } from "./CollapsedThread";
@@ -31,7 +31,7 @@ import { useTurnComments } from "./useTurnComments";
 import "./thread.css";
 
 /**
- * **The** thread card (SPEC.md §6, §11; `design/index.html`'s `.thread-card`).
+ * **The** thread card (SPEC.md §6, §10; `design/index.html`'s `.thread-card`).
  *
  * One component, four hosts — an expanded chip in a column, a margin card beside
  * a document, a `type: thread` document open in a reader, and a child thread
@@ -44,7 +44,7 @@ import "./thread.css";
  * **This is the expanded half of a conversation, and only that.** `ThreadPanel`
  * decides which half is on screen; mounting this one is what displays the
  * conversation and therefore what marks it seen (SPEC.md §7). The `–` control in
- * the head is the fold, and it is present in every host now — §11's "whether it
+ * the head is the fold, and it is present in every host now — §10's "whether it
  * can be collapsed does not depend on the width" is exactly the sentence that
  * used to be untrue here, where a margin card had no way back to anything.
  */
@@ -256,7 +256,7 @@ export function ThreadCard({
       data-thread={threadId}
       data-depth={String(depth)}
       /*
-       * SPEC.md §11's selection menu, on the card rather than on the reader: a
+       * SPEC.md §10's selection menu, on the card rather than on the reader: a
        * thread card renders in four hosts and only one of them is a document
        * view. The handler stops the event when it opens, so the innermost card
        * answers for its own turns and the document view's own menu never opens
@@ -264,7 +264,7 @@ export function ThreadCard({
        *
        * With **no** selection it declines, and the conversation's own menu takes
        * the event: right-clicking a card offers that card's actions — collapse,
-       * resolve/reopen — which is where §11 puts the fold, since it claims no key
+       * resolve/reopen — which is where §10 puts the fold, since it claims no key
        * of its own. Read off `defaultPrevented` rather than off a second
        * selection check, because the selection handler is the one that decides
        * whether it consumed the event and asking twice is how the two answers
@@ -424,7 +424,7 @@ interface ChildCardsProps {
 
 /**
  * Nested conversations, and where the nesting stops **drawing** — not where it
- * stops existing (SPEC.md §11, rider signed 2026-08-05).
+ * stops existing (SPEC.md §10, rider signed 2026-08-05).
  *
  * Indentation runs out at {@link MAX_NESTED_DEPTH}: past it the wrapper stops
  * insetting and the card says how deep it is instead, so depths 3, 4 and 5 all
@@ -432,7 +432,7 @@ interface ChildCardsProps {
  * **collapsed** — one line that still says what it is, expanding where it stands
  * — rather than becoming a link that navigates away.
  *
- * That link was the one collapse in the app with no way back: §11 now says
+ * That link was the one collapse in the app with no way back: §10 now says
  * "every collapse expands again in place… a fold whose only way back is losing
  * your place is not a collapse", and "opening it in its own reader stays
  * available as a **choice**, never as the only way to read it" — which is where
@@ -471,7 +471,7 @@ interface ThreadContextProps {
 
 /**
  * `.t-context` — where this conversation hangs, and the way back to it
- * (SPEC.md §11: the anchor quote is pinned at the top and links back to the
+ * (SPEC.md §10: the anchor quote is pinned at the top and links back to the
  * parent at the anchor position).
  *
  * A thread whose parent was deleted degrades to the stored id as plain text:

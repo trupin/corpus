@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
+- SPEC.md **§10** — *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
 
 ## Summary
 
@@ -92,7 +92,7 @@ cut.
 
 ### Key Implementation Details
 
-**Read SHARED-057's applied text in SPEC.md §11 first**, and measure against it
+**Read SHARED-057's applied text in SPEC.md §10 first**, and measure against it
 rather than against taste. Its four clauses are the rubric: size follows place
 not content; overflow is revealed not accommodated; boxes are sized for real
 content; the one exception grows into empty space.
@@ -328,7 +328,7 @@ looked closest to the line.
 | --- | --- | --- | --- | --- |
 | L1 | `apps/ui/src/editor/RefNodeView.tsx:81` `{alias ?? title ?? id}` with `useDoc(id)` at `:46` | An un-aliased `[[ref]]` paints as `doc-20260819-a3f9` (17ch) then becomes a 37ch title, **inside contenteditable**. The paragraph rewraps; a gained line drops every block below it | I could not get a `.ref` node to render in the reader in the time available (my probe measured `absent` in both states), so the reflow is unconfirmed. `DocView.tsx:331-346` argues this exact hazard for a different cause | **yes — highest** |
 | L2 | `apps/ui/src/reader/ScopeProvenance.tsx:52-73`, mounted `DocView.tsx:429` **above** the body; `Reader.css:657` (`flex-wrap: wrap`) | `useResidentLane(docId)` is a multi-hop §7 scope walk. `null` until it lands, then a ~28px band appears above the body; then `row.conversation ?? lane` swaps an id for a name and may wrap | Unmeasured. `DocView.tsx:378` holds paint for plugin discovery but not for this walk | **yes** |
-| L3 | `apps/ui/src/anchors/AnchoredThreads.tsx:89,128` | A chip (~26px) or card (~100px+) is portalled *between two blocks of the body* a beat after the body paints | Unmeasured. `:31-53` defends the timing on §6/§11 grounds and predates the 2026-08-20 rider | **yes** |
+| L3 | `apps/ui/src/anchors/AnchoredThreads.tsx:89,128` | A chip (~26px) or card (~100px+) is portalled *between two blocks of the body* a beat after the body paints | Unmeasured. `:31-53` defends the timing on §6/§10 grounds and predates the 2026-08-20 rider | **yes** |
 | L4 | `apps/ui/src/search/FilterChips.tsx:177,190,238`; `filters.ts:174` (`hits.find(...)?.title ?? id`); `search.css:60` (`flex-wrap: wrap`) | A reference chip shows the id, then a 40ch title when the doc enters the hit set — and flips back as typing changes the set. The row rewraps and the result list drops ~28px mid-typing | Unmeasured | **yes** |
 | L5 | `plugins/todos/ui/TodoListItem.tsx:72-74,127-144`; `todos.css:295-335` | `useTodoItems(row.id)` is async; the whole `.todo-items` preview block is **absent** until it lands, then ~65px appears inside every row at once | Unmeasured; needs the todos plugin loaded | **yes** |
 | L6 | `apps/ui/src/thread/ResidentBadge.tsx:65-98` into `.t-head` (`Reader.css:471`, `flex-wrap: wrap`) | The badge inserts on `GET /api/agents`. `thread.css:598` asserts *"the head is one row"*, but `Reader.css:474` sets `flex-wrap: wrap`, so it wraps before it shrinks and adds a line | Unmeasured | yes |

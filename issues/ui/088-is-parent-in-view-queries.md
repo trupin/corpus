@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — columns and saved views are filtered lists
+- SPEC.md §10 — columns and saved views are filtered lists
 - SPEC.md §9.2 — the filter set a view query composes from
 
 ## Summary
@@ -45,7 +45,7 @@ reachable from a column or saved view without hand-editing the query.
       hiding rows after this ships
 - [x] It composes visibly with the filters already on the view, rather than
       replacing them
-- [x] Reachable from the keyboard like every other affordance (§11 adds no
+- [x] Reachable from the keyboard like every other affordance (§10 adds no
       exclusive-pointer capability)
 
 ## Technical Design

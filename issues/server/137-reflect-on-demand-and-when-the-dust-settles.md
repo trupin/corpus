@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: CONTRACT-076
-- Blocks: CLI-060 (`corpus reflect`), UI-153, AGENT-042 (the skill handles the event)
+- Blocks: CLI-062 (`corpus reflect`), UI-153, AGENT-044 (the skill handles the event)
 
 ## Spec References
 - SPEC.md §7 — rider 9 (reflection), lanes, the queue contract, presence and `idle`

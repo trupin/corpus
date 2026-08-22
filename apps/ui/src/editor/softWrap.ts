@@ -16,7 +16,7 @@ import { NODE } from "./markdown/schema.js";
  * workspace during UI-054, 10 of 11 agent turns — so most documents in a real
  * corpus carry a newline in the middle of most sentences. CommonMark says that
  * newline is a space, `MarkdownView` renders it as one, and a thread turn
- * written by the agent renders it as one (SPEC.md §11, SHARED-009 Amendment 7:
+ * written by the agent renders it as one (SPEC.md §10, SHARED-009 Amendment 7:
  * a person's typed newline breaks, an author's soft wrap does not). Only the
  * document editor disagreed, and it read visibly ragged.
  *

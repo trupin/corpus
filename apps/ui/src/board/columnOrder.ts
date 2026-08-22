@@ -1,5 +1,5 @@
 /**
- * Board position arithmetic (SPEC.md §11 — reordering a column edits its view
+ * Board position arithmetic (SPEC.md §10 — reordering a column edits its view
  * document's `order`).
  *
  * Two rules, and both exist to keep the *file* honest rather than to keep the
@@ -103,7 +103,7 @@ export function planReorder(
   return [{ id: moved.id, order: midpoint }];
 }
 
-/** The `order` a brand-new column takes: last on the board (SPEC.md §11). */
+/** The `order` a brand-new column takes: last on the board (SPEC.md §10). */
 export function nextOrder(columns: readonly OrderedColumn[]): number {
   const orders = columns
     .map((column) => column.order)

@@ -4,7 +4,7 @@ import type { MenuAction } from "./menuModel";
 /**
  * A declared action list, rendered.
  *
- * Two presentations, one declaration (SPEC.md §11). `popover` is the reader's
+ * Two presentations, one declaration (SPEC.md §10). `popover` is the reader's
  * anchored ⋯ sheet (`design/index.html`'s `.comments-pop`); `context` is the
  * pointer-positioned menu (`.ac-menu`, the same frame every other menu in the
  * app uses). Which one is chosen is the host's business; **what is in it** is

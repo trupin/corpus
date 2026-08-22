@@ -2,7 +2,7 @@
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget } from "@corpus/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavEntry } from "../board/useBoardLocalState";
 import {
@@ -305,7 +305,7 @@ describe("FocusMode", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  /** SPEC.md §11: overlays and focus mode take precedence, then the column reader. */
+  /** SPEC.md §10: overlays and focus mode take precedence, then the column reader. */
   it("Escape closes the menu, then focus, then the column reader", async () => {
     const { container } = render(<Stacked transport={wire()} />);
     await waitFor(() => {

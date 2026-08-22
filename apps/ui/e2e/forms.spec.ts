@@ -5,7 +5,7 @@ import { stubCorpus, type StubJob } from "./stubCorpus";
 
 /**
  * UI-084 in a real browser: the three controls a form renders, and the Attention
- * row that survives being read (SPEC.md §6, §11).
+ * row that survives being read (SPEC.md §6, §10).
  *
  * **The asymmetry is the point.** §7's read state clears when you look, so every
  * other Attention reason vanishes the moment the thread is opened — a question
@@ -127,7 +127,7 @@ const oneChoice = (question: string, options: readonly string[]): string =>
  * A thread the agent asked **twice** in: two agent turns, each carrying its own
  * form, neither answered.
  *
- * Two *forms*, not one form of two fields — §11 counts asks, and a form is
+ * Two *forms*, not one form of two fields — §10 counts asks, and a form is
  * answered once as a whole (§6), so a two-field form is one thing still open and
  * not two. Their questions differ because that is how an answer turn is matched
  * back to the form it answers, on the stub and in the projection alike.
@@ -220,7 +220,7 @@ test.describe("the Attention row a form leaves behind", () => {
     // > textarea` out-specifies a class on the field itself.
     await expect(form.locator(".form-write")).toHaveCSS("border-top-width", "1px");
 
-    // Everything reachable from the keyboard: no answer is pointer-only (§11).
+    // Everything reachable from the keyboard: no answer is pointer-only (§10).
     await form.locator('input[type="radio"]').first().focus();
     await page.keyboard.press("Space");
     await expect(form.locator(".form-opt.picked")).toHaveCount(1);
@@ -258,7 +258,7 @@ test.describe("the Attention row a form leaves behind", () => {
   });
 
   /**
-   * SPEC.md §11's last clause: "a thread holding **more than one** unanswered
+   * SPEC.md §10's last clause: "a thread holding **more than one** unanswered
    * form says how many are still open".
    *
    * The threshold is the behaviour, so the number and its absence are asserted
@@ -329,7 +329,7 @@ test.describe("the Attention row a form leaves behind", () => {
    *
    * The test above shows the row clearing when *this page* answers — and that
    * page's own mutation invalidates `["docs"]`, so it proves the board repaints
-   * and says nothing about SSE. §11's live updates are the other case: the
+   * and says nothing about SSE. §10's live updates are the other case: the
    * answer arrives from a second tab, another column, or a script, and the only
    * thing that reaches this browser is an `invalidate` frame. So here the corpus
    * is changed **behind the page's back** and nothing else happens until the
@@ -578,7 +578,7 @@ test.describe("the Attention row a form leaves behind", () => {
 
     await row(page, "th_form").click();
     await column(page).locator(".t-resolve").click();
-    // Resolving re-asserts the collapse rule (§11), so the card folds — what is
+    // Resolving re-asserts the collapse rule (§10), so the card folds — what is
     // being asserted here is the reason, not the card.
     await expect.poll(async () => (await corpus.doc("th_form"))?.status).toBe("resolved");
     await column(page).getByRole("button", { name: "‹ Attention" }).click();
@@ -785,7 +785,7 @@ test.describe("the Attention row a form leaves behind", () => {
       .fill(`I wrote this yesterday:\n\n\`\`\`md\n${heading}\n\`\`\`\n\nand then left`);
     await expect(first.locator(".form-unreadable")).toHaveCount(0);
 
-    // A block quote is the other spelling §11's snippet action produces.
+    // A block quote is the other spelling §10's snippet action produces.
     await first.locator("textarea").fill(`I wrote this yesterday:\n\n> ${heading}`);
     await expect(first.locator(".form-unreadable")).toHaveCount(0);
     await expect(submit).toBeEnabled();
@@ -893,7 +893,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await expect(blank).not.toHaveClass(/picked/);
 
     // The way back, reached with the arrow keys of the group it belongs to —
-    // never a pointer-only affordance (§11). Two options plus the blank row, so
+    // never a pointer-only affordance (§10). Two options plus the blank row, so
     // ArrowDown twice from the first lands on it.
     await form.locator('.form-opt:not(.form-opt-blank) input[type="radio"]').first().focus();
     await page.keyboard.press("ArrowDown");

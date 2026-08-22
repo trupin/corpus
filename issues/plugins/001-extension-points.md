@@ -18,8 +18,8 @@ fable — API-boundary design across four surfaces; the kit contract is a long-l
 
 ## Spec References
 - SPEC.md §10 — "Plugin system" (the four extension points, discovery by convention, `@corpus/kit` as the UI contract)
-- SPEC.md §11 — "UI — the board" (columns are pinned view documents; plugin column types in the new-list picker)
-- SPEC.md §15 M5 — "plugin system + todos plugin" (the executable check this issue's machinery must satisfy)
+- SPEC.md §10 — "UI — the board" (columns are pinned view documents; plugin column types in the new-list picker)
+- SPEC.md §12 M5 — "plugin system + todos plugin" (the executable check this issue's machinery must satisfy)
 - CLAUDE.md — Repository Structure (dependency direction: `plugins/*` import **only** `@corpus/kit` + `@corpus/contract`)
 
 ## Summary
@@ -30,7 +30,7 @@ Build the plugin substrate: four independent discovery mechanisms (UI manifests,
 - [ ] **Manifest contract** is typed in `@corpus/kit` and exported for plugin authors: `{ id, name, icon?, order?, docTypes: [{ type, ListItem?, View?, DocPanel?, validate? }], columns: [{ type, label, icon?, Component, defaultQuery? }] }`. Every field except `id`, `name`, `docTypes`, `columns` is optional; `docTypes` and `columns` may be empty arrays.
 - [ ] **Doc type renderers**: a document whose frontmatter `type` matches a registered `docTypes[].type` with a `View` renders with that `View`; with no `View` (or no plugin) it falls back to the standard markdown document view. `ListItem` replaces the default row renderer for that type in every column list.
 - [ ] **DocPanel** is the single core injection slot in v1: for a doc type a plugin owns, its `DocPanel` renders in a fixed slot **above** the document body in both the column reader and focus mode. No other injection slots exist.
-- [ ] **Plugin columns are column types**: registered `columns` entries appear in the board's "＋ New list" picker; choosing one creates a **pinned view document** with `column: "<plugin>/<type>"` in its frontmatter (merged with `defaultQuery` if provided). The column is then ordered, persisted, reordered, and stewarded exactly like any other column (SPEC.md §11), with the plugin `Component` rendering the column body.
+- [ ] **Plugin columns are column types**: registered `columns` entries appear in the board's "＋ New list" picker; choosing one creates a **pinned view document** with `column: "<plugin>/<type>"` in its frontmatter (merged with `defaultQuery` if provided). The column is then ordered, persisted, reordered, and stewarded exactly like any other column (SPEC.md §10), with the plugin `Component` rendering the column body.
 - [ ] **Error boundary**: every plugin column and every plugin-supplied renderer (`View`, `ListItem`, `DocPanel`) renders inside an error boundary; a throwing component shows an error card **in place** naming the plugin, and the rest of the board keeps working (no white screen, no lost columns).
 - [ ] **Missing/broken plugin**: a manifest that throws or fails validation at load is skipped with a visible warning surfaced in the UI (console strip notice) and `console.error`; the rest of the plugins still load. A pinned view document whose `column:` references an unregistered plugin/type renders a **"plugin missing"** card in that column's body, and the column itself remains present, reorderable, and deletable.
 - [ ] **Server discovery**: at boot the server dynamically imports `plugins/*/server/routes.ts` (compiled/loaded per the server's existing module strategy) and mounts each plugin's exported Hono router at `/api/x/<plugin>`. A plugin with no `server/` directory is skipped silently; a plugin whose routes module throws is skipped with a logged warning and **does not prevent server boot**.
@@ -68,7 +68,7 @@ Build the plugin substrate: four independent discovery mechanisms (UI manifests,
 
 ### Key Implementation Details
 
-- **Template frontmatter carry-over is a plugin-design question** _(SERVER-005 template-bleed fix, 2026-07-27)_: SPEC §9.2 pins pre-fill as body-only and the server now enforces it (template frontmatter shadowing documented defaults was a bug — evergreen:true silently opted every templated note out of staleness). SPEC §11's looser "starting frontmatter/body" phrasing survives only as this open question: should plugins be able to declare SCOPED template keys (e.g. `column: research`) that carry to instances — never fields with documented server defaults? If yes, this issue designs the declaration mechanism and proposes the §11/§9.2 reconciliation as a spec clarification (user sign-off).
+- **Template frontmatter carry-over is a plugin-design question** _(SERVER-005 template-bleed fix, 2026-07-27)_: SPEC §9.2 pins pre-fill as body-only and the server now enforces it (template frontmatter shadowing documented defaults was a bug — evergreen:true silently opted every templated note out of staleness). SPEC §10's looser "starting frontmatter/body" phrasing survives only as this open question: should plugins be able to declare SCOPED template keys (e.g. `column: research`) that carry to instances — never fields with documented server defaults? If yes, this issue designs the declaration mechanism and proposes the §10/§9.2 reconciliation as a spec clarification (user sign-off).
 
 
 **Discovery is convention, not registration.** Nothing in core enumerates plugin names. The UI globs, the server reads the directory, the CLI scans, `init` copies. Adding a plugin is `mkdir plugins/foo` plus files; removing it is `rm -rf`. Any design that requires editing a core file to add a plugin is wrong.
@@ -79,7 +79,7 @@ Build the plugin substrate: four independent discovery mechanisms (UI manifests,
 
 **Slot resolution is the only coupling.** Core components never import plugin code. They call `resolveDocView(doc.type)` and get back either a plugin component already wrapped in a boundary, or `null` (meaning: use the core default). This keeps the fallback path — "renders as plain markdown" — a natural consequence of the resolution returning `null`, not a special case that could rot.
 
-**Plugin columns are view documents, not routes.** A plugin registering a column type contributes a picker entry only. Selecting it goes through the same create-pinned-view-document path as folder/search columns (SPEC.md §11), writing `column: "<plugin>/<type>"` plus any `defaultQuery` fields into frontmatter. The board then renders it by looking that key up in the registry. Consequence: reorder, delete, and agent stewardship come for free, and an uninstalled plugin degrades to a missing-renderer problem in one column rather than a broken board.
+**Plugin columns are view documents, not routes.** A plugin registering a column type contributes a picker entry only. Selecting it goes through the same create-pinned-view-document path as folder/search columns (SPEC.md §10), writing `column: "<plugin>/<type>"` plus any `defaultQuery` fields into frontmatter. The board then renders it by looking that key up in the registry. Consequence: reorder, delete, and agent stewardship come for free, and an uninstalled plugin degrades to a missing-renderer problem in one column rather than a broken board.
 
 **Error boundaries are per-slot, not per-board.** A single boundary around the board would let one crash blank everything. Each resolved plugin component gets its own boundary instance keyed by `<plugin>/<role>/<type>` so a reset happens when the user navigates away and back.
 
@@ -121,7 +121,7 @@ Vitest, colocated per surface.
 - Lint-rule test — run ESLint programmatically over a fixture file that imports from `apps/ui/src` and assert the rule reports; and over one importing `@corpus/kit` and assert it does not.
 
 ## E2E Verification Plan
-Real app only: real server process, real Vite build/dev server, real browser (Playwright), real `corpus` binary. SPEC.md §15 M5 is the gold standard this plan instantiates — PLUGINS-002 runs M5 verbatim against `plugins/todos`; here we run the same shape against `plugins/_fixture`.
+Real app only: real server process, real Vite build/dev server, real browser (Playwright), real `corpus` binary. SPEC.md §12 M5 is the gold standard this plan instantiates — PLUGINS-002 runs M5 verbatim against `plugins/todos`; here we run the same shape against `plugins/_fixture`.
 
 ### Verification Steps
 1. **Baseline boot** — `npm run watch`; browser loads the board; server log lists discovered plugins; `corpus --help` shows the fixture topic.
@@ -131,9 +131,9 @@ Real app only: real server process, real Vite build/dev server, real browser (Pl
 5. **Server route + SSE** — `curl` the fixture's `/api/x/_fixture/...` route with the workspace bearer token; observe a 200, the file change on disk, and the corresponding `x/_fixture/...` `invalidate` event on the SSE stream; confirm the open plugin column updates live without reload.
 6. **CLI verb** — run `corpus _fixture <verb>` against the running server; observe the effect on disk and in the UI. Confirm the verb appears in `docs/cli.md` after `npm run docs:cli -w apps/cli` with no other diff.
 7. **Skill loading** — `corpus init` into a temp workspace; confirm the fixture's skill file exists under `<workspace>/.claude/skills/`.
-8. **§15 M5 — deletion** — `rm -rf plugins/_fixture`, restart: the app boots, the server logs no plugin, its documents render as **plain markdown**, its column shows the **"plugin missing"** card while the board otherwise works, and `corpus --help` no longer lists the topic. Restore the directory, restart: renderer, DocPanel, column, route, and verb all return.
-9. **§15 M5 — lint rule** — add `import { something } from "../../apps/ui/src/board/Board"` to a fixture plugin file; `npm run lint` fails naming the kit-only rule. Remove it; lint passes.
-10. **§15 M5 — error boundary** — temporarily make the fixture column `Component` throw on render; reload: an error card appears in that column naming the plugin, every other column still renders and scrolls, and the console strip has no unhandled error. Repeat for a throwing `View` (error card in the reader, board intact). Revert.
+8. **§12 M5 — deletion** — `rm -rf plugins/_fixture`, restart: the app boots, the server logs no plugin, its documents render as **plain markdown**, its column shows the **"plugin missing"** card while the board otherwise works, and `corpus --help` no longer lists the topic. Restore the directory, restart: renderer, DocPanel, column, route, and verb all return.
+9. **§12 M5 — lint rule** — add `import { something } from "../../apps/ui/src/board/Board"` to a fixture plugin file; `npm run lint` fails naming the kit-only rule. Remove it; lint passes.
+10. **§12 M5 — error boundary** — temporarily make the fixture column `Component` throw on render; reload: an error card appears in that column naming the plugin, every other column still renders and scrolls, and the console strip has no unhandled error. Repeat for a throwing `View` (error card in the reader, board intact). Revert.
 11. **Broken manifest** — introduce a syntax/shape error in the fixture manifest; rebuild: the plugin is skipped, a visible warning appears, and the rest of the app is unaffected. Revert.
 12. Capture command output, server log lines, SSE frames, and screenshots for the log.
 
@@ -232,7 +232,7 @@ while template entries keep the two-key shape (Adjudication 11). Collision rule 
 warning naming the collision) and cross-plugin collision rule unit-verified in
 `apps/cli/src/commands/init/scaffold-plugins.test.ts`.
 
-**8. §15 M5 deletion (step 8).** Stopped server+Vite; `tar` backup; `rm -rf plugins/_fixture`.
+**8. §12 M5 deletion (step 8).** Stopped server+Vite; `tar` backup; `rm -rf plugins/_fixture`.
 `npm run build` succeeded; server restarted logging **no** plugin line;
 `GET /api/x/_fixture/notes → 404`; `corpus --help` no longer lists the topic. Browser: board
 renders all 5 columns; **no** plugin warning (absence is a normal state); the fixture column
@@ -246,7 +246,7 @@ DocPanel, ListItem, column, server route and CLI verb all returned, and
 corpus db doctor` → `projection is clean — 12 documents from 12 files` (TEST-142). Outside
 `plugins/`, nothing changed between the two states.
 
-**9. §15 M6 lint rule (step 9).** Added `import "../../apps/ui/src/board/newList";` to
+**9. §12 M6 lint rule (step 9).** Added `import "../../apps/ui/src/board/newList";` to
 `plugins/_fixture/manifest.ts` → `npm run lint` exit 1:
 ```
 1:1 error '../../apps/ui/src/board/newList' import is restricted from being used by a pattern.
@@ -340,11 +340,11 @@ exactly one named place per surface — the glob composition in
 > **Template frontmatter carry-over is a plugin-design question** _(SERVER-005 template-bleed
 > fix, 2026-07-27)_: SPEC §9.2 pins pre-fill as body-only and the server now enforces it
 > (template frontmatter shadowing documented defaults was a bug — evergreen:true silently opted
-> every templated note out of staleness). SPEC §11's looser "starting frontmatter/body"
+> every templated note out of staleness). SPEC §10's looser "starting frontmatter/body"
 > phrasing survives only as this open question: **should plugins be able to declare SCOPED
 > template keys (e.g. `column: research`) that carry to instances — never fields with
 > documented server defaults?** If yes, a follow-up issue designs the declaration mechanism and
-> proposes the §11/§9.2 reconciliation as a spec clarification (user sign-off).
+> proposes the §10/§9.2 reconciliation as a spec clarification (user sign-off).
 
 No carry-over mechanism was built: `types.yaml`'s `seedTemplate` is documented as supplying a
 **body only** (docs/PLUGINS.md), and no code path moves template frontmatter onto instances.

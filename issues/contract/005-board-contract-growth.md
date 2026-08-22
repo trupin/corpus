@@ -14,7 +14,7 @@ P1
 
 ## Model
 
-opus — additive schema growth with shapes pinned by SPEC §9.2/§11 and the sprint-004 findings; no open design questions.
+opus — additive schema growth with shapes pinned by SPEC §9.2/§10 and the sprint-004 findings; no open design questions.
 
 ## Dependencies
 
@@ -23,7 +23,7 @@ opus — additive schema growth with shapes pinned by SPEC §9.2/§11 and the sp
 
 ## Spec References
 
-- SPEC.md §11 — staleness ramp, thread-row affordances, board columns
+- SPEC.md §10 — staleness ramp, thread-row affordances, board columns
 - SPEC.md §9.2 — collection query row content
 - `issues/sprints/sprint-004.md` — Open Conflicts 2 and 7 (discovery record)
 
@@ -33,8 +33,8 @@ Two gaps found while sprint-004 pinned SERVER-007/011 to the shipped contract: (
 
 ## Acceptance Criteria
 
-- [x] The query-key vocabulary is published in the contract (schemas/sse.ts): the closed set of key shapes (e.g. `["docs"]`, `["docs", {filter-hash}]`, `["doc", id]`, `["thread", id]`, `["tree"]`, `["queue"]`, `["jobs"]`, `["job-log", id]` — derive the actual set from SPEC §11's refetch surfaces and SERVER-007's emitter), each with a description of what emits it and what should refetch on it; exported constants/helpers so server emitter and UI bridge share one source.
-- [x] `DocRowSchema` gains the §11 fields: staleness tier (the enum the staleness ramp renders), and for thread rows the agent-participation state and unread/awaiting affordances — nullable/absent for non-thread rows, consistent with the "thread filters no-op on non-threads" convention.
+- [x] The query-key vocabulary is published in the contract (schemas/sse.ts): the closed set of key shapes (e.g. `["docs"]`, `["docs", {filter-hash}]`, `["doc", id]`, `["thread", id]`, `["tree"]`, `["queue"]`, `["jobs"]`, `["job-log", id]` — derive the actual set from SPEC §10's refetch surfaces and SERVER-007's emitter), each with a description of what emits it and what should refetch on it; exported constants/helpers so server emitter and UI bridge share one source.
+- [x] `DocRowSchema` gains the §10 fields: staleness tier (the enum the staleness ramp renders), and for thread rows the agent-participation state and unread/awaiting affordances — nullable/absent for non-thread rows, consistent with the "thread filters no-op on non-threads" convention.
 - [x] SERVER-011's projection query can populate every new field from existing tables (verify against the shipped schema; if a field needs data the projection lacks, flag it instead of inventing).
 - [x] **Turn-append mounting helper** _(CONTRACT-004 escalation, 2026-07-27)_: `@hono/zod-openapi` registers hard validators for every media type when `required: true`, so the dual-media `POST /api/threads/{id}/turns` body ships as a tested `RULE_EXEMPTIONS` entry (bare call compiles). Provide a contract-owned mounting helper that keeps `required: true` in the document while dispatching validation by content-type itself, remove the exemption, and land before SERVER-006 creates call sites.
 - [x] **Nullable timestamps decision** _(SERVER-011 handoff, 2026-07-27)_: `documents.created/updated` are legitimately null (hand-written skill files) but `DocRow` declares both non-nullable — the server currently serializes an epoch sentinel and staleness treats unknown age as fresh. Decide: make the row fields nullable (UI renders "—") or bless the sentinel; either way document it in the schema description.
@@ -45,7 +45,7 @@ Two gaps found while sprint-004 pinned SERVER-007/011 to the shipped contract: (
 
 Orchestrator decisions — full reasoning in `issues/sprints/sprint-005.md`:
 
-1. **Rider: the §14 `warnings` carrier** — response-side field (e.g. on mutation responses) for validation warnings; additive, no new routes/request bodies, every pinned invariant holds. This issue now hard-blocks SERVER-005's warning ACs — it merges FIRST in the sprint.
+1. **Rider: the §11 `warnings` carrier** — response-side field (e.g. on mutation responses) for validation warnings; additive, no new routes/request bodies, every pinned invariant holds. This issue now hard-blocks SERVER-005's warning ACs — it merges FIRST in the sprint.
 2. **The key vocabulary is the emitted nine-shape set** recorded in SERVER-007's E2E log — including both lock keys (`["locks"]`, `["locks",docId]`); the issue's earlier example list is superseded.
 3. **DocRow growth breaks merged SERVER-011** (nullable fields it doesn't populate red the server typecheck): SERVER-015 is filed to populate them and merges together with this issue — expect the orchestrator to gate the combined harvest.
 
@@ -61,7 +61,7 @@ names without bundling Zod — the same constraint that put `ACTOR_HEADER`/`ACTO
 - `packages/contract/src/routes/events.ts` — renders the vocabulary into the `GET /events` description, so it reaches `openapi.json`
 - `packages/contract/src/schemas/query.ts` — `DocRow` staleness tier + thread affordances
 - `packages/contract/src/schemas/doc.ts` — nullable row timestamps; `DocMutationResponse`; `warnings` on update/delete
-- `packages/contract/src/schemas/warning.ts` **(new)** — the §14 warnings carrier
+- `packages/contract/src/schemas/warning.ts` **(new)** — the §11 warnings carrier
 - `packages/contract/src/routes/turn-append.ts` **(new)** — the dual-media route definition + `mountAppendTurn`
 - `packages/contract/src/routes/threads.ts` — `appendTurn` moved out to its mounting module
 - `packages/contract/src/routes/docs.ts` — doc mutations return `DocMutationResponse`
@@ -100,7 +100,7 @@ _N/A — additive growth._
 | Nullable timestamps (AC 4)  | **Nullable.** `DocRow.created`/`updated` become `IsoDateTime \| null`; the epoch sentinel is rejected. `DocFrontmatter` stays non-nullable — a document the server writes is always stamped. | `schemas/doc.ts` — `UNDATED_DESCRIPTION` + block note |
 | Staleness representation    | **Nullable tier**, no `fresh` member: `null` is fresh, which is why `stale=` takes a tier and never `fresh`.                                                                                | `schemas/query.ts` — `DocRowSchema.stale` description |
 | Thread affordances          | **Nullable, not optional** — the key is always present; `null` means "not a thread".                                                                                                        | `schemas/query.ts` — `threadRowShape` block note      |
-| §14 warnings codes          | Four: `commit_failed`, `commit_skipped` (the auto-commit half) **plus** `orphaned_anchor`, `unresolved_ref` (§14's validation half, which the sprint recommendation did not enumerate).      | `schemas/warning.ts`                                  |
+| §11 warnings codes          | Four: `commit_failed`, `commit_skipped` (the auto-commit half) **plus** `orphaned_anchor`, `unresolved_ref` (§11's validation half, which the sprint recommendation did not enumerate).      | `schemas/warning.ts`                                  |
 
 #### 1. Vocabulary — published, closed, Zod-free (TEST-100…104)
 
@@ -213,7 +213,7 @@ _(Sprint-authorized deferral: `DEFERRED → SERVER-006` for a real product call 
 handler for `POST /api/threads/{id}/turns` exists yet. The authorized substitute — the contract's
 own mounted-stub tests plus `tsc` probes — is what is recorded above.)_
 
-#### 4. §14 warnings carrier (sprint-005 rider)
+#### 4. §11 warnings carrier (sprint-005 rider)
 
 `schemas/warning.ts` adds `Warning {code, detail}` and the always-present `warnings` array.
 `DocMutationResponse {doc, warnings}` now backs create/move/archive/unarchive;

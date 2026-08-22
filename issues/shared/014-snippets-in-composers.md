@@ -25,9 +25,9 @@ fable
 ## Spec References
 
 - §6 Threads and anchors — "Forms in turns", "Attachments"
-- §11 UI — the board → Thread view (copyable canvases, riders signed 2026-08-02
+- §10 UI — the board → Thread view (copyable canvases, riders signed 2026-08-02
   and 2026-08-03; "Every composer takes attachments", rider signed 2026-08-05)
-- §11 → global composer key contract (SHARED-009 Amendment 1, signed 2026-08-03)
+- §10 → global composer key contract (SHARED-009 Amendment 1, signed 2026-08-03)
 
 ---
 
@@ -60,12 +60,12 @@ The draft below says so plainly rather than letting the two readings coexist.
 
 ## What already exists — this rider does not re-specify it
 
-- §11 already makes fenced blocks in rendered turns **copyable canvases**: a copy
+- §10 already makes fenced blocks in rendered turns **copyable canvases**: a copy
   button putting the block's raw text on the clipboard, the info string rendering
   as the block's label, long lines wrapping rather than scrolling, and a block
   taller than a threshold rendering **clipped** behind a control that expands it
   and says how much is hidden.
-- §11 already says **every composer takes attachments**, stated once for the
+- §10 already says **every composer takes attachments**, stated once for the
   whole set rather than per surface (SHARED-012).
 - §6 already says a pasted image or file becomes an attachment rather than
   garbage text.
@@ -87,7 +87,7 @@ content.
 
 **The ``` trigger collides with markdown.** Answer: **there is no collision,
 because they are the same object.** A fence typed in a composer is a snippet. The
-draft makes this cost nothing by keying the collapse to the height threshold §11
+draft makes this cost nothing by keying the collapse to the height threshold §10
 already defines — below it a snippet renders open, exactly as a code block always
 has, so a three-line paste is unaffected; above it, the collapse is the whole
 point. Text typed after the fence becomes the snippet's label, so ```` ```python ````
@@ -127,14 +127,14 @@ with the CLI and see one `snippet` fence, and see one collapsed row in the board
 > several with the surrounding prose leaking between them. Every writer of a turn
 > obeys this: the composers when a person makes a snippet, and the agent when it
 > emits one. A turn may hold several snippets. A snippet that ends up in a
-> **document** body (a Capture, §11) is preserved as a fenced block in that
+> **document** body (a Capture, §10) is preserved as a fenced block in that
 > document's markdown and renders there as an ordinary code block — the collapse
 > below is a property of **rendered turns**, where a reader is reading rather
 > than editing.
 
-### Amendment 2 — §11 Thread view, REPLACE the wrap/clip sentences
+### Amendment 2 — §10 Thread view, REPLACE the wrap/clip sentences
 
-REPLACE, in §11's Thread view bullet, exactly this text:
+REPLACE, in §10's Thread view bullet, exactly this text:
 
 > Long lines **wrap** inside the canvas rather than scrolling horizontally, so
 > the whole block is readable without a second axis of navigation, and a block
@@ -162,12 +162,12 @@ with:
 > threshold a snippet renders open like any other canvas — collapsing three lines
 > hides nothing worth hiding. The copy button always puts the **whole** block on
 > the clipboard, collapsed, clipped or expanded, and expanding or collapsing is
-> operable from the keyboard like every other affordance (§11 adds no
+> operable from the keyboard like every other affordance (§10 adds no
 > exclusive-pointer capability). _(Rider signed 2026-08-03; the clipping half
 > signed 2026-08-03 after the wrap, on a second report; the snippet collapse
 > signed 2026-08-05.)_
 
-### Amendment 3 — §11 Thread view, APPEND after the attachments statement
+### Amendment 3 — §10 Thread view, APPEND after the attachments statement
 
 APPEND immediately after "…which surface it was written in decides nothing about
 what it can carry. _(Rider signed 2026-08-05.)_":
@@ -199,7 +199,7 @@ what it can carry. _(Rider signed 2026-08-05.)_":
 ## Open questions for sign-off
 
 **Q1 — Does a *short* snippet collapse?** The user said "collapsed by default"
-flatly; the draft collapses only past §11's existing height threshold, on the
+flatly; the draft collapses only past §10's existing height threshold, on the
 grounds that the user's own reason ("the idea is that it is somewhat long") does
 not apply to three lines, and that a one-row placeholder hiding two lines of
 content is worse than the content.
@@ -244,7 +244,7 @@ for a shortcut, not a dialog._
   block there; collapse lives in rendered turns.
 - No change to what the agent writes (subject to Q3).
 - No syntax highlighting is promised by this rider; the info string is a label,
-  as §11 already says.
+  as §10 already says.
 - No retroactive repair: turns written before this exists are not rewritten into
   snippets.
 
@@ -254,7 +254,7 @@ for a shortcut, not a dialog._
 - [ ] All three amendments applied to SPEC.md verbatim at phase kickoff, by the
       orchestrator
 - [ ] Amendment 2 **replaces** the quoted sentences rather than duplicating them
-      — the ordinary-fence threshold must survive exactly once in §11
+      — the ordinary-fence threshold must survive exactly once in §10
 - [ ] The implementing chain does not start before the text is in place
 - [ ] The composer-side widening rule is checked against
       `assets/workspace/claude/skills/comment/SKILL.md`'s producer rule and the
@@ -264,7 +264,7 @@ for a shortcut, not a dialog._
 
 ### Files to Create/Modify
 
-- `SPEC.md` §6, §11
+- `SPEC.md` §6, §10
 
 ## Testing Strategy
 

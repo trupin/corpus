@@ -1,5 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import type { ComponentType, KeyboardEvent, MouseEvent, ReactElement } from "react";
+import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
 import {
   AgentActivityDot,
   AgeChip,
@@ -14,14 +14,20 @@ import { useRowActions, type RowNotice } from "./useRowActions.js";
 import { useAgentActivity } from "./useRowSignals.js";
 
 /**
- * The single list-item renderer every column uses (SPEC.md §11 — type-aware rows).
+ * The single list-item renderer every column uses (SPEC.md §10 — type-aware rows).
  *
  * **A row knows nothing about any column.** It takes a `DocRow` and callbacks;
  * it never reads a board, a view document or a query. That is what lets the same
- * component render in the board, in a search result list, and inside a plugin's
- * own surface — and it is why {@link RowProps} is exported: a plugin's
- * registered `ListItem` (PLUGINS-001) is a component with exactly this prop
- * shape, and it cannot be written without the type.
+ * component render in a board column, in a search result list, and in an
+ * anchored-thread list — and it is why {@link RowProps} is exported: a host that
+ * wraps a row, or builds its props before it has one, needs the type.
+ *
+ * **There is exactly one renderer, and no seam for a second.** No delegate prop
+ * swaps the layout out per document type, which is what makes the row safe
+ * against a `type:` it has never seen: the set of types on the wire is not the
+ * set any one build knows — an older workspace's documents, a hand-written file,
+ * or a server newer than this client can each name one (SPEC.md §5) — and a row
+ * that had to be claimed before it could be drawn would render those as nothing.
  *
  * Everything the row *derives* is derived from what the server already computed:
  * the staleness tier, the attention reasons, the unread and awaiting-agent
@@ -61,14 +67,7 @@ export interface RowProps {
   /** Injectable clock, so a test can pin the age label and the `reviewed` instant. */
   readonly now?: Date | undefined;
   /**
-   * The plugin seam (SPEC.md §10). When a host resolves a registered `ListItem`
-   * for this document's type it passes it here and the row delegates wholesale.
-   * The registry lookup itself is PLUGINS-001's, which keeps that issue purely
-   * additive: the seam already exists and is already tested.
-   */
-  readonly ListItem?: ComponentType<RowProps> | undefined;
-  /**
-   * The keyboard row cursor is on this row (SPEC.md §11's `↑`/`↓`, `j`/`k`) —
+   * The keyboard row cursor is on this row (SPEC.md §10's `↑`/`↓`, `j`/`k`) —
    * the prototype's `.row.kbd` outline.
    *
    * A prop rather than a class the host adds from outside, because the host that
@@ -79,16 +78,13 @@ export interface RowProps {
   readonly cursor?: boolean | undefined;
 }
 
-/** What a plugin's registered list item must accept. */
-export type ListItemComponent = ComponentType<RowProps>;
-
 /**
  * The prototype's `.needs-you` text, derived from the row's own reasons.
  *
  * It stays the bare kind — `form` — and does **not** carry
  * `unansweredForms`. The pill is "short text only — the reason line carries the
  * sentence" ({@link NeedsYouBadge}), the mockup's own form pill reads `form`
- * with no number, and §11's "says how many" is one statement: putting the count
+ * with no number, and §10's "says how many" is one statement: putting the count
  * in two places on the same row is two things to keep in step for no second
  * reader.
  */
@@ -99,7 +95,7 @@ function needsYouText(attention: readonly string[]): string | null {
 }
 
 export function Row(props: RowProps): ReactElement {
-  const { row, onOpen, onNotify, unreadCount, now, ListItem, showReasons, cursor } = props;
+  const { row, onOpen, onNotify, unreadCount, now, showReasons, cursor } = props;
 
   const level = stalenessLevel(row.stale);
   const showActions = hasStaleActions(level);
@@ -108,12 +104,6 @@ export function Row(props: RowProps): ReactElement {
     ...(now ? { now: () => now } : {}),
   });
   const activity = useAgentActivity(row);
-
-  // Hooks run unconditionally; the delegation happens after them, so a plugin
-  // item swapping in and out never changes this component's hook order.
-  // `ListItem: undefined` on the delegate is what stops a plugin item that
-  // re-renders `Row` as its own fallback from recursing forever.
-  if (ListItem !== undefined) return <ListItem {...props} ListItem={undefined} />;
 
   const excerpt = rowExcerpt(row);
   const context = rowContext(row);

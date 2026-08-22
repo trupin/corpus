@@ -1,8 +1,8 @@
 /*
- * Base styles, ported from `design/index.html` (SPEC.md §11 names it
+ * Base styles, ported from `design/index.html` (SPEC.md §10 names it
  * authoritative for look & feel). The tokens these rules consume live in
- * `@corpus/kit/tokens.css`, which `main.tsx` imports first — plugins get the
- * tokens without inheriting the app's chrome.
+ * `@corpus/kit/tokens.css`, which `main.tsx` imports first — a surface built
+ * from the kit alone gets the tokens without inheriting the app's chrome.
  *
  * No colour literal appears anywhere under `apps/ui/src`: every colour is a
  * `var(--…)`, which is what makes the theme toggle total.

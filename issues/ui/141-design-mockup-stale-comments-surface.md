@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — the comments-list rider _(signed 2026-08-04)_: *"A document's
+- SPEC.md §10 — the comments-list rider _(signed 2026-08-04)_: *"A document's
   comments are also available as a **list**, reached by a Document / Comments
   switch in the reader's header and present in both column view and full
   screen."*
@@ -46,7 +46,7 @@ design/index.html:1693  function toggleCommentsPop(btn) { … }   ← and the be
 So the mockup shows a control that opens a list of conversations **with nothing
 to do about any of them**, where the app now has a two-state toggle onto a
 surface that filters, replies, resolves and writes. It also has no comments list
-at all, and no composer for a comment with no selection — the two things §11's
+at all, and no composer for a comment with no selection — the two things §10's
 rider is about.
 
 **Why this matters, and why it is filed rather than folded in.** The mockup is
@@ -58,7 +58,7 @@ contract out of this file. UI-055's scope was deliberately held to the composer
 keys ("nothing else in the mockup changes"), so the comments surface needs its
 own issue rather than a quiet widening of that one.
 
-**It is not a code defect.** The app is right and the mockup is stale; §11's
+**It is not a code defect.** The app is right and the mockup is stale; §10's
 signed rider supersedes it. Nothing is broken for a user. What is at risk is the
 next person who reads the mockup.
 
@@ -94,7 +94,7 @@ The app is the reference, and it is small enough to read end to end:
 
 - `apps/ui/src/comments/CommentsSwitch.tsx` — the toggle, its two states, its
   accessible names, and **why it is not unconditional** (a measured deviation
-  from §11, recorded in the docblock)
+  from §10, recorded in the docblock)
 - `apps/ui/src/comments/CommentsTab.tsx` + `comments.css` — the list
 - `apps/ui/src/reader/Reader.css` — `.comments-btn`, `.comments-btn.on`,
   `.comments-count`
@@ -109,7 +109,7 @@ rows, `.composer` at the foot — exactly as the app's own `comments.css` was.
 
 - **Do not draw the switch unconditionally.** The app's toggle appears when the
   document has conversations, or whenever the list is showing. That is a
-  deviation from §11's wording, measured and recorded in UI-063: at a 560px
+  deviation from §10's wording, measured and recorded in UI-063: at a 560px
   column with a parent title at its `max-width: 40%` cap the head has 13px of
   slack and the toggle needs 61px. A mockup that drew it always would put the
   next reader back where this release started.

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 /**
  * The reserved image box (UI-129), pinned where it is actually declared.
  *
- * SPEC.md §11's rider signed 2026-08-20 is a **layout** promise — "a value that
+ * SPEC.md §10's rider signed 2026-08-20 is a **layout** promise — "a value that
  * arrives later than the box holding it" moves nothing — and jsdom implements no
  * layout, so the acceptance test for it is the real-browser geometry spec
  * (`apps/ui/e2e/image-geometry.spec.ts`). What a unit test can still hold is the
@@ -88,9 +88,9 @@ describe("the reserved image box", () => {
     //
     // **The default is the reading measure, not a thumbnail** (PR #53 review).
     // Prose is the surface with no host to retune it — a document body, a
-    // turn's message, a plugin's canvas — and an image there carries content
+    // turn's message, a compose preview — and an image there carries content
     // someone has to read. A 240px default made the full-screen viewer the
-    // ordinary way to read one, which SPEC.md §11's third clause forbids, and
+    // ordinary way to read one, which SPEC.md §10's third clause forbids, and
     // on a surface with no viewer mounted there is no viewer to fall back on.
     expect(box.get("width")).toBe("var(--md-img-box-w, 100%)");
     // `auto`, so a surface that states only a width gets the matching height.

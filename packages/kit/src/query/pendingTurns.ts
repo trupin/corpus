@@ -1,7 +1,7 @@
 import type { Thread, Turn } from "@corpus/contract";
 
 /**
- * The user's own turn, shown before the server has confirmed it (SPEC.md §11 —
+ * The user's own turn, shown before the server has confirmed it (SPEC.md §10 —
  * "optimistic append of the user's own turn, reconciled on refetch").
  *
  * Kept in a provider-level store as well as in the query cache. The cache copy

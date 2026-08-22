@@ -1,4 +1,4 @@
-import { COLUMN_REF_PATTERN, RESERVED_FRONTMATTER_KEYS, type ViewQuery } from "@corpus/contract";
+import { RESERVED_FRONTMATTER_KEYS, type ViewQuery } from "@corpus/contract";
 import { UsageError } from "../../errors.js";
 import { parseTriStateBoolean } from "../../input.js";
 import type { ParsedFlags } from "../../parse-args.js";
@@ -11,7 +11,7 @@ import type { FlagSpec } from "../../registry/types.js";
  * It lives outside both verbs because both write the same keys and a second
  * grammar is the defect this module exists to prevent — CLI-016 published
  * `--extra`'s five rules in the flag's own description, and CLI-018's view
- * flags (SPEC.md §11) parse numbers and `null` for exactly the same reasons.
+ * flags (SPEC.md §10) parse numbers and `null` for exactly the same reasons.
  * `edit.ts` re-exports the two functions its own tests drive, so the split is
  * invisible from outside.
  */
@@ -60,7 +60,7 @@ import type { FlagSpec } from "../../registry/types.js";
  * **Objects and arrays are deliberately out of this grammar** (SPEC 38,
  * adjudicated by CLI-018): a `{`-leading value is stored as the string it looks
  * like, and `--extra-json` is the flag that means "parse this as JSON". Two
- * meanings for one syntax would make every plugin key ambiguous; a second flag
+ * meanings for one syntax would make every non-core key ambiguous; a second flag
  * is unambiguous and costs the caller three characters.
  */
 export function parseExtraValue(raw: string): string | number | boolean | null {
@@ -100,9 +100,9 @@ function jsonStringLiteral(raw: string): string | undefined {
  * only makes the message actionable, so a key the contract adds tomorrow is
  * still refused, just with the generic hint.
  *
- * The four §11 view keys earn entries here the moment they earn flags
- * (CLI-018): before that, `--extra pinned=true` was refused with "core keys are
- * not user-writable through `--extra`" and nowhere to go, which is a refusal an
+ * The §10 view keys earn entries here the moment they earn flags (CLI-018):
+ * before that, `--extra pinned=true` was refused with "core keys are not
+ * user-writable through `--extra`" and nowhere to go, which is a refusal an
  * agent cannot act on.
  */
 const FLAG_FOR_RESERVED_KEY: Readonly<Record<string, string>> = {
@@ -115,7 +115,6 @@ const FLAG_FOR_RESERVED_KEY: Readonly<Record<string, string>> = {
   pinned: "--pinned",
   order: "--order",
   query: "--query",
-  column: "--column",
 };
 
 const RESERVED_KEYS: ReadonlySet<string> = new Set(RESERVED_FRONTMATTER_KEYS);
@@ -181,12 +180,11 @@ export function parseExtraFlags(entries: readonly string[]): Record<string, unkn
  * (sprint-018 TEST-639, outcome (a)).
  *
  * `extra` has carried objects and arrays on the wire since CONTRACT-011
- * (`EXTRA_MAX_DEPTH = 8`, and `todo.items` — an array of objects — is the
- * reference plugin's own shape), so the scalars-only limit was never the
- * contract's: it was `--extra`'s grammar, and a CLI-only agent stewarding a
- * plugin key that stores an object had no verb at all. Widening `--extra` to
- * parse `{`-leading values as JSON would have changed what a value already
- * stores today, so the escape hatch is a second flag instead.
+ * (`EXTRA_MAX_DEPTH = 8` is a depth no scalar needs), so the scalars-only limit
+ * was never the contract's: it was `--extra`'s grammar, and a CLI-only agent
+ * stewarding a non-core key that stores an object had no verb at all. Widening
+ * `--extra` to parse `{`-leading values as JSON would have changed what a value
+ * already stores today, so the escape hatch is a second flag instead.
  *
  * **Nothing is bounded here.** Depth and size are the contract's
  * (`EXTRA_MAX_DEPTH`, `EXTRA_MAX_BYTES`), enforced server-side over the whole
@@ -253,11 +251,11 @@ export function combineExtraPatches(
 }
 
 /**
- * The §11 view keys, parsed off the flags both verbs declare (CLI-018).
+ * The §10 view keys, parsed off the flags both verbs declare (CLI-018).
  *
  * A column **is** a `type: view` document with `pinned: true` — its frontmatter
  * holds the query and the board position — so "@agent pin me a view of
- * unresolved finance threads" is these four keys and nothing else. They are
+ * unresolved finance threads" is these three keys and nothing else. They are
  * core fields on the contract (`packages/contract/src/schemas/doc.ts`), already
  * accepted on `POST /api/docs` and `PUT /api/docs/{id}`; the whole of this
  * issue is the verb surface over them.
@@ -273,13 +271,11 @@ export function parseViewFlags(flags: ParsedFlags) {
   const pinned = parseTriStateBoolean("pinned", flags.string("pinned"));
   const order = parseOrder(flags.string("order"));
   const query = parseQuery(flags.strings("query"));
-  const column = parseColumn(flags.string("column"));
 
   return {
     ...(pinned === undefined ? {} : { pinned }),
     ...(order === undefined ? {} : { order }),
     ...(query === undefined ? {} : { query }),
-    ...(column === undefined ? {} : { column }),
   };
 }
 
@@ -298,27 +294,6 @@ export function parseOrder(raw: string | undefined): number | null | undefined {
   throw new UsageError(`--order takes a finite number or \`null\` — got "${raw}".`, {
     hint: "The board sorts columns on this number, so it has to be one: `--order 4`, `--order 1.5` to land between two neighbours without renumbering them, or `--order null` to drop the key and take the documented tiebreak (nulls last, then title, then id).",
   });
-}
-
-/**
- * `column` is a plugin column reference, `"<plugin>/<type>"` — the shape
- * `COLUMN_REF_PATTERN` pins, imported rather than re-typed.
- *
- * The check is about the **shape** and never about whether the plugin is
- * installed: a view referencing an uninstalled plugin keeps its board position
- * and renders the plugin-missing card (SPEC.md §15 M6), which is the behaviour
- * that makes a plugin removable. `null` clears the key; no legal reference can
- * be the word `null`, since every reference carries a slash.
- */
-export function parseColumn(raw: string | undefined): string | null | undefined {
-  if (raw === undefined) return undefined;
-  if (raw === "null") return null;
-  if (!COLUMN_REF_PATTERN.test(raw)) {
-    throw new UsageError(`--column takes \`<plugin>/<type>\` — got "${raw}".`, {
-      hint: "Exactly one slash, no whitespace: `--column todos/todos`. A plugin that is not installed is still a legal reference — the column keeps its place and renders a plugin-missing card. `--column null` makes it a plain filtered list again.",
-    });
-  }
-  return raw;
 }
 
 type QueryValue = ViewQuery[string];
@@ -419,7 +394,7 @@ export const VIEW_KEY_FLAGS: readonly FlagSpec[] = [
     type: "string",
     valueName: "true|false",
     description:
-      "Pin this document to the board as a column, or unpin it (SPEC.md §11 — **a column IS a " +
+      "Pin this document to the board as a column, or unpin it (SPEC.md §10 — **a column IS a " +
       "`type: view` document with `pinned: true`**). Takes an explicit value, like `--evergreen`: " +
       "omitting the flag leaves the field alone, `--pinned false` removes the column. The board " +
       "picks the change up over SSE with no reload. Note this is the **write** side of `doc list " +
@@ -450,15 +425,5 @@ export const VIEW_KEY_FLAGS: readonly FlagSpec[] = [
       "is the string as typed. **Naming any key replaces the whole query** — `query` is one core " +
       "field, not a merge patch — and `--query null` clears it. An object or array value is a " +
       "usage error: the map is flat.",
-  },
-  {
-    name: "column",
-    type: "string",
-    valueName: "plugin/type",
-    description:
-      "Render this pinned view as a plugin column type (SPEC.md §10), e.g. `--column todos/todos`; " +
-      "`--column null` makes it a plain filtered list again. Exactly one slash, no whitespace. The " +
-      "check is about the shape only — a reference to a plugin that is **not installed** is legal " +
-      "and keeps its board position, rendering the plugin-missing card (SPEC.md §15).",
   },
 ];

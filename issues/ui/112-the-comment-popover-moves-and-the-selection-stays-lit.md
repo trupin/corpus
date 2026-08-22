@@ -24,10 +24,10 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** Document view — *"selecting text pops a floating toolbar
+- SPEC.md **§10** Document view — *"selecting text pops a floating toolbar
   (formatting + **Comment**); commenting captures the text-quote selector and
   opens a thread composer"*
-- SPEC.md **§11** Thread view — a comment on a selection inside a turn: *"the
+- SPEC.md **§10** Thread view — a comment on a selection inside a turn: *"the
   selection becomes the child thread's text-quote anchor (§6), **is highlighted
   in the turn** the way an anchor is highlighted in a document"*
 - SPEC.md **§6** — anchors and how a highlight is painted
@@ -69,7 +69,7 @@ same paint by a different owner.
 ## Acceptance Criteria
 
 - [x] The popover can be dragged, by an affordance that says so, and is operable
-      from the keyboard — §11 adds no exclusive-pointer capability
+      from the keyboard — §10 adds no exclusive-pointer capability
 - [x] It cannot be dragged off-screen, and survives a scroll of the surface
       beneath it
 - [x] A position is per-opening, not persisted: a new selection opens a fresh

@@ -20,7 +20,7 @@ export interface AppProps {
 }
 
 /**
- * The application's **one** `CorpusProvider` (SPEC.md §11 — a single resilient
+ * The application's **one** `CorpusProvider` (SPEC.md §10 — a single resilient
  * SSE connection). Every provider owns its own `EventSource` and its own cache,
  * so a second one would silently double both; the kit warns when it sees one,
  * and `main.tsx` renders this component exactly once.

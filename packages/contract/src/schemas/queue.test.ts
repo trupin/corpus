@@ -37,9 +37,18 @@ describe("QueueEvent", () => {
     expect(QueueEventSchema.parse(event)).toEqual(event);
   });
 
-  it("accepts a plugin-defined type with an arbitrary payload", () => {
-    const pluginEvent = { ...event, type: "todo.due", payload: { todoId: 4, nested: { a: [1] } } };
-    expect(QueueEventSchema.parse(pluginEvent)).toEqual(pluginEvent);
+  /**
+   * The openness the wire promises: a queue carried over from an older
+   * workspace, a hand-written `pending/` file, or a newer server can each put a
+   * type here that this build has never heard of, and the envelope still parses.
+   */
+  it("accepts an unrecognised type with an arbitrary payload", () => {
+    const unknownEvent = {
+      ...event,
+      type: "ledger.reconciled",
+      payload: { entryId: 4, nested: { a: [1] } },
+    };
+    expect(QueueEventSchema.parse(unknownEvent)).toEqual(unknownEvent);
   });
 
   it("accepts an empty payload", () => {
@@ -60,8 +69,8 @@ describe("queue vocabularies", () => {
     expect(CoreQueueEventTypeSchema.parse(type)).toBe(type);
   });
 
-  it("does not treat a plugin type as a core type", () => {
-    expect(CoreQueueEventTypeSchema.safeParse("todo.due").success).toBe(false);
+  it("does not treat an unrecognised type as a core type", () => {
+    expect(CoreQueueEventTypeSchema.safeParse("ledger.reconciled").success).toBe(false);
   });
 
   /**
@@ -214,9 +223,11 @@ describe("InProgressEvent", () => {
     expect(InProgressEventSchema.safeParse({ ...held, originId: "evt_7c1d" }).success).toBe(false);
   });
 
-  /** Open, for the reason `QueueEvent.type` is: plugins define their own event types. */
-  it("leaves the type open to plugin-defined values", () => {
-    expect(InProgressEventSchema.parse({ ...held, type: "todo.due" }).type).toBe("todo.due");
+  /** Open, for the reason `QueueEvent.type` is: the wire's set is not this build's set. */
+  it("leaves the type open to values this build does not know", () => {
+    expect(InProgressEventSchema.parse({ ...held, type: "ledger.reconciled" }).type).toBe(
+      "ledger.reconciled",
+    );
     expect(InProgressEventSchema.safeParse({ ...held, type: "" }).success).toBe(false);
   });
 });
@@ -551,7 +562,7 @@ describe("isAgentPresent", () => {
   });
 
   /**
-   * The point of taking a clock: §11 asks the pill to flip on its own when an
+   * The point of taking a clock: §10 asks the pill to flip on its own when an
    * agent walks away, and nothing else may have happened to prompt a refetch.
    */
   it("expires a stale `live` no invalidation has arrived to correct", () => {
@@ -578,7 +589,7 @@ describe("isAgentPresent", () => {
 });
 
 /**
- * The pill's four states (SPEC.md §11, rider SHARED-033). Two of the three
+ * The pill's four states (SPEC.md §10, rider SHARED-033). Two of the three
  * precedence steps were already the UI's behaviour; the third — `disconnected`
  * over `working` — is the decision CONTRACT-045 makes, and it is the mirror of
  * the bug that filed the issue: `working` about an agent that claimed work and

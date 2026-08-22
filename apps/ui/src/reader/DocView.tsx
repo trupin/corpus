@@ -7,10 +7,10 @@ import {
   THREAD_DOC_TYPE,
   useDoc,
   useDocs,
+  type RevealTarget,
   type RowNotice,
 } from "@corpus/kit";
-import type { RevealTarget } from "@corpus/kit/plugin";
-import { useRef, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";
 import { CommentsTab } from "../comments/CommentsTab";
@@ -20,8 +20,6 @@ import { useAnchorLayer } from "../anchors/useAnchorLayer";
 import { useMarginLayout } from "../anchors/useMarginLayout";
 import { DocEditor, editorHandlesType } from "../editor/DocEditor";
 import { useSelectionContextMenu } from "../menu/useSelectionContextMenu";
-import { usePluginDiscovery, usePluginRegistry } from "../plugins/registry";
-import { resolveDocPanel, resolveDocView } from "../plugins/slots";
 import { summaryFromRow, type ThreadSummary } from "../thread/CollapsedThread";
 import { ThreadPanel } from "../thread/ThreadPanel";
 import { readStateOf, type ThreadReadState } from "../thread/threadCollapse";
@@ -34,27 +32,32 @@ import { ScopeProvenance } from "./ScopeProvenance";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
- * **The** document view. One component, two hosts (SPEC.md §11).
+ * **The** document view. One component, two hosts (SPEC.md §10).
  *
  * The in-column reader and focus mode differ in chrome and in reading measure
  * and in nothing else: same frontmatter form, same ⋯ menu, same 💬, same refs,
  * same backlinks, same related panel. Forking the rendering would let the two
- * drift, and §11 describes one document view rendered at two sizes.
+ * drift, and §10 describes one document view rendered at two sizes.
  *
  * The body branch is where UI-006 landed: a markdown-bodied document renders
- * through `DocEditor`, and **there is no second branch** — §11's *the board is
+ * through `DocEditor`, and **there is no second branch** — §10's *the board is
  * never read-only* means a document the agent is writing gets the same editable
  * surface as any other. The lock banner that used to sit above it, and the
  * read-only rendering it announced, are gone with the mechanism (SPEC.md §7).
  *
- * **Three outcomes, decided in this order** (UI-014):
+ * **Two outcomes, decided in this order** (UI-014):
  *
  * 1. a thread is its conversation (`ThreadCard`) — SPEC.md §6;
- * 2. a plugin `View` registered for the document's type replaces the standard
- *    document view wholesale — SPEC.md §10;
- * 3. everything else is a markdown body, and a markdown body is editable —
- *    SPEC.md §11. Core type or plugin type, known or unknown, plugin present
- *    or long deleted.
+ * 2. everything else is a markdown body, and a markdown body is editable —
+ *    SPEC.md §10, which says a core type and "a type nothing recognises" open
+ *    alike. That second clause is the whole of what protects a workspace's
+ *    existing documents: this build knows six types and will meet files typed
+ *    for a seventh, and they get the ordinary document view — editor, working
+ *    checkboxes, comments, search — rather than a placeholder or a refusal.
+ *
+ * **There is no third outcome, and no seam for one.** Nothing registers a
+ * surface of its own for a document type, so those two branches are the whole of
+ * what a document can open as, and the rule above has no exception.
  *
  * `MarkdownView` is left with exactly one document: a `view`, whose content is
  * its stored query rather than its prose.
@@ -64,7 +67,7 @@ import type { ReaderDoc } from "./useReaderDoc";
  * Whether a thread that **is** the open document holds a turn nobody has seen —
  * and, where this reader cannot tell, saying so (PR #25 re-review, MAJOR).
  *
- * §11's interlock — "a conversation carrying a turn you have not seen is never
+ * §10's interlock — "a conversation carrying a turn you have not seen is never
  * collapsed by the rule" — is the clause that stops the by-rule fold becoming a
  * way to lose messages, so this placement has to answer it truthfully rather
  * than assume. Three answers, from two sources:
@@ -89,7 +92,7 @@ import type { ReaderDoc } from "./useReaderDoc";
  * placement, so a resolved standalone thread opened after a reload was placed
  * expanded every time, forever, against §6. Its absence now answers `unknown`,
  * the rule stands down rather than being fed a guess, and the placement is the
- * same one §11's interlock would have chosen — but for a reason the code can
+ * same one §10's interlock would have chosen — but for a reason the code can
  * defend. A field on the thread resource deletes this branch outright:
  * `issues/contract/036-thread-unread-field.md`.
  *
@@ -159,7 +162,7 @@ export interface DocViewProps {
   readonly onNavigate: (docId: string, reveal?: RevealTarget) => void;
   readonly onNotify: (notice: RowNotice) => void;
   /**
-   * Which half of the reader the header's switch is on (SPEC.md §11's rider).
+   * Which half of the reader the header's switch is on (SPEC.md §10's rider).
    *
    * The two are **alternatives, not layers**: the body is unmounted while the
    * comments list is shown. §7 counts *displayed* content, and a `ThreadCard`
@@ -219,53 +222,21 @@ export function DocView({
    * the rule reads — the thread's status, and whether it holds an unseen turn —
    * have to be in hand *before* the panel mounts, or a resolved conversation is
    * placed open whenever its row is a beat slower than its turns and stays that
-   * way. Same instinct as the plugin-discovery gate below: nothing paints until
-   * what it would paint is known.
+   * way. Nothing paints until what it would paint is known.
    */
   const placementKnown = !reader.threadPending && !scopeThreads.isPending;
-  // Subscribe to plugin discovery so an open reader swaps to a plugin `View`
-  // (or back) when the registry settles after first render.
-  usePluginRegistry();
-  const discovery = usePluginDiscovery();
-
   /**
-   * The document, if any, whose body this reader is *currently showing* and
-   * painted while discovery was `abandoned` — see the gate below. Its body is on
-   * screen with no plugin chrome and must not acquire any: a panel appearing
-   * over it now is the defect, arriving late instead of early. Written during
-   * render because it is a cache of a render's own outcome and re-deriving it in
-   * an effect would cost the frame this exists to prevent; the write is
-   * idempotent.
+   * Whether this reader hosts the anchor layer — the editable body, and the only
+   * branch below that puts conversations at their anchors.
    *
-   * The mark is dropped the moment the reader moves onto another document,
-   * which is what makes it a property of one painted body rather than of this
-   * component (PR #22 review, MINOR). `DocView` is not keyed by document id, so
-   * a reader lives across every navigation in its stack: a mark kept past the
-   * document it describes would paint blind for a `[[ref]]` followed an hour
-   * after discovery settled, and again for the original document on the way
-   * Back — neither of which is a late arrival over anything. There is nothing on
-   * screen at that point to protect; the incoming body's first paint carries its
-   * chrome, which is exactly the ordering this whole gate is for.
+   * A thread is its own conversation and hosts none. Everything else does, for
+   * every type `editorHandlesType` answers for — which is every type but `view`,
+   * including one this build has never heard of. There is no second gate:
+   * nothing claims a type ahead of that predicate, so its answer is the answer
+   * here too.
    */
-  const paintedBlind = useRef<string | null>(null);
-  if (paintedBlind.current !== reader.docId) paintedBlind.current = null;
-  if (doc !== undefined && discovery === "abandoned") paintedBlind.current = reader.docId;
-  const blind = paintedBlind.current === reader.docId;
-
-  // The PLUGINS-001 slots, resolved once per render. A registered plugin
-  // `View` replaces the standard document view — including the editor, were a
-  // plugin ever to claim a core editable type (SPEC.md §10: "a doc whose
-  // `type` has a registered `View` renders with it") — so the anchor layer is
-  // not hosted either: the plugin owns its whole body surface.
-  const PluginView =
-    doc === undefined || reader.isThread || blind ? null : resolveDocView(doc.frontmatter.type);
-  const DocPanel =
-    doc === undefined || reader.isThread || blind ? null : resolveDocPanel(doc.frontmatter.type);
   const anchorsHost =
-    doc !== undefined &&
-    !reader.isThread &&
-    PluginView === null &&
-    editorHandlesType(doc.frontmatter.type);
+    doc !== undefined && !reader.isThread && editorHandlesType(doc.frontmatter.type);
   /**
    * Whether the document half is the one being shown.
    *
@@ -290,19 +261,18 @@ export function DocView({
    * places **every** child it has, `placeChildThreads` splitting them into the
    * ones under their turn and the ones after the last turn, two sets that are
    * exhaustive and mutually exclusive. So the list below it was a second,
-   * complete rendering of the same conversations: SPEC.md §11 says child threads
+   * complete rendering of the same conversations: SPEC.md §10 says child threads
    * are shown per-turn, and reserves the below-body list for threads with **no
    * place in the body**.
    *
    * `reader.isThread` would fix the count and describe the wrong property. Two
-   * body branches place threads and two do not, and what separates them is
+   * body branches place threads and one does not, and what separates them is
    * whether they place, not what type the document is: the editor puts anchored
    * threads at their anchors, a thread's conversation puts its children under
-   * their turns, while a plugin `View` and the static markdown fallback place
-   * nothing at all — which is why the list is load-bearing there and must not be
-   * removed with the duplicate. Naming the property the branches actually share
-   * is what makes the next body branch answer the question rather than inherit
-   * an answer.
+   * their turns, while the static markdown fallback places nothing at all —
+   * which is why the list is load-bearing there and must not be removed with the
+   * duplicate. Naming the property the branches actually share is what makes the
+   * next body branch answer the question rather than inherit an answer.
    */
   const bodyPlacesThreads = anchorsHost || reader.isThread;
 
@@ -327,7 +297,7 @@ export function DocView({
   });
 
   /**
-   * SPEC.md §11's selection menu, hosted here rather than on the reader: this
+   * SPEC.md §10's selection menu, hosted here rather than on the reader: this
    * is the component both hosts render, and it is where the editor and the
    * commenting flow already meet. It declines every event it does not own, so
    * the reader's own right-click (the document's ⋯ set) still reaches every
@@ -379,53 +349,26 @@ export function DocView({
   }
 
   /**
-   * **Nothing of this document paints until plugin discovery has settled**
-   * (UI-073) — and that is the whole fix, made here because this is where the
-   * document's vertical layout is decided.
+   * `Loading…` until the document itself has arrived, and nothing else gates it.
    *
-   * Discovery is a dynamic `import()` started at bootstrap, and the `DocPanel`
-   * it may register renders *above* the body. Landing after the editor had
-   * painted, it dropped everything below it by its own height — measured at
-   * **77.86px** (306.69 → 384.55) in the todos workspace. That is not cosmetic.
-   * This is the surface where text is selected in order to comment on it, so a
-   * body that moves between mousedown and mouseup yields a selection over words
-   * nobody chose — silently, because the resulting selection is perfectly
-   * valid. Driven deterministically, a drag aimed at `Call the plumber` came
-   * back holding `in the inbox.` plus the whole item above it, and in UI-071 a
-   * string picked up that way travelled into a comment quote and a highlight.
-   *
-   * **Why holding, and not the two alternatives.**
-   *
-   * - *Reserving the slot's height* would spend vertical space on every
-   *   document in the workspace to protect a slot almost none of them fill,
-   *   which SPEC.md §11's reading surface cannot afford and the issue rules
-   *   out outright. The height is also unknowable before the panel renders (the
-   *   todos panel grows a notice and a due chip), so the reservation would be a
-   *   guess that still moves when it is wrong. And it cannot cover a plugin
-   *   `View` at all: a `View` replaces the body wholesale, at whatever size it
-   *   likes — there is no slot to reserve.
-   * - *Cancelling an in-flight selection* when the layout shifts treats the
-   *   symptom and misses half of it: a plain **click** — placing a caret,
-   *   ticking a task-list box — has no in-flight state to cancel and still
-   *   lands on whatever moved into its place.
-   *
-   * **What holding costs: bounded, and in practice nothing.** The registry goes
-   * empty → loaded exactly once per session, from `main.tsx` at bootstrap, so
-   * this is not a per-open price; and the wait it adds is only whatever is left
-   * of a local module import once the reader's own `GET /api/docs/:id` round
-   * trip is done. Every reader opened after that first settle waits for zero.
-   * Core's boot stays uncoupled from plugin load time — the shell, the board and
-   * the keyboard are live from the first frame (§10's containment promise);
-   * only the one surface whose geometry is at risk waits, and it says so.
-   *
-   * **The bound.** `DISCOVERY_BUDGET_MS` (2s) — past that the phase turns
-   * `abandoned` and the body paints with no plugin chrome, because an unreadable
-   * document is worse than an unadorned one. `blind` above then holds this
-   * document that way for as long as it is on screen, so a registry that turns
-   * up afterwards is honoured by the next document opened rather than by moving
-   * the words out from under a pointer that is already on them.
+   * **One gate is the whole of it, and the hazard that bought the second one
+   * belongs to whatever is added above the body next** (UI-073). A panel that
+   * renders above the body and lands *after* the editor has painted drops
+   * everything below it by its own height — the last such panel this reader
+   * carried measured **77.86px** (306.69 → 384.55). This is the surface where
+   * text is selected in order to comment on it, so a body that moves between
+   * mousedown and mouseup
+   * yields a selection over words nobody chose — silently, because the resulting
+   * selection is perfectly valid. Driven deterministically, a drag aimed at one
+   * list item came back holding a phrase from the item above it, and in UI-071 a
+   * string picked up that way travelled into a comment quote and a highlight. A
+   * plain **click** is not covered by cancelling an in-flight selection either:
+   * placing a caret or ticking a task-list box has no in-flight state to cancel
+   * and still lands on whatever moved into its place. So anything that renders
+   * above the body must be laid out in the body's first paint, not after it —
+   * which is what every remaining child here does.
    */
-  if (doc === undefined || discovery === "pending") {
+  if (doc === undefined) {
     return <p className="reader-note">Loading…</p>;
   }
 
@@ -438,17 +381,9 @@ export function DocView({
         // Arrived: the body is on screen, and a reveal that cannot find its
         // words in it has found them absent rather than early (see above).
         {...arrived}
-        /*
-         * A plugin `View` owns its whole body surface (SPEC.md §10), so core
-         * paints no menu of its own over it — the plugin contributes one if it
-         * wants one (§11, amended 2026-08-02). The marker is what
-         * `menu/nativeMenu.ts` reads, so
-         * the reader's own right-click handler never has to know about plugins.
-         */
-        {...(PluginView === null ? {} : { "data-plugin-surface": "" })}
       >
         {/*
-         * The body's own right edge, as a grab handle (SPEC.md §11's width
+         * The body's own right edge, as a grab handle (SPEC.md §10's width
          * rider). First in the document half so it is one Tab from the head
          * rather than one Tab past the whole editor, and rendered only while a
          * body is on screen: the comments list carries no measure, and a
@@ -487,34 +422,21 @@ export function DocView({
 
         {/*
          * SPEC.md §7's scope, on the artifact: which conversation this document
-         * came out of, and who is resident in it. Above the plugin slot and the
-         * body because it is context for reading them, and quiet enough that a
+         * came out of, and who is resident in it. Above the body because it is
+         * context for reading it, and quiet enough that a
          * document belonging to no conversation — the ordinary case — looks
          * exactly as it did before (`ScopeProvenance` draws nothing at all).
          */}
         <ScopeProvenance docId={doc.frontmatter.id} onOpenDoc={onNavigate} />
 
         {/*
-         * The DocPanel slot — the one core injection slot in v1 (SPEC.md §10):
-         * for a doc type a plugin owns, its panel renders in this fixed spot
-         * above the document body. Both hosts get it for free, because the
-         * column reader and focus mode both render this component. The
-         * resolver returns the panel already wrapped in its own boundary, or
-         * `null` — no plugin, no panel, **no placeholder**: a document nothing
-         * claims lays out exactly as it did before there was a slot here. The
-         * gate above is what makes that affordable — nothing below this line
-         * ever moves to make room, because nothing below it paints first.
-         */}
-        {DocPanel !== null ? <DocPanel doc={doc} /> : null}
-
-        {/*
-         * The comments list, in place of the body — SPEC.md §11's rider: *"the
+         * The comments list, in place of the body — SPEC.md §10's rider: *"the
          * trade the user accepted is seeing one or the other, not both"*.
          *
-         * It is offered on every document, including one whose body a plugin
-         * `View` owns and one that is itself a thread: a conversation can carry
-         * child threads, and "what is outstanding here" is the same question
-         * whatever the document is made of.
+         * It is offered on every document, including one that is itself a
+         * thread: a conversation can carry child threads, and "what is
+         * outstanding here" is the same question whatever the document is made
+         * of.
          */}
         {showsBody ? null : (
           <CommentsTab
@@ -554,24 +476,25 @@ export function DocView({
          *
          * The wrapper is `display: contents`, so it is invisible to layout and the
          * body's own measure is untouched; `[hidden]` is what takes it off screen.
-         * The other three body branches *do* place conversations — a thread's body
-         * is its conversation, and a plugin `View` and the static fallback both
-         * fall through to the thread list below — so they are unmounted, and only
-         * the editor is kept.
+         * The other two body branches *do* place conversations — a thread's body
+         * is its conversation, and the static fallback falls through to the thread
+         * list below — so they are unmounted, and only the editor is kept.
          */}
         <div className="doc-body-slot" hidden={!showsBody}>
           {/*
            * The one body-rendering call site. A thread document's body IS its
            * conversation (SPEC.md §6: "the conversation is the document"), which is
            * why a thread opened from a column reads as turns rather than as the
-           * markdown file behind them. A plugin `View` replaces the standard
-           * document view wholesale for its registered type (SPEC.md §10).
+           * markdown file behind them.
            *
-           * With no plugin, a non-core type falls through to the **editor**, not
-           * to a static render (UI-014): §10's deleted-plugin degradation is the
-           * loss of the plugin's chrome, and §15 M6's "renders as plain markdown"
-           * is satisfied by the plain-markdown body the editor shows — which the
-           * user can still fix, as they can on every other document.
+           * **A type this build does not recognise falls through to the editor**,
+           * not to a static render (UI-014, SPEC.md §12's M6). A workspace holds
+           * whatever its owner and its
+           * agent have written, `type:` is an open string on the wire (§5), and the
+           * promise is that such a document opens, renders its markdown with
+           * working checkboxes, is searchable and is commentable — the same
+           * document view every core type gets. `MarkdownView` below is left with
+           * exactly one type, `view`, whose content is its stored query.
            */}
           {!showsBody && !anchorsHost ? null : reader.isThread ? (
             <div className="doc-body thread-conversation">
@@ -581,13 +504,13 @@ export function DocView({
                *
                * This panel used to opt out of the rule, on the reading that
                * navigating to a thread is newer than the rule and therefore wins
-               * §11's precedence. It is not: §11's precedence clause is about
+               * §10's precedence. It is not: §10's precedence clause is about
                * "collapsing or expanding it **yourself**", an explicit gesture,
                * while the rule applies "when a conversation is **placed**" — and
                * opening a thread in a reader is a placement. §6 settles the rest
                * in one line, "a resolved thread is collapsed by default *wherever
-               * it is shown*", and §11 enumerates this placement by name. The
-               * exception also broke the half of §11 that is not open to reading
+               * it is shown*", and §10 enumerates this placement by name. The
+               * exception also broke the half of §10 that is not open to reading
                * at all: "a change to the thread's status re-asserts the rule…
                * **so resolving a conversation collapses it even while it is open
                * on screen**", which resolving a thread-as-document did not do.
@@ -626,8 +549,6 @@ export function DocView({
               onAnchors={anchors.onAnchors}
               onEditor={anchors.onEditor}
             />
-          ) : PluginView !== null ? (
-            <PluginView doc={doc} />
           ) : (
             <MarkdownView markdown={doc.body} className="doc-body" onOpenRef={onNavigate} />
           )}
@@ -675,11 +596,11 @@ export function DocView({
            * here, now asking the question it always meant (see
            * `bodyPlacesThreads`).
            *
-           * A plugin `View` and the static markdown fallback host no anchor layer
-           * and no conversation, so for them this is the only render their threads
-           * ever get: the branch is load-bearing and removing it would silently
-           * drop every thread on those documents. A thread reaches this line with
-           * its children already placed per turn (SPEC.md §11), so it lists
+           * The static markdown fallback — a `view` document — hosts no anchor
+           * layer and no conversation, so for it this is the only render its
+           * threads ever get: the branch is load-bearing and removing it would
+           * silently drop every thread on one. A thread reaches this line with
+           * its children already placed per turn (SPEC.md §10), so it lists
            * nothing — and a child whose anchor went orphaned is not lost with the
            * list, because `placeChildThreads` has already put it after the last
            * turn rather than leaving it for this one.
@@ -725,7 +646,7 @@ export function DocView({
           left={anchors.draft.left}
           pending={anchors.submitting}
           // A comment on a document selection is not yet in a conversation, so
-          // the nearest scope §11's rule can mean is the document itself.
+          // the nearest scope §10's rule can mean is the document itself.
           weightScope={docWeightScope(doc.frontmatter.id)}
           // …and the scope walk starts at the same document: a comment on it is
           // a thread on it, which is exactly what §7's walk climbs from.

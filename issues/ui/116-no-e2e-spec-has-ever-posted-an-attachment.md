@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — *"Every composer takes attachments"* (rider signed
+- SPEC.md **§10** — *"Every composer takes attachments"* (rider signed
   2026-08-05)
 - SPEC.md **§6** — attachments, chips, and what a comment may carry
 
@@ -38,7 +38,7 @@ The consequence, found by PLUGINS-012 and stated in its own words:
 > **No spec in the suite has ever posted an attachment on any surface** — not
 > the reply box, not the comment popover, not the global composer.
 
-So this release ships §11's rider made true across five composers, and **CI
+So this release ships §10's rider made true across five composers, and **CI
 checks none of the send path**. Every proof that attachments actually reach the
 server in this phase — UI-111's four drills, UI-112's, PLUGINS-012's md5-verified
 bytes on disk — came from a human-driven browser drill that runs once, by hand,
@@ -136,7 +136,7 @@ around, not fixed).
 ### Specs added
 
 `apps/ui/e2e/attachments.spec.ts` (9 tests) and one test in
-`apps/ui/e2e/todos-menu.spec.ts`. All five composers §11's rider binds:
+`apps/ui/e2e/todos-menu.spec.ts`. All five composers §10's rider binds:
 
 | Surface | Route | Covered |
 | --- | --- | --- |

@@ -6,7 +6,7 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-done — **SIGNED 2026-08-09 and applied to SPEC.md §11 and §4**
+done — **SIGNED 2026-08-09 and applied to SPEC.md §10 and §4**
 
 ## Priority
 
@@ -24,9 +24,9 @@ fable
 
 ## Spec References
 
-- SPEC.md §11 — "Selecting rows, and acting on the selection", the rider signed
+- SPEC.md §10 — "Selecting rows, and acting on the selection", the rider signed
   2026-08-05 (SHARED-017), which this rider substantially revises
-- SPEC.md §11 line 467 — as amended by SHARED-030
+- SPEC.md §10 line 467 — as amended by SHARED-030
 
 ## Summary
 
@@ -52,14 +52,14 @@ settle it now.
 
 ## Drafted rider text
 
-Replacing §11's "Selecting rows, and acting on the selection" rider. The
+Replacing §10's "Selecting rows, and acting on the selection" rider. The
 **machinery** below the interaction model — partial application, the three-part
 result, what clears a selection, the delete restrictions — is preserved from the
 signed text and is not re-litigated here; only the interaction model changes.
 
 > **Selecting rows, and acting on the selection.** A column's list can be put
 > into **bulk mode** by a named control in its header, and this is the one place
-> in the app where a change is staged and then saved (§11 abolishes that pattern
+> in the app where a change is staged and then saved (§10 abolishes that pattern
 > everywhere else, and this is its single exception — a bulk change is worth
 > reviewing before it happens, precisely because it is many changes at once).
 > Outside bulk mode a click opens a row and nothing else, exactly as before.
@@ -144,7 +144,7 @@ before it is ever signed, and UI-083 rewritten rather than patched.
 - [ ] The three open questions above are answered in the sign-off conversation,
       not deferred to the implementing agent
 - [ ] User signs off, or amends
-- [ ] Applied to SPEC.md §11, replacing the interaction-model half of the
+- [ ] Applied to SPEC.md §10, replacing the interaction-model half of the
       2026-08-05 rider and preserving its machinery half verbatim; the original
       signature line is annotated as revised, with both dates legible
 - [ ] Contradiction sweep recorded here against SHARED-030 (the exception must

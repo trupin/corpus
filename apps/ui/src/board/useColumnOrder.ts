@@ -4,7 +4,7 @@ import { planReorder, type OrderedColumn } from "./columnOrder";
 
 /**
  * Persisting a reorder — the one code path both the drag and `⇧←`/`⇧→` use
- * (SPEC.md §11, §15 M3).
+ * (SPEC.md §10, §12 M3).
  *
  * There is deliberately no second, weaker keyboard path: the prototype reorders
  * the DOM imperatively because it has no data layer, and copying that would

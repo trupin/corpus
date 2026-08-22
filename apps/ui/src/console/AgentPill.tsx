@@ -14,12 +14,12 @@ import { agentDotClass, agentPillText, agentState } from "./consoleModel";
 const TICK_MS = 15_000;
 
 /**
- * The agent-status pill — and, per SPEC.md §11, the **only** place agent or
+ * The agent-status pill — and, per SPEC.md §10, the **only** place agent or
  * system status appears. Nothing agent-related belongs in the top bar.
  *
  * ## What it says
  *
- * Four states, and §11's own precedence between them, taken whole from the
+ * Four states, and §10's own precedence between them, taken whole from the
  * contract (`agentActivity`, CONTRACT-045) rather than derived here:
  *
  * - **`halted`** while the sentinel is set — it outranks everything, because
@@ -40,7 +40,7 @@ const TICK_MS = 15_000;
  * right is the fact that *is* true then.
  *
  * The dot pulses only for `working`, which is why the pulse means something;
- * `disconnected` is deliberately not dressed as a failure (§11: with no agent
+ * `disconnected` is deliberately not dressed as a failure (§10: with no agent
  * running it is simply the truth).
  *
  * ## Why it holds a clock

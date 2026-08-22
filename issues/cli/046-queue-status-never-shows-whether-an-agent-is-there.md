@@ -25,7 +25,7 @@ opus
 ## Spec References
 
 - SPEC.md **§7** — presence is the parked request
-- SPEC.md **§11** — the agent pill's four states
+- SPEC.md **§10** — the agent pill's four states
 
 ## Summary
 

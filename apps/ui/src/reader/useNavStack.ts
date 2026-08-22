@@ -1,9 +1,9 @@
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget } from "@corpus/kit";
 import { useCallback, useMemo, useState } from "react";
 import type { NavEntry } from "../board/useBoardLocalState";
 
 /**
- * A reader's navigation history (SPEC.md §11): "each reader keeps its own
+ * A reader's navigation history (SPEC.md §10): "each reader keeps its own
  * navigation stack — following `[[refs]]`, backlinks, or thread-context links
  * pushes; Back pops with scroll position restored; the reader exits to its list
  * only when the stack empties".
@@ -60,7 +60,7 @@ export interface NavStackApi {
   /**
    * Forgets every entry naming a document that no longer exists.
    *
-   * The abandon rule (SPEC.md §11) removes an empty document the moment it
+   * The abandon rule (SPEC.md §10) removes an empty document the moment it
    * stops being displayed, and an entry left behind would make Back land on a
    * tombstone.
    */

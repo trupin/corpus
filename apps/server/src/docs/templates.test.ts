@@ -291,7 +291,7 @@ describe("POST /api/docs — template pre-fill", () => {
     ws.write("data/docs/templates/note.md", loadedTemplate("note", "TEMPLATE BODY"));
     ws.reproject();
 
-    // A `view` has no template here: SPEC.md §11 makes "none → empty" an
+    // A `view` has no template here: SPEC.md §10 makes "none → empty" an
     // ordinary outcome, never an error.
     const created = await createDoc(ws, { type: "view", title: "No template" });
     expect(created.body["body"]).toBe("");

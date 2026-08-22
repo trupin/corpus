@@ -1,7 +1,7 @@
 import type { BoardCommands } from "./boardCommands";
 
 /**
- * SPEC.md §11's keyboard scheme, declared **once**.
+ * SPEC.md §10's keyboard scheme, declared **once**.
  *
  * The prototype binds its handlers in one place and writes its cheat-sheet in
  * another, and the two agree only for as long as someone keeps them agreeing.
@@ -70,7 +70,7 @@ export interface Shortcut {
   readonly scope: ShortcutScope;
   /**
    * Live while the caret is in an input, textarea or contenteditable. Defaults
-   * to false — typing `c` into a document types a `c` (SPEC.md §11 implies it;
+   * to false — typing `c` into a document types a `c` (SPEC.md §10 implies it;
    * anything else makes every writing surface unusable). ⌘K is the exception.
    */
   readonly allowInInput?: boolean;
@@ -98,7 +98,7 @@ export interface Shortcut {
    *
    * **The trap, and why the rule is not "skip when a button has focus".** The
    * board's own row *is* a control — `role="button"`, `tabindex="0"`
-   * (`@corpus/kit`'s `Row`) — and `↵` on the highlighted row is SPEC.md §11's
+   * (`@corpus/kit`'s `Row`) — and `↵` on the highlighted row is SPEC.md §10's
    * binding. So `ownsActivationKeys` exempts the row, by name, and the exemption
    * is pinned by a test on both sides. Nothing else is exempt: a quick-action
    * `<button>` *inside* a row is a control like any other and keeps its own `↵`.
@@ -177,7 +177,7 @@ export function shortcutProbes(): readonly { shortcut: Shortcut; probe: Keyboard
 
 /**
  * The scheme, in `design/index.html`'s cheat-sheet order — which is also
- * SPEC.md §11's enumeration order.
+ * SPEC.md §10's enumeration order.
  */
 export const SHORTCUTS: readonly Shortcut[] = [
   {

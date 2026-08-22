@@ -24,8 +24,8 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
-- SPEC.md **§11** — the reader and its head
+- SPEC.md **§10** — *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
+- SPEC.md **§10** — the reader and its head
 
 ## Summary
 
@@ -207,7 +207,7 @@ The rule is broken by an ordinary save.
 The first version shipped reserved `committed · git ✓ · 99 anchors orphaned` —
 **246.55px**, the widest string `saveChipText` can reach. It satisfied every
 acceptance criterion, and it was reversed on review, because it read SPEC.md
-§11's third clause backwards: *"the box is sized for the text people actually
+§10's third clause backwards: *"the box is sized for the text people actually
 have, measured against real content rather than a placeholder, so revealing is
 the uncommon case and not the ordinary reading path."* Spending 46% of the head
 on a message almost no save carries left the **ordinary** reading width

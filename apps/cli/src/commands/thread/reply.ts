@@ -63,7 +63,7 @@ export async function runThreadReply(
     api.POST("/api/threads/{id}/turns", {
       params: { path: { id } },
       // Spread rather than `model` unconditionally, so an unstated model is an
-      // **absent field** rather than a null or an empty string: SPEC.md §11
+      // **absent field** rather than a null or an empty string: SPEC.md §10
       // wants a turn nobody recorded a model for to show nothing at all, and
       // absence having one spelling is what makes that checkable.
       // SPEC.md §9.2's job travels the same way, and for the same reason:
@@ -110,7 +110,7 @@ export const replyCommand: WorkspaceCommandSpec = {
     "line, and a turn heading inside a fence, an inline code span or a block quote, all go " +
     "through untouched.\n\n" +
     "**`--model` states what wrote the turn**, and only an agent's turn may carry one (SPEC.md " +
-    "§11). It is a record of what ran, not a request for anything to run, and it is recorded " +
+    "§10). It is a record of what ran, not a request for anything to run, and it is recorded " +
     "verbatim; omit it and the turn carries no model at all, which reads as nothing rather than " +
     "as a guess.",
   args: [{ name: "id", required: true, description: "The thread's id." }],
@@ -121,7 +121,7 @@ export const replyCommand: WorkspaceCommandSpec = {
         "corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'\nI filed the note under finance/.\nCORPUS_EOF",
       description:
         "The agent's form: a heredoc reply, authored by the agent, stating the model that wrote " +
-        "it (SPEC.md §7, §11).",
+        "it (SPEC.md §7, §10).",
     },
     {
       command: 'corpus thread reply th_a1b2c3 -m "one more thought"',

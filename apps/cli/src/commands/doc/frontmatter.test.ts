@@ -1,10 +1,9 @@
-import { COLUMN_REF_PATTERN, RESERVED_FRONTMATTER_KEYS } from "@corpus/contract";
+import { RESERVED_FRONTMATTER_KEYS } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import { ExitCode, exitCodeFor, isCliError } from "../../errors.js";
 import { ParsedFlags, type FlagValue } from "../../parse-args.js";
 import {
   combineExtraPatches,
-  parseColumn,
   parseExtraFlags,
   parseExtraJsonFlags,
   parseExtraValue,
@@ -54,8 +53,9 @@ describe("--extra-json", () => {
     });
   });
 
-  it("carries the array-of-objects shape a plugin key actually has", () => {
-    // SPEC.md §12's `todo` document: the shape CONTRACT-011 sized
+  it("carries the array-of-objects shape an extra key actually has", () => {
+    // A document carrying a list of records under its own key: the shape
+    // CONTRACT-011 sized
     // `EXTRA_MAX_DEPTH` around, and the one `--extra` could never express.
     expect(parseExtraJsonFlags(['items=[{"text":"Ship it","done":false}]'])).toEqual({
       items: [{ text: "Ship it", done: false }],
@@ -141,32 +141,24 @@ describe("--order", () => {
   );
 });
 
-describe("--column", () => {
-  it("takes a plugin reference and clears with null", () => {
-    expect(parseColumn("todos/todos")).toBe("todos/todos");
-    expect(parseColumn("null")).toBeNull();
-    expect(parseColumn(undefined)).toBeUndefined();
+/**
+ * `column` was a view key with a flag of its own until SHARED-066 (it named a
+ * plugin renderer, `<plugin>/<type>`, and there are no plugins). It is now an
+ * ordinary key the core does not define, which is exactly what `--extra` is
+ * for — so the flag is gone and the key is *writable*, where naming a core key
+ * there is still a usage error.
+ */
+describe("`column` after the plugin surface went", () => {
+  it("is no longer a reserved key", () => {
+    expect(RESERVED_FRONTMATTER_KEYS).not.toContain("column");
   });
 
-  it("accepts a reference to a plugin that is not installed — the shape is the whole check", () => {
-    expect(parseColumn("not-installed/board")).toBe("not-installed/board");
+  it("is settable through --extra, like any other key the core does not define", () => {
+    expect(parseExtraFlags(["column=todos/todos"])).toEqual({ column: "todos/todos" });
   });
 
-  it.each(["nonsense", "a/b/c", "a/", "/b", "a b/c", "a/b c"])("refuses %s", (raw) => {
-    const error = thrown(() => parseColumn(raw));
-    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
-    expect(String(error)).toContain("<plugin>/<type>");
-    expect(hint(error)).toContain("Exactly one slash");
-  });
-
-  it("agrees with the contract's own pattern rather than re-typing it", () => {
-    // Imported, not copied: a reference the request schema would accept is
-    // accepted here, and one it would reject never leaves the process.
-    for (const raw of ["todos/todos", "not-installed/board", "nonsense", "a/b/c", "a b/c"]) {
-      const accepted = COLUMN_REF_PATTERN.test(raw);
-      if (accepted) expect(parseColumn(raw), raw).toBe(raw);
-      else expect(exitCodeFor(thrown(() => parseColumn(raw))), raw).toBe(ExitCode.usageError);
-    }
+  it("has no flag of its own on either verb", () => {
+    expect(VIEW_KEY_FLAGS.map((flag) => flag.name)).not.toContain("column");
   });
 });
 
@@ -250,18 +242,18 @@ describe("the view flags as a patch fragment", () => {
     expect(parseViewFlags(flagsOf({}))).toEqual({});
   });
 
-  it("carries all four at once", () => {
-    expect(
-      parseViewFlags(
-        flagsOf({ pinned: "true", order: "4", query: ["type=thread"], column: "todos/todos" }),
-      ),
-    ).toEqual({ pinned: true, order: 4, query: { type: "thread" }, column: "todos/todos" });
+  it("carries all three at once", () => {
+    expect(parseViewFlags(flagsOf({ pinned: "true", order: "4", query: ["type=thread"] }))).toEqual(
+      { pinned: true, order: 4, query: { type: "thread" } },
+    );
   });
 
   it("carries every clearing form", () => {
-    expect(
-      parseViewFlags(flagsOf({ pinned: "false", order: "null", query: ["null"], column: "null" })),
-    ).toEqual({ pinned: false, order: null, query: null, column: null });
+    expect(parseViewFlags(flagsOf({ pinned: "false", order: "null", query: ["null"] }))).toEqual({
+      pinned: false,
+      order: null,
+      query: null,
+    });
   });
 
   it("refuses a non-boolean --pinned", () => {
@@ -272,14 +264,14 @@ describe("the view flags as a patch fragment", () => {
 });
 
 describe("the flag declarations", () => {
-  it("declares the four view keys once, for both verbs to share", () => {
-    expect(VIEW_KEY_FLAGS.map((flag) => flag.name)).toEqual(["pinned", "order", "query", "column"]);
+  it("declares the three view keys once, for both verbs to share", () => {
+    expect(VIEW_KEY_FLAGS.map((flag) => flag.name)).toEqual(["pinned", "order", "query"]);
     expect(VIEW_KEY_FLAGS.find((flag) => flag.name === "query")?.repeated).toBe(true);
   });
 
   it("names every reserved view key in a flag, so the refusal has somewhere to point", () => {
     const named = new Set(VIEW_KEY_FLAGS.map((flag) => flag.name));
-    for (const key of ["pinned", "order", "query", "column"]) {
+    for (const key of ["pinned", "order", "query"]) {
       expect(RESERVED_FRONTMATTER_KEYS).toContain(key);
       expect(named.has(key), key).toBe(true);
     }
@@ -291,7 +283,6 @@ describe("the reserved-key refusal covers the view keys", () => {
     ["pinned=true", "--pinned"],
     ["order=1", "--order"],
     ["query=x", "--query"],
-    ["column=a/b", "--column"],
   ])("refuses --extra %s and names %s", (entry, flag) => {
     const error = thrown(() => parseExtraFlags([entry]));
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);

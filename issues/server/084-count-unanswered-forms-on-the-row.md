@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — the attention row, and "more than one unanswered form says
+- SPEC.md **§10** — the attention row, and "more than one unanswered form says
   how many are still open" _(rider signed 2026-08-05)_
 
 ## Summary

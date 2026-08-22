@@ -75,7 +75,7 @@ describe("CaptureResult", () => {
     expect(CaptureResultSchema.safeParse(result).success).toBe(false);
   });
 
-  /** A capture is a document write and a thread write in one call (SPEC.md §14). */
+  /** A capture is a document write and a thread write in one call (SPEC.md §11). */
   it("carries a warning raised while committing the captured document", () => {
     const result = {
       docId: "doc_a1b2c3",

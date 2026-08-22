@@ -320,7 +320,7 @@ describe("the collapsed strip", () => {
           "agent: disconnected · queue 3",
         );
       });
-      // Not styled as a failure (SPEC.md §11), and it does not pulse.
+      // Not styled as a failure (SPEC.md §10), and it does not pulse.
       expect(container.querySelector(".agent-pill .dot")?.className).toBe("dot away");
       expect(container.querySelector(".agent-pill")?.getAttribute("data-agent-state")).toBe(
         "disconnected",
@@ -457,7 +457,7 @@ describe("the collapsed strip", () => {
 });
 
 /**
- * The index pill (UI-040, SPEC.md §11's index-pill rider) — the strip's second
+ * The index pill (UI-040, SPEC.md §10's index-pill rider) — the strip's second
  * pill, fed by `GET /api/index/status` and refreshed by the `["index"]` frames
  * the embed worker emits as it drains.
  */

@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §8 (the honest pending indicator), §11 (adaptive thread placement —
+- SPEC.md §8 (the honest pending indicator), §10 (adaptive thread placement —
   margin cards in focus mode and wide layouts)
 
 ## Summary
@@ -46,7 +46,7 @@ per reader:
 
 - `apps/ui/src/anchors/AnchoredThreads.tsx:93` — `MarginColumn` maps
   `threads.map(...)` to one `ThreadCard` each, ungated. This is the Docs-style
-  margin placement §11 mandates for focus mode and wide layouts, i.e. the common
+  margin placement §10 mandates for focus mode and wide layouts, i.e. the common
   case, not an edge one.
 - `apps/ui/src/thread/ThreadCard.tsx:418` — child threads mount `ThreadCard`
   recursively.

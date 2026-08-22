@@ -11,7 +11,7 @@
 // every later one amends — so an unclean stop costs the boundary, never the
 // work. Recovery exists for the changes the commit path never saw:
 //
-//   1. **A commit git refused** (SPEC.md §14) — a workspace hook, a full disk, a
+//   1. **A commit git refused** (SPEC.md §11) — a workspace hook, a full disk, a
 //      mid-rebase repository. The mutation stood and stayed on disk.
 //   2. **Out-of-band edits** made while the server was down. While it is up the
 //      watcher commits them for itself, authored `user` (SERVER-090), so what
@@ -77,7 +77,7 @@ export type RecoveryOutcome =
   /**
    * Not a git repository, or no git at all. Silent, exactly as every other git
    * path in the server treats it: both are ordinary states of a usable
-   * workspace (SPEC.md §14).
+   * workspace (SPEC.md §11).
    */
   | { readonly kind: "unavailable"; readonly reason: string }
   /** The repository is in a state no commit may be made in. One log line, then boot continues. */
@@ -89,7 +89,7 @@ export type RecoveryOutcome =
       /** Every path the commit holds — documents and their non-document neighbours alike. */
       readonly paths: readonly string[];
     }
-  /** git refused (SPEC.md §14). The changes stay on disk and the index is restored. */
+  /** git refused (SPEC.md §11). The changes stay on disk and the index is restored. */
   | { readonly kind: "failed"; readonly reason: string; readonly output: string };
 
 export interface BootRecoveryOptions {
@@ -308,7 +308,7 @@ async function attempt(git: Git, logger: Logger): Promise<RecoveryOutcome> {
  * roots, as a single recovery commit (SPEC.md §4).
  *
  * Never throws and never prevents a start: a workspace whose commits git refuses
- * is still a workspace you can read, and §14 already says the changes stand on
+ * is still a workspace you can read, and §11 already says the changes stand on
  * disk. Runs inside the git lock, so it cannot interleave with a mutation.
  */
 export async function recoverUncommittedChanges(
@@ -348,7 +348,7 @@ export async function recoverUncommittedChanges(
       });
       break;
     case "failed":
-      // SPEC.md §14: loudly, and the changes stand. The operator can commit them
+      // SPEC.md §11: loudly, and the changes stand. The operator can commit them
       // by hand; the server serves the workspace either way.
       logger.error("could not commit changes left uncommitted by a previous run", {
         reason: outcome.reason,

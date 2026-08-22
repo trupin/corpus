@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 thread view copyable canvases (rider signed 2026-08-02)
+- SPEC.md §10 thread view copyable canvases (rider signed 2026-08-02)
 
 ## Summary
 User request (2026-08-02): make agent-prepared text (e.g. prompts for other

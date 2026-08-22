@@ -3,7 +3,7 @@ import type { paths } from "@corpus/contract/client";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
 /**
- * The console's read path and its two failed-job actions (SPEC.md §7, §11),
+ * The console's read path and its two failed-job actions (SPEC.md §7, §10),
  * available from the terminal as well as the drawer: every queue event is a
  * job, so these are the same rows the UI renders, addressed by event id.
  */

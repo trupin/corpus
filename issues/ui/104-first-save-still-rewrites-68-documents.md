@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — "the editor serializes to clean markdown", and autosave with
+- SPEC.md **§10** — "the editor serializes to clean markdown", and autosave with
   no save button
 - SPEC.md **§5** — files on disk are the source of truth
 - SPEC.md **§1** — the corpus is the user's documents; the tool stewards them
@@ -34,7 +34,7 @@ UI-103 fixed the fixed-point failures: all 618 repo documents now settle on the
 first printing, where six did not. But its sweep also measured what the **first**
 save still changes, and that is **68 documents** — down from 72, not to zero.
 
-Normalisation on first save is partly by design: §11 says the editor serializes
+Normalisation on first save is partly by design: §10 says the editor serializes
 to clean markdown. The question this issue exists to settle is **which of the 68
 are normalisation and which are the tool rewriting the user's document**, and the
 sweep already shows at least one of the latter.

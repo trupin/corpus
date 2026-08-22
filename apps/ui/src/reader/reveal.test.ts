@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { RevealItem } from "@corpus/kit/plugin";
+import type { RevealItem } from "@corpus/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   chooseOccurrence,
@@ -323,7 +323,7 @@ describe("revealItem", () => {
   }
 
   /**
-   * PLUGINS-010's drill, in a unit test.
+   * The real-app drill of PLUGINS-010, in a unit test.
    *
    * A reveal fires as soon as the document has content, and the document is not
    * finished laying out then: on a cold open the next frame is where the chips

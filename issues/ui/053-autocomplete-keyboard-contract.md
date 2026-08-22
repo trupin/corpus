@@ -18,7 +18,7 @@ opus
 - Coordinate with: UI-052 (composer keys — the menu claims `↵` while open)
 
 ## Spec References
-- SPEC.md §11 "Smart input everywhere", as amended by SHARED-009 Amendment 4
+- SPEC.md §10 "Smart input everywhere", as amended by SHARED-009 Amendment 4
 
 ## Summary
 Live report 2026-08-03: _"When autocomplete shows, I want to be able to navigate

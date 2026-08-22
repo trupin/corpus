@@ -73,7 +73,7 @@ reason-chip correspondence.
 
 **One contradiction, and it is a stale deferral rather than a false claim:**
 
-- **FIND-1 — `DEFERRED → CONTRACT-011` is no longer true at the branch tip.** The log's §11 and its
+- **FIND-1 — `DEFERRED → CONTRACT-011` is no longer true at the branch tip.** The log's §10 and its
   deferrals block say the parent title "arrives through `DocRow.parentTitle`" and that the seam is a
   `parentTitle` prop with a `TODO(CONTRACT-011)`. **CONTRACT-011 shipped `parentTitle` in `d0268db`,
   two commits *before* UI-004's `cb05907`**, and I verified it is populated on the wire for every

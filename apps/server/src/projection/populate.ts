@@ -1,5 +1,5 @@
 // Rebuilding every row from the workspace's files — the operation that makes
-// §9.1's "derived tables only" true and §15's M1 check pass.
+// §9.1's "derived tables only" true and §12's M1 check pass.
 //
 // One pass, one transaction, shared by `openProjection` (boot: files may have
 // changed while the server was down) and by `rebuild` (into a fresh database

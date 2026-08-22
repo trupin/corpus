@@ -30,7 +30,7 @@ opus
   call sites.
 - SPEC.md **§4** — "One action, one commit" (rider signed 2026-08-05). Unchanged,
   and this issue must not weaken it.
-- SPEC.md **§14** — a mutation stands even when its commit does not.
+- SPEC.md **§11** — a mutation stands even when its commit does not.
 
 ## Summary
 
@@ -59,7 +59,7 @@ immediately and *amends* it as the window grows, so the window's content is in
 git at every instant. That is strictly better than what the spec promises, and
 the spec promising a weaker bound is not licence to implement the weaker thing:
 
-- §5 says the file on disk is the truth and §14 says a mutation stands when its
+- §5 says the file on disk is the truth and §11 says a mutation stands when its
   commit does not. A buffer that loses a crash's worth of commits contradicts
   both harder than the amend model does.
 - The rider itself says an unclean stop costs "the boundary and not the work" —

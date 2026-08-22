@@ -392,7 +392,7 @@ TEST-11: A ref serializes from its attributes, never from its rendered text
 #### Markdown input shortcuts
 
 ```
-TEST-12: The shortcut set from §11 works as you type
+TEST-12: The shortcut set from §10 works as you type
   When:  Each of `## `, `### `, `#### `, `**bold**`, `*italic*`, `_italic_`, `` `code` ``, `- `,
          `* `, `1. `, ``` ``` ```, `> ` is typed at the start of an empty block (or around a word)
   Then:  Each transforms live into the corresponding node or mark, and the result survives a save +
@@ -723,7 +723,7 @@ TEST-58: One autocomplete, three triggers, one data source
          `@` → `type: agent-def` (name + description), `/` → `type: skill`, `[[` → documents by
          title. There is NO separate registry, no hardcoded agent list, and no second endpoint.
          Creating a new `agent-def` document with `corpus doc create` makes it autocompletable
-         immediately (§11: "there is no separate registry")
+         immediately (§10: "there is no separate registry")
 
 TEST-59: It lives in `@corpus/kit` and has three callers
   Then:  The component ships under `packages/kit/src/components/Autocomplete/` (or the kit path the
@@ -1021,7 +1021,7 @@ TEST-103: An empty or whitespace-only selection cannot create a thread
   Then:  The `💬 Comment` button is DISABLED for an empty or whitespace-only selection. No request is
          possible
 
-TEST-104: The disk proof — §15 M3's gold path
+TEST-104: The disk proof — §12 M3's gold path
   When:  A phrase is selected, a comment typed, `○ note only` set, and submit pressed
   Then:  Without a page reload: the highlight appears and a `💬 1 · user` chip appears. On disk: the
          PARENT's frontmatter gains an `anchors:` entry whose `exact`/`prefix`/`suffix` match what
@@ -1060,7 +1060,7 @@ TEST-109: The server's report is authoritative over the local mapping
          meta rebuilds the set from server data; a stale response (older local revision) is IGNORED —
          asserted by delivering two responses out of order and checking the newer one survives
 
-TEST-110: §15 M1's reconciliation semantics, seen through the UI
+TEST-110: §12 M1's reconciliation semantics, seen through the UI
   Then:  Four sequences, each verified on screen AND in `git diff` on the parent's frontmatter:
          (a) insert before the range → highlight unchanged, `exact` unchanged, `prefix` refreshed;
          (b) insert after → highlight unchanged, `exact` unchanged, `suffix` refreshed;
@@ -1280,8 +1280,8 @@ TEST-142: The cheat sheet is the prototype's panel
          `var(--line-strong)` with a 2px bottom border, 4px radius, `1px 6px`) then a `.d` description
          in `var(--ink-2)`. `?` toggles it; `esc` closes it
 
-TEST-143: The rendered legend covers §11's enumeration, item by item
-  Then:  The cheat sheet's rows are cross-checked against SPEC.md §11's keyboard scheme AND the
+TEST-143: The rendered legend covers §10's enumeration, item by item
+  Then:  The cheat sheet's rows are cross-checked against SPEC.md §10's keyboard scheme AND the
          prototype's twelve rows (`↑↓` move rows / also j,k · `↵` open document · `⇧↵` open in full
          screen · `esc` close/back · `←→` switch column / also [,] · `⇧←⇧→` move column · `f` focus
          mode · `e` archive · `r` reply · `c` compose · `⌘K` search · `?` cheat-sheet). Any binding
@@ -1296,7 +1296,7 @@ TEST-144: `?` does not stack overlays
 #### The full scheme
 
 ```
-TEST-145: Every binding does what §11 says
+TEST-145: Every binding does what §10 says
   Then:  On the board with no overlay: `j`/`k` and `↑`/`↓` move the row cursor in the ACTIVE column
          with a visible `.row.kbd` outline, scrolling the cursor into view, and CLAMP at both ends
          (no wrap, and the board does not scroll); `↵` opens the highlighted document in its column;
@@ -1359,7 +1359,7 @@ TEST-154: The pending indicator appears on both flows for free
          says "verify it does"
 
 TEST-155: The optimistic row appears immediately and reconciles
-  Then:  Per §11 both results appear on the board IMMEDIATELY — optimistically inserted into the
+  Then:  Per §10 both results appear on the board IMMEDIATELY — optimistically inserted into the
          matching columns and reconciled on the SSE-driven refetch. A row that appears only after the
          refetch fails this; a row that never reconciles (duplicates after refetch) also fails it
 
@@ -1391,13 +1391,13 @@ where the editor, its anchors, the conversation and the way in are all on screen
 serializer, one keyboard and one document.
 
 ```
-TEST-159: §15 M4's gold path, end to end, in one unbroken act
+TEST-159: §12 M4's gold path, end to end, in one unbroken act
   Given: A real workspace on 9022 with the seed columns
   When:  Omnibox-create a document (it lands in `inbox/`, opens title-selected) → type a paragraph →
          select a phrase → comment with `○ note only` → open the resulting thread → reply
   Then:  The file updates via autosave; the anchor survives the typing; the highlight and chip appear
          with NO reload; the thread appears in an Open-threads column; the reply lands in the thread
-         file; and `git log` shows the squashed auto-commits. This is SPEC.md §15 M4's named
+         file; and `git log` shows the squashed auto-commits. This is SPEC.md §12 M4's named
          Playwright check and it spans all four issues
 
 TEST-160: One serializer, one autocomplete, one intake, one open-in-column, one escape chain
@@ -1481,7 +1481,7 @@ TEST-171: e2e green at the tip with the reserved ports respected
          (confirm 8765 free with `lsof` and say so). `.c-failed` / `.c-failed-jobs` assertions still
          pass unmodified
 
-TEST-172: The four Playwright specs each cover their issue's §15-named check
+TEST-172: The four Playwright specs each cover their issue's §12-named check
   Then:  `editor.spec.ts` covers type → autosave → file updates → anchors survive → squashed commit;
          `thread.spec.ts` covers seen-on-display (expanding a chip counts, opening the parent does
          not), the comment flow and turn deletion; `anchors.spec.ts` covers select → comment
@@ -1493,7 +1493,7 @@ TEST-173: The prototype comparison is done, side by side, once
   Then:  The editor chrome, the margin cards, the thread card, the composer, the compose panel and the
          cheat sheet are each compared against `design/index.html` in the same browser at the same
          zoom, and every deviation is either fixed or named in the E2E log with a reason.
-         `design/index.html` is authoritative for look and feel (§11)
+         `design/index.html` is authoritative for look and feel (§10)
 
 TEST-174: Light and dark both come from the token set
   Then:  No new hardcoded color literal appears in any CSS added by this sprint — every value is a
@@ -1687,7 +1687,7 @@ squash-on-idle signal arrives via SSE"*.
 Neither source exists:
 
 - `UpdateDocResponseSchema` is `{doc, anchors: {remapped, orphaned}, warnings}`. There is no commit
-  field, no sha, no timestamp. `warnings` reports §14 problems (e.g. a git hook rejection) — it is
+  field, no sha, no timestamp. `warnings` reports §11 problems (e.g. a git hook rejection) — it is
   evidence a commit did **not** land, not evidence one did.
 - The SSE key vocabulary is **closed at nine shapes** and none of them means "a commit was written"
   or "the idle window elapsed and the commits squashed". `["docs", id]` fires on any mutation,
@@ -1708,7 +1708,7 @@ which I am choosing:
   the first time. This is the only option that makes the criterion literally true, and it has a lead
   time.
 
-Whatever is chosen, §15 M4's named check — *"squashed auto-commit on idle per §4"* — is still
+Whatever is chosen, §12 M4's named check — *"squashed auto-commit on idle per §4"* — is still
 verified on disk in TEST-23 and TEST-159, so the milestone does not depend on this ruling.
 
 ### 3. UI-006 reads the lock from a field that does not exist, and says nothing about acquiring one (**P0**)
@@ -1904,7 +1904,7 @@ This sprint is complete when:
   byte-identical, and a full session of anchoring leaves no markup on disk (TEST-161). SPEC.md §6's
   "the body stays clean — no inline markers" is a data-integrity guarantee, not a rendering
   preference.
-- **§15 M4's named Playwright checks pass against the real app** (TEST-159, TEST-172): omnibox-create
+- **§12 M4's named Playwright checks pass against the real app** (TEST-159, TEST-172): omnibox-create
   → type (file updates via autosave; anchors survive; squashed auto-commit on idle) → select text →
   comment ("note only") → highlight + chip appear without reload → thread appears in an Open-threads
   column; and open an unread thread → the badge clears everywhere, expanding a chip counts, opening
@@ -1922,7 +1922,7 @@ This sprint is complete when:
 - **The form answer goes through the form route and produces a real `form.respond` event**
   (TEST-72, TEST-73), with the payload `{threadId, formTs, option, note|null}` quoted from the queue
   file.
-- **The keyboard scheme is generated from one registry, covers §11 item by item, and is silent inside
+- **The keyboard scheme is generated from one registry, covers §10 item by item, and is silent inside
   every writing surface** (TEST-140, TEST-141, TEST-143, TEST-151, TEST-157).
 - **Ask and Capture are each one call** (TEST-130, TEST-131) and both land on disk and on the board
   immediately with an honest pending indicator (TEST-154, TEST-155).
@@ -1948,7 +1948,7 @@ This sprint is complete when:
   a third audit.
 - **Any user-observable behavior change carries its SPEC.md amendment**, drafted by spec-writer and
   held for user sign-off at the phase PR — SHARED-002's adopted process rule. In this batch the
-  candidates are Conflict 2's save-chip claim (§11 says "autosave, no save button" and does not
+  candidates are Conflict 2's save-chip claim (§10 says "autosave, no save button" and does not
   describe chip states), Conflict 3(b)'s user-lock-on-first-keystroke (§7 asserts it; nothing
   implements it), and whatever Conflict 5 decides about title ownership.
 - **pr-reviewer verdict APPROVE** on the phase PR, with CRITICAL and MAJOR findings fixed or

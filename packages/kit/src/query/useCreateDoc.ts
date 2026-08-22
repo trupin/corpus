@@ -5,7 +5,7 @@ import type { CreateDocInput } from "../client/createCorpusClient.js";
 import { DOCS_KEY, TREE_KEY } from "./keys.js";
 
 /**
- * `POST /api/docs` — zero-form creation (SPEC.md §11), and the call that pins a
+ * `POST /api/docs` — zero-form creation (SPEC.md §10), and the call that pins a
  * board column (a column IS a `type: view` document with `pinned: true`).
  *
  * **Not optimistic**, for the same reason as `useUpdateDoc`: the server assigns

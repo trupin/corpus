@@ -13,7 +13,7 @@ import { useQueryVocabulary, type QueryVocabulary, type ValueOption } from "./qu
  * The column query editor's completions (UI-039).
  *
  * It is deliberately *not* `useAutocomplete`: that hook's trigger grammar is the
- * §11 smart-input one (`@` / `/` / `[[`) and its data source is three hardcoded
+ * §10 smart-input one (`@` / `/` / `[[`) and its data source is three hardcoded
  * `useDocs` calls, neither of which describes a query string. What is reused is
  * everything a user can perceive — the item shape, `AUTOCOMPLETE_LIMIT`, the
  * `.ac-menu` the kit renders, and, since UI-053, the ↑ ↓ ⇥ ↵ esc contract as

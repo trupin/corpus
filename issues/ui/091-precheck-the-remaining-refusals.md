@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — the form says what is wrong before it is sent
+- SPEC.md §10 — the form says what is wrong before it is sent
 
 ## Summary
 
@@ -31,7 +31,7 @@ Completes PR #28's pre-check. `formPreflight.ts` covers the marker collisions;
 the unterminated fence and the fabricated turn heading arrive as a write refusal
 instead, because the scanners were unreachable (CONTRACT-044 fixes that).
 
-§11 was deliberately scoped on review to promise only what ships, so this issue
+§10 was deliberately scoped on review to promise only what ships, so this issue
 is what lets that sentence widen — and widening it is a **SPEC edit needing user
 sign-off**, drafted here and held, not applied.
 
@@ -46,7 +46,7 @@ sign-off**, drafted here and held, not applied.
 - [x] The server refusal stays as the backstop and keeps working — this is a
       second line of defence, not a replacement
 - [x] The e2e stub exercises the same rule the server does
-- [x] A §11 amendment is drafted for user sign-off and held
+- [x] A §10 amendment is drafted for user sign-off and held
 
 **On the second criterion's escape clause.** It does not apply. CONTRACT-044
 moved the heading *grammar* (`turnHeadings`, `TURN_SEPARATOR`,
@@ -67,7 +67,7 @@ are. The criterion is built, not dropped.
 Fixtures for both shapes asserted as caught before any request is made, with the
 zero-requests assertion the existing pre-check tests already use.
 
-## Drafted SPEC.md §11 amendment — **held for user sign-off, not applied**
+## Drafted SPEC.md §10 amendment — **held for user sign-off, not applied**
 
 The sentence was deliberately scoped on review to promise only what shipped.
 With all three checks now in the form, it can widen. Current text (SPEC.md line

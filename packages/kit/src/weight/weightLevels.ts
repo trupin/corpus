@@ -1,6 +1,6 @@
 /**
  * The weight levels a workspace declares, read from its own orchestrate skill
- * (SPEC.md §7 and §11, rider SHARED-022 signed 2026-08-06; AGENT-015).
+ * (SPEC.md §7 and §10, rider SHARED-022 signed 2026-08-06; AGENT-015).
  *
  * ## There is exactly one declaration, and it is not here
  *

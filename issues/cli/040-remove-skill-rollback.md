@@ -29,7 +29,7 @@ opus
 - SPEC.md **§7** — "Loop safety (validate + reverting)", replaced 2026-08-12:
   "There is no separate rollback verb and no revert engine in the server: a revert
   is a write whose content came from history."
-- SPEC.md §6 (anchor reconciliation), §14 (validation, warnings), §4 (attributed
+- SPEC.md §6 (anchor reconciliation), §11 (validation, warnings), §4 (attributed
   commit) — the four properties the ordinary write path gives a revert for free.
 
 ## Summary
@@ -38,7 +38,7 @@ PR #43's review found `corpus skill rollback` overwrote a whole file with an old
 revision and destroyed uncommitted edits unrecoverably, at exit 0, with no
 warning. SHARED-042 replaced it rather than patching it: a revert is a write whose
 content came from history, so it belongs on `PUT /api/docs/{id}` with a key, where
-it reconciles anchors (§6), validates (§14), commits under the acting party (§4)
+it reconciles anchors (§6), validates (§11), commits under the acting party (§4)
 and is refused on a stale key (§7).
 
 This issue is the removal on the client side of that decision, and it spans two

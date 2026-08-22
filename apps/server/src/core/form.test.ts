@@ -250,7 +250,7 @@ describe("readThreadForms", () => {
 
     // Pinned as the *agreement* it now is: the renderer's `mapFormAnswers`
     // used to `continue` past its own registration on such a turn and leave the
-    // form live forever, and UI-021 converged it on this side, because §11's
+    // form live forever, and UI-021 converged it on this side, because §10's
     // reasons have to be clearable (SERVER-022 finding 3). Its paired block —
     // `apps/ui/src/thread/parseFormBlock.test.ts`, same name, same four cases —
     // is what keeps the two readers from drifting apart again.

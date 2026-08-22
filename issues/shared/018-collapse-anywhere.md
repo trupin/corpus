@@ -41,7 +41,7 @@ fable
   (child threads), standalone threads
 - §7 Event queue and agent loop — **Read state** ("what counts as read: displayed
   content only… opening the thread, expanding its collapsed chip")
-- §11 UI — Document view (adaptive thread placement, the comments list), Thread
+- §10 UI — Document view (adaptive thread placement, the comments list), Thread
   view (the fence clipping vocabulary this reuses; child threads per-turn),
   Keyboard scheme
 
@@ -124,7 +124,7 @@ reachable" clause is what forces that to become an in-place expander.
 
 ### The product already has a collapse vocabulary, and this reuses it
 
-§11's fence clipping — "a block taller than a threshold renders **clipped** behind
+§10's fence clipping — "a block taller than a threshold renders **clipped** behind
 a control that expands it and says how much is hidden" — is implemented with a
 control reading **"Show all 60 lines"** / **"Show less"**, and its own code
 comments state why it names the **whole** size rather than a remainder: "the
@@ -184,7 +184,7 @@ which is the only route back to a conversation whose card is folded.
 goes through the server and auto-commits (§4, §7). A collapse is a reading
 posture, so persisting it in the thread or the document would mean **reading a
 document produces git commits** — plainly wrong, and it would make one person's
-focus another browser's surprise. §11 already draws this line: "Only browser-local
+focus another browser's surprise. §10 already draws this line: "Only browser-local
 state stays local: scroll positions, open readers, and per-reader navigation
 stacks", and the console's expanded state and the reader's chosen width are
 already sticky-but-local. A collapse belongs in exactly that set.
@@ -194,7 +194,7 @@ empty on **every** document change — navigate away and back and everything you
 opened is closed again. That is the wrong half of the tradeoff for a feature
 whose purpose is focus: a reader who folds four settled threads to read a
 paragraph should not have to fold them again after following one `[[ref]]`. So
-the draft makes a manual collapse survive reload and navigation, the way §11
+the draft makes a manual collapse survive reload and navigation, the way §10
 already says the reader's width and the console's height do. Per reader: two
 columns showing the same document are two readers with their own navigation
 stacks, and they may disagree.
@@ -246,9 +246,9 @@ does **not** apply there; the on-demand collapse does, like everywhere. Neither
 surface becomes redundant: the list answers "what conversations exist on this
 document", the margin answers "what is being said about *this passage*".
 
-**No new key.** §11's keyboard scheme is a fixed published list with a
+**No new key.** §10's keyboard scheme is a fixed published list with a
 cheat-sheet, and this adds nothing to it. The affordance is an ordinary focusable
-control, and it joins each item's right-click menu for free — §11 already binds
+control, and it joins each item's right-click menu for free — §10 already binds
 that menu to "exactly that item's existing actions". The existing `r` binding
 (focus the reply composer), which today works by expanding the first collapsed
 chip, must keep working.
@@ -288,16 +288,16 @@ status: open              # open | resolved; resolved threads collapse in the do
 with:
 
 ```
-status: open              # open | resolved; a resolved thread is collapsed by default wherever it is shown (§11)
+status: open              # open | resolved; a resolved thread is collapsed by default wherever it is shown (§10)
 ```
 
 _(This is a retarget, not a new promise: the behaviour was already promised here
 and is unimplemented — filed as UI-077. The change is that it no longer reads as
 a property of one surface.)_
 
-### Amendment 2 — §11 Document view, REPLACE the adaptive-placement sentence
+### Amendment 2 — §10 Document view, REPLACE the adaptive-placement sentence
 
-REPLACE, in §11's **Document view — always editable, Google-Docs-like** bullet,
+REPLACE, in §10's **Document view — always editable, Google-Docs-like** bullet,
 exactly this existing sentence:
 
 > **Adaptive thread placement**: in focus mode and wide layouts, threads sit Docs-style in the right margin, aligned to their anchors with connectors; in narrow columns they collapse to chips at the anchor that expand inline.
@@ -306,9 +306,9 @@ with:
 
 > **Adaptive thread placement**: in focus mode and wide layouts, threads sit Docs-style in the right margin, aligned to their anchors with connectors; in narrow columns they sit as chips at the anchor that expand inline. **Which placement a thread gets depends on the width; whether it can be collapsed does not** — every placement obeys the one collapse behaviour defined in Thread view below.
 
-### Amendment 3 — §11 Thread view, APPEND at the end of the bullet
+### Amendment 3 — §10 Thread view, APPEND at the end of the bullet
 
-APPEND at the **end of §11's Thread view bullet**. At the time of writing that
+APPEND at the **end of §10's Thread view bullet**. At the time of writing that
 bullet ends with exactly this text:
 
 > **Newlines in a turn written by a person render as line breaks** — a textarea offers no other way to write one — while a turn written by the agent renders as ordinary markdown, where a single newline is a space and a break is written as markdown spells it. _(Rider signed 2026-08-03.)_
@@ -328,7 +328,7 @@ Append the following:
 >
 > **On demand, and by one rule.** Anyone can collapse or expand any conversation at any time. Independently, **a `resolved` thread is collapsed by default** (§6) — that is the single rule, the set of rules is closed, and adding one takes a change to this document. **A conversation carrying a turn you have not seen is never collapsed by the rule**, whoever wrote it and whatever its status: a collapsed conversation has displayed nothing and so never counts as read (§7), and a rule that folded away unread turns would be a way to lose them. The reader is not bound by this — anyone may still fold an unread conversation by hand; it is the rule that may not.
 >
-> **Precedence: the last thing that happened wins.** The rule decides the state a conversation is placed in; collapsing or expanding it yourself overrides the rule and **sticks** — through navigating away and back, and through a reload — the way the reader's chosen width and the console's height are sticky. A change to the thread's **status** re-asserts the rule and clears that override, so resolving a conversation collapses it even while it is open on screen, and reopening one expands it. **Reading never collapses anything**: the rule is applied when a conversation is placed and when its status changes, never because you have just read it. Collapse state is browser-local like scroll position and open readers — never written to the thread or the document, so reading a document commits nothing, and two columns showing the same document keep their own. Collapsing and expanding are operable from the keyboard like every other affordance (§11 adds no exclusive-pointer capability) and claim **no new key**: each conversation's collapse control sits in its own right-click menu alongside its other actions. _(Rider signed 2026-08-05.)_
+> **Precedence: the last thing that happened wins.** The rule decides the state a conversation is placed in; collapsing or expanding it yourself overrides the rule and **sticks** — through navigating away and back, and through a reload — the way the reader's chosen width and the console's height are sticky. A change to the thread's **status** re-asserts the rule and clears that override, so resolving a conversation collapses it even while it is open on screen, and reopening one expands it. **Reading never collapses anything**: the rule is applied when a conversation is placed and when its status changes, never because you have just read it. Collapse state is browser-local like scroll position and open readers — never written to the thread or the document, so reading a document commits nothing, and two columns showing the same document keep their own. Collapsing and expanding are operable from the keyboard like every other affordance (§10 adds no exclusive-pointer capability) and claim **no new key**: each conversation's collapse control sits in its own right-click menu alongside its other actions. _(Rider signed 2026-08-05.)_
 
 ---
 
@@ -408,7 +408,7 @@ nothing there is a special case except the default.
   that a collapsed conversation displays nothing and therefore reads nothing.
 - **No change to anchoring or reconciliation.** A collapsed thread's anchor
   behaves exactly as an expanded one's (§6).
-- **No new keyboard binding.** The §11 keyboard scheme and its cheat-sheet are
+- **No new keyboard binding.** The §10 keyboard scheme and its cheat-sheet are
   unchanged.
 - **Not a change to who may resolve.** That is SHARED-019, and it is separable.
 
@@ -417,12 +417,12 @@ nothing there is a special case except the default.
 - [ ] User signs off, or answers Q1–Q5 and the text is adjusted
 - [ ] Amendment 1 applied to SPEC.md §6 verbatim (one-line replace inside the
       frontmatter example)
-- [ ] Amendment 2 applied to SPEC.md §11 Document view verbatim (one-sentence
+- [ ] Amendment 2 applied to SPEC.md §10 Document view verbatim (one-sentence
       replace)
-- [ ] Amendment 3 appended at the **end** of §11's Thread view bullet — nothing
-      in §11 is deleted by it; if SHARED-016 is signed too, the two appends
+- [ ] Amendment 3 appended at the **end** of §10's Thread view bullet — nothing
+      in §10 is deleted by it; if SHARED-016 is signed too, the two appends
       coexist in whichever order they are applied
-- [ ] **UI-077 is re-pointed** at the amended §6 line and at the new §11 text,
+- [ ] **UI-077 is re-pointed** at the amended §6 line and at the new §10 text,
       and its `§5` citation corrected to `§6`
 - [ ] A second UI issue is filed for the on-demand half, and the two are
       sequenced so they ship together (UI-077 already says "do not ship this
@@ -437,7 +437,7 @@ nothing there is a special case except the default.
 
 ### Files to Create/Modify
 
-- `SPEC.md` §6 (one replace), §11 Document view (one replace), §11 Thread view
+- `SPEC.md` §6 (one replace), §10 Document view (one replace), §10 Thread view
   (one append)
 - `issues/ui/077-resolved-threads-collapse.md` (re-point, fix citation) — after
   sign-off

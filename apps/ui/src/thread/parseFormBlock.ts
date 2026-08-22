@@ -128,7 +128,7 @@ export interface AnswerableTurn {
 
 /**
  * What an answered form shows: every field the form asked with what was given
- * for it, plus the note about the ask as a whole (SPEC.md §11 — "each question
+ * for it, plus the note about the ask as a whole (SPEC.md §10 — "each question
  * beside what was given for it").
  *
  * `answers` is the contract's `FormFieldRecord`, which is also the shape the
@@ -174,7 +174,7 @@ function sameAnswers(left: readonly FormFieldRecord[], right: readonly FormField
 /**
  * Which forms have already been answered, keyed by the timestamp of the turn
  * carrying the form — which is the form's identity (SPEC.md §6) — and carrying
- * the record of what was given, which is what §11's answered form renders.
+ * the record of what was given, which is what §10's answered form renders.
  *
  * **The prose is the data, and the contract owns both ends of it** (orchestrator
  * decision 2026-08-07). The `form.respond` payload is reaped with its event, so
@@ -210,7 +210,7 @@ function sameAnswers(left: readonly FormFieldRecord[], right: readonly FormField
  *   hand-edited file produces such a turn (the answer route writes the label and
  *   the record, nothing else), but `POST …/turns/{ts}/form` accepts an answer for
  *   its form all the same, so a renderer that returned early left a live,
- *   answerable form that no later answer could ever clear. §11's reasons must
+ *   answerable form that no later answer could ever clear. §10's reasons must
  *   have an action that clears them (SERVER-022 finding 3).
  *
  * An answer no open form claims belongs to none of them and is left alone: it is

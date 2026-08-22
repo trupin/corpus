@@ -35,7 +35,6 @@ import {
   CLI_BUNDLE_PATH,
   PACKAGE_NAME,
   PackagingError,
-  PLUGINS_DIR,
   resolveRuntimeDependencies,
   SERVER_BUNDLE_PATH,
   STAGE_DIR_NAME,
@@ -43,7 +42,7 @@ import {
   UI_DIR,
   type DeclaredDependencies,
 } from "./package-manifest.js";
-import { externalizeThirdParty, stagePlugins, stageTree } from "./package-staging.js";
+import { externalizeThirdParty, stageTree } from "./package-staging.js";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const stageRoot = join(repoRoot, STAGE_DIR_NAME);
@@ -148,13 +147,6 @@ async function main(): Promise<void> {
     requireDirectory("apps/ui/dist", "npm run build"),
     join(stageRoot, UI_DIR),
   );
-  // A plugin is bundled from its own directory, so esbuild is told where the
-  // workspace's hoisted `node_modules` is — that is how `@corpus/contract`
-  // resolves for inlining and how `hono` resolves before being externalised.
-  const plugins = await stagePlugins(join(repoRoot, "plugins"), join(stageRoot, PLUGINS_DIR), {
-    nodePaths: [join(repoRoot, "node_modules")],
-  });
-
   for (const fileName of ["README.md", "LICENSE"]) {
     const from = join(repoRoot, fileName);
     if (!existsSync(from)) throw new PackagingError(`${fileName} is missing from the repo root`);
@@ -174,11 +166,6 @@ async function main(): Promise<void> {
       `  ${SERVER_BUNDLE_PATH}       ${kb(server.bytes)}`,
       `  ${UI_DIR}/                 ${String(uiFiles.length)} files`,
       `  ${TEMPLATE_DIR}/   ${String(templateFiles.length)} files`,
-      `  ${PLUGINS_DIR}/            ${
-        plugins.length === 0
-          ? "none (no built non-underscore plugin)"
-          : plugins.map((plugin) => plugin.dir).join(", ")
-      }`,
       `  dependencies       ${Object.keys(dependencies).join(", ")}`,
       "",
     ].join("\n"),

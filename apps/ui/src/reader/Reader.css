@@ -1,13 +1,13 @@
 /*
- * The in-column reader, ported from `design/index.html` (SPEC.md §11 names the
+ * The in-column reader, ported from `design/index.html` (SPEC.md §10 names the
  * mockup authoritative for look & feel): `.reader`, `.reader-head`, `.back`,
  * `.reader-id`, `.save-chip`, `.comments-btn`, `.comments-pop`, `.cp-item`,
  * `.expand`, `.fm-chips`, `.doc-title`, `.thread-slot`, `.thread-card`,
  * `.backlinks` and the archived banner.
  *
  * `.doc-body`, `.ref` and `.ref-broken` are NOT here — they ship from
- * `@corpus/kit/markdown.css` with the component that emits them, so a plugin
- * rendering a body inherits the same treatment.
+ * `@corpus/kit/markdown.css` with the component that emits them, so every
+ * surface that renders a body inherits the same treatment.
  *
  * The `prefers-reduced-motion` guard is declared once, in `app/global.css`, and
  * is deliberately not repeated here.
@@ -30,7 +30,7 @@
 /*
  * ── The head, and the rule it used to break (UI-135) ─────────────────────
  *
- * SPEC.md §11: *"Nothing resizes because of what it holds… Text that does not
+ * SPEC.md §10: *"Nothing resizes because of what it holds… Text that does not
  * fit is revealed rather than accommodated."* This row carries three runs of
  * text nobody chose the length of — a parent document's title on `.back`, the
  * document id, and a save chip whose copy grows *because the person just
@@ -130,7 +130,7 @@
  * 246px worst case instead was tried and reversed: it held every state in one
  * box and paid for it by leaving the reading width permanently short, with the
  * back label squeezed below its own cap and the document id truncating on a
- * head where nothing unusual was happening. SPEC.md §11 asks for the opposite
+ * head where nothing unusual was happening. SPEC.md §10 asks for the opposite
  * — *"the box is sized for the text people actually have… so revealing is the
  * uncommon case and not the ordinary reading path"* — so the anchor tail is
  * the thing that gets revealed, and the head is the thing that stays whole.
@@ -213,7 +213,7 @@
 }
 
 /*
- * ── The width control (UI-066, SPEC.md §11's rider of 2026-08-04) ─────────
+ * ── The width control (UI-066, SPEC.md §10's rider of 2026-08-04) ─────────
  *
  * *"The document body has a comfortable default width, and the reader can
  * change it — in column view and in full screen… Anchored thread placement
@@ -485,34 +485,6 @@
   cursor: default;
 }
 
-/* A **derived** value, where a control would have been (UI-092, SPEC.md §12).
-   It keeps the control's metrics — the same cell, the same padding, the same
-   face, and a transparent border rather than none — so a type that derives its
-   status does not shift the row it sits in or the hint beneath it. What it drops
-   is the chrome: no field background, no frame, nothing that reads as an act
-   somebody switched off.
-
-   SHARED-057: the width is the cell's, so `open` and `resolved` are the same
-   box and the form does not move when one becomes the other. The value comes
-   from a closed vocabulary of short words (§5), so the clip below is a
-   guarantee rather than a reading path — it exists so that a status this UI has
-   never heard of cannot widen anything either. */
-.fm-statement {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  font-family: var(--sans);
-  font-size: 12.5px;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--ink);
-  border: 1px solid transparent;
-  padding: 4px 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .archived-banner {
   border: 1px solid var(--line);
   background: var(--surface-2);
@@ -540,7 +512,7 @@
 }
 
 /*
- * ── The `Document / Comments` switch (SPEC.md §11's rider, 2026-08-04) ──
+ * ── The `Document / Comments` switch (SPEC.md §10's rider, 2026-08-04) ──
  *
  * It **is** the 💬 button — the same pill, the same place, the same width —
  * with a pressed state for the half you are on. That is what the row can hold:
@@ -573,7 +545,7 @@
 }
 
 /*
- * The thread count, in its own box (SPEC.md §11's rider, 2026-08-20).
+ * The thread count, in its own box (SPEC.md §10's rider, 2026-08-20).
  *
  * The button is `flex: none` — a control that never yields, by the rule above —
  * so a count crossing into two digits widens the *control*, and the head pays
@@ -928,7 +900,7 @@
   font-size: 12.5px;
 }
 
-/* ── Related (SPEC.md §11) ── */
+/* ── Related (SPEC.md §10) ── */
 
 /*
  * The pair. "Related" sits beside "Referenced by" below the body and shares its

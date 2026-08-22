@@ -4,7 +4,7 @@
 ui
 
 ## Status
-done — implemented 2026-08-21 (SPEC §11's rider was signed 2026-08-04; SHARED-010
+done — implemented 2026-08-21 (SPEC §10's rider was signed 2026-08-04; SHARED-010
 Amendment 2 settled the uniform-stretch question)
 
 ## Priority
@@ -18,7 +18,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Document view
+- SPEC.md §10 Document view
 - `design/index.html` (authoritative for look and feel)
 
 ## Summary
@@ -42,12 +42,12 @@ The user is explicit that a cap is fine — the ask is that **they** choose it.
   or both? A drag handle is the direct expression of "resize to the desired
   width"; presets are cheaper to make keyboard-accessible. Decide against
   `design/index.html` and the app's existing resize affordance — the console
-  drawer is already resizable by dragging its top edge (§11), so there is a
+  drawer is already resizable by dragging its top edge (§10), so there is a
   precedent to follow rather than a convention to invent.
 - **Scope of the setting.** Per document, per column, or global? "Both in column
   and full screen" implies it should not be re-set every time the same document
   is opened in a different host.
-- **Persistence.** §11 says navigation state is sticky. This should be too — say
+- **Persistence.** §10 says navigation state is sticky. This should be too — say
   where it is stored and whether it is workspace state or per-browser.
 - **Interaction with the column width itself.** A column has its own width; a
   document inside it cannot exceed it. Define what "wider" means when the column
@@ -65,7 +65,7 @@ The user, unprompted:
 > "I want to be able to resize the width any document, including threads. I know
 > we have an issue for that but just wanted to make that clear."
 
-**Read the signed §11 text carefully before implementing, because it invites the
+**Read the signed §10 text carefully before implementing, because it invites the
 narrow reading.** It says "**the document body** has a comfortable default
 width", and the only place it mentions threads is "anchored thread placement
 follows the body when it moves" — which frames a thread as something attached to
@@ -105,7 +105,7 @@ the precedent, including how it stamps state so a change re-asserts the default.
 - [x] A default is preserved for documents never adjusted — nobody is forced to
       set a width to read comfortably
 - [x] Keyboard-accessible: the control is reachable and operable without a
-      pointer (SPEC §11 requires no exclusive-pointer capability)
+      pointer (SPEC §10 requires no exclusive-pointer capability)
 - [x] Wide content that motivated this — tables, fenced blocks — actually uses
       the new width
 - [x] Anchored thread placement still lines up: margin cards and connectors are
@@ -148,7 +148,7 @@ never swallow a click meant for the last character of a line.
 
 **The width belongs to the surface**, keyed with UI-077's own
 `columnSurface(columnId)` and `FOCUS_SURFACE`, in `localStorage` under
-`corpus.docWidth` with a version stamp. §11 asks for a width that persists
+`corpus.docWidth` with a version stamp. §10 asks for a width that persists
 *across navigation*, and navigation is what changes the document — so a
 per-document width would be re-set on every ref followed, which is the opposite
 of the sentence. What a person expresses by dragging is "documents in this
@@ -164,7 +164,7 @@ reader read too narrow".
   column drew 517px of prose and ~380px of gutter — closing that gutter is the
   whole of the report.
 - **No reset gesture.** A double-click-to-restore with no keyboard equivalent
-  would be an exclusive-pointer capability, which §11 forbids, and a second key
+  would be an exclusive-pointer capability, which §10 forbids, and a second key
   was not worth claiming. The default survives for any surface never dragged.
 - **No per-element measure.** SHARED-010 Amendment 2 — offered and declined.
   The table and the fence take the dragged width like the prose does.

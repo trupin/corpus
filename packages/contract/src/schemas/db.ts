@@ -1,11 +1,11 @@
 import { z } from "@hono/zod-openapi";
 
 /**
- * The projection's two maintenance operations (SPEC.md §14, §15 M1).
+ * The projection's two maintenance operations (SPEC.md §11, §12 M1).
  *
  * The projection is a **derived** SQLite cache: "the whole database is
  * reconstructible from the workspace at any time" (§9.1). Two operations make
- * that claim checkable rather than aspirational, and §14 names both — `db
+ * that claim checkable rather than aspirational, and §11 names both — `db
  * doctor` "fails when files and projection rows drift", `db rebuild`
  * "reconstructs the projection from files alone", and "`rebuild && doctor` clean
  * is the standing invariant" that v1's definition of done gates on.
@@ -157,7 +157,7 @@ export const ProjectionDriftSchema = z
  * or map to an icon, instead of quietly becoming a second prose field beside
  * `detail`.
  *
- * These are **not** SPEC.md §14's mutation warnings (`schemas/warning.ts`).
+ * These are **not** SPEC.md §11's mutation warnings (`schemas/warning.ts`).
  * Those describe a write that partly failed — a rejected auto-commit — and their
  * `code` set is closed because it enumerates the ways one pipeline can fail.
  * Doctor writes nothing and can produce no commit warning at all; this is a
@@ -273,7 +273,7 @@ export const DoctorReportSchema = z
       .describe(
         "Report-only findings that are not drift: things worth a person's attention that the " +
           "projection is nonetheless correct about. **Never moves `ok` and never changes the exit " +
-          "code** — SPEC.md §14's standing `rebuild && doctor` clean invariant is about drift, and " +
+          "code** — SPEC.md §11's standing `rebuild && doctor` clean invariant is about drift, and " +
           "a warning that flipped the verdict would fail a routine check on workspaces where " +
           "nothing is wrong with the projection. Absent and empty mean the same thing: a server " +
           "that runs no warning pass omits the key entirely, which is what keeps this field " +

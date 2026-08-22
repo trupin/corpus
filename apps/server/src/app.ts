@@ -57,7 +57,6 @@ import {
 } from "./git/index.js";
 import { createJobService, createStatedWeightRecorder, mountJobRoutes } from "./jobs/index.js";
 import { createLogger, type Logger } from "./logger.js";
-import { mountPluginRoutes, type DiscoveredPlugin } from "./plugins/index.js";
 import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
 import { mountDbRoutes, type ProjectionDb } from "./projection/index.js";
@@ -220,15 +219,6 @@ export interface CreateServerDeps {
   readonly projection?: ProjectionDb | undefined;
   /** How often `GET /events` writes its keep-alive comment; `0` disables it. */
   readonly heartbeatMs?: number | undefined;
-  /**
-   * Plugins discovered by `lifecycle.ts` (PLUGINS-001). Pre-resolved and
-   * handed in — dynamic `import()` is async and `createServer` stays a pure,
-   * synchronous function of its inputs, exactly the projection's pattern.
-   * Mounted after every core route (a plugin can never shadow `/api/docs`)
-   * and only when a projection exists: plugin routes write through the core
-   * write path, which does not exist without one.
-   */
-  readonly plugins?: readonly DiscoveredPlugin[] | undefined;
   /**
    * The server's one git writer (SPEC.md §4). Constructed here from
    * `config.workspaceRoot` by default — it is a command builder, not an open
@@ -658,27 +648,15 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       index: indexMaintenance,
     });
 
-    // §14's validator over HTTP, and §7's skill creation. Both need the
+    // §11's validator over HTTP, and §7's skill creation. Both need the
     // projection — the check resolves ids and answers "does this `[[ref]]`
     // target exist", a create mints an id against it — so both live in this
-    // block, and both are mounted before the plugin routers like every other
-    // core route.
+    // block.
     mountCheckRoutes(app, {
       workspaceRoot: config.workspaceRoot,
       projection: deps.projection,
     });
     mountSkillRoutes(app, docsWorkspace, mutex);
-
-    // Plugin routers, last of the API surface (SPEC.md §10): every core mount
-    // above wins any path dispute by construction, the `/api/*` bearer guard
-    // already covers `/api/x/*`, and a failing plugin is skipped inside —
-    // never a boot failure.
-    mountPluginRoutes(app, deps.plugins ?? [], {
-      workspace: docsWorkspace,
-      mutex,
-      logger,
-      now,
-    });
   }
 
   // Outside the projection block on purpose: serving bytes reads the filesystem

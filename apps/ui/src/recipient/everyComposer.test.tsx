@@ -212,7 +212,7 @@ function commentPopoverProbe(lanes: readonly ReturnType<typeof residentLane>[]):
 }
 
 /**
- * §7's surfaces, in §11's order — each with the lane its location computes.
+ * §7's surfaces, in §10's order — each with the lane its location computes.
  *
  * The global composer is the one whose default is the orchestrator, because its
  * Ask creates a **standalone** thread that is in no scope by construction; on it

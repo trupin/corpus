@@ -26,7 +26,7 @@ import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from
  * "a no-op edit writes nothing" rule.
  *
  * `⋯` and right-click open the **same** menu, from the same declaration and
- * through the same frame (SPEC.md §11's right-click bullet) — the header had
+ * through the same frame (SPEC.md §10's right-click bullet) — the header had
  * its own capture-phase mousedown and Escape handling before UI-018, which was
  * a third dismissal story racing the escape chain (sprint-016 TEST-442).
  */
@@ -135,7 +135,7 @@ export function ColumnHead({
       onContextMenu={(event) => {
         // The rename and edit-query fields are inputs: the browser's own menu is
         // the useful one there. A selection elsewhere does not suppress the
-        // header's menu (SPEC.md §11, user report 2026-07-30).
+        // header's menu (SPEC.md §10, user report 2026-07-30).
         if (keepsNativeMenu({ target: event.target })) return;
         event.preventDefault();
         openMenu(event.clientX, event.clientY, false);

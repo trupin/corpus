@@ -35,7 +35,7 @@ Implements CONTRACT-007's form-answer route through the shipped mutation pipelin
 - [x] The answer is validated against the **fence it answers** by calling `@corpus/contract`'s `validateFormAnswer` — an option the form does not offer is `400` naming `body.option` and quoting the offered options.
 - [x] The fence is located with the contract's own grammar (`extractFormSource` / `FormSchema`); no third definition is introduced. ` ```formula `, ` ```form-builder `, no fence, unparseable YAML and YAML failing `FormSchema` are all refused.
 - [x] Only the four declared statuses (`201 / 400 / 401 / 404`) are reachable — in particular **no `423`**: no lock guard is added (sprint-006 Adjudication 1 stands).
-- [x] The answer appends a real turn through the shipped pipeline (atomic write, `updated`/`agent` frontmatter, auto-commit with the acting party as git author, synchronous re-projection, SSE `invalidate`), carrying §14 warnings on the response.
+- [x] The answer appends a real turn through the shipped pipeline (atomic write, `updated`/`agent` frontmatter, auto-commit with the acting party as git author, synchronous re-projection, SSE `invalidate`), carrying §11 warnings on the response.
 - [x] Exactly one `form.respond` event is enqueued, with the `FormRespondPayloadSchema` shape `{threadId, formTs, option, note|null}` where `formTs` is the **carrying turn's** stamp; no `comment.created` rides along.
 - [x] §8 is honoured through the shipped `decideParticipation` predicate: a resolved (or non-engaged) thread appends the turn and commits it but enqueues nothing, and `eventId` is `null`.
 - [x] The attention reason clears: the thread is in `needs=form` / `needs=me` before the answer and absent after (discharged by construction — appending a *user* turn moves `last_author`, so `needs.ts` needed no change).
@@ -236,7 +236,7 @@ Second answer to the same form: `HTTP 201`, a second `form.respond`
 (`evt_w7etktbb35o6`, `option: "A"`, `note: "changed my mind"`), thread now at 4 turns. Deliberate —
 §6 gives the turn format no "answered" marker, and the thread has already left `needs=form`.
 
-#### TEST-89 — §14 warnings
+#### TEST-89 — §11 warnings
 
 With a `pre-commit` hook exiting 1 in the real workspace:
 
@@ -247,7 +247,7 @@ turn still on disk: True
 git status for the file: M data/threads/th_thkolnvs.md
 ```
 
-The write stands, uncommitted, and the client is told — §14's rule exactly.
+The write stands, uncommitted, and the client is told — §11's rule exactly.
 
 #### TEST-91 — Attention
 

@@ -22,7 +22,7 @@ type JsonBody<Body> = Body extends { content: { "application/json": infer Shape 
 type CreateDocBody = JsonBody<NonNullable<paths["/api/docs"]["post"]["requestBody"]>>;
 type CreateThreadBody = JsonBody<NonNullable<paths["/api/threads"]["post"]["requestBody"]>>;
 
-/** The zero-form create from SPEC.md §11: a type and a title, nothing else. */
+/** The zero-form create from SPEC.md §10: a type and a title, nothing else. */
 const minimalCreateDoc: CreateDocBody = { type: "note", title: "Mortgage options" };
 
 /** Every server-defaulted field is still *accepted*; it is only never demanded. */
@@ -38,7 +38,6 @@ const fullCreateDoc: CreateDocBody = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: { source: "import" },
 };
 
@@ -83,7 +82,6 @@ function createTestClient() {
             pinned: request.pinned ?? false,
             order: request.order ?? null,
             query: request.query ?? null,
-            column: request.column ?? null,
             extra: request.extra ?? {},
           },
           body: request.body ?? "",

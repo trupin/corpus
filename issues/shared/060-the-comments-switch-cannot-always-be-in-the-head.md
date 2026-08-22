@@ -1,11 +1,11 @@
-# [SHARED-060] §11 puts the comments switch in the header unconditionally, and the header cannot hold it
+# [SHARED-060] §10 puts the comments switch in the header unconditionally, and the header cannot hold it
 
 ## Domain
 shared (orchestrator)
 
 ## Status
 done — **SIGNED by the user 2026-08-21**, option 1 (ratify what shipped), applied
-to SPEC.md §11 the same day. The switch arrives with the first conversation and
+to SPEC.md §10 the same day. The switch arrives with the first conversation and
 the ⋯ path is the guarantee. UI-063's recorded deviation is now a recorded
 design.
 
@@ -19,7 +19,7 @@ fable
 - Related: UI-063 (which measured it), SHARED-010 (the rider being corrected), SHARED-057 (the geometry rule that forbids the alternatives), UI-135 (which set the head's rules)
 
 ## Spec References
-- SPEC.md **§11**, Document view — *"A document's comments are also available as a **list**, reached by a Document / Comments switch in the reader's header and present in both column view and full screen."*
+- SPEC.md **§10**, Document view — *"A document's comments are also available as a **list**, reached by a Document / Comments switch in the reader's header and present in both column view and full screen."*
 
 ## The problem
 
@@ -100,7 +100,7 @@ together are not nothing.
 **So the real deviation is narrower than the first draft claimed**, and it is
 this one thing: **a document with no comments has no switch.**
 
-Replace, in §11's Document view bullet:
+Replace, in §10's Document view bullet:
 
 > A document's comments are also available as a **list**, reached by a Document
 > / Comments switch in the reader's header and present in both column view and
@@ -138,5 +138,5 @@ The orchestrator recommends **1**. The ⋯ path is always present, and a switch
 between two views where one of them is empty is chrome without a job.
 
 ## Acceptance
-Nothing until signed. If signed, the orchestrator applies the text to §11 and
+Nothing until signed. If signed, the orchestrator applies the text to §10 and
 UI-063's recorded deviation becomes a recorded design instead.

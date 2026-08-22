@@ -258,7 +258,7 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
   let closed = false;
   /**
    * The tail of the out-of-band commit chain (SERVER-090). Always settled, never
-   * rejected: `handleCommitFailure` swallows, because §14 already rules that a
+   * rejected: `handleCommitFailure` swallows, because §11 already rules that a
    * change stands on disk when its commit does not, and an unhandled rejection
    * here would take the process down over a workspace hook.
    */
@@ -386,9 +386,6 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         content: content.toString("utf8"),
         selfWrites,
         logger,
-        // §12's derived status rides the reconciliation's own rewrite
-        // (SERVER-085); it never opens one of its own.
-        derivedFields: db.derivedFields,
         ...(options.readHead === undefined ? {} : { readHead: options.readHead }),
       });
       if (reconciled.kind === "reconciled") {

@@ -20,7 +20,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §12 todos; §11 reader (anchor highlight/scroll behavior)
+- SPEC.md §12 todos; §10 reader (anchor highlight/scroll behavior)
 
 ## Summary
 Live dogfood report (2026-08-02): clicking an item row in the todos column opens

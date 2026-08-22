@@ -9,7 +9,7 @@ import {
 } from "./noticesModel";
 
 /**
- * **What this session raised** — the console's Notices tab (SPEC.md §11's
+ * **What this session raised** — the console's Notices tab (SPEC.md §10's
  * Notices paragraph, rider authorized 2026-08-21; UI-139).
  *
  * Every warning and refusal, newest first, each with its whole text, its tone

@@ -72,7 +72,7 @@ Space        → menus 0, activeElement INPUT.col-title col-title-input
 Escape       → menus 0, activeElement BUTTON.col-menu   (nothing ran)
 ```
 
-### The open reader (§11: "the open reader (its ⋯ menu set)")
+### The open reader (§10: "the open reader (its ⋯ menu set)")
 
 Right-click on the reader:
 
@@ -135,8 +135,8 @@ Enter             menus 0, no toast                  ← re-toggled the trigger;
 So on that surface no item can hold focus, and `↵` cannot activate one. The gap is
 **absence of roving focus**, not the `preventDefault` interception UI-028 fixed —
 the pre-fix reproduction ("with roving focus correctly on a menu item") was never
-reachable there. §11's `esc`/arrows/`↵` sentence is written about the right-click
-context menu, which passes on the reader, and §11 also requires every context-menu
+reachable there. §10's `esc`/arrows/`↵` sentence is written about the right-click
+context menu, which passes on the reader, and §10 also requires every context-menu
 action to stay reachable without a pointer, which it does via right-click / ⇧F10.
 Suggest a follow-up UI issue to give `.comments-pop` the same roving focus as
 `ContextMenu`; it is an accessibility gap, not a broken behaviour.

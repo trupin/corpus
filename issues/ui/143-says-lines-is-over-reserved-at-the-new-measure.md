@@ -17,7 +17,7 @@ opus
 - Related: SHARED-061, SHARED-057, UI-137
 
 ## Spec References
-- SPEC.md **§11** — SHARED-057's reserve rule and SHARED-061's room rule, which are one rule in two halves
+- SPEC.md **§10** — SHARED-057's reserve rule and SHARED-061's room rule, which are one rule in two halves
 
 ## Summary
 

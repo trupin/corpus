@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: UI-149, CONTRACT-075 (folder menu items call the typed client; SERVER-136 for them to work end to end)
+- Depends on: UI-149, CONTRACT-075 (folder menu items call the typed client; SERVER-139 for them to work end to end)
 - Blocks: —
 
 ## Spec References

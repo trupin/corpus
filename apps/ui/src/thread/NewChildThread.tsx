@@ -24,13 +24,13 @@ import { GrowingTextarea } from "./GrowingTextarea";
  * being created is a conversation and its first turn is the question, and the
  * rest happens in the child card's own composer, which is the full one.
  *
- * **What it is not smaller by is attachments** (SPEC.md §11's rider, signed
+ * **What it is not smaller by is attachments** (SPEC.md §10's rider, signed
  * 2026-08-05): "a comment on a turn" is in the list of surfaces that take files
  * by picker, paste and drop, and this box used to say in a comment that it
  * carried none. It carries them now, on the same intake and the same chips as
  * every other composer (UI-111).
  *
- * Its keys are the kit's contract (SPEC.md §11) — `↵` newline, `⌘↵` comment,
+ * Its keys are the kit's contract (SPEC.md §10) — `↵` newline, `⌘↵` comment,
  * `esc` cancel. Until UI-052 this box spelled them itself and got them wrong: it
  * sent on any `Enter`, including the one that **commits an IME composition**, so
  * typing a Japanese comment posted it mid-word. The contract carries that guard
@@ -68,10 +68,10 @@ export function NewChildThread({
   const recipient = useComposerRecipient({ start: parentThreadId });
   /*
    * This box sends `requestsAgent: false` unconditionally, so its address sits
-   * on §11's floor: the line says nobody is asked, the popover offers the
+   * on §10's floor: the line says nobody is asked, the popover offers the
    * recipient rows alone, and no weight exists to state — a control that could
    * never act used to stand here dimmed, which UI-126 replaced with nothing
-   * (SPEC.md §11: nothing to weigh where no work is asked for). The weight
+   * (SPEC.md §10: nothing to weigh where no work is asked for). The weight
    * input is deliberately omitted, not merely inert.
    */
   const address = composerAddress({

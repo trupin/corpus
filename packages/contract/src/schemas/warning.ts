@@ -1,14 +1,14 @@
 import { z } from "@hono/zod-openapi";
 
 /**
- * SPEC.md §14's warnings: things that went wrong around a mutation without
+ * SPEC.md §11's warnings: things that went wrong around a mutation without
  * making it fail. A warning never changes the status code and never rolls
  * anything back — the file mutation stands, because files are the source of
  * truth. It exists so the failure "surfaces loudly — a warning on the API
  * response, a server log entry, and console visibility" instead of leaving
  * silent drift.
  *
- * Two families are named by §14 itself:
+ * Two families are named by §11 itself:
  *
  * - **The auto-commit half.** "If a hook fails during an auto-commit, the file
  *   mutation still stands … the failure surfaces loudly." Also covers a
@@ -36,7 +36,7 @@ import { z } from "@hono/zod-openapi";
  * fits (a machine-readable class plus prose naming the documents), so the only
  * thing that had to change is its published meaning: "non-fatal problems"
  * became "non-fatal problems, and effects on documents the request did not
- * name". A SPEC.md §14 rider saying so is drafted in
+ * name". A SPEC.md §11 rider saying so is drafted in
  * `issues/contract/047-report-a-carried-reconciliation.md`, held for the user's
  * signature; it ratifies the widening rather than authorising it, since §7 and
  * §4 already require the effect and the honesty about it respectively.
@@ -116,7 +116,7 @@ export const WarningSchema = z
 export const warningsField = z
   .array(WarningSchema)
   .describe(
-    "Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it " +
+    "Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it " +
       "had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The " +
       "mutation succeeded regardless — files are the source of truth and the server never rolls " +
       "a write back because a commit or a check failed, and a carried effect is not a failure at " +

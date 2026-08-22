@@ -80,7 +80,7 @@ function Host({ wire, initial, isActive, onFocusMode, onNav }: HostProps): React
 }
 
 type FullWireOptions = Partial<Parameters<typeof readerTransport>[0]> & {
-  /** Resolves `th_rate`, which is what makes it collapse by rule (SPEC.md §11). */
+  /** Resolves `th_rate`, which is what makes it collapse by rule (SPEC.md §10). */
   readonly resolvedThread?: boolean;
 };
 
@@ -618,7 +618,7 @@ describe("Reader", () => {
    *
    * What counts as read is **displayed** content, so the question is no longer
    * "is this a parent document" but "is this conversation folded". A resolved
-   * thread is collapsed by the one rule (§11) and its collapsed line displays
+   * thread is collapsed by the one rule (§10) and its collapsed line displays
    * nothing, so the parent's reader marks nothing seen — and the same thread
    * opened as a document does.
    */
@@ -677,7 +677,7 @@ describe("Reader", () => {
     expect(screen.getByText("is 6.1% right?")).toBeDefined();
     /*
      * The standalone host is the same card, composer included — and it now
-     * carries the fold too. SPEC.md §11 lists "a `type: thread` document open in
+     * carries the fold too. SPEC.md §10 lists "a `type: thread` document open in
      * a reader in a column or in full screen" among the places a conversation
      * can be collapsed, and the control used to be absent here because there was
      * no chip to fold back into. There is one now, in every placement.
@@ -726,7 +726,7 @@ describe("Reader", () => {
   });
 
   /**
-   * SPEC.md §11, amended by SHARED-041: **the board is never read-only.** There
+   * SPEC.md §10, amended by SHARED-041: **the board is never read-only.** There
    * is no banner to raise, no holder to name and no Force unlock, because there
    * is no lock — a document the agent is writing is the same editable surface as
    * any other, and the reader asks nobody's permission to show it that way.

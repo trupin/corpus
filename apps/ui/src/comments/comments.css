@@ -1,5 +1,5 @@
 /*
- * The Comments tab (SPEC.md §11's comments-list rider, signed 2026-08-04).
+ * The Comments tab (SPEC.md §10's comments-list rider, signed 2026-08-04).
  *
  * `design/index.html` has no comments list to port — the mockup's 💬 popover is
  * what this replaced — so the surface is built out of the treatments the mockup
@@ -8,7 +8,7 @@
  * `.thread-slot`s exactly as the below-body list draws them, and the composer at
  * the foot is `.composer`, unchanged.
  *
- * **Nothing in here resizes because of what it holds** (SPEC.md §11,
+ * **Nothing in here resizes because of what it holds** (SPEC.md §10,
  * SHARED-057). Two places would have: a filter option carrying a count, and a
  * row carrying a quote of unknown length. The count sits in a reserved box
  * (`.cm-count`), and the quote truncates with the whole of it on a `title`.

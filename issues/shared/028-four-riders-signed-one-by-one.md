@@ -23,7 +23,7 @@ fable
 
 ## Spec References
 
-- SPEC.md §6, §11, §9.2, §4
+- SPEC.md §6, §10, §9.2, §4
 
 ## Summary
 
@@ -38,7 +38,7 @@ the heading as a simplification — the one option that makes attribution
 forgeable and retroactively re-reads every existing thread file. §6 documents
 the `anchors` map the same way and for the same reason.
 
-**§11 — the pre-check widened** (UI-091). Three of the four §6 refusals are now
+**§10 — the pre-check widened** (UI-091). Three of the four §6 refusals are now
 caught in the composer, so the sentence scoped on review under-described what
 ships. The clause worth having is "the same rules, asked twice": it stops a
 future change relaxing the server guard as redundant, which would move a

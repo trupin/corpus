@@ -6,7 +6,7 @@ import { stubCorpus } from "./stubCorpus";
  * UI-032 in a real browser: **`↵` presses the control that has focus.**
  *
  * The board binds `↵` to "open the highlighted document" on a *document* keydown
- * listener and calls `preventDefault()` (SPEC.md §11's scheme, `useShortcuts`).
+ * listener and calls `preventDefault()` (SPEC.md §10's scheme, `useShortcuts`).
  * A `<button>` activates on `↵` through its **default action**, which runs after
  * every listener and only if nothing cancelled the event — so for as long as the
  * board claimed the key, no focused button anywhere in board scope could be
@@ -99,7 +99,7 @@ test.describe("what the rule must not take away", () => {
   /**
    * The trap this issue is mostly about: the board's row is itself a control
    * (`role="button"`, `tabindex="0"`), and `↵` on the **highlighted** row is
-   * SPEC.md §11's binding. A rule phrased as "skip when a control has focus"
+   * SPEC.md §10's binding. A rule phrased as "skip when a control has focus"
    * would have cost the scheme its own key.
    */
   test("↵ still opens the highlighted row", async ({ page }) => {

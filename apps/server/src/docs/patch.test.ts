@@ -361,7 +361,7 @@ describe("POST /api/docs/{id}/patch", () => {
     expect(anchors[ANCHOR]?.exact).toBe(QUOTE);
   });
 
-  it("surfaces §14's warnings from the write it delegates to", async () => {
+  it("surfaces §11's warnings from the write it delegates to", async () => {
     anchored("patch-warnings");
 
     const response = await patch("doc_mortgage", {
@@ -371,7 +371,7 @@ describe("POST /api/docs/{id}/patch", () => {
     expect(response.status).toBe(200);
     const payload = PatchDocResponseSchema.parse(await response.json());
     expect(payload.warnings.map((warning) => warning.code)).toContain("unresolved_ref");
-    // A §14 warning never fails a write: the patch landed anyway.
+    // A §11 warning never fails a write: the patch landed anyway.
     expect(ws.read(DOC_PATH)).toContain("[[doc_nosuchdoc]]");
   });
 

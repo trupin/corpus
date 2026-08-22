@@ -24,7 +24,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** Thread view — "An agent turn says which model wrote it"
+- SPEC.md **§10** Thread view — "An agent turn says which model wrote it"
 - SPEC.md **§7** — the deciding stage's weight governs
 
 ## Summary
@@ -48,7 +48,7 @@ the CLI is where the value has to enter.
 - [x] `corpus thread reply` and `corpus thread create` can state the model that
       wrote the turn, and it reaches `turnModels` on disk
 - [x] **Absent stays absent.** Omitting it must post no `model` at all, not an
-      empty string — §11 requires a turn with no record to show nothing rather
+      empty string — §10 requires a turn with no record to show nothing rather
       than a guess, and SERVER-074 refuses a blank so absence has one spelling
 - [x] A **person's** turn cannot carry one. The server already refuses it with a
       `400`; the CLI should not make that reachable by accident, and its help
@@ -75,7 +75,7 @@ the CLI is where the value has to enter.
   one, and SERVER-070 found a second door for forms; assuming this one has fewer
   would be the third time.
 - **Do not have the CLI guess.** It cannot know which model is running it, and a
-  plausible default is exactly what §11's "nothing rather than a guess" forbids.
+  plausible default is exactly what §10's "nothing rather than a guess" forbids.
   The value comes from the caller.
 
 ## Testing Strategy
@@ -148,7 +148,7 @@ renders:
  ('agent', '…21:54Z', None),              ('user',  '…21:55Z', None)]
 ```
 
-The agent turn that stated nothing and the person's turn are `null` — §11's
+The agent turn that stated nothing and the person's turn are `null` — §10's
 "nothing rather than a guess", and the absence has one spelling.
 
 ### Refusals (all exit 2, nothing sent — turn count stayed 4 across all four)
@@ -156,7 +156,7 @@ The agent turn that stated nothing and the person's turn are `null` — §11's
 ```
 $ corpus thread reply th_ucvpzvrs --model claude-opus-4-1 -m "not sent"        # default actor is user
 corpus: only an agent turn names the model that wrote it.
-  A turn authored by `user` names no model (SPEC.md §11). Pass `--from agent` when the agent
+  A turn authored by `user` names no model (SPEC.md §10). Pass `--from agent` when the agent
   wrote this turn, or drop --model. Nothing was sent to the server.
 
 $ corpus thread reply th_ucvpzvrs --from agent --model "" -m "not sent"

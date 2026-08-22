@@ -25,7 +25,7 @@ opus
 ## Spec References
 
 - SPEC.md **§7** — designation, lanes, the lapse fallback
-- SPEC.md **§14** — what a check reports
+- SPEC.md **§11** — what a check reports
 
 ## Summary
 
@@ -37,7 +37,7 @@ The docblock's own defence cuts both ways: dropping just the weight would substi
 
 ## Acceptance Criteria
 
-- [ ] An ill-shaped `resident:` block on a standalone thread is **reported** rather than only absorbed — `corpus check` is the natural surface (SPEC.md §14)
+- [ ] An ill-shaped `resident:` block on a standalone thread is **reported** rather than only absorbed — `corpus check` is the natural surface (SPEC.md §11)
 - [ ] The report names the file and what about the block did not parse
 - [ ] The parse rule itself is unchanged: a block that does not parse still yields no designation
 - [ ] Falsified: write an ill-shaped block, confirm the check reports it, remove the reporting, confirm it goes quiet
@@ -51,7 +51,7 @@ The docblock's own defence cuts both ways: dropping just the weight would substi
 
 ### Key Implementation Details
 
-Read SHARED-052's drafted rider before deciding what a check may report — it is unsigned, and this issue must not assume its outcome. If §14 as it stands cannot carry this finding, say so in the issue rather than inventing a surface.
+Read SHARED-052's drafted rider before deciding what a check may report — it is unsigned, and this issue must not assume its outcome. If §11 as it stands cannot carry this finding, say so in the issue rather than inventing a surface.
 
 ## Testing Strategy
 

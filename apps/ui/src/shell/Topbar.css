@@ -1,5 +1,5 @@
 /* Top bar, ported from `design/index.html`. Agent and queue status deliberately
-   live in the console strip, not here (SPEC.md §11). */
+   live in the console strip, not here (SPEC.md §10). */
 
 .topbar {
   display: flex;
@@ -30,7 +30,7 @@
 }
 
 /* A button, not an input: ⌘K opens the full search module as an overlay
-   (SPEC.md §11, UI-009), so the bar is an affordance for it, never a field. */
+   (SPEC.md §10, UI-009), so the bar is an affordance for it, never a field. */
 .searchbar {
   flex: 1;
   max-width: 620px;

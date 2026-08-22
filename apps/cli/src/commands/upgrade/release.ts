@@ -235,7 +235,7 @@ export function compareVersions(one: string, other: string): number | undefined 
     if (difference !== 0) return difference > 0 ? 1 : -1;
   }
 
-  // Same numbers: a pre-release precedes the release it leads to (semver §11),
+  // Same numbers: a pre-release precedes the release it leads to (semver §10),
   // so `0.4.0-rc.1` is older than `0.4.0` and never an upgrade target for it.
   const leftPre = left[4];
   const rightPre = right[4];

@@ -82,7 +82,7 @@ rather than picking to keep moving.
       `LegacyItemsNotice` reports) derives **nothing** and falls back to the
       stored value — the same rule the DocPanel already applies to its counts
 - [ ] Deleting `plugins/todos/` leaves core booting and todo documents rendering
-      as ordinary markdown with working checkboxes (SPEC.md §15 M6's subtractive
+      as ordinary markdown with working checkboxes (SPEC.md §12 M6's subtractive
       check) — derived status degrades to the stored value, it does not error
 - [ ] The kit-only import rule is not weakened
 
@@ -237,7 +237,7 @@ clean after one `--write` on `items.test.ts`.
    (Stored stays `open` on disk — the frontmatter write-back is SERVER-085's,
    per SHARED-036's adjudication.)
 
-**Subtractive check (SPEC §15 M6)** — `plugins/todos/` moved aside, server
+**Subtractive check (SPEC §12 M6)** — `plugins/todos/` moved aside, server
 restarted: boots clean (only `_fixture` discovered), `GET /api/docs/doc_p016aa`
 → 200, `GET /api/x/todos/lists` → 404. Vite + Playwright against the real
 board: document opens in the core editor — `checkboxes=1 todoPanel=0

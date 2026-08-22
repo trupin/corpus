@@ -17,11 +17,11 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — view width stored in the view doc's frontmatter, agent-stewardable ("@agent make the finance column wider")
+- SPEC.md §10 — view width stored in the view doc's frontmatter, agent-stewardable ("@agent make the finance column wider")
 - SPEC.md §7 — the agent mutates only via the CLI
 
 ## Summary
-UI-019's escalation (sprint-016 TEST-455, Adjudication 23): §11 promises the agent can
+UI-019's escalation (sprint-016 TEST-455, Adjudication 23): §10 promises the agent can
 widen a column, but `corpus doc edit` exposes no way to write an arbitrary `extra`
 frontmatter key — `--extra` appears nowhere in docs/cli.md; `extra` is read-only output.
 Since the agent is CLI-only, the stewardability promise is unreachable. The server side
@@ -74,7 +74,7 @@ board reads `extra.width` with `typeof raw !== "number"` and falls back to the d
 (`apps/ui/src/board/columnWidth.ts`), so storing `"520"` would be a green unit test and a column that
 never widens. `--extra` with no `=`, or with an empty key, is a usage error before any request.
 
-### TEST-528 / TEST-534 · the §11 promise, walked as the agent
+### TEST-528 / TEST-534 · the §10 promise, walked as the agent
 
 Only commands `docs/cli.md` documents; no HTTP call, no file edit:
 

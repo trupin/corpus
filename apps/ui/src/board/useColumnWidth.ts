@@ -16,7 +16,7 @@ import {
 } from "./columnWidth";
 
 /**
- * Dragging a column's edge (SPEC.md §11), on the console's own pattern.
+ * Dragging a column's edge (SPEC.md §10), on the console's own pattern.
  *
  * `useConsoleLayout` is the precedent the spec names — pointer capture on the
  * handle, `pointermove`/`pointerup`/`pointercancel` on the window, a clamp
@@ -93,7 +93,8 @@ export function useColumnWidth({
       setLive(next);
       write.current(
         // Only the one key: `extra` is merged per RFC 7386, so sending the
-        // whole object would be how a plugin's data gets destroyed by a resize.
+        // whole object would be how a resize destroys frontmatter the core does
+        // not define and cannot read (SPEC.md §9's `extra_json` passthrough).
         { id: viewDocId, changes: { extra: { width: next } } },
         {
           onError: (error: Error) => {

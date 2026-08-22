@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: CONTRACT-074, CLI-060
+- Depends on: CONTRACT-077, CLI-062
 - Blocks: —
 
 ## Spec References

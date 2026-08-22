@@ -25,12 +25,12 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — the console's **three tabs**, and the **Notices** paragraph
+- SPEC.md **§10** — the console's **three tabs**, and the **Notices** paragraph
   (rider authorized 2026-08-21). Read it before coding; it settles every question
   this issue used to leave open.
-- SPEC.md **§11** — *"Nothing resizes because of what it holds"* (SHARED-057) and
+- SPEC.md **§10** — *"Nothing resizes because of what it holds"* (SHARED-057) and
   its clause on revealing what does not fit
-- SPEC.md **§14** — *"a warning on the API response, a server log entry, and
+- SPEC.md **§11** — *"a warning on the API response, a server log entry, and
   console visibility"* for a failed workspace hook. No console surface has ever
   delivered the third.
 
@@ -86,7 +86,7 @@ what it rejected. What the implementer needs from it:
 - [x] An **error** notice marks the console until Notices has been opened; a
       confirmation does not mark it
 - [x] The list is bounded, and on reaching its bound says how many it dropped
-      rather than ending quietly (§11's stated-cap rule)
+      rather than ending quietly (§10's stated-cap rule)
 - [x] The tab is reachable and operable by keyboard, consistent with the two
       tabs UI-125 already built (`role="tablist"`, `Console.tsx:129`)
 - [x] A toast a person is pointing at still does not move, and the stack's
@@ -254,7 +254,7 @@ board scope still loses `Enter`, including the toast's own `✕`.
   expires; empty outside a provider. Plus `appendNotice` directly, for the bound
   and the drop count.
 - `Notices.test.tsx` — **18 passed** (new): the empty state, the whole reason
-  with no `title`, the bound and its sentence, the three tabs in §11's order,
+  with no `title`, the bound and its sentence, the three tabs in §10's order,
   the marker's four states, and the tab strip's keys key by key.
 - `noticesModel.test.ts` — **7 passed** (new): the drop sentence agrees with the
   cap it was given, and the clock is eight characters at every hour.
@@ -296,7 +296,7 @@ never a view of it — a toast is gone in six seconds and the notice is not — 
 it sits behind its own context so a component that merely raises toasts does not
 re-render because one was raised.
 
-**The tab lists confirmations too, and §11's sentence says "warning and
+**The tab lists confirmations too, and §10's sentence says "warning and
 refusal".** Deliberate. The rider's own framing is "a toast is a notice
 arriving, and this tab is where it stays", the acceptance criterion asks each row
 to carry *its tone*, and a tone column is meaningless in a list of one tone. A

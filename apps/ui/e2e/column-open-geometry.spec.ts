@@ -25,7 +25,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * ```
  *
  * The body rose 97.7px, its measure grew 211.2px, and its closing paragraph
- * travelled 267.7px — all of it after the reader was on screen. §11's own
+ * travelled 267.7px — all of it after the reader was on screen. §10's own
  * justification for SHARED-057 is that a box which changes size pushes whatever
  * is stacked against it, and this is that, at a scale a person reads through.
  *

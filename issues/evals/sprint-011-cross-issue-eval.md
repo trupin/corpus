@@ -21,7 +21,7 @@ what an installed user gets.
 
 | #   | Criterion                                   | Result | Notes |
 | --- | ------------------------------------------- | ------ | ----- |
-| 159 | §15 M4's gold path, one unbroken act        | PASS   | See the transcript below. Create → type → autosave → select → comment (`○ note only`) → highlight + chip **with no reload** → thread in the Open-threads column → reply lands in the thread file → squashed auto-commits in `git log` |
+| 159 | §12 M4's gold path, one unbroken act        | PASS   | See the transcript below. Create → type → autosave → select → comment (`○ note only`) → highlight + chip **with no reload** → thread in the Open-threads column → reply lands in the thread file → squashed auto-commits in `git log` |
 | 160 | One serializer / autocomplete / intake / open-in-column / escape chain | PASS | Five greps, five results, quoted below |
 | 161 | Body survives a full session byte-clean     | PASS (round 2) | Round 1 FAILed: three documents ended the session carrying HTML character references. **Fixed at `85d929a` and re-verified** — after a full round-2 editing session across four documents, `grep -rn '&#' $WS/data/` is **empty** and every body is clean CommonMark |
 | 162 | Keyboard doesn't fight editor/composer/anchors | PASS | Every writing surface swallowed every letter shortcut (`c e f r j k ?` × 5 surfaces); navigation shortcuts worked outside them; `esc` unwound popover → overlay one layer per press; no shortcut fired twice |
@@ -34,7 +34,7 @@ what an installed user gets.
 | 169 | Whole-repo gate green at the tip            | N/A (orchestrator) | `npm run build` succeeded (exit 0, dependency order). Lint/typecheck/test are the orchestrator's single harvest run — not duplicated here, per the sprint's machine-load rules |
 | 170 | Merged coverage gate holds                  | N/A (orchestrator) | Not run by the evaluator (machine-load rules) |
 | 171 | e2e green at the tip, ports respected       | N/A (orchestrator) | Playwright is single-holder; I held a browser session for the whole evaluation. `8765` confirmed free by `lsof` throughout |
-| 172 | Four Playwright specs cover the §15 checks  | PASS   | `editor.spec.ts`, `thread.spec.ts`, `anchors.spec.ts`, `compose-keyboard.spec.ts` all present in `apps/ui/e2e/` |
+| 172 | Four Playwright specs cover the §12 checks  | PASS   | `editor.spec.ts`, `thread.spec.ts`, `anchors.spec.ts`, `compose-keyboard.spec.ts` all present in `apps/ui/e2e/` |
 | 173 | Prototype comparison done side by side      | PASS   | Every chrome surface I measured came back on-token: editor typography, thread card, composer foot, compose panel, cheat sheet, autocomplete menu, margin connector. The single deviation found is cosmetic and non-binding (UI-007 TEST-116's `max-width`) |
 | 174 | Light and dark both from the token set      | PASS   | Grep for hex/rgb literals in every CSS file this sprint added — `editor.css`, `anchors.css`, `thread.css`, `compose.css`, `keyboard.css`, kit's `autocomplete.css` — returns **0 literals** in all six |
 | 175 | PLAN.md tells the truth at the end          | PENDING (unblocked) | `issues/PLAN.md` still reads `in_progress` for UI-006, UI-007, UI-008 and UI-010. **All four now carry a PASS verdict**, so the evaluator gate is clear and the statuses can flip. Orchestrator bookkeeping, not an implementation defect |

@@ -105,7 +105,7 @@ const calendarDate = (nowMs: number, days = 0): string =>
   new Date(nowMs + days * MS_PER_DAY).toISOString().slice(0, 10);
 
 /**
- * §11's default lifecycle rule — "archived documents are organizational, not
+ * §10's default lifecycle rule — "archived documents are organizational, not
  * deleted, and drop out of the default set" — as one fragment parameterized by
  * the row it judges. Written once because it is applied in the places that must
  * agree: the collection query's own WHERE clause, the `unreadThreads` aggregate
@@ -209,7 +209,7 @@ export function compileFilters(query: FilterQuery, nowMs: number): Compiled {
     conditions.push(types.length === 0 ? "0" : `d.type IN (${types.join(", ")})`);
   }
 
-  // SPEC.md §11: archived documents are organizational, not deleted — they drop
+  // SPEC.md §10: archived documents are organizational, not deleted — they drop
   // out of the default set and come back only when they are asked for. There are
   // two ways to ask and they mean different things (CONTRACT-012): `status`
   // *narrows* to one lifecycle state, so `status=archived` is archived and
@@ -239,7 +239,7 @@ export function compileFilters(query: FilterQuery, nowMs: number): Compiled {
   }
 
   if (query.folder !== undefined) {
-    // §11 folder scoping: a folder column shows the documents filed there *and*
+    // §10 folder scoping: a folder column shows the documents filed there *and*
     // the conversations about them, so a thread inherits its parent's folder.
     const prefix = binder.next("folder", likePrefix(folderPathPrefix(query.folder)));
     conditions.push(
@@ -301,7 +301,7 @@ export function compileFilters(query: FilterQuery, nowMs: number): Compiled {
   }
 
   // Not thread-only: any document may carry `pinned`, though only a view
-  // renders as a column (SPEC.md §11). `pinned=true&type=view&sort=order` is
+  // renders as a column (SPEC.md §10). `pinned=true&type=view&sort=order` is
   // the board's entire column set, in one bounded query. Ranked retrieval does
   // not declare it (a board concern, not a retrieval one), so this branch is
   // simply never taken there.

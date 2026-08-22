@@ -4,7 +4,7 @@ import { useCorpusClient } from "../client/context.js";
 import { HEALTH_KEY } from "./keys.js";
 
 /**
- * `GET /api/health` — the console strip's liveness probe (SPEC.md §11).
+ * `GET /api/health` — the console strip's liveness probe (SPEC.md §10).
  *
  * A probe, not data: its only job is to let the strip say something true about
  * the server, so a failure stays inside the query and the shell renders either

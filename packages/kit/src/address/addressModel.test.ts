@@ -26,10 +26,10 @@ import type { AgentLane } from "@corpus/contract";
  * because the two rules that matter most here are about **wording** and about
  * **what is withheld from the wire**, and neither should need a render:
  *
- *   - SPEC.md §11, rider signed 2026-08-19: a composer addressing a resident's
+ *   - SPEC.md §10, rider signed 2026-08-19: a composer addressing a resident's
  *     lane offers no weight and names the resident's, and a standing choice is
  *     **not sent** — it is not made, rather than silently discarded.
- *   - SPEC.md §11's floor: a send that will not reach the agent has nothing to
+ *   - SPEC.md §10's floor: a send that will not reach the agent has nothing to
  *     weigh, so nothing is offered and nothing is stated.
  */
 

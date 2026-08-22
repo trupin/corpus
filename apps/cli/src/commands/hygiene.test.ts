@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
  *
  * **The server is the sole writer** (CLAUDE.md Architecture Decision 2). A CLI
  * verb that touched a document file, or ran a state-changing git command, would
- * fork the one write path every guarantee in SPEC.md §14 rests on — and the
+ * fork the one write path every guarantee in SPEC.md §11 rests on — and the
  * result on disk looks the same until two writers race. That scan covers the
  * topics the rule is about: `doc`, `thread`, `db`, and `index-maintenance` —
  * the `corpus index` verbs, whose directory is named for the barrel collision it

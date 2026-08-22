@@ -1,6 +1,6 @@
 /**
  * The weight a composer is currently stating, and the per-conversation starting
- * point it comes back to (SPEC.md §11, rider SHARED-022 signed 2026-08-06).
+ * point it comes back to (SPEC.md §10, rider SHARED-022 signed 2026-08-06).
  *
  * ## Three rules, and each has a plausible-looking wrong implementation
  *
@@ -15,14 +15,14 @@
  * because an element needs a value has deleted the feature's premise, and
  * SHARED-022's non-goals say so by name.
  *
- * **The starting point is browser-local and dies with the page.** §11 puts it in
+ * **The starting point is browser-local and dies with the page.** §10 puts it in
  * the same class as reader width and collapse state — "only browser-local state
  * stays local" — and Decision 3 rejects a per-thread value written to the thread
  * document *by name*. So it is a module-level map and **not** `localStorage`:
  * reload clears it, a second browser never sees it, and no thread or document
  * gains a field. (`threadCollapse.ts` persists because a fold is a reading
  * posture that should outlive a reload; a stated weight is about the request you
- * are about to send, and §11 asks for a starting point "in the same
+ * are about to send, and §10 asks for a starting point "in the same
  * conversation", not a setting.)
  *
  * **One value per conversation, shared by every surface showing it.** Two
@@ -35,7 +35,7 @@
  *
  * It is not a setting and it is not sticky beyond its scope: the value is
  * visible on the control the moment a composer opens, and changeable in one
- * gesture. §11's words are "as a visible starting point that can be changed in
+ * gesture. §10's words are "as a visible starting point that can be changed in
  * one gesture, never as a setting that acts on you unseen" — the visibility is
  * what makes remembering it legitimate, so a surface that stores a choice must
  * render it.
@@ -63,7 +63,7 @@ export function weightChoice(scope: string): string | undefined {
  * States a choice for one conversation, or clears it.
  *
  * Written on **selection** rather than on send, because the value is what the
- * control displays and §11 requires two surfaces on one conversation to agree.
+ * control displays and §10 requires two surfaces on one conversation to agree.
  * Sending changes nothing here: the request carried the value, and the same
  * value is the next request's starting point.
  */
@@ -87,15 +87,15 @@ export function subscribeWeightChoices(listener: () => void): () => void {
  *
  * For the jsdom suites' `afterEach`: a choice outlives a component by design, so
  * without this one test's click is the next test's starting state. Nothing in
- * the app calls it — a reload is how a person clears these, and §11 describes no
+ * the app calls it — a reload is how a person clears these, and §10 describes no
  * "forget my weights" action.
  *
  * **Reachable only through `@corpus/kit/testing`** (UI-082's PR #35 review), never through the
- * package root. It was on the plugin surface until a review pointed out what
- * that publishes: an action §11 does not describe, offered to plugin authors as
- * though it were one, and callable from a plugin to wipe every composer's
- * standing choice out from under the person who made them. The test-support
- * subpath is where a helper whose own docblock says "for the suites" belongs.
+ * package root. It was on the runtime surface until a review pointed out what
+ * that publishes: an action §10 does not describe, offered as though it were
+ * one, and callable to wipe every composer's standing choice out from under the
+ * person who made them. The test-support subpath is where a helper whose own
+ * docblock says "for the suites" belongs.
  */
 export function resetWeightChoices(): void {
   if (choices.size === 0) return;
@@ -109,9 +109,9 @@ export function resetWeightChoices(): void {
  * "The same conversation" is the thread, so two columns showing it share one
  * starting point. The comment-on-a-turn box sitting inside one of its turns
  * does **not** share it — that box always sends `requestsAgent: false`, so it
- * sits on §11's floor and offers no weight at all (UI-126); a scope for a
+ * sits on §10's floor and offers no weight at all (UI-126); a scope for a
  * choice that cannot be made would be a value nothing renders, which is the
- * "acts on you unseen" case §11 forbids. Its `child:` scope was removed with
+ * "acts on you unseen" case §10 forbids. Its `child:` scope was removed with
  * its control.
  */
 export function threadWeightScope(threadId: string): string {
@@ -121,7 +121,7 @@ export function threadWeightScope(threadId: string): string {
 /**
  * The scope of a comment on a document selection.
  *
- * A new comment is not yet in a conversation, so the nearest thing §11's rule
+ * A new comment is not yet in a conversation, so the nearest thing §10's rule
  * can mean is the document being commented on: comment twice on the same
  * document and the second composer starts from the first's choice, which is the
  * behaviour the rule exists to produce.
@@ -178,7 +178,7 @@ export interface ComposerWeight {
  * yields no levels the request states nothing, whatever is standing in the map —
  * otherwise editing the guidance to declare nothing would leave a composer
  * silently sending a weight it no longer shows, which is the "acts on you
- * unseen" case §11 forbids. A level that disappears while others remain is a
+ * unseen" case §10 forbids. A level that disappears while others remain is a
  * different matter and is *not* rewritten: the composer's address control keeps showing it
  * so the person can see what will be sent, because the UI silently substituting
  * a surviving level would be the composer lying about the request.

@@ -78,7 +78,7 @@ None.
 
 - **`.c-status` in the strip.** The strip renders `corpus 0.0.0` between the spacer and `HALT`.
   TEST-86 does not list it, and it predates UI-011 — flagging only so the "single home of
-  agent/system status" reading in SPEC.md §11 is a deliberate choice rather than an accretion.
+  agent/system status" reading in SPEC.md §10 is a deliberate choice rather than an accretion.
 - **Duplicate toast nodes** (same observation as UI-005 / UI-009).
 - **`↗ open` resolution.** With no subject, a job opens into the *first* column — in this workspace,
   Attention. Correct per the documented fallback, but a job whose origin lives in a specific folder
@@ -88,7 +88,7 @@ None.
 
 28 of 28 criteria met. The drawer pushes rather than overlays and keeps the shipped flex-grow and
 collapsed-height assertions true; the height survives a drag and a reload under its own key
-(SPEC.md §15 M3); log lines arrive by cursored HTTP refetch announced by keys-only `invalidate`
-frames, with the SSE capture proving no log text ever crosses the wire (SPEC.md §15 M4); HALT is
+(SPEC.md §12 M3); log lines arrive by cursored HTTP refetch announced by keys-only `invalidate`
+frames, with the SSE capture proving no log text ever crosses the wire (SPEC.md §12 M4); HALT is
 server state in both directions including a CLI-initiated halt reflected live; and TEST-107 — the
 one criterion this issue could not finish — now passes end to end. **PASS.**

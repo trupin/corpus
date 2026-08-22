@@ -1,5 +1,5 @@
 // SERVER-074 — which model wrote an agent turn, written, projected, and kept
-// honest (SPEC.md §6, §11; CONTRACT-043).
+// honest (SPEC.md §6, §10; CONTRACT-043).
 //
 // Driven through the real app against a real workspace, because every claim
 // here is about bytes: what lands in the thread file's frontmatter, what a

@@ -18,7 +18,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §6 Anchoring, §11 adaptive thread placement
+- SPEC.md §6 Anchoring, §10 adaptive thread placement
 
 ## Summary
 Caught by the pre-push gate on 2026-08-05, on the v0.3.0 release commit —

@@ -1,4 +1,4 @@
-# [UI-111] The comment popover takes no attachments, and §11 says every composer does
+# [UI-111] The comment popover takes no attachments, and §10 says every composer does
 
 ## Domain
 
@@ -25,7 +25,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** Thread view — *"**Every composer takes attachments.** Wherever
+- SPEC.md **§10** Thread view — *"**Every composer takes attachments.** Wherever
   a comment can be written — the global composer, a thread's reply box, **a
   comment on a document selection**, a comment on a turn or on a selection within
   one, and any composer a plugin contributes — files can be added by picker,
@@ -61,7 +61,7 @@ about what it can carry."*
 - [x] A comment may be **attachment-only**, with no text, as §6 allows
 - [x] The attachments land on the created thread's first turn, which is where a
       comment-on-a-selection's content goes
-- [x] The composer key contract is untouched (§11): `↵` newline, `⌘↵` sends
+- [x] The composer key contract is untouched (§10): `↵` newline, `⌘↵` sends
 - [x] The same audit is run across every surface the rider names, so this issue
       closes the **class** and not one instance: the global composer, the reply
       box, the document-selection popover, a comment on a turn, and a comment on
@@ -181,7 +181,7 @@ under the thread, and git records it — with no text in the comment at all.
 - Popover bounding box **320 × 256** with a chip present: still a popover, not a
   panel (UI-070's criterion for this surface). Screenshot:
   `/tmp/ui111/popover-with-attachments.png`.
-- `↵` inserted a newline and left the popover open; `⌘↵` sent. §11's key
+- `↵` inserted a newline and left the popover open; `⌘↵` sent. §10's key
   contract is untouched. The second comment landed as
   `data/threads/th_453zzcsw.md` — text **and** file:
   `with words this time` + `![x.png](attachments/…/x.png)`.

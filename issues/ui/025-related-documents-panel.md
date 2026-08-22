@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 document view (SHARED-006 Edit 12)
+- SPEC.md §10 document view (SHARED-006 Edit 12)
 
 ## Summary
 Below the body, beside the backlinks panel: the ranked related set from

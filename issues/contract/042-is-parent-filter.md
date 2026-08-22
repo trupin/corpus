@@ -24,7 +24,7 @@ opus
 ## Spec References
 
 - SPEC.md **§9.2** — the collection query endpoint's enumerated filter list
-- SPEC.md **§11** — columns and saved views are filtered lists
+- SPEC.md **§10** — columns and saved views are filtered lists
 
 ## Summary
 

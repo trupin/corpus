@@ -17,8 +17,8 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Thread view ("turns markdown-rendered")
-- SPEC.md §11 composer key contract (SHARED-009 Amendment 1)
+- SPEC.md §10 Thread view ("turns markdown-rendered")
+- SPEC.md §10 composer key contract (SHARED-009 Amendment 1)
 
 ## Summary
 Found by UI-052 (2026-08-03) while verifying the new composer contract in a real
@@ -140,7 +140,7 @@ Typed into the **real reply composer** with real keystrokes:
 `check 6.1%` · `↵` · `then rerun` · `⌘↵`.
 
 - Before submitting, the textarea held `"check 6.1%\nthen rerun"` — `↵` inserted
-  and did not send (SPEC.md §11's contract).
+  and did not send (SPEC.md §10's contract).
 - The appended user turn rendered with `br: 1`, `innerText:
   "check 6.1%\nthen rerun"`, box height **49px** against a 24.3px line height —
   two drawn lines.

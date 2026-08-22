@@ -2,7 +2,7 @@ import type { ToastTone } from "../shell/Toasts";
 
 /**
  * The words the console's **Notices** tab says — every warning and refusal this
- * session raised, after its toast has gone (SPEC.md §11's Notices paragraph,
+ * session raised, after its toast has gone (SPEC.md §10's Notices paragraph,
  * rider authorized 2026-08-21; UI-139).
  *
  * Pure and apart from the component, for `residentsModel`'s reason: the honesty
@@ -44,7 +44,7 @@ export const NO_NOTICES_NOTE =
 export const NOTICES_UNREAD_HINT = "An error notice you have not read — open the console's Notices";
 
 /**
- * What the bound says when it bites. §11 forbids a listing that ends quietly:
+ * What the bound says when it bites. §10 forbids a listing that ends quietly:
  * *"on reaching its bound the oldest go and it says so"*.
  *
  * `cap` is passed rather than imported so that this stays a pure sentence with
@@ -62,7 +62,7 @@ export function droppedNoticesLine(dropped: number, cap: number): string {
  *
  * Built from the date's parts rather than `toLocaleTimeString`, for two
  * reasons. The width is fixed, so a notice arriving at 09:05 and one at 14:32
- * occupy the same box — §11's rider again, at row grain. And it is the same
+ * occupy the same box — §10's rider again, at row grain. And it is the same
  * eight characters in every locale, so the column reserved for it in
  * `console.css` is a measurement rather than a guess.
  *

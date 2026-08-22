@@ -25,7 +25,7 @@ opus
 
 - SPEC.md §7 — the orchestrator-skill paragraph: a stated weight is "honoured,
   not weighed again", and travels with the work
-- SPEC.md §11 "Smart input everywhere" — the composer offers the weight
+- SPEC.md §10 "Smart input everywhere" — the composer offers the weight
 - SPEC.md §7 console bullet — a dispatch names the weight it ran at
 
 ## Summary
@@ -36,7 +36,7 @@ decomposition against what exists. **SHARED-022's chain is missing its middle.**
 The rider names agent-runtime, **contract + server**, and ui. Only the
 agent-runtime and ui halves were filed. So today:
 
-- §11 says the composer offers the weight and it **"rides with the request to
+- §10 says the composer offers the weight and it **"rides with the request to
   whatever does the work"** — but no request schema carries it.
 - §7 says a stated weight is honoured by the dispatch — but nothing transports it
   from the post to the queue event the dispatch reads.
@@ -68,7 +68,7 @@ workspace edited its table.
 ## Acceptance Criteria
 
 - [x] Every composer that can request the agent can carry a chosen level —
-      stated once for the set, the way attachments and snippets are (§11), not
+      stated once for the set, the way attachments and snippets are (§10), not
       per surface. **One field**, `requestedWeightField`
       (`schemas/weight.ts`), spelled `weight` on all five composer request
       bodies: `CreateThreadRequest`, `MultipartCreateThreadRequest`,
@@ -136,7 +136,7 @@ workspace edited its table.
 
 ### Deliberately not done
 
-- **`POST /api/threads/{id}/forms/{ts}/answer` does not carry a weight.** §11's
+- **`POST /api/threads/{id}/forms/{ts}/answer` does not carry a weight.** §10's
   amendment enumerates *composers*; a form answer is a reply to a question the
   agent asked inside work already dispatched, not a composer writing a new
   request, and UI-082's surface table does not list it. Whether answering may
@@ -160,11 +160,11 @@ workspace edited its table.
 already records the **`agent flag`** on both thread-writing routes, which is a
 request-shape fact of exactly this class — an optional instruction the body
 carries that changes what the agent does. A second one of the same class, which
-§11 promises rides "with the request to whatever does the work", is invisible in
+§10 promises rides "with the request to whatever does the work", is invisible in
 §9.2 today, and an evaluator reading the inventory alone would not know which
 routes accept it.
 
-**One bullet, not three clauses**, mirroring §11's own construction: the rule is
+**One bullet, not three clauses**, mirroring §10's own construction: the rule is
 stated once for the set of composers, which is what SHARED-012 says stops a
 surface being forgotten.
 
@@ -176,7 +176,7 @@ in SPEC.md):
 the following:
 
 > - **A request that can reach the agent may state the weight its work should be
->   done at** (§7, §11): `POST /api/threads`, `POST /api/capture` and
+>   done at** (§7, §10): `POST /api/threads`, `POST /api/capture` and
 >   `POST /api/threads/:id/turns` each take an optional level name, in their JSON
 >   and multipart forms alike. The value is a level from the **workspace's own
 >   agent guidance** and is never an enumerated set on the wire — §7 keeps model

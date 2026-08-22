@@ -32,7 +32,7 @@ import { useCompose, type ComposeMode } from "./useCompose";
 import "./compose.css";
 
 /**
- * The global composer (SPEC.md §11, `design/index.html`'s `#compose-overlay`):
+ * The global composer (SPEC.md §10, `design/index.html`'s `#compose-overlay`):
  * one textarea, two submits, and the blank page the agent is reachable from.
  *
  * **It is the thread composer's units in a different chrome.** The `@` / `/`
@@ -60,7 +60,7 @@ export const COMPOSE_PLACEHOLDER =
 export const COMPOSE_HINT = `@ agents · / skills · [[ refs · ${COMPOSER_NEWLINE_HINT}`;
 export const ASK_LABEL = `Ask ${COMPOSER_PRIMARY_KEY}`;
 /**
- * Capture is the *secondary* submit, so it takes `⇧⌘↵` — SPEC.md §11's contract
+ * Capture is the *secondary* submit, so it takes `⇧⌘↵` — SPEC.md §10's contract
  * gives `⌘↵` to the primary action in every composer, and here that is Ask. The
  * chord it used to own moved with the rule, not against it.
  */
@@ -94,7 +94,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
   const intake = useAttachmentIntake();
   const compose = useCompose(onNotify);
   /*
-   * One weight for the whole overlay, shared by both submits (SPEC.md §11's
+   * One weight for the whole overlay, shared by both submits (SPEC.md §10's
    * rider). The global composer's Ask is not a conversation, so "the same
    * conversation" has no referent here; `GLOBAL_COMPOSE_WEIGHT_SCOPE` documents
    * the reading taken and the one rejected. Both submits send `requestsAgent:
@@ -198,7 +198,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
   );
 
   /**
-   * The contract, and only the contract (SPEC.md §11): `↵` is a newline, `⌘↵`
+   * The contract, and only the contract (SPEC.md §10): `↵` is a newline, `⌘↵`
    * asks, `⇧⌘↵` captures, `esc` closes, an IME commit does none of it, and an
    * open completion menu is asked first. Every one of those sentences used to be
    * written out here, and in four other composers, each slightly differently.

@@ -10,7 +10,7 @@ import {
 const nameOfLength = (length: number): string => "a".repeat(length);
 
 describe("SkillName", () => {
-  it.each(["orchestrate", "comment", "weekly-review", "todos2"])("accepts %s", (name) => {
+  it.each(["orchestrate", "comment", "weekly-review", "triage2"])("accepts %s", (name) => {
     expect(SkillNameSchema.parse(name)).toBe(name);
   });
 

@@ -11,7 +11,7 @@ import {
 } from "./CollapsedThread.js";
 
 /**
- * What a collapsed conversation still says (SPEC.md §11).
+ * What a collapsed conversation still says (SPEC.md §10).
  *
  * The line is the whole of "collapsed is never hidden", so each clause of it is
  * pinned separately: a fold that stopped naming its size would be a truncation,

@@ -4,7 +4,16 @@
 plugins
 
 ## Status
-todo
+closed — obsoleted by SHARED-067 (Phase 42, 2026-08-22): the plugin surface is deleted
+
+This was filed in Phase 41's navigation work, which landed on `main` while
+Phase 42 was removing the plugin system on a branch. The two phases were
+designed in parallel and neither knew of the other.
+
+There is no plugin column to place on a board, no `onOpen` to route, and no
+manifest to read one from. What survives of its intent — **a board's column
+opens a path rather than swallowing the click** — is UI-149's, and does not
+need a plugin to be true.
 
 ## Priority
 P2
@@ -13,7 +22,7 @@ P2
 opus
 
 ## Dependencies
-- Depends on: UI-149, AGENT-042 (docs/PLUGINS.md text)
+- Depends on: UI-149, AGENT-044 (docs/PLUGINS.md text)
 - Blocks: —
 
 ## Spec References

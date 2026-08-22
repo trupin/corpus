@@ -190,7 +190,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | SERVER-038 | Recovery path for already-committed invisible documents (SERVER-037 TEST-564) | done | P2 | SERVER-037 |
 | SERVER-039 | Archived-status guard at the write boundary (audit FIX 5, sole-writer) | done | P1 | SERVER-005 |
 | UI-020 | Unarchive affordance in the reader menu (audit SPEC 34) | done | P1 | SERVER-039, UI-012 |
-| CLI-018 | Agent-writable view keys: §11 "pin me a view" reachable (audit SPEC 37+38) | done | P1 | CLI-016 |
+| CLI-018 | Agent-writable view keys: §10 "pin me a view" reachable (audit SPEC 37+38) | done | P1 | CLI-016 |
 | UI-021 | Renderer: both-answer-and-form turn divergence (audit FIX 10 follow-up) | done | P2 | UI-008 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
@@ -208,8 +208,8 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-022 | Focus mode: redundant back-to-list button next to ✕ Close (user report) | done | P1 | — |
 | UI-023 | Reader-open column widening must cap at the content measure (user report) | done | P1 | — |
 | UI-024 | Selection context menu (comment on selection) + item menus win over stray selections (user reports) | done | P1 | UI-018, UI-008 |
-| UI-027 | Anchor highlights never render in the document body (eval finding, §11) | done | P1 | UI-008 |
-| UI-028 | ↵ does not activate context-menu items (eval finding, §11) | done | P2 | UI-018 |
+| UI-027 | Anchor highlights never render in the document body (eval finding, §10) | done | P1 | UI-008 |
+| UI-028 | ↵ does not activate context-menu items (eval finding, §10) | done | P2 | UI-018 |
 | CLI-022 | No CLI surface for anchored thread creation (CLI-018 finding, §7) | done | P2 | CLI-003 |
 | UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | done | P1 | — |
 | UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | done | P2 | UI-005 |
@@ -230,13 +230,13 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-037 | Reveal-target seam: discriminated open payload through kit + reader (sprint-023 OC5) | done | P2 | — |
 | UI-038 | Column header sort control wraps in narrow columns; degrade label to "last ↓" (dogfood) | done | P2 | — |
 | UI-039 | Column query editor: autocomplete + syntax help (dogfood) | done | P2 | — |
-| SERVER-051 | Embed worker emits SSE invalidations for index status (§11 pill rider) | done | P1 | — |
-| UI-045 | Kit surface for plugin menus, selectors, mutations (PLUGINS-009 debt; selector-drift hazard) | todo | P1 | PLUGINS-009 |
+| SERVER-051 | Embed worker emits SSE invalidations for index status (§10 pill rider) | done | P1 | — |
+| UI-045 | Kit surface for plugin menus, selectors, mutations (PLUGINS-009 debt; selector-drift hazard) | closed | P1 | PLUGINS-009 |
 | UI-046 | Dev-only: StrictMode drops thread reveals on cached docs (PLUGINS-009 finding) | todo | P2 | — |
-| UI-040 | Console strip: semantic-index pill with live progress (§11 rider, signed) | done | P1 | SERVER-051 |
-| UI-041 | Copy button on fenced blocks in rendered turns (§11 canvas rider, signed) | done | P1 | — |
+| UI-040 | Console strip: semantic-index pill with live progress (§10 rider, signed) | done | P1 | SERVER-051 |
+| UI-041 | Copy button on fenced blocks in rendered turns (§10 canvas rider, signed) | done | P1 | — |
 | AGENT-010 | Skills: reusable deliverables go in labeled fenced blocks | done | P2 | — |
-| UI-042 | Clipboard fidelity: rich HTML copy out, rich paste in as markdown (§11 rider, signed) | done | P1 | — |
+| UI-042 | Clipboard fidelity: rich HTML copy out, rich paste in as markdown (§10 rider, signed) | done | P1 | — |
 | INFRA-017 | Coverage merge OOMs: every browser dump parsed at once (PR #19 CI blocker) | done | P0 | — |
 | INFRA-018 | Halve the e2e coverage payload at the collector (INFRA-017 follow-up) | todo | P2 | INFRA-017 |
 | UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | done | P2 | — |
@@ -244,7 +244,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-019 | A slow pre-push gate outlives the SSH session git opened (141, blocked v0.2.0 + phase 12) | done | P0 | — |
 | SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | todo | P2 | — |
 
-Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
+Note: the SPEC §10 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
 
 ## Phase 10 — Self-upgrade (signed rider SHARED-007, 2026-08-02)
 
@@ -382,8 +382,8 @@ belongs to the same fix wave.
 | UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | done | P1 | UI-062 |
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
 | UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
-| UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | todo | P2 | UI-073 |
-| INFRA-020 | Two tests fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
+| UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | closed | P2 | UI-073 |
+| INFRA-020 | Tests that fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
 | SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | closed | P1 | — |
 | SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | done | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
@@ -429,14 +429,14 @@ belongs to the same fix wave.
 | SHARED-022 | Choosing the model for a request — weight levels, honoured as a directive (SIGNED, applied) | done | P2 | — |
 | UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | done | P2 | SHARED-022, CONTRACT-039, SERVER-069, AGENT-015 |
 | AGENT-015 | Skill states the weight levels the picker reads, and honours a stated one | done | P2 | SHARED-022 |
-| PLUGINS-014 | The todos composer offers no weight control (PR #35 review) | todo | P2 | UI-082 |
+| PLUGINS-014 | The todos composer offers no weight control (PR #35 review) | closed | P2 | UI-082 |
 | CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
 | UI-079 | `reveal.spec` waits on a decoration with a finite lifetime — **misfiled**, the spec was right; replaced by UI-140 | closed | P2 | — |
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
-| SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
+| SERVER-065 | Three projection readers swallow a failed `readdir` silently | todo | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | done | P1 | INFRA-008 |
 | INFRA-023 | New nanoid advisory blocks every commit; scoped override clears it | done | P1 | INFRA-010 |
@@ -467,7 +467,7 @@ belongs to the same fix wave.
 | UI-089 | The changelog's older entries clip, and the clip reports its size | done | P2 | SHARED-025, AGENT-020 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
-| SERVER-067 | Non-blocking errors reach the log but not the response: needs a §14 warning-channel decision | todo | P2 | SERVER-066 |
+| SERVER-067 | Non-blocking errors reach the log but not the response: needs a §11 warning-channel decision | todo | P2 | SERVER-066 |
 | UI-081 | Console's job list / log split is not resizable — needs a one-line SPEC amendment signed | blocked | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
@@ -491,7 +491,7 @@ the two are read in that order.
 
 The wave's throughline is that three surfaces disagree with the contract they
 sit on. `DOC_STATUSES` is type-independent, yet the row menu gates Resolve on
-threads; §11 abolishes edit mode, yet frontmatter kept one; §12 makes a todo's
+threads; §10 abolishes edit mode, yet frontmatter kept one; §12 makes a todo's
 items the record, yet nothing reads them into its status. SHARED-031 settles the
 vocabulary all three were guessing at.
 
@@ -547,7 +547,7 @@ independent of each other and run in parallel behind it. **SERVER-091 carries on
 adjudication the implementer must not re-litigate**: keep the eager-commit-then-
 amend mechanism, do not build a deferred commit buffer — the rider's "holds work
 outside git" is a stated worst-case bound, not an instruction, and a buffer
-contradicts §5 and §14 harder than the amend model does.
+contradicts §5 and §11 harder than the amend model does.
 
 SERVER-090 is not part of the rider and is deliberately filed apart from it: an
 external editor's change is committed under the *next* mutation's author, or not
@@ -644,7 +644,7 @@ type it are currently exclusive.
 
 Three more from the same sitting, all the same shape — **the surface you write
 in gets in the way of the thing you are writing about**. `UI-111` is not a
-feature request but a **spec-compliance defect**: §11's rider of 2026-08-05 says
+feature request but a **spec-compliance defect**: §10's rider of 2026-08-05 says
 "every composer takes attachments" and names "a comment on a document selection"
 in its own list, and that popover has no attachment code at all. `UI-112` is the
 comment modal sitting on the evidence, and a highlight that arrives only after
@@ -654,7 +654,7 @@ the anchor the server resolved", i.e. painted at the moment it stops mattering.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | UI-110 | The composer you are typing in stays visible while you scroll what you are commenting on | done | P0 | — |
-| UI-111 | The comment popover takes no attachments, and §11 says every composer does | done | P0 | — |
+| UI-111 | The comment popover takes no attachments, and §10 says every composer does | done | P0 | — |
 | UI-112 | The comment popover can be moved, and what it is about stays lit while you write | done | P0 | — |
 | UI-113 | A column shrinks when you open something in it, and cannot be resized while it is open | done | P0 | — |
 | SERVER-113 | `GET /api/docs/{id}/diff`'s default base is a commit that touched a different document (SERVER-097 finding) | done | P1 | — |
@@ -777,11 +777,11 @@ its fix is a real design question — the obvious emit makes every progress tick
 re-read every board column.
 
 **Second scope addition, 2026-08-16 — `PLUGINS-012`.** `UI-111` audited every
-surface §11's attachment rider names and fixed all but one: the Todos plugin's
+surface §10's attachment rider names and fixed all but one: the Todos plugin's
 *Comment on item* composer, which it could not reach, because a plugin may import
 only `@corpus/kit` and the kit published no intake hook at the time. `UI-070` has
 now published it — that was its entire purpose. So this release would otherwise
-ship a §11 claim ("every composer takes attachments") with one composer in the
+ship a §10 claim ("every composer takes attachments") with one composer in the
 repo still refusing files, which is exactly the half-finished feature the release
 rule forbids. Pulled in.
 
@@ -942,8 +942,8 @@ the shipped release, which is why AGENT-034 is in scope rather than deferred.
 | UI-123 | The autocomplete offers what the server now refuses (SERVER-125 consequence) | done | P0 | SERVER-125 |
 | CONTRACT-064 | The designate schema still states the pre-SERVER-125 resolution rule (PR #50 review sweep) | done | P1 | SERVER-125 |
 | SERVER-127 | A bare .claude/skills/SKILL.md is addressable and loaded by nothing (UI-123 derived fixture) | done | P1 | SERVER-125 |
-| SHARED-051 | A persona is addressable by where it lives, and §11 said otherwise (SIGNED 2026-08-19) | done | P0 | SERVER-125 |
-| SHARED-052 | A check can report what a save accepts, and §14 says it cannot (SIGNED 2026-08-20) | done | P1 | SERVER-124 |
+| SHARED-051 | A persona is addressable by where it lives, and §10 said otherwise (SIGNED 2026-08-19) | done | P0 | SERVER-125 |
+| SHARED-052 | A check can report what a save accepts, and §11 says it cannot (SIGNED 2026-08-20) | done | P1 | SERVER-124 |
 | SHARED-053 | §7 says a renamed or archived profile goes missing; archiving does not (SIGNED 2026-08-20) | done | P1 | — |
 
 **v0.12.0** is the `done` rows above: *everything the profile release left
@@ -1059,7 +1059,7 @@ not a behaviour change.
 | CLI-054 | `corpus thread scope` lists what a resident owns | done | P1 | CONTRACT-068, SERVER-130 |
 | AGENT-039 | A listener is launched at the designation's weight | done | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
 | SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | done | P0 | — |
-| SHARED-056 | §7 enumerates the core events, §9.2 the routes, §11 the console (SIGNED 2026-08-20) | done | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
+| SHARED-056 | §7 enumerates the core events, §9.2 the routes, §10 the console (SIGNED 2026-08-20) | done | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
 | SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | todo | P2 | SERVER-129 |
 
 ## Phase 37 — Nothing moves under your cursor (2026-08-20, user report)
@@ -1145,11 +1145,11 @@ launch. The decisions each issue was filed on are recorded in the issue under
 ## Phase 38 — Comments have a place (2026-08-21, v0.16.0 scope)
 
 **SHARED-010 was signed 2026-08-04 and three of its surfaces were never built.**
-§11 describes a `Document / Comments` switch in the reader header, a list holding
+§10 describes a `Document / Comments` switch in the reader header, a list holding
 every thread on the document filtered on two independent axes, a composer for a
 remark that needs no selection, a reply box on each thread in place, and a body
 whose width the person chooses. None of it exists. The spec has been describing
-machinery nobody can run for seventeen days, and every issue filed against §11
+machinery nobody can run for seventeen days, and every issue filed against §10
 since has been filed against a description rather than a surface.
 
 This phase finishes that rider, plus **UI-139** — folded in on the user's
@@ -1228,16 +1228,51 @@ left in a report.
 | SHARED-061 | A surface is as large as its place allows (SIGNED 2026-08-21, applied) | done | P0 | — |
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
-| UI-144 | A deleted document's reveal names the wrong absence, and a ref is written in render (PR #54 re-review NITs) | todo | P3 | — |
+| UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | todo | P3 | — |
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | todo | P1 | SHARED-061 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
 | UI-146 | The document body rises 75px after it is on screen, and a right-click jumps it 188px (UI-093 consequence) | done | P0 | — |
 | SHARED-062 | A todo list's `due` is its items, and a hand-written date does not survive (SIGNED 2026-08-22, applied) | done | P0 | — |
-| SHARED-063 | §11's reader menu offers Resolve on every document that has one (SIGNED 2026-08-22, applied) | done | P1 | — |
-| UI-147 | The mockup still draws the eased column open that UI-146 removed | todo | P2 | UI-146 |
-| SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | todo | P2 | — |
+| SHARED-063 | §10's reader menu offers Resolve on every document that has one (SIGNED 2026-08-22, applied) | done | P1 | — |
+| UI-147 | The mockup still draws the eased column open that UI-146 removed | done | P2 | UI-146 |
+| SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | closed | P2 | — |
+
+## Phase 42 — The core is the whole of it (2026-08-22, v0.18.0 scope)
+
+**The plugin surface and the todos plugin are removed entirely**, on the user's
+instruction: *"I want it fully gone, no trace of it in the codebase or the
+specs."* Asked what should become of `todo` — since v0.17.0's derived `status`
+and `due` are plugin-declared — they chose **delete it entirely: `todo` is not a
+type**, with the loss named and accepted.
+
+**SHARED-067 is signed and applied.** It replaces a premise rather than removing
+a feature: §1 said *"every domain feature is a plugin"*, and now says the core is
+the whole of the product and extension happens in the corpus. §10, §12 and §13
+are deleted; §10 → §10, §11 → §10, §12 → §12; 1,574 citations renumbered in one
+pass across 596 files.
+
+**M6 survives in substance rather than being struck.** It was *"plugin system +
+todos plugin"* with a subtractive check. It is now *"an unknown type still
+opens"* — a document whose `type:` the core has never heard of opens, renders
+with working checkboxes, searches, and passes `doc check`. That check is what
+protects the user's existing `type: todo` documents, so it outlives the thing it
+was written for.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-067 | The plugin system is removed, and the core is the whole of it (SIGNED 2026-08-22, applied) | done | P0 | — |
+| AGENT-044 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-067 |
+| UI-154 | Relocate the reader's open payloads out of the plugin surface, then delete it | done | P0 | SHARED-067 |
+| SERVER-139 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-067 |
+| UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
+| CLI-062 | Delete the CLI's plugin discovery, command topics and template install | todo | P0 | SHARED-067 |
+| CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
+| INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
+| SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
+| SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
+| AGENT-043 | Does a workspace skill covering a domain oblige the comment loop to apply it? | todo | P2 | SHARED-067 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
@@ -1289,7 +1324,7 @@ that nothing tells you your skills are stale until the agent tries the verb.
 ## Phase 40 — Your documents stop lying about their status (2026-08-21, v0.17.0 scope)
 
 **Two signed riders have been half-built for thirteen days.** SHARED-030
-(frontmatter hides behind an edit mode §11 abolished) and SHARED-036 (a todo
+(frontmatter hides behind an edit mode §10 abolished) and SHARED-036 (a todo
 list says `open` after its last item is checked) were both signed 2026-08-08.
 Their vocabulary half landed — SHARED-031 settled `status` as one vocabulary,
 PLUGINS-015 fixed the column's checkbox — and the mechanism half did not.
@@ -1384,7 +1419,7 @@ what is unreflected.
 **Order of work.** SHARED-064 first, rider by rider. Then CONTRACT-074,
 CONTRACT-075 and CONTRACT-076 together. Then SERVER-138, SERVER-136, SERVER-137
 and UI-148 (three at a time on this machine). Then CLI-060, UI-149 and UI-152.
-Then AGENT-042, CLI-061, UI-150, UI-151, UI-153 and PLUGINS-019. Critical path:
+Then AGENT-042, CLI-061, UI-150, UI-151 and UI-153. Critical path:
 SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 
 | ID | Title | Status | Priority | Model | Dependencies |
@@ -1405,4 +1440,4 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | todo | P0 | opus | UI-149, CONTRACT-075 |
 | UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | todo | P1 | opus | UI-149 |
 | UI-153 | The Reflect control, and what changed since the agent last looked | todo | P1 | opus | UI-148, SERVER-137 |
-| PLUGINS-019 | A plugin column lives on a board, and its `onOpen` opens a path | todo | P2 | opus | UI-149, AGENT-042 |
+| PLUGINS-019 | A plugin column lives on a board — **closed**, the plugin surface is deleted (SHARED-067) | closed | P2 | opus | UI-149, AGENT-042 |

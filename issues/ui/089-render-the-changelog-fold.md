@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — the **Document view** bullet: "A document's **changelog** (§5)
+- SPEC.md §10 — the **Document view** bullet: "A document's **changelog** (§5)
   renders as the ordinary body content it is. Past a threshold of entries it
   **clips**, exactly as a long fenced block does and for the same reason — the
   newest entries stay visible, the rest sit behind a control that expands them
@@ -35,7 +35,7 @@ opus
   _(Rider signed 2026-08-07; re-based on clipping the same day, on review.)_
 - SPEC.md §5 — the changelog is ordinary body content, appended and never
   rewritten; "past a threshold the older entries are **clipped** rather than
-  removed (§11)"
+  removed (§10)"
 
 ## Summary
 
@@ -43,12 +43,12 @@ AGENT-020 gives documents a changelog (user decision, 2026-08-07). This is the
 reading half.
 
 **This issue was filed against the rider's first draft and its language was
-stale.** That draft put the changelog under §11's *collapse* behaviour. On
+stale.** That draft put the changelog under §10's *collapse* behaviour. On
 review the rider was **re-based on clipping** the same day, precisely so that
-§11's set of default-collapse rules stays closed at exactly one member (a
+§10's set of default-collapse rules stays closed at exactly one member (a
 `resolved` thread) — a changelog is body content, not a conversation. The signed
 text is the clipping behaviour, and this file has been corrected to match it:
-"fold" below now reads "clip" throughout, and the §11 quotation above is the
+"fold" below now reads "clip" throughout, and the §10 quotation above is the
 signed sentence rather than the draft's.
 
 **Check before building anything**: the changelog is ordinary markdown in the
@@ -59,7 +59,7 @@ the clip belongs.
 ## Acceptance Criteria
 
 - [x] Older changelog entries render **clipped**, and the control **says how
-      many are hidden** — and its whole size, the way §11 has every fold report
+      many are hidden** — and its whole size, the way §10 has every fold report
       itself
 - [x] It expands **in place**, without navigating away
 - [x] Recent entries are visible without expanding anything
@@ -68,7 +68,7 @@ the clip belongs.
       editable. A clip that made its contents unselectable would break
       commenting on an older entry — see the verification log for exactly what a
       clip can and cannot deliver here, and how the gap is closed
-- [x] Keyboard-reachable like every other affordance (§11 adds no
+- [x] Keyboard-reachable like every other affordance (§10 adds no
       exclusive-pointer capability)
 - [x] An anchor into a **clipped** entry still resolves, and revealing that
       thread expands the clip rather than silently failing to scroll to it —
@@ -91,7 +91,7 @@ the clip belongs.
 
 ### Notes
 
-- The clip is §11's **clipping** behaviour (`CodeFence`), not its collapse
+- The clip is §10's **clipping** behaviour (`CodeFence`), not its collapse
   behaviour. The set of default-collapse rules is closed and stays closed.
 - The threshold could not be the fence's constant, and the reason is a unit
   mismatch rather than a preference — see the verification log.
@@ -158,7 +158,7 @@ instruction was to reuse the fence's threshold rather than invent a second one;
 that turned out to be impossible, and the reason is a unit mismatch. The fence's
 threshold is a **length** — `--fence-collapsed-height: 420px` in `markdown.css`,
 measured against the laid-out box, because how much of a fence fits depends on
-the width the reader gave it. §11 fixes the changelog's threshold in **entries**
+the width the reader gave it. §10 fixes the changelog's threshold in **entries**
 ("past a threshold **of entries**"), and §5 and the skill both speak of how many
 entries sit behind the control. There is no conversion: a height cannot say how
 many entries are hidden, and a count cannot be a `max-height`. So there is one
@@ -167,14 +167,14 @@ threshold", stated once), and the **behaviour** is the fence's — deliberately
 down to the button's wording.
 
 **What the control says.** `Show all 12 entries · 7 hidden`. Both numbers,
-because §11 asks for both and they answer different questions: the whole size is
+because §10 asks for both and they answer different questions: the whole size is
 what every fold in this app reports ("its whole size, the way a clipped block
 names its whole length rather than a remainder"), and "says how many are hidden"
 is what the changelog rider asks of this control by name.
 
 ### The one place the spec asks for more than a clip can give
 
-§11 says "clipped entries stay selectable, commentable and searchable like any
+§10 says "clipped entries stay selectable, commentable and searchable like any
 other body text". **Searchable** is free (search reads the markdown on disk, and
 nothing here writes) and **commentable/anchorable** is free (anchors are matched
 against the document, not the laid-out box — proved below). **Selectable** is
@@ -184,7 +184,7 @@ where a clip has a hard limit, and it was measured rather than assumed:
 > `"·\n"` from `Selection.toString()` — the list markers and nothing else.
 
 Text a browser is not painting is text the selection does not return. That is
-true of **every** clip, `CodeFence`'s hidden lines included, and §11 asks for
+true of **every** clip, `CodeFence`'s hidden lines included, and §10 asks for
 this one "exactly as a long fenced block does" — so the literal reading is not
 achievable by any clip, in any CSS. The guarantee is therefore delivered the way
 a clip can deliver it, and one step further than the fence goes: **any selection
@@ -195,7 +195,7 @@ typed. Nothing is ever edited inside a box nobody can see. This is flagged for
 the record rather than waived quietly: if the user wants the literal reading, it
 needs a different presentation than a clip and therefore a spec change.
 
-**Resolved 2026-08-08, by user sign-off.** §11 was amended rather than the
+**Resolved 2026-08-08, by user sign-off.** §10 was amended rather than the
 presentation changed: the sentence no longer promises clipped entries stay
 *selectable*, which no clip in any CSS can deliver, and states instead what a
 clip can keep — commentable, searchable, anchors resolving — plus the guarantee
@@ -219,7 +219,7 @@ and a thread anchored inside **entry 2** — one of the seven the clip hides.
   synchronously, so the `scrollIntoView` on the next line finds the entry laid
   out. Asserted: zero clipped entries, the highlight's box has height, and
   `toBeInViewport()` passes. Before this the jump "succeeded" and showed the
-  reader nothing — exactly the quiet failure §11 forbids.
+  reader nothing — exactly the quiet failure §10 forbids.
 - And it stays open after the 1.2 s flash goes out: the reader was brought
   somewhere, not shown it for a second.
 

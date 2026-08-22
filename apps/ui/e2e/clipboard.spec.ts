@@ -7,7 +7,7 @@ import { expect, test } from "./coverage";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 
 /**
- * UI-042's clipboard rider (SPEC.md §11), in a real browser with a real system
+ * UI-042's clipboard rider (SPEC.md §10), in a real browser with a real system
  * clipboard.
  *
  * This one is not a stylesheet suite. Copying is a browser act with an
@@ -274,7 +274,7 @@ async function readClipboard(page: Page): Promise<Flavors> {
  * A real DOM selection over an element's contents.
  *
  * `⌘A` is not usable on a rendered (non-editable) surface: it selects the whole
- * page, whose common ancestor is not a document body, and the §11 selection
+ * page, whose common ancestor is not a document body, and the §10 selection
  * menu correctly declines. This is the range a drag would leave.
  */
 async function selectContents(page: Page, selector: string): Promise<void> {
@@ -308,7 +308,7 @@ async function parkSentinel(page: Page): Promise<void> {
   }, SENTINEL);
 }
 
-/** Runs the §11 right-click menu's Copy over a whole editable body. */
+/** Runs the §10 right-click menu's Copy over a whole editable body. */
 async function copyViaContextMenu(page: Page, within: string): Promise<Flavors> {
   // On prose, never on the task list's checkbox, for either click: clicking a
   // form control inside the body toggles it and moves the selection, and
@@ -382,7 +382,7 @@ test.describe("copying through the right-click menu", () => {
     await turn.click({ button: "right" });
     const menu = page.getByRole("menu", { name: "Actions for the selection" });
     await menu.waitFor();
-    // No editor here: §11's "Copy always" is the whole menu.
+    // No editor here: §10's "Copy always" is the whole menu.
     await expect(menu.getByRole("menuitem")).toHaveCount(1);
     await menu.locator('[data-act="copy"]').click();
     await expect(menu).toHaveCount(0);

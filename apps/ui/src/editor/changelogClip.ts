@@ -6,11 +6,11 @@ import { NODE } from "./markdown/schema.js";
 
 /**
  * A document's **changelog**, clipped past a threshold of entries (UI-089,
- * SPEC.md §5 and §11, rider signed 2026-08-07 and re-based on clipping the same
+ * SPEC.md §5 and §10, rider signed 2026-08-07 and re-based on clipping the same
  * day).
  *
  * §5 gives a document a section at the end of its body where the agent records
- * what changed and what it made of it, appending and never rewriting. §11 says
+ * what changed and what it made of it, appending and never rewriting. §10 says
  * how it is read: "past a threshold of entries it **clips**, exactly as a long
  * fenced block does and for the same reason — the newest entries stay visible,
  * the rest sit behind a control that expands them and **says how many are
@@ -19,7 +19,7 @@ import { NODE } from "./markdown/schema.js";
  * ## This is clipping, not collapse
  *
  * The distinction is the whole reason the rider was re-based, and it is
- * load-bearing: §11's set of default-**collapse** rules is closed and holds
+ * load-bearing: §10's set of default-**collapse** rules is closed and holds
  * exactly one member (a `resolved` thread), and adding to it takes a change to
  * SPEC.md. A changelog is body content rather than a conversation, so it clips —
  * the same behaviour `CodeFence` gives a tall fence, in the same words ("Show
@@ -36,7 +36,7 @@ import { NODE } from "./markdown/schema.js";
  *
  * ## Why the entries stay in the DOM
  *
- * §11 requires that "clipped entries stay selectable, commentable and searchable
+ * §10 requires that "clipped entries stay selectable, commentable and searchable
  * like any other body text", and §5 that commenting on an old entry is an
  * ordinary anchored thread. So a clipped entry is **not** removed and **not**
  * `display: none`: it keeps its place in the ProseMirror document and in the
@@ -53,7 +53,7 @@ import { NODE } from "./markdown/schema.js";
  *   that reaches into the clipped range opens the clip (see
  *   {@link clipStateApply}), so nothing is ever typed into a box nobody can see.
  * - **Revealing a conversation anchored inside the clip expands it** rather than
- *   scrolling to a zero-height box — the case §11 calls out by name. That is
+ *   scrolling to a zero-height box — the case §10 calls out by name. That is
  *   {@link expandClipAround}, which `useAnchorLayer` calls before it scrolls.
  *
  * ## The threshold is a count, and cannot be the fence's number
@@ -62,7 +62,7 @@ import { NODE } from "./markdown/schema.js";
  * than a preference. The fence's threshold is a **length** —
  * `--fence-collapsed-height` in `markdown.css`, a CSS pixel height measured
  * against the laid-out box, because how much of a fence fits depends on the
- * width the reader gave it. §11 fixes the changelog's threshold in **entries**
+ * width the reader gave it. §10 fixes the changelog's threshold in **entries**
  * ("past a threshold of entries"), and §5 and the workspace skill both speak of
  * how many entries sit behind the control. There is no conversion between the
  * two: a height cannot say how many entries are hidden, and a count cannot be a
@@ -203,7 +203,7 @@ function attrLevel(node: PmModelNode): number {
 /**
  * What the control says.
  *
- * Both numbers, because §11 asks for both and they answer different questions:
+ * Both numbers, because §10 asks for both and they answer different questions:
  * the whole size is what every fold in this app reports ("its whole size, the
  * way a clipped block names its whole length rather than a remainder"), and
  * "says how many are hidden" is what this rider asks of this control by name. A
@@ -318,7 +318,7 @@ export function toggleClip(view: EditorView, expanded: boolean): void {
 /**
  * Open the clip that contains `node`, if one does. Returns whether it did.
  *
- * The half of §11's anchor clause that is not automatic: "an anchor into a
+ * The half of §10's anchor clause that is not automatic: "an anchor into a
  * clipped entry still resolves — revealing that conversation expands the clip
  * rather than quietly failing to reach it." Resolving is free (anchors read the
  * document, not the box); *reaching* it is this, and the caller is whoever is

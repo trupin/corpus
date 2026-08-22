@@ -50,14 +50,14 @@ import {
 } from "@corpus/contract/client";
 
 /**
- * The kit's data path, and the only one plugins get (SPEC.md §10).
+ * The kit's data path, and the only one the board gets (SPEC.md §10).
  *
  * It wraps `@corpus/contract`'s generated client rather than re-exporting it.
- * The generated `CorpusApi` is an open `client.GET("/any/path")` surface: handing
- * it to a plugin would make "the kit is the only import surface" unenforceable,
- * because every route would be reachable through the kit's own export. What
- * ships instead is one method per operation the kit actually supports, typed
- * from the contract's schemas, with a uniform thrown error.
+ * The generated `CorpusApi` is an open `client.GET("/any/path")` surface, and a
+ * surface that reaches it caches under no query key, so nothing ever tells it
+ * its data went stale. What ships instead is one method per operation the kit
+ * actually supports, typed from the contract's schemas, with a uniform thrown
+ * error.
  */
 
 export interface CorpusClientConfig {
@@ -82,15 +82,6 @@ export interface RequestOptions {
   readonly signal?: AbortSignal;
 }
 
-/** One plugin-route call (SPEC.md §10): JSON in, JSON out, nothing else. */
-export interface PluginRequestInit {
-  /** Defaults to `GET`. */
-  readonly method?: "GET" | "POST" | "PUT" | "DELETE";
-  /** JSON-encoded when present. */
-  readonly body?: unknown;
-  readonly signal?: AbortSignal;
-}
-
 export interface AppendTurnInput {
   readonly body: string;
   /**
@@ -107,7 +98,7 @@ export interface AppendTurnInput {
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
   readonly requestsAgent?: boolean;
   /**
-   * The weight this request states its work should be done at (SPEC.md §7, §11)
+   * The weight this request states its work should be done at (SPEC.md §7, §10)
    * — one of the **Key** tokens the workspace's own orchestrate skill declares.
    *
    * **Omit it to state no weight**, which means the orchestrator decides,
@@ -165,7 +156,7 @@ export interface CreateThreadUpload {
 }
 
 /**
- * `POST /api/capture` (SPEC.md §11) — the composer's *Capture*, which is
+ * `POST /api/capture` (SPEC.md §10) — the composer's *Capture*, which is
  * multipart-only on the wire even without files.
  *
  * `text` is required by the contract: a capture becomes a document's body, and
@@ -246,7 +237,7 @@ export interface CorpusClient {
    * The narrower grammar is deliberate. `/api/search` publishes no `sort`, no
    * `offset` and no `pinned`, and silently ignores them if sent, so a caller
    * that wants paging or a stored order wants {@link listDocs} — which is why
-   * saved views and board columns stay on it (SPEC.md §11).
+   * saved views and board columns stay on it (SPEC.md §10).
    */
   searchCorpus(params: SearchParams, options?: RequestOptions): Promise<SearchResults>;
   /**
@@ -278,22 +269,22 @@ export interface CorpusClient {
    * Parameterless and read-only, like {@link getQueueStatus}: §7 makes the
    * roster *"a read, never a push"*, so this answers over HTTP and the SSE
    * stream only ever names `["agents"]`. There is deliberately no designate or
-   * release method beside it — designation is user-only state (§7), and a
-   * plugin that could re-designate a conversation through the kit would be
-   * rewiring a scope on the strength of an import.
+   * release method beside it — designation is user-only state (§7), so a
+   * surface that could re-designate a conversation through the kit would be
+   * rewiring a scope nobody asked it to.
    */
   getAgentRoster(options?: RequestOptions): Promise<AgentRoster>;
   /**
    * `GET /api/index/status` — the semantic index's own health report behind the
-   * console strip's index pill (SPEC.md §9.1, §11's index-pill rider).
+   * console strip's index pill (SPEC.md §9.1, §10's index-pill rider).
    *
    * Read-only and parameterless, like {@link getQueueStatus}: the endpoint
    * answers one snapshot of derived state, and every field on it is a fact the
    * server derived — `state` is what a caller decides with and `detail` is the
    * sentence it renders. **No rebuild method ships beside it**: kicking a
-   * rebuild off is `corpus index rebuild`'s job (SPEC.md §9.1), and a plugin
-   * that could discard the workspace's vectors through the kit would be a
-   * destructive act on the strength of an import.
+   * rebuild off is `corpus index rebuild`'s job (SPEC.md §9.1), and a surface
+   * that could discard the workspace's vectors through the kit would make a
+   * destructive act reachable from a pill that only reports.
    */
   getIndexStatus(options?: RequestOptions): Promise<IndexStatus>;
   getHealth(options?: RequestOptions): Promise<Health>;
@@ -342,25 +333,10 @@ export interface CorpusClient {
    */
   fetchAttachment(target: string, options?: RequestOptions): Promise<Blob>;
   /**
-   * `<method> /api/x/<plugin>/<path>` — a plugin's own server routes
-   * (SPEC.md §10, PLUGINS-001).
-   *
-   * Plugin routes live outside the generated contract (a new plugin is zero
-   * contract changes), so this is the one deliberately untyped door in the
-   * client: the caller hands a plugin-relative path, gets `unknown` back, and
-   * validates the payload with its own schema — Zod at the boundary, exactly
-   * as the server does on the way in. Going through the client rather than a
-   * private `fetch` keeps the bearer token, the base URL and the error shape
-   * (`CorpusRequestError`) in one place, and keeps the kit's cache the only
-   * cache — see {@link usePluginQuery} for the read path with SSE
-   * invalidation included.
-   */
-  pluginRequest(plugin: string, path: string, init?: PluginRequestInit): Promise<unknown>;
-  /**
-   * `POST /api/docs` — zero-form creation (SPEC.md §11).
+   * `POST /api/docs` — zero-form creation (SPEC.md §10).
    *
    * Also how a board column comes into being: a column IS a `type: view`
-   * document with `pinned: true`, so pinning a list is this call with the §11
+   * document with `pinned: true`, so pinning a list is this call with the §10
    * view keys set, and nothing else. See {@link CreateDocInput}.
    */
   createDoc(input: CreateDocInput): Promise<DocMutationResponse>;
@@ -450,7 +426,7 @@ export interface CorpusClient {
    */
   createThreadWithFiles(input: CreateThreadUpload): Promise<CreateThreadResponse>;
   /**
-   * `POST /api/capture` — the composer's Capture (SPEC.md §11).
+   * `POST /api/capture` — the composer's Capture (SPEC.md §10).
    *
    * One call, because it is one act: the server creates the `data/docs/inbox/`
    * document, the agent-requested whole-document filing thread that asks for it
@@ -488,7 +464,7 @@ export interface CorpusClient {
    * It did not until UI-109, and the absence was load-bearing prose:
    * `useComposerRecipient` cited it as the structural enforcement of §7's first
    * two prohibitions on an override — *"an override never rewires a scope, never
-   * re-designates anything"*. That argument has moved rather than lapsed. §11
+   * re-designates anything"*. That argument has moved rather than lapsed. §10
    * puts designate/release in the conversation's own menu, which is a board
    * surface and therefore a kit consumer, so the capability has to be reachable;
    * what enforces the prohibitions now is that the recipient path never calls
@@ -503,7 +479,7 @@ export interface CorpusClient {
    *
    * **Idempotent**: releasing a thread that has none is the state the caller
    * asked for, not an error, and it answers with the thread either way because a
-   * release that does write can raise §14 warnings.
+   * release that does write can raise §11 warnings.
    */
   releaseResident(threadId: string): Promise<ThreadMutationResponse>;
   /**
@@ -623,7 +599,7 @@ export type UpdateDocChanges = UpdateDocRequest;
  * The `POST /api/docs` body, exactly as the contract declares it.
  *
  * Aliased for the same reason as {@link UpdateDocChanges}: which fields a
- * creation may carry is the contract's decision. In particular the §11 view
+ * creation may carry is the contract's decision. In particular the §10 view
  * keys (`pinned`, `order`, `query`, `column`) live here, which is what lets the
  * board create a column without a second write.
  */
@@ -1037,28 +1013,6 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         throw new CorpusRequestError("GET /attachments", response.status, payload);
       }
       return response.blob();
-    },
-
-    async pluginRequest(plugin, path, init) {
-      const send = config.fetch ?? globalThis.fetch;
-      const method = init?.method ?? "GET";
-      // Leading slashes normalised away rather than trusted, exactly as for
-      // attachment targets: a path may address the plugin's own routes only.
-      const url = `${config.baseUrl}/api/x/${plugin}/${path.replace(/^\/+/, "")}`;
-      const operation = `${method} /api/x/${plugin}/${path.replace(/^\/+/, "")}`;
-      const response = await send(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${config.token}`,
-          ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
-        },
-        ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-        ...(init?.signal && canForwardAbortSignal() ? { signal: init.signal } : {}),
-      });
-      const payload: unknown =
-        response.status === 204 ? null : await response.json().catch(() => null);
-      if (!response.ok) throw new CorpusRequestError(operation, response.status, payload);
-      return payload;
     },
 
     async createDoc(input) {

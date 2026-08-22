@@ -1,10 +1,11 @@
 /*
  * Corpus design tokens.
  *
- * Ported from `design/index.html`, which SPEC.md §11 names authoritative for
+ * Ported from `design/index.html`, which SPEC.md §10 names authoritative for
  * look & feel. Values are transcribed verbatim — never "improved", renamed, or
- * recomputed here. The token layer lives in `@corpus/kit` (not in `apps/ui`) so
- * plugins inherit theming for free by consuming the same stylesheet (§10).
+ * recomputed here. The token layer lives in `@corpus/kit` (not in `apps/ui`)
+ * beside the components that spend the tokens, so every surface inherits one
+ * theming by consuming the same stylesheet (§10).
  *
  * Semantic roles. These are load-bearing; later surfaces pick a token by role,
  * not by how the colour looks:

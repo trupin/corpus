@@ -501,14 +501,14 @@ a real workspace and a real git repository, not with mocks:
   of three files must occupy (`EISDIR`). → 500; the turn directory does **not**
   exist (not even the first file); thread markdown byte-identical; no commit.
 - *The write is refused after the bytes land*: the thread is given two turns
-  sharing a timestamp, so §14's `duplicate-turn-timestamp` blocks
+  sharing a timestamp, so §11's `duplicate-turn-timestamp` blocks
   `validateBeforeWrite` — which runs *after* the bytes are on disk, exactly the
   window the cleanup exists for. → 400; `.corpus/attachments/<thread>/` does not
   exist at all (the turn directory went, and the pruning took the empty thread
   directory with it); markdown unchanged; no commit.
 
 Ordering is: choose the ts → write the bytes → write and commit the markdown. A
-*commit* failure is deliberately **not** a cleanup trigger (§14: the file
+*commit* failure is deliberately **not** a cleanup trigger (§11: the file
 mutation stands and the failure is a warning), so bytes stay with the turn that
 references them.
 
@@ -536,7 +536,7 @@ TEST-58a a thread with no attachments at all deletes with no error and no
   with `force`).
 TEST-58b a deletion whose commit fails (a `pre-commit` hook that always exits 1):
   the DELETE still answers 200, the turn is gone from disk, and the bytes go
-  with it. Justification: §14 says the *file mutation stands* — the deletion
+  with it. Justification: §11 says the *file mutation stands* — the deletion
   succeeded, only its commit did not, so the bytes belong to a turn that no
   longer exists. The outcome the design forbids is losing bytes for a turn that
   **failed** to delete, and that cannot happen: cleanup runs only after

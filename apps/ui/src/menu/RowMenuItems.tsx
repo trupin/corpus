@@ -5,7 +5,7 @@ import { useDocActions } from "./docActions";
 import { MenuItems } from "./MenuItems";
 
 /**
- * A list row's own actions (SPEC.md §11): open · open in focus · archive ·
+ * A list row's own actions (SPEC.md §10): open · open in focus · archive ·
  * delete · resolve/reopen · the staleness quick actions where they are already
  * shown.
  *

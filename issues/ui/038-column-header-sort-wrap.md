@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 board columns (header row)
+- SPEC.md §10 board columns (header row)
 
 ## Summary
 Live dogfood report (2026-08-02, screenshot): shrinking the window makes the

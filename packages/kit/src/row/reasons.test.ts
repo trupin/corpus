@@ -34,9 +34,9 @@ describe("the reason vocabulary", () => {
   });
 
   it("renders an unknown code on a neutral chip rather than dropping it", () => {
-    expect(reasonChip("todos/overdue")).toEqual({
-      code: "todos/overdue",
-      label: "todos/overdue",
+    expect(reasonChip("x/overdue")).toEqual({
+      code: "x/overdue",
+      label: "x/overdue",
       chipClass: REASON_CHIP_CLASSES.neutral,
     });
   });
@@ -48,7 +48,7 @@ describe("the reason vocabulary", () => {
 });
 
 /**
- * SPEC.md §11: "a thread holding **more than one** unanswered form says how many
+ * SPEC.md §10: "a thread holding **more than one** unanswered form says how many
  * are still open". The threshold is the behaviour — one form reads exactly as it
  * always has — so every case around it is pinned, not just the plural one.
  */
@@ -83,7 +83,7 @@ describe("how many unanswered forms are still open", () => {
     expect(reasonChip("unread-reply", null, 3).label).toBe("agent replied");
     expect(reasonChip("failed-job", null, 3).label).toBe("failed job");
     expect(reasonChip("stale", "very-stale", 3).label).toBe("review: archive or act");
-    expect(reasonChip("todos/overdue", null, 3).label).toBe("todos/overdue");
+    expect(reasonChip("x/overdue", null, 3).label).toBe("x/overdue");
   });
 });
 

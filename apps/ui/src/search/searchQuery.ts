@@ -1,7 +1,7 @@
 import type { DocsFilter } from "@corpus/kit";
 
 /**
- * One query shape, three consumers (SPEC.md §11 — the search overlay, and
+ * One query shape, three consumers (SPEC.md §10 — the search overlay, and
  * "save as view" pinning that search as a board column).
  *
  * Everything the overlay knows about a search lives in {@link SearchQuery}, and
@@ -80,7 +80,7 @@ export const RELEVANCE_SORT = "relevance";
 
 /**
  * The single request a search issues. Every active chip is a query parameter and
- * nothing is filtered afterwards — SPEC.md §11's "all through the single
+ * nothing is filtered afterwards — SPEC.md §10's "all through the single
  * `GET /api/docs` endpoint" is a statement about this function.
  */
 export function toApiParams(query: SearchQuery): SearchApiParams {

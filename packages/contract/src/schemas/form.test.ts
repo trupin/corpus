@@ -315,7 +315,7 @@ describe("the form grammar", () => {
  * precondition of the answer prose that **nothing checked**, and its violation
  * was silent all the way through: the form posted, the answer posted, and only
  * the read-back failed — leaving the thread in Attention as "awaiting your
- * answer" with no answer able to clear it, which is exactly what §11 forbids.
+ * answer" with no answer able to clear it, which is exactly what §10 forbids.
  *
  * These cases pin the enforcement where it makes the failure inert rather than
  * silent: a form that could not be answered does not parse, so it is refused at
@@ -798,9 +798,9 @@ describe("the form.respond payload", () => {
     expect(parseFormRespondPayload({ type: "form.respond", payload })).toEqual(payload);
   });
 
-  it("declines an event of another type, core or plugin", () => {
+  it("declines an event of another type, core or unrecognised", () => {
     expect(parseFormRespondPayload({ type: "comment.created", payload })).toBeUndefined();
-    expect(parseFormRespondPayload({ type: "todos.moved", payload })).toBeUndefined();
+    expect(parseFormRespondPayload({ type: "ledger.reconciled", payload })).toBeUndefined();
   });
 
   /** Events come off disk: one written by an older server is skipped, not thrown on. */

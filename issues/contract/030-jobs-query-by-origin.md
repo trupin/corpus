@@ -17,7 +17,7 @@ opus
 - Blocks: SERVER-056
 
 ## Spec References
-- SPEC.md §7 (queue and jobs), §8 (the honest pending indicator), §11 (the board)
+- SPEC.md §7 (queue and jobs), §8 (the honest pending indicator), §10 (the board)
 
 ## Summary
 Found by the Fable review of PR #21 (2026-08-04) against UI-058's work.

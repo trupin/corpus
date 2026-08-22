@@ -90,7 +90,7 @@ describe("the staged set the Save sends (CONTRACT-048)", () => {
     expect(BulkActionRequestSchema.safeParse(one({})).success).toBe(false);
   });
 
-  it("offers exactly SPEC.md §11's selection actions, minus the one that changes nothing", () => {
+  it("offers exactly SPEC.md §10's selection actions, minus the one that changes nothing", () => {
     expect([...BULK_ACTION_NAMES]).toEqual([
       "archive",
       "unarchive",
@@ -126,7 +126,7 @@ describe("the staged set the Save sends (CONTRACT-048)", () => {
 });
 
 /**
- * §11 makes a row carry exactly one staged action — "re-choosing *replaces* a
+ * §10 makes a row carry exactly one staged action — "re-choosing *replaces* a
  * row's staged action" — so the same id twice is a staged set that was keyed
  * wrong. Refusing is the point: last-write-wins would be a silent choice about
  * someone's documents, and applying both would write one document twice inside
@@ -206,11 +206,11 @@ describe("an id staged twice is refused, and the refusal says why", () => {
 });
 
 /**
- * §11: "Because there is no per-row gesture for rows nobody enumerated, a
+ * §10: "Because there is no per-row gesture for rows nobody enumerated, a
  * whole-result-set selection stages as a **single entry** — one line reading
  * what it covers and how many, carrying one action for all of them."
  */
-describe("the whole-result-set entry (SPEC.md §11)", () => {
+describe("the whole-result-set entry (SPEC.md §10)", () => {
   const query = { type: ["note", "view"], tag: "finance" };
 
   it("carries one action for a query rather than for enumerated ids", () => {
@@ -233,7 +233,7 @@ describe("the whole-result-set entry (SPEC.md §11)", () => {
   });
 
   /**
-   * §11: "Bulk delete is offered **only** on a selection whose documents are
+   * §10: "Bulk delete is offered **only** on a selection whose documents are
    * enumerated — a whole-result-set selection cannot be deleted." Structural, so
    * it is a type error rather than a refusal discovered on 412 documents.
    */
@@ -296,7 +296,7 @@ describe("the whole-result-set entry (SPEC.md §11)", () => {
 });
 
 /**
- * SPEC.md §11: tagging "adds or removes the named tags and never replaces a
+ * SPEC.md §10: tagging "adds or removes the named tags and never replaces a
  * document's tag set". The delta has to be expressible, and the replacement has
  * to be *inexpressible* — a `tags: [...]` key that flattened twenty different
  * tag sets into one would be a silent data loss no response could report.
@@ -397,7 +397,7 @@ describe("the three-part result (CONTRACT-037, per-document verbs from CONTRACT-
   });
 
   /**
-   * §11's "already in that state" is a no-op and explicitly not a failure, so
+   * §10's "already in that state" is a no-op and explicitly not a failure, so
    * the two lists have to be able to disagree — a result that only ever filled
    * one of them would let a board render "17 archived" for 17 documents that
    * were archived yesterday.
@@ -436,7 +436,7 @@ describe("the three-part result (CONTRACT-037, per-document verbs from CONTRACT-
     expect(parsed.orphanedThreadIds).toEqual(["th_x9y8", "th_a1b2"]);
   });
 
-  it("carries §14 warnings, so a rejected auto-commit is visible", () => {
+  it("carries §11 warnings, so a rejected auto-commit is visible", () => {
     const parsed = BulkActionResultSchema.parse({
       ...result,
       commit: null,
@@ -485,7 +485,7 @@ describe("a refusal names the document, the act, the reason and what to do about
    */
   it("no longer carries a staleness refusal, which had no producer", () => {
     // `locked` became `stale` when SHARED-041 replaced the lock with a key, and
-    // `stale` was kept on the strength of a §11 sentence struck on 2026-08-13
+    // `stale` was kept on the strength of a §10 sentence struck on 2026-08-13
     // (PR #46 review). Nothing ever emitted it and nothing can: every act this
     // route offers names its own delta, so the request carries no key and the
     // route has no version to compare. A declared class with no producer invites

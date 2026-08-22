@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §6 — forms; §14 — needs=form
+- SPEC.md §6 — forms; §11 — needs=form
 
 ## Summary
 SERVER-032's audit fix round (FIX 10, 2026-07-30): the server now counts a turn that
@@ -154,11 +154,11 @@ which Adjudication 8 permits by name. The body is byte-identical:
 -    // `mapFormAnswers`, which `continue`s past its own registration on such a
 -    // turn and so leaves the form live forever. Pinned so the divergence is a
 -    // decision rather than a surprise; the UI follow-up converges on this side,
--    // because §11's reasons have to be clearable (SERVER-022 finding 3).
+-    // because §10's reasons have to be clearable (SERVER-022 finding 3).
 -    it("diverges from the renderer, which would leave that form unanswerable", () => {
 +    // Pinned as the *agreement* it now is: the renderer's `mapFormAnswers`
 +    // used to `continue` past its own registration on such a turn and leave the
-+    // form live forever, and UI-021 converged it on this side, because §11's
++    // form live forever, and UI-021 converged it on this side, because §10's
 +    // reasons have to be clearable (SERVER-022 finding 3). Its paired block —
 +    // `apps/ui/src/thread/parseFormBlock.test.ts`, same name, same four cases —
 +    // is what keeps the two readers from drifting apart again.
@@ -183,7 +183,7 @@ quoted above, and nothing else under `apps/server` was touched by UI-020 or UI-0
 
 The **renderer's own docblock** (`parseFormBlock.ts`, the `mapFormAnswers` header) listed two pairing
 rules; it now lists three, the new one naming the server's `readThreadForms` as the reader it agrees
-with and the reason the clearable behaviour was the one to converge on (§11's reasons must have an
+with and the reason the clearable behaviour was the one to converge on (§10's reasons must have an
 action that clears them, SERVER-022 finding 3). Its "Two rules" lead-in became "Three rules".
 
 ### TEST-632 · the fixture round-trips against the real detector — **PASS**

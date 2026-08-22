@@ -11,7 +11,7 @@ import type { WeightLevel } from "../weight/weightLevels.js";
 /**
  * One composer's **address**: who answers, and at what weight — the single
  * derivation behind the line every composer shows and the popover it opens
- * (SPEC.md §11: the recipient statement, the weight control, and the rider
+ * (SPEC.md §10: the recipient statement, the weight control, and the rider
  * signed 2026-08-19 that makes the second not live for a resident's lane; §7's
  * *"a resident's weight is set when it is designated, not per message"*;
  * UI-126).
@@ -33,7 +33,7 @@ import type { WeightLevel } from "../weight/weightLevels.js";
  * a dimmed control, not a kept-but-inert choice. The standing choice survives
  * in its scope (`weightChoice.ts`) and comes back the moment the composer
  * reaches the agent again; while it cannot be *seen* it is also not **sent**,
- * because a value the surface no longer shows is exactly §11's "a setting that
+ * because a value the surface no longer shows is exactly §10's "a setting that
  * acts on you unseen". A recipient pick standing on the floor is still said on
  * the line, for the same reason in the other direction.
  *
@@ -152,7 +152,7 @@ export const LINE_SEPARATOR = " · ";
 
 /**
  * What the composer says **where the weight control would be**, for a resident
- * (SPEC.md §11, rider signed 2026-08-19: *"The composer says so where the
+ * (SPEC.md §10, rider signed 2026-08-19: *"The composer says so where the
  * control would be, naming the resident's weight, so a person learns the answer
  * rather than losing the question."*).
  *

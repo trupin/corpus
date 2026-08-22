@@ -13,7 +13,7 @@ import { canonicalFilter, searchKey } from "./keys.js";
  * from is a product decision rather than a parameter. Interactive search is
  * ranked and returns one-line hits; saved views and board columns stay filtered
  * lists on `GET /api/docs`, because relevance ranking is a property of the
- * search box and not of a persisted document (SPEC.md §11).
+ * search box and not of a persisted document (SPEC.md §10).
  *
  * Caches under `searchKey(params)` — `["docs", "search", { …canonical params }]`
  * — so two spellings of one query share a cache entry and one request, and the

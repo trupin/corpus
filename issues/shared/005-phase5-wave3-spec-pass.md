@@ -17,7 +17,7 @@ fable
 - Blocks: PLUGINS-005, PLUGINS-006, PLUGINS-007
 
 ## Spec References
-- SPEC.md §12 (todos), §6 (anchors), §15 (plugins/M6), §7 (residual deferral sentences)
+- SPEC.md §12 (todos), §6 (anchors), §12 (plugins/M6), §7 (residual deferral sentences)
 
 ## Summary
 Two bundles, one sign-off round:
@@ -28,7 +28,7 @@ the document body as GFM task-list lines; the todos plugin stops registering a `
 so the core editor + the entire shipped anchor layer handle items natively and
 item-level commenting is an ordinary text-quote anchor. Amend §12 accordingly: retire
 the `[TBD: PLUGINS-003]` note, select the body-checkbox representation, restate the
-"Renderer" clause and the "toggling PUTs through a plugin route" clause, and the §15 M6
+"Renderer" clause and the "toggling PUTs through a plugin route" clause, and the §12 M6
 drill clause. **User decisions needed:**
 1. **Per-item `due`**: the body has no per-item field. Options: drop to document-level
    `due`, or an inline convention `- [ ] text (due: 2026-08-01)` (recommended,
@@ -36,7 +36,7 @@ drill clause. **User decisions needed:**
 2. **The toggle path**: UI checkbox toggle becomes an ordinary body edit through the
    core editor; the plugin route remains the CLI/agent path and format owner — confirm.
 3. **The Renderer seam**: the reference plugin stops shipping a `View`; confirm
-   `ListItem` + `DocPanel` + `validate` adequately prove the `docTypes` seam for §15's
+   `ListItem` + `DocPanel` + `validate` adequately prove the `docTypes` seam for §12's
    purposes (else the rejected 3b design's cost re-opens).
 
 **B. §7 residual deferral sentences (sprint-016 Open Conflict 2, ledgered).** Three
@@ -50,7 +50,7 @@ _Drafted 2026-07-30 by spec-writer (fable). DRAFT text only — SPEC.md is untou
 user signs off. Design basis for Bundle A: issues/plugins/003-item-level-commenting.md
 Technical Design (Candidate 3, no-View variant). Line numbers cite the current SPEC.md._
 
-### Bundle A — §12 body-checkbox todos (+ §15 M6, §6/§10 no-ops)
+### Bundle A — §12 body-checkbox todos (+ §12 M6, §6/§10 no-ops)
 
 #### A1. §12 — items live in the document body (storage selection + per-item due)
 
@@ -60,7 +60,7 @@ Technical Design (Candidate 3, no-View variant). Line numbers cite the current S
 
 **(b) Proposed text**
 
-> - **Doc type** `todo`: items are **checkbox lines in the document body** — standard markdown task-list items (`- [ ] text` / `- [x] text`), in body order. The plugin owns the item format, and every item mutation reaches the file through the server like any other body edit — but a todo document is otherwise an ordinary document: same core frontmatter, same lifecycle, and its type's template can ship starter items in its body like any template pre-fill (§11). An item may carry an inline due date — `(due: YYYY-MM-DD)` at the end of its line; open items past their date get the overdue treatment wherever items are shown. An item without the marker simply has no due date, and text that doesn't parse as the marker is ordinary item text — never an error.
+> - **Doc type** `todo`: items are **checkbox lines in the document body** — standard markdown task-list items (`- [ ] text` / `- [x] text`), in body order. The plugin owns the item format, and every item mutation reaches the file through the server like any other body edit — but a todo document is otherwise an ordinary document: same core frontmatter, same lifecycle, and its type's template can ship starter items in its body like any template pre-fill (§10). An item may carry an inline due date — `(due: YYYY-MM-DD)` at the end of its line; open items past their date get the overdue treatment wherever items are shown. An item without the marker simply has no due date, and text that doesn't parse as the marker is ordinary item text — never an error.
 
 **(c) Open questions and notes**
 
@@ -76,17 +76,17 @@ Technical Design (Candidate 3, no-View variant). Line numbers cite the current S
 
 **(b) Proposed text**
 
-> - **Rendering and item comments**: todo documents render in the **core document view** — the standard editor shows the checkbox list natively, so a todo document gets the entire §11 editing surface, and **each item can be commented on**: selecting an item's text and commenting creates an ordinary text-quote anchor (§6, unchanged — no special item anchoring exists). The thread follows its item through checks, renames, and reorders, and detaches (orphaned, quote preserved) when the item is deleted. In the UI, toggling a box is an ordinary body edit saved like any other; the plugin's routes remain the item-level write path for the CLI and the agent, and the plugin remains the format owner behind them. The plugin registers no custom document renderer.
+> - **Rendering and item comments**: todo documents render in the **core document view** — the standard editor shows the checkbox list natively, so a todo document gets the entire §10 editing surface, and **each item can be commented on**: selecting an item's text and commenting creates an ordinary text-quote anchor (§6, unchanged — no special item anchoring exists). The thread follows its item through checks, renames, and reorders, and detaches (orphaned, quote preserved) when the item is deleted. In the UI, toggling a box is an ordinary body edit saved like any other; the plugin's routes remain the item-level write path for the CLI and the agent, and the plugin remains the format owner behind them. The plugin registers no custom document renderer.
 
 **(c) Open questions and notes**
 
-- [DECISION NEEDED — user question 2] **The toggle path.** Under this text the UI checkbox toggle is a core body edit (autosave, locks, reconciliation — all §11/§6 machinery), while `corpus todos add|check` and the plugin routes stay the CLI/agent path and the one place that knows the item format. Confirm this restatement of "toggling a box PUTs through a plugin route" — the WHAT (a toggle persists, is attributed, and syncs live) is unchanged; which door the UI's write goes through is what changes.
-- [DECISION NEEDED — user question 3] **The renderer seam.** The reference plugin stops shipping a `View`, so §12's opening claim ("proves all four extension points") rests on `docTypes` being exercised through `ListItem` + `DocPanel` + `validate` (plus the underscore fixture plugin covering `View` itself, and §13's publish plugin as its natural first real consumer). Confirm this is adequate proof of the seam for §15's purposes. If instead a **shipped** `View` consumer is required, the design's rejected Candidate 3b (items in body, plugin keeps a View) re-opens with its full cost: a kit capture affordance, kit-exported thread rendering, and a rewritten anchoring ban.
+- [DECISION NEEDED — user question 2] **The toggle path.** Under this text the UI checkbox toggle is a core body edit (autosave, locks, reconciliation — all §10/§6 machinery), while `corpus todos add|check` and the plugin routes stay the CLI/agent path and the one place that knows the item format. Confirm this restatement of "toggling a box PUTs through a plugin route" — the WHAT (a toggle persists, is attributed, and syncs live) is unchanged; which door the UI's write goes through is what changes.
+- [DECISION NEEDED — user question 3] **The renderer seam.** The reference plugin stops shipping a `View`, so §12's opening claim ("proves all four extension points") rests on `docTypes` being exercised through `ListItem` + `DocPanel` + `validate` (plus the underscore fixture plugin covering `View` itself, and §13's publish plugin as its natural first real consumer). Confirm this is adequate proof of the seam for §12's purposes. If instead a **shipped** `View` consumer is required, the design's rejected Candidate 3b (items in body, plugin keeps a View) re-opens with its full cost: a kit capture affordance, kit-exported thread rendering, and a rewritten anchoring ban.
 - The bullet is retitled (**Renderer** → **Rendering and item comments**) because the plugin no longer renders; if the user prefers keeping the §12 bullet-name symmetry with §10's extension points, the title can stay "Renderer" with the same body text.
 
-#### A3. §15 M6 — the deletion drill without a custom renderer
+#### A3. §12 M6 — the deletion drill without a custom renderer
 
-**(a) Replaces** — §15, milestone 6 (SPEC.md:460), currently:
+**(a) Replaces** — §12, milestone 6 (SPEC.md:460), currently:
 
 > 6. **M6 — plugin system + todos plugin**: discovery, `@corpus/kit`, todos end-to-end. _Check_: delete `plugins/todos` → app still boots and renders todo docs as plain markdown (its column shows a "plugin missing" card); restore → custom renderer, DocPanel, and Todos column return; the kit-only import rule is lint-enforced (a direct UI-internals import from a plugin fails lint); a deliberately throwing plugin column shows an error card while the rest of the board keeps working.
 
@@ -193,7 +193,7 @@ amendments applied to SPEC.md on branch `phase-5-followups` the same day.
 **Sections touched in SPEC.md:** §7 (five places: statuses :237, queue verbs :243,
 orchestrator-skill outcomes bullet :248, locks/user-editor bullet :257, force-unlock bullet
 :258), §9.2 (two places: queue routes :324, lock routes :325), §12 (doc-type and rendering
-bullets — `[TBD: PLUGINS-003]` retired), §15 (M6 drill). §6 and §10 untouched by design
+bullets — `[TBD: PLUGINS-003]` retired), §12 (M6 drill). §6 and §10 untouched by design
 (A4). Line numbers cite the pre-amendment file.
 
 **Wording judgments made within the sign-off's bounds:**
@@ -219,11 +219,11 @@ _Sign-off record goes here._
 
 - 2026-07-30 — spec-writer (fable): both bundles drafted under "Drafts for sign-off" above;
   SPEC.md untouched, no git commands. Grounding read: PLUGINS-003 Technical Design,
-  SPEC.md §6/§7/§9.2/§10/§12/§15, SHARED-004 (format + item-7 pending texts), and the
+  SPEC.md §6/§7/§9.2/§10/§12/§12, SHARED-004 (format + item-7 pending texts), and the
   shipped defer surface (`packages/contract/src/schemas/queue.ts`,
   `apps/cli/src/commands/queue/defer.ts`). Awaiting user sign-off in one round.
 - 2026-07-30 — spec-writer (fable): sign-off received (all recommendations accepted; B4
-  riders in full); all nine amendments applied to SPEC.md (§7 ×5, §9.2 ×2, §12 ×2, §15 M6)
+  riders in full); all nine amendments applied to SPEC.md (§7 ×5, §9.2 ×2, §12 ×2, §12 M6)
   on branch `phase-5-followups`; sign-off record above; status flipped to done. No git
   commands run — committing and unblocking PLUGINS-005/006/007 are the orchestrator's.
 

@@ -172,7 +172,7 @@ deadline never clears.
 **Consequence, stated plainly**: a person cannot put a deadline on a todo list
 as a whole. They put it on an item, which is what §12's model already asks of
 them. The `due` control on a todo document should render locked for the same
-§11 reason UI-092 locks `status` — that is `apps/ui`, filed as a note to the
+§10 reason UI-092 locks `status` — that is `apps/ui`, filed as a note to the
 orchestrator rather than done here.
 
 **A rider is owed for this.** SPEC.md §12 says a `todo` item may carry a due
@@ -401,7 +401,7 @@ doc_gatitzxj  todo  open  Reporter case  data/docs/inbox/reporter-case.md
 doc_gatitzxj  todo  open  Reporter case  data/docs/inbox/reporter-case.md
 ```
 
-### Subtractive check (SPEC.md §15 M6)
+### Subtractive check (SPEC.md §12 M6)
 
 `plugins/todos/` moved aside, server restarted:
 

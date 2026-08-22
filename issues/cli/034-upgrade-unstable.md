@@ -97,7 +97,7 @@ Consequences to design for, not work around:
       naming the retention window
 - [ ] The conditional server restart behaves exactly as it does on the stable
       path
-- [ ] `docs/cli.md` regenerates cleanly with the new flag (the §14 drift check)
+- [ ] `docs/cli.md` regenerates cleanly with the new flag (the §11 drift check)
 - [ ] Stable `corpus upgrade` is behaviourally unchanged — same endpoint, same
       checksum verification, same output
 

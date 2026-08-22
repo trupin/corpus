@@ -2,9 +2,9 @@
  * `@corpus/kit/testing` — doubles for the things a kit consumer cannot get from
  * its test runner.
  *
- * A separate entry point on purpose: none of this belongs in the plugin
- * contract's runtime surface, but every consumer of that contract needs it,
- * because there is no real `EventSource` to test against. Node gates
+ * A separate entry point on purpose: none of this belongs on the kit's runtime
+ * surface, but every consumer of that surface needs it, because there is no
+ * real `EventSource` to test against. Node gates
  * `EventSource` behind `--experimental-eventsource` (absent on both Node 22 and
  * 25) and jsdom implements none at all. Without an injected factory a mounted
  * `CorpusProvider` spends the whole test backing off against a constructor that
@@ -23,10 +23,10 @@ export {
 export { docRowFixture } from "./docRow.js";
 /**
  * A composer's standing weight choice is module-level and survives unmount by
- * design (SPEC.md §11's rider), so one suite's click is the next suite's
+ * design (SPEC.md §10's rider), so one suite's click is the next suite's
  * starting state without an `afterEach` that clears it. It is exported *here*
- * and not from the package root because §11 describes no "forget my weights"
- * action, and a test-only helper on the plugin contract invites one.
+ * and not from the package root because §10 describes no "forget my weights"
+ * action, and a test-only helper on the runtime surface invites one.
  */
 export { resetWeightChoices } from "../weight/weightChoice.js";
 export {

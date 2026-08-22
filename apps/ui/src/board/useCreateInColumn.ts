@@ -2,15 +2,14 @@ import { DEFAULT_DOC_FOLDER, type Doc } from "@corpus/contract";
 import { useCreateDoc, type CreateDocInput } from "@corpus/kit";
 import { useCallback } from "react";
 import { publishPristineBody } from "../abandon/registry";
-import type { PluginColumnRef } from "./viewDoc";
 
 /**
- * `＋` on a column — zero-form, inbox-first creation (SPEC.md §11).
+ * `＋` on a column — zero-form, inbox-first creation (SPEC.md §10).
  *
  * The rule is the column's own document, read: a `folder:` query creates into
- * that folder; a plugin `column:` creates that plugin's document type; anything
- * else creates into `data/docs/inbox/`, because quick creation should never ask
- * where a thought belongs — the agent files inbox arrivals per its skill.
+ * that folder, and anything else creates into `data/docs/inbox/`, because quick
+ * creation should never ask where a thought belongs — the agent files inbox
+ * arrivals per its skill.
  *
  * **UI-009's omnibox creates the same way.** That is why the request shape is a
  * separate pure function and the hook takes a target rather than a column: the
@@ -24,13 +23,18 @@ export const UNTITLED_DOCUMENT_TITLE = "Untitled";
 /** What creation needs to know about the column it was invoked from. */
 export interface CreateTarget {
   readonly folder: string | null;
-  readonly plugin: PluginColumnRef | null;
 }
 
-/** The omnibox's target, and any column that is not folder- or plugin-scoped. */
-export const INBOX_TARGET: CreateTarget = { folder: null, plugin: null };
+/** The omnibox's target, and any column that is not folder-scoped. */
+export const INBOX_TARGET: CreateTarget = { folder: null };
 
-/** The type a document created from this column gets. */
+/**
+ * The type every document created from a column gets.
+ *
+ * One value, not a choice: `＋` is zero-form creation, and a picker asking which
+ * of six types this is would be the form SPEC.md §10 refuses. A document that
+ * should be something else is retyped in its own frontmatter afterwards.
+ */
 export const DEFAULT_DOC_TYPE = "note";
 
 /**
@@ -45,8 +49,7 @@ export const DEFAULT_DOC_TYPE = "note";
  * exactly this reason).
  */
 export function creationRequest(target: CreateTarget, title: string): CreateDocInput {
-  const type = target.plugin?.type ?? DEFAULT_DOC_TYPE;
-  return { type, title, folder: target.folder ?? DEFAULT_DOC_FOLDER };
+  return { type: DEFAULT_DOC_TYPE, title, folder: target.folder ?? DEFAULT_DOC_FOLDER };
 }
 
 export interface CreateInColumn {
@@ -74,7 +77,7 @@ export function useCreateInColumn(): CreateInColumn {
       const response = await mutateAsync(creationRequest(target, title));
       /*
        * The body the document was born with — a template's prefill (SPEC.md
-       * §11's "Templates are documents"), or nothing at all.
+       * §10's "Templates are documents"), or nothing at all.
        *
        * The abandon rule needs it: a new `note` in a seeded workspace arrives
        * holding `## Context / ## Notes / ## Open questions`, and a user who

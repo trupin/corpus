@@ -17,7 +17,7 @@ opus
 - Blocks: PLUGINS-012
 
 ## Spec References
-- SPEC.md §11 as replaced by SHARED-012; §6 attachments (picker/paste/drag-drop,
+- SPEC.md §10 as replaced by SHARED-012; §6 attachments (picker/paste/drag-drop,
   chip previews, the size cap and its 413)
 
 ## Summary

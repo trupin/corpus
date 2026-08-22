@@ -502,7 +502,7 @@ describe("corpus doc edit", () => {
     expect(JSON.parse(machine.stdout())).toEqual({ doc, anchors, warnings: [] });
   });
 
-  it("folds a §14 warning onto the same single line", async () => {
+  it("folds a §11 warning onto the same single line", async () => {
     const stub = await startStubServer(
       jsonResponder(200, {
         ...UPDATED,
@@ -649,13 +649,13 @@ describe("corpus doc edit --extra", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, {
       args: ARGS,
-      flags: { extra: ["plugin.todos.v=1", "with space=x", "TITLE=not-title", "é=1"] },
+      flags: { extra: ["ledger.fy26.v=1", "with space=x", "TITLE=not-title", "é=1"] },
     });
 
     await runDocEdit(harness.context, { stdinIsBodySource: false });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
-      extra: { "plugin.todos.v": 1, "with space": "x", TITLE: "not-title", é: 1 },
+      extra: { "ledger.fy26.v": 1, "with space": "x", TITLE: "not-title", é: 1 },
     });
   });
 
@@ -862,7 +862,7 @@ describe("the --extra value grammar", () => {
   });
 });
 
-describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
+describe("corpus doc edit — the §10 view keys (CLI-018)", () => {
   it("pins, positions and reconfigures a column in one request", async () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, {
@@ -900,12 +900,12 @@ describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, {
       args: ARGS,
-      flags: { order: "null", query: ["null"], column: "null" },
+      flags: { order: "null", query: ["null"] },
     });
 
     await runDocEdit(harness.context, { stdinIsBodySource: false });
 
-    expect(bodyOf(stub.requests[0]?.body)).toEqual({ order: null, query: null, column: null });
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({ order: null, query: null });
   });
 
   it("replaces the whole query rather than merging into it", async () => {
@@ -927,7 +927,6 @@ describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
         title: "Finance",
         extra: ["width=640"],
         pinned: "true",
-        column: "todos/todos",
         key: KEY,
       },
     });
@@ -938,7 +937,6 @@ describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
       title: "Finance",
       extra: { width: 640 },
       pinned: true,
-      column: "todos/todos",
       key: KEY,
       body: "body\n",
     });
@@ -966,7 +964,6 @@ describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
   it.each([
     { order: "1e400" },
     { order: '"4"' },
-    { column: "nonsense" },
     { pinned: "maybe" },
     { query: ["filters={}"] },
     { query: ["null", "type=note"] },

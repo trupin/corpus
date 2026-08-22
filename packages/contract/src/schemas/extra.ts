@@ -3,34 +3,36 @@ import { z } from "@hono/zod-openapi";
 /**
  * The **open extra-frontmatter surface** (CONTRACT-011, adjudicated 2026-07-27).
  *
- * SPEC.md §5 promises that "plugins may add fields under their own keys" and
- * §12's reference plugin cashes that promise (`todo` documents carry
- * `items: [{ text, done, ts }]`). This module is that promise reaching the
- * wire: one object, `extra`, carried on every document row, on the single
- * document read, and on create/update requests, holding **every frontmatter
- * key that is not a core key** — flat, exactly as the keys sit in the file.
- * The object itself is the namespace; there is no per-plugin sub-nesting,
- * because the file has none: on disk a plugin key is simply a YAML key beside
- * the core ones, and the wire mirrors the file (the file is the source of
- * truth, and this surface must round-trip it).
+ * SPEC.md §5 says that any key the core does not define is "preserved verbatim
+ * as extra frontmatter", and §9.1 says the projection carries it "as opaque
+ * passthrough the server never interprets". This module is that promise
+ * reaching the wire: one object, `extra`, carried on every document row, on the
+ * single document read, and on create/update requests, holding **every
+ * frontmatter key that is not a core key** — flat, exactly as the keys sit in
+ * the file. The object itself is the namespace, and there is no sub-nesting,
+ * because the file has none: on disk such a key is simply a YAML key beside the
+ * core ones, and the wire mirrors the file (the file is the source of truth,
+ * and this surface must round-trip it).
  *
  * The server **stores and returns these keys and never interprets them**.
- * Meaning belongs to whoever owns the key — a plugin's own schema (the
- * `validate` extension point, SPEC.md §10), never this contract. That is the
- * whole design: a new plugin doc type is *zero* contract changes.
+ * Meaning belongs to whoever wrote the key — a person, an agent following a
+ * convention the workspace holds in its own documents — never this contract.
+ * That is the whole design: a workspace can carry a shape the core has never
+ * heard of at *zero* contract changes, which is the same openness `type` keeps
+ * (SPEC.md §12's M6).
  *
  * Core keys, by contrast, stay closed and validated where they always were.
- * §11's view keys (`pinned`, `order`, `query`, `column`) are deliberately
- * **not** in here — they graduated to first-class core fields (see `doc.ts`),
- * because two of them are server semantics (`pinned` is a filter, `order` is a
- * sort, and a key the server filters and sorts on is by definition not opaque)
- * and because keeping them out preserves this object's one absolute rule:
- * nothing in it ever means anything to the server.
+ * The view keys (`pinned`, `order`, `query`) are deliberately **not** in here —
+ * they graduated to first-class core fields (see `doc.ts`), because two of them
+ * are server semantics (`pinned` is a filter, `order` is a sort, and a key the
+ * server filters and sorts on is by definition not opaque) and because keeping
+ * them out preserves this object's one absolute rule: nothing in it ever means
+ * anything to the server.
  */
 
 /**
  * The closed set of core frontmatter keys (SPEC.md §5 base fields, §6 thread
- * fields, §11 view fields). A key in `extra` naming one of these is rejected
+ * fields, §10 view fields). A key in `extra` naming one of these is rejected
  * with `400`, on requests and by construction on responses — so a core field
  * can never be shadowed, duplicated, or smuggled past its own validation.
  *
@@ -76,26 +78,33 @@ export const RESERVED_FRONTMATTER_KEYS = [
   // queue routes on designation (SERVER-111) that is also a way for an agent to
   // redirect its own work.
   "resident",
-  // SPEC.md §11 — which model wrote each agent turn, keyed by turn timestamp.
+  // SPEC.md §10 — which model wrote each agent turn, keyed by turn timestamp.
   // Reserved is what makes it unforgeable: `extra` is a client-supplied merge
   // patch, so an attribution stored there could be rewritten by an ordinary
   // `PUT /api/docs/{id}` (see `./turn-model.ts`).
   "turnModels",
-  // SPEC.md §11 — view documents (first-class core keys, see doc.ts)
+  // SPEC.md §10 — view documents (first-class core keys, see doc.ts)
+  //
+  // `column` is deliberately absent (SHARED-066). It named a plugin renderer,
+  // `<plugin>/<type>`, and with the plugin surface gone it names nothing — so
+  // it stopped being a core key rather than becoming a core key that means
+  // nothing. Absent from this list is what makes an old view's `column:` land
+  // here, in `extra`, preserved verbatim and never interpreted: a board written
+  // before the removal keeps working, and echoing the document back through an
+  // update writes the key out again unchanged.
   "pinned",
   "order",
   "query",
-  "column",
 ] as const;
 
 const RESERVED_KEY_SET: ReadonlySet<string> = new Set(RESERVED_FRONTMATTER_KEYS);
 
 /**
  * Maximum container nesting of a single extra value, counting the value's own
- * arrays and objects but not the `extra` object itself. `todo.items` — an
- * array of objects of scalars — is depth 2; the bound leaves plugins ample
- * structural headroom while keeping a document's frontmatter a record, not a
- * database.
+ * arrays and objects but not the `extra` object itself. An array of objects of
+ * scalars — the shape a hand-written list of items takes — is depth 2, so the
+ * bound leaves ample structural headroom while keeping a document's
+ * frontmatter a record, not a database.
  */
 export const EXTRA_MAX_DEPTH = 8;
 
@@ -113,9 +122,9 @@ export type ExtraValue =
 
 const EXTRA_DESCRIPTION =
   "Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat " +
-  "and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` " +
-  "document's `items`). The server stores and returns these keys and **never interprets them**; " +
-  "meaning belongs to the key's owner (a plugin's own schema), never to this contract. " +
+  "and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and " +
+  "returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, " +
+  "never to this contract. " +
   `Keys must not name a core frontmatter key (${RESERVED_FRONTMATTER_KEYS.join(", ")}) — such a ` +
   "request is rejected with `400`, exact and case-sensitive, so a core field can never be " +
   "shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) " +
@@ -209,9 +218,9 @@ const checkValue = (
  * (see the non-nullable-component invariant in `openapi.test.ts`).
  *
  * Values are typed `unknown` on purpose — the contract polices *shape bounds*
- * (plain JSON, depth, size) and *key collisions*, never meaning. A plugin
- * validates its own keys with its own Zod schema (SPEC.md §10 `validate`),
- * which is what keeps a new plugin doc type at zero contract changes.
+ * (plain JSON, depth, size) and *key collisions*, never meaning. Whoever wrote
+ * a key is the only party that knows what it says, which is what keeps a
+ * frontmatter convention the core has never heard of at zero contract changes.
  */
 export const ExtraFrontmatterSchema = z
   .record(z.string().min(1), z.unknown())

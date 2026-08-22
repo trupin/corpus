@@ -23,13 +23,13 @@ opus — well-trodden TipTap+markdown territory; the hard parts (anchor offset m
 
 ## Spec References
 
-- SPEC.md §11 — "UI — the board" → _Document view — always editable, Google-Docs-like_ (no edit mode, markdown shortcuts, autosave, selection toolbar, `[[` autocomplete, lock read-only state)
-- SPEC.md §11 — _Smart input everywhere_ (`[[` → documents by title, inserts the id ref)
+- SPEC.md §10 — "UI — the board" → _Document view — always editable, Google-Docs-like_ (no edit mode, markdown shortcuts, autosave, selection toolbar, `[[` autocomplete, lock read-only state)
+- SPEC.md §10 — _Smart input everywhere_ (`[[` → documents by title, inserts the id ref)
 - SPEC.md §6 — "Threads and anchors" → _Anchor reconciliation (automatic)_ (every save runs reconciliation; `PUT /api/docs/:id` reports remapped/orphaned)
 - SPEC.md §5 — inline references are id-based, render as the target's **current** title, alias form `[[id|as text]]`
 - SPEC.md §7 — _Document locks_ (locked document renders read-only)
 - SPEC.md §9.2 — `PUT /api/docs/:id`, `GET /api/docs` (title search for `[[`)
-- SPEC.md §15 M3 — Playwright check: "omnibox-create a doc … → type (file updates via autosave; anchors survive; squashed auto-commit on idle)"
+- SPEC.md §12 M3 — Playwright check: "omnibox-create a doc … → type (file updates via autosave; anchors survive; squashed auto-commit on idle)"
 - `design/index.html` — **authoritative look & feel** (`.doc-body`, `.doc-title`, `.save-chip` + `.saving`/`.saved`, `.sel-toolbar` + `.comment-btn`, `.ref`, `.ac-menu`/`.ac-item`, `.lock-banner`, `[contenteditable] { caret-color: var(--accent) }`)
 
 ## Summary
@@ -138,7 +138,7 @@ Vitest in `apps/ui`:
 7. Select a phrase — the floating toolbar appears; **B** bolds it and the file gains `**…**` after autosave; **💬 Comment** fires without altering the body.
 8. Lock the document from another process (`corpus lock acquire <docId> --holder agent`, or trigger an agent edit). The editor goes read-only with the banner; typing does nothing. Release the lock and confirm editing resumes without losing scroll position.
 9. With the editor focused and mid-sentence, touch the file from outside (`corpus doc edit` on a *different* document, then on the same one after idling) — confirm the in-progress text is not clobbered while typing, and the external change appears once editing settles.
-10. Playwright: add `apps/ui/e2e/editor.spec.ts` covering steps 2–7 against the real app per §15 M3.
+10. Playwright: add `apps/ui/e2e/editor.spec.ts` covering steps 2–7 against the real app per §12 M3.
 
 ## E2E Verification Log
 

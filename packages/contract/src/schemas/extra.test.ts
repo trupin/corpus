@@ -7,8 +7,8 @@ import {
   RESERVED_FRONTMATTER_KEYS,
 } from "./extra.js";
 
-/** SPEC.md §12's reference payload — the shape the surface exists to carry. */
-const todoItems = {
+/** A hand-written frontmatter convention the core defines nothing about — the shape the surface exists to carry. */
+const handWrittenItems = {
   items: [
     { text: "follow up on X", done: false, ts: "2026-07-19T10:00:00Z" },
     { text: "renew the fixed rate", done: true, ts: "2026-07-20T09:00:00Z" },
@@ -20,8 +20,8 @@ describe("ExtraFrontmatter", () => {
     expect(ExtraFrontmatterSchema.parse({})).toEqual({});
   });
 
-  it("round-trips §12's todo items untouched", () => {
-    expect(ExtraFrontmatterSchema.parse(todoItems)).toEqual(todoItems);
+  it("round-trips a hand-written list of items untouched", () => {
+    expect(ExtraFrontmatterSchema.parse(handWrittenItems)).toEqual(handWrittenItems);
   });
 
   it("round-trips every plain-JSON value kind, null included", () => {
@@ -142,14 +142,26 @@ describe("RESERVED_FRONTMATTER_KEYS drift pin", () => {
     }
   });
 
-  it("covers §11's per-turn model record, which is frontmatter on thread files", () => {
+  it("covers §10's per-turn model record, which is frontmatter on thread files", () => {
     expect(RESERVED_FRONTMATTER_KEYS).toContain("turnModels");
   });
 
-  it("covers the §11 view keys, now first-class core fields", () => {
-    for (const key of ["pinned", "order", "query", "column"]) {
+  it("covers the §10 view keys, now first-class core fields", () => {
+    for (const key of ["pinned", "order", "query"]) {
       expect(RESERVED_FRONTMATTER_KEYS).toContain(key);
     }
+  });
+
+  /**
+   * The one view key that went the other way (SHARED-066). `column` named a
+   * plugin renderer; with no plugin surface it names nothing, so it stopped
+   * being a core key rather than becoming a core key that means nothing. Absent
+   * from this list is precisely what lets an old view's `column:` round-trip
+   * through `extra` instead of being rejected as a shadowed core field.
+   */
+  it("does not reserve `column`, so a pre-removal view keeps its key", () => {
+    expect(RESERVED_FRONTMATTER_KEYS).not.toContain("column");
+    expect(ExtraFrontmatterSchema.safeParse({ column: "todos/todos" }).success).toBe(true);
   });
 
   it("stays deduplicated", () => {

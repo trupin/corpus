@@ -47,7 +47,7 @@ contain threads. That is the intended answer, not a leak:
   `corpus doc show`.
 - The conversation that referred to a document is very often the most useful
   thing near it; hiding it would make the agent's expansion strictly worse than
-  the §11 backlinks panel, which already shows threads through `references=`.
+  the §10 backlinks panel, which already shows threads through `references=`.
 - Excluding them would need a type predicate §9.2 does not authorize, and would
   have to answer what happens to a thread that references a document from its
   *preamble* rather than a turn — a distinction `links` cannot express.

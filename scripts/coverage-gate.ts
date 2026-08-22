@@ -78,7 +78,7 @@ export function workspaceOf(repoRelativePath: string): string {
   const parts = repoRelativePath.split("/");
   const [group, name] = parts;
   if (parts.length < 3 || group === undefined || name === undefined) return ".";
-  if (group !== "apps" && group !== "packages" && group !== "plugins") return ".";
+  if (group !== "apps" && group !== "packages") return ".";
   return `${group}/${name}`;
 }
 

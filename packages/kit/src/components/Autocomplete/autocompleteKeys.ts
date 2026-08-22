@@ -1,5 +1,5 @@
 /**
- * SPEC.md §11's **autocomplete key contract**, in one place.
+ * SPEC.md §10's **autocomplete key contract**, in one place.
  *
  * > All autocompletes in the app share one keyboard contract: arrows move the
  * > highlight (wrapping at both ends), `⇥` and `↵` both accept the highlighted
@@ -16,9 +16,8 @@
  * handlers had nothing in common but their shape (UI-053, user report
  * 2026-08-03).
  *
- * It lives in the kit because §10 makes the kit the plugin contract: a
- * completing input a plugin contributes must answer to the same keys, and a
- * plugin may import nothing else.
+ * It lives in the kit because §10 binds every completing input in the app to the
+ * same keys, and one copy is what makes them all obey it.
  */
 
 /**
@@ -44,7 +43,7 @@ export interface AutocompleteKeyEvent {
  *
  * The contract's keys are bare keys — `↑` `↓` `⇥` `↵` `esc` — and every chord
  * built on one of them belongs to somebody else. Two of those somebodies are
- * live in the same field: SPEC.md §11 gives the composer `⌘↵` ("the primary
+ * live in the same field: SPEC.md §10 gives the composer `⌘↵` ("the primary
  * action is always `⌘↵`") and `⇧⌘↵`, and the browser gives everyone `⇧⇥` for
  * reverse focus. Neither has any accept semantics, and a menu that answered
  * them would be a menu overruling the app's primary action from a popup the
@@ -53,9 +52,9 @@ export interface AutocompleteKeyEvent {
  * The rule lives **here**, on the menu, rather than in the composer's key
  * handler: the composer consults the menu's claim before it looks at anything
  * (`composerKeys.ts`), so a menu that says "this is not my key" needs no host
- * to know a menu exists — and that holds for the ProseMirror host and any
- * plugin's completing input just as it does for the global composer, none of
- * which would otherwise spell the exclusion the same way. (PR #20 review,
+ * to know a menu exists — and that holds for the ProseMirror host and the column
+ * query editor just as it does for the global composer, none of which would
+ * otherwise spell the exclusion the same way. (PR #20 review,
  * MINOR: `⌘↵` in the global composer accepted a completion instead of asking.)
  */
 function isBarePress(event: AutocompleteKeyEvent): boolean {

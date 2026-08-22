@@ -211,7 +211,7 @@ describe("corpus thread reply", () => {
    * rendered it — and nothing ever supplied a value, so every turn showed blank.
    * This is the door the value enters through (Architecture Decision 2).
    */
-  describe("--model, the turn's stated model (SPEC.md §11)", () => {
+  describe("--model, the turn's stated model (SPEC.md §10)", () => {
     it("sends a stated model with the turn", async () => {
       const stub = await startStubServer(jsonResponder(201, APPENDED));
       const harness = stubContext(stub, {
@@ -241,7 +241,7 @@ describe("corpus thread reply", () => {
 
       const sent = bodyOf(stub.requests[0]?.body);
       // Not `model: null`, not `model: ""` — the key is simply not there, which
-      // is the one spelling of "nothing was recorded" (SPEC.md §11).
+      // is the one spelling of "nothing was recorded" (SPEC.md §10).
       expect(sent).toEqual({ body: "filed it" });
       expect(Object.keys(sent)).not.toContain("model");
     });

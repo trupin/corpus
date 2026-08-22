@@ -5,7 +5,7 @@ import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import "./ImageViewer.css";
 
 /**
- * One image, full-screen over the app (SPEC.md §11: "clicking any rendered
+ * One image, full-screen over the app (SPEC.md §10: "clicking any rendered
  * image — a turn attachment or an image in a document body — opens it
  * full-screen over the app, where `esc` closes it and returns focus to the
  * image").

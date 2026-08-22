@@ -26,8 +26,8 @@ opus
 - SPEC.md **§7**, Read state — the mark lives on the server (`.corpus/seen.json`)
   and "survives browser changes"; unread is "turns after the mark"
 - SPEC.md **§6**, thread frontmatter — `status: open | resolved; a resolved
-  thread is collapsed by default wherever it is shown (§11)`
-- SPEC.md **§11**, Thread view — "a conversation carrying a turn you have not
+  thread is collapsed by default wherever it is shown (§10)`
+- SPEC.md **§10**, Thread view — "a conversation carrying a turn you have not
   seen is never collapsed **by the rule**" (the unread interlock)
 
 ## Summary
@@ -42,7 +42,7 @@ either: no last-seen mark, no per-turn seen flag.
 
 That is fine for every surface that only *displays* a conversation. It stopped
 being fine when UI-077 made read state an **input to a placement decision**:
-SPEC.md §11's interlock says the by-rule fold never applies to a conversation
+SPEC.md §10's interlock says the by-rule fold never applies to a conversation
 carrying an unseen turn, so a placement that cannot answer "is this unread"
 cannot apply §6's rule either.
 

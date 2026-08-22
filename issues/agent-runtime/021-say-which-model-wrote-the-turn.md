@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — "An agent turn says which model wrote it… the turn names the
+- SPEC.md **§10** — "An agent turn says which model wrote it… the turn names the
   model of the **deciding** stage"
 - SPEC.md **§7** — work may be split into stages at different weights; the
   deciding stage runs at the governing weight
@@ -50,7 +50,7 @@ lasts.
       happened. Conflating them makes "honoured, not weighed again"
       unverifiable, and the skill should say so in one line so the distinction
       survives a later edit
-- [x] When the agent genuinely does not know, it states **nothing** — §11 wants
+- [x] When the agent genuinely does not know, it states **nothing** — §10 wants
       an absence rather than a plausible attribution nobody can check. An
       instruction to "state your best guess" would be the exact failure
 - [x] `scripts/workspace-template.test.ts` passes and pins the rule

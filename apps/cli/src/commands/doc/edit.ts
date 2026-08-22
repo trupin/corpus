@@ -278,7 +278,7 @@ export async function runDocEdit(
     // whole object back would race every other writer of a key this invocation
     // never mentioned.
     ...(extra === undefined ? {} : { extra }),
-    // The §11 view keys are *not* a merge patch — each is one core field, and
+    // The §10 view keys are *not* a merge patch — each is one core field, and
     // an unnamed one is simply absent here.
     ...view,
   };
@@ -288,7 +288,7 @@ export async function runDocEdit(
   // trade a usage error for a write that rewrites the document with itself.
   if (body === undefined && Object.keys(patch).length === 0) {
     throw new UsageError(`nothing to change on ${id}.`, {
-      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra, --extra-json, --pinned, --order, --query, --column.",
+      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra, --extra-json, --pinned, --order, --query.",
     });
   }
 
@@ -358,9 +358,9 @@ export const editCommand: WorkspaceCommandSpec = {
     "The server refuses the same write (SERVER-039); refusing it here costs no round trip and " +
     "names a **command** where the server can only name a route. `--extra` and `--extra-json` " +
     "write non-core frontmatter keys — the " +
-    "column `width` of SPEC.md §11 among them — as a merge patch: named keys replace, `null` " +
-    "removes, unnamed keys are untouched. `--pinned`, `--order`, `--query` and `--column` write " +
-    "the four **view keys** of SPEC.md §11, which are core fields rather than `extra` ones: a " +
+    "column `width` of SPEC.md §10 among them — as a merge patch: named keys replace, `null` " +
+    "removes, unnamed keys are untouched. `--pinned`, `--order` and `--query` write " +
+    "the three **view keys** of SPEC.md §10, which are core fields rather than `extra` ones: a " +
     "board column IS a `type: view` document with `pinned: true`, so pinning, reordering and " +
     "reconfiguring one is this verb, and the board follows over SSE with no reload. An edit that " +
     "names no change at all is a usage error, not an empty request.\n\n" +
@@ -449,7 +449,8 @@ export const editCommand: WorkspaceCommandSpec = {
       repeated: true,
       description:
         "Set one non-core frontmatter key, repeatably — the agent's way to steward a column's " +
-        "`width` (SPEC.md §11) or any plugin key. **The value grammar is total over scalars** — " +
+        "`width` (SPEC.md §10) or any other key the core does not define. **The value grammar is " +
+        "total over scalars** — " +
         "every input maps to exactly one JSON scalar, and `--extra-json` is the flag for an " +
         "object or an array: `null` deletes " +
         "the key (RFC 7386), `true`/`false` are booleans, a canonical **finite** JSON number " +
@@ -461,7 +462,7 @@ export const editCommand: WorkspaceCommandSpec = {
         "everywhere else (`9007199254740993` stores as `9007199254740992`); quote it to keep the " +
         "digits. Only the keys named are sent: the rest of `extra` is untouched " +
         "byte-for-byte, never read-modify-written. Naming a **core** key (`title`, `status`, " +
-        "`due`, `tags`, `pinned`, `order`, `query`, `column`, `id`, …) is a usage error before " +
+        "`due`, `tags`, `pinned`, `order`, `query`, `id`, …) is a usage error before " +
         "any request, pointing at the real flag where there is one.",
     },
     {
@@ -474,8 +475,8 @@ export const editCommand: WorkspaceCommandSpec = {
         "`--extra`'s scalar grammar deliberately does not have. The value is parsed as JSON, so " +
         "an object or an array reaches the file as YAML structure: " +
         '`--extra-json publish=\'{"target":"blog","draft":true}\'`, or ' +
-        '`--extra-json items=\'[{"text":"Ship it","done":false}]\'` for a plugin key shaped ' +
-        "like SPEC.md §12's. Same merge-patch semantics as `--extra` — named keys replace, " +
+        '`--extra-json items=\'[{"text":"Ship it","done":false}]\'` for a key whose value is a ' +
+        "list of objects. Same merge-patch semantics as `--extra` — named keys replace, " +
         "`null` deletes, unnamed keys are untouched — and the same core-key refusal. Depth and " +
         "size are the contract's (`EXTRA_MAX_DEPTH`, `EXTRA_MAX_BYTES`), checked server-side " +
         "over the whole object; the CLI only insists the text is JSON, so a shell-quoting slip " +
@@ -531,9 +532,9 @@ export const editCommand: WorkspaceCommandSpec = {
         "Reorder: a midpoint lands the column between the first and second without renumbering the rest of the board.",
     },
     {
-      command: 'corpus doc edit doc_t0d0s1 --extra-json publish=\'{"target":"blog"}\'',
+      command: 'corpus doc edit doc_a1b2c3 --extra-json publish=\'{"target":"blog"}\'',
       description:
-        "Store a plugin key whose value is an object; `--extra` stores scalars, and this is how the same merge patch carries structure.",
+        "Store a non-core key whose value is an object; `--extra` stores scalars, and this is how the same merge patch carries structure.",
     },
     {
       command: 'corpus doc edit doc_a1b2c3 --file revised.md --key "$key" --json',

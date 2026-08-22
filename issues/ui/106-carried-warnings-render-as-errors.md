@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§14** — warnings are the non-fatal channel
+- SPEC.md **§11** — warnings are the non-fatal channel
 - SPEC.md **§7** — a skill folder move is ordinary, specified behaviour
 
 ## Summary
@@ -57,8 +57,13 @@ one that *is* a problem gets missed.
 
 ### Files to Create/Modify
 
-- Wherever `apps/ui` maps a warning to a tone; check `packages/kit` too, since a
-  plugin surface may render the same channel.
+- Wherever `apps/ui` maps a warning to a tone; check `packages/kit` too, because
+  the row and notice components live there and render the same channel.
+  (**Amended 2026-08-22 by SHARED-065, Phase 41**: the original reason for
+  checking the kit was that a plugin surface might render the channel. SHARED-067
+  removed plugins, but the kit is kept — SHARED-067 amendment 3 rewords it as
+  *"the shared UI kit — the components and data hooks `apps/ui` is built from"* —
+  so the instruction survives its cause and keeps its reason restated.)
 
 ### Notes
 

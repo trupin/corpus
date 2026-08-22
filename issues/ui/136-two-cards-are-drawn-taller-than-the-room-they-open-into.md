@@ -24,11 +24,11 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — the search overlay, the composer, and *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
+- SPEC.md **§10** — the search overlay, the composer, and *"Nothing resizes because of what it holds"* (rider signed 2026-08-20)
 
 ## Reconciled by UI-142 (2026-08-21) — finding 1 is closed, 2 and 3 stand
 
-UI-142 audited SPEC.md §11's rider of 2026-08-21 (SHARED-061) and asked whether
+UI-142 audited SPEC.md §10's rider of 2026-08-21 (SHARED-061) and asked whether
 these three are that same defect seen from the other side. The answer differs
 per finding, and the split is the reason this issue is not simply closed.
 
@@ -61,7 +61,7 @@ one visible row"* — holds: at 581px of card those three lanes share one row.
 - **2, the reader column's async width**, is SHARED-057's first sentence — *a
   value that arrives later than the box laid out against it*. Nothing about it is
   a bound chosen too small; the bound is simply not known yet. A different half
-  of §11, and `settledReader()` is still the open question.
+  of §10, and `settledReader()` is still the open question.
 - **3, the reply foot at 336px**, is SHARED-057 clause 2 — *what yields when a
   row runs out of room*. The room there is the column, and the column's width is
   the user's own choice, so there is no larger room being refused. SHARED-061

@@ -28,7 +28,7 @@ opus
 - SPEC.md **§7** — the SHARED-048 rider: *"Naming none is the ordinary case and
   requires nothing to exist first; naming a profile is how a conversation gets
   an agent that behaves differently from the default."*
-- SPEC.md **§11** — the conversation's menu, and *"exactly that item's existing
+- SPEC.md **§10** — the conversation's menu, and *"exactly that item's existing
   actions"*
 
 ## Summary

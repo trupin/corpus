@@ -95,7 +95,7 @@ Reproduction (deterministic on my rig):
 4. `esc` and `⌫`, pressed any number of times (I tried 7), now do nothing: the active column has no reader.
 5. Hover the Inbox column → `.col.kactive` returns to `doc_seedinbox` → `esc` closes the reader normally.
 
-`localStorage["corpus.board"]` is clean throughout (`nav: [{"docId":"doc_v5k7myux","scrollY":0}]`), and the state survives a full page reload, so this is the hover-follows-active rule in SPEC §11 ("The active column follows focus/hover"), not corrupted navigation state. It is not caused by UI-022 — the back-button change cannot move the active column — but a user who closes full screen with the keyboard and then presses `esc` again will find it dead until they move the mouse. Worth a separate issue.
+`localStorage["corpus.board"]` is clean throughout (`nav: [{"docId":"doc_v5k7myux","scrollY":0}]`), and the state survives a full page reload, so this is the hover-follows-active rule in SPEC §10 ("The active column follows focus/hover"), not corrupted navigation state. It is not caused by UI-022 — the back-button change cannot move the active column — but a user who closes full screen with the keyboard and then presses `esc` again will find it dead until they move the mouse. Worth a separate issue.
 
 ## Summary
 

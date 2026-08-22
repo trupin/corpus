@@ -1,14 +1,13 @@
 import type { IndexStatus, QueueStatus } from "@corpus/contract";
 import { useHealth } from "@corpus/kit";
 import type { KeyboardEvent, ReactElement } from "react";
-import { usePluginRegistry } from "../plugins/registry";
 import { AgentPill } from "./AgentPill";
 import { UNKNOWN_QUEUE_STATUS, consoleCounts } from "./consoleModel";
 import { IndexPill } from "./IndexPill";
 import { NOTICES_UNREAD_HINT } from "./noticesModel";
 
 /**
- * The collapsed one-line strip (SPEC.md §11): caret, the word `console`, the
+ * The collapsed one-line strip (SPEC.md §10): caret, the word `console`, the
  * agent pill, the counts, the reachability notice, and the HALT toggle pinned
  * right. Clicking anywhere on it toggles the drawer.
  */
@@ -35,32 +34,11 @@ export function ServerStatus(): ReactElement {
   /*
    * `title` because the version is the server's string, not ours: `.c-status`
    * is bounded at 24ch and a long pre-release tag ellipsises, so the whole of
-   * it has to be reachable in place (SPEC.md §11's rider, clause 2).
+   * it has to be reachable in place (SPEC.md §10's rider, clause 2).
    */
   return (
     <span className="c-status" role="status" title={`corpus ${health.data.version}`}>
       corpus {health.data.version}
-    </span>
-  );
-}
-
-/**
- * Plugin load warnings (SPEC.md §10: "a manifest that fails to load is skipped
- * with a visible warning"). Written once at bootstrap by `loadPlugins()` and
- * read here, so a broken plugin is a fact in the strip — not only a
- * `console.error` a user never opens. The class is its own (`.c-plugin-warn`),
- * never `.c-failed`, which is the reachability notice's and is asserted in
- * Playwright strict mode (sprint-010 adjudication 5).
- */
-export function PluginWarnings(): ReactElement | null {
-  const warnings = usePluginRegistry().warnings;
-  if (warnings.length === 0) return null;
-  const detail = warnings.map((warning) => `${warning.plugin}: ${warning.reason}`).join("\n");
-  return (
-    <span className="c-plugin-warn" role="status" title={detail}>
-      {warnings.length === 1
-        ? `plugin ${warnings[0]?.plugin ?? ""} skipped`
-        : `${String(warnings.length)} plugin warnings`}
     </span>
   );
 }
@@ -120,7 +98,7 @@ export interface ConsoleStripProps {
    *
    * The marker is drawn either way and only *lit* by this flag — see
    * `.c-notice-mark` in `console.css`. A mark that appeared would re-width the
-   * line it appeared on, which is exactly what §11's rider forbids, and it would
+   * line it appeared on, which is exactly what §10's rider forbids, and it would
    * do it on the one row that always renders.
    */
   readonly unreadNotice: boolean;
@@ -183,7 +161,7 @@ export function ConsoleStrip({
       {/*
        * The index pill sits **after** the counts and immediately before the
        * spacer, which is the one slot in this row where a late arrival displaces
-       * nothing (SPEC.md §11's rider — "a value that arrives later than the box
+       * nothing (SPEC.md §10's rider — "a value that arrives later than the box
        * holding it" moves nothing else).
        *
        * `GET /api/index/status` answers after first paint, and the pill is
@@ -198,7 +176,6 @@ export function ConsoleStrip({
        */}
       {index === undefined ? null : <IndexPill status={index} />}
       <span className="spacer" />
-      <PluginWarnings />
       <ServerStatus />
       <button
         type="button"

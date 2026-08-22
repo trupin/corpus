@@ -245,7 +245,7 @@ npm run lint / format:check / typecheck  clean
   SERVER-046's to decide from its own rebuild verb.
 - A workspace whose only recorded identity is a model the engine cannot offer reports
   `indexed == total` while every vector is from the wrong model — honest for the worker (it
-  refuses to touch them), and exactly the `mixed`/foreign-identity case §14 asks `db doctor` to
+  refuses to touch them), and exactly the `mixed`/foreign-identity case §11 asks `db doctor` to
   fail on. Flagged for SERVER-046.
 
 ## Completion Checklist (domain agent)

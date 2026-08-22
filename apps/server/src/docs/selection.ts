@@ -1,7 +1,7 @@
-// §11's **whole-result-set** selection, resolved into the ids one Save acts on.
+// §10's **whole-result-set** selection, resolved into the ids one Save acts on.
 //
 // A staged set is enumerated rows — a document somebody looked at and chose a
-// verb for — with one exception §11 states outright: "because there is no
+// verb for — with one exception §10 states outright: "because there is no
 // per-row gesture for rows nobody enumerated, a whole-result-set selection
 // stages as a **single entry** … carrying one action for all of them", and "the
 // count is re-evaluated when the Save runs". That last clause is why this module
@@ -62,7 +62,7 @@ const valueToWire = (value: ViewQuery[string]): string =>
  * with it.
  *
  * `limit`, `offset` and `sort` are accepted and then **deliberately ignored**:
- * they are how a column pages and orders what it *shows*, and §11's second
+ * they are how a column pages and orders what it *shows*, and §10's second
  * selection act extends the selection to "everything the query matches" — "all
  * 412 matching", not the fifty on screen. Refusing them instead would refuse the
  * board's own stored queries, which carry `sort` as a matter of course.
@@ -77,7 +77,7 @@ export function compileSelectionQuery(query: ViewQuery): DocsQuery {
         message:
           `\`${key}\` is not a filter \`GET /api/docs\` accepts, so nothing here can say which ` +
           "documents it means. A stored view degrades on an unknown key; a Save cannot, because " +
-          "this query decides what gets written (SPEC.md §11).",
+          "this query decides what gets written (SPEC.md §10).",
       });
       continue;
     }
@@ -101,13 +101,13 @@ export function compileSelectionQuery(query: ViewQuery): DocsQuery {
 }
 
 /**
- * The ids §11's single whole-result-set entry covers, **at the moment the Save
+ * The ids §10's single whole-result-set entry covers, **at the moment the Save
  * runs**.
  *
  * Read outside every write lane, because which lanes the act holds is decided
  * from this list — so a document created between this read and the first write
  * is not in the act, exactly as one created a second before the Save was pressed
- * would not be. §11 asks for the count to be re-evaluated *when the Save runs*,
+ * would not be. §10 asks for the count to be re-evaluated *when the Save runs*,
  * which this is, and for the result to report what actually changed, which the
  * three parts do.
  */

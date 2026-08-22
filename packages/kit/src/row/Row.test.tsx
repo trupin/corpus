@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import type { DocRow } from "@corpus/contract";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCorpusTestHarness, docRowFixture } from "../testing/index.js";
 import { Row, type RowProps } from "./Row.js";
@@ -171,7 +170,7 @@ describe("badges", () => {
   });
 
   /**
-   * SPEC.md §7 replaced the lock with a key, and §11 made the board never
+   * SPEC.md §7 replaced the lock with a key, and §10 made the board never
    * read-only: there is no holder to name on a row and no projection to name
    * one from. A row therefore draws no lock chip and — the part worth pinning —
    * **asks nobody for one**, because a row hook runs once per card and a
@@ -440,7 +439,7 @@ describe("the reason line", () => {
   });
 
   /*
-   * SPEC.md §11 — "a thread holding more than one unanswered form says how many
+   * SPEC.md §10 — "a thread holding more than one unanswered form says how many
    * are still open". The number comes off `DocRow.unansweredForms`, which the
    * server derives from the same predicate as the `form` reason itself, so the
    * row never counts anything for itself and never fetches a thread to do it.
@@ -479,11 +478,11 @@ describe("the reason line", () => {
 
   it("keeps an unknown reason code on a neutral chip", () => {
     const { container } = renderRow({
-      row: docRowFixture({ attention: ["todos/overdue"] as never }),
+      row: docRowFixture({ attention: ["x/overdue"] as never }),
     });
     const chip = container.querySelector(".reason .r-chip");
     expect(chip?.className).toBe("r-chip");
-    expect(chip?.textContent).toBe("todos/overdue");
+    expect(chip?.textContent).toBe("x/overdue");
   });
 
   it("renders no reason line at all when the row has no reasons", () => {
@@ -499,34 +498,6 @@ describe("the reason line", () => {
     expect(container.querySelector(".reason")).toBeNull();
     // The badge is not a reason chip and stays.
     expect(container.querySelector(".needs-you")).not.toBeNull();
-  });
-});
-
-describe("the plugin seam", () => {
-  it("delegates wholesale to a registered ListItem", () => {
-    function TodoItem({ row }: RowProps): ReactElement {
-      return <li data-plugin-item={row.id}>{row.title}</li>;
-    }
-    const { container } = renderRow({
-      row: docRowFixture({ id: "todo_1", type: "todo", title: "Home maintenance" }),
-      ListItem: TodoItem,
-    });
-    expect(container.querySelector("[data-plugin-item='todo_1']")?.textContent).toBe(
-      "Home maintenance",
-    );
-    expect(container.querySelector(".row")).toBeNull();
-  });
-
-  it("does not recurse when the plugin item falls back to Row", () => {
-    function Fallback(props: RowProps): ReactElement {
-      return <Row {...props} />;
-    }
-    const { container } = renderRow({
-      row: docRowFixture({ title: "Fallback" }),
-      ListItem: Fallback,
-    });
-    expect(container.querySelectorAll(".row")).toHaveLength(1);
-    expect(container.querySelector(".row-title")?.textContent).toBe("Fallback");
   });
 });
 

@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §5 — document tree; §14 — doctor/validation
+- SPEC.md §5 — document tree; §11 — doctor/validation
 
 ## Summary
 SERVER-037's TEST-564 finding (2026-07-30): the fix is forward-only, and `db doctor` is

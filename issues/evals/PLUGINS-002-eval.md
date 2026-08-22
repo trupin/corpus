@@ -196,7 +196,7 @@ which used only `corpus todos` and core `corpus doc` verbs, and neither skill na
    wrapper (the one `Edit`) before proceeding. The sprint contract's wrapper recipe has the same latent
    issue — worth pinning the loader path absolutely in future contracts.
 
-### F. §15 M6 — the subtractive check (TEST-281–TEST-283) — **drilled by this evaluator**
+### F. §12 M6 — the subtractive check (TEST-281–TEST-283) — **drilled by this evaluator**
 
 Drill: `mv plugins/todos /tmp/corpus-s014-eval3-todos-backup`, rebuild the UI, restart the server; then
 restore, rebuild, restart.

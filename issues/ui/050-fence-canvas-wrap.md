@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Thread view, copyable-canvases sentence as amended by SHARED-009
+- SPEC.md §10 Thread view, copyable-canvases sentence as amended by SHARED-009
   Amendment 5
 
 ## Summary

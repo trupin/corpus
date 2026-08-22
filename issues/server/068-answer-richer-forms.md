@@ -38,7 +38,7 @@ opus
 - SPEC.md **§8** — a form answer re-triggers the agent like any engaged-thread
   reply. **Not changed by this issue**
 - SPEC.md **§4** — every mutation auto-commits with the acting party as author
-- SPEC.md **§14** — validation before writing
+- SPEC.md **§11** — validation before writing
 
 ## Summary
 
@@ -74,7 +74,7 @@ they land:
   a signal — so this becomes an actor refusal in the same family as user-only
   deletion.
 - **A form is answered once.** Answering again is legal today, and the pairing
-  re-runs afterwards. §6's "answered once, as a whole" and §11's "changing your
+  re-runs afterwards. §6's "answered once, as a whole" and §10's "changing your
   mind is an ordinary reply, not a second answer to the same question" close it.
 
 ## Acceptance Criteria
@@ -177,7 +177,7 @@ answer rather than each inventing it.
 
 **The answer turn's text is the only durable record of what was answered.** The
 `form.respond` payload lives in `.corpus/` — runtime state, reaped with its event
-— while §11 requires an answered form to render "each question beside what was
+— while §10 requires an answered form to render "each question beside what was
 given for it" after a reload. So the prose in the turn *is* the data.
 
 **Therefore the format and its parser are a pair, and the pair lives in
@@ -263,7 +263,7 @@ than inventing a third posture, and make the reason legible in the response — 
 agent that gets an opaque error will retry.
 
 **Mind the write path's other half.** The answer is a turn append like any other,
-so it validates before writing (§14) and auto-commits with the acting party as
+so it validates before writing (§11) and auto-commits with the acting party as
 author (§4). If the answer prose can carry user-supplied text — a `write` field's
 answer, or the note — then it can carry a backtick run or a line that looks like a
 turn heading. §6's `## <author> · <ts>` delimiters and SERVER-066's
@@ -288,7 +288,7 @@ than a review comment.
   case in `core/form.test.ts`; it must keep working
 - A thread **resolved** while a form is unanswered — the row clears because the
   predicate guards on `status = 'open'`; nothing here changes that, and the agent
-  still never resolves a thread that owes an answer (SPEC §11)
+  still never resolves a thread that owes an answer (SPEC §10)
 - A form fence whose YAML does not parse, or naming a fourth kind — `readForm`
   returns its `NoFormReason`; the turn is not answerable and does not surface as
   a form. Never a partial read

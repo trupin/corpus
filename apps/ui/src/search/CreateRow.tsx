@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 
 /**
  * `＋ Create "<query>" — opens ready to edit, in inbox/` — the zero-form
- * creation path (SPEC.md §11).
+ * creation path (SPEC.md §10).
  *
  * The whole point is what is *absent*: no form, no folder picker, no type
  * chooser, no dialog. A query that names nothing yet becomes a document with

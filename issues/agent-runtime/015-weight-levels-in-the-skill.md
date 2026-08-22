@@ -20,7 +20,7 @@ opus
 
 - Depends on: **SHARED-022** (signed by the user 2026-08-06; all three amendments
   applied to SPEC.md — verified in place at §7's Orchestrator skill paragraph,
-  §7's console bullet, and §11's "Smart input everywhere")
+  §7's console bullet, and §10's "Smart input everywhere")
 - Blocks: **UI-082** (the composer's picker reads its levels from the artefact
   this issue produces — do not build the picker against a hardcoded list)
 - Related: **AGENT-018** (SHARED-023, todo) — the other half of §7's weight rule.
@@ -39,7 +39,7 @@ opus
   at, and where that weight came from**"
 - SPEC.md **§7** — "model names live in the skill, not here" (standing text, not
   amended by SHARED-022 and the reason the levels live here at all)
-- SPEC.md **§11**, "Smart input everywhere" — the composer side, "from the levels
+- SPEC.md **§10**, "Smart input everywhere" — the composer side, "from the levels
   the workspace's own agent guidance defines (§7), named as that guidance names
   them"
 - SPEC.md **§2.4** — workspaces take template changes on their own schedule,
@@ -215,7 +215,7 @@ picker without the transport and is not evaluable end-to-end.
 - **A level whose model the installed Claude Code does not provide.** This is the
   unhonourable path: do the work, disclose in the log and the reply.
 - **A weight stated for work that enqueues nothing** (note-only). Nothing is
-  dispatched, so nothing is governed; the skill need not handle it, and §11 makes
+  dispatched, so nothing is governed; the skill need not handle it, and §10 makes
   it a presentation rule on the composer side.
 - **A stated weight plus a targeted `@<subagent>`.** Both are directives (§8's
   "a directive, not a hint"); they compose — the named subagent runs at the stated

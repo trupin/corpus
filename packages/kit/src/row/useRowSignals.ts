@@ -8,7 +8,7 @@ import { useOutstandingJobs } from "../query/useOutstandingJobs.js";
  * under one key, so a column of two hundred rows still issues one request, and
  * it repaints live because the server invalidates that key over SSE. This is the
  * reason it is not a prop drilled down from a column: a row that asks for its
- * own signals is a row a plugin can render anywhere.
+ * own signals is a row any surface can render anywhere.
  *
  * There used to be a second signal here — the edit lock — and it is gone with
  * the mechanism (SPEC.md §7 "A key, not a lock"). Nothing on the board polls or

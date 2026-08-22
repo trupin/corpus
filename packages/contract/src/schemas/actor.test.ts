@@ -8,7 +8,7 @@ describe("Actor", () => {
   });
 
   it("rejects an unknown party", () => {
-    expect(ActorSchema.safeParse("plugin").success).toBe(false);
+    expect(ActorSchema.safeParse("server").success).toBe(false);
   });
 });
 

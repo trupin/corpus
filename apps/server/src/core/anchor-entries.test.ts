@@ -21,7 +21,7 @@ describe("anchorEntries", () => {
   });
 
   // A hand-edited file with one malformed entry must not lose it because someone
-  // commented on the document; `doc check` reports it (§14), the write preserves it.
+  // commented on the document; `doc check` reports it (§11), the write preserves it.
   it("keeps entries the selector schema would reject", () => {
     expect(anchorEntries({ anc_a1b2c3d4: "not a selector", nonsense: 7 })).toEqual({
       anc_a1b2c3d4: "not a selector",

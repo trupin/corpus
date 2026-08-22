@@ -40,7 +40,7 @@ export interface DocumentTrace {
 /**
  * How many documents each cache remembers.
  *
- * Sized for the board: SPEC.md §11's columns each carry their own reader, and
+ * Sized for the board: SPEC.md §10's columns each carry their own reader, and
  * focus mode is one more surface over the same document set.
  */
 export const TRACE_CACHE_ENTRIES = 6;

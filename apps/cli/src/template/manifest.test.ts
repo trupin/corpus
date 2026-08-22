@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { InternalError } from "../errors.js";
 import {
-  pluginSourceMarker,
   readTemplateManifest,
   serializeManifest,
   sha256,
@@ -19,7 +18,7 @@ const MANIFEST: TemplateManifest = {
   installedAt: "2026-07-28T10:00:00.000Z",
   files: [
     { path: ".claude/skills/comment/SKILL.md", sha256: "a".repeat(64) },
-    { path: ".claude/skills/notes/SKILL.md", sha256: "b".repeat(64), source: "plugin:todos" },
+    { path: ".claude/skills/notes/SKILL.md", sha256: "b".repeat(64) },
   ],
 };
 
@@ -57,8 +56,17 @@ describe("the template manifest", () => {
     ).toThrow(InternalError);
   });
 
-  it("names the plugin a file came from", () => {
-    expect(pluginSourceMarker("todos")).toBe("plugin:todos");
+  it("still reads a manifest an older tool wrote, extra keys and all", () => {
+    // An entry is recognised by the two fields this tool reads. A manifest
+    // written when entries also recorded where their bytes came from must keep
+    // parsing: rejecting it as unrecognisable would break
+    // `corpus workspace upgrade` in exactly the workspaces that have one.
+    const legacy =
+      '{"version":1,"tool":"0.1.0","installedAt":"x","files":[' +
+      `{"path":"a.md","sha256":"${"a".repeat(64)}","source":"starter:examples"}]}`;
+    expect(readTemplateManifest(write(legacy))?.files).toEqual([
+      { path: "a.md", sha256: "a".repeat(64), source: "starter:examples" },
+    ]);
   });
 
   it("hashes bytes, not text", () => {

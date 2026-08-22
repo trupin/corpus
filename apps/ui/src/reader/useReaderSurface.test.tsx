@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget } from "@corpus/kit";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -153,10 +153,9 @@ describe("a reveal flash and the navigation that lit it", () => {
  * top, drew no flash and forgot what it was for. Measured at **2.5% of opens**
  * (9 of 360) at eight Playwright workers, and ~19% with four cores busy.
  *
- * The reader shows `Loading…` and no body at all while plugin discovery is
- * pending, so those 320 ms were spent searching a placeholder. That is the
- * shape the tests below reproduce: a surface that says nothing, then says
- * something.
+ * The reader shows `Loading…` and no body at all until its own fetch answers,
+ * so those 320 ms were spent searching a placeholder. That is the shape the
+ * tests below reproduce: a surface that says nothing, then says something.
  */
 describe("a reveal whose body has not arrived yet", () => {
   /** Long enough to have exhausted the ladder this replaces, twice over. */
@@ -230,9 +229,8 @@ describe("a reveal whose body has not arrived yet", () => {
  * The other half of the same distinction, found in review of UI-140 (PR #54).
  *
  * A **warm** open renders the body in the same commit that gives the reader
- * content — a document already in the query cache, with plugin discovery long
- * since settled — so the reveal's first look is at a finished surface that never
- * changes again. Arrival inferred from movement alone is unobtainable there, so
+ * content — a document already in the query cache — so the reveal's first look
+ * is at a finished surface that never changes again. Arrival inferred from movement alone is unobtainable there, so
  * a quote edited away could not be called absent: the reveal ran the full
  * `REVEAL_WAIT_MS` and then blamed the loading of a document that had loaded
  * perfectly, in the tone that marks the console with an unread error.

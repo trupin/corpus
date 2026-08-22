@@ -13,7 +13,7 @@ import type {
 } from "@corpus/contract";
 import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
-import { derivedFieldRefusalBody, unknownRecipientBody } from "./serverRefusals";
+import { archivedStatusRefusalBody, unknownRecipientBody } from "./serverRefusals";
 
 /**
  * A recording transport for the reader's suites.
@@ -116,7 +116,7 @@ export interface ReaderTransportOptions {
    */
   readonly holdWrites?: Promise<void>;
   /**
-   * Warnings `POST /api/threads` answers with (SPEC.md §14). A created thread
+   * Warnings `POST /api/threads` answers with (SPEC.md §11). A created thread
    * can succeed and still carry them — an unresolved `[[ref]]`, a skipped
    * commit — and they are the half of the outcome the user has to be told
    * about.
@@ -172,7 +172,6 @@ export function docFixture(overrides: DocOverrides = {}): Doc {
       pinned: false,
       order: null,
       query: null,
-      column: null,
       extra: {},
       ...frontmatterOverrides,
     },
@@ -754,11 +753,11 @@ function threadSummary(id: string, resolved: boolean): unknown {
  * against.
  *
  * `PUT /api/docs/{id}` is route-specific for the same reason: its `400` is
- * SERVER-085's *this field is derived*, and the form branches on the `issues`
- * that refusal names. A shapeless body there would let a test certify a
- * behaviour — a refused `status` leaving the local map — that the real refusal
- * would never trigger. The body carries whichever derived fields the request
- * actually sent, exactly as the server's does.
+ * SERVER-039's *an archived document is not brought back by a `PUT`*, and the
+ * form branches on the `issues` that refusal names. A shapeless body there would
+ * let a test certify a behaviour — a refused `status` leaving the local map —
+ * that the real refusal would never trigger. The body names the status the
+ * request actually sent, exactly as the server's does.
  */
 function refusal(route: string, status: number, call: ReaderCall): unknown {
   if (status === 413) {
@@ -766,14 +765,13 @@ function refusal(route: string, status: number, call: ReaderCall): unknown {
   }
   if (status === 400 && route.startsWith("PUT /api/docs/")) {
     const sent = call.body;
-    const carried =
-      typeof sent === "object" && sent !== null
-        ? ["status", "due"].filter((field) => field in sent)
-        : [];
-    return derivedFieldRefusalBody(carried, {
-      id: route.slice("PUT /api/docs/".length),
-      type: "todo",
-    });
+    const next =
+      typeof sent === "object" &&
+      sent !== null &&
+      typeof (sent as Record<string, unknown>)["status"] === "string"
+        ? String((sent as Record<string, unknown>)["status"])
+        : "open";
+    return archivedStatusRefusalBody(route.slice("PUT /api/docs/".length), next);
   }
   if (status === 400 && route === "POST /api/threads") {
     const message =
@@ -805,7 +803,7 @@ export function relatedPath(docId: string): string {
   return `/api/docs/${docId}/related`;
 }
 
-/** A related row, for the ranking the panel renders (SPEC.md §11). */
+/** A related row, for the ranking the panel renders (SPEC.md §10). */
 export function relatedFixture(overrides: Partial<RelatedDoc> = {}): RelatedDoc {
   return {
     id: "doc_related",

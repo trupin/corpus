@@ -19,7 +19,7 @@ fable
 ## Dependencies
 
 - Depends on: nothing new. Every action this rider batches already exists
-  individually (§11 ⋯ menu, staleness quick actions, §9.2 write routes).
+  individually (§10 ⋯ menu, staleness quick actions, §9.2 write routes).
 - Blocks: the UI chain this rider implies (not yet filed), plus one server-side
   question it raises — whether "one action, one commit" (Amendment 1) needs a way
   to ask for several document mutations as one act. That is a contract/server
@@ -38,9 +38,9 @@ fable
 - §9 Server — `DELETE /api/docs/:id` is **user-only** with an explicit confirm;
   user-only endpoints reject agent actors; deleted documents' threads become
   orphaned records
-- §11 UI — the board: columns, per-column reader, type-aware rows, ⋯ menu,
+- §10 UI — the board: columns, per-column reader, type-aware rows, ⋯ menu,
   right-click context menu, keyboard scheme, "browser-local state stays local"
-- §14 Validation — every mutation validates before writing; a mutation can
+- §11 Validation — every mutation validates before writing; a mutation can
   succeed and still surface warnings
 
 ---
@@ -57,7 +57,7 @@ rather than buried in the amendment text.
 
 ## What already exists — this rider does not re-specify any of it
 
-- **Every action it batches is already specified, one document at a time.** §11's
+- **Every action it batches is already specified, one document at a time.** §10's
   reader ⋯ menu offers Archive, Unarchive, Delete (user-only, explicit confirm
   per §9) and Resolve/Reopen; the staleness ramp already puts archive /
   still-current / @agent-triage quick actions on a stale **row**; §9.2 has the
@@ -79,7 +79,7 @@ rather than buried in the amendment text.
   one that already applies, per document.
 - **Partial outcomes already have a vocabulary.** §2.4's upgrade report states
   "what it updated, what it left alone, and, listed apart from both, the
-  conflicts that are unresolved work". §14 already has mutations that succeed and
+  conflicts that are unresolved work". §11 already has mutations that succeed and
   still carry warnings. Amendment 2 reuses that three-part shape verbatim in
   spirit rather than inventing a second one.
 - **"One act, one attributed commit" already exists as a pattern**: the workspace
@@ -89,7 +89,7 @@ rather than buried in the amendment text.
   item's existing actions, nothing invented" — which the selection menu must obey
   rather than sidestep.
 
-So the gap is narrow and entirely in §11 (how a selection is made, shown, and
+So the gap is narrow and entirely in §10 (how a selection is made, shown, and
 reported on) plus one sentence of §4 (what it does to git history).
 
 ---
@@ -183,12 +183,12 @@ APPEND immediately after, in §4, exactly this existing text:
 the following paragraph:
 
 > **One action, one commit.** An action a person takes on **several documents at
-> once** — the board's bulk actions on a selection (§11) — lands as a **single**
+> once** — the board's bulk actions on a selection (§10) — lands as a **single**
 > auto-commit, authored by the acting party like any other: archiving twenty
 > documents is one commit, not twenty, the same shape an upgrade's template sync
 > (§2.4) and `corpus skill rollback` (§7) already have when one act spans several
 > files. The commit contains exactly the documents the action **changed** — a
-> document the action could not change (§11) leaves nothing in it — so `git log`
+> document the action could not change (§10) leaves nothing in it — so `git log`
 > never records an effect the user was told did not happen, and reverting that
 > one commit undoes the action as a unit. A bulk commit is its own entry in the
 > history: it never folds into a preceding editing session's squashed commit, and
@@ -199,7 +199,7 @@ the following paragraph:
 > and the message is what keeps that legible from both directions. _(Rider signed
 > 2026-08-05.)_
 
-### Amendment 2 — §11, APPEND a new bullet after "Type-aware rows"
+### Amendment 2 — §10, APPEND a new bullet after "Type-aware rows"
 
 APPEND, as a new bullet immediately after the bullet ending with exactly this
 existing text:
@@ -215,7 +215,7 @@ the following:
 >   it in the reader exactly as before, and a row joins the selection only through
 >   an explicit act — its own selection control (revealed on hover or keyboard
 >   focus, and shown on every row once the selection is non-empty) or the keyboard
->   bindings below, which reach everything the pointer reaches (§11 adds no
+>   bindings below, which reach everything the pointer reaches (§10 adds no
 >   exclusive-pointer capability). **A selection lives in one column at a time** —
 >   the active column — and starting one in another column clears it: the same
 >   document legitimately appears in two columns, and a selection spanning both
@@ -232,14 +232,14 @@ the following:
 >   so a selection holding a note and a thread offers no Resolve — nothing is
 >   half-applied because of a type mismatch. Tagging **adds or removes the named
 >   tags** and never replaces a document's tag set. **Ask the agent about these**
->   creates one agent-requested standalone thread (§11's Ask) whose first turn
+>   creates one agent-requested standalone thread (§10's Ask) whose first turn
 >   references every selected document, and appears on the board like any Ask; it
 >   changes none of the selected documents, so it stays available when some of
 >   them are locked.
 >   **A bulk action applies to what it can and reports what it could not.** It
 >   never refuses the whole set because of one document: a document locked by the
 >   other party is refused exactly as a single edit to it would be, naming the
->   holder (§7); one that fails validation is refused with its reason (§14); the
+>   holder (§7); one that fails validation is refused with its reason (§11); the
 >   rest go through. **The result is stated in three parts** — what **changed**,
 >   what was **already in that state** (a document already archived is a no-op,
 >   not a failure), and, listed apart from both, what **did not change and why**,
@@ -272,14 +272,14 @@ the following:
 >   reader, and live updates arriving over SSE. A row that leaves the list because
 >   it no longer matches the query — including because the action just archived it
 >   — leaves the selection with it. **Right-clicking a row that is part of the
->   selection** opens the selection's actions and names the count, under §11's
+>   selection** opens the selection's actions and names the count, under §10's
 >   existing context-menu rule (exactly the actions already offered, nothing
 >   invented); right-clicking a row outside the selection opens that row's own
 >   menu and leaves the selection alone. _(Rider signed 2026-08-05.)_
 
-### Amendment 3 — §11 keyboard scheme, REPLACE the tail of the bullet
+### Amendment 3 — §10 keyboard scheme, REPLACE the tail of the bullet
 
-REPLACE, in §11's **Keyboard scheme (v1)** bullet, exactly this text:
+REPLACE, in §10's **Keyboard scheme (v1)** bullet, exactly this text:
 
 > `f` focus mode on the open document · `e` archive the open (or highlighted)
 > document · `r` focus the reply composer of the open document's visible thread ·
@@ -403,7 +403,7 @@ the scheme says.
 - [ ] All three amendments applied to SPEC.md verbatim at phase kickoff, by the
       orchestrator
 - [ ] Amendment 3 **replaces** the quoted keyboard text rather than duplicating
-      it — the `f` / `e` / `r` / `?` bindings must survive exactly once in §11
+      it — the `f` / `e` / `r` / `?` bindings must survive exactly once in §10
 - [ ] Amendments 1 and 2 are **appends**; nothing existing is deleted by them
 - [ ] §7 and §9 are **not** edited: the lock rule and the user-only deletion rule
       are referenced, never restated or relaxed
@@ -417,7 +417,7 @@ the scheme says.
 
 ### Files to Create/Modify
 
-- `SPEC.md` §4 (one append), §11 (one append, one replace)
+- `SPEC.md` §4 (one append), §10 (one append, one replace)
 
 ## Testing Strategy
 

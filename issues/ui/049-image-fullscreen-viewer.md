@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Thread view, as amended by SHARED-009 Amendment 3
+- SPEC.md §10 Thread view, as amended by SHARED-009 Amendment 3
 - §6:222 "Posted turns render images inline and other files as download chips"
 
 ## Summary

@@ -11,13 +11,13 @@
 ## What makes this sprint different
 
 **Two of the five issues are the board, and the board is the product.** UI-003 and UI-004 together
-are SPEC.md §11's entire first screen — the thing a user sees when `corpus server start` prints a
+are SPEC.md §10's entire first screen — the thing a user sees when `corpus server start` prints a
 URL. Everything after them (UI-005 reader, UI-006 editor, UI-007 anchored threads, UI-009 search,
 PLUGINS-001) hangs off the two contracts they establish: the **column** contract (a pinned view
 document) and the **row** contract (`Row`'s props, exported from `packages/kit`).
 
 **UI-003 cannot be implemented against the shipped contract, and this is not a small gap.**
-SPEC.md §11 says *"A column IS a `type: view` document with `pinned: true`; its frontmatter holds
+SPEC.md §10 says *"A column IS a `type: view` document with `pinned: true`; its frontmatter holds
 the query … and `order`."* The workspace agrees — `assets/workspace/data/docs/views/attention.md`
 ships `pinned: true`, `order: 1`, `query: {needs: me}` — and the server's document core agrees
 (`core/frontmatter.ts` is explicitly *"the pre-defaults form plus passthrough for plugin keys"*).
@@ -268,7 +268,7 @@ Every fact below was read out of the shipped tree at `6543280` while writing thi
   records sprint-006 Adjudication 1: *"No lock guard. Commenting is not editing: §7's lock is the
   edit lock, nothing in the parent is touched by a turn, and `appendTurn` declares no `423`."*
   **SERVER-016 must not add a lock guard.**
-- `FormAnswerResponse = {thread, turn, eventId (nullable), warnings}` and it **is** a §14 warnings
+- `FormAnswerResponse = {thread, turn, eventId (nullable), warnings}` and it **is** a §11 warnings
   carrier. `eventId`'s own description already pins the §8 rule: *"Null when the answer does not
   re-trigger it — a resolved thread stops re-triggering the agent even while it is engaged."*
 - The grammar lives in `packages/contract/src/schemas/form.ts` and is **exported from
@@ -450,7 +450,7 @@ TEST-9: The new order is corpus state, not browser state
   Given: TEST-8's drag has landed
   When:  The page is reloaded, and a second browser context is opened against the same server
   Then:  Both show the new order. Then inspect `localStorage`: the stored blob contains **no** query,
-         no `order`, no column identity. This is the review-blocking correctness rule of SPEC.md §11
+         no `order`, no column identity. This is the review-blocking correctness rule of SPEC.md §10
 
 TEST-10: The reorder writes the minimum set of documents
   Given: Sparse `order` values (multiples of 10) across five columns
@@ -518,7 +518,7 @@ TEST-17: A preset choice and a plugin-column affordance behave consistently
 TEST-18: A view document referencing a missing plugin column keeps its place
   Given: A pinned view document with `column: "todos/board"` and no such plugin installed
   When:  The board loads
-  Then:  A "plugin missing" card renders in that column's place (SPEC.md §15 M5) and the column is
+  Then:  A "plugin missing" card renders in that column's place (SPEC.md §12 M5) and the column is
          not dropped from the board
 ```
 
@@ -530,15 +530,15 @@ TEST-19: ＋ on a folder column creates into that folder
   When:  Its `＋` is pressed
   Then:  A file is created under `data/docs/finance/` on disk (not `inbox/`), it opens immediately in
          that column, and its title is focused **and selected** (verify the selection, not just the
-         focus — SPEC.md §11 says "ready to type")
+         focus — SPEC.md §10 says "ready to type")
 
 TEST-20: ＋ on every other column creates into inbox
   Given: The Attention column (a `needs=me` view, not folder-scoped)
   When:  Its `＋` is pressed
-  Then:  The created file lands in `data/docs/inbox/`, per SPEC.md §11's inbox-first rule
+  Then:  The created file lands in `data/docs/inbox/`, per SPEC.md §10's inbox-first rule
 
 TEST-21: The creation call is factored for UI-009 to share
-  Given: SPEC.md §11 — the omnibox creates the same way
+  Given: SPEC.md §10 — the omnibox creates the same way
   Then:  The creation path is one named unit consumed by the `＋` handler, exported or importable by
          UI-009 without duplication, and the code says so. UI-009 re-implementing this is the
          failure this criterion prevents
@@ -620,7 +620,7 @@ TEST-33: Rows arrive through a contract UI-004 can satisfy
          prop shape is written verbatim into the E2E log — it is UI-004's and PLUGINS-001's input
 
 TEST-34: Folder columns include the threads that inherit the folder
-  Given: SPEC.md §11 — "threads inherit their parent document's folder"
+  Given: SPEC.md §10 — "threads inherit their parent document's folder"
   When:  A document is created in `finance/` and a thread is created on it (thread files live in
          `data/threads/`), with a `finance/` folder column on the board
   Then:  Both the document row and the thread row appear in that column
@@ -879,7 +879,7 @@ TEST-69: An unknown reason code renders rather than disappears
          row is not dropped
 
 TEST-70: Handling the reason clears the row live
-  Given: SPEC.md §11 — "Handling the reason … clears the row live via SSE"
+  Given: SPEC.md §10 — "Handling the reason … clears the row live via SSE"
   When:  An unread thread in Attention is marked seen out of band
   Then:  The unread pill clears and the row leaves the Attention column, both with no reload
 ```
@@ -1038,12 +1038,12 @@ TEST-88: A second answer to the same form is handled deliberately
 #### Warnings, projection, and Attention
 
 ```
-TEST-89: §14 warnings ride the response
+TEST-89: §11 warnings ride the response
   Given: `FormAnswerResponse` carries `warnings`, and `warningsFor()` produces `commit_failed` when
          the auto-commit is rejected
   When:  An answer is submitted in a workspace whose `pre-commit` hook exits 1
   Then:  `201` with a **non-empty** `warnings` array carrying `commit_failed` and the hook's detail;
-         the answer turn **still stands on disk** (SPEC.md §14 — "The server never rolls back a file
+         the answer turn **still stands on disk** (SPEC.md §11 — "The server never rolls back a file
          write because a commit failed"); and the commit count is unchanged
 
 TEST-90: The write re-projects synchronously — read-your-write
@@ -1561,7 +1561,7 @@ UI-003, and UI-003 → UI-004's wiring.
 
 ### 1. UI-003's view-document contract does not exist on the wire (**P0, blocks the issue entirely**)
 
-SPEC.md §11: *"A column IS a `type: view` document with `pinned: true`; its frontmatter holds the
+SPEC.md §10: *"A column IS a `type: view` document with `pinned: true`; its frontmatter holds the
 query (filters, search text, sort) and `order` (board position)."* The workspace agrees —
 `assets/workspace/data/docs/views/attention.md` ships `pinned: true`, `order: 1`, `query: {needs: me}`
 — and `apps/server/src/core/frontmatter.ts` is documented as *"the pre-defaults form plus passthrough

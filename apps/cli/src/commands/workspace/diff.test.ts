@@ -61,13 +61,6 @@ function makeTemplate(): string {
   return root;
 }
 
-/** A plugin tree contributing one skill, carrying `source: "plugin:<dir>"`. */
-function makePlugins(): string {
-  const root = tempDir("plugins");
-  write(root, "todos/skills/todos/SKILL.md", "todos skill v1\n");
-  return root;
-}
-
 interface Harness {
   readonly root: string;
   readonly context: WorkspaceCommandContext;
@@ -75,12 +68,11 @@ interface Harness {
   json<T>(): T;
 }
 
-function makeWorkspace(templateRoot: string, pluginsRoot: string): string {
+function makeWorkspace(templateRoot: string): string {
   const root = tempDir("ws");
   scaffoldWorkspace({
     root,
     templateRoot,
-    pluginsRoot,
     port: 9120,
     token: generateToken(),
     toolVersion: "0.1.0",
@@ -107,23 +99,16 @@ function harnessFor(
   };
 }
 
-function diff(
-  harness: Harness,
-  tool: { readonly template: string; readonly plugins: string },
-): Promise<void> {
-  return runWorkspaceDiff(harness.context, {
-    templateRoot: tool.template,
-    pluginsRoot: tool.plugins,
-  });
+function diff(harness: Harness, tool: { readonly template: string }): Promise<void> {
+  return runWorkspaceDiff(harness.context, { templateRoot: tool.template });
 }
 
 const COMMENT_SKILL = ".claude/skills/comment/SKILL.md";
 
 /** The workspace edited a skill; the tool then changed the same skill. */
-function conflictingWorkspace(): { root: string; template: string; plugins: string } {
+function conflictingWorkspace(): { root: string; template: string } {
   const template = makeTemplate();
-  const plugins = makePlugins();
-  const root = makeWorkspace(template, plugins);
+  const root = makeWorkspace(template);
 
   write(root, COMMENT_SKILL, "# Comment\n\nask a question\nthen wait\nand log it\n");
   write(
@@ -131,15 +116,15 @@ function conflictingWorkspace(): { root: string; template: string; plugins: stri
     "claude/skills/comment/SKILL.md",
     "# Comment\n\nask a better question\nthen wait\n",
   );
-  return { root, template, plugins };
+  return { root, template };
 }
 
 describe("corpus workspace diff <path>", () => {
   it("shows what the tool changed under a file this workspace edited", async () => {
-    const { root, template, plugins } = conflictingWorkspace();
+    const { root, template } = conflictingWorkspace();
     const harness = harnessFor(root, { path: COMMENT_SKILL });
 
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
 
     const out = harness.stdout();
     expect(out).toContain("conflict — edited here and changed by the tool");
@@ -153,10 +138,10 @@ describe("corpus workspace diff <path>", () => {
   });
 
   it("names all three sides and which of them moved", async () => {
-    const { root, template, plugins } = conflictingWorkspace();
+    const { root, template } = conflictingWorkspace();
     const harness = harnessFor(root, { path: COMMENT_SKILL, json: true });
 
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
     const report = harness.json<WorkspaceDiffReport>();
 
     expect(report.action).toBe("keep-modified");
@@ -176,10 +161,10 @@ describe("corpus workspace diff <path>", () => {
   });
 
   it("emits exactly one JSON value and no human prose under --json", async () => {
-    const { root, template, plugins } = conflictingWorkspace();
+    const { root, template } = conflictingWorkspace();
     const harness = harnessFor(root, { path: COMMENT_SKILL, json: true });
 
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
 
     expect(harness.stdout().trimEnd().split("\n")).toHaveLength(1);
     expect(() => harness.json<WorkspaceDiffReport>()).not.toThrow();
@@ -187,11 +172,10 @@ describe("corpus workspace diff <path>", () => {
 
   it("says a clean file is clean, and exits successfully", async () => {
     const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
+    const root = makeWorkspace(template);
     const harness = harnessFor(root, { path: COMMENT_SKILL, json: true });
 
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
     const report = harness.json<WorkspaceDiffReport>();
 
     expect(report.action).toBe("current");
@@ -202,8 +186,7 @@ describe("corpus workspace diff <path>", () => {
 
   it("distinguishes a file only the tool changed from a conflict", async () => {
     const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
+    const root = makeWorkspace(template);
     write(
       template,
       "claude/skills/comment/SKILL.md",
@@ -211,7 +194,7 @@ describe("corpus workspace diff <path>", () => {
     );
 
     const harness = harnessFor(root, { path: COMMENT_SKILL });
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
 
     expect(harness.stdout()).toContain("not a conflict — this workspace never edited it");
     expect(harness.stdout()).toContain("+ask a better question");
@@ -219,12 +202,11 @@ describe("corpus workspace diff <path>", () => {
 
   it("distinguishes a file only this workspace changed from a conflict", async () => {
     const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
+    const root = makeWorkspace(template);
     write(root, COMMENT_SKILL, `${SKILL_V1}and log it\n`);
 
     const harness = harnessFor(root, { path: COMMENT_SKILL, json: true });
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
 
     expect(harness.json<WorkspaceDiffReport>()).toMatchObject({
       action: "keep-silent",
@@ -239,13 +221,12 @@ describe("corpus workspace diff <path>", () => {
 
   it("says a retired file is retired rather than diffing it against nothing", async () => {
     const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
+    const root = makeWorkspace(template);
     // The tool dropped the file; the workspace's copy stays.
     unlinkSync(join(template, "claude", "skills", "comment", "SKILL.md"));
 
     const harness = harnessFor(root, { path: COMMENT_SKILL, json: true });
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
     const report = harness.json<WorkspaceDiffReport>();
 
     expect(report.action).toBe("retired");
@@ -255,12 +236,11 @@ describe("corpus workspace diff <path>", () => {
 
   it("shows a file this workspace deleted as a whole-file addition", async () => {
     const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
+    const root = makeWorkspace(template);
     unlinkSync(join(root, ".claude", "skills", "comment", "SKILL.md"));
 
     const harness = harnessFor(root, { path: COMMENT_SKILL, json: true });
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
     const report = harness.json<WorkspaceDiffReport>();
 
     expect(report.action).toBe("restore-candidate");
@@ -269,30 +249,13 @@ describe("corpus workspace diff <path>", () => {
     expect(report.diff?.text).toContain("@@ -0,0 +1,4 @@");
   });
 
-  it("carries plugin provenance through, and diffs against the plugin's copy", async () => {
-    const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
-    write(root, ".claude/skills/todos/SKILL.md", "todos skill, edited here\n");
-    write(plugins, "todos/skills/todos/SKILL.md", "todos skill v2\n");
-
-    const harness = harnessFor(root, { path: ".claude/skills/todos/SKILL.md", json: true });
-    await diff(harness, { template, plugins });
-    const report = harness.json<WorkspaceDiffReport>();
-
-    expect(report.source).toBe("plugin:todos");
-    expect(report.conflict).toBe(true);
-    expect(report.diff?.text).toContain("+todos skill v2");
-  });
-
   it("refuses a path the tool does not install, with the reason and a usage exit", async () => {
     const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
+    const root = makeWorkspace(template);
     write(root, "data/docs/inbox/mine.md", "a document of my own\n");
 
     const harness = harnessFor(root, { path: "data/docs/inbox/mine.md" });
-    const error = await diff(harness, { template, plugins }).catch((cause: unknown) => cause);
+    const error = await diff(harness, { template }).catch((cause: unknown) => cause);
 
     expect(isCliError(error)).toBe(true);
     if (!isCliError(error)) return;
@@ -304,11 +267,10 @@ describe("corpus workspace diff <path>", () => {
 
   it("suggests the near miss when a known path is misspelled", async () => {
     const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
+    const root = makeWorkspace(template);
 
     const harness = harnessFor(root, { path: ".claude/skills/comment/SKILL.MD" });
-    const error = await diff(harness, { template, plugins }).catch((cause: unknown) => cause);
+    const error = await diff(harness, { template }).catch((cause: unknown) => cause);
 
     expect(isCliError(error)).toBe(true);
     if (!isCliError(error)) return;
@@ -316,24 +278,24 @@ describe("corpus workspace diff <path>", () => {
   });
 
   it("accepts a path relative to the directory the command was run from", async () => {
-    const { root, template, plugins } = conflictingWorkspace();
+    const { root, template } = conflictingWorkspace();
     const harness = harnessFor(root, {
       path: "comment/SKILL.md",
       cwd: join(root, ".claude", "skills"),
       json: true,
     });
 
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
 
     expect(harness.json<WorkspaceDiffReport>().path).toBe(COMMENT_SKILL);
   });
 
   it("says every verdict is a guess when the workspace has no manifest", async () => {
-    const { root, template, plugins } = conflictingWorkspace();
+    const { root, template } = conflictingWorkspace();
     unlinkSync(templateManifestPath(root));
 
     const harness = harnessFor(root, { path: COMMENT_SKILL });
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
 
     expect(harness.stdout()).toContain("conflict (no baseline)");
     expect(harness.stdout()).toContain("no .corpus/template-manifest.json");
@@ -345,22 +307,16 @@ describe("corpus workspace diff <path>", () => {
 
 describe("corpus workspace diff (no path)", () => {
   it("lists the paths currently in conflict without re-running an upgrade", async () => {
-    const { root, template, plugins } = conflictingWorkspace();
-    write(root, ".claude/skills/todos/SKILL.md", "todos skill, edited here\n");
-    write(plugins, "todos/skills/todos/SKILL.md", "todos skill v2\n");
+    const { root, template } = conflictingWorkspace();
     // Changed by the tool but untouched here: not a conflict, so not listed.
     write(template, "README.md", "readme v2\n");
 
     const harness = harnessFor(root, { json: true });
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
     const report = harness.json<WorkspaceConflictList>();
 
-    expect(report.conflicts.map((file) => file.path)).toEqual([
-      COMMENT_SKILL,
-      ".claude/skills/todos/SKILL.md",
-    ]);
+    expect(report.conflicts.map((file) => file.path)).toEqual([COMMENT_SKILL]);
     expect(report.conflicts.every((file) => file.conflict)).toBe(true);
-    expect(report.conflicts[1]?.source).toBe("plugin:todos");
     // The listing carries the same three identities, so triage needs no second call.
     expect(report.conflicts[0]).toMatchObject({
       action: "keep-modified",
@@ -370,10 +326,10 @@ describe("corpus workspace diff (no path)", () => {
   });
 
   it("names each conflict and the verb that shows it, for a human", async () => {
-    const { root, template, plugins } = conflictingWorkspace();
+    const { root, template } = conflictingWorkspace();
     const harness = harnessFor(root);
 
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
 
     expect(harness.stdout()).toContain("1 conflict — edited in this workspace and changed by");
     expect(harness.stdout()).toContain(`  ${COMMENT_SKILL}`);
@@ -382,11 +338,10 @@ describe("corpus workspace diff (no path)", () => {
 
   it("says so plainly, and successfully, when there is nothing in conflict", async () => {
     const template = makeTemplate();
-    const plugins = makePlugins();
-    const root = makeWorkspace(template, plugins);
+    const root = makeWorkspace(template);
 
     const harness = harnessFor(root, { json: true });
-    await diff(harness, { template, plugins });
+    await diff(harness, { template });
 
     expect(harness.json<WorkspaceConflictList>().conflicts).toEqual([]);
   });

@@ -32,7 +32,7 @@ Discovered by sprint-006: no `formAnswer` schema and no producer of `form.respon
 
 ## Acceptance Criteria
 
-- [x] **Rider**: `resolve`/`reopen` responses gain the warnings field (SERVER-006: they return a bare ThreadSummary, so their §14 warnings are log-only today).
+- [x] **Rider**: `resolve`/`reopen` responses gain the warnings field (SERVER-006: they return a bare ThreadSummary, so their §11 warnings are log-only today).
 - [x] **Rider**: `ReapStaleResult` gains `failed: string[]` (QueueService returns it; the CLI cannot report give-ups without it — CLI-004 harvest note).
 - [x] **Rider**: `JobSchema` gains a nullable origin-title field for the jobs listing (thread- and doc-origin jobs carry the origin's title so UI-011's console can label jobs without a second fetch — struck from SERVER-018 on 2026-07-27 because no such field exists in the contract; the server-side population rides with SERVER-016 or a small follow-up).
 - [x] Form-answer request/response schemas per §8; the submission route declared; `form.respond` payload pinned in the QueueEvent core types.
@@ -58,7 +58,7 @@ Discovered by sprint-006: no `formAnswer` schema and no producer of `form.respon
 ### The rest
 
 - Route `POST /api/threads/{id}/turns/{ts}/form` → `FormAnswerRequest {option, note?}` →
-  `FormAnswerResponse {thread, turn, eventId, warnings}` (a new §14 carrier). `eventId` is
+  `FormAnswerResponse {thread, turn, eventId, warnings}` (a new §11 carrier). `eventId` is
   **nullable, not optional**: a resolved thread stops re-triggering the agent (§8).
 - `validateFormAnswer(form, answer)` lives in the contract, not the server: the wire's own
   definition of a valid answer gets one implementation, which the server rejects with and a client
@@ -149,7 +149,7 @@ assertion or updates a pinned literal to its new correct value:
 | no `500` declared anywhere | green |
 | every named component a plain, non-nullable, undefaulted object | green (`Job` included) |
 | no server-applied default in a request body; none in a `required` array | green |
-| §14 `warnings` required on every carrier | `CARRIERS` 7 → 9 (`ThreadMutationResponse`, `FormAnswerResponse`); the "no other component carries a differently-shaped warnings field" sweep still passes |
+| §11 `warnings` required on every carrier | `CARRIERS` 7 → 9 (`ThreadMutationResponse`, `FormAnswerResponse`); the "no other component carries a differently-shaped warnings field" sweep still passes |
 | request bodies: `RULE_EXEMPTIONS === {}` | unchanged, still empty |
 | request-body count | 11 → **12** (the form-answer body; CONTRACT-009 adds a media type, not a body) |
 | mandatory/omittable partition | `POST /api/threads/{id}/turns/{ts}/form: true` added |

@@ -27,7 +27,7 @@ A Reflect control on the board bar asks for a reflection now and carries the cor
 - [ ] `useReflectStatus()` reads `GET /api/workspace/reflect` and follows the SSE kinds SERVER-137 emits; no polling.
 - [ ] Board bar: **Reflect · N changes since <relative time>**; while pending: "reflecting…", disabled; with `changed: 0`: "Reflect" enabled (a person may still ask); a `pending: true` answer on click shows the pending state, never an error toast.
 - [ ] "reflected <relative>" beside the control opens the last digest thread (`lastDigest`) as a loose path on the current board (UI-149's left-edge placement); when `reflected` is null the text reads "never reflected".
-- [ ] A row with `updated > reflected` **and** `lastActor !== "agent"` (both on the row, CONTRACT-074) shows a small mark (the prototype's dot vocabulary, a distinct glyph from "open elsewhere"); the column head shows "N changed" when N > 0; a board tab shows a dot when any of its columns' documents are changed (derived from the rows already loaded, never an extra request).
+- [ ] A row with `updated > reflected` **and** `lastActor !== "agent"` (both on the row, CONTRACT-077) shows a small mark (the prototype's dot vocabulary, a distinct glyph from "open elsewhere"); the column head shows "N changed" when N > 0; a board tab shows a dot when any of its columns' documents are changed (derived from the rows already loaded, never an extra request).
 - [ ] A configured `quiet` of `0` changes the control's title to say reflections are manual only.
 - [ ] e2e `reflect.spec.ts`: stub clock and counts; marks present; click → pending state; SSE clock move → marks clear and count drops.
 

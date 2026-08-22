@@ -17,10 +17,10 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Thread view as amended by SHARED-009 Amendment 2
+- SPEC.md §10 Thread view as amended by SHARED-009 Amendment 2
 - §6 "Anchoring" and §6 "Recursion" (a thread is a document; commenting on a
   turn creates a child thread whose `parent` is the thread's id)
-- §11 right-click menu ("Comment on selection")
+- §10 right-click menu ("Comment on selection")
 
 ## Summary
 Live report 2026-08-03: _"In a thread, or any document for that matter. I want to
@@ -157,7 +157,7 @@ assumption` with a DOM range, right-clicked on it at (880, 379):
 
 - menu: `["💬 Comment on selection\nopens a thread anchored to these words",
   "Copy\nthe selection, with its formatting, to the clipboard"]` — Comment first,
-  clipboard after, exactly §11's order for a non-editable body.
+  clipboard after, exactly §10's order for a non-editable body.
 - composer citation: `“revisit the rate assumption”`.
 - typed a comment, clicked send. **On the wire**, `POST /api/threads`:
 

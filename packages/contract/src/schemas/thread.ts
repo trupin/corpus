@@ -89,7 +89,7 @@ export const ThreadSummarySchema = z
  *
  * **Warnings ride a wrapper, never the resource.** {@link ThreadSummarySchema}
  * is a *resource*: it is every list row of `GET /api/docs?type=thread`, and
- * bolting §14's warnings onto it would put an always-empty array on every row of
+ * bolting §11's warnings onto it would put an always-empty array on every row of
  * every listing and make "did this mutation warn?" unanswerable from a read. So
  * the mutation gets its own envelope — `{thread, warnings}`, exactly mirroring
  * `DocMutationResponse`'s `{doc, warnings}` — and the resource stays untouched.
@@ -98,7 +98,7 @@ export const ThreadSummarySchema = z
  * rewrites the thread file's frontmatter and auto-commits it, so a workspace git
  * hook that rejects the commit leaves the change on disk and uncommitted. The
  * server already computes those warnings and, before this shape existed, could
- * only log them (SPEC.md §14: "surfaces loudly — a warning on the API response").
+ * only log them (SPEC.md §11: "surfaces loudly — a warning on the API response").
  */
 export const ThreadMutationResponseSchema = z
   .object({ thread: ThreadSummarySchema, warnings: warningsField })
@@ -239,14 +239,14 @@ export const MultipartCreateThreadRequestSchema = z
   .openapi("MultipartCreateThreadRequest");
 
 /**
- * Every thread mutation carries §14's warnings, exactly as the document
+ * Every thread mutation carries §11's warnings, exactly as the document
  * mutations do — the same `warningsField`, so there is one definition of what a
  * warning is and one shape it arrives in.
  *
  * Threads need it as sharply as documents: **anchored creation writes the parent
  * document's frontmatter**, so a workspace git hook that rejects the auto-commit
  * leaves the parent's anchors map on disk and uncommitted. Without the field the
- * person who just posted a comment is told nothing at all, and §14's "surfaces
+ * person who just posted a comment is told nothing at all, and §11's "surfaces
  * loudly — a warning on the API response" would be true of document writes and
  * silently false of thread writes, though both go through one pipeline.
  */

@@ -24,10 +24,10 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 — the collapse rider _(signed 2026-08-05)_: collapsing "claims
+- SPEC.md §10 — the collapse rider _(signed 2026-08-05)_: collapsing "claims
   **no new key**: each conversation's collapse control sits in its own right-click
   menu alongside its other actions", and is "operable from the keyboard like every
-  other affordance (§11 adds no exclusive-pointer capability)"
+  other affordance (§10 adds no exclusive-pointer capability)"
 - `design/index.html` — authoritative for look & feel
 
 ## Summary

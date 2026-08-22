@@ -1,5 +1,5 @@
 /**
- * SPEC.md §11's "Every composer can choose how much thought the work gets"
+ * SPEC.md §10's "Every composer can choose how much thought the work gets"
  * (rider SHARED-022, signed 2026-08-06), as one unit.
  *
  * Four parts, and the split is the design:

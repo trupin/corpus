@@ -137,10 +137,9 @@ export interface AgentActivityDotProps {
  * The row's agent signal, whichever of the two it is — so a row draws it with
  * one call and cannot draw the pulsing one for an unclaimed event by mistake.
  *
- * It exists because there are two row implementations and there will be more:
- * every plugin `ListItem` renders this signal itself ({@link WorkingDot} is a
- * kit export precisely so it can), and a rule about what may pulse that each of
- * them re-derives is a rule that holds in some of them.
+ * It exists because the choice between the two dots is a rule, not a rendering
+ * detail: any surface that draws this signal calls this one function, and a rule
+ * each caller re-derives is a rule that holds in some of them.
  */
 export function AgentActivityDot({ activity }: AgentActivityDotProps): ReactElement | null {
   if (activity.state === "working") return <WorkingDot title={activity.title} />;

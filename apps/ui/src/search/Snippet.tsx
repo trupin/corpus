@@ -9,7 +9,7 @@ import { Fragment, type ReactElement } from "react";
  * full-text index marks matches with". Ranked retrieval is read by an agent that
  * pays for every character, so the runs are deliberately not on that wire.
  *
- * SPEC.md §11 still asks for **snippet-highlighted results**, and the Phase C
+ * SPEC.md §10 still asks for **snippet-highlighted results**, and the Phase C
  * amendment moved the endpoint without touching that clause, so the highlight is
  * recomputed here from the text the user typed — the only thing on this side
  * that knows what was searched for.

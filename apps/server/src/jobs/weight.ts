@@ -89,8 +89,8 @@ export interface StatedWeightRecorderOptions {
  *
  * Reads the payload rather than the event type, because a weight belongs to no
  * particular type (`REQUESTED_WEIGHT_PAYLOAD_KEY` is event-type-agnostic by
- * design): a plugin's own event carrying one is logged by this without a line of
- * change here or in the contract.
+ * design): an event type this recorder has never heard of carrying one is
+ * logged by it without a line of change here or in the contract.
  *
  * **A log line may never cost the caller its event.** The event is on disk and
  * mirrored by the time this runs; a failed append is a missing line in a runtime

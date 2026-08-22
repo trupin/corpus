@@ -746,7 +746,7 @@ This sprint is complete when:
 1. **OC1 — legacy notice lives in the plugin DocPanel** (accepted): above the
    stats strip, read-only legacy list collapsed by default. No core reader
    region; §10's one-slot rule stands.
-2. **OC2 — PLUGINS-009 conflicts with signed SPEC §11** ("plugin-rendered
+2. **OC2 — PLUGINS-009 conflicts with signed SPEC §10** ("plugin-rendered
    surfaces out of scope in v1", SHARED-004 item 4): ruled **amend — SIGNED by the user 2026-08-02
    ("Amend — plugin menus in")** — the user's 2026-08-02 dogfood request ("right click…
    should allow me to take quick action on the item") is a direct scope
@@ -773,5 +773,5 @@ This sprint is complete when:
    file corrected to `done`.
 
 Wave plan: PLUGINS-008 (plugins-dev) + UI-036 (ui-dev, after UI-034
-harvests) in parallel; PLUGINS-009 held on the §11 sign-off; UI-037 →
+harvests) in parallel; PLUGINS-009 held on the §10 sign-off; UI-037 →
 PLUGINS-010 sequenced behind the wave.

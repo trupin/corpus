@@ -38,7 +38,7 @@ fable
 - §8 Agent participation semantics — engaged threads re-trigger on every later
   turn; this rider adds *where* the agent replies without touching *whether* it
   is asked
-- §11 UI — Thread view: turn-selection commenting, "Child threads shown per-turn",
+- §10 UI — Thread view: turn-selection commenting, "Child threads shown per-turn",
   "Opening a thread marks it seen"
 
 ---
@@ -72,7 +72,7 @@ new primitive.
 
 - **Subthreading a turn is already specified and is exactly what the user is
   doing.** §6's **Recursion**: "commenting on a thread turn creates a child thread
-  whose `parent` is the thread's id." §11's Thread view adds the finer form:
+  whose `parent` is the thread's id." §10's Thread view adds the finer form:
   "Selecting text inside a rendered turn offers the same Comment affordance the
   document view offers: the selection becomes the child thread's text-quote anchor
   (§6)". So a subthread reply is, by construction, **anchored into the text of the
@@ -368,9 +368,9 @@ with:
 _(The rest of the paragraph — marks living server-side, what counts as read,
 opening a parent document not marking its chips seen, Attention — is unchanged.)_
 
-### Amendment 4 — §11 **Thread view**, APPEND after the newlines sentence
+### Amendment 4 — §10 **Thread view**, APPEND after the newlines sentence
 
-APPEND immediately after, in §11's **Thread view** bullet, exactly this existing
+APPEND immediately after, in §10's **Thread view** bullet, exactly this existing
 text:
 
 > **Newlines in a turn written by a person render as line breaks** — a textarea
@@ -458,7 +458,7 @@ the agent to use the subthread to continue the conversation") is emphatic and th
 is their call, not mine.
 
 **Q6 — Ordering against SHARED-016.** Its Amendment 1 and this rider's Amendment 4
-append to §11's Thread view bullet after **the same** existing sentence. Both are
+append to §10's Thread view bullet after **the same** existing sentence. Both are
 unsigned. Whichever signs second appends after the other's inserted text — no
 conflict, but the second one to be applied must re-read the bullet rather than
 pattern-match blindly. Flagged so the orchestrator does not discover it mid-edit.
@@ -505,7 +505,7 @@ pattern-match blindly. Flagged so the orchestrator does not discover it mid-edit
 
 ### Files to Create/Modify
 
-- `SPEC.md` §6 (one append), §7 (one replace), §8 (one append), §11 (one append)
+- `SPEC.md` §6 (one append), §7 (one replace), §8 (one append), §10 (one append)
 
 ## Testing Strategy
 

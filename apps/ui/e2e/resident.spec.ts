@@ -6,7 +6,7 @@ import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 /**
  * **Designating a resident from the board** — SPEC.md §7's rider (*"Naming none
  * is the ordinary case and requires nothing to exist first"*) reached through
- * §11's conversation menu, in a real browser.
+ * §10's conversation menu, in a real browser.
  *
  * ## The reported defect, spelled as a test
  *
@@ -180,7 +180,7 @@ test.describe("designating a resident", () => {
   });
 
   /**
-   * SPEC.md §11: *"`esc` dismisses, arrows navigate, `↵` activates"*. The new
+   * SPEC.md §10: *"`esc` dismisses, arrows navigate, `↵` activates"*. The new
    * item claims no key of its own and is reached like every other one — a real
    * browser, because only a real browser performs a focused button's default.
    */
@@ -438,7 +438,7 @@ test.describe("designating a resident", () => {
     await page.locator('button[data-address-line="th_solo"]').click();
     await expect(page.locator(`${picker} [data-recipient-lane]`)).toHaveCount(2);
     const lane = page.locator(`${picker} [data-recipient-lane="th_solo"]`);
-    // UI-126 and SPEC.md §11's rider signed 2026-08-19: where the weight
+    // UI-126 and SPEC.md §10's rider signed 2026-08-19: where the weight
     // control would be for a resident's lane, the composer states the answer
     // instead. A running agent cannot change what it is, so a control here
     // would discard the choice in silence — which is what a person reported.

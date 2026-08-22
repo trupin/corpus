@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { createCorpusClient } from "../client/createCorpusClient.js";
-import { docKey, docsListKey, HEALTH_KEY, pluginKey, threadKey, TREE_KEY } from "../query/keys.js";
+import { docKey, docsListKey, HEALTH_KEY, threadKey, TREE_KEY } from "../query/keys.js";
 import { fakeEventSourceFactory, failingEventSourceFactory } from "../testing/index.js";
 import {
   backoffDelay,
@@ -172,18 +172,17 @@ describe("invalidation mapping", () => {
     expect(invalidated(queryClient, TREE_KEY)).toBe(true);
   });
 
-  // TEST-18: no allowlist. A kit that only honoured the core shapes would
-  // break every plugin's live updates (SPEC.md §10).
-  it("passes plugin and unrecognised keys straight through", () => {
+  // TEST-18: no allowlist. A kit that only honoured the shapes it recognises
+  // would stop refetching the moment the server grew a key this build predates,
+  // and the staleness would be silent.
+  it("passes unrecognised keys straight through", () => {
     const { bridge, factory, queryClient } = setup();
     active = bridge;
-    queryClient.setQueryData(pluginKey("todos", "board"), { todos: [] });
     queryClient.setQueryData(["something", "nobody", "declared"], { x: 1 });
     bridge.start();
-    factory.latest().invalidate(["x", "todos", "board"], ["something", "nobody", "declared"]);
+    factory.latest().invalidate(["something", "nobody", "declared"]);
     vi.advanceTimersByTime(DEFAULT_BATCH_WINDOW_MS);
 
-    expect(invalidated(queryClient, pluginKey("todos", "board"))).toBe(true);
     expect(invalidated(queryClient, ["something", "nobody", "declared"])).toBe(true);
   });
 

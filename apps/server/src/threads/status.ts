@@ -67,7 +67,8 @@ export async function setThreadStatus(
     }
     // Captured before the write removes it. `thread.resident` rather than the
     // raw key, for `releaseResident`'s reason: the key can be present without
-    // being a designation (a parented thread's, a plugin's), and a lane that
+    // being a designation (a parented thread's, or a hand-written `resident:`
+    // meaning something else), and a lane that
     // never existed has no departure to announce — though the stray key is still
     // cleared. Where it *is* a designation, this is the resident as every other
     // surface reported it a moment ago.

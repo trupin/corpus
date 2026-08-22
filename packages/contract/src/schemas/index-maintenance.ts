@@ -38,7 +38,7 @@ import { SemanticIndexStateSchema } from "./retrieval.js";
  * full-text index and the links graph (SPEC.md §2.2 rule 1, §9.1). That is why
  * neither route carries an acting party, and why a pending backlog is *staleness*
  * rather than drift — `corpus db doctor` stays clean while indexing is merely in
- * flight (SPEC.md §14), and this endpoint is where the backlog is visible.
+ * flight (SPEC.md §11), and this endpoint is where the backlog is visible.
  */
 
 const chunkCount = (what: string) => z.number().int().min(0).describe(what);

@@ -24,7 +24,7 @@ fable
 
 ## Spec References
 
-- SPEC.md **§11** line 539 — the `@` autocomplete, backed by `GET /api/docs`
+- SPEC.md **§10** line 539 — the `@` autocomplete, backed by `GET /api/docs`
 - SPEC.md **§7** line 399 — the agent-def root
 
 ## Summary

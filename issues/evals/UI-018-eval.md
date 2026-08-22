@@ -53,13 +53,13 @@ Adjudication 13 exists to catch, and it survives scrutiny — see TEST-444.
 
 ## The disclosed test change, audited (Adjudication 13)
 
-Commit `8c73173` widens `compose-keyboard.spec.ts`'s cheat-sheet pin from **twelve** §11
+Commit `8c73173` widens `compose-keyboard.spec.ts`'s cheat-sheet pin from **twelve** §10
 bindings to **thirteen**, adding `menu.open`. Adjudication 13 makes weakening a test to reach
 green a fail, so I read the diff rather than the log's account of it:
 
 - The count is not loosened — it is re-pinned at a **specific** new number, with the added
   binding named explicitly in the expected list and placed among the row bindings.
-- The change carries a comment naming the §11 sentence the thirteenth comes from ("the menu key
+- The change carries a comment naming the §10 sentence the thirteenth comes from ("the menu key
   (or ⇧F10) opens the same menu on the current keyboard highlight"), which is a real, signed
   clause of the amended spec.
 

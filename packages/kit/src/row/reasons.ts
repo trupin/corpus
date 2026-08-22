@@ -2,16 +2,16 @@ import type { NeedsReason, StaleTier } from "@corpus/contract";
 import { stalenessLevel } from "./staleness.js";
 
 /**
- * Attention reason code → chip, as one table (SPEC.md §11 — "each row carries a
+ * Attention reason code → chip, as one table (SPEC.md §10 — "each row carries a
  * reason chip").
  *
  * A table rather than a chain of conditions in the component, for two reasons
  * that are both correctness rather than taste: the chips must correspond
  * *exactly* to the row's own `attention` array as the server computed it (no
  * sniffing of titles, bodies or timestamps to guess a reason), and a code the
- * table has never heard of must still render — plugins extend the system
- * (SPEC.md §10) and a reason line that silently drops a row's only explanation
- * is worse than an ugly one.
+ * table has never heard of must still render — the server's vocabulary may grow
+ * ahead of this build, and a reason line that silently drops a row's only
+ * explanation is worse than an ugly one.
  *
  * ## The vocabulary delta, recorded rather than papered over
  *
@@ -34,7 +34,7 @@ import { stalenessLevel } from "./staleness.js";
  * Two of the five codes cannot be spelled by the code alone, and both numbers
  * they need are already on the row rather than derivable here: `stale` chooses
  * its wording from the tier, and `form` says **how many** forms are still open
- * (SPEC.md §11 — "a thread holding more than one unanswered form says how many
+ * (SPEC.md §10 — "a thread holding more than one unanswered form says how many
  * are still open"). Neither is sniffed: the tier is `DocRow.stale` and the count
  * is `DocRow.unansweredForms`, both computed by the server, and the second is
  * derived from the same predicate as the `form` reason itself, so the chip's
@@ -59,7 +59,7 @@ export const REASON_CHIP_CLASSES = {
 
 /**
  * What a label may read off the row beyond its own code. Internal: the public
- * functions take the two values positionally, so a plugin never has to build
+ * functions take the two values positionally, so a caller never has to build
  * this object to ask for a chip.
  */
 interface ReasonContext {
@@ -82,7 +82,7 @@ interface ReasonEntry {
 const REASON_TABLE: Readonly<Record<NeedsReason, ReasonEntry>> = {
   "unread-reply": { label: "agent replied", chipClass: REASON_CHIP_CLASSES.reply },
   /*
-   * §11 asks for the number only above one: one unanswered form reads exactly as
+   * §10 asks for the number only above one: one unanswered form reads exactly as
    * it always has, and "1 awaiting your answer" would be a count nobody needed
    * and a second wording for the ordinary case.
    */

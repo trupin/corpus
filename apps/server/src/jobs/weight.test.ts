@@ -99,12 +99,13 @@ describe("createStatedWeightRecorder", () => {
 
   it("logs a weight on any event type, without being taught the type", async () => {
     // `REQUESTED_WEIGHT_PAYLOAD_KEY` is event-type-agnostic by contract design
-    // so a plugin's own event can carry one with no contract change; reading the
-    // payload rather than switching on the type is what honours that here.
+    // so an event type this recorder has never heard of can carry one with no
+    // contract change; reading the payload rather than switching on the type is
+    // what honours that here.
     const record = createStatedWeightRecorder({ jobs, logger });
     const event = await queue.enqueue({
-      type: "todos.item.flagged",
-      source: "plugin",
+      type: "errands.item.flagged",
+      source: "capture",
       payload: { itemId: "itm_1", weight: "Small and mechanical" },
     });
 

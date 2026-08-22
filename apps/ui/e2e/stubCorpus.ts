@@ -175,7 +175,7 @@ export interface StubRow {
    * A separate seed from `body` because the record is a separate place on disk:
    * §6 keeps it in the thread document's **frontmatter**, so the turn's own text
    * carries none of it and a body alone names no model. Seeding it here is what
-   * lets a spec meet the mixed conversation §11 is written about — a turn with a
+   * lets a spec meet the mixed conversation §10 is written about — a turn with a
    * model, an agent turn without, and a person's turn — rather than only the
    * all-null thread a body-only stub can produce. A timestamp with no entry
    * reports `null`, exactly as the server reports a turn nobody recorded one for.
@@ -193,16 +193,15 @@ export interface StubRow {
    *
    * Seeded rather than flatly `null`, which is what it was until the review of
    * PR #55: nothing read it, so nothing noticed, and no spec could put a **date**
-   * in front of a surface that shows one. `derived-due.spec.ts` is the surface —
-   * a `due` a plugin derives is stated rather than offered — and it needs a
-   * document whose deadline is not null to say anything about it at all.
+   * in front of a surface that shows one. The frontmatter form's `due` control
+   * is that surface, and it needs a document whose deadline is not null to say
+   * anything about it at all.
    */
   readonly due?: string | null;
   readonly pinned?: boolean;
   readonly order?: number | null;
   /** A view document's query — the contract's `ViewQuery`, not free-form JSON. */
   readonly query?: ViewQuery | null;
-  readonly column?: string | null;
   readonly parent?: string | null;
   readonly extra?: Readonly<Record<string, unknown>>;
   /** A staleness tier, or `null` for fresh — SPEC.md §5's ramp, never a string. */
@@ -223,7 +222,7 @@ export interface StubRow {
    *
    * Seeded because the flag is what the one collapse rule defers to: "a
    * conversation carrying a turn you have not seen is never collapsed by the
-   * rule" (§11, UI-077), and a stub that answered `unread: false` for everything
+   * rule" (§10, UI-077), and a stub that answered `unread: false` for everything
    * could not tell a rule that honours the interlock from one that ignores it.
    * Cleared by `POST /api/threads/{id}/seen`, as the server clears it.
    */
@@ -287,7 +286,6 @@ interface StoredDoc {
   pinned: boolean;
   order: number | null;
   query: ViewQuery | null;
-  column: string | null;
   parent: string | null;
   extra: Record<string, unknown>;
   stale: StaleTier | null;
@@ -296,9 +294,9 @@ interface StoredDoc {
   /**
    * Stamped on every write, exactly as the server stamps it. Kept per document
    * rather than as one frozen constant because a surface may legitimately key
-   * on "has this document changed" — the todos column's `(id, updated)`
-   * fingerprint is the shipped case (PLUGINS-007) — and a stub that never moves
-   * `updated` would make such a query look correct while pinning nothing.
+   * on "has this document changed" — a row's age label and the staleness ramp
+   * both read it — and a stub that never moves `updated` would make such a
+   * reading look correct while pinning nothing.
    */
   updated: string;
   /**
@@ -529,7 +527,7 @@ function fieldsOf(body: MultipartBody): Record<string, unknown> {
  */
 export interface StubJob {
   readonly eventId: string;
-  /** `comment.created`, `form.respond`, `doc.edited`, or a plugin's own. */
+  /** `comment.created`, `form.respond`, `doc.edited`, or one the core does not define. */
   readonly type: string;
   /** One of `QUEUE_EVENT_STATUSES`; the queue's three non-terminal ones are what §8 reads. */
   readonly status: QueueEventStatus;
@@ -652,7 +650,6 @@ function seeded(row: StubRow): StoredDoc {
     pinned: row.pinned ?? false,
     order: row.order ?? null,
     query: row.query ?? null,
-    column: row.column ?? null,
     parent: row.parent ?? null,
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
@@ -713,7 +710,7 @@ function refIdsIn(body: string): readonly string[] {
 
 /**
  * `includeArchived=true` on a related request — the archived exclusion every
- * list applies by default (SPEC.md §11), lifted into the union.
+ * list applies by default (SPEC.md §10), lifted into the union.
  */
 function subjectWantsArchived(url: URL): boolean {
   return url.searchParams.get("includeArchived") === "true";
@@ -777,7 +774,7 @@ function unansweredFormsOf(doc: StoredDoc): number {
 }
 
 /**
- * The row's attention reasons (SPEC.md §11), derived rather than seeded.
+ * The row's attention reasons (SPEC.md §10), derived rather than seeded.
  *
  * Two of the five, which are the two UI-084's asymmetry is about: an unanswered
  * form (which survives being read) and an unread agent reply (which does not).
@@ -947,7 +944,7 @@ export async function stubCorpus(
    * `parseThreadTurns` is the body-only parser the server's own is mirrored from
    * and names no model, and the `turnModels` map keyed by turn timestamp is what
    * supplies one. A timestamp with no entry stays `null` — the honest answer
-   * §11 requires for a turn nobody recorded a model for.
+   * §10 requires for a turn nobody recorded a model for.
    */
   const turnsOf = (doc: StoredDoc): readonly StubTurn[] =>
     doc.type === "thread"
@@ -1054,7 +1051,6 @@ export async function stubCorpus(
       pinned: doc.pinned,
       order: doc.order,
       query: doc.query,
-      column: doc.column,
       extra: doc.extra,
     };
   };
@@ -1144,7 +1140,6 @@ export async function stubCorpus(
       pinned: doc.pinned,
       order: doc.order,
       query: doc.query,
-      column: doc.column,
       extra: doc.extra,
     },
   });
@@ -1178,7 +1173,7 @@ export async function stubCorpus(
     const folder = params.get("folder");
     if (folder !== null && !doc.path.includes(`/${folder.replace(/\/+$/, "")}/`)) return false;
     /*
-     * `needs=` — the Attention column's filter (SPEC.md §11). `me` is the union
+     * `needs=` — the Attention column's filter (SPEC.md §10). `me` is the union
      * of every reason; every other value names one. Derived from the same
      * `attentionOf` the row reports, so a row can never appear in Attention
      * carrying no reason chip, or carry one and be filtered out.
@@ -1206,7 +1201,7 @@ export async function stubCorpus(
      * This line used to be `JSON.parse(request.postData())` unconditionally,
      * which throws on a `multipart/form-data` body: the route handler died, the
      * request hung, and so no spec in the suite had ever posted an attachment on
-     * any surface. Every composer §11's rider binds now can, so the send path
+     * any surface. Every composer §10's rider binds now can, so the send path
      * has to be recordable, and the JSON path has to keep behaving exactly as it
      * did — every other spec in this directory reads `body`.
      */
@@ -1335,7 +1330,7 @@ export async function stubCorpus(
 
     if (url.pathname === "/api/tree") return json(route, { folders: [] } satisfies FolderTree);
     /*
-     * `GET /api/index/status` — the strip's index pill (SPEC.md §11's
+     * `GET /api/index/status` — the strip's index pill (SPEC.md §10's
      * index-pill rider).
      *
      * Nobody had written a handler, so the `{}` fallback at the bottom of this
@@ -1787,7 +1782,7 @@ export async function stubCorpus(
     }
 
     /*
-     * `POST /api/capture` — the global composer's second submit (SPEC.md §11).
+     * `POST /api/capture` — the global composer's second submit (SPEC.md §10).
      *
      * Multipart-only on the wire, which is why it had no handler here before
      * UI-116: the recorder threw on the body before this branch could have run.
@@ -2216,7 +2211,7 @@ export async function stubCorpus(
         resident: null,
         // `turnsOf`, not the bare body parser: this is the read every thread
         // surface goes through, and it is where a turn learns which model wrote
-        // it (SPEC.md §11).
+        // it (SPEC.md §10).
         turns: [...turnsOf(doc)],
       } satisfies Thread);
     }
@@ -2430,27 +2425,6 @@ export async function stubCorpus(
         } satisfies UpdateDocResponse);
       }
       return json(route, asDoc(doc));
-    }
-
-    /*
-     * `/api/x/**` — the plugin namespace, and the one place this stub still
-     * answers an empty body deliberately (UI-085).
-     *
-     * A plugin's routes are not in the generated contract, so nothing here can
-     * know their shapes and nothing here should invent them: the core stub is a
-     * stand-in for the **core** server. Every plugin spec registers its own
-     * handler after this one — Playwright matches most-recent-first, so theirs
-     * wins — and this is what a plugin surface meets when its spec has not.
-     *
-     * `{}` rather than the refusal below, and the difference is not politeness:
-     * a plugin client **validates** its responses (`plugins/todos` parses with
-     * Zod), so the empty body is refused at that boundary and the column draws
-     * its error card. The silence UI-085 is about is the silence of a body that
-     * *passes* unnoticed, which this one cannot do.
-     */
-    if (url.pathname.startsWith("/api/x/")) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
-      return;
     }
 
     /*

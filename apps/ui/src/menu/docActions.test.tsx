@@ -6,7 +6,6 @@ import { cleanup, render, renderHook, screen, waitFor } from "@testing-library/r
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DocMenu } from "../reader/DocMenu";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
-import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
 import { DocMenuItems } from "./DocMenuItems";
 import {
@@ -23,7 +22,7 @@ afterEach(() => {
 });
 
 /**
- * The declaration itself (SPEC.md §11's "one source of actions, two
+ * The declaration itself (SPEC.md §10's "one source of actions, two
  * presentations"). These read the array rather than a rendered menu, because
  * the availability rule is the thing under test and two hand-written UI
  * assertions are exactly the drift the shape exists to prevent.
@@ -135,7 +134,7 @@ describe("Archive and Unarchive are the two halves of one act", () => {
     expect(notify.mock.calls.at(-1)?.[0]?.message).toContain("Unarchive failed");
   });
 
-  /** A reversible act; §11 keeps the two-click ceremony for the one that is not. */
+  /** A reversible act; §10 keeps the two-click ceremony for the one that is not. */
   it("asks for no confirmation, because nothing is destroyed", () => {
     const harness = createCorpusTestHarness({ fetch: readerTransport({ docs: [] }).fetch });
     const { result } = renderHook(
@@ -155,7 +154,7 @@ describe("Archive and Unarchive are the two halves of one act", () => {
 });
 
 /**
- * SPEC.md §11's right-click bullet: the context menu lists "exactly that item's
+ * SPEC.md §10's right-click bullet: the context menu lists "exactly that item's
  * existing actions — the same set its ⋯ / header menu offers, nothing
  * invented". Asserted as an equality between the two presentations rather than
  * as two hand-written expectations, which could drift apart the day one of them
@@ -225,10 +224,6 @@ describe("both presentations show one set", () => {
  * thread route would look identical here.
  */
 describe("Resolve is offered wherever a status is settable", () => {
-  afterEach(() => {
-    setPluginRegistry(EMPTY_REGISTRY);
-  });
-
   const RESOLVED_NOTE: DocActionSubject = { ...NOTE, status: "resolved" };
   const THREAD: DocActionSubject = {
     id: "th_fixture",
@@ -242,27 +237,6 @@ describe("Resolve is offered wherever a status is settable", () => {
     type: "todo" as const,
     status: "open",
   };
-
-  /** One doc type, declaring a derivation exactly as PLUGINS-016 defines it. */
-  function installDerivedType(type: string): void {
-    setPluginRegistry(
-      buildRegistry([
-        {
-          dir: "todos",
-          loaded: {
-            module: {
-              default: {
-                id: "todos",
-                name: "Todos",
-                docTypes: [{ type, deriveStatus: () => "resolved" as const }],
-                columns: [],
-              },
-            },
-          },
-        },
-      ]),
-    );
-  }
 
   it("offers Resolve on an ordinary note, which nothing but this menu withheld", () => {
     const resolve = actionsOf(NOTE).labelOf("resolve");
@@ -351,23 +325,18 @@ describe("Resolve is offered wherever a status is settable", () => {
   });
 
   /**
-   * SHARED-031 part 2, signed: "A type whose status is **derived** rather than
-   * set (§12) is such a case: it offers no Resolve, because there is nothing
-   * there for anyone to set."
+   * Nothing computes a document's status from its content, so every document's
+   * status is its own to set whatever its `type:` says — and a workspace's
+   * `type: todo` documents, an unrecognised type real workspaces already hold,
+   * get the full action set like any other (SPEC.md §12's M6).
    */
-  it("withholds it from a type that derives its status", () => {
-    installDerivedType("todo");
-    expect(actionsOf(TODO).ids()).not.toContain("resolve");
-  });
-
-  it("offers it on that same type when no plugin claims it — the declaration is the gate", () => {
-    // §15 M6: with `plugins/todos/` gone, a todo document is an ordinary one.
+  it("offers it on a type this build does not recognise, exactly as on a note", () => {
     expect(actionsOf(TODO).ids()).toContain("resolve");
   });
 
-  it("leaves the derivation alone for other types", () => {
-    installDerivedType("todo");
-    expect(actionsOf(NOTE).ids()).toContain("resolve");
+  it("decides by the subject's status, never by its type", () => {
+    expect(actionsOf({ ...TODO, status: "archived" }).ids()).not.toContain("resolve");
+    expect(actionsOf({ ...TODO, status: "resolved" }).labelOf("resolve")).toBe("Reopen");
   });
 
   /**

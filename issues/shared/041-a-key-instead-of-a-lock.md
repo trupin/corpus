@@ -40,9 +40,9 @@ Everything this rider touches, so the sweep is checkable:
 - §4 line 177 — "An event deferred on a lock (§7) ends the agent's window"
 - §9.2 — `423` on every write route, and the lock endpoints themselves
 - §9.2 line 398 — the `locks(...)` projection table
-- §11 line 509 — "If the document is **locked**, it renders read-only with a
+- §10 line 509 — "If the document is **locked**, it renders read-only with a
   banner naming the holder and a **Force unlock** action"
-- §15 M5 line 577 — "Locks: an agent-held lock renders the doc read-only…"
+- §12 M5 line 577 — "Locks: an agent-held lock renders the doc read-only…"
 
 ## Summary
 
@@ -196,12 +196,12 @@ the sweep should be able to check each one.
 8. **§9.2 line 398** — the `locks(doc_id, holder, acquired, ttl)` projection table
    goes. Nothing replaces it: a key is derived from the document, not stored, and
    the editing signal comes from the edit-session tracker, which is in memory.
-9. **§11 line 509** — "If the document is **locked**, it renders read-only with a
+9. **§10 line 509** — "If the document is **locked**, it renders read-only with a
    banner naming the holder and a **Force unlock** action" is struck. **The board
    is never read-only.** A document the agent is writing stays editable; the
    person's write presents its key like any other, and the refusal path is the
    editor's existing adopt-an-external-change behaviour.
-10. **§15 M5 line 577** — the milestone check's lock clause becomes: two writers
+10. **§12 M5 line 577** — the milestone check's lock clause becomes: two writers
     editing one document, where the second write is refused, shown what changed,
     and lands on retry.
 
@@ -235,9 +235,9 @@ the sweep should be able to check each one.
   already carries. An earlier draft proposed naming the *acting party* on a
   refusal; that was withdrawn, because both writers in the subagent case are
   `agent`, so it distinguishes nothing there.
-- **What a bulk Save presents.** §11's staged Save writes many documents in one
+- **What a bulk Save presents.** §10's staged Save writes many documents in one
   act, and gathering a key per row before saving is a different UX from the one
-  §11 describes. Most likely a bulk Save is a named delta throughout (archive,
+  §10 describes. Most likely a bulk Save is a named delta throughout (archive,
   tag, resolve) and needs no key at all — but a staged Save that carries a body
   edit would. Settle before UI work starts.
 
@@ -302,10 +302,10 @@ word appearing in a heading:
   old mechanism forgettable; it now says to present the document's key.
 - **§7's subagent-outcome paragraph** described "a lock deferral … re-enters the
   queue on its own when the lock clears". Re-based on the editing session.
-- **§11's bulk Save** referred to locked documents three times (a Save staying
+- **§10's bulk Save** referred to locked documents three times (a Save staying
   available "when some of them are locked", a refusal "naming the holder",
   retrying "after clearing a lock"). Re-based on content having moved.
-- **§15's M2 and M3** listed `locks` among the backbone and the CLI verb
+- **§12's M2 and M3** listed `locks` among the backbone and the CLI verb
   families, and M2's check exercised a lock refusal and a force break.
 
 **Confirmed clear:**
@@ -316,8 +316,8 @@ word appearing in a heading:
 - §7's "Every change leaves a visible trace" is unaffected: the force-break audit
   entry was one such trace, and deleting the act deletes the trace with it rather
   than leaving a claim about a commit nobody makes.
-- §11's "Autosave, no save button" is untouched and does not contradict the board
-  presenting a key: a key is not a user action, and §11's sentence is about what
+- §10's "Autosave, no save button" is untouched and does not contradict the board
+  presenting a key: a key is not a user action, and §10's sentence is about what
   the person has to do.
 - SHARED-037's `corpus doc patch` language holds against "a patch needs no key" —
   that rider already defines a patch as naming the text it expects to find, so
@@ -333,7 +333,7 @@ word appearing in a heading:
 - §7's own "Every change leaves a visible trace": the force-break audit entry was
   one such trace and is being deleted. Confirm nothing else claimed it.
 - §9.2's `423` appears on many routes; confirm none is left orphaned.
-- §11's autosave: confirm the board presenting a key does not contradict
+- §10's autosave: confirm the board presenting a key does not contradict
   "Autosave, no save button" — it should not, since a key is not a user action.
 - SHARED-037's `corpus doc patch`: confirm the "a patch needs no key" claim holds
   against that rider's own staleness language.

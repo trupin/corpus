@@ -26,8 +26,8 @@ opus — behavioral rules enumerated in §7/§8; judgment encoded in AGENT-002's
 - SPEC.md §7 (**comment skill**, agent stewardship, **skill genesis**, job logs, document locks)
 - SPEC.md §8 (agent participation semantics) — what requests the agent, targeted `@<subagent>` / `/<skill>` as directives, structured `mentions`/`skills` in the event payload, `engaged` re-triggering, the honest pending indicator
 - SPEC.md §6 (threads and anchors) — turn format, anchor context, **standalone threads** (`parent: null`), forms in turns
-- SPEC.md §11 (capture filing) — quick creation lands in `data/docs/inbox/`; Capture creates an inbox document plus an agent-requested filing thread; "the agent files inbox arrivals per its skill"
-- SPEC.md §15 M5 — the executable check the loop plus this skill must satisfy (corrected per sprint-014 Adjudication 15)
+- SPEC.md §10 (capture filing) — quick creation lands in `data/docs/inbox/`; Capture creates an inbox document plus an agent-requested filing thread; "the agent files inbox arrivals per its skill"
+- SPEC.md §12 M5 — the executable check the loop plus this skill must satisfy (corrected per sprint-014 Adjudication 15)
 
 ## Summary
 

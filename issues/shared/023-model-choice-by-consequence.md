@@ -48,7 +48,7 @@ are explicitly out of scope (user, 2026-08-06).
   shared" example, and it shapes the formulation (below)
 - §8 Agent participation semantics — "a directive, not a hint". Borrowed by
   reference through SHARED-022; **not edited**
-- §11 UI — the composer's weight control (SHARED-022 Amendment 3). **Not edited**
+- §10 UI — the composer's weight control (SHARED-022 Amendment 3). **Not edited**
 
 ---
 
@@ -323,14 +323,14 @@ from. "Collected at the light level (judged); analysed at the strong level
 (judged — the result is going out)". That is legible, and it is legible in the
 place they already look.
 
-### Decision 7 — §7 only. Nothing in §8, nothing in §11.
+### Decision 7 — §7 only. Nothing in §8, nothing in §10.
 
 The brief asks whether any of this belongs in §8 (participation). **It does
 not.** §8 owns what *wakes* the agent and *where* it replies; this rider is
 entirely about *how work is done once it has been asked for*. SHARED-022 set the
-precedent cleanly: it put the weight rules in §7 and touched §11 only because it
+precedent cleanly: it put the weight rules in §7 and touched §10 only because it
 introduced a **person-facing control**. This rider introduces none — no new
-composer control, no new toggle, no new flag. So §11 is untouched too, and both
+composer control, no new toggle, no new flag. So §10 is untouched too, and both
 are listed as non-goals so the chain does not drift.
 
 ---
@@ -504,7 +504,7 @@ unanswerable. That is SHARED-022's Q2 and is not reopened here.
 
 **Q4 — Does any of this belong in §8 (participation) rather than §7?** No, as
 drafted. §8 owns what wakes the agent and where it replies; every amendment here
-is about how work is done once it has been asked for. §11 is untouched too,
+is about how work is done once it has been asked for. §10 is untouched too,
 because this rider adds no person-facing control.
 
 _Recommendation: §7 only, as drafted._ **If any part were to move**, the only
@@ -568,7 +568,7 @@ redundant.
   deciding stage, and not stronger.
 - **No new surface.** No new log file, no new UI, no new composer control, no new
   flag. Amendment 4 makes an existing surface plural and nothing more.
-- **No new person-facing control**, so §11 is untouched (Q5).
+- **No new person-facing control**, so §10 is untouched (Q5).
 - **§8 is not edited**, and §6's turn format is not edited.
 - **Not a budget, quota, or cost feature.** Nothing counts, caps, reports or
   bills tokens. The saving is a consequence of the rule, never its subject.
@@ -591,7 +591,7 @@ redundant.
       orchestrator paragraph has taken amendments on two consecutive days;
       `_(Rider signed 2026-08-06.)_` occurs four times in SPEC.md and is not an
       anchor
-- [ ] **§8, §11 and §6 are not edited**; root `CLAUDE.md` and root `.claude/` are
+- [ ] **§8, §10 and §6 are not edited**; root `CLAUDE.md` and root `.claude/` are
       not touched
 - [ ] The implementing chain does not start before the text is in place
 

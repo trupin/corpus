@@ -8,13 +8,6 @@ import { loadServerConfig, type ServerConfig } from "./config.js";
 import { CorpusError, describeThrown } from "./errors.js";
 import { createLogger, type Logger } from "./logger.js";
 import {
-  createDerivedFieldsRegistry,
-  discoverPlugins,
-  resolvePluginsRoot,
-  type DerivedFieldsRegistry,
-  type DiscoveredPlugin,
-} from "./plugins/index.js";
-import {
   attachProjection,
   openWorkspaceProjection,
   type ProjectionDb,
@@ -98,14 +91,6 @@ function logBootFailure(logger: Logger, error: unknown, fallbackMessage: string)
   logger.error(fallbackMessage, describeThrown(error));
 }
 
-/** The production discovery: resolve the bundled `plugins/` root, scan it. */
-function defaultDiscoverPlugins(
-  logger: Logger,
-  env: NodeJS.ProcessEnv,
-): Promise<readonly DiscoveredPlugin[]> {
-  return discoverPlugins({ pluginsRoot: resolvePluginsRoot(env), env, logger });
-}
-
 export interface RunServerOptions {
   readonly argv: readonly string[];
   readonly env: NodeJS.ProcessEnv;
@@ -117,25 +102,8 @@ export interface RunServerOptions {
    * Opens the SQLite projection (SERVER-004). Runs *before* `createServer`, whose
    * `projection` dep it becomes. Injected so a test driving the lifecycle with a
    * stand-in server does not need a real workspace on disk.
-   *
-   * Takes the derived-field registry discovery built (SERVER-085, SERVER-134) because the
-   * boot scan happens inside this call — see `openWorkspaceProjection`.
    */
-  readonly openProjectionFn?: (
-    config: ServerConfig,
-    logger: Logger,
-    derivedFields: DerivedFieldsRegistry,
-  ) => ProjectionDb | undefined;
-  /**
-   * Discovers `plugins/*` (PLUGINS-001). Runs before `createServer` — dynamic
-   * `import()` is async and route mounting is not — and never throws: a broken
-   * plugin is a logged skip, not a boot failure. Injected so lifecycle tests
-   * need no plugins on disk.
-   */
-  readonly discoverPluginsFn?: (
-    logger: Logger,
-    env: NodeJS.ProcessEnv,
-  ) => Promise<readonly DiscoveredPlugin[]>;
+  readonly openProjectionFn?: (config: ServerConfig, logger: Logger) => ProjectionDb | undefined;
   /** Registers the projection's disposer and binds the queue's `events` mirror. */
   readonly attachProjectionFn?: (server: CorpusServer) => void;
   /** Starts the chokidar watcher and registers its disposer (SERVER-007). */
@@ -188,28 +156,12 @@ export async function runServerProcess(
     for (const warning of config.warnings) {
       logger.info(`warning: ${warning}`, { configPath: config.configPath });
     }
-    // Plugins resolve against the tool's install directory, never the
-    // workspace (SPEC.md §10, sprint-012 Adjudication 12); routes must be
-    // mounted before the socket opens, so discovery happens here.
-    //
-    // **Before the projection, since SERVER-085**: a doc type may answer for its
-    // own `status` (SPEC.md §12), and the projection's boot scan is what writes
-    // every document's row. Opening first would scan the whole workspace with
-    // nothing to ask, and every todo document would sit on the board under the
-    // status its file happens to state until something edited it. Discovery
-    // needs nothing from the projection and never throws, so the order costs
-    // only the dynamic imports it was always going to pay for.
-    const plugins = await (options.discoverPluginsFn ?? defaultDiscoverPlugins)(logger, env);
     // Before the socket opens, and before the app is built: a projection that
     // cannot be built is a boot failure, the first request must never race the
     // initial projection, and `createServer` takes the open handle as a dep
     // rather than opening one itself.
-    projection = (options.openProjectionFn ?? openWorkspaceProjection)(
-      config,
-      logger,
-      createDerivedFieldsRegistry(plugins, logger),
-    );
-    server = (options.createServerFn ?? createServer)(config, { projection, plugins });
+    projection = (options.openProjectionFn ?? openWorkspaceProjection)(config, logger);
+    server = (options.createServerFn ?? createServer)(config, { projection });
     (options.attachProjectionFn ?? attachProjection)(server);
     // The watcher is filesystem-bound and lifecycle-scoped, so it attaches here
     // alongside the projection; its disposer runs before the database closes.

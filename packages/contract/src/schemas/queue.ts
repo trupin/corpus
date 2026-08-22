@@ -5,9 +5,18 @@ import { laneScopeParam } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
 
 /**
- * Event types the product itself handles (SPEC.md §7). The wire type stays an
- * open string because plugins define their own event types; consumers that only
- * handle core types narrow with {@link CoreQueueEventTypeSchema}.
+ * Event types the product itself handles (SPEC.md §7), and they are all of
+ * them.
+ *
+ * **The wire type stays an open string, because the set on the wire is not the
+ * set this build knows.** A queue carried over from a workspace older than this
+ * release, an event somebody wrote into `pending/` by hand, and a server newer
+ * than the client reading it can each put a type here that no enum would admit,
+ * and a `400` at the boundary would make the event unreadable rather than
+ * unhandled. The shipped orchestrate skill states the same rule from the other
+ * side: an unrecognised type is failed with the type quoted in the reason,
+ * never completed and never dispatched on the shape of its name. Consumers that
+ * only handle core types narrow with {@link CoreQueueEventTypeSchema}.
  *
  * The set is exactly §7's "Core event types" sentence, and the order here is
  * **by producer, with the one type nothing produces last** rather than §7's
@@ -35,9 +44,8 @@ import { IsoDateTimeSchema } from "./time.js";
  *   nothing produces it, and an arriving one is settled like a report. It is
  *   last because of that, not because it is newest.
  *
- * **`doc.edited` is a core type rather than a plugin one** because the core loop
- * owns both ends of it: the server emits it, and the shipped orchestrate skill
- * handles it. `resident.designated` is core for the same reason — designation is
+ * **`doc.edited` is a core type** because the core loop owns both ends of it:
+ * the server emits it, and the shipped orchestrate skill handles it. `resident.designated` is core for the same reason — designation is
  * a first-class act of the product, visible in the queue, the job log and the
  * history exactly as a comment is, and §7 makes it ordinary queue vocabulary
  * rather than a side channel — and `resident.released` is core because it is
@@ -133,15 +141,22 @@ export const QueueEventSchema = z
       .string()
       .min(1)
       .describe(
-        `Event type. Core values: ${CORE_QUEUE_EVENT_TYPES.join(", ")}. Plugins define their own.`,
+        `Event type. Core values: ${CORE_QUEUE_EVENT_TYPES.join(", ")}. Open rather than ` +
+          "enumerated because the set on the wire is not the set any one build knows: a queue " +
+          "carried over from an older workspace, an event written into `pending/` by hand, or a " +
+          "server newer than this client can each name a type this client has never heard of " +
+          "(SPEC.md §7). A consumer that does not recognise a type fails the event with the type " +
+          "quoted, and never guesses a handler from the name.",
       ),
     created: IsoDateTimeSchema,
     source: z.string().min(1).describe("What produced the event, e.g. `ui` or `cli`."),
     payload: z
       .record(z.string(), z.unknown())
       .describe(
-        "Type-specific payload; plugins own the shape of their own event types, which is why this " +
-          "stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads " +
+        "Type-specific payload; the shape belongs to whatever defines the type, which is why this " +
+          "stays open rather than becoming a union keyed on `type` (SPEC.md §7) — a union would " +
+          "close the same set `type` deliberately leaves open, and make every event this build " +
+          "has not heard of unrepresentable on the wire. The core payloads " +
           "are declared beside their features: `form.respond` carries " +
           "`{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the " +
           "answered form (SPEC.md §6, §7); `doc.edited` carries `{docId, sessionId, actor, " +
@@ -150,12 +165,12 @@ export const QueueEventSchema = z
           "(SPEC.md §7) — one release produces exactly one such event, and a lapse produces " +
           "none.\n\n" +
           "**One key crosses every type: `weight`.** When the request that enqueued the event " +
-          "stated the weight its work should be done at (SPEC.md §7, §11), that level name rides " +
+          "stated the weight its work should be done at (SPEC.md §7, §10), that level name rides " +
           "here verbatim, and the dispatch honours it rather than weighing the work again. It is " +
           "**absent** when the request stated nothing, which means the orchestrator decides — never " +
           "a default level, and never `null`. It is deliberately not part of any one payload " +
-          "shape: a weight is a property of *a request that asked for work*, so a plugin's own " +
-          "event type carries it the same way with no contract change.",
+          "shape: a weight is a property of *a request that asked for work*, so any event type " +
+          "carries it the same way with no contract change.",
       ),
   })
   .openapi("QueueEvent");
@@ -212,7 +227,8 @@ export const InProgressEventSchema = z
       .min(1)
       .describe(
         "The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for " +
-          `the same reason: plugins define their own. Core values: ${CORE_QUEUE_EVENT_TYPES.join(", ")}. ` +
+          "the same reason: the set on the wire is not the set any one build knows. Core values: " +
+          `${CORE_QUEUE_EVENT_TYPES.join(", ")}. ` +
           "It is half of what makes the row checkable: an agent recognises *what kind of work* it " +
           "is being told it still owes.",
       ),
@@ -225,8 +241,8 @@ export const InProgressEventSchema = z
     originId: DocumentIdSchema.nullable().describe(
       "Document or thread the held event originated from, or null — **the same field `Job.originId` " +
         "is, derived by the same rule**: the first of `threadId`, `parentId`, `docId` in the event " +
-        "payload that names a document the corpus still holds. `form.respond` names a thread; a " +
-        "plugin event may name nothing, which is what null is for.",
+        "payload that names a document the corpus still holds. `form.respond` names a thread; an " +
+        "event whose payload names none of the three is what null is for.",
     ),
     originTitle: z
       .string()
@@ -389,7 +405,7 @@ export const AGENT_PRESENCE_WINDOW_SECONDS = MAX_IDLE_TIMEOUT_SECONDS * 2;
  * existed the console had to guess the second from the first. It guessed by
  * elimination — not halted and nothing in progress ⇒ `idle` — so a machine with
  * no agent at all reported an agent with nothing to do, which is precisely the
- * claim §11's rider now says requires evidence. The evidence is this field.
+ * claim §10's rider now says requires evidence. The evidence is this field.
  *
  * It is **the roster's own verdict aggregated**, not a second notion of
  * liveness: `agent.live` is true exactly when some `AgentLane.live` is, and
@@ -438,7 +454,7 @@ export const QueueStatusSchema = z
  * *withdraw* a stale presence, never manufacture one the server denied, which is
  * what keeps this a second application of one rule rather than a second rule.
  *
- * It takes a clock so a UI can re-evaluate on a tick without refetching: §11
+ * It takes a clock so a UI can re-evaluate on a tick without refetching: §10
  * asks the pill to flip on its own when an agent walks away, and a pill that
  * only moved when new data arrived would sit on `idle` for as long as nothing
  * else happened — the original bug with extra steps. Clock skew costs nothing
@@ -460,12 +476,12 @@ export function isAgentPresent(presence: AgentPresence, now: Date = new Date()):
 }
 
 /**
- * The four states SPEC.md §11's agent pill names, in one place because two
- * consumers already read them — the console strip and any plugin reading queue
- * status — and a rule about honesty that each derives for itself is a rule that
- * holds in one of them.
+ * The four states SPEC.md §10's agent pill names, in one place because more
+ * than one consumer already reads them — the console strip, and anything else
+ * that reads queue status — and a rule about honesty that each derives for
+ * itself is a rule that holds in one of them.
  *
- * The precedence is the interesting part, and every step of it is §11's own
+ * The precedence is the interesting part, and every step of it is §10's own
  * "reports what the server can actually observe":
  *
  * 1. **`halted`** outranks everything. While the sentinel is set nothing new is
@@ -603,7 +619,7 @@ export const HaltQueueRequestSchema = z
  * `parentId` in its payload, `form.respond` carries `{threadId, formTs, answers,
  * note}` and names no document. The defer call is made by the party that just
  * read the document and saw the session open, so the document is supplied here
- * rather than inferred from a payload shape that plugins are free to define.
+ * rather than inferred from a payload whose shape the event type decides.
  *
  * `reason` is the deferral's human sentence, and it replaces the `deferred:`
  * prefix the interim protocol smuggled into a failure reason: the status now

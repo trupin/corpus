@@ -5,7 +5,7 @@ import { expect, test } from "./coverage";
 
 /**
  * UI-139 — **a refusal a keyboard-only or touch user can finish reading**, in a
- * real browser (SPEC.md §11's Notices paragraph, rider authorized 2026-08-21).
+ * real browser (SPEC.md §10's Notices paragraph, rider authorized 2026-08-21).
  *
  * ## Why this suite has to be a browser and not jsdom
  *
@@ -167,7 +167,7 @@ test.describe("a refusal outlives its toast", () => {
   /**
    * SHARED-058 call 5. A record nobody is told about helps only a person who
    * already knew to look — and the marker that tells them must not itself be a
-   * thing that moves the one line that always renders (§11's rider).
+   * thing that moves the one line that always renders (§10's rider).
    */
   test("marks the console for a refusal, without re-widthing the strip", async ({ page }) => {
     const mark = page.locator(".c-notice-mark");

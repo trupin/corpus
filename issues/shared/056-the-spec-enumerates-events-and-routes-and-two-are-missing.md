@@ -1,4 +1,4 @@
-# [SHARED-056] §7 enumerates the core events, §9.2 the routes, and §11 the console — Phase 36 added one of each
+# [SHARED-056] §7 enumerates the core events, §9.2 the routes, and §10 the console — Phase 36 added one of each
 
 ## Domain
 
@@ -28,7 +28,7 @@ fable
 
 ## Summary
 
-Phase 36 added a core event type (`resident.released`, CONTRACT-069) and a route (`GET /api/threads/:id/scope`, CONTRACT-068). Both are behaviour the user asked for on 2026-08-19 and both are built. It also added a **console tab** (UI-125), and §11's console paragraph describes that drawer's contents in closed detail — the strip, the jobs master-detail, the index pill — and mentions no tabs at all.
+Phase 36 added a core event type (`resident.released`, CONTRACT-069) and a route (`GET /api/threads/:id/scope`, CONTRACT-068). Both are behaviour the user asked for on 2026-08-19 and both are built. It also added a **console tab** (UI-125), and §10's console paragraph describes that drawer's contents in closed detail — the strip, the jobs master-detail, the index pill — and mentions no tabs at all.
 
 All three are enumerations, and an enumeration that omits a member is false rather than incomplete. The contract's docblocks record the first two as pending amendments. The third was found by the PR #52 review on 2026-08-19. This issue is the amendment for all three.
 
@@ -50,14 +50,14 @@ All three are enumerations, and an enumeration that omits a member is false rath
 
 > - `GET /api/threads/:id/scope` — **what a resident owns**: the thread, its subthreads, and every artifact whose provenance walks back to it, derived by the same walk the queue routes with, one frugal line per member and never a body, bounded to one page with a stated `truncated` flag. Refused for a thread with no resident — the orchestrator's lane is not a scope.
 
-**Edit 5 — §11, the console paragraph.** After *"Expanded (click), it **pushes the board up — never overlays content** — and its **height is resizable** by dragging its top edge."*, insert:
+**Edit 5 — §10, the console paragraph.** After *"Expanded (click), it **pushes the board up — never overlays content** — and its **height is resizable** by dragging its top edge."*, insert:
 
 > The expanded drawer holds **two tabs**, and both are the agent's own machinery rather than the corpus, which is what puts them here: **Jobs**, described below, and **Residents** — §7's roster, showing every lane with the resident that owns it, the weight that resident works at, and whether it is live, with the selected lane's **scope** beside it: the conversation, its subthreads, and the artifacts whose provenance walks back to it. A scope is read for the lane a person selects and never for every lane at once, and a listing that reached its bound says so rather than ending quietly — §7 forbids an enumeration of the corpus, and a silent cap is worse than a stated one.
 
 ## Acceptance Criteria
 
 - [x] The user has signed the drafted text, verbatim, on its own
-- [x] §11 describes the console's two tabs and what the Residents tab shows
+- [x] §10 describes the console's two tabs and what the Residents tab shows
 - [x] `npm run spec:check` passes
 
 ## Completion Checklist (orchestrator)

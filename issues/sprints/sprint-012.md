@@ -20,11 +20,11 @@ unusual things:
   present, every `corpus …` invocation resolves against `docs/cli.md`). The other half are
   *behavioral* and are only provable by starting a real `claude` session in a real workspace and
   watching a real queue event go `pending → in-progress → processed`. **A skill that passes the
-  textual half and was never run is a fail.** §15 M5's "or simulate with `corpus thread reply --from
+  textual half and was never run is a fail.** §12 M5's "or simulate with `corpus thread reply --from
   agent`" is a fallback for *M5's server-side* check; it is **not** a substitute for AGENT-002's own
   verification, which is precisely the claim that the prose drives the loop.
 - **For CONTRACT-008 the "real application" is the generated artifacts plus a stub app.** Per
-  adjudication 2 there are no handlers this sprint. The §15 M1 check is the bar: `npm run generate -w
+  adjudication 2 there are no handlers this sprint. The §12 M1 check is the bar: `npm run generate -w
   packages/contract` idempotent from a clean tree, `openapi.json` carrying the declared shapes, and
   the *generated* typed client calling the *real* route definitions mounted on an `OPENAPIHono` stub
   over real HTTP. Reading the route source and declaring it correct is not verification.
@@ -262,7 +262,7 @@ export const checkCorpus = (documents: readonly CheckDocument[], options?: Check
 ```
 
 `CHECK_CODES` has thirteen members. **Exactly two are warnings**: `anchor-unresolved` and
-`ref-unresolved` — matching §14's "unresolvable-but-well-formed anchors (orphaned threads) and
+`ref-unresolved` — matching §11's "unresolvable-but-well-formed anchors (orphaned threads) and
 unresolved `[[refs]]` are warnings". The other eleven (`frontmatter-unparseable`,
 `frontmatter-invalid`, `id-prefix-mismatch`, `duplicate-id`, `anchor-malformed`,
 `duplicate-anchor-id`, `thread-parent-missing`, `thread-anchor-missing`, `anchor-claimed-twice`,
@@ -744,12 +744,12 @@ TEST-58: The response separates errors from warnings, reusing CheckReport's shap
 TEST-59: The code vocabulary matches the validator's, exhaustively
   Then:  The schema's `code` is a closed enum equal to `CHECK_CODES`' thirteen members, and the
          route description records which two are warnings — `anchor-unresolved` and `ref-unresolved`
-         (§14: orphaned anchors and unresolved `[[refs]]`). The other eleven are errors, INCLUDING
+         (§11: orphaned anchors and unresolved `[[refs]]`). The other eleven are errors, INCLUDING
          `anchor-unused`. The log quotes both lists side by side and asserts they agree
 
 TEST-60: Validation is read-only and says so
   Then:  The route declares NO actor header (it mutates nothing), and its description states that it
-         exposes the same validator the write path runs (§14: "hooks and API share one
+         exposes the same validator the write path runs (§11: "hooks and API share one
          implementation")
 ```
 
@@ -787,7 +787,7 @@ TEST-65: Both routes require the workspace bearer token
 
 TEST-66: Generation is idempotent from a clean tree, twice
   When:  `npm run generate -w packages/contract` is run on a clean tree, then again
-  Then:  `git status --porcelain packages/contract` is empty after BOTH runs (§15 M1). Output quoted
+  Then:  `git status --porcelain packages/contract` is empty after BOTH runs (§12 M1). Output quoted
 
 TEST-67: The artifact drift check is green, twice in a row
   When:  `node --import tsx scripts/check-generated-artifacts.ts`
@@ -812,7 +812,7 @@ TEST-70: Round-trip against a stub app, over real HTTP
   Then:  Typed responses come back and type-check; a malformed body is rejected by the ROUTE's own
          validator with the standard 400 + `issues[]` (proving the schema does the work, not the
          stub handler); an unknown skill name reaches the handler with the path param parsed. This
-         is §15 M1's check, instantiated
+         is §12 M1's check, instantiated
 
 TEST-71: Zod round-trips per schema
   Then:  Vitest covers parse/serialize round-trips for both request schemas and both response
@@ -927,7 +927,7 @@ TEST-87: "Plain markdown" means the standard document view, which is the editor
   Given: Sprint-011 adjudication 7 — the editor owns the document body ALWAYS; `MarkdownView`
          renders non-document bodies (turns, snippets)
   Then:  When `resolveDocView` returns `null`, the body renders through the SHIPPED editor at
-         `apps/ui/src/editor/`, not through a second `MarkdownView` path. §10's and §15 M6's "renders
+         `apps/ui/src/editor/`, not through a second `MarkdownView` path. §10's and §12 M6's "renders
          as plain markdown" is satisfied by the standard document view. The E2E log states this
          explicitly — it is the single most likely way to accidentally introduce a second body
          renderer
@@ -1152,7 +1152,7 @@ TEST-125: The core → plugin ban has explicit allowlisted entry points
          server discoverer, the CLI scanner). The allowlist is enumerated in the config with a
          comment naming §10
 
-TEST-126: §15 M6's lint check passes for real
+TEST-126: §12 M6's lint check passes for real
   When:  `import { something } from "../../apps/ui/src/board/Board"` is added to a fixture plugin
          file and `npm run lint` is run; then removed and re-run
   Then:  The first run FAILS naming the kit-only rule; the second passes. Both outputs quoted
@@ -1212,7 +1212,7 @@ TEST-135: The scoped-template-keys question is filed, not answered
   Then:  No mechanism exists by which a plugin declares frontmatter keys that carry to instances
          created from its template — `types.yaml`'s `seedTemplate` supplies a BODY only, per §9.2's
          body-only pre-fill (SERVER-005). Grep for any frontmatter carry-over path → absent. The
-         §11-vs-§9.2 question is written into the issue's E2E log verbatim for user sign-off later
+         §10-vs-§9.2 question is written into the issue's E2E log verbatim for user sign-off later
          (adjudication 3). Implementing it this sprint is a FAIL, and so is silently dropping the
          question
 ```
@@ -1254,7 +1254,7 @@ TEST-141: E2E passes with 8765 unbound
 
 TEST-142: Every scratch workspace is self-consistent
   Then:  In each issue's scratch workspace, `corpus db rebuild && corpus db doctor` is clean — the
-         standing §14 invariant
+         standing §11 invariant
 
 TEST-143: Each E2E log states the model actually used
   Then:  "implemented on: opus | fable" appears in all three logs. AGENT-002 and PLUGINS-001 are
@@ -1293,7 +1293,7 @@ TEST-144: Nothing is left running
 - **Runtime plugin loading, third-party distribution, or a plugin marketplace.** §1 non-goal; §10
   pins build-time `import.meta.glob` and bundled-with-the-tool for v1.
 - **Scoped template frontmatter keys carried from plugin column declarations.** Adjudication 3 —
-  implement without the mechanism, file the §11-vs-§9.2 question for user sign-off.
+  implement without the mechanism, file the §10-vs-§9.2 question for user sign-off.
 - **Any change to `packages/contract` by the agent-runtime or plugins agent**, and any change to
   `apps/ui`/`apps/server`/`apps/cli` by the contract agent. §9.3, restated from sprints 008–011.
 - **Streaming anything over SSE.** §2.2 rule 3 stays absolute — plugin invalidations carry keys only.
@@ -1645,7 +1645,7 @@ This sprint is complete when:
   `ENDPOINT_INVENTORY` was extended so the pinned-surface test passes (TEST-52).
 - **CONTRACT-008 changed no consumer** (TEST-72) and the server's 404 before-state is recorded
   (TEST-73).
-- **§15 M6's four named checks pass against the real app** (TEST-126, TEST-127, TEST-128, TEST-129,
+- **§12 M6's four named checks pass against the real app** (TEST-126, TEST-127, TEST-128, TEST-129,
   TEST-93): delete the plugin → the app still boots and its documents render as the standard document
   view with a "plugin missing" card in its column; restore → renderer, DocPanel, column, route and
   verb return; the kit-only import rule is lint-enforced and demonstrably fires; a deliberately
@@ -1709,7 +1709,7 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
    `CheckFinding` / `CheckReport` field names verbatim. Enforced by TEST-56, TEST-58, TEST-72.
 
 3. **PLUGINS-001's open spec question is NOT resolved in-sprint.** Whether plugins may declare
-   *scoped* template keys that carry from a column declaration to created instances (§11's
+   *scoped* template keys that carry from a column declaration to created instances (§10's
    "starting frontmatter/body" vs §9.2's body-only pre-fill, per the SERVER-005 template-bleed fix)
    stays open. Implement **without** the mechanism; file the question verbatim in the issue's E2E
    log for user sign-off later. Building it is a fail; dropping the question silently is also a

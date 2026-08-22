@@ -328,7 +328,7 @@ test.describe("the composer's shipped stylesheet", () => {
   });
 
   /**
-   * UI-052 made the field a textarea (SPEC.md §11's `↵`-is-a-newline contract),
+   * UI-052 made the field a textarea (SPEC.md §10's `↵`-is-a-newline contract),
    * and the whole risk of that swap is visual: a textarea arrives with a border,
    * a scrollbar and the browser's own font unless every one of them is turned
    * off. Measured in the real cascade, because that is where the defaults are.

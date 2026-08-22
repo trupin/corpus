@@ -1,6 +1,5 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
-import type { RowNotice } from "@corpus/kit";
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget, RowNotice } from "@corpus/kit";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { ReattachOffer } from "../reattach/ReattachOffer";
@@ -11,7 +10,7 @@ import "./anchors.css";
 
 /**
  * The three places an anchored thread can be, and the one place a detached one
- * is (SPEC.md §11).
+ * is (SPEC.md §10).
  *
  * - **A chip at its anchor**, in a narrow column — a widget between the two
  *   blocks the anchor sits between, with the real `ThreadPanel` portalled into
@@ -30,7 +29,7 @@ import "./anchors.css";
  *
  * <a id="PLACEMENT_WAITS"></a>
  * **A placement waits for the row list to answer, and both of these say so.**
- * SPEC.md §11 applies the rule "when a conversation is **placed**", and
+ * SPEC.md §10 applies the rule "when a conversation is **placed**", and
  * `ThreadPanel` latches that decision once — deliberately, so that reading a
  * conversation can never fold it. The cost of latching is that a decision taken
  * against a guess is permanent, so there must be no guesses: an anchor whose row
@@ -46,7 +45,7 @@ import "./anchors.css";
  * is a beat later on a slow list and not at all on a fast one — the two queries
  * are issued in the same tick and the body does not paint until the first
  * returns. Nothing is lost meanwhile: **the anchored highlight is in the body
- * from the first paint** and is not a placement, so §11's "the passage still says
+ * from the first paint** and is not a placement, so §10's "the passage still says
  * it has been discussed" holds throughout. And the case this guard was once
  * confused with — a thread past the first page of `useDocs`, whose row is never
  * coming — is *answered*, not pending, so it keeps the panel PR #25 gave it

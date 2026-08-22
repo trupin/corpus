@@ -184,7 +184,7 @@ describe("GET /api/tree", () => {
   it("answers a contract-shaped tree", async () => {
     const tree = FolderTreeSchema.parse(await json("/api/tree"));
     expect(tree.folders.map((node) => node.path)).toEqual(["finance", "inbox"]);
-    // Two documents plus the thread on one of them (SPEC.md §11 folder scoping).
+    // Two documents plus the thread on one of them (SPEC.md §10 folder scoping).
     expect(tree.folders[0]).toMatchObject({ name: "finance", count: 3, totalCount: 3 });
   });
 });

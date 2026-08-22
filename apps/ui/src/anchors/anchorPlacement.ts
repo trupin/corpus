@@ -106,7 +106,7 @@ export interface AnchoredThread {
  *   different things, or the range covers no content at all — yields no
  *   segments, and a thread with no segments is **not an anchored thread on this
  *   screen**. It is listed below the body with the ones that hang off no text
- *   (SPEC.md §11), never drawn in the margin, and above all never given a
+ *   (SPEC.md §10), never drawn in the margin, and above all never given a
  *   position it does not have. Dropping such a card at the top of the document
  *   is what made it read as a comment on the title (UI-062).
  *
@@ -157,7 +157,7 @@ export function isPlaced(thread: AnchoredThread): boolean {
  * document itself and are never paginated. Past that page the two disagree, and
  * a placement that **skipped** the anchors whose rows it did not have made those
  * conversations vanish from the margin while their highlights stayed in the
- * body. SPEC.md §11 promises the opposite: "its anchored highlight stays in the
+ * body. SPEC.md §10 promises the opposite: "its anchored highlight stays in the
  * body, so the passage still says it has been discussed and *the conversation is
  * still reachable from it*". The same gap opens transiently on every first
  * paint, before the list lands — which popped panels in rather than showing them.
@@ -171,7 +171,7 @@ export function isPlaced(thread: AnchoredThread): boolean {
  * cannot say.** The row is where "does this hold a turn nobody has seen" comes
  * from; an anchor carries no read state at all, and this said `unread: true`
  * instead — the right *placement* reached by asserting a fact the surface does
- * not have (PR #25 re-review, MAJOR). The outcome is unchanged, because §11's
+ * not have (PR #25 re-review, MAJOR). The outcome is unchanged, because §10's
  * interlock and the unknown answer stand the rule down alike: it is placed
  * **expanded**, its card fetches the conversation by id and tells the whole
  * truth, which is what every anchored thread did before this placement had a
@@ -263,7 +263,7 @@ function order(thread: AnchoredThread): number {
   return thread.placement.segments[0]?.from ?? Number.MAX_SAFE_INTEGER;
 }
 
-/** Threads on the document that are not anchored to any text (SPEC.md §11). */
+/** Threads on the document that are not anchored to any text (SPEC.md §10). */
 export function detachedThreads(
   rows: readonly DocRow[],
   anchors: readonly ResolvedAnchor[],

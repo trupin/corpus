@@ -10,7 +10,7 @@ import { duplicateTurnTimestamps } from "./turns.js";
 
 /**
  * The corpus validator behind `corpus doc check` and every server mutation
- * (SPEC.md §14). The severity split is the whole point and is not negotiable:
+ * (SPEC.md §11). The severity split is the whole point and is not negotiable:
  *
  * - **Errors** are structural lies — a document that cannot be read, an id that
  *   two documents claim, a thread pointing at an anchor nobody wrote, an anchor
@@ -19,7 +19,7 @@ import { duplicateTurnTimestamps } from "./turns.js";
  *   it reads perfectly well and quietly swallows everything after it, threads'
  *   turns included — see {@link checkUnterminatedFence} for why that is an error
  *   and why it still never blocks a write.
- * - **Warnings** are exactly the two states §14 carves out, and no others: an
+ * - **Warnings** are exactly the two states §11 carves out, and no others: an
  *   anchor that is well-formed but no longer resolves (an orphaned thread — a
  *   normal outcome of editing, §6), and a `[[ref]]` to a document that does not
  *   exist *yet* (how a corpus grows, §5). Failing on either would punish the
@@ -38,7 +38,7 @@ import { duplicateTurnTimestamps } from "./turns.js";
  * wrong; that is judged under those roots exactly as it is under `data/`
  * (SERVER-124, {@link waivedAsAbsent}).
  *
- * An anchor entry with no thread is deliberately on the failure side: §14 lists
+ * An anchor entry with no thread is deliberately on the failure side: §11 lists
  * "every anchor belongs to an existing thread" among the rules a mutation must
  * satisfy, and §6 states the invariant it protects — deleting or resolving a
  * thread removes its anchor entry, so "no highlight is ever left pointing at an
@@ -350,10 +350,14 @@ export function claudeCodeFrontmatterIssues(
  * which `null` and absent already mean the same thing.
  *
  * There is deliberately no case for `type`: `DocTypeSchema` is an open
- * `z.string().min(1)` because "plugins declare their own types … a closed enum
- * would make every plugin a contract change", so `type: not-a-real-type` is a
- * well-formed plugin type and is reported by nothing, here or under `data/`.
- * `type: []` and `type: ""` are reported, being not a non-empty string.
+ * `z.string().min(1)` (SPEC.md §5), so `type: not-a-real-type` is reported by
+ * nothing, here or under `data/`. **That openness is a promise, not an
+ * oversight** — a workspace may hold a type this build has never heard of,
+ * written by hand or left behind by the workspace's own history, and §12's M6
+ * requires such a document to open, render and search like any other. Closing
+ * the enum would turn every one of them into a finding about a value the
+ * document is entitled to carry. `type: []` and `type: ""` are reported, being
+ * not a non-empty string.
  */
 const waivedAsAbsent = (
   data: Readonly<Record<string, unknown>>,
@@ -401,7 +405,7 @@ const checkAnchorEntries = (
 /**
  * A fenced code block the body never closed (SERVER-066).
  *
- * **Why this is an error rather than a warning.** §14's warning family is the
+ * **Why this is an error rather than a warning.** §11's warning family is the
  * two states it carves out by name, and both are normal outcomes of using the
  * system as designed — an anchor the author edited out from under a thread (§6),
  * a `[[ref]]` written before its target exists (§5). An unclosed fence is never
@@ -498,7 +502,7 @@ export const checkCorpus = (
 
     // Anchor entries are checked against the raw mapping first: schema
     // validation would reject the whole document for one bad selector, and the
-    // specific rule is what a §14 report is for.
+    // specific rule is what a §11 report is for.
     checkAnchorEntries(entry.document, entry.path, docId, report);
 
     // Before the validation gate below, and asked of every document type: a body

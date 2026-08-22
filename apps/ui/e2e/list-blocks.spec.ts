@@ -6,7 +6,7 @@ import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 /**
  * UI-103, from the only place it can be seen: a real editor with autosave on.
  *
- * §11 gives the document view **autosave and no save button**, so opening a
+ * §10 gives the document view **autosave and no save button**, so opening a
  * document and typing one character anywhere in it writes the whole body back.
  * That makes the serializer's fidelity a data-integrity property rather than a
  * formatting one, and it is why the assertion here is against the bytes the

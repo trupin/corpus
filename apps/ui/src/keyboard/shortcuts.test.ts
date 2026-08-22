@@ -111,11 +111,11 @@ describe("the shortcut registry", () => {
   });
 
   /**
-   * SPEC.md §11's enumeration and `design/index.html`'s twelve rows, item by
+   * SPEC.md §10's enumeration and `design/index.html`'s twelve rows, item by
    * item. A binding present in one and absent from the other is a scheme that
    * has quietly changed without the spec saying so.
    */
-  it("is exactly SPEC.md §11's scheme, in the prototype's order", () => {
+  it("is exactly SPEC.md §10's scheme, in the prototype's order", () => {
     expect(SHORTCUTS.map((shortcut) => shortcut.id)).toEqual([
       "rows.move",
       "rows.open",

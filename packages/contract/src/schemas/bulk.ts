@@ -4,7 +4,7 @@ import { DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { warningsField } from "./warning.js";
 
 /**
- * **One action, one commit** (SPEC.md §4; §11's "Selecting rows, and acting on
+ * **One action, one commit** (SPEC.md §4; §10's "Selecting rows, and acting on
  * the selection") — the shapes behind `POST /api/docs/bulk`.
  *
  * ## Why this route exists at all
@@ -27,7 +27,7 @@ import { warningsField } from "./warning.js";
  * consequence: "**A Save carrying a mix of verbs is still one act and still one
  * commit** — archiving three documents and resolving two is one pass, so it is
  * one commit, not one per verb; anything else would make the history disagree
- * with the single report §11 requires."
+ * with the single report §10 requires."
  *
  * CONTRACT-037 shipped this request as `{ids, action}` — *one* verb over *many*
  * ids — which cannot say that. The alternative the user weighed and rejected at
@@ -50,14 +50,14 @@ import { warningsField } from "./warning.js";
  * Both are defensible and the next reader will ask, so: the value of this
  * surface is concentrated in two rules that are identical for every act — a
  * bulk act is exactly one commit containing exactly what changed, and its result
- * is §11's three parts. Per-act routes would restate both eight times, and eight
+ * is §10's three parts. Per-act routes would restate both eight times, and eight
  * restatements are eight opportunities to drift; a server would then be free to
  * implement one of them by looping the single-document path without any
  * declaration contradicting it. The acts differ only in their parameters, which
  * is exactly what a discriminated union is for. Per-act routes fare *worse*
  * under SHARED-032 than they did before, because a mixed Save would then be
  * several requests by construction. The single-document routes are untouched and
- * stay the path for the reader's ⋯ menu and per-row quick actions (§11) — this
+ * stay the path for the reader's ⋯ menu and per-row quick actions (§10) — this
  * route is for a *selection*, and the distinction is the commit.
  *
  * **Threads ride here too, rather than getting a second batch path.** Resolve
@@ -65,7 +65,7 @@ import { warningsField } from "./warning.js";
  * `/api/threads/{id}` — but a thread is a document (§6), `status` is a core
  * document field (§5), and the collection route `GET /api/docs?type=thread` is
  * already the thread list. This route addresses documents by id and answers in
- * ids, so nothing thread-shaped is needed in either direction. §11 no longer
+ * ids, so nothing thread-shaped is needed in either direction. §10 no longer
  * requires a selection to be homogeneous — "an action is offered on the rows
  * that can take it and is simply absent on the rows that cannot, so a list
  * holding notes and threads offers Resolve on the threads alone" — which makes
@@ -75,7 +75,7 @@ import { warningsField } from "./warning.js";
  * ## Ids, and the one entry that is not an id
  *
  * Enumerated ids remain the shape of a staged row: a row is a document the
- * person looked at and chose a verb for. §11 keeps one selection that is not
+ * person looked at and chose a verb for. §10 keeps one selection that is not
  * enumerable — "a second, separately labelled act extends the selection to
  * **everything the query matches**" — and it is explicit about how that stages:
  * "Because there is no per-row gesture for rows nobody enumerated, **a
@@ -84,13 +84,13 @@ import { warningsField } from "./warning.js";
  * carries at most one such entry ({@link BulkWholeResultSetEntrySchema}) beside
  * the enumerated ones, and it is a field of its own rather than a member of
  * `entries`: at most one is then structural rather than a rule someone has to
- * remember, and §11's "a whole-result-set selection cannot be deleted" becomes
+ * remember, and §10's "a whole-result-set selection cannot be deleted" becomes
  * inexpressible instead of merely forbidden.
  *
  * CONTRACT-037 decided "ids, never a filter" and that decision is **narrowed
  * here, not reversed**: a filter still cannot stand in for enumerated rows, and
- * the one thing it may express is the one selection §11 says has no enumerated
- * form. §11's "the result reports the documents actually changed — saying so
+ * the one thing it may express is the one selection §10 says has no enumerated
+ * form. §10's "the result reports the documents actually changed — saying so
  * when that differs from the number shown" is then the caller comparing the
  * count it displayed against {@link BulkActionResultSchema}, which is where that
  * comparison belongs: only the caller knows what number it showed.
@@ -114,17 +114,17 @@ import { warningsField } from "./warning.js";
  */
 
 /**
- * The acts §11 offers on a selection, minus the one that needs nothing here:
+ * The acts §10 offers on a selection, minus the one that needs nothing here:
  * "Ask the agent about these" creates one standalone thread whose first turn
  * references every selected document, through the existing `POST /api/threads`,
- * and changes none of them — which is why §11 keeps it available whatever the
+ * and changes none of them — which is why §10 keeps it available whatever the
  * rest of the Save could not do.
  *
  * Two of these have no dedicated single-document route either: `tag` and
  * `review` are keys of `UpdateDocRequest` on `PUT /api/docs/{id}`. They are
  * named acts here rather than a batched partial update on purpose — a batched
  * `UpdateDocRequest` would let one request set twenty documents' titles to the
- * same string, and §11 offers no such action.
+ * same string, and §10 offers no such action.
  */
 export const BULK_ACTION_NAMES = [
   "archive",
@@ -139,7 +139,7 @@ export const BULK_ACTION_NAMES = [
 
 /**
  * The acts a **whole-result-set** entry may carry: every one except `delete`.
- * §11: "Bulk delete is offered **only** on a selection whose documents are
+ * §10: "Bulk delete is offered **only** on a selection whose documents are
  * enumerated — a whole-result-set selection cannot be deleted, because 'all 412
  * matching' is not a set anyone read before confirming." Published as a narrower
  * union rather than enforced by a refinement, so the restriction is a *type*
@@ -152,10 +152,10 @@ export const BULK_WHOLE_RESULT_SET_ACTION_NAMES = BULK_ACTION_NAMES.filter(
 export const BulkActionNameSchema = z.enum(BULK_ACTION_NAMES).openapi({
   description:
     "Which act was applied to **this** document. Carried per document rather than once per " +
-    "request because a Save may hold a mix of verbs (SPEC.md §4, §11: each row carries its own " +
+    "request because a Save may hold a mix of verbs (SPEC.md §4, §10: each row carries its own " +
     "staged action), so the report reads on its own and never has to be paired back to the call " +
     "that produced it — including for documents a `wholeResultSet` entry covered, which the " +
-    "caller never enumerated. The eight are SPEC.md §11's selection actions except " +
+    "caller never enumerated. The eight are SPEC.md §10's selection actions except " +
     '"Ask the agent about these", which changes no document and goes through `POST /api/threads`.',
   example: "archive",
 });
@@ -166,7 +166,7 @@ const FOLDER_DESCRIPTION =
   "document keeps its id, so every `[[ref]]`, anchor entry and thread `parent` survives the move.";
 
 /**
- * Tagging is a **delta**, and the shape is what makes that non-negotiable: §11
+ * Tagging is a **delta**, and the shape is what makes that non-negotiable: §10
  * says tagging "adds or removes the named tags and never replaces a document's
  * tag set", and a `tags: [...]` key here would flatten twenty different tag sets
  * into one with no way for a caller to notice. There is deliberately no way to
@@ -181,7 +181,7 @@ const FOLDER_DESCRIPTION =
  */
 const TAG_ACTION_MESSAGE =
   "`tag` is a delta: give `add`, `remove`, or both, and at least one tag between them. There is " +
-  "no replace — SPEC.md §11 is explicit that tagging adds or removes the named tags and never " +
+  "no replace — SPEC.md §10 is explicit that tagging adds or removes the named tags and never " +
   "replaces a document's tag set.";
 
 const tagList = z
@@ -208,7 +208,7 @@ const SHARED_ACTS = [
     .describe(
       "Set `status: resolved` on threads (SPEC.md §6). Later turns stop re-triggering the agent. " +
         "A document that is not a thread is refused with `not-applicable` rather than acted on — " +
-        "§11 offers Resolve on the threads alone, so a mixed list stages it only where it applies.",
+        "§10 offers Resolve on the threads alone, so a mixed list stages it only where it applies.",
     ),
   z
     .strictObject({ action: z.literal("reopen") })
@@ -256,7 +256,7 @@ const DELETE_ACT = z
       "with `403` for the whole request, not per document — the agent archives, never deletes. " +
       "Each deleted document's threads become orphaned records, totalled in " +
       "`orphanedThreadIds`. Unlike archiving it cannot be undone from the app; git is the only " +
-      "recovery. Available on an **enumerated** entry only: §11 forbids deleting a " +
+      "recovery. Available on an **enumerated** entry only: §10 forbids deleting a " +
       "whole-result-set selection, so `wholeResultSet.action` cannot spell it.",
   );
 
@@ -284,7 +284,7 @@ const DELETE_ACT = z
 export const BulkActionSchema = z.discriminatedUnion("action", [...SHARED_ACTS, DELETE_ACT]);
 
 /**
- * The same union minus `delete`, for the one entry §11 will not let anyone
+ * The same union minus `delete`, for the one entry §10 will not let anyone
  * delete through. Narrowing the *type* rather than adding a refinement is the
  * point: `{query, action: {action: "delete"}}` is a call nobody can write, so
  * the restriction cannot be discovered at runtime by someone who tried it on 412
@@ -294,23 +294,23 @@ export const BulkWholeResultSetActionSchema = z.discriminatedUnion("action", SHA
 
 const ENTRY_ACTION_DESCRIPTION =
   "The act staged against this one document, discriminated on `action`. **Each row carries its " +
-  "own** (SPEC.md §11): archiving three documents and resolving two is one Save, so a request " +
+  "own** (SPEC.md §10): archiving three documents and resolving two is one Save, so a request " +
   "may hold any mix of verbs and is still one act and one commit (§4).";
 
 const ENTRIES_DESCRIPTION =
   "The individually staged rows — one entry per document, each carrying its own act. **An id " +
-  "may appear at most once**: a row carries exactly one staged action (SPEC.md §11 — " +
+  "may appear at most once**: a row carries exactly one staged action (SPEC.md §10 — " +
   "re-choosing *replaces* a row's staged action), so a repeat is a caller bug rather than " +
   "something to resolve. Two entries for one id with **different** acts are refused naming both, " +
   "because picking one would be a silent choice about someone's documents; two with the same act " +
   "are refused too, and the message says which id. May be empty **only** when `wholeResultSet` " +
   "is present — an act on nothing is a caller bug, and a `200` carrying three empty lists would " +
   "let a broken board look healthy. Deliberately uncapped: a column's query legitimately matches " +
-  "thousands, and a limit the spec does not state would refuse a selection §11 allows the board " +
+  "thousands, and a limit the spec does not state would refuse a selection §10 allows the board " +
   "to offer.";
 
 const WHOLE_RESULT_SET_DESCRIPTION =
-  "§11's whole-result-set selection, staged as a **single entry** carrying one action for " +
+  "§10's whole-result-set selection, staged as a **single entry** carrying one action for " +
   "everything the column's query matches rather than for enumerated ids. At most one — the field " +
   'is singular rather than a member of `entries`, so "at most one" is structural and ' +
   "`delete` is inexpressible. Omit it for an ordinary staged set, which is the common case. The " +
@@ -339,13 +339,13 @@ export const BulkStagedEntrySchema = z
   });
 
 /**
- * §11's whole-result-set selection, staged as **one entry**: "one line reading
+ * §10's whole-result-set selection, staged as **one entry**: "one line reading
  * what it covers and how many, carrying one action for all of them", which
  * "sits in the staged set beside individually staged rows and is discarded,
  * saved and reported exactly as they are".
  *
  * It carries a query rather than ids because there is no per-row gesture for
- * rows nobody enumerated, and because §11 requires "the count is re-evaluated
+ * rows nobody enumerated, and because §10 requires "the count is re-evaluated
  * when the Save runs" — a count re-evaluated by the caller before it sends would
  * be a different promise, and the difference is exactly the documents that
  * entered or left the result set in between.
@@ -368,17 +368,17 @@ export const BulkWholeResultSetEntrySchema = z
   .strictObject({
     query: ViewQuerySchema.describe(
       "The column's query, in the same flat parameter map a `type: view` document stores " +
-        '(SPEC.md §11) — `{type: ["note", "view"], tag: "finance"}` ≡ ' +
+        '(SPEC.md §10) — `{type: ["note", "view"], tag: "finance"}` ≡ ' +
         "`type=note,view&tag=finance`. The server compiles it into `GET /api/docs` and applies " +
         "the act to **everything it matches when the Save runs**, re-evaluated then and not " +
-        "before (§11). Unlike a stored view's query an unrecognised key or an unacceptable value " +
+        "before (§10). Unlike a stored view's query an unrecognised key or an unacceptable value " +
         "is a `400` here rather than a silent degrade: this query decides what gets written. " +
         "Documents that `entries` names individually are **excluded** — a row someone staged by " +
         "hand keeps the verb they chose, so no document is ever covered twice and the request " +
         "needs no precedence rule at write time.",
     ),
     action: BulkWholeResultSetActionSchema.describe(
-      "The one act carried for everything the query matches. **`delete` is not among them**: §11 " +
+      "The one act carried for everything the query matches. **`delete` is not among them**: §10 " +
         'forbids deleting a whole-result-set selection, because "all 412 matching" is not a set ' +
         "anyone read before confirming. Rows the act does not apply to come back `refused` with " +
         "`not-applicable`, exactly as an enumerated row would.",
@@ -395,7 +395,7 @@ export const BulkWholeResultSetEntrySchema = z
  * rejected", restated for the shape that replaced it.
  *
  * **An id staged twice is a `400`, and the message says whether the acts
- * differed.** §11 makes a row carry exactly one staged action — "re-choosing
+ * differed.** §10 makes a row carry exactly one staged action — "re-choosing
  * *replaces* a row's staged action" — so the same id twice is a staged set that
  * was keyed wrong. Where the acts differ the request is genuinely ambiguous, and
  * the alternatives are both worse than refusing: last-write-wins picks one
@@ -438,7 +438,7 @@ export const BulkActionRequestSchema = z
         message:
           first === entry.action.action
             ? `\`${entry.id}\` is staged twice. A row carries exactly one staged action ` +
-              "(SPEC.md §11), so name each document once."
+              "(SPEC.md §10), so name each document once."
             : `\`${entry.id}\` is staged twice with different actions (\`${first}\` and ` +
               `\`${entry.action.action}\`). Refused rather than resolved: choosing one would be a ` +
               "silent choice about someone's documents, and applying both would write one " +
@@ -459,13 +459,13 @@ export const BulkActionRequestSchema = z
  * **There is deliberately no staleness class**, and the history of that is worth
  * keeping because the value outlived two justifications in a row. It began as
  * `locked`, naming the holder of the edit lock; when SHARED-041 replaced the
- * lock with a key it was renamed `stale`, and kept on the strength of §11's
+ * lock with a key it was renamed `stale`, and kept on the strength of §10's
  * sentence — *"a document whose content moved under the staged Save is refused
  * exactly as a single edit to it would be, saying so (§7)"*. It was declared
  * "because the spec sentence requires the report to be able to say it, not
  * because every implementation must produce it".
  *
- * **That sentence is gone** (struck from §11 and §9.2 on 2026-08-13, PR #46
+ * **That sentence is gone** (struck from §10 and §9.2 on 2026-08-13, PR #46
  * review), and it was the value's only remaining support: no code path emits it,
  * and none can. Every act this route offers — archive, unarchive, resolve,
  * reopen, move, tag, review, delete — **names its own delta**, so by §7 none of
@@ -490,10 +490,10 @@ export const BulkRefusalReasonSchema = z.enum(BULK_REFUSAL_REASONS).openapi({
     "Which class of refusal this is. `not-found`: no " +
     "document has that id; the other documents are not the caller's mistake, so it is an entry " +
     "here rather than a `404` for the whole request. `not-applicable`: the act does not apply to " +
-    "this document (resolving something that is not a thread) — §11 offers an action only on the " +
+    "this document (resolving something that is not a thread) — §10 offers an action only on the " +
     "rows that can take it, so for an enumerated row this means the corpus changed between " +
     "staging and saving, and for a `wholeResultSet` entry it is the ordinary case of one act " +
-    "covering a mixed result set. `invalid`: the write would leave the document failing §14 " +
+    "covering a mixed result set. `invalid`: the write would leave the document failing §11 " +
     "validation, refused with its reason. `write-failed`: the file could not be written; nothing " +
     "about this document reached the commit.",
   example: "not-applicable",
@@ -502,7 +502,7 @@ export const BulkRefusalReasonSchema = z.enum(BULK_REFUSAL_REASONS).openapi({
 /**
  * What every part of the result names: the document, and **what was done to
  * it**. The verb is per document because a Save carries a mix of them (SPEC.md
- * §4, §11), so a bare id would leave a report unable to say what happened
+ * §4, §10), so a bare id would leave a report unable to say what happened
  * without pairing itself back against the request — and for the documents a
  * `wholeResultSet` entry covered, the caller has no request row to pair against
  * at all.
@@ -519,7 +519,7 @@ export const BulkActionOutcomeSchema = z.object(outcomeShape).openapi("BulkActio
 });
 
 /**
- * One document the act did not change, and why — §11's third part, "listed apart
+ * One document the act did not change, and why — §10's third part, "listed apart
  * from both … each named individually with its reason".
  *
  * **The reason and its message are the whole of an entry**, and that is what the
@@ -530,7 +530,7 @@ export const BulkActionOutcomeSchema = z.object(outcomeShape).openapi("BulkActio
  * and the message carries what a person needs. One field fewer, one refinement
  * fewer, and no shared component to accidentally make nullable.
  *
- * Stated as one shape rather than a union of two because §11 describes one list
+ * Stated as one shape rather than a union of two because §10 describes one list
  * of named refusals, and a `oneOf` here would make every consumer narrow before
  * it could read the id it already has.
  */
@@ -544,14 +544,14 @@ export const BulkActionRefusalSchema = z
       .describe(
         "Human-readable specifics for this document — which act found nothing to apply, the " +
           "validator's own finding, the write error. Rendered verbatim beside the document's " +
-          "title; never parsed. Always present: §11 requires every entry in this part to carry " +
+          "title; never parsed. Always present: §10 requires every entry in this part to carry " +
           "its reason, and a class alone does not tell a person what to do next.",
       ),
   })
   .openapi("BulkActionRefusal");
 
 /**
- * §11's three parts, plus what the act as a whole did.
+ * §10's three parts, plus what the act as a whole did.
  *
  * **Ids and verbs, not documents.** Twenty archived documents would be twenty
  * full `Doc` bodies on a response nobody reads them from: the board already
@@ -564,20 +564,20 @@ export const BulkActionRefusalSchema = z
  * **The parts partition the requested ids.** Every id the request resolves to
  * appears exactly once across `changed`, `alreadyInState` and `refused`, and
  * nothing else appears there at all — so a caller can total the three and
- * compare against what it selected: §11's "if seventeen of twenty changed, the
+ * compare against what it selected: §10's "if seventeen of twenty changed, the
  * result says seventeen, names the three, and the history agrees with it (§4)".
  * For a request whose staged set is entirely enumerated — the common case — the
  * resolved ids are exactly the ids in `entries`, which is CONTRACT-037's
  * invariant unchanged. A `wholeResultSet` entry adds the ids its query matched
  * when the Save ran, minus the ids `entries` already names; those ids are in no
  * request field, so these three lists are the only place the caller learns them
- * (§11: "the count is re-evaluated when the Save runs, and the result reports the
+ * (§10: "the count is re-evaluated when the Save runs, and the result reports the
  * documents actually changed — saying so when that differs from the number
  * shown").
  *
  * **`changed` and the commit are one computation, and the containment runs one
  * way.** §4 requires the commit to contain "exactly the documents the action
- * changed", and §11 requires the history to agree with the report; concretely,
+ * changed", and §10 requires the history to agree with the report; concretely,
  * every id in `changed` has a file in `git show --name-only <commit>`, because
  * only a write that landed puts an id there and only those writes are staged. A
  * document that was already in the target state, or that was refused, writes
@@ -618,7 +618,7 @@ export const BulkActionResultSchema = z
     changed: z
       .array(BulkActionOutcomeSchema)
       .describe(
-        "Documents the act changed, each with the verb that changed it — §11's first part. Every " +
+        "Documents the act changed, each with the verb that changed it — §10's first part. Every " +
           "one of them has a file in `commit` (§4); the containment runs this way only, since a " +
           "commit may also carry files for documents the act did not name (§6's anchor cascade " +
           "reaching a surviving parent, a skill folder move carrying a nested skill — reported " +
@@ -629,10 +629,10 @@ export const BulkActionResultSchema = z
     alreadyInState: z
       .array(BulkActionOutcomeSchema)
       .describe(
-        "Documents that were **already in that state** — §11's second part, explicitly a no-op " +
+        "Documents that were **already in that state** — §10's second part, explicitly a no-op " +
           'and **not a failure**: "a document already archived is a no-op, not a failure". They ' +
           "contribute nothing to the commit, and a board must not colour them as errors. This is " +
-          "also where a row that reached its staged state between staging and saving lands: §11 " +
+          "also where a row that reached its staged state between staging and saving lands: §10 " +
           "keeps such a row staged and says it is already done, and this part is what says it. " +
           "The `review` act populates it only when the instant it would write is the one already " +
           "there: instants are second-precision, so repeating `review` on the same document " +
@@ -643,8 +643,8 @@ export const BulkActionResultSchema = z
     refused: z
       .array(BulkActionRefusalSchema)
       .describe(
-        "Documents that **did not change, and why** — §11's third part, listed apart from both " +
-          "others because it is the part worth re-reading. After the act, §11 reduces the staged " +
+        "Documents that **did not change, and why** — §10's third part, listed apart from both " +
+          "others because it is the part worth re-reading. After the act, §10 reduces the staged " +
           "set to exactly these, so retrying what was refused is one gesture.",
       ),
     orphanedThreadIds: z
@@ -653,7 +653,7 @@ export const BulkActionResultSchema = z
         "Threads left as **orphaned records** by a `delete`, totalled across every document " +
           "actually deleted (SPEC.md §9.2 — they keep their `parent` id and stay readable; their " +
           "anchors no longer resolve). Drop their caches. Empty when the act deleted nothing. " +
-          "§11's confirm needs this count *before* the act, which is a `GET /api/docs?type=thread&" +
+          "§10's confirm needs this count *before* the act, which is a `GET /api/docs?type=thread&" +
           "parent=<ids>` the caller makes itself — this field is what the act actually did.",
       ),
     commit: z
@@ -668,7 +668,7 @@ export const BulkActionResultSchema = z
           "commit and a commit containing nothing is not one; the workspace is not a git " +
           "repository (`commit_skipped` in `warnings`); or the workspace's hooks rejected the " +
           "commit, leaving the writes on disk and uncommitted (`commit_failed` in `warnings`, " +
-          "§14).",
+          "§11).",
       ),
     warnings: warningsField,
   })

@@ -5,7 +5,7 @@ import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 /**
  * UI-104, from the only place it can be seen: a real editor with autosave on.
  *
- * §11 gives the document view **autosave and no save button**, so opening a
+ * §10 gives the document view **autosave and no save button**, so opening a
  * document and typing one character anywhere in it writes the whole body back.
  * A table that gains a column on that save is not a formatting difference — it
  * is the user's file, restructured, committed under their authorship, with

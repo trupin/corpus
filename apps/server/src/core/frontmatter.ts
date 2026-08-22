@@ -20,7 +20,7 @@ import { residentOrNull } from "./resident.js";
  *
  * `@corpus/contract` owns the post-defaults form every core field is required
  * in; a file legitimately omits optional fields, so this is the *pre-defaults*
- * form plus passthrough for plugin keys. Everything the two do share — id
+ * form plus passthrough for every key the core does not define. Everything the two do share — id
  * patterns, the selector shape, the status and agent enums — is imported, never
  * restated: two definitions of one shape is the drift Architecture Decision 3
  * exists to prevent.
@@ -98,8 +98,8 @@ export const FileFrontmatterSchema = z.looseObject({
    * parse, and its whole job is to make the absent case explicit.
    *
    * **Anything that is not a thread id reads as `null` rather than failing.**
-   * `origin` was a perfectly legal `extra` key before this existed — §5 and §12
-   * make frontmatter the plugin extension point — so a workspace may already
+   * `origin` was a perfectly legal `extra` key before this existed — §5 lets a
+   * document carry any key the core does not define — so a workspace may already
    * hold documents whose `origin:` means something else entirely. Validating it
    * strictly would make every save of such a document a `400`, including the
    * reader's autosave, until somebody hand-edited the file: a corpus that
@@ -122,11 +122,11 @@ export const FileFrontmatterSchema = z.looseObject({
  *
  * `turnModels` (SPEC.md §6, CONTRACT-043) defaults to the empty map for the same
  * reason every optional field here does: a thread nobody recorded a model for
- * simply has no key, which is §11's "nothing rather than a guess" spelled in
+ * simply has no key, which is §10's "nothing rather than a guess" spelled in
  * frontmatter. Its shape is `core/turn-model.ts`'s file-level form — the
  * contract's canonical map behind the one normalisation a file needs — so a
  * hand-written offset instant is accepted and an entry naming no instant at all
- * is reported as the §14 finding it is, rather than silently missing every turn.
+ * is reported as the §11 finding it is, rather than silently missing every turn.
  */
 export const FileThreadFrontmatterSchema = FileFrontmatterSchema.extend({
   id: ThreadIdSchema,
@@ -201,7 +201,7 @@ export const isThreadFrontmatter = (data: Readonly<Record<string, unknown>>): bo
  * Validate a frontmatter mapping, picking the thread schema when the document
  * declares `type: thread`. Returns issues rather than throwing — the corpus
  * checker reports every document's problems, so one bad file must not abort the
- * run (§14).
+ * run (§11).
  */
 export const validateFrontmatter = (data: Readonly<Record<string, unknown>>): FrontmatterResult => {
   const schema = isThreadFrontmatter(data) ? FileThreadFrontmatterSchema : FileFrontmatterSchema;

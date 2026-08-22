@@ -6,7 +6,7 @@ import { createUiClient } from "../app/apiClient";
  *
  * A `DELETE` issued from a `pagehide` handler on an ordinary client is racing
  * the browser's own teardown and is routinely cancelled — which would make
- * closing the tab the one exit route the abandon rule (SPEC.md §11) silently
+ * closing the tab the one exit route the abandon rule (SPEC.md §10) silently
  * failed on. `keepalive: true` is the platform's answer: the request outlives
  * the document that issued it.
  *

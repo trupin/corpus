@@ -7,6 +7,23 @@ contract
 in_progress — surface 1 (the published contract) is **done** in PR #55; surfaces
 2 (`packages/kit`) and 3 (`apps/ui/e2e`) remain
 
+**Amended 2026-08-22 by SHARED-065 (Phase 41). Not closed, and not rewritten
+blind.** Surfaces 2 and 3 survive Phase 41 whole: `packages/kit` is kept (SHARED-067
+amendment 3 rewords it as *"the shared UI kit"*) and `apps/ui/e2e/stubCorpus.ts`
+is core test infrastructure. So the remaining work stands exactly as filed.
+
+**One correction to the copy this issue tells the next agent to make.** The
+landed surface-1 prose named a *plugin-event-type consequence* — the E2E log below
+records that verbatim, and it was true when written. CONTRACT-077 (`06afcb61`,
+*"The published contract forgets plugins existed"*) has since removed that clause;
+`packages/contract/src/schemas/query.ts` now greps to zero for `plugin`, verified
+2026-08-22. **So surfaces 2 and 3 must be written from the contract's text as it
+stands today, not from the E2E log's account of it.** The log is left unedited as
+the record of what PR #55 shipped.
+
+Nothing else moves: the predicate itself never mentioned plugins, and
+`AWAITING_AGENT_SQL` is unchanged by Phase 41.
+
 ## Priority
 P2
 

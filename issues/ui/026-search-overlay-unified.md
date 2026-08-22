@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 search overlay (SHARED-006 Edit 11)
+- SPEC.md §10 search overlay (SHARED-006 Edit 11)
 
 ## Summary
 The overlay's ranked result list switches from `GET /api/docs?q=` to `GET
@@ -192,7 +192,7 @@ which is all they ever used.
   the grouping so the two can never disagree (TEST-1026). Highlighting survived the payload change:
   `/api/search` sends plain text, so the query's words are marked client-side into `<mark>` elements
   React creates — no HTML string, no sanitizer, the same safety property the structured runs bought
-  (sprint-010 Open Conflict 4), keeping §11's "snippet-highlighted results" true.
+  (sprint-010 Open Conflict 4), keeping §10's "snippet-highlighted results" true.
 
 ### Tests and gates
 

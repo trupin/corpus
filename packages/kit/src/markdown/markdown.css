@@ -1,10 +1,10 @@
 /*
  * The rendered-markdown surface, ported from `design/index.html`'s `.doc-body`
- * and `.ref` (SPEC.md §11 names the mockup authoritative for look & feel).
+ * and `.ref` (SPEC.md §10 names the mockup authoritative for look & feel).
  *
  * Shipped from the kit rather than from `apps/ui` because `MarkdownView` is part
- * of the kit contract (SPEC.md §10): a plugin that renders a body must be able
- * to make it look like every other body in Corpus, and:
+ * of the kit contract (SPEC.md §10): every surface that renders a body must be
+ * able to make it look like every other body in Corpus, and:
  *
  *     import "@corpus/kit/markdown.css";
  *
@@ -13,7 +13,7 @@
  *
  * ── The measure is a default, not a cap (UI-066) ──────────────────────────
  *
- * SPEC.md §11: *"The document body has a comfortable default width, and the
+ * SPEC.md §10: *"The document body has a comfortable default width, and the
  * reader can change it — in column view and in full screen."* So `62ch` moves
  * from being the width to being the **fallback**: a host that sets
  * `--doc-measure` on any ancestor decides, and one that sets nothing gets
@@ -89,7 +89,7 @@
 }
 
 /*
- * A block wraps; it does not scroll (UI-050, SPEC.md §11's rider signed
+ * A block wraps; it does not scroll (UI-050, SPEC.md §10's rider signed
  * 2026-08-03: "long lines wrap inside the canvas rather than scrolling
  * horizontally"). The reading measure is 62ch, so a 400-column line — every one
  * of the 37 fenced blocks in a real workspace has a line wider than the canvas
@@ -151,10 +151,10 @@
 /*
  * ── Images (UI-049) ──────────────────────────────────────────────────
  *
- * SPEC.md §11: "clicking any rendered image … opens it full-screen over the
+ * SPEC.md §10: "clicking any rendered image … opens it full-screen over the
  * app". The affordance is declared once, on the class `CorpusImage` puts on
- * every image it draws, so a turn attachment, a document body and a plugin
- * surface all say the same thing about what a click will do.
+ * every image it draws, so a turn attachment, a document body and a compose
+ * preview all say the same thing about what a click will do.
  *
  * `.md-img` alone carries no cursor: without a viewer mounted the image is not
  * clickable, and `role="button"` is what the component adds only when one is.
@@ -166,7 +166,7 @@
 /*
  * ── The reserved box (UI-129) ────────────────────────────────────────
  *
- * SPEC.md §11, rider signed 2026-08-20: "a value that arrives later than the
+ * SPEC.md §10, rider signed 2026-08-20: "a value that arrives later than the
  * box holding it" must move nothing else on the screen. An `<img>` with no
  * stated size is that rule's purest counter-example. It occupies **0×0** until
  * the bytes decode and then takes its natural box, so every line beneath it
@@ -189,7 +189,7 @@
  * first version of this reservation stated one box — 240×180 — for every image
  * in the product, and that number is `design/index.html`'s `.turn-att-img`: the
  * mockup's figure for a *thumbnail hanging off a message*, which is the only
- * image the mockup draws. Applied to a document body it read SPEC.md §11's
+ * image the mockup draws. Applied to a document body it read SPEC.md §10's
  * third clause backwards. A 900×600 screenshot in a body rendered at the
  * reading measure before this issue and was legible there. At 240×180 it is a
  * thumbnail, so opening the viewer becomes the ordinary way to read an image
@@ -199,7 +199,7 @@
  *
  * So the ratio is stated once and the width is the surface's own:
  *
- * - **Prose — a document body, a turn's message, a plugin surface — takes the
+ * - **Prose — a document body, a turn's message, a compose preview — takes the
  *   whole reading measure** (`width: 100%` inside `.doc-body`'s 62ch). That is
  *   the widest the column allows and the size those images rendered at before
  *   the reservation existed, so the change restores the reading size and adds
@@ -328,7 +328,7 @@
  *
  *     ul.contains-task-list > li.task-list-item > input[type=checkbox] + text
  *
- * and that is a shape any plugin importing this stylesheet can produce, because
+ * and that is a shape any host importing this stylesheet can produce, because
  * `MarkdownView` is what produces it.
  *
  * The editor's shape is **not** here (PR #19 review). TipTap's
@@ -337,7 +337,7 @@
  * editor, and no way to render one. Those selectors live beside the editor that
  * produces them, in `apps/ui/src/editor/editor.css`, which is where sprint-023's
  * Out of Scope note put UI-034's CSS in the first place. The two files draw the
- * *same* box for the same document — SPEC.md §11's "there is no edit mode" is a
+ * *same* box for the same document — SPEC.md §10's "there is no edit mode" is a
  * visual promise as much as a behavioural one — so the shared measurements (a
  * 13px box, 8px from its text) are stated in both and changing one is changing
  * both.
@@ -468,7 +468,7 @@
 /*
  * ── Copyable canvases (UI-041) ───────────────────────────────────────
  *
- * A fenced block on a rendered surface (SPEC.md §11, rider signed 2026-08-02):
+ * A fenced block on a rendered surface (SPEC.md §10, rider signed 2026-08-02):
  * the info string as a small label above the block, and a copy button over its
  * top-right corner. Only `MarkdownView` emits this shape — the editor's code
  * blocks are bare `pre`s and keep the rules above, untouched.
@@ -485,7 +485,7 @@
    *
    * The one place the number lives. `CodeFence` never reads it: it asks the
    * laid-out box whether there is more than it shows, so retuning this — a
-   * host with a taller reader, a plugin with a denser surface — retunes the
+   * host with a taller reader, a surface with a denser layout — retunes the
    * whole behavior with no code change.
    *
    * **420px ≈ 20 lines of the block's own type** (12.5px mono at the 1.62 line

@@ -1,7 +1,7 @@
 /*
  * Toasts, ported from `design/index.html` (`.toast-wrap`, `.toast`).
  *
- * **The stack is reserved slots, not a flow** (UI-132; SPEC.md §11's rider
+ * **The stack is reserved slots, not a flow** (UI-132; SPEC.md §10's rider
  * signed 2026-08-20). The prototype's wrapper is a bottom-anchored flex column,
  * which means every departure drags the survivors toward the anchor — 47px per
  * expiry on UI-128's one-line toasts, 65px on the two-line ones this suite

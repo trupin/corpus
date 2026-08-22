@@ -115,7 +115,6 @@ async function seedVocabulary(page: Page): Promise<void> {
             pinned: false,
             order: null,
             query: null,
-            column: null,
             extra: {},
           })),
           page: { total: 2, limit: 200, offset: 0 },
@@ -173,7 +172,7 @@ test.describe("the column query editor", () => {
     await expect(field(page)).toHaveValue("type=");
 
     // Now the *values*, and they are the workspace's own: `todo` exists only
-    // because a plugin's document does. No hardcoded list knows that.
+    // because a document on disk says so. No hardcoded list knows that.
     await expect(menu(page)).toBeVisible();
     await expect(optionText(page).filter({ hasText: "todo" })).toHaveCount(1);
     await expect(optionText(page).filter({ hasText: "note" })).toHaveCount(1);

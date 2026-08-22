@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — keyboard scheme (`↵` open the highlighted document); menu conventions ("adds no exclusive capability")
+- SPEC.md §10 — keyboard scheme (`↵` open the highlighted document); menu conventions ("adds no exclusive capability")
 
 ## Summary
 UI-030 escalation (2026-07-31, reproduced in a real browser): with focus on the
@@ -52,7 +52,7 @@ cleanup removes them.
 - [x] Focused ⋯ / 💬 / any chrome button: `↵` activates it natively; board shortcut does not fire
 - [x] Highlighted row: `↵` still opens the document (regression pinned)
 - [x] The rule is one mechanism, not per-button patches; documented in shortcuts.ts
-- [x] e2e keyboard case: focus ⋯ via keyboard → ↵ → popover opens → arrows/↵ run an action (completing the §11 no-pointer path end-to-end)
+- [x] e2e keyboard case: focus ⋯ via keyboard → ↵ → popover opens → arrows/↵ run an action (completing the §10 no-pointer path end-to-end)
 
 ## Technical Design
 ### Files to Create/Modify
@@ -98,7 +98,7 @@ was being stolen.
 - **A `data-board-shortcut-exempt` marker on chrome controls** — the same opt-in
   failure mode, plus a private attribute where ARIA already says the same thing.
 - **"Skip when a button has focus"** — the trap named in this issue. `.row` is a
-  control and `↵` on the highlighted row is §11's own binding.
+  control and `↵` on the highlighted row is §10's own binding.
 - **A `control` scope that suspends every board key while a control has focus** —
   too wide. It would silently stop `j`, `c`, `f` and `e` from working next to any
   control that happened to hold focus.

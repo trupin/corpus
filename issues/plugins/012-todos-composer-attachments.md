@@ -17,11 +17,11 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 as replaced by SHARED-012: the contract binds "any composer a
+- SPEC.md §10 as replaced by SHARED-012: the contract binds "any composer a
   plugin contributes"
 
 ## Summary
-`plugins/todos/ui/TodoItemComposer.tsx` takes no attachments. The signed §11 text
+`plugins/todos/ui/TodoItemComposer.tsx` takes no attachments. The signed §10 text
 covers plugin composers explicitly, so the reference plugin has to demonstrate
 the capability rather than be the one surface without it.
 

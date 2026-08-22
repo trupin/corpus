@@ -18,7 +18,7 @@ import { sanitizeGitEnv } from "./env.js";
 export const MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024;
 
 /**
- * A commit runs the workspace's own hooks (SPEC.md §14 — "honored, never
+ * A commit runs the workspace's own hooks (SPEC.md §11 — "honored, never
  * bypassed"), so the budget covers a real pre-commit hook rather than a bare
  * `git commit`. A hook that hangs past this fails the commit loudly instead of
  * holding a request open forever; the file mutation still stands.

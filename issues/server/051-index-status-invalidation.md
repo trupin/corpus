@@ -17,7 +17,7 @@ opus
 - Blocks: UI-040
 
 ## Spec References
-- SPEC.md §11 console index pill (rider signed 2026-08-02); §9.1
+- SPEC.md §10 console index pill (rider signed 2026-08-02); §9.1
 
 ## Summary
 `GET /api/index/status` exists but nothing announces its changes: the embed

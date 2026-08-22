@@ -4,7 +4,7 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-066 in a real browser: the document body's width is the reader's to
- * choose (SPEC.md §11's rider, signed 2026-08-04).
+ * choose (SPEC.md §10's rider, signed 2026-08-04).
  *
  * > *"The document body has a comfortable default width, and the reader can
  * > change it — in column view and in full screen — with the width persisting
@@ -264,7 +264,7 @@ test.describe("the document body's width, in a column", () => {
     // default that was never changed.
     expect(chosen).toBeGreaterThan(before + 150);
 
-    // Navigation: §11 asks for a width that persists across it, and navigation
+    // Navigation: §10 asks for a width that persists across it, and navigation
     // is exactly what changes the document — so the width is the reader's.
     await page.locator(".reader .back").click();
     await page.locator('.row[data-row-doc="doc_note"]').click();
@@ -313,11 +313,11 @@ test.describe("the document body's width, in a column", () => {
    * **What this test does and does not cover, stated rather than implied.** It
    * reveals through the comments list, which is the `jumpToThread` seam. That
    * seam is *not* the one the defect broke — checked, by restoring the observer
-   * and watching this test stay green — and the one that broke is the todo
-   * item's `revealItem`/`trackReveal` path in `reveal.spec.ts`, which caught it
+   * and watching this test stay green — and the one that broke is
+   * `revealItem`/`trackReveal`, pinned in `reveal.spec.ts`, which caught it
    * 20/20 and is where it stays caught. Reproducing that seam here would mean a
-   * second copy of the todos fixture with a plugin in it, and two copies of one
-   * seam drift. So this pins the half a width suite can honestly own — the
+   * second copy of its fixture, and two copies of one seam drift. So this pins
+   * the half a width suite can honestly own — the
    * reader still scrolls to what it was asked to show, with the control on
    * screen — and `docWidthControl.test.tsx` pins the rule the defect broke:
    * this control observes nothing and updates no state before paint.

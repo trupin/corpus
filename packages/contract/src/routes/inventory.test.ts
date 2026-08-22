@@ -59,18 +59,14 @@ describe("the committed OpenAPI document matches the pinned inventory", () => {
     expect(committedOperations()).toContain(signature);
   });
 
-  /** Adjudicated exemptions: they exist at runtime but are deliberately not contract surface. */
-  it.each(["/api/openapi.json", "/api/x/todos/list"])(
-    "leaves %s out of the contract on purpose",
-    (path) => {
-      expect(Object.keys(committed.paths)).not.toContain(path);
-    },
-  );
+  /** The one adjudicated exemption: it exists at runtime but is deliberately not contract surface. */
+  it("leaves /api/openapi.json out of the contract on purpose", () => {
+    expect(Object.keys(committed.paths)).not.toContain("/api/openapi.json");
+  });
 
-  it("documents both exemptions in the top-level description, so neither reads as a gap", () => {
+  it("documents that exemption in the top-level description, so it does not read as a gap", () => {
     const description = (committed as unknown as { info: { description: string } }).info
       .description;
-    expect(description).toContain("/api/x/<plugin>/...");
     expect(description).toContain("/api/openapi.json");
   });
 });

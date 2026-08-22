@@ -6,6 +6,50 @@ shared
 ## Status
 todo
 
+## Phase 41 triage — the plugin items, struck one at a time (2026-08-22)
+
+**SHARED-065 swept this ledger for plugin and todos items.** SHARED-067 removed
+the plugin surface and the todos plugin on the user's instruction — *"I want it
+fully gone, no trace of it in the codebase or the specs"* — and `todo` is not a
+document type.
+
+**The method, because a ledger is a record and not a task list.** Every item that
+loses its subject is struck through with `~~` and given a reason, exactly as this
+file already does for items closed by INFRA-014 and by the 2026-07-31 sign-off
+round. Nothing is deleted: a struck item still shows what PR #11 and PR #12 found,
+which is what stops a reviewer re-litigating it. **Items whose subject is core
+were kept and re-worded**, never struck — the plugin was sometimes the witness and
+not the defect.
+
+**What was struck**, in file order: the summary's finding-16 note
+(`docs/PLUGINS.md`); MINOR 5, 7, 8 and 9; NIT 27, 28 and 29; the PR #12
+`(plugins)` item whole; **half** of the PR #12 `(cli, NITs)` item; **two of three**
+in the PR #12 `(server/plugins, NITs)` item; sub-item (c) of the second-half eval
+observations; sub-item (a) of the dogfood-wave observations; the dev-init
+`plugins/_fixture` item; and the kit-CSS placement item.
+
+**Four items kept that a naive sweep would have struck**, each named here so the
+judgment is auditable:
+
+1. **The reveal-into-focus gap** (filed against PLUGINS-010) — the gap was in
+   core `FocusMode`, and it is now **resolved**: `onOpenFocus` is wired at
+   `apps/ui/src/board/Column.tsx:223-230` and carries an `OpenPayload` through to
+   focus mode. Recorded as done rather than as moot.
+2. **The mixed-list normalisation observation** — the dogfood item has two halves
+   and only the first was a `/api/x/todos` route. The second is the core editor
+   schema giving a plain bullet a checkbox, and it is untouched.
+3. **The `\r\r\n` all-blank-CRLF body NIT** — filed under a `(server/plugins)`
+   label beside two items that are plugin route semantics. Body normalisation is
+   core, so it is kept while its two neighbours are struck.
+4. **The PLUGINS-004 and PLUGINS-018 citations** in the summary and elsewhere —
+   these say which *issue* fixed a finding. They are history, they are accurate,
+   and rewriting them would falsify the record of what was fixed pre-merge.
+
+**One item is retained deliberately even though its subject is gone**: Draft 1 of
+the PR #12 spec amendments, `corpus todos migrate`. It is a **sign-off record** —
+the user signed it on 2026-07-30 and it was applied. A note marks what SHARED-067
+has since done to it. The signature is not edited.
+
 ## Priority
 P2
 
@@ -24,18 +68,19 @@ The 2026-07-29 pr-reviewer pass on PR #11 (verdict REQUEST_CHANGES) produced 15 
 and 14 NIT findings beyond the three MAJORs. The MAJORs and MINORs 4/12/13/14/15 were
 fixed pre-merge (CONTRACT-018/019, SERVER-034/035, PLUGINS-004, CLI-014); finding 24
 (INFRA-010 AC text) and 32 (root `*.tgz` gitignore) were fixed as bookkeeping; finding
-18 (PR body drift) was fixed on the PR; finding 16 is already tracked by CLI-012 (add
-a "not yet wired" note to docs/PLUGINS.md:88-93 there). This ledger holds the rest for
-triage into domain issues — do not let them silently expire.
+18 (PR body drift) was fixed on the PR; ~~finding 16 is already tracked by CLI-012 (add
+a "not yet wired" note to docs/PLUGINS.md:88-93 there)~~ — **finding 16 struck by
+SHARED-065 (Phase 41), 2026-08-22: INFRA-031 deletes `docs/PLUGINS.md`.** This ledger
+holds the rest for triage into domain issues — do not let them silently expire.
 
 ## Findings to triage
 
 **MINOR**
-- (5, infra) `scripts/pack-audit.ts:40` — no positive `REQUIRED_PACK_ENTRIES` entry for the todos plugin; if `npm run build` stops invoking `build-plugins.ts`, the tarball ships without the §15 reference plugin while `pack:check` stays green.
+- ~~(5, infra) `scripts/pack-audit.ts:40` — no positive `REQUIRED_PACK_ENTRIES` entry for the todos plugin; if `npm run build` stops invoking `build-plugins.ts`, the tarball ships without the §12 reference plugin while `pack:check` stays green.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: there is no reference plugin to ship, and INFRA-031 deletes `build-plugins.ts` with the workspace. The *general* rule this instance illustrated — every artifact the installed tool resolves needs a positive `REQUIRED_PACK_ENTRIES` entry — is already `scripts/pack-audit.ts`'s stated contract and needs no ledger item.
 - ~~(6, infra) `.github/workflows/release.yml:78-82` — only the absent `NPM_TOKEN` bars a `v*` tag from publishing; an `environment:` with required reviewers would make the no-publish decision structural. (User decision on record: no publish, ever — consider deleting the publish job instead.)~~ **CLOSED by INFRA-014** (sprint-020 Adjudication 1): the `publish` job is repurposed into a `release` job — `npm publish` and `id-token: write` are gone, and the tag flow now attaches the tarball to a GitHub Release. Nothing in `.github/` can publish.
-- (7, infra) `eslint.config.js:116-120` — core→plugin import ban enumerates only relative depths 3–5; shallower/deeper files slip through; boundary test probes depth 3 only.
-- (8, kit) `packages/kit/src/client/createCorpusClient.ts:655-660` — `pluginRequest` claims plugin-namespace-only but only strips leading slashes; `../../` escapes with the bearer token attached. Reject dot segments or soften the claim.
-- (9, kit) `packages/kit/src/query/usePluginQuery.ts:26-30` — a query string in the path breaks cache-key matching against `broadcastInvalidate`, silently losing SSE invalidation; docblock promises "byte-identical" keys without that precondition.
+- ~~(7, infra) `eslint.config.js:116-120` — core→plugin import ban enumerates only relative depths 3–5; shallower/deeper files slip through; boundary test probes depth 3 only.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: INFRA-031 deletes the core→plugin ban and its boundary test. A rule with nothing to ban cannot be under-enforced.
+- ~~(8, kit) `packages/kit/src/client/createCorpusClient.ts:655-660` — `pluginRequest` claims plugin-namespace-only but only strips leading slashes; `../../` escapes with the bearer token attached. Reject dot segments or soften the claim.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: `pluginRequest` is deleted; it survives only in stale `apps/ui/dist` build output. **Verified this is not a live traversal hole elsewhere** — the finding was specific to the `/api/x/` path builder, and there is no `/api/x/` route space any more (SHARED-067 amendment 8).
+- ~~(9, kit) `packages/kit/src/query/usePluginQuery.ts:26-30` — a query string in the path breaks cache-key matching against `broadcastInvalidate`, silently losing SSE invalidation; docblock promises "byte-identical" keys without that precondition.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: `usePluginQuery` is deleted, and so is `broadcastInvalidate` — the other half of the pairing the finding was about. Neither name appears in `packages/kit/src` or `apps/ui/src` any more. Whether any surviving kit query hook keys on a caller-supplied path string was **not** re-checked here, and is the one thing worth a look if this mechanism is ever suspected again.
 - (10, ui) `apps/ui/src/editor/useAutosave.ts:346-349` — `beforeunload` guard calls `preventDefault()` but never sets `event.returnValue`; pre-119 Chromium/WebViews show no dialog and the parked buffer (only copy of user text) is destroyed unprompted.
 - (11, agent-runtime) `assets/workspace/claude/skills/comment/SKILL.md:31,394-395` — documented `unresolved` payload examples strip the `@` sigil the server actually sends (`threads/mentions.ts:170`); sigil is the discriminator vs. skill invocations; file internally inconsistent (137-138 keeps it).
 - (17, docs) `docs/workspace-template.md` (~line 140) — contradiction: manifest declared tracked (gitignore negation ships) but a later paragraph says it "is gitignored under `.corpus/*`".
@@ -48,9 +93,9 @@ triage into domain issues — do not let them silently expire.
 - (23, infra) `scripts/merge-coverage.ts:149-156` — INFRA-009 guard wiring untested (deleting the call site keeps the suite green).
 - (25, infra) `scripts/package-staging.ts:153` — `externalizeThirdParty` would externalize Node `#subpath` imports into a confusing (but loud) `PackagingError`.
 - (26, infra) `scripts/check-pack.ts:70-80` — staged-name assertion inside the zero-violations branch; combined failures under-report; name-only mismatch prints success before failure (exit codes correct).
-- (27, server/cli) `apps/server/src/plugins/discover.ts:159` / `apps/cli/src/registry/plugins.ts:118` — `isDirectory()` false for symlinked plugin dirs while the UI glob matches them; three discovery surfaces disagree.
-- (28, plugins) `plugins/todos/ui/TodoView.tsx:153` — React key `${item.ts}:${item.text}` collides for identical texts in the same millisecond.
-- (29, ui) `apps/ui/src/plugins/slots.tsx` — wrapped-component cache never observes a registry swap outside tests; fine until manifest hot-reload.
+- ~~(27, server/cli) `apps/server/src/plugins/discover.ts:159` / `apps/cli/src/registry/plugins.ts:118` — `isDirectory()` false for symlinked plugin dirs while the UI glob matches them; three discovery surfaces disagree.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: all three discovery surfaces are deleted (SERVER-139, CLI-062, UI-155). Confirmed on disk: neither `apps/server/src/plugins/` nor `apps/cli/src/registry/plugins.ts` exists.
+- ~~(28, plugins) `plugins/todos/ui/TodoView.tsx:153` — React key `${item.ts}:${item.text}` collides for identical texts in the same millisecond.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: INFRA-031 deletes `plugins/`. The collision was in that component's own item list and no core list is keyed that way.
+- ~~(29, ui) `apps/ui/src/plugins/slots.tsx` — wrapped-component cache never observes a registry swap outside tests; fine until manifest hot-reload.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: UI-155 deletes the slot dispatch and the registry. `apps/ui/src/plugins/` no longer exists, and the hot-reload it was waiting on will never arrive.
 - (30, cli) `apps/cli/src/commands/workspace/upgrade.ts:161-167` — version-only bump early-returns without refreshing the manifest's `tool` field (stale `fromVersion` later).
 - (31, cli) `apps/cli/src/commands/init/git.ts` — `commitPaths` docstring overclaims ("index left alone"); `git add -- <paths>` does update those index entries.
 
@@ -68,9 +113,9 @@ triage into domain issues — do not let them silently expire.
 - (server+contract) FormSchema accepts non-trim-stable/multi-line options; answeredOption compares first-line-trimmed → permanently unclearable needs=form badge. Pin options single-line trim-stable (rider) or match the composed line.
 - (agent-runtime) audit SPEC 35/36 remain open: the archived-collision 409 carries name not id while comment/SKILL.md instructs `doc unarchive <id>`; both skills' "reversible" clauses still name no verb. One skill-text pass.
 - (agent-runtime) orchestrate/SKILL.md:428 worked example labels a Haiku-criterion dispatch "(Sonnet …)" — trains mis-tiering.
-- (plugins) blockquoted task items (`> - [ ]`) render as live checkboxes but are invisible to the plugin (same family as audit FIX 7/8); ISO_DATE_PATTERN accepts non-calendar dates (2026-02-30) with lexicographic overdue compare; `list --open --json` lacks an index field for machine consumers.
-- (cli, NITs) template symlink install (v1-trusted, textual escapesPlugin); archived refusal drains a piped body before refusing.
-- (server/plugins, NITs) status-alongside-body-edit refusal untested; drifted half-state PUT {status:open} 200-no-ops; `\r\r\n` on an all-blank-CRLF body.
+- ~~(plugins) blockquoted task items (`> - [ ]`) render as live checkboxes but are invisible to the plugin (same family as audit FIX 7/8); ISO_DATE_PATTERN accepts non-calendar dates (2026-02-30) with lexicographic overdue compare; `list --open --json` lacks an index field for machine consumers.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: all three are todos-plugin behaviour — an item parser, a due-date pattern and a `corpus todos list` flag. SHARED-067 removed the derived `status`/`due` reading entirely, with the loss named and accepted by the user, so there is no parser left to be blind to a blockquoted checkbox. **The checkboxes themselves are core and unaffected** — SPEC §12's M6 requires a document of an unrecognised type to render with working checkboxes.
+- (cli, NITs) ~~template symlink install (v1-trusted, textual `escapesPlugin`);~~ archived refusal drains a piped body before refusing. **Half struck by SHARED-065 (Phase 41), 2026-08-22**: CLI-062 deletes plugin template install and `escapesPlugin` with it. **The archived-refusal half is core `corpus` behaviour and stands.**
+- (server/plugins, NITs) ~~status-alongside-body-edit refusal untested; drifted half-state PUT {status:open} 200-no-ops;~~ `\r\r\n` on an all-blank-CRLF body. **Two of three struck by SHARED-065 (Phase 41), 2026-08-22**: the first two are the todos item routes' status semantics, under the `/api/x/` space SHARED-067 amendment 8 deleted. **The CRLF item is kept**: body normalisation is core and has nothing to do with the label's `plugins` half. The split was a judgment call and is recorded as one.
 - (ui, NIT residue) docActions Delete Esc-mid-flight notice; abandon registry pristine-map session leak (unless closed in the fix round).
 
 **From sprint-016 contracting (2026-07-30)**
@@ -96,7 +141,16 @@ Three SPEC.md amendments from the PR #12 review.
 - **Applied**: 2026-07-30, all three applied to SPEC.md on branch `phase-5-followups`, exactly as drafted below (§12 CLI bullet, §7 wake-back sentence + §237 matching touch, §9.2 `POST /api/skills` bullet inserted before the rollback bullet).
 - The drafts below are retained verbatim as the record of what was signed and applied.
 
-### Draft 1 (APPLIED) — §12 (~line 405): the shipped `corpus todos migrate` verb
+### Draft 1 (APPLIED, then removed with its section) — §12 (~line 405): the shipped `corpus todos migrate` verb
+
+**Note added 2026-08-22 by SHARED-065 (Phase 41), and the signed text below is
+left exactly as it was.** SHARED-067 deleted §12 (*Reference plugin: todos*)
+entirely, so the sentence this amendment produced is no longer in SPEC.md and
+`corpus todos migrate` is no longer a verb. **The record is retained unedited
+because it is a signature**: the user approved these three drafts on 2026-07-30
+and they were applied that day. Editing a sign-off record to match a later
+decision would make the tracker unable to say what was actually agreed. Drafts 2
+and 3 are unaffected by Phase 41.
 
 **(a) Current text**
 
@@ -144,8 +198,8 @@ Three SPEC.md amendments from the PR #12 review.
 
 ## Polish-eval ledger additions (2026-07-30, evaluator pass on UI-022/023/024)
 
-Promoted to issues (not ledgered): anchor highlights never render (UI-027, §11
-violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
+Promoted to issues (not ledgered): anchor highlights never render (UI-027, §10
+violation); ↵ never activates any Corpus menu item (UI-028, §10 violation).
 
 - **Reading-width ceiling is a constant while `62ch` is font-dependent** (UI-023
   eval note 4): 560px carries ~13px slack over the strictly-measured 547.2px on the
@@ -155,15 +209,15 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - ~~esc dead after focus close~~ — **RULED 2026-07-31 (user): ignore the pointer
   until it moves.** Filed as UI-031.
 - **UI-024 issue prose corrected in place** (eval LEDGER-3): a selection in a thread
-  turn opens the reader's item menu (correct per §11), it does not fall through to
+  turn opens the reader's item menu (correct per §10), it does not fall through to
   the native menu as the "As built" note claimed; behavior right, text fixed.
-- ~~§14 doctor report-only warnings rider~~ — **SIGNED AND APPLIED 2026-07-31**
-  (user sign-off round; SPEC.md §14 updated).
+- ~~§11 doctor report-only warnings rider~~ — **SIGNED AND APPLIED 2026-07-31**
+  (user sign-off round; SPEC.md §11 updated).
 
 ## Wave-1 harvest ledger additions (2026-07-31, sprint-018)
 
-- ~~§11 ⋯-menu Unarchive rider~~ — **SIGNED AND APPLIED 2026-07-31** (user sign-off
-  round; SPEC.md §11 updated).
+- ~~§10 ⋯-menu Unarchive rider~~ — **SIGNED AND APPLIED 2026-07-31** (user sign-off
+  round; SPEC.md §10 updated).
 - **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
   deliberate deferral; independently confirmed as PR #14 review MINOR 1,
   Board.tsx:598-604): never a skill, no folder move, so harmless — but it is now the
@@ -181,7 +235,7 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - **Thread-create warnings are document-scoped, not call-scoped** (Phase 6 eval
   LEDGER-P6-2): a create response carries every unresolved anchor on the parent, so
   the CLI's warning suffix can list other threads' orphans. Either scope the printed
-  list to the new anchor id or document the semantics in the verb help. (§14
+  list to the new anchor id or document the semantics in the verb help. (§11
   validates the whole rewritten frontmatter — server behavior is by design.)
 - **UI-021 eval methodology caveat** (recorded, not waived): pre-fix reproduction was
   unit-level (pure function), live leg post-fix only — fine here, not precedent for
@@ -193,7 +247,7 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
   under CONTRACT-025's open kind space; publishing it in `DOCTOR_WARNING_KINDS` is an
   optional CONTRACT rider at triage.
 - **In-column margin mode: RULED 2026-07-31 (user)** — focus-only is the intended
-  reading of §11; no numbers change. Remaining triage item: remove or annotate the
+  reading of §10; no numbers change. Remaining triage item: remove or annotate the
   unreachable `.reader-scroll.with-margin` in-column CSS path.
 - **SERVER-033 honest-scope note**: the @hono/node-server advisory was Windows-only
   and 1.19.17 already carried the identical traversal regex — the bump closes the
@@ -255,7 +309,7 @@ _n/a until triage._
   text sanitization).
 - Finding 4: fork PRs' read-only GITHUB_TOKEN makes the sticky comment fail red
   (non-required job) — revisit if/when outside contributions start.
-- Finding 5 (spec, needs user sign-off): one-sentence §11 rider making UI-031's
+- Finding 5 (spec, needs user sign-off): one-sentence §10 rider making UI-031's
   signed pointer rule spec text ("the active column ignores a stationary pointer
   across programmatic closes; hover re-adopts on real movement") — queue for the
   next sign-off round.
@@ -308,7 +362,7 @@ _n/a until triage._
   server-side cosmetic (UI-026 observation); strip heading markers at snippet
   composition at triage.
 - **Blank-query chips search nothing** on the hybrid overlay ("Type to search…") —
-  ACCEPTED as correct per the signed §11 amendment (q required for ranked search;
+  ACCEPTED as correct per the signed §10 amendment (q required for ranked search;
   chips-only browsing is saved views' job). Recorded so it isn't re-litigated.
 - TEST-1032 naming deviation (searchCorpus/useCorpusSearch vs "one search method") —
   orchestrator-directed, flag to the evaluator.
@@ -334,25 +388,39 @@ _n/a until triage._
   "markdown byte for byte" claim is imprecise; decide at triage whether the
   plain flavor should title-strip for external plain-text targets. (b) UI-040:
   `stale`/`disabled` pill states verified stub-only (a real disabled drained
-  to current before paint); `failed`>0 not producible live. (c) PLUGINS-009's
+  to current before paint); `failed`>0 not producible live. ~~(c) PLUGINS-009's
   "Mark as open" branch unreachable from the column (spec-correct: checked
-  items never render rows) — untested in the real app by construction.
-- Reveal-into-focus gap (PLUGINS-010, 2026-08-02): FocusMode honours reveal
+  items never render rows) — untested in the real app by construction.~~
+  **(c) STRUCK by SHARED-065 (Phase 41), 2026-08-22**: the todos item menu is
+  deleted. (a) and (b) are core and stand.
+- ~~Reveal-into-focus gap (PLUGINS-010, 2026-08-02): FocusMode honours reveal
   payloads (UI-037, unit-pinned) but no producer can reach it — Column.tsx
   hands plugin bodies `onOpen` only, and every core focus path passes a bare
   id. Wire `onOpenFocus` (or widen the focus path) when a producer wants it;
-  until then the honouring code is contracted but unreachable.
+  until then the honouring code is contracted but unreachable.~~ **RESOLVED, not
+  moot — verified 2026-08-22 by SHARED-065 (Phase 41).** The gap was in **core**
+  `FocusMode`, not in the plugin that found it, so it was checked rather than
+  struck. `onOpenFocus` is now wired: `apps/ui/src/board/Column.tsx:223-230`
+  takes an `OpenPayload` and passes it to both the column reader and focus mode,
+  *"so a reveal rides along to both"*. The honouring code has a producer.
 - Dogfood-wave eval observations (2026-08-02, recorded in the eval files, both
-  outside any issue's criteria): (a) `PUT /api/x/todos/<id>/items/0` on a
+  outside any issue's criteria): ~~(a) `PUT /api/x/todos/<id>/items/0` on a
   frontmatter-ONLY legacy doc succeeds and silently self-migrates it (dual and
   malformed correctly refuse) — decide whether silent self-migration is a
-  feature or should refuse like its siblings; (b) the editor schema normalises
-  a list mixing a plain bullet with a task item into a full task list, giving
-  the plain bullet a checkbox — decide whether mixed lists should be preserved.
-- (low-confidence, dev-only) `corpus init` from a source checkout installs
+  feature or should refuse like its siblings;~~ **(a) STRUCK by SHARED-065 (Phase
+  41), 2026-08-22**: the `/api/x/` route space is deleted (SHARED-067 amendment
+  8), and with it the item routes and the legacy `items:` migration. **(b) is
+  core and stands**: the editor schema normalises a list mixing a plain bullet
+  with a task item into a full task list, giving the plain bullet a checkbox —
+  decide whether mixed lists should be preserved. It is now more load-bearing
+  than when filed, because SPEC §12's M6 makes checkbox rendering on an
+  unrecognised type the guarantee protecting existing `type: todo` documents.
+- ~~(low-confidence, dev-only) `corpus init` from a source checkout installs
   plugins/_fixture's fixture-notes skill, which then surfaces as a type:skill doc in
   search — packaged installs are clean (underscore plugins excluded; pack:check
-  guards). Consider a dev-init exclusion at triage.
+  guards). Consider a dev-init exclusion at triage.~~ **STRUCK by SHARED-065
+  (Phase 41), 2026-08-22**: INFRA-031 deletes `plugins/_fixture` with the
+  workspace, so a source-checkout `init` has no fixture skill to install.
 - Orchestrator ruling, no rider needed (2026-08-03, PR #19 review question):
   the Fable reviewer asked whether UI-039's query editor (autocomplete + syntax
   help) needed its own signed SPEC rider, noting that four comparable UI
@@ -367,9 +435,20 @@ _n/a until triage._
   grammar the spec does not already define. Recorded here rather than silently,
   because the asymmetry is a fair question and the next reviewer will ask it
   again. Revisit if the editor ever gains grammar of its own.
-- Kit CSS placement deviation (2026-08-03, PR #19 review MINOR): sprint-023's
+  **Note (SHARED-065, Phase 41, 2026-08-22)**: one of the four cited precedents,
+  plugin-contributed menus, no longer exists — SHARED-067 removed it along with
+  the §10 sentence it added. **The ruling is unaffected and stays as written.**
+  It turns on what UI-039 did, not on what the four comparators were, and the
+  four are named as history rather than as live examples.
+- ~~Kit CSS placement deviation (2026-08-03, PR #19 review MINOR): sprint-023's
   Out of Scope said UI-034's task-list CSS lands in `apps/ui`; it landed in
   `packages/kit/src/markdown/markdown.css`. The kit renders markdown, so
   rendered task lists plausibly belong there — but the TipTap-editor-shaped
   selectors ship to plugins that can never emit that markup. Resolution
-  recorded with the ui-dev fix pass; triage should confirm the split.
+  recorded with the ui-dev fix pass; triage should confirm the split.~~
+  **STRUCK by SHARED-065 (Phase 41), 2026-08-22.** The deviation is a fact and
+  the CSS is still in the kit, but the *harm* was that editor-shaped selectors
+  shipped to plugins that could never emit that markup. `packages/kit` is kept
+  (SHARED-067 amendment 3) with exactly one consumer, `apps/ui`, which does run
+  the TipTap editor. Nothing is shipped to a consumer that cannot use it, so
+  there is no split left to confirm.

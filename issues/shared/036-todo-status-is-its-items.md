@@ -60,7 +60,7 @@ To be appended to §12's **Doc type `todo`** bullet:
 > shows and the two can therefore never disagree. The field is **not editable for
 > this type**: the status control shows the derived value and says it comes from
 > the items, which is not an edit mode but a field that was never the person's to
-> set (§11). **`archived` is not derived, because it is not a claim about what is
+> set (§10). **`archived` is not derived, because it is not a claim about what is
 > left to do.** It says where a document is kept (§5), which no checkbox can
 > imply, so an archived todo document reads `archived` whatever its items say —
 > the derivation chooses between `open` and `resolved` and nothing else, and
@@ -93,8 +93,8 @@ complete work but never to undo it. Replacing the **Column** bullet:
 - [ ] User signs off, or amends the drafted text
 - [ ] The signed text is applied to SPEC.md §12 with the `_(Rider signed
       YYYY-MM-DD.)_` marker the section's other riders carry
-- [ ] The rider is checked against §5 (archiving), §11 (frontmatter form,
-      always-editable rule) and §14 (`doc check`) for contradictions before
+- [ ] The rider is checked against §5 (archiving), §10 (frontmatter form,
+      always-editable rule) and §11 (`doc check`) for contradictions before
       applying — specifically that `doc check` must not report a todo document
       whose stored status is stale as invalid
 - [ ] PLAN.md rows for PLUGINS-016 / SERVER-085 / UI-092 reference the signed
@@ -141,5 +141,5 @@ _N/A — spec rider._
 - [ ] Rider read aloud one at a time, verbatim
 - [ ] Signed by user
 - [ ] Applied to SPEC.md with signature marker
-- [ ] Contradiction sweep across §5, §11, §14 done and recorded here
+- [ ] Contradiction sweep across §5, §10, §11 done and recorded here
 - [ ] Committed with `[SHARED-036]` prefix

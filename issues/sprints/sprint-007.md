@@ -648,9 +648,9 @@ TEST-57: The last-turn cascade cleans up too
 
 TEST-58: Cleanup follows the commit, and a thread with no attachments deletes cleanly
   Given: (a) a thread with no attachments at all; (b) a deletion whose commit fails (hook
-         rejection, §14)
+         rejection, §11)
   Then:  (a) deletion succeeds with no error and no attempt to remove a missing directory;
-         (b) per §14 the file mutation stands and the failure surfaces as a warning — state
+         (b) per §11 the file mutation stands and the failure surfaces as a warning — state
          whether the bytes were removed and justify it. Losing bytes for a turn that FAILED
          to delete is the outcome the design forbids
 ```
@@ -1001,7 +1001,7 @@ TEST-115: `db rebuild` does not use the 10 s global timeout
          (registry validation would have rejected it at module load — Open Conflict 11)
 
 TEST-116: `db doctor` on a clean workspace exits 0
-  When:  `corpus db rebuild && corpus db doctor` — §14's standing invariant
+  When:  `corpus db rebuild && corpus db doctor` — §11's standing invariant
   Then:  Exit 0; the human line says the projection is clean; `--json` emits
          `{ok: true, drift: [], stats: {…}}` with `drift` EMPTY and `ok` true
 
@@ -1262,7 +1262,7 @@ TEST-144: The projection is fully reconstructible after the loop
 
 TEST-145: `rebuild && doctor` is clean at the end of the loop
   When:  `corpus db rebuild && corpus db doctor`
-  Then:  Exit 0, `ok: true`, `drift: []` — §14's standing invariant holds on a workspace that
+  Then:  Exit 0, `ok: true`, `drift: []` — §11's standing invariant holds on a workspace that
          has been through every mutation this sprint added
 
 TEST-146: The whole surface is behind the bearer guard, except the one documented hole
@@ -1435,7 +1435,7 @@ CLI-003's AC 5 specifies `corpus doc check [<id>…] [--staged]` validating "via
 `packages/contract` declares no validation route: the full route inventory is docs (list,
 get, create, put, move, archive, unarchive, delete), threads (get, create, delete-turn,
 resolve, reopen, seen), turn-append, capture, attachments, db (rebuild, doctor), events,
-health, jobs, locks, queue, tree. SPEC §14 requires that the hook and the API share **one**
+health, jobs, locks, queue, tree. SPEC §11 requires that the hook and the API share **one**
 validator implementation, so the CLI cannot legitimately validate locally either.
 
 **The validator itself is not missing.** `apps/server/src/core/check.ts` already exports
@@ -1454,11 +1454,11 @@ needs to post**. What is missing is a route and a handler, not an implementation
   a thin SERVER handler over `checkCorpus` is genuinely small, and it would let CLI-003 ship
   AC 5 whole. Sequence it first, like Conflict 6's rider.
 - *Otherwise strike AC 5* and file the trio as follow-ups. Rationale for striking: M3's
-  milestone check (§15) names `doc create|edit`, `thread reply --from agent` and the queue
+  milestone check (§12) names `doc create|edit`, `thread reply --from agent` and the queue
   verbs — not `doc check`; and the pre-commit hook that consumes it has no installer either
   (Conflict 2), so shipping the verb this sprint delivers no gate.
 
-**Not negotiable either way**: the CLI must not grow its own validator. §14 requires the
+**Not negotiable either way**: the CLI must not grow its own validator. §11 requires the
 hooks and the API to share one implementation, and that implementation is `core/check.ts`
 inside the server. TEST-107…110 are marked `STRUCK → Open Conflict 1` if the rider is
 declined.
@@ -1466,12 +1466,12 @@ declined.
 ### 2. `.githooks/pre-commit` is the tool repo's harness, not a workspace hook
 
 CLI-003's Files to Create/Modify lists `.githooks/pre-commit` — "call `corpus doc check
---staged` and `corpus db doctor` per SPEC.md §14". `.githooks/` belongs to the **Corpus tool
+--staged` and `corpus db doctor` per SPEC.md §11". `.githooks/` belongs to the **Corpus tool
 repository** (CLAUDE.md: "versioned git hooks, wired via `npm run setup-hooks`"). That
 repository is not a Corpus workspace: it has no `.corpus/config.json`, so both commands would
 exit **3** on every commit any developer makes — including the agents working this sprint.
 
-SPEC §14's hooks are the **workspace's** hooks ("If the workspace's git repository has
+SPEC §11's hooks are the **workspace's** hooks ("If the workspace's git repository has
 hooks, the server's auto-commits run through them").
 
 **Recommendation: strike the `.githooks/` edit entirely and file the workspace-hook
@@ -1525,7 +1525,7 @@ dispatch, with mandatoriness re-imposed by hand) — real contract work, not a o
 
 **Recommendation: strike AC 2 from SERVER-010 and file a CONTRACT rider + SERVER follow-up
 sequenced with UI-008.** `POST /api/capture` already accepts multipart, so *Capture* — the
-composer action §11 actually describes as "screenshot + one line is a first-class capture" —
+composer action §10 actually describes as "screenshot + one line is a first-class capture" —
 is covered by this sprint (TEST-14…16, TEST-141). *Ask* with attachments waits for the rider.
 TEST-14 asserts the Capture half either way.
 

@@ -11,7 +11,7 @@ import {
 import type { ExtraProps } from "react-markdown";
 
 /**
- * A fenced block, rendered as a **copyable canvas** (SPEC.md §11, rider signed
+ * A fenced block, rendered as a **copyable canvas** (SPEC.md §10, rider signed
  * 2026-08-02): the fence's raw text is one click away, and the fence's info
  * string — ```` ```prompt ```` — is drawn as the block's label.
  *
@@ -26,7 +26,7 @@ import type { ExtraProps } from "react-markdown";
  * string, and no label — a `prompt` block pastes into another agent's input
  * exactly as its author wrote it.
  *
- * **Wrapped, and collapsed when tall** (UI-050, SPEC.md §11's wrap rider signed
+ * **Wrapped, and collapsed when tall** (UI-050, SPEC.md §10's wrap rider signed
  * 2026-08-03). Long lines wrap inside the canvas instead of scrolling sideways
  * — that is `markdown.css`'s doing and applies to every `pre` on a rendered
  * surface. Wrapping is what makes the collapse necessary: the same 400-column
@@ -302,7 +302,7 @@ export function CodeFence({ node, children, ...rest }: CodeFenceProps): ReactEle
  * `↵` and `space` are a button's own activation keys, and a button inside a
  * rendered body has to say so out loud: a host may bind them globally —
  * `apps/ui` binds `↵` to "open the highlighted document" on a document-level
- * listener that calls `preventDefault()` (SPEC.md §11's keyboard scheme) — and
+ * listener that calls `preventDefault()` (SPEC.md §10's keyboard scheme) — and
  * a cancelled keydown never becomes the click a keyboard user is owed. Observed
  * in a real browser: focus the button, press `↵`, nothing happens.
  *

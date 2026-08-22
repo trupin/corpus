@@ -15,12 +15,12 @@ import "./console.css";
 
 /**
  * The console drawer — the bottom region of the shell and the single home of
- * agent and queue status (SPEC.md §7, §11).
+ * agent and queue status (SPEC.md §7, §10).
  *
  * **It pushes; it never overlays.** `.app` is a flex column, `.board` is its
  * only flex-grow child, and `.console` is `flex: none`. Giving `.console-body`
  * a height therefore takes that height *from the board* — there is no
- * `position: fixed` anywhere in this feature, and that is the one thing §11
+ * `position: fixed` anywhere in this feature, and that is the one thing §10
  * explicitly forbids.
  *
  * The body is not rendered at all while collapsed, which is also how "a
@@ -69,7 +69,7 @@ export function Console(): ReactElement {
   const notices = useNotices();
   const queue = useQueueStatus();
   /*
-   * The index pill's data (SPEC.md §11's index-pill rider). One query for the
+   * The index pill's data (SPEC.md §10's index-pill rider). One query for the
    * whole feature, mounted with the strip rather than with the drawer body: the
    * pill is on the collapsed line, so unlike the job log there is nothing to
    * defer. It costs one request per `["index"]` frame and never polls.
@@ -81,7 +81,7 @@ export function Console(): ReactElement {
   const [chosen, setChosen] = useState<string | null>(null);
   /*
    * Which body the drawer is showing (UI-125). Jobs is the default and stays
-   * §11's console: a drawer that opened on another tab would have moved the job
+   * §10's console: a drawer that opened on another tab would have moved the job
    * list somebody expanded it to read. Not persisted, unlike the drawer's open
    * state and height — those are what a person set, and this is where they are
    * looking right now.
@@ -203,7 +203,7 @@ export function Console(): ReactElement {
            * Three bodies, one drawer (UI-125, then UI-139): the queue's jobs,
            * this session's notices, and §7's roster with what each lane owns.
            * None of the three is the corpus — each is the running system's own
-           * account of itself, which is what §11 puts in the console.
+           * account of itself, which is what §10 puts in the console.
            */}
           <div
             className="console-tabs"

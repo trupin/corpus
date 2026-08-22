@@ -1,5 +1,5 @@
 // `POST /api/docs/bulk` — a column's **staged set**, applied as **one act and
-// one commit** (SPEC.md §4's "One action, one commit", §11's bulk mode; riders
+// one commit** (SPEC.md §4's "One action, one commit", §10's bulk mode; riders
 // signed 2026-08-05 and 2026-08-09).
 //
 // **Why this is not a loop.** Every single-document verb takes one `{id}`, and
@@ -29,7 +29,7 @@
 // verbs (SERVER-087).
 //
 // **Where the rows come from.** Enumerated `entries` are the staged rows, in
-// request order; §11's whole-result-set selection is one further entry carrying
+// request order; §10's whole-result-set selection is one further entry carrying
 // one act for everything a query matches, resolved into ids by
 // `docs/selection.ts` when the Save runs and covering everything **except** the
 // ids `entries` names — so no document is ever staged twice and the act needs no
@@ -71,7 +71,7 @@
 // Both are pinned by tests, so the exceptions are documented by something that
 // fails when they change rather than by this sentence.
 //
-// **Per-document outcomes stay per-document** (§11: a bulk action "applies to
+// **Per-document outcomes stay per-document** (§10: a bulk action "applies to
 // what it can and reports what it could not", and "never refuses the whole set
 // because of one document"). An unknown id, a not-applicable act and a failed
 // write are entries in `refused`; none of them is a verdict on the request. The single whole-request refusal is an agent asking to `delete`, which
@@ -84,7 +84,7 @@
 // rest of the act proceeds. Across documents the guarantee is *no half-commit*,
 // not *no half-write*: the writes land before the single `git commit`, so a
 // process killed between them leaves changed files on disk uncommitted — exactly
-// the state §14 already defines for a hook that rejects a commit ("the file is
+// the state §11 already defines for a hook that rejects a commit ("the file is
 // the source of truth", the mutation stands). Git offers nothing stronger short
 // of writing the tree by hand; what it does guarantee is that the commit is one
 // object containing exactly what landed, so a partially-applied act is never
@@ -135,7 +135,7 @@ import {
  * What one document's share of the act comes to: the files to write, what to
  * validate first, and what the act owes the projection and the bus for it.
  *
- * `null` from a planner means **already in that state** — §11's second part,
+ * `null` from a planner means **already in that state** — §10's second part,
  * "explicitly a no-op and not a failure".
  */
 type DocumentPlan = {
@@ -276,8 +276,8 @@ class Refusal extends Error {
  *
  * The **class of refusal is decided by which step failed**, not by re-reading a
  * message: `planFor` raises "this act does not apply here" (a `not-applicable`,
- * §11's "the corpus changed between selecting and acting"), while
- * `validateBeforeWrite` raises §14's own finding (`invalid`). Both are `400`s, so
+ * §10's "the corpus changed between selecting and acting"), while
+ * `validateBeforeWrite` raises §11's own finding (`invalid`). Both are `400`s, so
  * nothing about the error itself could tell them apart — the caller's `fallback`
  * is what carries that knowledge, and it is the reason the two are separate
  * `try` blocks below.
@@ -323,10 +323,10 @@ function refusalFor(
  * `write-failed` is the one published reason both of whose clauses are true here
  * — "the file could not be written; nothing about this document reached the
  * commit" — where `not-applicable` would tell the user to refresh the board and
- * `invalid` would claim the document fails §14 validation, which it does not.
+ * `invalid` would claim the document fails §11 validation, which it does not.
  *
  * The path itself lives in the error's `issues`, and a refusal row has no
- * `issues` field to carry it, so it is folded into the message: §11 requires
+ * `issues` field to carry it, so it is folded into the message: §10 requires
  * every entry in this part to carry its reason, and "the destination is already
  * occupied" without the destination is not one a person can act on.
  */
@@ -413,7 +413,7 @@ function planFor(
         unproject: plan.unproject,
         keys: docKeys(loaded),
         // A move renames the file and changes not one byte inside it, so there
-        // is nothing new for §14 to read.
+        // is nothing new for §11 to read.
         validate: null,
       };
     }
@@ -447,7 +447,7 @@ function planFor(
 
 /**
  * The staged set as rows this file can run: enumerated entries in request order,
- * then §11's whole-result-set entry expanded into the ids its query matches,
+ * then §10's whole-result-set entry expanded into the ids its query matches,
  * minus the ids `entries` already names.
  *
  * The exclusion is the contract's (CONTRACT-048 decision 4) and it is what makes
@@ -555,7 +555,7 @@ export async function applyBulkAction(
   // refusal is the request's, never a per-document outcome — **including when
   // the delete is one row of five**: a staged set is not a way to smuggle a
   // delete past §9.2, so the whole Save is refused rather than four rows of it
-  // applied. `wholeResultSet` cannot spell `delete` at all (§11), which the
+  // applied. `wholeResultSet` cannot spell `delete` at all (§10), which the
   // contract makes a type error rather than a check anyone here could forget.
   if (actor === "agent" && request.entries.some((entry) => entry.action.action === "delete")) {
     throw forbidden(AGENT_DELETE_MESSAGE);
@@ -697,7 +697,7 @@ async function runBulk(
   // act is one commit and one re-projection. So a plan made for a parent still
   // sees the row of a thread an earlier plan in the same act already unlinked,
   // and the act would report an id in both `changed` and `orphanedThreadIds`:
-  // deleted and, in the same breath, "still readable, drop its caches". §11's
+  // deleted and, in the same breath, "still readable, drop its caches". §10's
   // bulk-delete confirm counts exactly this number, so it would over-count.
   //
   // Filtered here rather than inside `planDelete`, which is shared with

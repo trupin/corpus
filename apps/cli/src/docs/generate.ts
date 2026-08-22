@@ -20,11 +20,7 @@ export function generateCliDocs(registry: Registry): string {
   validateRegistry(registry);
 
   const commands = [...registry.commands].sort(byName);
-  // The one docs-side enforcement of the §10 underscore convention
-  // (sprint-012 Adjudication 9): `_`-prefixed plugin topics are test fixtures
-  // — present in dev help, never in the committed CLI reference. A real
-  // (non-underscore) plugin topic documents itself here like any core topic.
-  const topics = [...registry.topics].filter((topic) => !topic.name.startsWith("_")).sort(byName);
+  const topics = [...registry.topics].sort(byName);
 
   const lines: string[] = [
     DOCS_HEADER,

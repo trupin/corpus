@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 line 467 — as amended by SHARED-030
+- SPEC.md §10 line 467 — as amended by SHARED-030
 - SPEC.md §4 — autosave, idle-squashed commits
 - SPEC.md §7 — locks freeze every control
 
@@ -53,7 +53,7 @@ and immediate for discrete ones.
 - [x] A failed save is visible and retryable without a Save button, using the
       body's existing `SaveChip` treatment rather than a new one
 - [x] ~~Under a lock held by the other party~~ — **void**: SHARED-041 replaced
-      locks with keys and §11 makes the board never read-only. The surviving
+      locks with keys and §10 makes the board never read-only. The surviving
       not-editable state is a *field* lock with a stated reason (`statusLock`),
       which is what SHARED-030's derived-field clause asks for
 - [x] Leaving the document mid-debounce still flushes the pending change (the

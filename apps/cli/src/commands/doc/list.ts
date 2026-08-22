@@ -10,7 +10,7 @@ import { oneLine, renderColumns } from "../columns.js";
 import { collectDocFilters, DOC_FILTER_FLAGS, insertFlagAfter, oneOf } from "../filters.js";
 
 /**
- * `corpus doc list` — the enumeration verb (SPEC.md §9.2, §11). Until it
+ * `corpus doc list` — the enumeration verb (SPEC.md §9.2, §10). Until it
  * existed, an agent that reaches the workspace only through the CLI could read a
  * document it already knew the id of and nothing else: "what is in the corpus"
  * was answerable only by walking the filesystem, which answers with files rather
@@ -43,7 +43,7 @@ const PINNED_FLAG: FlagSpec = {
   name: "pinned",
   type: "boolean",
   description:
-    "Only documents pinned to the board as columns (SPEC.md §11) — in practice `type: view` " +
+    "Only documents pinned to the board as columns (SPEC.md §10) — in practice `type: view` " +
     "documents. Selects the pinned side only.",
 };
 
@@ -202,7 +202,7 @@ export const listCommand: WorkspaceCommandSpec = {
     "no document of any type carries a parent column, so a note's parent is null by genuinely " +
     "having none, and `--is-parent true` keeps it while `--is-parent false` drops it — an " +
     "answer, not a no-op.\n\n" +
-    "Archived documents are **excluded by default** (SPEC.md §11). `--status archived` selects " +
+    "Archived documents are **excluded by default** (SPEC.md §10). `--status archived` selects " +
     "them alone; `--include-archived` widens the default set to the union.\n\n" +
     "**The list is paginated and says so.** The server applies its own page limit, and the last " +
     "line always states the range shown out of the total that matched, naming the `--offset` " +
@@ -214,8 +214,8 @@ export const listCommand: WorkspaceCommandSpec = {
     "A misspelled value for one of the enumerated filters (`--status`, `--sort`, `--needs`, " +
     "`--stale`, `--agent`, `--author`) is a usage error listing the alternatives, and no request " +
     "is sent. The open ones — `--type`, `--tag`, `--folder`, `--due` — are passed through " +
-    "verbatim, since plugins define their own types and the CLI does not know the workspace's " +
-    "tags or folders.",
+    "verbatim, since the CLI does not know the workspace's tags, its folders, or every `type:` " +
+    "its documents carry.",
   args: [],
   flags: [
     {

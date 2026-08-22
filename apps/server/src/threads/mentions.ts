@@ -198,7 +198,7 @@ const targetRows = (projection: ProjectionDb, type: string): TargetRow[] =>
  * failed to resolve can say which document was skipped and why.
  *
  * First row wins a collision, in id order, so the answer is at least
- * deterministic; two skills claiming one name is a `doc check` finding (§14),
+ * deterministic; two skills claiming one name is a `doc check` finding (§11),
  * not something to resolve arbitrarily at post time.
  */
 function targetIndex(projection: ProjectionDb, type: string): Map<string, ResolvedTarget> {

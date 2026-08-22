@@ -1,4 +1,4 @@
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget } from "@corpus/kit";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import { readStateOf } from "../thread/threadCollapse";
@@ -20,7 +20,7 @@ import type { ReaderDoc } from "./useReaderDoc";
  * **Which conversations are folded is deliberately not here any more.** It used
  * to be — a list of expanded thread ids in React state, reset to empty on every
  * document change, so a reader who opened four conversations to read a paragraph
- * found them all closed again after following one `[[ref]]`. SPEC.md §11 now
+ * found them all closed again after following one `[[ref]]`. SPEC.md §10 now
  * makes a fold **sticky** ("through navigating away and back, and through a
  * reload"), and browser-local per reader, which is a different lifetime from
  * anything else on this surface: it outlives the navigation, so it lives in
@@ -211,7 +211,7 @@ export function useReaderSurface({
   /*
    * A new document clears the flash and nothing else.
    *
-   * It used to clear the folds too, which is exactly what SPEC.md §11 now
+   * It used to clear the folds too, which is exactly what SPEC.md §10 now
    * forbids: a fold survives navigating away and back. The flash does not — it
    * is a 1.2 s pointer at one conversation on the document being left.
    */
@@ -259,7 +259,7 @@ export function useReaderSurface({
 
   const jumpToThread = useCallback((threadId: string) => {
     // Jumping to a conversation expands it: the reader asked for it by name, and
-    // that is the reader's own act overriding the rule (SPEC.md §11).
+    // that is the reader's own act overriding the rule (SPEC.md §10).
     const row = rows.current.find((candidate) => candidate.id === threadId);
     if (row !== undefined) {
       expand.current({ threadId, status: row.status, readState: readStateOf(row.unread) });

@@ -27,7 +27,7 @@ of the real projection over real HTTP.
 | #   | Criterion                                                        | Result | Notes                                                                    |
 | --- | ---------------------------------------------------------------- | ------ | ------------------------------------------------------------------------ |
 | 1   | Field suggestions; real workspace values after `field=`          | PASS   | Values are counted rows from the live projection, incl. the plugin type  |
-| 2   | Follows the §11 autocomplete conventions (arrows/↵/esc)          | PASS   | `.ac-menu` `role="listbox"`, ⇥ completes, ↓ moves, ↵ accepts, esc layers |
+| 2   | Follows the §10 autocomplete conventions (arrows/↵/esc)          | PASS   | `.ac-menu` `role="listbox"`, ⇥ completes, ↓ moves, ↵ accepts, esc layers |
 | 3   | Visible help button opens a syntax reference; dismissible; kbd   | PASS   | `?` reachable by one ⇥; `role="dialog"`; esc closes panel only           |
 | 4   | Invalid queries surface the existing error state unchanged       | PASS   | `sort=nonsense` → the column's existing failed-request card              |
 | 5   | No behavior change to query execution                            | PASS   | Commits are one `PUT` carrying the typed query verbatim                  |

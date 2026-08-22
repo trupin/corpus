@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Document view (the editor serializes to clean markdown)
+- SPEC.md §10 Document view (the editor serializes to clean markdown)
 
 ## Summary
 Live report 2026-08-04: _"The rendering of tables in documents are using `<br>`

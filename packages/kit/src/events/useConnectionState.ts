@@ -4,7 +4,7 @@ import type { ConnectionState } from "./sseBridge.js";
 
 /**
  * The live-update connection's state, for the console strip and the shell
- * (SPEC.md §11). A UI that cannot say "reconnecting" silently serves stale data
+ * (SPEC.md §10). A UI that cannot say "reconnecting" silently serves stale data
  * and looks identical to one that is up to date — which is the failure mode
  * this hook exists to make impossible.
  */

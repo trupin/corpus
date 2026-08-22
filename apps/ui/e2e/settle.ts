@@ -17,8 +17,7 @@ import { expect, type Page } from "@playwright/test";
  *
  * **So why this still exists.** The reader's document half has other reasons to
  * settle late, and they are the reasons the specs importing this were written
- * for: images decoding into their reserved boxes, a plugin panel arriving after
- * discovery, a thread's turns rendering. A spec that measures a point and then
+ * for: images decoding into their reserved boxes, a thread's turns rendering. A spec that measures a point and then
  * acts on it in the next round-trip is aiming at where the text *was*, and
  * three separate failures on this branch were exactly that — a drag that
  * selected nothing, a heading that "moved" across an unrelated click, and a

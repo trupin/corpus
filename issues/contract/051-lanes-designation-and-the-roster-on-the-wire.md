@@ -78,7 +78,7 @@ lands on. Flagged rather than applied silently.
 1. **`DELETE .../resident` answers `200` with the thread, not `204`.** The edge
    case cited "flush's discipline", but flush is `204` because it **writes no
    workspace file**; a release rewrites the thread's frontmatter and
-   auto-commits, so it can raise §14's warnings — the exact argument that
+   auto-commits, so it can raise §11's warnings — the exact argument that
    created `ThreadMutationResponse` for `resolve`/`reopen`. A `204` would make
    a rejected auto-commit unreportable. Idempotence is unchanged: releasing a
    thread with no resident is a `200` that writes and commits nothing.

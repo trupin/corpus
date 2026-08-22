@@ -169,7 +169,7 @@ filters on tag through the list lane exactly as before. Verified end-to-end: a p
 with `--query tag=garden` fetched `GET /api/docs?tag=garden` and rendered the two tagged documents
 (`Greenhouse plan`, `Dawn misting for nursery beds`), and the column ⋯ menu's **Edit query** edits
 those stored filters inline (`tag=garden` in an editable field in the column header). Screenshot:
-`…/16-restored-tag-query.png`. That is the lane SPEC §11 assigns persisted filtered lists to, and it
+`…/16-restored-tag-query.png`. That is the lane SPEC §10 assigns persisted filtered lists to, and it
 is untouched.
 
 ### The one thing I could not verify, stated plainly
@@ -191,7 +191,7 @@ zero page errors and zero uncaught exceptions.
 
 ### Why this is PASS-with-carried-criterion rather than PASS
 
-SPEC §11 still names `tag` among the chips the overlay's query composes with, and that promise is
+SPEC §10 still names `tag` among the chips the overlay's query composes with, and that promise is
 not yet kept. The interim fix does not pretend otherwise — it removes the lie, not the gap. The gap
 is explicitly owned by **CONTRACT-026**, and this criterion should be re-tested there rather than
 being quietly closed here.
@@ -202,7 +202,7 @@ being quietly closed here.
 
 ### FAIL-1: the `tag:` filter chip is an inert control
 
-**Criterion**: AC 1 — "chips and archived behavior unchanged". SPEC.md §11 lists `tag` among the
+**Criterion**: AC 1 — "chips and archived behavior unchanged". SPEC.md §10 lists `tag` among the
 filter chips the overlay's query composes with.
 
 **Expected**: clicking `tag: any` offers the corpus's tag vocabulary and applies a `tag` filter to
@@ -240,15 +240,15 @@ self-explaining. Tag *application* in the overlay remains open under CONTRACT-02
 `tags`, so the chip has no vocabulary to offer), it is already **escalated to the orchestrator as a
 contract question**, and sprint-022's TEST-1027 explicitly permits it *provided the log states which
 chip lost its options and why* — which the log does. It is recorded here as a criterion failure
-because the issue's own AC and SPEC §11 both say the chip works, and because a control that renders
+because the issue's own AC and SPEC §10 both say the chip works, and because a control that renders
 as an affordance and does nothing is a user-visible defect regardless of its cause. The adjudication
-(fix, waive, or amend §11) belongs to the orchestrator, not to this verdict.
+(fix, waive, or amend §10) belongs to the orchestrator, not to this verdict.
 
 ## Observations (not failures)
 
 - **The type glyph is coarser than before.** A hit carries no `type`, so the glyph reads `doc` or
   `thread` off the id prefix; a `view`, `skill` or `template` hit now shows `doc`. Grouping still
-  reads "Documents / Threads", which satisfies §11's "grouped by type", but the per-row distinction
+  reads "Documents / Threads", which satisfies §10's "grouped by type", but the per-row distinction
   a `GET /api/docs` row used to carry is gone. Disclosed in the log.
 - **A chip-only overlay issues no request** and says "Type to search…" rather than claiming nothing
   matched. `q` is required by the endpoint; the wording is honest. Disclosed in the log.
@@ -266,6 +266,6 @@ grammar).
 The sixth, the `tag:` chip, was a dead affordance in the first pass and is now an honest disabled
 one: no pointer effect, no keyboard focus, no request, visually unavailable, and self-explaining to
 both sighted and assistive users. Tag filtering itself survives intact on board columns. What
-remains open is SPEC §11's promise that the *overlay* composes a tag filter — deliberately carried
+remains open is SPEC §10's promise that the *overlay* composes a tag filter — deliberately carried
 to CONTRACT-026 rather than closed here, and to be re-tested there together with the
 "in-query tags still clear" behaviour that is unreachable-by-construction in this build.

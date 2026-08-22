@@ -23,7 +23,7 @@ opus — a detector refinement with a SPEC-reading to confirm.
 
 ## Spec References
 
-- SPEC.md §6/§11 — forms and the needs reasons
+- SPEC.md §6/§10 — forms and the needs reasons
 - issues/evals/HARDENING-P4-eval.md — F-1 (2026-07-29)
 
 ## Summary
@@ -254,7 +254,7 @@ _Appended 2026-07-30 by server-dev (opus) in the wave-3 audit fix round
   case), malformed fences are crossed with answers in `query.test.ts` (a fence nobody can answer
   must neither light the reason nor absorb an answer meant for one that is answerable), and the
   duplicate-`ts` case is recorded: `INSERT OR IGNORE` drops the second turn, form and all, so a
-  §14 hard failure in the file costs that form its row.
+  §11 hard failure in the file costs that form its row.
 
 ## Completion Checklist (domain agent)
 

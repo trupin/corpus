@@ -22,13 +22,13 @@ export const STALE_TIERS = ["aging", "stale", "very-stale"] as const;
 export const StaleTierSchema = z.enum(STALE_TIERS);
 
 /**
- * The reasons a row lands in Attention (SPEC.md §11). `needs=me` is their union;
+ * The reasons a row lands in Attention (SPEC.md §10). `needs=me` is their union;
  * a row's own `attention` array carries the individual reasons and never `me`.
  */
 export const NEEDS_REASONS = ["unread-reply", "form", "due", "stale", "failed-job"] as const;
 
 export const NeedsReasonSchema = z.enum(NEEDS_REASONS).openapi({
-  description: "Why a row needs attention (SPEC.md §11).",
+  description: "Why a row needs attention (SPEC.md §10).",
 });
 
 export const NEEDS_FILTERS = ["me", ...NEEDS_REASONS] as const;
@@ -36,9 +36,9 @@ export const NEEDS_FILTERS = ["me", ...NEEDS_REASONS] as const;
 export const NeedsFilterSchema = z.enum(NEEDS_FILTERS);
 
 /**
- * `order` (CONTRACT-011) sorts ascending by the §11 view key of the same name
+ * `order` (CONTRACT-011) sorts ascending by the §10 view key of the same name
  * — the board's column ordering. Ascending only: a board reads left to right,
- * and no §11 surface wants the reverse. Ties and absent keys are deterministic
+ * and no §10 surface wants the reverse. Ties and absent keys are deterministic
  * by the documented tiebreak — `order` with nulls **last** (a column with no
  * `order` is placed, never dropped), then `title`, then `id` — so the same
  * column set renders in the same sequence on every load.
@@ -107,7 +107,8 @@ export const docFilterShape = {
       ...queryParam("type"),
       description:
         `Comma-separated document types; values OR together. Core values: ${CORE_DOC_TYPES.join(", ")}. ` +
-        "Open rather than enumerated because plugins define their own types (SPEC.md §5, §10).",
+        "Open rather than enumerated because a workspace may hold documents of a type this build " +
+        "has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6).",
     }),
   status: z
     .enum(DOC_STATUSES)
@@ -116,7 +117,7 @@ export const docFilterShape = {
       ...queryParam("status"),
       description:
         "Restrict to a lifecycle status. Omitted, the default result set **excludes** " +
-        "`status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so " +
+        "`status: archived` (SPEC.md §10); passing `status` explicitly overrides that default, so " +
         "`status=archived` selects archived documents *only*. To see archived documents " +
         "**alongside** the rest, use `includeArchived=true` — that is the archived chip, not this " +
         "parameter.",
@@ -130,7 +131,7 @@ export const docFilterShape = {
       description:
         "Lift the default archived exclusion. `true` widens the default result set into the " +
         "**union** of archived and non-archived documents — the archived chip's " +
-        '"include archived" reading (SPEC.md §11) — where `status=archived` selects archived ' +
+        '"include archived" reading (SPEC.md §10) — where `status=archived` selects archived ' +
         "documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** " +
         "and nothing else, so it is a no-op alongside an explicit `status`: `status` already " +
         "replaces the default filter, and `status=open&includeArchived=true` is just `status=open`.",
@@ -153,7 +154,7 @@ export const docFilterShape = {
       ...queryParam("folder"),
       description:
         "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads " +
-        "inherit their parent document's folder (SPEC.md §11).",
+        "inherit their parent document's folder (SPEC.md §10).",
     }),
   parent: DocumentIdSchema.optional().openapi({
     ...queryParam("parent"),
@@ -211,7 +212,7 @@ export const docFilterShape = {
   needs: NeedsFilterSchema.optional().openapi({
     ...queryParam("needs"),
     description:
-      "The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons " +
+      "The Attention filter (SPEC.md §10). `me` is the union of every reason; the individual reasons " +
       `(${NEEDS_REASONS.join(", ")}) back the per-reason chips. Composes with the other filters by ` +
       "intersection — `needs=me&folder=finance` is Attention within that folder.",
   }),
@@ -255,7 +256,7 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
         "Documents whose frontmatter carries `pinned: true` (`false` selects the rest — a " +
         "missing key reads as `false`). The board's column set is one bounded query — " +
         "`pinned=true&type=view&sort=order` — with every view's `query`, `order` and `column` " +
-        "on the rows, so no per-column follow-up read is ever needed (SPEC.md §11). Not " +
+        "on the rows, so no per-column follow-up read is ever needed (SPEC.md §10). Not " +
         "thread-only: any type may carry the key, though only views render as columns.",
     }),
   isParent: z
@@ -291,7 +292,7 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
     description:
       `Sort key; defaults to \`${DEFAULT_DOC_SORT}\`. \`relevance\` requires \`q\` and is rejected ` +
       "with `400` without it, rather than silently falling back. `order` sorts ascending by the " +
-      "§11 view key — the board's column ordering — with the documented tiebreak: `order` with " +
+      "§10 view key — the board's column ordering — with the documented tiebreak: `order` with " +
       "nulls last (a view with no `order` key is placed, never dropped), then `title`, then `id`.",
   }),
 })
@@ -351,7 +352,7 @@ export const SnippetSchema = z
   .openapi("Snippet");
 
 /**
- * The §11 thread-row affordances, carried by every row and `null` on rows that
+ * The §10 thread-row affordances, carried by every row and `null` on rows that
  * are not threads.
  *
  * **Nullable, not optional.** A row always has the key; `null` means "not a
@@ -391,7 +392,7 @@ const threadRowShape = {
     .string()
     .nullable()
     .describe(
-      "The anchored text this thread hangs off, pinned at the top of a thread row (SPEC.md §11). " +
+      "The anchored text this thread hangs off, pinned at the top of a thread row (SPEC.md §10). " +
         "Null on non-threads, on whole-document threads, and on standalone threads.",
     ),
   turnCount: z
@@ -408,7 +409,7 @@ const threadRowShape = {
     .string()
     .nullable()
     .describe(
-      "Plain-text preview of the thread's last turn, for the row's second line (SPEC.md §11). " +
+      "Plain-text preview of the thread's last turn, for the row's second line (SPEC.md §10). " +
         "Null on non-threads and on a thread with no turns.",
     ),
   unread: z
@@ -423,14 +424,14 @@ const threadRowShape = {
     .nullable()
     .describe(
       "True when the queue still owes this thread something — the pending-agent indicator " +
-        "(SPEC.md §8, §11). **It is a question about the queue, not about the thread**: true " +
+        "(SPEC.md §8, §10). **It is a question about the queue, not about the thread**: true " +
         "exactly when some event in a non-terminal status (`pending`, `in-progress` or " +
         "`deferred`, SPEC.md §7 — `deferred` included, since a job parked while somebody edits " +
         "is still owed) carries this thread's id as a top-level value of its payload. The " +
         "payload is matched by value rather than by a fixed key list (`threadId`, `parentId`, " +
-        "…), the same way the `failed-job` attention reason matches one, so an event type " +
-        "defined by a plugin that names this thread under its own key lights the indicator with " +
-        "no server change (SPEC.md §7, §10). **It reads no thread state, deliberately** — not " +
+        "…), the same way the `failed-job` attention reason matches one, so an event type this " +
+        "build has never heard of that names this thread under its own key lights the indicator " +
+        "with no server change (SPEC.md §7). **It reads no thread state, deliberately** — not " +
         "`agent`, not `status`, not `lastAuthor`. In particular resolving a thread does not " +
         "clear it, because resolving cancels no queued event: the missing `status` test is the " +
         "rule here, not an omission. A note-only turn enqueues nothing, so it never sets this. " +
@@ -446,7 +447,7 @@ const threadRowShape = {
  * A row of `GET /api/docs`: the projection's document columns plus what a list
  * needs and a document read does not — why the row wants attention, where the
  * query matched, how stale it is, how many of its threads are unread, how many
- * forms it is still waiting on, and the thread affordances §11's type-aware rows
+ * forms it is still waiting on, and the thread affordances §10's type-aware rows
  * render.
  */
 export const DocRowSchema = z
@@ -478,13 +479,16 @@ export const DocRowSchema = z
           'means "nothing unread" and never "unknown".',
       ),
     /**
-     * The count behind §11's last Attention clause: "a thread holding **more
+     * The count behind §10's last Attention clause: "a thread holding **more
      * than one** unanswered form says how many are still open."
      *
      * **Why a scalar on the row, and not something on `attention`.** The reason
-     * codes are a flat list a plugin may extend (SPEC.md §10); widening an entry
-     * into `{code, count}` would rewrite every consumer of every reason for one
-     * reason's sake. A sibling field is additive, and nothing that renders a
+     * codes are a flat list the server may extend, and its vocabulary may grow
+     * ahead of any one client — `packages/kit`'s reason table renders a code it
+     * has never seen for exactly that reason. Widening an entry into
+     * `{code, count}` would rewrite every consumer of every reason for one
+     * reason's sake, and would break the readers that cannot be rebuilt in step
+     * with the server. A sibling field is additive, and nothing that renders a
      * reason chip today has to change to keep working.
      *
      * **Why not derived in the client.** A row carries no turns — `lastTurn` is
@@ -511,7 +515,7 @@ export const DocRowSchema = z
       .int()
       .min(0)
       .describe(
-        "How many **unanswered forms** this thread still holds (SPEC.md §6, §11) — the number " +
+        "How many **unanswered forms** this thread still holds (SPEC.md §6, §10) — the number " +
           "behind Attention's \"how many are still open\". It counts the thread's agent turns " +
           "carrying an answerable `form` block that no later turn has answered, which is exactly " +
           "the set the `form` attention reason tests for the existence of, under the same " +
@@ -525,11 +529,11 @@ export const DocRowSchema = z
           "at all). **Resolving the thread takes it to `0`** along with the reason: a resolved " +
           "conversation is not waiting for an answer (SPEC.md §6). **`POST /api/threads/{id}/seen` " +
           "leaves it untouched** — an unanswered form's row is the one that survives being read " +
-          "(SPEC.md §11), the opposite of `unread` and `unreadThreads`, which being read is " +
+          "(SPEC.md §10), the opposite of `unread` and `unreadThreads`, which being read is " +
           "precisely what clears. It rides on every row so no list has to fetch each thread to " +
           "count its forms. **`0` on a thread with no unanswered form, and `0` on every " +
           'non-thread row** — never null and never absent, so `0` always means "none" and never ' +
-          '"unknown". Rendering is the consumer\'s: §11 asks for the number only when it is ' +
+          '"unknown". Rendering is the consumer\'s: §10 asks for the number only when it is ' +
           "greater than one.",
       ),
     attention: z
@@ -539,8 +543,9 @@ export const DocRowSchema = z
           "`needs=`, so any list can render reason chips. Empty when nothing applies; never " +
           "contains `me`, which is the union filter and not a reason. Entries stay bare codes: " +
           "the one reason with a number to report carries it in the sibling `unansweredForms`, " +
-          "because plugins extend this list (SPEC.md §10) and a code is what every consumer of " +
-          "every reason already reads.",
+          "because the server's vocabulary may grow ahead of the client reading it — a client " +
+          "must render a reason code it has never seen — and a bare code is what every consumer " +
+          "of every reason already reads.",
       ),
     snippets: z
       .array(SnippetSchema)

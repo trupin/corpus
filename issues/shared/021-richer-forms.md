@@ -24,9 +24,9 @@ fable
   projection which is already form-scoped), a UI issue (the controls and the
   answered record), and an agent-runtime issue (the ask-with-a-form rule). None
   filed.
-- **Ordering hazard — three unsigned riders now append after the same §11 Thread
+- **Ordering hazard — three unsigned riders now append after the same §10 Thread
   view sentence.** SHARED-016 Amendment 1, SHARED-020, and this rider's
-  Amendment 7 all anchor on the newlines sentence at the end of §11's **Thread
+  Amendment 7 all anchor on the newlines sentence at the end of §10's **Thread
   view** bullet. Whoever applies last must **re-read the bullet** and append after
   whatever is then last; pattern-matching on the quoted anchor will interleave
   three riders' text.
@@ -44,7 +44,7 @@ fable
   turn; the time-aware pending indicator. **Not edited by this rider**
 - §9.2 HTTP API — `needs=form`, and `needs=me` as the union of the Attention
   reasons
-- §11 UI — **Attention**, **Thread view**, the composer key contract, "§11 adds no
+- §10 UI — **Attention**, **Thread view**, the composer key contract, "§10 adds no
   exclusive-pointer capability"
 
 ---
@@ -124,7 +124,7 @@ were leaving the door open — it does not invent one. Verified 2026-08-05:
   **resolving the thread already clears the row** (the predicate guards on
   `status = 'open'`).
 - **The attention promise is already written.** §6: "Threads with an unanswered
-  form surface in Attention as 'awaiting your answer'." §11: Attention is
+  form surface in Attention as 'awaiting your answer'." §10: Attention is
   `needs=me` — "unread agent replies, unanswered forms, due/overdue documents,
   stale-for-review, failed jobs — each row carrying a reason chip", and "handling
   the reason (reading the reply, answering the form, …) clears the row live via
@@ -151,7 +151,7 @@ click. The inference fix is that the answer arrives keyed to the questions.
 
 ### The third motivation is the one with a real gap
 
-**Partly already promised, and the promise is worded correctly** — §6 and §11 both
+**Partly already promised, and the promise is worded correctly** — §6 and §10 both
 say an unanswered form surfaces in Attention, and §9.2 makes it individually
 addressable as `needs=form`. So this rider does not need to invent an attention
 signal. **But the gap is elsewhere, and it is bigger than the grammar**, in two
@@ -176,7 +176,7 @@ stated as behaviour, and Amendments 2 and 6 write it down so an evaluator can te
 it.
 
 **The counter-signal already points the other way and stays untouched.** §8's
-time-aware pending indicator and §11's per-row pending-agent indicator say the
+time-aware pending indicator and §10's per-row pending-agent indicator say the
 thread is waiting on the *agent*. The two facts are independent and can both be
 true: answer nothing, reply in prose to ask something else, and the thread now owes
 you an answer *and* owes the agent a reply. The draft says both are shown rather
@@ -334,7 +334,7 @@ hatch a reliable signal needs, and Amendment 6 says so out loud.
 
 ## Proposed SPEC.md amendments — verbatim, for sign-off
 
-> **Ordering hazard.** Amendment 7 appends after the **same** §11 Thread view
+> **Ordering hazard.** Amendment 7 appends after the **same** §10 Thread view
 > sentence that SHARED-016 Amendment 1 and SHARED-020 append after. Whoever
 > applies last must **re-read the bullet** and append after whatever is last at
 > that moment.
@@ -438,9 +438,9 @@ with the following:
 > out which answer belongs to which question, and never has to guess whether a
 > question went unanswered or unasked)
 
-### Amendment 4 — §11 Attention, APPEND to the bullet
+### Amendment 4 — §10 Attention, APPEND to the bullet
 
-APPEND immediately after, in §11, exactly this existing bullet:
+APPEND immediately after, in §10, exactly this existing bullet:
 
 > - **Attention** is a built-in seed view (`needs=me`): unread agent replies,
 >   unanswered forms, due/overdue documents, stale-for-review, failed jobs — each
@@ -483,9 +483,9 @@ the following, as a new paragraph:
 > form: a form is for questions that have answers, and everything else is ordinary
 > prose.
 
-### Amendment 6 — §11 Thread view, APPEND after the newlines sentence
+### Amendment 6 — §10 Thread view, APPEND after the newlines sentence
 
-APPEND immediately after, in §11's **Thread view** bullet, exactly this existing
+APPEND immediately after, in §10's **Thread view** bullet, exactly this existing
 text:
 
 > **Newlines in a turn written by a person render as line breaks** — a textarea
@@ -663,7 +663,7 @@ questions across three turns.
 - [ ] All six amendments applied to SPEC.md verbatim at phase kickoff, by the
       orchestrator
 - [ ] **Amendment 6's anchor is re-read, not pattern-matched**: SHARED-016
-      Amendment 1 and SHARED-020 append after the same §11 Thread view sentence,
+      Amendment 1 and SHARED-020 append after the same §10 Thread view sentence,
       so whichever applies last appends after whatever is last at that moment
 - [ ] §8 is **not** edited
 - [ ] §6's fence-grammar sentences (the ```` ```form ```` fence, the whole-info-string
@@ -682,7 +682,7 @@ questions across three turns.
 
 ### Files to Create/Modify
 
-- `SPEC.md` §6 (two replacements), §7 (one replacement, one append), §11 (two
+- `SPEC.md` §6 (two replacements), §7 (one replacement, one append), §10 (two
   appends)
 
 ## Testing Strategy

@@ -226,9 +226,12 @@ describe("parseDocEditedPayload", () => {
     expect(parseDocEditedPayload(editedEvent)).toEqual(payload);
   });
 
-  it.each(["comment.created", "form.respond", "todo.due"])("ignores a %s event", (type) => {
-    expect(parseDocEditedPayload({ ...editedEvent, type })).toBe(undefined);
-  });
+  it.each(["comment.created", "form.respond", "ledger.reconciled"])(
+    "ignores a %s event",
+    (type) => {
+      expect(parseDocEditedPayload({ ...editedEvent, type })).toBe(undefined);
+    },
+  );
 
   /** Events come off disk: an older server's payload is skipped, never thrown on. */
   it.each([{}, null, "not an object", { docId: "doc_a1b2c3" }])(
@@ -289,7 +292,7 @@ describe("the diff response", () => {
 
   /**
    * The no-history answer: a document never committed, or a workspace with no
-   * git (SPEC.md §14). A `200` with a null range rather than an error, because
+   * git (SPEC.md §11). A `200` with a null range rather than an error, because
    * the document plainly exists and genuinely has no change to show.
    */
   it("represents a document with no committed history as a null range", () => {

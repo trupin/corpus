@@ -34,7 +34,7 @@ re-read at the end to prove no navigation happened.
 
 ## Evidence
 
-### §11's "pin me a view", in one command, live
+### §10's "pin me a view", in one command, live
 
 One browser page open on the board, untouched. Columns read before, the CLI run from
 a shell, columns re-read on the same page with no reload:
@@ -119,5 +119,5 @@ None.
 
 3 of 3 criteria passed. The agent can pin an ordered, queried board column with one
 documented command, and a browser sitting on the board grows the column about a
-second later without a reload — SPEC §11's "pin me a view" reached entirely through
+second later without a reload — SPEC §10's "pin me a view" reached entirely through
 the CLI, which is what this issue existed to make possible.

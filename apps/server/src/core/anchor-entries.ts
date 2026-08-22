@@ -10,7 +10,7 @@
  * - **Unrecognised entries survive.** The map is read as raw YAML, not through
  *   the selector schema. A hand-edited file with one malformed entry must not
  *   lose it just because someone commented on the document — `doc check` reports
- *   it (§14), the write path preserves it.
+ *   it (§11), the write path preserves it.
  * - **The map is always an object.** A file whose `anchors` key is missing, null
  *   or (wrongly) a list starts from an empty map rather than failing the write;
  *   the alternative is refusing to accept a comment because of a typo elsewhere

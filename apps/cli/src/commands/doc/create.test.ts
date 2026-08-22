@@ -121,7 +121,7 @@ describe("corpus doc create", () => {
     expect(JSON.parse(stub.requests[0]?.body ?? "")).toMatchObject({ folder: "does/not/exist" });
   });
 
-  it("creates a pinned view in one request — SPEC.md §11's promise, on the wire", async () => {
+  it("creates a pinned view in one request — SPEC.md §10's promise, on the wire", async () => {
     // The command from the verb's own example, minus the body: what an agent
     // types for "pin me a view of unresolved finance threads".
     const stub = await startStubServer(jsonResponder(201, CREATED));
@@ -166,14 +166,13 @@ describe("corpus doc create", () => {
         pinned: "true",
         order: "5",
         query: ["type=note"],
-        column: "todos/board",
       },
     });
 
     await runDocCreate(harness.context, { stdinIsBodySource: false });
 
     expect(Object.keys(JSON.parse(stub.requests[0]?.body ?? "") as object).sort()).toEqual(
-      ["type", "title", "folder", "evergreen", "pinned", "order", "query", "column"].sort(),
+      ["type", "title", "folder", "evergreen", "pinned", "order", "query"].sort(),
     );
   });
 
@@ -192,12 +191,7 @@ describe("corpus doc create", () => {
 
   it("refuses a malformed view flag before any request", async () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
-    for (const flags of [
-      { order: "first" },
-      { column: "nonsense" },
-      { pinned: "yes" },
-      { query: ["type"] },
-    ]) {
+    for (const flags of [{ order: "first" }, { pinned: "yes" }, { query: ["type"] }]) {
       const harness = stubContext(stub, { flags: { type: "view", title: "T", ...flags } });
       const error: unknown = await runDocCreate(harness.context, {
         stdinIsBodySource: false,
@@ -395,9 +389,9 @@ describe("corpus doc create", () => {
       expect(example?.description).toContain("SPEC.md §7");
       expect(example?.description).toContain("`name`, derived from the filename");
       expect(example?.description).toContain("`description`, defaulted to the title");
-      // The old wording cited §11 — a section that exists, so `spec:check`
+      // The old wording cited §10 — a section that exists, so `spec:check`
       // passed it, and that says nothing about the one file both readers share.
-      expect(example?.description).not.toContain("SPEC.md §11");
+      expect(example?.description).not.toContain("SPEC.md §10");
       expect(example?.description).not.toContain("no separate registry");
     });
   });

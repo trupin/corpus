@@ -28,7 +28,7 @@ describe("the resolve/reopen confirmations", () => {
     expect(threadStatusNotice(false)).toBe(THREAD_REOPENED_NOTICE);
   });
 
-  it("claims committed in both directions — SPEC.md §14, the write landed on disk", () => {
+  it("claims committed in both directions — SPEC.md §11, the write landed on disk", () => {
     expect(THREAD_RESOLVED_NOTICE).toContain("committed");
     expect(THREAD_REOPENED_NOTICE).toContain("committed");
   });

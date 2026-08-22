@@ -24,7 +24,7 @@ opus
 ## Spec References
 
 - SPEC.md §6 — forms are written only through the server's thread endpoints
-- SPEC.md §11 — a malformed form renders as a broken block
+- SPEC.md §10 — a malformed form renders as a broken block
 
 ## Summary
 
@@ -38,7 +38,7 @@ CONTRACT-038 declared the write-time refusal for a malformed form fence on
 first turn, that turn can carry a form fence, and nothing checks it — so a
 malformed form still reaches disk by that route.
 
-The half that catches it afterwards does exist: §11's raw-render rule means the
+The half that catches it afterwards does exist: §10's raw-render rule means the
 board shows a broken block rather than half-working controls, and
 `unterminated-fence` (SERVER-066) catches the fence-shaped subset. So this is a
 narrowing of a hole rather than an open wound. But the asymmetry is arbitrary —

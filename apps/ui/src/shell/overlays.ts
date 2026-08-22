@@ -1,10 +1,10 @@
 /**
  * Whether an overlay currently owns the keyboard.
  *
- * **The signal is the DOM, not a flag.** Four surfaces can be the top layer —
- * the search overlay, the compose panel, the cheat sheet, and whatever a plugin
- * mounts — and a boolean somewhere would be one more thing every one of them has
- * to remember to clear on unmount. Asking "is one mounted" cannot go stale.
+ * **The signal is the DOM, not a flag.** Several surfaces can be the top layer
+ * — the search overlay, the compose panel, the cheat sheet — and a boolean
+ * somewhere would be one more thing every one of them has to remember to clear
+ * on unmount. Asking "is one mounted" cannot go stale.
  *
  * The contract that makes it true is a class pair: **every modal surface renders
  * `.overlay.open` as its scrim** (`design/index.html`'s markup). A panel that
@@ -32,7 +32,7 @@ export const MENU_SURFACE = '[role="menu"]';
  * Whether an open menu owns the keyboard.
  *
  * UI-028. A menu is a layer drawn over the board, and while it is up its items
- * are what the keyboard is talking to — SPEC.md §11: "`esc` dismisses, arrows
+ * are what the keyboard is talking to — SPEC.md §10: "`esc` dismisses, arrows
  * navigate, `↵` activates". The arrows worked because {@link ContextMenu}
  * handles them itself and the dispatcher skips an already-defaulted event; `↵`
  * did not, because a `<button>` activates on `↵` through its *default action*,

@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §8 (the honest pending indicator), §11 (the board)
+- SPEC.md §8 (the honest pending indicator), §10 (the board)
 
 ## Summary
 The consumer half of CONTRACT-030 / SERVER-056, and the reason both were filed.

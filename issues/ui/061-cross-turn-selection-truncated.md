@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 Thread view, "Commenting on a selection" (SHARED-009 Amendment 2)
+- SPEC.md §10 Thread view, "Commenting on a selection" (SHARED-009 Amendment 2)
 
 ## Summary
 Fable review of PR #20, MINOR. `apps/ui/src/thread/useTurnComments.tsx:132` with

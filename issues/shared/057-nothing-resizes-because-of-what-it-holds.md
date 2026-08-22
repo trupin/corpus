@@ -24,7 +24,7 @@ fable
 
 ## Spec References
 
-- SPEC.md **§11** — the Shell paragraph, which already carries the global UI rules
+- SPEC.md **§10** — the Shell paragraph, which already carries the global UI rules
 
 ## Summary
 
@@ -46,7 +46,7 @@ findings a person can check.
 
 ## The drafted text — read this back verbatim before applying
 
-Appended to **§11's Shell paragraph**, the one ending *"No sidebar. Vanilla CSS
+Appended to **§10's Shell paragraph**, the one ending *"No sidebar. Vanilla CSS
 tokens, light/dark."*:
 
 > **Nothing resizes because of what it holds.** A component's size is a property
@@ -85,7 +85,7 @@ tokens, light/dark."*:
 ## Acceptance Criteria
 
 - [x] The user has signed the drafted text, verbatim
-- [x] §11 states that a component's size does not follow its content
+- [x] §10 states that a component's size does not follow its content
 - [x] It states what to do with text that does not fit
 - [x] It states that boxes are sized against real content
 - [x] It names the one exception, and bounds it
@@ -95,7 +95,7 @@ tokens, light/dark."*:
 
 ### Files to Create/Modify
 
-- `SPEC.md` — §11's Shell paragraph
+- `SPEC.md` — §10's Shell paragraph
 
 ## Testing Strategy
 
@@ -112,7 +112,7 @@ tokens, light/dark."*:
 
 - 2026-08-20 — the user signed the drafted text in the v0.15.0 go-ahead, quoting
   it back as `SHARED-057 signed as drafted`.
-- Applied verbatim to §11's Shell paragraph, dated 2026-08-20.
+- Applied verbatim to §10's Shell paragraph, dated 2026-08-20.
 - `npm run spec:check` passes.
 
 ## Completion Checklist (orchestrator)

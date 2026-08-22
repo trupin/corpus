@@ -27,7 +27,7 @@ opus
   to claim)
 - SPEC.md §7 — the queue: non-terminal statuses, and an event as the unit of
   outstanding work
-- SPEC.md §11 — live updates: the server announces staleness, the UI refetches
+- SPEC.md §10 — live updates: the server announces staleness, the UI refetches
 
 ## Summary
 

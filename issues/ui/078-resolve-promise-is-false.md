@@ -25,7 +25,7 @@ opus
 ## Spec References
 
 - SPEC.md §8 — a resolved thread does not re-trigger the agent
-- SPEC.md §14 — a mutation's outcome is reported honestly
+- SPEC.md §11 — a mutation's outcome is reported honestly
 
 ## Summary
 
@@ -224,7 +224,7 @@ thread → `Resolve status flip, committed` → the toast rendered, verbatim:
 TOAST: ["✓Thread resolved — committed. Replying reopens it.✕"]
 ```
 
-The card then folded to `💬 3 turns · user · resolved · whole document` (§11's
+The card then folded to `💬 3 turns · user · resolved · whole document` (§10's
 collapse rule). Expanded it: header `resolved`, composer toggle `◉ ask agent`,
 and on a resolved thread the composer hint reads `reopens on reply` (observed on
 the resolved case-D thread in the same session). Typed a reply and sent it.

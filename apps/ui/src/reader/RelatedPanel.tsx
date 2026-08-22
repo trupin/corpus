@@ -2,7 +2,7 @@ import type { RelatedDoc } from "@corpus/contract";
 import type { ReactElement } from "react";
 
 /**
- * "Related" (SPEC.md §11, §9.2): the ranked related set for the open document,
+ * "Related" (SPEC.md §10, §9.2): the ranked related set for the open document,
  * from `GET /api/docs/{id}/related` — the same answer `corpus doc related`
  * gives the agent, rendered for a person.
  *
@@ -21,7 +21,7 @@ import type { ReactElement } from "react";
  * instead of falling through a match and disappearing.
  *
  * Clicking a row pushes onto the reader's navigation stack exactly like a
- * `[[ref]]` or a backlink — SPEC.md §11's three sources of one history, now
+ * `[[ref]]` or a backlink — SPEC.md §10's three sources of one history, now
  * four.
  *
  * Empty renders `null`, the rule `Backlinks.tsx` sets: a heading over nothing is

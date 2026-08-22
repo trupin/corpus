@@ -137,7 +137,7 @@ export const resolveThread = createRoute({
     "Sets `status: resolved`. The thread collapses in the document view and **later turns stop " +
     "re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a " +
     "conversation is closed without deleting anything. Resolving rewrites the thread file and " +
-    "auto-commits it, so the response carries §14's warnings — a workspace hook that rejects the " +
+    "auto-commits it, so the response carries §11's warnings — a workspace hook that rejects the " +
     "commit leaves the status change on disk and uncommitted, and that has to be visible.\n\n" +
     "**Resolving releases the thread's resident with it** (SPEC.md §7): a settled conversation " +
     "has nobody to keep resident, so the response's `resident` is null whenever there was one. " +
@@ -163,7 +163,7 @@ export const reopenThread = createRoute({
   description:
     "Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns " +
     "(SPEC.md §8). Like `resolve`, it rewrites and auto-commits the thread file, so the response " +
-    "carries §14's warnings.\n\n" +
+    "carries §11's warnings.\n\n" +
     "**Reopening does not restore a resident** (SPEC.md §8): resolving released it, and the " +
     "conversation resumes on the orchestrator's lane. Designating again is a deliberate act, as " +
     "the first designation was — the alternative would make releasing conditional on nobody ever " +

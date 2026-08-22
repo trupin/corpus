@@ -3,8 +3,6 @@ import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { boardTransport } from "../testing/boardFixture";
-import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
-import { columnRequest, type NewListChoice } from "./newList";
 import { NewListPicker } from "./NewListPicker";
 
 afterEach(cleanup);
@@ -61,63 +59,20 @@ describe("NewListPicker", () => {
     expect(screen.getByRole("menuitem", { name: /Due this week/ })).toBeDefined();
   });
 
-  it("offers registered plugin column types, and creates through the same choice path", () => {
-    setPluginRegistry(
-      buildRegistry([
-        {
-          dir: "fx",
-          loaded: {
-            module: {
-              default: {
-                id: "fx",
-                name: "FX",
-                docTypes: [],
-                columns: [
-                  {
-                    type: "board",
-                    label: "FX board",
-                    icon: "▣",
-                    Component: () => null,
-                    defaultQuery: { type: "fx-item" },
-                  },
-                ],
-              },
-            },
-          },
-        },
-      ]),
+  /**
+   * Three sources and no fourth: the workspace's folders, the presets and the
+   * current search. Nothing in this menu is discovered at runtime, so what a
+   * person can start a list from is what the corpus holds.
+   */
+  it("offers folders, presets and the search — and nothing from anywhere else", async () => {
+    const { container } = renderPicker("mortgage");
+    await waitFor(() => {
+      expect(screen.getByRole("menuitem", { name: /finance/ })).toBeDefined();
+    });
+    const sources = [...container.querySelectorAll("[data-newlist]")].map(
+      (item) => (item.getAttribute("data-newlist") ?? "").split(":")[0],
     );
-    try {
-      const { onChoose } = renderPicker();
-      const item = screen.getByRole("menuitem", { name: /FX board/ });
-      expect(item.textContent).toContain("fx/board");
-      fireEvent.click(item);
-      expect(onChoose).toHaveBeenCalledWith(
-        expect.objectContaining({
-          source: "plugin",
-          column: "fx/board",
-          query: { type: "fx-item" },
-        }),
-      );
-      // The choice compiles to the same POST /api/docs body every column uses,
-      // with the plugin reference and defaultQuery merged into frontmatter.
-      const choice = (onChoose.mock.calls[0] as [NewListChoice])[0];
-      expect(columnRequest(choice, 40)).toMatchObject({
-        type: "view",
-        pinned: true,
-        order: 40,
-        column: "fx/board",
-        query: { type: "fx-item" },
-      });
-    } finally {
-      setPluginRegistry(EMPTY_REGISTRY);
-    }
-  });
-
-  it("offers no plugin entries when no plugin is installed", () => {
-    setPluginRegistry(EMPTY_REGISTRY);
-    const { container } = renderPicker();
-    expect(container.querySelector("[data-newlist^='plugin:']")).toBeNull();
+    expect(new Set(sources)).toEqual(new Set(["folder", "preset", "search"]));
   });
 
   it("omits the from-search entry when no search query is active", () => {

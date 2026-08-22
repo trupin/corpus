@@ -159,7 +159,7 @@ export function bodyFlags(what: string): readonly FlagSpec[] {
  * (`thread create`, `thread reply`). Shared here rather than declared twice for
  * the same reason `bodyFlags` is: two spellings of one idea drift.
  *
- * It is the CLI's whole part in SPEC.md §11's "an agent turn says which model
+ * It is the CLI's whole part in SPEC.md §10's "an agent turn says which model
  * wrote it". The mechanism below it is complete — the contract carries the
  * field, the server records it in the thread's `turnModels` frontmatter and
  * projects it, the board renders it — and until this flag existed nothing
@@ -172,7 +172,7 @@ export function bodyFlags(what: string): readonly FlagSpec[] {
  *     a weight is stated before the work and must be "honoured, not weighed
  *     again", a claim only checkable while the two stay separate fields.
  *   - **The caller states it; the CLI never guesses.** A process cannot know
- *     which model is driving it, and a plausible default is exactly what §11's
+ *     which model is driving it, and a plausible default is exactly what §10's
  *     "nothing rather than a guess" forbids. So there is no default, no
  *     environment fallback and no inference — omitted means *no field at all*.
  *   - **It is a display string, not a validated set.** §7 keeps model names in
@@ -186,7 +186,7 @@ export const MODEL_FLAG: FlagSpec = {
   type: "string",
   valueName: "name",
   description:
-    "The model that **wrote** this turn (SPEC.md §11), recorded with it so _which model wrote " +
+    "The model that **wrote** this turn (SPEC.md §10), recorded with it so _which model wrote " +
     "this?_ stays answerable from the conversation itself, long after the job's log has been " +
     "reaped with its event (SPEC.md §7). It is a **report of what ran**, never a request for " +
     "what should run: it selects nothing, and it is not a weight (which is stated before the " +
@@ -205,7 +205,7 @@ export const MODEL_FLAG: FlagSpec = {
  *
  * Absence has exactly **one** spelling, which is why a blank is refused rather
  * than sent: `--model ""` would otherwise become an attribution to a model with
- * no name, and §11 wants nothing at all in that case. The server refuses a blank
+ * no name, and §10 wants nothing at all in that case. The server refuses a blank
  * too — this refusal is the same answer, one round trip earlier, with nothing
  * written.
  *
@@ -224,7 +224,7 @@ export function resolveTurnModel(
   if (context.actor !== "agent") {
     throw new UsageError(`only an agent turn names the model that wrote it.`, {
       hint:
-        `A turn authored by \`${context.actor}\` names no model (SPEC.md §11). Pass \`--from ` +
+        `A turn authored by \`${context.actor}\` names no model (SPEC.md §10). Pass \`--from ` +
         `agent\` when the agent wrote this turn, or drop --model. Nothing was sent to the server.`,
     });
   }
@@ -422,7 +422,7 @@ export function parseTriStateBoolean(name: string, value: string | undefined): b
 }
 
 /**
- * §14's warnings, folded onto the verb's single success line. Details are
+ * §11's warnings, folded onto the verb's single success line. Details are
  * collapsed to one line: a rejecting git hook's output is multi-line, and a
  * success message that spans lines breaks every caller parsing the last line.
  */

@@ -1,5 +1,5 @@
 /**
- * The validation surface (SPEC.md §14): `POST /api/check`, the HTTP form of the
+ * The validation surface (SPEC.md §11): `POST /api/check`, the HTTP form of the
  * one validator every mutation already runs.
  *
  * The validator itself is `core/check.ts` and its server-side wiring — the two

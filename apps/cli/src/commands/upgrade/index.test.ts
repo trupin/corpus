@@ -74,7 +74,6 @@ async function makeWorkspace(templateRoot: string): Promise<string> {
   scaffoldWorkspace({
     root,
     templateRoot,
-    pluginsRoot: undefined,
     port: 9210,
     token: generateToken(),
     toolVersion: "0.3.0",
@@ -174,7 +173,7 @@ async function run(options: RunOptions): Promise<Harness> {
 
   await runUpgrade(base.context, {
     fetch: await releaseFetch(options),
-    template: { templateRoot: options.template, pluginsRoot: undefined },
+    template: { templateRoot: options.template },
     installMethod:
       options.undetectable === true
         ? {
@@ -256,7 +255,6 @@ describe("corpus upgrade --check", () => {
     expect(result.conflicts).toHaveLength(1);
     const conflict = result.conflicts[0];
     expect(conflict?.path).toBe(".claude/skills/comment/SKILL.md");
-    expect(conflict?.source).toBe("template");
     expect(conflict?.detail).toContain("modified here");
     expect(conflict?.resolve).toBe("corpus workspace diff .claude/skills/comment/SKILL.md");
   });
@@ -393,7 +391,6 @@ describe("corpus upgrade", () => {
     expect(result.conflicts).toHaveLength(1);
     const conflict = result.conflicts[0];
     expect(conflict?.path).toBe(".claude/skills/comment/SKILL.md");
-    expect(conflict?.source).toBe("template");
     expect(conflict?.detail).toContain("only here");
     expect(conflict?.resolve).toBe("corpus workspace diff .claude/skills/comment/SKILL.md");
     // Distinct from what merely happened: the file that *was* updated is in
@@ -557,7 +554,7 @@ describe("corpus upgrade refuses rather than guessing", () => {
     const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
     const failure: unknown = await runUpgrade(base.context, {
       fetch: await releaseFetch(),
-      template: { templateRoot: template, pluginsRoot: undefined },
+      template: { templateRoot: template },
       installMethod: npmGlobal(),
       npm: () => {
         throw new PartialFailureError("the install command failed", {
@@ -607,7 +604,7 @@ describe("corpus upgrade refuses rather than guessing", () => {
     const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
     const failure: unknown = await runUpgrade(base.context, {
       fetch: await releaseFetch(),
-      template: { templateRoot: template, pluginsRoot: undefined },
+      template: { templateRoot: template },
       installMethod: npmGlobal(),
       npm: (options) => {
         installs.push(options.tarballPath);
@@ -649,7 +646,7 @@ describe("when the tool moves and the workspace cannot follow", () => {
       fetch: await releaseFetch(),
       // A template root that vanishes with the install is what a half-written
       // package looks like from here.
-      template: { templateRoot: join(template, "gone"), pluginsRoot: undefined },
+      template: { templateRoot: join(template, "gone") },
       installMethod: npmGlobal(),
       npm: () => Promise.resolve({ command: "npm install --global …", output: "" }),
       serverRunning: () => Promise.resolve(true),
@@ -720,7 +717,7 @@ describe("when it is interrupted mid-install", () => {
       const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
       const failure: unknown = await runUpgrade(base.context, {
         fetch: await releaseFetch(),
-        template: { templateRoot: template, pluginsRoot: undefined },
+        template: { templateRoot: template },
         installMethod: npmGlobal(),
         signals,
         // A long install, ended by the interrupt exactly as the real npm child
@@ -769,7 +766,7 @@ describe("when it is interrupted mid-install", () => {
     const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
     await runUpgrade(base.context, {
       fetch: await releaseFetch(),
-      template: { templateRoot: template, pluginsRoot: undefined },
+      template: { templateRoot: template },
       installMethod: npmGlobal(),
       signals,
       npm: (options) =>
@@ -802,7 +799,7 @@ describe("when it is interrupted mid-install", () => {
     const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
     await runUpgrade(base.context, {
       fetch: await releaseFetch(),
-      template: { templateRoot: template, pluginsRoot: undefined },
+      template: { templateRoot: template },
       installMethod: npmGlobal(),
       signals,
       npm: () => {

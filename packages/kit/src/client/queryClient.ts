@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { CorpusRequestError } from "./createCorpusClient.js";
 
 /**
- * Query defaults for an SSE-invalidated cache (SPEC.md §11, "Live updates").
+ * Query defaults for an SSE-invalidated cache (SPEC.md §10, "Live updates").
  *
  * The server pushes `invalidate` events carrying query keys; the kit's bridge
  * turns those into invalidations. That makes every form of *guessing* about

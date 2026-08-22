@@ -226,7 +226,7 @@ describe("the mutation pipeline", () => {
     });
     off();
 
-    // The mutation stands: SPEC.md §14 — the server never rolls back a file
+    // The mutation stands: SPEC.md §11 — the server never rolls back a file
     // write because a commit failed.
     expect(ws.read(created.path)).toContain("after the hook refused");
     expect(ws.git("status", "--porcelain")).toContain(created.path);
@@ -812,6 +812,7 @@ describe("resolveFolder", () => {
       // but one no ordinary `*.md` is indexed from, and `note` has none at all.
       expect(resolveFolder(undefined, "skill")).toBe("data/docs/inbox");
       expect(resolveFolder(undefined, "note")).toBe("data/docs/inbox");
+      // And a type this build has never heard of files like any other (§12 M6).
       expect(resolveFolder(undefined, "todo")).toBe("data/docs/inbox");
     });
 

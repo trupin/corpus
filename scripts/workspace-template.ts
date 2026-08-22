@@ -17,14 +17,6 @@ export const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 export const TEMPLATE_ROOT = path.join(REPO_ROOT, "assets", "workspace");
 export const CONTRACT_DOC_PATH = path.join(REPO_ROOT, "docs", "workspace-template.md");
 
-/**
- * The bundled plugins tree. `corpus init` installs each plugin's
- * `skills/<name>/` into the same `.claude/skills/` the template fills, so the
- * two trees are one product surface once a workspace exists — which is why the
- * rules this module's test applies to skills read from both roots (PLUGINS-013).
- */
-export const PLUGINS_ROOT = path.join(REPO_ROOT, "plugins");
-
 /** Raised for any malformed template input, always naming the offending path. */
 export class TemplateError extends Error {
   override readonly name = "TemplateError";
@@ -278,7 +270,7 @@ export function readContractDoc(docPath: string = CONTRACT_DOC_PATH): ContractDo
 
 // --- Declared weight levels --------------------------------------------------
 //
-// AGENT-015, SPEC.md §7 and §11 (rider SHARED-022, signed 2026-08-06). A request
+// AGENT-015, SPEC.md §7 and §10 (rider SHARED-022, signed 2026-08-06). A request
 // may state the weight its work is done at, "choosing among the levels the skill
 // itself defines" — so the orchestrate skill's tier table is not only prose a
 // model reads, it is the **declaration** a composer enumerates to build its

@@ -17,7 +17,7 @@ opus
 - Blocks: — (closes PLUGINS-003 together with PLUGINS-007)
 
 ## Spec References
-- SPEC.md §12 as amended by SHARED-005; §6 (anchors); §15 M6
+- SPEC.md §12 as amended by SHARED-005; §6 (anchors); §12 M6
 
 ## Summary
 Second leg of the PLUGINS-003 design: remove the todos plugin's `View` registration so
@@ -32,7 +32,7 @@ in-plugin.
 ## Acceptance Criteria
 - [x] `View` gone; `ListItem`/`DocPanel`/`validate` remain (the docTypes seam still proven per SHARED-005 answer 3)
 - [x] Item-level comment: select item text → thread anchored to it; anchor survives check/uncheck, rename (reconciles), reorder; delete orphans per §6
-- [x] §15 M6 delete/restore drill still green
+- [x] §12 M6 delete/restore drill still green
 - [x] e2e spec landed; evidence two-part (DOM + disk/git)
 
 ## Technical Design
@@ -222,7 +222,7 @@ migrated       (corpus todos migrate) doc_legacyui001 → th_232mbjfk, anchor: n
 created after  (body-backed)          doc_fbn55faa    → th_iwa3lr5j, anchor: null, open
 ```
 
-### TEST-504 — the §15 M6 drill, against its newly signed text
+### TEST-504 — the §12 M6 drill, against its newly signed text
 
 `plugins/todos` was **moved out of the repository** into the scratch dir (a full `cp -R` backup and a
 33-file checksum manifest taken first), the workspace server and the Vite dev server restarted, then

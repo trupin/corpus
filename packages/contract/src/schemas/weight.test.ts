@@ -67,7 +67,7 @@ describe("RequestedWeightSchema", () => {
 });
 
 /**
- * §11 states the control once for the whole set of composers rather than per
+ * §10 states the control once for the whole set of composers rather than per
  * surface — SHARED-012's lesson, and the reason three of five composers once
  * shipped without attachments. So the enumeration lives here, in the test, and
  * every request body a composer sends is checked against the same three rules.
@@ -93,7 +93,7 @@ describe("the request field, on every composer's request body", () => {
 
   /**
    * The premise of the whole feature: "Choosing nothing is the ordinary case and
-   * means the agent decides" (§11). Absence must survive parsing as absence —
+   * means the agent decides" (§10). Absence must survive parsing as absence —
    * not as a level, not as `null`.
    */
   it.each(requests)("%s leaves it absent when nothing was chosen", (_name, schema, base) => {
@@ -112,7 +112,7 @@ describe("the request field, on every composer's request body", () => {
 
   /**
    * A weight is not a trigger. §8 alone decides what reaches the agent, and
-   * §11 is explicit that choosing a weight "neither asks the agent nor stops it
+   * §10 is explicit that choosing a weight "neither asks the agent nor stops it
    * being asked" — so a weight beside an explicit `requestsAgent: false` is a
    * valid request that simply governs no work, never a `400`.
    */
@@ -206,7 +206,7 @@ describe("readRequestedWeight", () => {
   /**
    * The key is event-type-agnostic on purpose: it rides beside whatever payload
    * the producing feature declares, so neither core payload has to grow a
-   * variant and a plugin's own event type carries it with no contract change.
+   * variant and any other event type carries it with no contract change.
    */
   it("reads it beside a core payload without disturbing that payload's own parse", () => {
     const formRespond = {

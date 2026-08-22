@@ -27,6 +27,6 @@ export const indexTopic: TopicSpec = {
     "verbs necessary: `status` is where a backlog is visible instead of hidden, and `rebuild` is " +
     "how the whole corpus is re-embedded — after an embedding model changes, or to retry chunks " +
     "that failed. A backlog is staleness, not drift: `corpus db doctor` stays clean while it " +
-    "drains, and ranked search stays available on its lexical half, saying so (SPEC.md §14).",
+    "drains, and ranked search stays available on its lexical half, saying so (SPEC.md §11).",
   commands: [statusCommand, rebuildCommand],
 };

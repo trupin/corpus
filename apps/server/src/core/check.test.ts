@@ -67,7 +67,7 @@ describe("checkCorpus on a clean corpus", () => {
   });
 });
 
-describe("§14 hard failures", () => {
+describe("§11 hard failures", () => {
   it("reports unparseable frontmatter without throwing", () => {
     const corpus = [
       ...cleanCorpus(),
@@ -212,7 +212,7 @@ Body.
   });
 
   it("reports an anchor entry no thread references", () => {
-    // §14 lists "every anchor belongs to an existing thread" among the failures;
+    // §11 lists "every anchor belongs to an existing thread" among the failures;
     // §6 is the invariant behind it — no highlight left on an empty conversation.
     const report = checkCorpus(
       [doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY)],
@@ -255,7 +255,7 @@ Body.
  * every heading after it and folded the user's reply into the agent's turn.
  * Nothing reported anything.
  */
-describe("§14 unterminated fenced code blocks", () => {
+describe("§11 unterminated fenced code blocks", () => {
   /** The reported shape: the closing run shares a line with the content. */
   const SWALLOWING_TURN = [
     "## agent · 2026-07-19T10:07:12Z",
@@ -367,7 +367,7 @@ describe("§14 unterminated fenced code blocks", () => {
   });
 });
 
-describe("§14 warnings", () => {
+describe("§11 warnings", () => {
   it("warns — never errors — on an anchor that no longer resolves", () => {
     const corpus = [
       doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, "The sentence was rewritten.\n"),
@@ -592,9 +592,9 @@ describe("§5's waiver under a `.claude/` root (SERVER-124)", () => {
 
   /**
    * The issue's own reproduction, in full. `type` is deliberately absent from
-   * the findings: `DocTypeSchema` is an open `z.string().min(1)` so that "plugins
-   * declare their own types", which makes `not-a-real-type` a well-formed plugin
-   * type here exactly as it is under `data/`.
+   * the findings: `DocTypeSchema` is an open `z.string().min(1)` (SPEC.md §5),
+   * which makes `not-a-real-type` a well-formed type here exactly as it is
+   * under `data/`.
    */
   it("reports every malformed field of the issue's `bogus.md`", () => {
     const findings = blockFindings(ROOTS[0], {
@@ -612,7 +612,9 @@ describe("§5's waiver under a `.claude/` root (SERVER-124)", () => {
     ]);
   });
 
-  it("leaves a legal plugin type alone", () => {
+  it("leaves a type this build has never heard of alone", () => {
+    // §12's M6: a workspace's own history may have left this behind, and the
+    // check must not turn it into a finding.
     expect(blockFindings(ROOTS[0], { type: "todo" })).toEqual([]);
   });
 

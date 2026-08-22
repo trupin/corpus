@@ -1,6 +1,6 @@
 import type { JobLookup } from "./write.js";
 import { unknownJob } from "../errors.js";
-// `POST /api/docs` — creation (SPEC.md §9.2, §11).
+// `POST /api/docs` — creation (SPEC.md §9.2, §10).
 //
 // Creation is zero-form and inbox-first: a type and a title are the whole
 // requirement, and everything else the server fills in — the id, the path, the
@@ -107,7 +107,7 @@ export function allocatePath(
  *   because it asked for something the system cannot give it.
  * - **`description` is the caller's, and the server fills it in when the caller
  *   sends none.** Without it Claude Code loads nothing at all, so it cannot
- *   simply be left out; but §11's creation is **zero-form** — "a type and a
+ *   simply be left out; but §10's creation is **zero-form** — "a type and a
  *   title are the whole requirement, and everything else the server fills in" —
  *   and demanding one here would make the type's own verb refuse the shape
  *   every other type accepts. It would also be unsendable: the agent reaches
@@ -153,28 +153,26 @@ function claudeCodeFields(path: string, input: CreateDocRequest): Record<string,
 }
 
 /**
- * §11's view keys and §12's plugin keys, as frontmatter keys of a brand-new
- * document (CONTRACT-011).
+ * §7's view keys, plus every frontmatter key the core does not define, as
+ * frontmatter keys of a brand-new document (CONTRACT-011).
  *
  * Two rules, both the contract's own. **A key whose value is absent is not
  * written**: `order: null` "is the same as omitting it: no `order` key",
  * `pinned` defaults to `false` and an absent `pinned` reads as `false`, so a
  * plain note's frontmatter stays §5's canonical block and nothing else. And
- * **`extra` is flat, mirroring the file** — a plugin key is a YAML key beside
- * the core ones (§12's `todo` carries a top-level `items:`), so each key is
- * spread in as itself rather than nested under an `extra:` mapping the file
- * format has never had. A `null` extra value is a no-op on create, since there
+ * **`extra` is flat, mirroring the file** — an extra key is a YAML key beside
+ * the core ones, so each key is spread in as itself rather than nested under an
+ * `extra:` mapping the file format has never had. A `null` extra value is a no-op on create, since there
  * is nothing yet to remove.
  *
- * A key here can never shadow a core one: `ExtraFrontmatterSchema` rejects all
- * eighteen reserved keys with a `400` before the handler is reached.
+ * A key here can never shadow a core one: `ExtraFrontmatterSchema` rejects every
+ * reserved key with a `400` before the handler is reached.
  */
 function viewFields(input: CreateDocRequest): Record<string, unknown> {
   const fields: Record<string, unknown> = {};
   if (input.pinned === true) fields["pinned"] = true;
   if (input.order !== undefined && input.order !== null) fields["order"] = input.order;
   if (input.query !== undefined && input.query !== null) fields["query"] = input.query;
-  if (input.column !== undefined && input.column !== null) fields["column"] = input.column;
   for (const [key, value] of Object.entries(input.extra ?? {})) {
     if (value === null) continue;
     fields[key] = value;

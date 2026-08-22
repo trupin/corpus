@@ -196,7 +196,7 @@ describe("a conversation at its anchor", () => {
 
   /**
    * The by-rule half of UI-077 — SPEC.md §6's `status` line, kept at last, and
-   * §11's "a `resolved` thread is collapsed by default".
+   * §10's "a `resolved` thread is collapsed by default".
    */
   it("is placed collapsed when it is resolved, and displays nothing", async () => {
     const wire = mount(docWith([anchorAt("6.1%", { threadStatus: "resolved" })]), [

@@ -147,7 +147,7 @@ export const RESIDENT_WEIGHT_BOUNDARY =
  * the only place the choice can be made. So it is carried **here**, on the
  * `Resident` every surface already reads (the thread, the thread summary, the
  * roster row, the `resident.designated` payload), rather than write-only on the
- * request: a surface that shows who is resident (§11, UI-125) must show what it
+ * request: a surface that shows who is resident (§10, UI-125) must show what it
  * runs at, or the choice is invisible once made.
  *
  * It is `string | null`, **required and nullable** like every response-side
@@ -366,7 +366,7 @@ export const AgentPresenceSchema = z
   .object({ live: presenceLiveField, since: presenceSinceField })
   .openapi("AgentPresence", {
     description:
-      "**Whether an agent is there, and the observation behind the answer** (SPEC.md §7, §11). " +
+      "**Whether an agent is there, and the observation behind the answer** (SPEC.md §7, §10). " +
       "Presence is the parked scoped `idle` and nothing else — nothing is registered, nothing is " +
       "reaped, and nothing new is asked of the agent, which is why it can be reported without a " +
       "heartbeat protocol.\n\n" +

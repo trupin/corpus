@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — new "Right-click context menu" bullet (before the keyboard scheme), amended and signed off 2026-07-30 (SHARED-004): rows, column headers, readers, and console job rows get a menu with exactly that item's existing actions (nothing invented), targeting the item under the cursor; native menu preserved on text selections, editable fields, and off-item; ⇧F10/menu-key opens it on the keyboard highlight; plugin-rendered surfaces excluded in v1.
+- SPEC.md §10 — new "Right-click context menu" bullet (before the keyboard scheme), amended and signed off 2026-07-30 (SHARED-004): rows, column headers, readers, and console job rows get a menu with exactly that item's existing actions (nothing invented), targeting the item under the cursor; native menu preserved on text selections, editable fields, and off-item; ⇧F10/menu-key opens it on the keyboard highlight; plugin-rendered surfaces excluded in v1.
 
 ## Summary
 User request (2026-07-29, follow-up phase after PR #11): override the browser's
@@ -167,10 +167,10 @@ Plugin-rendered rows and plugin column bodies get the **native** menu (TEST-437)
 handler consults `resolveListItem(row.type)`, a plugin `View` marks its surface
 `data-plugin-surface`, and no handler is attached inside a plugin column body at all.
 
-### Shipped spec pin reconciled to the amended §11
+### Shipped spec pin reconciled to the amended §10
 
-`apps/ui/e2e/compose-keyboard.spec.ts`'s cheat-sheet test pinned "SPEC.md §11's **twelve**
-bindings". UI-018 adds a thirteenth, and it is a §11 binding: the section's right-click
+`apps/ui/e2e/compose-keyboard.spec.ts`'s cheat-sheet test pinned "SPEC.md §10's **twelve**
+bindings". UI-018 adds a thirteenth, and it is a §10 binding: the section's right-click
 bullet says "the menu key (or ⇧F10) opens the same menu on the current keyboard highlight".
 The spec now pins **thirteen**, with `menu.open` listed among the row bindings (which is
 what it acts on), and carries a comment naming the bullet the thirteenth comes from — so it

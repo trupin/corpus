@@ -265,7 +265,7 @@ free. No `git` state-changing command was run in this repository.
   todo document was invisible to `corpus todos list`, to every todo row's item preview and to the
   aggregate column at once, with nothing anywhere saying so. `everyTodoDoc` is now shared by both
   walks, parameterised by `includeArchived` — the one real difference between them (the aggregate
-  inherits core's §11 archived exclusion; migration deliberately lifts it).
+  inherits core's §10 archived exclusion; migration deliberately lifts it).
 - **CLEAN 43 — `todoListKey` was dead and its broadcast half a no-op.** The plugin publishes exactly
   one query, whose key is `["x","todos","lists","at",<fingerprint>]`; TanStack matches by prefix, so
   a `["x","todos","lists",<docId>]` broadcast is not a prefix of it and invalidated nothing. It

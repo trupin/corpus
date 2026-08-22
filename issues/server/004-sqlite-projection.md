@@ -25,7 +25,7 @@ opus — the schema is fully pinned by §9.1; the work is disciplined mapping, n
 
 - SPEC.md §9.1 — "Projection (SQLite)" (the derived tables, document roots, read-your-write consistency)
 - SPEC.md §7 — "Skills and agent definitions are documents" (`.claude/skills/**/SKILL.md`, `.claude/skills-archived/`, `.claude/agents/*.md` as additional roots)
-- SPEC.md §15 — M1 check (projection rebuild idempotence, `db doctor` drift detection)
+- SPEC.md §12 — M1 check (projection rebuild idempotence, `db doctor` drift detection)
 - CLAUDE.md — Architecture Decision 2 (files remain the source of truth; SQLite is derived and rebuildable)
 
 ## Summary
@@ -132,7 +132,7 @@ file_hashes(path TEXT PRIMARY KEY, hash TEXT, size INTEGER, mtime_ms INTEGER)
 
 **Runtime projectors (`project-runtime.ts`).** `events` from `.corpus/queue/<status>/*.json` (status derived from the containing directory); `jobs` from `.corpus/jobs/<eventId>.jsonl` (status joined from the event, `last_line` = the final line, full logs stay in the file and are tailed, never projected); `locks` from `.corpus/locks/<docId>.json`; `seen` from `.corpus/seen.json`. Each exposes both a whole-directory projector (used by `rebuild`) and a single-file projector (used by the watcher in SERVER-007).
 
-**`rebuild(config, { into })`.** Create a brand-new database at `into ?? <corpusDir>/cache.db.rebuild-<pid>`, apply the schema, enumerate every root, project every file, project runtime state, write `meta.rebuilt_at` and `meta.schema_version`, close. When `into` is omitted, `fs.renameSync` it over `cache.db` (same filesystem, atomic) after closing the previous handle; when `into` is given, leave it in place — that is the mode pre-push uses to prove the projection is reconstructible from files alone (§14). Rebuild reports `{ documents, threads, turns, anchors, links, events, durationMs, skipped: [{path, reason}] }`.
+**`rebuild(config, { into })`.** Create a brand-new database at `into ?? <corpusDir>/cache.db.rebuild-<pid>`, apply the schema, enumerate every root, project every file, project runtime state, write `meta.rebuilt_at` and `meta.schema_version`, close. When `into` is omitted, `fs.renameSync` it over `cache.db` (same filesystem, atomic) after closing the previous handle; when `into` is given, leave it in place — that is the mode pre-push uses to prove the projection is reconstructible from files alone (§11). Rebuild reports `{ documents, threads, turns, anchors, links, events, durationMs, skipped: [{path, reason}] }`.
 
 **`doctor(config)`.** Two passes, ordered cheapest-first:
 
@@ -167,8 +167,8 @@ Vitest, colocated `*.test.ts`, against **real** SQLite files in temp workspaces 
 - **Per-projector row shapes**: a fixture document, a fixture thread with three turns, a document with two anchors (one resolvable, one not) — assert exact row contents including `resolved_offset` NULL for the orphan.
 - **Links**: refs in a document body and in a turn body both produce rows; refs in code fences do not.
 - **FTS**: query by a word appearing only in a body, only in a title, and only in a turn; assert `snippet()` output is non-empty.
-- **Rebuild idempotence** (§15 M1): rebuild twice into two temp paths, dump both with `.dump`-equivalent queries ordered deterministically, assert equality.
-- **Doctor** (§15 M1): clean workspace → `ok`; then (a) modify a file's content → `content_mismatch`; (b) add a file without projecting → `missing_row`; (c) delete a file without projecting → `orphan_row`; assert each drift kind independently, and assert the hash pass is skipped when size+mtime are unchanged (spy on the hash function or count reads).
+- **Rebuild idempotence** (§12 M1): rebuild twice into two temp paths, dump both with `.dump`-equivalent queries ordered deterministically, assert equality.
+- **Doctor** (§12 M1): clean workspace → `ok`; then (a) modify a file's content → `content_mismatch`; (b) add a file without projecting → `missing_row`; (c) delete a file without projecting → `orphan_row`; assert each drift kind independently, and assert the hash pass is skipped when size+mtime are unchanged (spy on the hash function or count reads).
 - **Roots**: fixtures under all five roots; assert types, that archived skills are indexed with `status: archived`, and that a symlinked skill is indexed once.
 - **Performance smoke**: generate 1000 fixture documents, assert rebuild and doctor stay inside the stated targets (generous margins so the test is not flaky in CI).
 
@@ -186,7 +186,7 @@ N/A — this is a feature, not a bug.
 4. `sqlite3 … "select doc_id,anchor_id,resolved_offset from anchors"` — expected: the resolvable anchor has an integer offset that, when used to slice the real file's body, yields the quoted text; the non-resolvable one is `NULL`.
 5. `sqlite3 … "select * from links"` — expected: rows for refs written in a document body and for refs written inside a turn body.
 6. `sqlite3 … "select ref, snippet(search,4,'[',']','…',8) from search where search match 'mortgage'"` (using a word actually present in the fixtures) — expected: hits for the document and for the turn that mentions it.
-7. Rebuild a second time into a temp path (`into`), then diff the two databases' logical contents (`sqlite3 … "select * from documents order by id"` on both, `diff` the outputs). Expected: identical — rebuild is idempotent (§15 M1).
+7. Rebuild a second time into a temp path (`into`), then diff the two databases' logical contents (`sqlite3 … "select * from documents order by id"` on both, `diff` the outputs). Expected: identical — rebuild is idempotent (§12 M1).
 8. Drift check: run `doctor` → expected `ok`. Then edit a document with a real editor/`printf >>`, re-run `doctor` → expected `content_mismatch` naming that path. Re-project that single file and re-run → `ok`. Delete a file with `rm`, re-run → `orphan_row`. Time each run (`time`) and record the numbers.
 9. Read-your-write sanity: from a single `tsx` script, write a new markdown file, call `projectDocument` synchronously, then immediately `SELECT` it — expected: the row is visible in the same tick, no polling.
 
@@ -288,7 +288,7 @@ th_x9y8#2026-07-03T09:00:00Z|turn|th_x9y8|Is the [mortgage] rate in [[doc_a1b2c3
 
 PASS — a title-only hit (`Mortgage options`) and a turn-body hit, both with non-empty snippets, `ref` = `<threadId>#<ts>` for the turn. Diacritic folding: a note containing `café` is returned by `search match 'cafe'` → `doc_cafe01|doc`, so the declared `unicode61 remove_diacritics 2` tokenizer is the one in effect.
 
-**6. Rebuild idempotence (§15 M1).** Two rebuilds into two temp paths, then every table dumped with a deterministic `order by` and `diff`ed:
+**6. Rebuild idempotence (§12 M1).** Two rebuilds into two temp paths, then every table dumped with a deterministic `order by` and `diff`ed:
 
 ```
 documents: identical   threads: identical   anchors: identical   turns: identical

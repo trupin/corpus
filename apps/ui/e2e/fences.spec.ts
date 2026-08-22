@@ -4,7 +4,7 @@ import { expect, test } from "./coverage";
 import { stubCorpus } from "./stubCorpus";
 
 /**
- * UI-041's copyable canvases (SPEC.md §11, rider signed 2026-08-02), in a real
+ * UI-041's copyable canvases (SPEC.md §10, rider signed 2026-08-02), in a real
  * browser with a real clipboard.
  *
  * The whole point of the feature is the **bytes on the clipboard**, and that is

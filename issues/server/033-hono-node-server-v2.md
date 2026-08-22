@@ -474,7 +474,7 @@ $ lsof -nP -iTCP:8792 -sTCP:LISTEN
 8792 free
 ```
 
-§15 M3's check passes end to end against the v2 adapter.
+§12 M3's check passes end to end against the v2 adapter.
 
 ### Machine hygiene
 

@@ -185,7 +185,7 @@ describe("corpus thread create", () => {
     await runThreadCreate(harness.context);
 
     // Not an error: SPEC.md §6 resolves anchors at render time, so the thread is
-    // created and the §14 warning is what tells the caller it is orphaned.
+    // created and the §11 warning is what tells the caller it is orphaned.
     expect(harness.stdout()).toBe(
       "created th_a1b2c3 — anchored at anc_k4f7 on doc_a1b2c3 — warning: orphaned_anchor " +
         "(anc_k4f7 does not resolve in data/docs/note.md)\n",
@@ -312,7 +312,7 @@ describe("corpus thread create", () => {
    * turn of a thread the agent opens is an agent turn like any other, and until
    * this flag existed it too rendered blank.
    */
-  describe("--model, the first turn's stated model (SPEC.md §11)", () => {
+  describe("--model, the first turn's stated model (SPEC.md §10)", () => {
     it("sends a stated model alongside the first turn", async () => {
       const stub = await startStubServer(jsonResponder(201, WHOLE_DOC));
       const harness = stubContext(stub, {

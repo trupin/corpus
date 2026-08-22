@@ -64,7 +64,7 @@ export const respondToForm = createRoute({
     "line of its own, where those three read as the note heading, the blank marker, and a " +
     "question heading. A form breaking either rule does not parse at all — so it is a `400` on " +
     "the turn that would write it and, wherever such bytes already exist, a form to nobody: it " +
-    "renders as the broken code block it is (§11) rather than advertising a question no answer " +
+    "renders as the broken code block it is (§10) rather than advertising a question no answer " +
     "could ever clear.\n\n" +
     "**The answer** carries one entry per field answered, matched to its field by `question` " +
     "rather than by position, with the value under the key the field's kind names: `option` for " +
@@ -89,7 +89,7 @@ export const respondToForm = createRoute({
     "rather than rewritten (a rewrite would record an answer nobody gave). `404` when the thread has no such turn, or " +
     "that turn carries no form; `409` when that form is **already answered** — a form is answered " +
     "once, and changing your mind is an ordinary reply, not a second answer to the same question " +
-    "(SPEC.md §6, §11). The `409` is deliberate: the request is well formed and the state is what " +
+    "(SPEC.md §6, §10). The `409` is deliberate: the request is well formed and the state is what " +
     "refuses it, so retrying with a different body will not help.",
   request: {
     params: FormParamsSchema,

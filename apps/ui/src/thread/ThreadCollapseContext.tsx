@@ -24,12 +24,12 @@ import {
 } from "./threadCollapse";
 
 /**
- * One reading surface's folds, held where SPEC.md §11 says they belong: in the
+ * One reading surface's folds, held where SPEC.md §10 says they belong: in the
  * browser, per reader, never on disk.
  *
  * **Per reader is the point, not an implementation detail.** "Two columns
  * showing the same document keep their own" is spelled out in the signed text,
- * and it falls straight out of §11's existing division — a column's scroll
+ * and it falls straight out of §10's existing division — a column's scroll
  * position, its open reader and its navigation stack are already its own, and a
  * fold is the same kind of fact about *this* reader rather than about the
  * document. So the key is the column (or focus mode), and the entries inside it
@@ -60,7 +60,7 @@ export interface ThreadCollapseApi {
    */
   readonly observe: (subject: ThreadCollapseSubject) => void;
   /**
-   * **Reading never collapses anything** (SPEC.md §11) — and this is the whole
+   * **Reading never collapses anything** (SPEC.md §10) — and this is the whole
    * of it, held by the surface rather than by a component (PR #25 re-review,
    * MINOR).
    *
@@ -71,7 +71,7 @@ export interface ThreadCollapseApi {
    * `unread: false`, and the rule folds the conversation shut while the reader
    * is looking at it. So the surface records what a conversation was **placed**
    * with, and that record only ever gets more cautious ({@link
-   * strongerReadState}) until the thread's **status** changes — §11's "the rule
+   * strongerReadState}) until the thread's **status** changes — §10's "the rule
    * is applied when a conversation is placed and when its status changes" — at
    * which point it is taken fresh.
    *
@@ -92,7 +92,7 @@ export interface ThreadCollapseApi {
    * Keeps a conversation's placement record alive while it is **on screen**, and
    * exactly that long.
    *
-   * A placement is a fresh decision every time §11 says one is made, so the
+   * A placement is a fresh decision every time §10 says one is made, so the
    * record must not outlive the conversation's stay on the surface: a resolved
    * thread placed expanded because it was unread, then read, then navigated away
    * from, must be folded when the reader comes back to it — otherwise the fix

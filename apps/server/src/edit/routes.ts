@@ -59,7 +59,7 @@ export interface EditSessionRouteDeps {
  *   it emits, so a flush racing the idle sweep finds nothing left to end.
  * - **Says nothing about emission.** `flush` is synchronous and the enqueue it
  *   starts is not; a session with an empty path-scoped range, or whose commits
- *   were all rejected under §14, emits nothing and still answers `204`.
+ *   were all rejected under §11, emits nothing and still answers `204`.
  *
  * The one thing the route decides is its `404`, and it means an unknown
  * *document* — never "no session here". A permissive `204` for an id the

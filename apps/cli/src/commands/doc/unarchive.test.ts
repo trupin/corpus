@@ -134,7 +134,7 @@ describe("corpus doc unarchive", () => {
     expect(JSON.parse(harness.stdout())).toEqual({ doc: DOC, warnings: [] });
   });
 
-  it("folds a §14 warning onto the same line", async () => {
+  it("folds a §11 warning onto the same line", async () => {
     const stub = await startStubServer((request, response) => {
       if (request.method === "GET") return sendJson(response, 200, archived(DOC));
       sendJson(response, 200, {

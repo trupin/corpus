@@ -24,12 +24,12 @@ function SearchIcon(): ReactElement {
 export interface TopbarProps {
   /** Opens the search overlay. ⌘K does the same thing, through the shortcut registry. */
   readonly onOpenSearch?: () => void;
-  /** Opens the Ask/Capture composer — the same act as `c` (SPEC.md §11). */
+  /** Opens the Ask/Capture composer — the same act as `c` (SPEC.md §10). */
   readonly onOpenCompose?: () => void;
 }
 
 /**
- * Wordmark · centred search affordance · Ask/Capture (SPEC.md §11). Agent and
+ * Wordmark · centred search affordance · Ask/Capture (SPEC.md §10). Agent and
  * queue status belong to the console strip and are deliberately absent here.
  *
  * The search affordance is a **button**, not an input: the query input lives in

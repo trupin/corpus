@@ -23,7 +23,7 @@ opus — projection/query plumbing on established patterns (originTitle preceden
 
 ## Spec References
 
-- SPEC.md §11 (views), §12 (plugin frontmatter)
+- SPEC.md §10 (views), §12 (plugin frontmatter)
 - `issues/contract/011-extra-frontmatter-surface.md`
 
 ## Summary
@@ -48,7 +48,7 @@ Server half of the CONTRACT-011 coupled commit: project the extra-frontmatter ob
    shares `viewFrontmatterShape` between the row and the frontmatter component.
 2. **Five new `documents` columns** — `pinned`, `sort_order`, `query_json`, `column_ref`,
    `extra_json`; `SCHEMA_VERSION` 2 → 3, so every existing `cache.db` is dropped and rebuilt from
-   files on first open. §9.1's column list predates §11 having a wire surface; a filter
+   files on first open. §9.1's column list predates §10 having a wire surface; a filter
    (`pinned`) and a sort (`order`) cannot be answered from the files at request time without one
    read per row, which is the N+1 the collection query exists to prevent. All five are still
    derived — `db rebuild` reconstructs them from frontmatter. `sort_order` is spelled apart from
@@ -203,8 +203,8 @@ disk key.
 **Known consequence, deliberately not fixed here:** `FileFrontmatterSchema` still passes the four
 view keys through as loose keys rather than validating them, so a hand-edited `order: first` is
 reported by neither `doc check` nor the save path — both readers degrade it to `null`. Making
-them validated file fields would turn a malformed view key into a §14 *blocking* failure on every
-save of that document; that is a §14 policy call, not this issue's.
+them validated file fields would turn a malformed view key into a §11 *blocking* failure on every
+save of that document; that is a §11 policy call, not this issue's.
 
 ## Completion Checklist (domain agent)
 

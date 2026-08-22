@@ -33,7 +33,6 @@ const doc = {
     pinned: false,
     order: null,
     query: null,
-    column: null,
     extra: {},
   },
   body: "Body, as it now stands.",

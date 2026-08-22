@@ -24,7 +24,7 @@ import {
 } from "./docWidth";
 
 /**
- * The control SPEC.md §11's width rider asks for, and the two hosts that carry
+ * The control SPEC.md §10's width rider asks for, and the two hosts that carry
  * it.
  *
  * **Why a dragged edge and not a preset.** The report was *"I want to be able
@@ -32,7 +32,7 @@ import {
  * twice — the console drawer's top edge and a column's own right edge — so this
  * is a convention to follow rather than one to invent. Both of those are
  * `role="separator"` strips with arrow-key resizing beside the drag, which is
- * also what keeps this off the pointer-only list (§11 adds no exclusive-pointer
+ * also what keeps this off the pointer-only list (§10 adds no exclusive-pointer
  * capability).
  *
  * **Why it is not in the reader's head.** The head is full. UI-135's rules for

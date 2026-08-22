@@ -9,12 +9,12 @@ import {
   type RowNotice,
   type StalenessLevel,
 } from "@corpus/kit";
-import { useStatusLock } from "../doc/fieldLock";
+import { statusLock } from "../doc/statusLock";
 import { threadStatusNotice } from "../thread/resolveNotice";
 import type { MenuAction } from "./menuModel";
 
 /**
- * A document's or thread's actions, declared once (SPEC.md §11).
+ * A document's or thread's actions, declared once (SPEC.md §10).
  *
  * The reader's ⋯ menu and every context menu on that document read this array,
  * so an action's availability — a thread that was just resolved, a document that
@@ -97,7 +97,7 @@ export interface DocActionOptions {
   readonly onOpen?: (() => void) | undefined;
   readonly onOpenFocus?: (() => void) | undefined;
   /**
-   * Show this document's comments list (SPEC.md §11's rider, UI-063).
+   * Show this document's comments list (SPEC.md §10's rider, UI-063).
    *
    * The reader passes it; a row does not, because a row has no reader to switch.
    * It is the list's second way in and the **only** one on a document with no
@@ -180,15 +180,17 @@ export function useDocActions(
    * frontmatter form asks, from the one function that answers it.
    *
    * The form renders the control locked with the reason; this menu **omits** the
-   * action instead, because §11's context menu lists "exactly that item's
+   * action instead, because §10's context menu lists "exactly that item's
    * existing actions" and an item nothing could ever arm is not one of them. The
-   * two cases it covers: an archived document, whose `PUT` the server refuses
-   * outright (SERVER-039) so offering the act would promise a refusal; and a
-   * type that **derives** its status (SPEC.md §12), where SHARED-031 part 2 says
-   * in signed text that it "offers no Resolve, because there is nothing there
-   * for anyone to set".
+   * one case left is an archived document, whose `PUT` the server refuses
+   * outright (SERVER-039), so offering the act would promise a refusal.
+   *
+   * **It is the only case, and `type:` is not one of them.** Every document's
+   * status is its own to set, whatever its type says — including a type this
+   * build does not recognise, which SPEC.md §10 requires and §5's open `type`
+   * makes routine.
    */
-  const settable = useStatusLock(subject) === null;
+  const settable = statusLock(subject) === null;
   const list: MenuAction[] = [];
 
   if (surface === "row" && onOpen !== undefined) {
@@ -288,7 +290,7 @@ export function useDocActions(
    * (SPEC.md §7 — an archived skill is "restorable"). Availability is the
    * document's own `status`, which `DocActionSubject` already carries, so both
    * presentations gain the inverse from this one declaration. No confirm on
-   * either: neither is destructive, and §11 keeps the two-click ceremony for the
+   * either: neither is destructive, and §10 keeps the two-click ceremony for the
    * one act that is.
    */
   if (archived) {

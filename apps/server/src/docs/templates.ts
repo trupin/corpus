@@ -1,4 +1,4 @@
-// Template pre-fill on create (SPEC.md §9.2, §11 — "templates are documents").
+// Template pre-fill on create (SPEC.md §9.2, §10 — "templates are documents").
 //
 // "A template IS a document (`type: template`) with a `for: <doc-type>` field.
 // Creating a document of that type with no body starts from the template."
@@ -46,7 +46,7 @@ const isMissingFile = (error: unknown): boolean =>
   (error.code === "ENOENT" || error.code === "ENOTDIR");
 
 /**
- * The template for `type`, or `null` when the type has none — which SPEC.md §11
+ * The template for `type`, or `null` when the type has none — which SPEC.md §10
  * makes an ordinary outcome ("none → empty"), never an error.
  *
  * Selection is deterministic: candidates are ordered by path and the first
@@ -75,7 +75,7 @@ export function findTemplate(
       parsed = parseDocument(readFileSync(resolve(workspaceRoot, row.path), "utf8"), row.path);
     } catch (error) {
       // A template that cannot be read is simply not a candidate; `doc check`
-      // reports it (§14) and a create must not fail because of it. That is as
+      // reports it (§11) and a create must not fail because of it. That is as
       // true of a file that has vanished as of one that no longer parses.
       if (error instanceof DocumentParseError || isMissingFile(error)) continue;
       throw error;

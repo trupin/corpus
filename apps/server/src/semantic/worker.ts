@@ -44,7 +44,7 @@
  *
  * **Progress is announced, never pushed.** Everything `GET /api/index/status`
  * reports moves under this loop and nowhere else, so the worker is the only
- * honest emitter of `["index"]` (SERVER-051, SPEC.md §11's console index pill).
+ * honest emitter of `["index"]` (SERVER-051, SPEC.md §10's console index pill).
  * It publishes on the same bus it listens to — see {@link INDEX_ANNOUNCE_MS} and
  * the emission points below — carrying the key and nothing else, exactly like
  * every other producer of staleness. Nothing about it reaches a request: a save

@@ -103,7 +103,7 @@ inactivity window may have elapsed a millisecond earlier and taken the session
 out through the other door. And emission is **decided after the response**: the
 server ends the session, then reads git, and a session whose path-scoped range
 turns out empty (an edit and its undo in one sitting) or whose auto-commits were
-all rejected or skipped (§14) correctly produces no event. So the route publishes
+all rejected or skipped (§11) correctly produces no event. So the route publishes
 the **postcondition** — *this document has no open edit session* — and nothing
 else. That is also the whole of what the caller needs.
 

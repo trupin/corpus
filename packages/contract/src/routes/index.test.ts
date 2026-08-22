@@ -30,7 +30,6 @@ const frontmatter = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
 };
 
@@ -69,7 +68,6 @@ const row = {
   pinned: false,
   order: null,
   query: null,
-  column: null,
   extra: {},
   stale: null,
   parent: null,
@@ -640,14 +638,14 @@ function createStubApp() {
         removedAnchor: null,
         parentId: c.req.valid("param").ts === turn.ts ? "doc_a1b2c3" : null,
         // A turn deletion that cascades to the parent's frontmatter is exactly
-        // where a rejected auto-commit has to surface (SPEC.md §14).
+        // where a rejected auto-commit has to surface (SPEC.md §11).
         warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
       },
       200,
     ),
   );
   // Resolving rewrites and auto-commits the thread file, which is exactly where a
-  // rejected hook has to surface (SPEC.md §14) — so the stub warns here rather
+  // rejected hook has to surface (SPEC.md §11) — so the stub warns here rather
   // than returning the tidy empty array.
   app.openapi(contractRoutes.resolveThread, (c) =>
     c.json(
@@ -725,7 +723,7 @@ function createStubApp() {
   // Designation and release (CONTRACT-051, widened by CONTRACT-061). The stub
   // resolves the name it was given and answers with the thread, because that is
   // the promise both halves make: the caller never repeats the lookup, and a
-  // release that wrote something can still report §14's warnings. A body with no
+  // release that wrote something can still report §11's warnings. A body with no
   // `name` — or no body at all — is a *general* resident, and the stub answers
   // with the two nulls rather than inventing a name for it (SPEC.md §7).
   app.openapi(contractRoutes.designateResident, (c) => {
@@ -1198,7 +1196,7 @@ describe("routes mounted on a Hono app", () => {
   });
 
   /**
-   * §11's whole-result-set selection: one entry carrying a query rather than
+   * §10's whole-result-set selection: one entry carrying a query rather than
    * enumerated ids, beside individually staged rows in the same request. The
    * ids it resolves to reach the caller only through the result.
    */
@@ -1225,7 +1223,7 @@ describe("routes mounted on a Hono app", () => {
 
   /**
    * §4: the commit contains exactly what changed, and a commit containing
-   * nothing is not one. An act every document refuses is still a `200` — §11
+   * nothing is not one. An act every document refuses is still a `200` — §10
    * reduces the selection to all of them and the user retries — so the empty
    * `changed` list and the null commit have to be expressible together.
    */
@@ -1239,7 +1237,7 @@ describe("routes mounted on a Hono app", () => {
   });
 
   /**
-   * CONTRACT-048: a row carries exactly one staged action (§11), so a repeated
+   * CONTRACT-048: a row carries exactly one staged action (§10), so a repeated
    * id is refused before any handler runs rather than collapsed — and the
    * message names the id and, when they differ, both verbs. Last-write-wins
    * would be a silent choice about someone's documents.
@@ -1268,7 +1266,7 @@ describe("routes mounted on a Hono app", () => {
     { entries: [{ id: "doc_a1b2c3", action: { action: "archive" }, author: "user" }] },
     // The shape CONTRACT-037 shipped: one verb over many ids, now unusable.
     { ids: ["doc_a1b2c3"], action: { action: "archive" } },
-    // §11 forbids deleting a whole-result-set selection, and it is unspellable.
+    // §10 forbids deleting a whole-result-set selection, and it is unspellable.
     { entries: [], wholeResultSet: { query: {}, action: { action: "delete" } } },
   ])("rejects the unusable bulk body %j before any handler runs", async (body) => {
     expect((await bulk(body)).status).toBe(400);

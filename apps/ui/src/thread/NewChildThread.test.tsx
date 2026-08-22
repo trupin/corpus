@@ -72,7 +72,7 @@ describe("commenting on a turn", () => {
   });
 
   /**
-   * SPEC.md §11's contract, and the reason the box is a textarea: it used to be
+   * SPEC.md §10's contract, and the reason the box is a textarea: it used to be
    * an `<input>`, where `↵` could not have inserted a newline even if it were
    * bound to.
    */

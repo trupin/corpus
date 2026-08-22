@@ -19,19 +19,19 @@ opus
 ## Dependencies
 
 - Depends on: —
-- Related: SHARED-040 (§4's act list), SHARED-030 (§11's frontmatter form),
+- Related: SHARED-040 (§4's act list), SHARED-030 (§10's frontmatter form),
   SERVER-092 (wired the act closers)
 
 ## Spec References
 
 - SPEC.md **§4** — "a document archived, restored, moved, renamed, or marked
   still current (§5)" closes a commit window
-- SPEC.md **§11** — the frontmatter form carries `title`, `tags`, `status`, `due`
+- SPEC.md **§10** — the frontmatter form carries `title`, `tags`, `status`, `due`
 
 ## Summary
 
 Found while correcting a wrong repair of my own during PR #44's review, which is
-the only reason it surfaced: I had asserted in §11 that retitling closes a
+the only reason it surfaced: I had asserted in §10 that retitling closes a
 window. It does not — and checking *why* turned up a real divergence next door.
 
 §4 lists **"a document archived"** among the acts that close a commit window.
@@ -39,7 +39,7 @@ window. It does not — and checking *why* turned up a real divergence next door
 declares `act: "names-the-window"`.
 
 But a document can also be archived through **`PUT /api/docs/{id}` with
-`{status: "archived"}`**, which is what §11's frontmatter form does — and
+`{status: "archived"}`**, which is what §10's frontmatter form does — and
 `apps/server/src/docs/update.ts:377` sets the act **only** for `reviewed`:
 
 ```ts
@@ -58,12 +58,12 @@ half the time.
 - **The act is the act.** §4 describes changes, not routes, so a status flip to
   `archived` through any door should close the window and name its commit. This
   is the reading §4's plain text supports.
-- **The form's writes are saves.** §11 (SHARED-030, signed 2026-08-12) puts the
+- **The form's writes are saves.** §10 (SHARED-030, signed 2026-08-12) puts the
   frontmatter form "under the body's rule", and the applied text now says every
   field it carries is an ordinary save that joins the open window. Making one of
   those four fields an act reintroduces exactly the surprise that rider removed.
 
-They cannot both hold. If the first wins, §11's frontmatter paragraph needs a
+They cannot both hold. If the first wins, §10's frontmatter paragraph needs a
 carve-out and the form's status control becomes a window-closing act. If the
 second wins, §4's list needs to say that archiving **through the archive verb**
 is the act — which is a spec change either way, and therefore needs the user.

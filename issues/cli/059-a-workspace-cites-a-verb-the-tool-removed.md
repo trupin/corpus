@@ -17,7 +17,7 @@ opus
 
 ## Spec References
 - SPEC.md **§2.4** — upgrade and the workspace template sync
-- SPEC.md **§14** — validation on the write path
+- SPEC.md **§11** — validation on the write path
 
 ## Summary
 
@@ -58,11 +58,11 @@ command registry is the other half and is authoritative.
 ## Decisions to make and record
 
 1. **Where the check lives.** `corpus doc check` already validates skills on
-   every save (§14) and knows how to report a finding — that is the cheap seam.
+   every save (§11) and knows how to report a finding — that is the cheap seam.
    A check at `corpus upgrade` time reaches a whole workspace at once. They are
    not exclusive, and doing both may be right.
 2. **Warning or failure?** A skill citing a removed verb still saves and still
-   runs — it just fails later. §14's warning channel is the honest home, and
+   runs — it just fails later. §11's warning channel is the honest home, and
    SERVER-067 is the open question about that channel. Do not make this a hard
    failure without saying why.
 3. **False positives.** A skill may quote a verb inside prose explaining that it

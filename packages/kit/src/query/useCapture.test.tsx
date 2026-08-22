@@ -9,7 +9,7 @@ import { useCapture } from "./useCapture.js";
 import { useCreateThread } from "./useCreateThread.js";
 
 /**
- * The two writes the global composer makes (SPEC.md §11). Both are asserted at
+ * The two writes the global composer makes (SPEC.md §10). Both are asserted at
  * the transport, because what matters about them is the *shape on the wire* —
  * which field carried the text, whether `requestsAgent` was the string `"true"`,
  * and that Capture is one request rather than three.

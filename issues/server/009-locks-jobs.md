@@ -310,7 +310,7 @@ allowEmpty: true, squash: false })`. `allowEmpty` and `squash` already existed o
 for exactly this caller; `trailers` is new — five lines in `buildTrailers`, appended after the
 standard trailers — because `Corpus-Actor` says who *broke* the lock (always `user`) and nothing
 expressed who *held* it. Outcome handling maps to the four `CommitOutcome` kinds: `committed` /
-`amended` pass, `skipped` / `failed` are logged loudly and never fail the break (SPEC.md §14).
+`amended` pass, `skipped` / `failed` are logged loudly and never fail the break (SPEC.md §11).
 
 ### 2. The guard is mounted on the write path
 

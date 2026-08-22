@@ -384,7 +384,7 @@ $ PUT /api/docs/doc_4n54pjht {"due":"2030-01-01","addTags":["late"]}
 $ grep -n '^due:' …/reporter-case.md  →  12:due: 2026-08-04
 ```
 
-### Subtractive check (SPEC.md §15 M6)
+### Subtractive check (SPEC.md §12 M6)
 
 Run by pointing the server at an **empty** plugins root (`CORPUS_PLUGINS_DIR`),
 so no directory in this repository was moved while another agent was working:

@@ -27,7 +27,7 @@ export interface CommentEventInput {
    * is the ordinary case.
    *
    * Not optional on this type, deliberately. Every composer that can reach the
-   * agent may state one (§11), so every producer here has to say what its
+   * agent may state one (§10), so every producer here has to say what its
    * request carried; a `?` would let a surface added later ship silently
    * dropping the field, which is SHARED-012's lesson about attachments told
    * once more.

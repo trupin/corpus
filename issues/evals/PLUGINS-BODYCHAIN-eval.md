@@ -84,7 +84,7 @@ the **fingerprint request trace** (TEST-509) and the **M6 highlight-with-the-plu
 | TEST-501 | Anchor follows a reorder                      | PASS   | Moving the anchored item to the end via a whole-body `corpus doc edit --file` → `edited doc_6rmjqayk — 1 anchor remapped`; `range 42-ish → {286,306}`, `orphaned false`, quote unchanged. (The routes have no reorder verb; the substitute lane is the one the log declared.) |
 | TEST-502 | Deleting the item orphans, quote preserved    | PASS   | `DELETE …/items/5` → 200; anchor `range: null`, `orphaned: true`, selector preserved byte-for-byte; `corpus thread show` still renders the thread with its quote; `doc check` warns `anchor-unresolved`; `db doctor` clean. Never silently detached, never re-attached. |
 | TEST-503 | Whole-document commenting never broke         | PASS   | Unanchored `POST /api/threads` on a pre-migration doc (`doc_legacycmnt1`), a migrated doc (`doc_legacydone1`) and a body-backed doc (`doc_64wupngz`) → `th_cm3a7tdj`, `th_57tyyzow`, `th_m2n6yjnw`, all `anchor: None`, `status: open`. |
-| TEST-504 | §15 M6 drill against the newly signed text    | PASS   | See FINDING-E — the full absent/restored table, including the new clause.                                                                                                     |
+| TEST-504 | §12 M6 drill against the newly signed text    | PASS   | See FINDING-E — the full absent/restored table, including the new clause.                                                                                                     |
 | TEST-505 | First todos e2e spec lands, run scoped        | PASS   | `apps/ui/e2e/todos.spec.ts` present, **7** tests with exactly the corrected titles — including `"toggles a checkbox as an ordinary body edit, through no plugin write"` (the honest assertion) and the two added pins. Not re-run by me (Adjudication 16 gives the harvest run that job). |
 | TEST-506 | Core defect filed not fixed; boundary holds   | PASS   | `git diff cb7825d..HEAD -- apps/ui/src packages/kit packages/contract apps/server SPEC.md` → **empty**. No task-list round-trip or capture defect was found by me either: the editor round-trips the list and captures a truthful quote. **Open Conflict 1 resolves to "no defect", confirmed independently.** |
 
@@ -215,7 +215,7 @@ Both outcomes satisfy TEST-500's actual requirement (attached with an honest quo
 orphan — never a silent misattachment). The log's "in both lanes" is true for the lanes it drilled;
 it should not be read as "every rename recomputes".
 
-### FINDING-E — TEST-504, the §15 M6 drill, run for real
+### FINDING-E — TEST-504, the §12 M6 drill, run for real
 
 `plugins/todos` was moved **out of the repository** into scratch (33-file checksum manifest taken
 first), the server and Vite restarted, the board and reader inspected, then moved back and both

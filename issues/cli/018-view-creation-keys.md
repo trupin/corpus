@@ -1,4 +1,4 @@
-# [CLI-018] Agent-writable view keys: make §11's "pin me a view" promise reachable
+# [CLI-018] Agent-writable view keys: make §10's "pin me a view" promise reachable
 
 ## Domain
 cli
@@ -17,12 +17,12 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — "@agent pin me a view of unresolved finance threads just works"
+- SPEC.md §10 — "@agent pin me a view of unresolved finance threads just works"
 
 ## Summary
 Wave-3 audit SPEC 37: `pinned`/`order`/`query`/`column` are core-reserved keys, so
 CLI-016's `--extra` refuses them and no other flag writes them — the CLI-only agent
-cannot create or pin a view, leaving §11's promise unreachable. Design space: dedicated
+cannot create or pin a view, leaving §10's promise unreachable. Design space: dedicated
 flags on `doc create`/`doc edit` (`--pinned`, `--order`, `--query k=v…`), or a
 `corpus view create|pin` verb pair. Also decide audit SPEC 38 here: whether `--extra`
 gains a documented object escape hatch (the publish plugin stores `publish: {…}`) or
@@ -56,7 +56,7 @@ contract gaps — no contract change was needed or made (TEST-645).
 
 Argued from what a CLI-only agent reading `corpus --help` finds.
 
-- **§11 says a column *is* a document** — "deletable like any document, nothing
+- **§10 says a column *is* a document** — "deletable like any document, nothing
   hardwired". A `corpus view` topic would be a second species: it would need its own
   `edit`, `archive`, `unarchive`, `list` and `show` to be usable, or it would strand the
   agent switching topics mid-task ("pin it with `corpus view pin`, retitle it with
@@ -162,7 +162,7 @@ $ /usr/bin/grep -n -- "--pinned\|--order\|--query\|--column\|--extra-json" docs/
 
 One hit, and it is `doc list`'s read **filter**. No verb wrote any of the four keys, and
 `--extra pinned=true` fell to `FLAG_FOR_RESERVED_KEY`'s generic branch ("Core keys are
-not user-writable through `--extra`") with nowhere to go. §11's sentence was unreachable.
+not user-writable through `--extra`") with nowhere to go. §10's sentence was unreachable.
 
 ### Setup
 
@@ -186,7 +186,7 @@ $ corpus doc create --type thread --title "Can we refinance?" --from agent -m "x
 created th_y3egm5xj — data/threads/th_y3egm5xj.md
 ```
 
-### TEST-633 — the §11 sentence, walked with nothing but documented verbs — **PASS**
+### TEST-633 — the §10 sentence, walked with nothing but documented verbs — **PASS**
 
 One command, taken verbatim from `doc create`'s own generated example:
 
@@ -375,7 +375,7 @@ todos plugin ("Nothing open. Every todo list is clear.").
 (NAVIGATIONS 2): the same column, in the **same position**, showing "Plugin missing —
 This column renders `not-installed`'s board view, which is not installed. Restore the
 plugin to bring the column back, or unpin this list — its view document is untouched
-either way." (§15 M6.) The refusal is about the *shape* only; `readColumn`'s read-side
+either way." (§12 M6.) The refusal is about the *shape* only; `readColumn`'s read-side
 asymmetry was left alone, per the contract's note.
 
 _One deviation from the contract's wording, deliberate._ TEST-638 writes the example as

@@ -24,7 +24,7 @@ opus
 ## Spec References
 
 - SPEC.md **§7** line 397 — the additional document roots
-- SPEC.md **§11** line 539 — creation is inbox-first
+- SPEC.md **§10** line 539 — creation is inbox-first
 
 ## Summary
 
@@ -76,7 +76,7 @@ carries:
 
 > Folder under `data/docs/`, accepted either as a bare name (`finance`) or as
 > the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is
-> inbox-first (SPEC.md §11) — **except for a type that SPEC.md §7 gives its own
+> inbox-first (SPEC.md §10) — **except for a type that SPEC.md §7 gives its own
 > document root**, which is where an omitted `folder` files it: a
 > `type: agent-def` document lands in `.claude/agents/`. Such a root may also be
 > named outright, by its exact declared path (`.claude/agents`), and a root named
@@ -173,7 +173,7 @@ create-has-grammar: true
 
 > Folder under `data/docs/`, accepted either as a bare name (`finance`) or as
 > the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is
-> inbox-first (SPEC.md §11), and the agent files inbox arrivals per its skill.
+> inbox-first (SPEC.md §10), and the agent files inbox arrivals per its skill.
 
 `CreateDocRequest.properties.folder.description` (new): the sentence above,
 continued with the §7-root grammar — the by-type default (`type: agent-def` →

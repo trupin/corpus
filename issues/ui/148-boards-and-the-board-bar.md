@@ -13,7 +13,7 @@ P0
 opus
 
 ## Dependencies
-- Depends on: CONTRACT-074, SERVER-138
+- Depends on: CONTRACT-077, SERVER-138
 - Blocks: UI-149, UI-152, UI-153
 
 ## Spec References
@@ -59,7 +59,7 @@ Vitest for `useBoards`, column resolution, v3 migration, the one-board rule; Pla
 
 ## E2E Verification Plan
 ### Verification Steps
-1. Real app on a fresh `corpus init` (AGENT-042 seeds): three tabs in order; drag Files first; reload; order holds; `corpus doc show` on each board shows the rewritten `order`.
+1. Real app on a fresh `corpus init` (AGENT-044 seeds): three tabs in order; drag Files first; reload; order holds; `corpus doc show` on each board shows the rewritten `order`.
 2. Archive Attention and Files → `×` gone on the last; archive via menu refused.
 
 ## E2E Verification Log

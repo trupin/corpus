@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md **§11** — bulk mode, per-row staged actions, and Save
+- SPEC.md **§10** — bulk mode, per-row staged actions, and Save
 - SPEC.md **§4** — "A Save carrying a mix of verbs is still one act and still one
   commit"
 
@@ -85,9 +85,9 @@ entry; OpenAPI drift.
    `{entries: {id, action}[], wholeResultSet?: {query, action}}`. The alternative
    — one `entries` list holding a discriminated union of `{kind: "id", …}` and
    `{kind: "query", …}` — was rejected because two rules would then have to be
-   *remembered* rather than being structural: §11's "a whole-result-set selection
+   *remembered* rather than being structural: §10's "a whole-result-set selection
    stages as a **single** entry" (singular field ⇒ at most one, unspellable
-   otherwise) and §11's "a whole-result-set selection cannot be deleted"
+   otherwise) and §10's "a whole-result-set selection cannot be deleted"
    (`wholeResultSet.action` is the act union **minus `delete`**, so the
    restriction is a type error in the generated client rather than a `400`
    somebody discovers after confirming on 412 documents).
@@ -100,7 +100,7 @@ entry; OpenAPI drift.
    so an unrecognised key or value is a `400` for the whole request.
    CONTRACT-037's "ids, never a filter" is therefore **narrowed, not reversed**:
    a filter still cannot stand in for enumerated rows, and the one thing it may
-   express is the one selection §11 says has no enumerated form.
+   express is the one selection §10 says has no enumerated form.
 3. **A repeated id is a `400`, not a collapse.** CONTRACT-037 collapsed repeats
    because a repeated member of an `ids` **set** carried no information. A
    repeated staged **row** carries a verb that may contradict its twin, so the
@@ -139,7 +139,7 @@ cannot: `BulkActionRequestSchema` carries `{id, action}` pairs and a
 `wholeResultSet` query and **no key**, so there is no version to compare against.
 `stale` exists only as a declared enum value, which the contract file says in as
 many words. Struck from §9.2 on 2026-08-13, along with the `409` that only made
-sense beside it. **§11 carried the same claim** (signed 2026-08-05, predating all
+sense beside it. **§10 carried the same claim** (signed 2026-08-05, predating all
 of this) and was struck the same day on the user's authorization: a bulk Save
 reports what did not apply, what failed validation, what could not be written and
 what was unknown — it does not report staleness, because it is not given the
@@ -154,27 +154,27 @@ a note to that effect is in its issue file.
 
 The text as applied, with the repair above folded in:
 
-> - `POST /api/docs/bulk` — applies a column's **staged set** (§11) as a single
+> - `POST /api/docs/bulk` — applies a column's **staged set** (§10) as a single
 >   act, which is what makes §4's "One action, one commit" something a client can
 >   ask for: the board makes one request per Save, never one per document and
 >   never one per verb. The body carries the individually staged rows as
 >   `{id, action}` **pairs** — each row its own action, so archiving three
 >   documents and resolving two is one request and therefore one commit — plus,
->   optionally, §11's whole-result-set selection as a **single entry** carrying
+>   optionally, §10's whole-result-set selection as a **single entry** carrying
 >   one action for the column's query rather than for enumerated ids, its count
 >   re-evaluated when the Save runs and covering everything the query matches
 >   except the ids named individually. The acts are archive, unarchive, resolve,
 >   reopen, move, tag (a delta of added and removed tags, never a replacement,
->   §11), mark still current, and delete — `delete` on an enumerated row only,
->   since §11 forbids deleting a whole-result-set selection. A staged set that
+>   §10), mark still current, and delete — `delete` on an enumerated row only,
+>   since §10 forbids deleting a whole-result-set selection. A staged set that
 >   names nothing, or that names one document twice, is refused for the whole
 >   request naming the id and, where they differ, both acts: a row carries exactly
 >   one staged action, and picking one silently would be a choice about someone's
 >   documents. Otherwise it **applies to what it can and reports what it could
->   not** (§11): the result names individually what **changed**, what was
+>   not** (§10): the result names individually what **changed**, what was
 >   **already in that state** (a no-op, not a failure), and what **did not change
 >   and why** — each with the act that applied to it, since a Save carries a mix —
->   one the act does not apply to reported as such, one failing §14 validation
+>   one the act does not apply to reported as such, one failing §11 validation
 >   refused with its reason, one whose file could not be written reported as
 >   such, and an unknown id reported as such. Partial application is a `200`;
 >   there is no `404`, because an unknown id is a per-document outcome here
@@ -316,7 +316,7 @@ carries `action` and a typed `lock.holder`; a staged set holding a `delete` from
 the agent is the typed `403`. Five of the assertions are **compile-time**,
 checked by `tsc --noEmit`: `TagIsADelta`, `MoveNeedsAFolder`,
 `EveryRowCarriesAVerb`, `EnumeratedRowMayDelete`, and
-`WholeResultSetMayNotDelete` — the last is §11's "a whole-result-set selection
+`WholeResultSetMayNotDelete` — the last is §10's "a whole-result-set selection
 cannot be deleted" as a type error rather than a runtime refusal.
 
 **6. Real requests through the mounted routes** —
@@ -388,7 +388,7 @@ concurrent ui-dev agent's work in `apps/ui/src/editor` and is not this issue's.
 one commit, `git show --name-only` agreeing with `changed`, a whole-result-set
 query re-evaluated at Save time — belongs to SERVER-087 and UI-083. This issue's
 E2E is that the contract regenerates idempotently, the client compiles against
-it, and the shape can express what §4 and §11 now require while refusing what
+it, and the shape can express what §4 and §10 now require while refusing what
 they forbid.
 
 **Refused / not done, deliberately:**

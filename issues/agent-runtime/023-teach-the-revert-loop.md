@@ -36,7 +36,7 @@ opus
 with an old revision and destroyed uncommitted edits unrecoverably, at exit 0.
 The user's decision was not to fix the verb but to remove it — **a revert is a
 write whose content came from history**, and through the ordinary write path it
-reconciles anchors (§6), validates (§14), commits under the acting party (§4) and
+reconciles anchors (§6), validates (§11), commits under the acting party (§4) and
 is protected by §7's key. A dedicated verb reimplements all four and gets them
 wrong.
 

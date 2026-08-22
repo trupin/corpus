@@ -50,8 +50,8 @@ const PublishContext = createContext<PublishSaveStatus | null>(null);
  *
  * Absent, the chip renders as the empty `.save-chip` element the head has
  * always carried — which is what keeps a surface with no editor (a thread
- * conversation, a plugin-rendered document) from reflowing when the editor is
- * not there.
+ * conversation, a `view` document) from reflowing when the editor is not
+ * there.
  */
 export function SaveStatusProvider({ children }: { readonly children: ReactNode }): ReactElement {
   const [value, setValue] = useState<SaveStatusValue>(IDLE);
@@ -112,7 +112,7 @@ const ORDINARY_SAVE_CHIP_TEXTS = [
 ] as const;
 
 /**
- * **The width the chip's box is reserved to** (UI-135, SPEC.md §11's *"nothing
+ * **The width the chip's box is reserved to** (UI-135, SPEC.md §10's *"nothing
  * resizes because of what it holds"*): the wider of the two ordinary strings
  * above, derived rather than written out, so the reservation cannot drift from
  * the copy. Change a word in `saveChipText` and the box changes with it.

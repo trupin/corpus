@@ -39,7 +39,7 @@ export const listDocs = createRoute({
   description:
     "Structured filters compose with optional full-text search: values OR within a comma-separated " +
     "parameter and AND across parameters. The default result set excludes `status: archived` " +
-    "(SPEC.md §11) unless `status` is passed explicitly. The thread-only filters — `parent`, " +
+    "(SPEC.md §10) unless `status` is passed explicitly. The thread-only filters — `parent`, " +
     "`agent`, `author` and `unread` — no-op for non-thread types rather than erroring (SPEC.md " +
     "§9.2). `isParent` is not one of them: it selects roots — documents with no parent — for " +
     "every type, and is the one filter that is **refused** in combination, since `parent=<id>` " +
@@ -191,7 +191,7 @@ export const createDoc = createRoute({
   },
   responses: {
     422: UNKNOWN_JOB_RESPONSE,
-    201: jsonContent(DocMutationResponseSchema, "The created document, and any §14 warnings."),
+    201: jsonContent(DocMutationResponseSchema, "The created document, and any §11 warnings."),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
   },
@@ -265,7 +265,7 @@ export const moveDoc = createRoute({
     422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       DocMutationResponseSchema,
-      "The document at its new path, and any §14 warnings.",
+      "The document at its new path, and any §11 warnings.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
@@ -312,7 +312,7 @@ export const archiveDoc = createRoute({
     422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       DocMutationResponseSchema,
-      "The document, now archived, any §14 warnings, and what a skill folder move carried.",
+      "The document, now archived, any §11 warnings, and what a skill folder move carried.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
@@ -359,7 +359,7 @@ export const unarchiveDoc = createRoute({
     422: UNKNOWN_JOB_RESPONSE,
     200: jsonContent(
       DocMutationResponseSchema,
-      "The document, restored, any §14 warnings, and what a skill folder move carried.",
+      "The document, restored, any §11 warnings, and what a skill folder move carried.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
@@ -386,7 +386,7 @@ export const deleteDoc = createRoute({
   responses: {
     200: jsonContent(
       DeleteDocResultSchema,
-      "The deleted id, the threads it orphaned, and any §14 warnings.",
+      "The deleted id, the threads it orphaned, and any §11 warnings.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,

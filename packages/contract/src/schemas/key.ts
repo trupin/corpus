@@ -82,7 +82,7 @@ import { z } from "@hono/zod-openapi";
  *      the file rather than the document, so it is not stable under the ordinary
  *      operations a workspace performs on its own files.
  *   - **The git blob hash of `HEAD`.** Fails (1) and (4): the working tree
- *      legitimately differs from `HEAD` (a hook rejected the auto-commit, §14),
+ *      legitimately differs from `HEAD` (a hook rejected the auto-commit, §11),
  *      so the version you read may have no blob at all, and it puts a git
  *      invocation on every document read.
  *   - **A version counter, an ETag registry, or any issued token.** Fails (2)

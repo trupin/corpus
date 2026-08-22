@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: SHARED-064 (rider 7 signed)
-- Blocks: SERVER-136, CLI-060, UI-150
+- Blocks: SERVER-139, CLI-062, UI-150
 
 ## Spec References
 - SPEC.md §9.2 — "HTTP API" (folder acts; "a response's warnings also carry effects on documents the request never named")
@@ -47,7 +47,7 @@ The explorer offers standard actions on directories, and the server has none: ev
 
 ### Edge Cases
 - A folder that holds a skill (`.claude/skills/...`) is outside `data/docs/` and outside these routes: `400`, "skills are archived by document".
-- Renaming to a different case on a case-insensitive filesystem is the server's problem (SERVER-136), but the contract documents that `to` is compared exactly.
+- Renaming to a different case on a case-insensitive filesystem is the server's problem (SERVER-139), but the contract documents that `to` is compared exactly.
 
 ## Testing Strategy
 Schema tests for path validation; a route-definition test that mounts the four routes on a stub and round-trips one success and one refusal each.

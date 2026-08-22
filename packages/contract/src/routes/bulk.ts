@@ -9,7 +9,7 @@ import {
 } from "./responses.js";
 
 /**
- * SPEC.md §4's "One action, one commit" and §11's bulk mode — a column's staged
+ * SPEC.md §4's "One action, one commit" and §10's bulk mode — a column's staged
  * set, and the Save that applies it — as one route. Why one route rather than
  * eight, why a staged row is an id rather than a filter, why the whole-result-set
  * selection is the one entry that is a query, and why partial failure is a `200`
@@ -31,14 +31,14 @@ import {
  * inference** (SHARED-032, 2026-08-09). §4: "A Save carrying a mix of verbs is
  * still one act and still one commit — archiving three documents and resolving
  * two is one pass, so it is one commit, not one per verb; anything else would
- * make the history disagree with the single report §11 requires." The server
+ * make the history disagree with the single report §10 requires." The server
  * implementation may not group the staged set by verb and write once per group,
  * and the fact that this route accepts the mix in one request is what removes the
  * excuse.
  *
  * **The three-part result and the commit's file list are one computation**, and
  * the agreement between them runs one way. They are not two answers that might
- * disagree: §11 puts it as "the history agrees with it (§4)", and concretely
+ * disagree: §10 puts it as "the history agrees with it (§4)", and concretely
  * every document `changed` names has a file in `git show --name-only <commit>`.
  * Not the converse — a commit may legitimately carry files for documents the act
  * never named. The description below states both ways that happens today and why
@@ -60,7 +60,7 @@ export const applyBulkAction = createRoute({
   description:
     "Applies a **staged set** to several documents and answers for all of them — the board makes " +
     "one request per Save, never one per document and never one per verb. **Each entry carries " +
-    "its own action** (SPEC.md §11: in bulk mode each row carries its own staged action), so " +
+    "its own action** (SPEC.md §10: in bulk mode each row carries its own staged action), so " +
     "archiving three documents and resolving two is one request. **The act lands as a single " +
     'auto-commit** (SPEC.md §4, "One action, one commit"), authored by the acting party like ' +
     "any other mutation: archiving twenty documents is one commit, not twenty, so reverting the " +
@@ -88,7 +88,7 @@ export const applyBulkAction = createRoute({
     "repeated saves of *one* document, never about one act across many). An implementation that " +
     "loops the single-document write path is therefore wrong rather than merely slower — it " +
     "produces N commits and has nothing honest to put in `commit`.\n\n" +
-    "**A whole-result-set selection is one entry, not a list of ids.** §11: because there is no " +
+    "**A whole-result-set selection is one entry, not a list of ids.** §10: because there is no " +
     "per-row gesture for rows nobody enumerated, such a selection stages as a **single entry** " +
     "carrying one action for everything the column's query matches. `wholeResultSet` is that " +
     "entry — at most one, beside any number of enumerated `entries` — and **the count is " +
@@ -96,15 +96,15 @@ export const applyBulkAction = createRoute({
     "query rather than as ids the caller resolved earlier. It covers everything the query " +
     "matches **except** the ids `entries` names individually, so no document is ever acted on " +
     "twice and a hand-staged row keeps the verb the person chose. **`delete` cannot be spelled " +
-    'on it at all** (§11: "all 412 matching" is not a set anyone read before confirming), which ' +
+    'on it at all** (§10: "all 412 matching" is not a set anyone read before confirming), which ' +
     "is a type error in the generated client rather than a runtime refusal. The ids it resolves " +
     "to appear in the result like any other, which is the only place the caller learns them.\n\n" +
-    '**Partial application is the normal case, and it is a `200`.** §11: a Save "applies ' +
+    '**Partial application is the normal case, and it is a `200`.** §10: a Save "applies ' +
     'to what it can and reports what it could not" and "never refuses the whole set because of ' +
     'one document". The result states three parts — what `changed`, what was `alreadyInState` ' +
     "(a document already archived is a no-op, **not** a failure), and, listed apart from both, " +
     "what was `refused` and why, each named individually **with the verb that applied to it**. One " +
-    "that fails validation is refused with its reason (§14); an unknown id is refused as " +
+    "that fails validation is refused with its reason (§11); an unknown id is refused as " +
     "`not-found`; a row the act does not apply to is refused as `not-applicable`; one whose " +
     "file could not be written is refused as `write-failed`; the rest go through. **There is no " +
     "staleness refusal**: every act here names its own delta, so none presents a key (SPEC.md " +
@@ -117,7 +117,7 @@ export const applyBulkAction = createRoute({
     "the request's, not a per-document outcome — exactly as `DELETE /api/docs/{id}` rejects it. " +
     "The agent archives, never deletes. Every other act is available to both parties.\n\n" +
     "**A `400` answers a staged set that cannot be applied as written**: nothing staged at all " +
-    "(no `entries` and no `wholeResultSet`), or one id staged twice. §11 makes a row carry " +
+    "(no `entries` and no `wholeResultSet`), or one id staged twice. §10 makes a row carry " +
     "exactly one staged action, so a repeated id means the staged set was keyed wrong; where the " +
     "two entries name different verbs the message says both, because choosing one silently would " +
     "be a choice about someone's documents and applying both would write one document twice " +
@@ -125,7 +125,7 @@ export const applyBulkAction = createRoute({
     "already being in the target state is a different thing entirely — a legal, successful act " +
     "that changes nothing and therefore makes **no commit at all**: `200`, empty `changed`, null " +
     "`commit`. The single-document routes are unchanged and remain the " +
-    "path for the reader's ⋯ menu and per-row quick actions (§11) — this route is for a " +
+    "path for the reader's ⋯ menu and per-row quick actions (§10) — this route is for a " +
     "selection, and the difference between them is the commit.",
   request: {
     headers: ActorHeaderSchema,
@@ -133,7 +133,7 @@ export const applyBulkAction = createRoute({
       required: true,
       description:
         "The staged set: the individually staged rows, each with its own act, and optionally " +
-        "§11's single whole-result-set entry. `entries` is mandatory, so the body is too.",
+        "§10's single whole-result-set entry. `entries` is mandatory, so the body is too.",
       content: { "application/json": { schema: BulkActionRequestSchema } },
     },
   },
@@ -141,7 +141,7 @@ export const applyBulkAction = createRoute({
     200: jsonContent(
       BulkActionResultSchema,
       "What changed, what was already in that state, what did not change and why — each named " +
-        "with the verb that applied to it, plus the single commit the act landed as, and any §14 " +
+        "with the verb that applied to it, plus the single commit the act landed as, and any §11 " +
         "warnings.",
     ),
     400: VALIDATION_RESPONSE,

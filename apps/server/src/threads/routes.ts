@@ -139,7 +139,7 @@ export function mountThreadRoutes(
     return c.json(result, 200);
   });
 
-  // Both carry §14's warnings on the response rather than only in the log:
+  // Both carry §11's warnings on the response rather than only in the log:
   // resolving rewrites the thread's frontmatter and auto-commits it, so a
   // workspace git hook that refuses the commit leaves the change on disk and
   // uncommitted — drift the person who clicked *Resolve* has to be told about.

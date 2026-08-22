@@ -2,7 +2,7 @@ import type { ThreadTurn } from "@corpus/kit";
 
 /**
  * Which model wrote a turn — and, just as importantly, when to say nothing
- * (SPEC.md §11, rider signed 2026-08-07).
+ * (SPEC.md §10, rider signed 2026-08-07).
  *
  * The rider's sentence is short and every clause of it is a rule this function
  * enforces: "A turn a person wrote names no model, and a turn written before

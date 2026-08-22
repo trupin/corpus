@@ -796,7 +796,7 @@ function leafToMdast(node: PmNode): MdNode[] {
  *   paragraph becomes a heading.
  *
  * Each of those rewrites the user's own file the first time anything is typed
- * in it, because §11 gives the editor autosave and no save button. So the
+ * in it, because §10 gives the editor autosave and no save button. So the
  * default here is the blank line and the flush spelling is the exception — the
  * safe direction, and the one where a block type the schema grows later is
  * separated rather than silently absorbed. `serialize.test.ts` enumerates

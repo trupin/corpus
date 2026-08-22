@@ -6,7 +6,7 @@ import { keepsNativeMenu } from "../menu/nativeMenu";
 import { blockedOn, blockedOnDetailLabel, jobDotClass, jobLabel } from "./consoleModel";
 
 /**
- * The master half of the console's master-detail (SPEC.md §11): a fixed 380 px
+ * The master half of the console's master-detail (SPEC.md §10): a fixed 380 px
  * list of jobs, newest first, one row per queue event.
  *
  * A row is a real `<button>` inside a `role="listbox"`-free plain list: the
@@ -14,7 +14,7 @@ import { blockedOn, blockedOnDetailLabel, jobDotClass, jobLabel } from "./consol
  * our own, and `aria-current` says which one the detail pane is showing.
  *
  * Right-clicking a row opens that row's own actions — `↗ open` plus, for a
- * `failed` or `deferred` job, Retry and Abandon (SPEC.md §11). The set is the
+ * `failed` or `deferred` job, Retry and Abandon (SPEC.md §10). The set is the
  * detail header's, from one declaration: a running job's menu must not offer
  * Retry, because its header does not.
  *
@@ -46,7 +46,7 @@ export function JobList({ jobs, selectedId, onSelect }: JobListProps): ReactElem
             }}
             onContextMenu={(event) => {
               // A selection anywhere on the page does not suppress a job row's
-              // own menu (SPEC.md §11, user report 2026-07-30).
+              // own menu (SPEC.md §10, user report 2026-07-30).
               if (keepsNativeMenu({ target: event.target })) return;
               event.preventDefault();
               // The menu acts on the row under the cursor, which is not

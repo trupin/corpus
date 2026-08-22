@@ -24,7 +24,7 @@ import {
 } from "./threadCollapse.js";
 
 /**
- * SPEC.md §11's collapse rules as arithmetic, away from any component.
+ * SPEC.md §10's collapse rules as arithmetic, away from any component.
  *
  * The three sentences under test are the ones the rider spends most of its
  * length on, and each of them is a thing that would be a bug if it drifted: the
@@ -54,7 +54,7 @@ describe("the one rule", () => {
    * and used to answer the interlock with a guess. The rule asks for knowledge,
    * so it stands down on `unknown` exactly as it does on `unread`: a fold hides
    * the turns (SPEC.md §7), and a surface that cannot vouch that they have been
-   * read cannot make §11's promise about what the fold costs.
+   * read cannot make §10's promise about what the fold costs.
    */
   it("never folds a conversation whose read state it does not know", () => {
     expect(resolvedRuleCollapses(subject({ status: "resolved", readState: "unknown" }))).toBe(
@@ -93,7 +93,7 @@ describe("the one rule", () => {
   });
 
   /**
-   * The interlock binds **the rule** — §11's words — and depth is not a rule:
+   * The interlock binds **the rule** — §10's words — and depth is not a rule:
    * `threadDepth.ts` says it is "what the surface can draw". Letting the
    * interlock jump the depth clamp drew a full card at a depth the surface had
    * already declared it could not usefully draw (PR #25 review, MINOR).
@@ -186,7 +186,7 @@ describe("the stored blob", () => {
       status: "resolved",
     });
     expect(surfaceOverrides(state, columnSurface("col_b"))["th_2"]?.collapsed).toBe(true);
-    // Two columns showing the same document keep their own (SPEC.md §11).
+    // Two columns showing the same document keep their own (SPEC.md §10).
     expect(surfaceOverrides(state, columnSurface("col_b"))["th_1"]).toBeUndefined();
   });
 

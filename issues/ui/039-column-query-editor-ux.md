@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §5 views / §11 column configure (the query editor surface)
+- SPEC.md §5 views / §10 column configure (the query editor surface)
 
 ## Summary
 Live dogfood report (2026-08-02, screenshot): editing a column's query presents
@@ -33,7 +33,7 @@ without leaving the editor.
 - [x] Typing in the query input suggests field names; after `field=`/operator,
       suggests real values from the workspace (via existing projection
       endpoints — no new routes unless escalated)
-- [x] Suggestions follow the app's existing autocomplete conventions (the §11
+- [x] Suggestions follow the app's existing autocomplete conventions (the §10
       smart-input machinery, arrows/↵/esc)
 - [x] A visible help button on the editor opens a syntax reference with
       examples; dismissible; keyboard reachable
@@ -50,7 +50,7 @@ Non-blocking, no commit-path validation, both existing error states untouched.
 
 ## Technical Design
 ### Files to Create/Modify
-- Column configure/query editor components; reuse the §11 autocomplete
+- Column configure/query editor components; reuse the §10 autocomplete
   machinery if practical (smart input already suggests docs/skills/agents)
 - Help content colocated with the editor; sourced from the actual parser's
   grammar so it cannot drift silently — escalate if the parser lives

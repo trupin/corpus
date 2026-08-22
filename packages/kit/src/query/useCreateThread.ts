@@ -69,7 +69,7 @@ export function useCreateThread(
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.body === "" ? {} : { text: input.body }),
         ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
-        // The stated weight rides on the multipart branch too (SPEC.md §11
+        // The stated weight rides on the multipart branch too (SPEC.md §10
         // names a comment carrying a file among the surfaces that may state
         // one), so attaching a file cannot silently drop it.
         ...(input.weight === undefined ? {} : { weight: input.weight }),

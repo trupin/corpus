@@ -1,4 +1,4 @@
-// `POST /api/docs/{id}/archive` and `/unarchive` (SPEC.md §7, §11).
+// `POST /api/docs/{id}/archive` and `/unarchive` (SPEC.md §7, §10).
 //
 // Archiving is "a reversible organizational act, never a deletion" — the file
 // stays, git keeps everything, and the document stays indexed. It drops out of
@@ -270,7 +270,7 @@ function assertMergeable(workspaceRoot: string, move: FolderMove): void {
  * Two things a carried document is still deliberately not given. Its `updated`
  * is not stamped: nothing about its content changed, and §5's staleness clock
  * must not be reset by a neighbour's archiving. Nor is a carried write put
- * through §14 validation — the file's content is the author's, unchanged but for
+ * through §11 validation — the file's content is the author's, unchanged but for
  * keys the system owns, so a finding would be about a document this act never
  * asked to edit.
  */
@@ -322,14 +322,9 @@ function ownedFields(
  * sitting under `.claude/skills-archived/` is archived whatever its own `status`
  * key says, and it is that half-state this route exists to repair.
  *
- * §5's other carve-out — a type whose status is **derived** (§12) returns to
- * whatever its record says at that moment — needs no branch here, and
- * deliberately does not get one (SERVER-085). This writes `resolved`, which is
- * simply "no longer archived" as far as a derived type is concerned; the write
- * pipeline then converges the file to whatever the document's own content says,
- * in the same write and the same commit (`docs/derived-fields.ts`). Branching
- * here as well would be the rule in two places, and the second copy would be the
- * one that forgets that unarchiving is not the only verb this has to hold for.
+ * Unarchiving writes `RESTORED_STATUS` unconditionally. It is deliberately not
+ * a memory of the status the document had before archiving — nothing keeps one,
+ * and §5 asks for none.
  */
 function restoredStatus(loaded: LoadedDocument, archived: boolean): Record<string, unknown> {
   if (archived) return { status: "archived" };
@@ -521,7 +516,7 @@ function planCarriedWrites(
  * folder lives.
  *
  * Validation is deliberately left to the caller: it needs `path` and `text`,
- * which are exactly what this returns, and the two callers report a §14 refusal
+ * which are exactly what this returns, and the two callers report a §11 refusal
  * differently (a `400` for one document, a `refused` entry for one of many).
  *
  * `held` is the set of document ids whose write lane the caller holds. It always
@@ -614,7 +609,7 @@ export async function setArchived(
       return { doc: toWireDoc(workspace, loaded), result: emptyResult() };
     }
 
-    // §14's findings about the bytes being written, then §7's about the
+    // §11's findings about the bytes being written, then §7's about the
     // documents this act carried. The two are independent: `plan.text === null`
     // is a folder move that rewrote nothing of the requested document, which is
     // exactly the case where the carried warnings matter most — every skill

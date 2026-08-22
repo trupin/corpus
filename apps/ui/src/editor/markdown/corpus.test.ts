@@ -11,7 +11,7 @@ import { serializeDoc } from "./serialize.js";
  * The round trip, over the repository's own documents — the sweep as a test
  * (UI-104).
  *
- * §11 gives the editor autosave and no save button, so **opening a document and
+ * §10 gives the editor autosave and no save button, so **opening a document and
  * typing one character writes the serializer's opinion of it to disk**. What
  * that opinion changes is therefore not an aesthetic question: §5 makes the
  * file the source of truth and §1 makes it the user's. This file is the guard,

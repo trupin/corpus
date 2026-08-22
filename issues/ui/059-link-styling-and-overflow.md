@@ -18,7 +18,7 @@ opus
 
 ## Spec References
 - `design/index.html` is authoritative for look and feel
-- SPEC.md §11 Thread view / Document view
+- SPEC.md §10 Thread view / Document view
 
 ## Summary
 Live report 2026-08-03, with a screenshot: a pasted Google Docs URL in a thread
