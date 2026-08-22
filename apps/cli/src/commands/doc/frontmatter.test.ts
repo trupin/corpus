@@ -53,8 +53,9 @@ describe("--extra-json", () => {
     });
   });
 
-  it("carries the array-of-objects shape a plugin key actually has", () => {
-    // SPEC.md §12's `todo` document: the shape CONTRACT-011 sized
+  it("carries the array-of-objects shape an extra key actually has", () => {
+    // A document carrying a list of records under its own key: the shape
+    // CONTRACT-011 sized
     // `EXTRA_MAX_DEPTH` around, and the one `--extra` could never express.
     expect(parseExtraJsonFlags(['items=[{"text":"Ship it","done":false}]'])).toEqual({
       items: [{ text: "Ship it", done: false }],

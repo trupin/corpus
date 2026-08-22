@@ -5,17 +5,10 @@
 // disk on every read — the projection supplies only the id → path mapping and
 // the fields the file does not get the last word on: `id`, `type` and `status`,
 // which a document root can override (a hand-written `SKILL.md` carries none of
-// them, and an archived skill's status comes from which folder it sits in), plus
-// `status` and `due` again for a type that **derives** them (§12). That is also
-// what makes read-your-write cheap: the write path projects synchronously, so
-// the path lookup is already current when the next request arrives.
-//
-// **Every derived field comes from the row, and for one reason** (SERVER-085 for
-// `status`, SERVER-134 for `due`): between an out-of-band edit and the next
-// server write the file's copy is a stale shadow, and a single-document read
-// that trusted it would show a deadline the board, the collection query and
-// every filter disagree with — on the one surface a person is looking at the
-// document. The row is the derivation's answer; the file's line is its shadow.
+// them, and an archived skill's status comes from which folder it sits in).
+// That is also what makes read-your-write cheap: the write path projects
+// synchronously, so the path lookup is already current when the next request
+// arrives.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";

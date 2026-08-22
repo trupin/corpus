@@ -1,5 +1,5 @@
 // Reading the §10 view keys and the open extra-frontmatter object out of a
-// frontmatter mapping (SPEC.md §5, §10, §12; CONTRACT-011).
+// frontmatter mapping (SPEC.md §5, §10; CONTRACT-011).
 //
 // One module, because two very different consumers must answer identically
 // about the same file: the projection (`documents` rows, and therefore

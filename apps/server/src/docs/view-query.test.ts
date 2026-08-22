@@ -1,6 +1,6 @@
 // The collection query's CONTRACT-011 surface: the `pinned` filter, the `order`
 // sort and its tiebreak, the view keys and `extra` on every row, and the
-// `parentTitle` live join (SPEC.md §10, §12).
+// `parentTitle` live join (SPEC.md §10).
 //
 // Seeded from real files through the real projector, like every other query
 // suite — and the board's own case is seeded from the **shipped** seed views in
@@ -78,7 +78,8 @@ beforeAll(() => {
   });
 
   // A document whose `type` this build has never heard of (§5's open string,
-  // §12's M6), carrying `items` as a top-level YAML key beside the core ones.
+  // §12's M6 — the open type), carrying `items` as a top-level YAML key beside
+  // the core ones.
   ws.doc({
     id: "doc_errandlist",
     path: "data/docs/inbox/errands.md",

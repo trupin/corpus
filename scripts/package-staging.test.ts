@@ -54,12 +54,9 @@ describe("stripSourceMapComment", () => {
 });
 
 describe("isPackagedArtifact", () => {
-  it.each(["index.js", "routes.js", "SKILL.md", "types.yaml", "index.css"])(
-    "keeps %s",
-    (fileName) => {
-      expect(isPackagedArtifact(fileName)).toBe(true);
-    },
-  );
+  it.each(["index.js", "routes.js", "SKILL.md", "index.css"])("keeps %s", (fileName) => {
+    expect(isPackagedArtifact(fileName)).toBe(true);
+  });
 
   it.each(["index.d.ts", "index.d.ts.map", "index.js.map", "tsconfig.tsbuildinfo"])(
     "drops %s",

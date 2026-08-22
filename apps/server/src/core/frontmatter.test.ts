@@ -41,17 +41,17 @@ describe("FileFrontmatterSchema", () => {
   });
 
   /**
-   * The five fields added below are the ones a *file* does not have to carry
-   * and a *response* always does (CONTRACT-011). `extra` is not a disk key at
-   * all — it is the wire envelope for every non-core key, which on disk sits
-   * beside the core ones (SPEC.md §12) — and the four §10 view keys are
-   * optional in a file the way `tags` and `due` are. `docs/read.ts`'s
+   * The fields added below are the ones a *file* does not have to carry and a
+   * *response* always does (CONTRACT-011). `extra` is not a disk key at all —
+   * it is the wire envelope for every non-core key, which on disk sits beside
+   * the core ones (SPEC.md §9.1) — and the §10 view keys are optional in a file
+   * the way `tags` and `due` are. `docs/read.ts`'s
    * `wireFrontmatter` is what supplies them, which is why this schema's output
    * is a *subset* of the wire shape rather than equal to it.
    */
   it("produces core values the contract's wire schema accepts unmodified", () => {
     const defaulted = FileFrontmatterSchema.parse(CORE);
-    const wire = { ...defaulted, pinned: false, order: null, query: null, column: null, extra: {} };
+    const wire = { ...defaulted, pinned: false, order: null, query: null, extra: {} };
     expect(DocFrontmatterSchema.safeParse(wire).success).toBe(true);
     // Nothing the file schema produced needed changing to get there.
     const parsed = DocFrontmatterSchema.parse(wire) as Record<string, unknown>;

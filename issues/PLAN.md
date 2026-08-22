@@ -1419,7 +1419,7 @@ what is unreflected.
 **Order of work.** SHARED-064 first, rider by rider. Then CONTRACT-074,
 CONTRACT-075 and CONTRACT-076 together. Then SERVER-138, SERVER-136, SERVER-137
 and UI-148 (three at a time on this machine). Then CLI-060, UI-149 and UI-152.
-Then AGENT-042, CLI-061, UI-150, UI-151, UI-153 and PLUGINS-019. Critical path:
+Then AGENT-042, CLI-061, UI-150, UI-151 and UI-153. Critical path:
 SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 
 | ID | Title | Status | Priority | Model | Dependencies |
@@ -1440,4 +1440,4 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | todo | P0 | opus | UI-149, CONTRACT-075 |
 | UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | todo | P1 | opus | UI-149 |
 | UI-153 | The Reflect control, and what changed since the agent last looked | todo | P1 | opus | UI-148, SERVER-137 |
-| PLUGINS-019 | A plugin column lives on a board, and its `onOpen` opens a path | todo | P2 | opus | UI-149, AGENT-042 |
+| PLUGINS-019 | A plugin column lives on a board — **closed**, the plugin surface is deleted (SHARED-067) | closed | P2 | opus | UI-149, AGENT-042 |

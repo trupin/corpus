@@ -322,14 +322,9 @@ function ownedFields(
  * sitting under `.claude/skills-archived/` is archived whatever its own `status`
  * key says, and it is that half-state this route exists to repair.
  *
- * §5's other carve-out — a type whose status is **derived** (§12) returns to
- * whatever its record says at that moment — needs no branch here, and
- * deliberately does not get one (SERVER-085). This writes `resolved`, which is
- * simply "no longer archived" as far as a derived type is concerned; the write
- * pipeline then converges the file to whatever the document's own content says,
- * in the same write and the same commit (`docs/derived-fields.ts`). Branching
- * here as well would be the rule in two places, and the second copy would be the
- * one that forgets that unarchiving is not the only verb this has to hold for.
+ * Unarchiving writes `RESTORED_STATUS` unconditionally. It is deliberately not
+ * a memory of the status the document had before archiving — nothing keeps one,
+ * and §5 asks for none.
  */
 function restoredStatus(loaded: LoadedDocument, archived: boolean): Record<string, unknown> {
   if (archived) return { status: "archived" };
