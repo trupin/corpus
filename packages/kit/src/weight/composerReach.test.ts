@@ -23,8 +23,9 @@ describe("whether a composer says sending reaches the agent", () => {
 
   it("defers to the conversation when the flag is omitted (SPEC.md §8)", () => {
     // Omitted is the wire's third state: "enqueue if this thread is already
-    // engaged". Every first-party composer sends an explicit flag; a plugin's
-    // may not, and answering `false` for it would call a live control dead.
+    // engaged". Every composer sends an explicit flag today, but the derivation
+    // is total over the wire — answering `false` here would call a live control
+    // dead.
     expect(composerReachesAgent({ engaged: true })).toBe(true);
     expect(composerReachesAgent({ engaged: false })).toBe(false);
   });

@@ -21,11 +21,11 @@ import { parseWeightLevels, type WeightLevel } from "./weightLevels.js";
  * and would cost a contract issue for something the existing projection already
  * answers.
  *
- * **It lives in `@corpus/kit` because five first-party composers and every
- * plugin composer must offer the same set.** A parser in `apps/ui` cannot be
- * reached from a plugin, and a second copy in kit is the enum problem again with
- * extra steps — the same reasoning SHARED-009's key contract and UI-070's
- * attachment intake were settled by.
+ * **It lives in `@corpus/kit` because every composer must offer the same set,
+ * and the control that offers it is a kit component.** A parser in `apps/ui`
+ * cannot be reached from `ComposerAddress`, and a second copy in kit is the enum
+ * problem again with extra steps — the same reasoning SHARED-009's key contract
+ * and UI-070's attachment intake were settled by.
  *
  * ## Locating the declaration must not depend on a page
  *

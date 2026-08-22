@@ -3,8 +3,8 @@
  * and `.ref` (SPEC.md §10 names the mockup authoritative for look & feel).
  *
  * Shipped from the kit rather than from `apps/ui` because `MarkdownView` is part
- * of the kit contract (SPEC.md §10): a plugin that renders a body must be able
- * to make it look like every other body in Corpus, and:
+ * of the kit contract (SPEC.md §10): every surface that renders a body must be
+ * able to make it look like every other body in Corpus, and:
  *
  *     import "@corpus/kit/markdown.css";
  *
@@ -153,8 +153,8 @@
  *
  * SPEC.md §10: "clicking any rendered image … opens it full-screen over the
  * app". The affordance is declared once, on the class `CorpusImage` puts on
- * every image it draws, so a turn attachment, a document body and a plugin
- * surface all say the same thing about what a click will do.
+ * every image it draws, so a turn attachment, a document body and a compose
+ * preview all say the same thing about what a click will do.
  *
  * `.md-img` alone carries no cursor: without a viewer mounted the image is not
  * clickable, and `role="button"` is what the component adds only when one is.
@@ -199,7 +199,7 @@
  *
  * So the ratio is stated once and the width is the surface's own:
  *
- * - **Prose — a document body, a turn's message, a plugin surface — takes the
+ * - **Prose — a document body, a turn's message, a compose preview — takes the
  *   whole reading measure** (`width: 100%` inside `.doc-body`'s 62ch). That is
  *   the widest the column allows and the size those images rendered at before
  *   the reservation existed, so the change restores the reading size and adds
@@ -328,7 +328,7 @@
  *
  *     ul.contains-task-list > li.task-list-item > input[type=checkbox] + text
  *
- * and that is a shape any plugin importing this stylesheet can produce, because
+ * and that is a shape any host importing this stylesheet can produce, because
  * `MarkdownView` is what produces it.
  *
  * The editor's shape is **not** here (PR #19 review). TipTap's
@@ -485,7 +485,7 @@
    *
    * The one place the number lives. `CodeFence` never reads it: it asks the
    * laid-out box whether there is more than it shows, so retuning this — a
-   * host with a taller reader, a plugin with a denser surface — retunes the
+   * host with a taller reader, a surface with a denser layout — retunes the
    * whole behavior with no code change.
    *
    * **420px ≈ 20 lines of the block's own type** (12.5px mono at the 1.62 line

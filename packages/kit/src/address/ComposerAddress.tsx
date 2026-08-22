@@ -21,8 +21,8 @@ import {
  * the outcome** — who answers, at what weight — that opens to change either.
  *
  * It ships from `@corpus/kit` for the reason the two controls it replaces did:
- * §10's enumeration binds "any composer a plugin contributes", and kit is how a
- * plugin gets a first-party affordance with one import and no copy.
+ * §10's enumeration binds every composer, and kit is how each of them gets the
+ * same affordance with one import and no copy.
  *
  * ## What it renders, and what it refuses to
  *
@@ -143,7 +143,7 @@ function lineTitle(line: string, live: boolean): string {
  * `.reader-scroll`, so the card's ceiling is that scrollport's top edge and not
  * the window's, while the comment popover is portaled to `document.body` and
  * genuinely has the window. Asking the layout rather than naming a host is what
- * makes one rule serve both — and any composer a plugin contributes.
+ * makes one rule serve both — and every other composer besides.
  *
  * ## Why this walk stops at a clip and not only at a scrollport
  *
@@ -314,7 +314,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
     const clip = clipperOf(card);
     // The row the address line was placed in — a composer foot, an action bar.
     // Read from the control's own parent rather than from a class name: the kit
-    // ships this to hosts it does not know, plugins included (SPEC.md §10).
+    // ships this to five hosts whose foot markup is not the same (SPEC.md §10).
     const host = box.current?.parentElement ?? null;
 
     const fit = (): void => {

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget } from "@corpus/kit";
 import {
   captureScrollAt,
   clearRevealAt,

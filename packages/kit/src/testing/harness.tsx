@@ -7,7 +7,7 @@ import { fakeEventSourceFactory, type RecordingEventSourceFactory } from "./fake
 
 /**
  * A mounted kit data layer with no real network and no real `EventSource` —
- * what a plugin (or `apps/ui`) needs to render a kit hook in a test.
+ * what a test needs to render a kit hook at all.
  *
  * The `QueryClient` deliberately does **not** use the kit's production defaults:
  * `retry: 1` with a 500 ms delay turns every error-path assertion into a

@@ -1,6 +1,5 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
-import type { RowNotice } from "@corpus/kit";
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget, RowNotice } from "@corpus/kit";
 import { useId, useMemo, type ReactElement } from "react";
 import { ReattachOffer } from "../reattach/ReattachOffer";
 import { summaryFromRow } from "../thread/CollapsedThread";

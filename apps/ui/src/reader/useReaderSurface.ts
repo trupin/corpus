@@ -1,4 +1,4 @@
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget } from "@corpus/kit";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import { readStateOf } from "../thread/threadCollapse";

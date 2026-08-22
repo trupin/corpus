@@ -12,9 +12,9 @@ import { useRef, type ReactElement } from "react";
  * and the attachment silently does not arrive.
  *
  * Published from the kit alongside {@link useAttachmentIntake} and
- * `PendingAttachments` (UI-070). The picker is the route a plugin cannot supply
- * for itself without re-deriving both of those details, and §10's rider binds
- * "any composer a plugin contributes" to all three routes, not two.
+ * `PendingAttachments` (UI-070). The picker is the route a composer cannot
+ * supply for itself without re-deriving both of those details, and §10's rider
+ * binds every composer to all three routes, not two.
  */
 
 export interface AttachButtonProps {

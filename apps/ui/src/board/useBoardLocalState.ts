@@ -1,4 +1,4 @@
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget } from "@corpus/kit";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 /**

@@ -1,6 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import { useDocs, type RowNotice } from "@corpus/kit";
-import type { OpenPayload } from "@corpus/kit/plugin";
+import { useDocs, type OpenPayload, type RowNotice } from "@corpus/kit";
 import { useEffect, useLayoutEffect, useState, type DragEvent, type ReactElement } from "react";
 import { PluginMissingCard } from "../plugins/PluginMissingCard";
 import { usePluginRegistry } from "../plugins/registry";

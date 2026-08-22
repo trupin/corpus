@@ -26,11 +26,11 @@
  *
  * `requestsAgent` is tri-state on the wire (§8): `true` asks, `false` is note
  * only, and **omitted** means "enqueue if this thread is already engaged" — the
- * server's rule, which needs the thread's own state to answer. Every first-party
- * composer sends an explicit `true` or `false` today, so `engaged` is unused by
- * them; it is here because a plugin composer may legitimately omit the flag, and
- * a derivation that answered `false` for it would tell that composer its control
- * is dead on precisely the threads where sending does wake the agent.
+ * server's rule, which needs the thread's own state to answer. Every composer in
+ * the app sends an explicit `true` or `false` today, so `engaged` is the branch
+ * none of them takes; it is here because the derivation must be total over the
+ * wire, and answering `false` for an omitted flag would report a live control as
+ * dead on precisely the threads where sending does wake the agent.
  */
 
 export interface ComposerReach {

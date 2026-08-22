@@ -2,7 +2,7 @@
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget } from "@corpus/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavEntry } from "../board/useBoardLocalState";
 import {

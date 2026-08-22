@@ -50,14 +50,14 @@ import {
 } from "@corpus/contract/client";
 
 /**
- * The kit's data path, and the only one plugins get (SPEC.md §10).
+ * The kit's data path, and the only one the board gets (SPEC.md §10).
  *
  * It wraps `@corpus/contract`'s generated client rather than re-exporting it.
- * The generated `CorpusApi` is an open `client.GET("/any/path")` surface: handing
- * it to a plugin would make "the kit is the only import surface" unenforceable,
- * because every route would be reachable through the kit's own export. What
- * ships instead is one method per operation the kit actually supports, typed
- * from the contract's schemas, with a uniform thrown error.
+ * The generated `CorpusApi` is an open `client.GET("/any/path")` surface, and a
+ * surface that reaches it caches under no query key, so nothing ever tells it
+ * its data went stale. What ships instead is one method per operation the kit
+ * actually supports, typed from the contract's schemas, with a uniform thrown
+ * error.
  */
 
 export interface CorpusClientConfig {
@@ -79,15 +79,6 @@ export interface CorpusClientConfig {
 
 /** Per-call options every read method accepts, so TanStack can cancel a query. */
 export interface RequestOptions {
-  readonly signal?: AbortSignal;
-}
-
-/** One plugin-route call (SPEC.md §10): JSON in, JSON out, nothing else. */
-export interface PluginRequestInit {
-  /** Defaults to `GET`. */
-  readonly method?: "GET" | "POST" | "PUT" | "DELETE";
-  /** JSON-encoded when present. */
-  readonly body?: unknown;
   readonly signal?: AbortSignal;
 }
 
@@ -278,9 +269,9 @@ export interface CorpusClient {
    * Parameterless and read-only, like {@link getQueueStatus}: §7 makes the
    * roster *"a read, never a push"*, so this answers over HTTP and the SSE
    * stream only ever names `["agents"]`. There is deliberately no designate or
-   * release method beside it — designation is user-only state (§7), and a
-   * plugin that could re-designate a conversation through the kit would be
-   * rewiring a scope on the strength of an import.
+   * release method beside it — designation is user-only state (§7), so a
+   * surface that could re-designate a conversation through the kit would be
+   * rewiring a scope nobody asked it to.
    */
   getAgentRoster(options?: RequestOptions): Promise<AgentRoster>;
   /**
@@ -291,9 +282,9 @@ export interface CorpusClient {
    * answers one snapshot of derived state, and every field on it is a fact the
    * server derived — `state` is what a caller decides with and `detail` is the
    * sentence it renders. **No rebuild method ships beside it**: kicking a
-   * rebuild off is `corpus index rebuild`'s job (SPEC.md §9.1), and a plugin
-   * that could discard the workspace's vectors through the kit would be a
-   * destructive act on the strength of an import.
+   * rebuild off is `corpus index rebuild`'s job (SPEC.md §9.1), and a surface
+   * that could discard the workspace's vectors through the kit would make a
+   * destructive act reachable from a pill that only reports.
    */
   getIndexStatus(options?: RequestOptions): Promise<IndexStatus>;
   getHealth(options?: RequestOptions): Promise<Health>;
@@ -341,21 +332,6 @@ export interface CorpusClient {
    * a `Blob` and owns the object URL it makes from it.
    */
   fetchAttachment(target: string, options?: RequestOptions): Promise<Blob>;
-  /**
-   * `<method> /api/x/<plugin>/<path>` — a plugin's own server routes
-   * (SPEC.md §10, PLUGINS-001).
-   *
-   * Plugin routes live outside the generated contract (a new plugin is zero
-   * contract changes), so this is the one deliberately untyped door in the
-   * client: the caller hands a plugin-relative path, gets `unknown` back, and
-   * validates the payload with its own schema — Zod at the boundary, exactly
-   * as the server does on the way in. Going through the client rather than a
-   * private `fetch` keeps the bearer token, the base URL and the error shape
-   * (`CorpusRequestError`) in one place, and keeps the kit's cache the only
-   * cache — see {@link usePluginQuery} for the read path with SSE
-   * invalidation included.
-   */
-  pluginRequest(plugin: string, path: string, init?: PluginRequestInit): Promise<unknown>;
   /**
    * `POST /api/docs` — zero-form creation (SPEC.md §10).
    *
@@ -1037,28 +1013,6 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         throw new CorpusRequestError("GET /attachments", response.status, payload);
       }
       return response.blob();
-    },
-
-    async pluginRequest(plugin, path, init) {
-      const send = config.fetch ?? globalThis.fetch;
-      const method = init?.method ?? "GET";
-      // Leading slashes normalised away rather than trusted, exactly as for
-      // attachment targets: a path may address the plugin's own routes only.
-      const url = `${config.baseUrl}/api/x/${plugin}/${path.replace(/^\/+/, "")}`;
-      const operation = `${method} /api/x/${plugin}/${path.replace(/^\/+/, "")}`;
-      const response = await send(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${config.token}`,
-          ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
-        },
-        ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-        ...(init?.signal && canForwardAbortSignal() ? { signal: init.signal } : {}),
-      });
-      const payload: unknown =
-        response.status === 204 ? null : await response.json().catch(() => null);
-      if (!response.ok) throw new CorpusRequestError(operation, response.status, payload);
-      return payload;
     },
 
     async createDoc(input) {

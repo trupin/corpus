@@ -8,8 +8,8 @@ import type { KeyboardEvent } from "react";
  * > control names its key, and an IME composition commit never submits.
  *
  * It lives in the kit rather than in `apps/ui` because the sentence binds *every*
- * composer — "and any composer a plugin contributes" — and a plugin may import
- * nothing else (§10). Before this module the app had five composers spelling the
+ * composer (§10), and one implementation they all import is the only way that
+ * holds. Before this module the app had five composers spelling the
  * contract four different ways, one of which (`NewChildThread`) sent a comment on
  * an IME composition commit because it was missing a guard its siblings had.
  * That is what five copies of a keyboard convention costs, so there is one.

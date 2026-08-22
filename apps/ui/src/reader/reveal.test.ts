@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { RevealItem } from "@corpus/kit/plugin";
+import type { RevealItem } from "@corpus/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   chooseOccurrence,

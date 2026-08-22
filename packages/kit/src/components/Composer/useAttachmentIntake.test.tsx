@@ -39,8 +39,8 @@ let latest: AttachmentIntake | null = null;
 /**
  * The whole published trio wired the way a composer wires it — the hook's drag
  * handlers on the surface, its paste handler on the field, the chip strip above
- * it and the 📎 in the foot. A plugin has exactly these imports available and
- * nothing else, so the test composes them the same way.
+ * it and the 📎 in the foot. These four imports are the whole of what a composer
+ * needs, so the test composes them the same way.
  */
 function Host(): ReactElement {
   const intake = useAttachmentIntake();

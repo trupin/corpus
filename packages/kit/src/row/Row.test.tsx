@@ -502,22 +502,22 @@ describe("the reason line", () => {
   });
 });
 
-describe("the plugin seam", () => {
-  it("delegates wholesale to a registered ListItem", () => {
-    function TodoItem({ row }: RowProps): ReactElement {
-      return <li data-plugin-item={row.id}>{row.title}</li>;
+describe("the delegate seam", () => {
+  it("delegates wholesale to a ListItem the host passes", () => {
+    function CustomItem({ row }: RowProps): ReactElement {
+      return <li data-custom-item={row.id}>{row.title}</li>;
     }
     const { container } = renderRow({
-      row: docRowFixture({ id: "todo_1", type: "todo", title: "Home maintenance" }),
-      ListItem: TodoItem,
+      row: docRowFixture({ id: "doc_1", title: "Home maintenance" }),
+      ListItem: CustomItem,
     });
-    expect(container.querySelector("[data-plugin-item='todo_1']")?.textContent).toBe(
+    expect(container.querySelector("[data-custom-item='doc_1']")?.textContent).toBe(
       "Home maintenance",
     );
     expect(container.querySelector(".row")).toBeNull();
   });
 
-  it("does not recurse when the plugin item falls back to Row", () => {
+  it("does not recurse when the delegate falls back to Row", () => {
     function Fallback(props: RowProps): ReactElement {
       return <Row {...props} />;
     }

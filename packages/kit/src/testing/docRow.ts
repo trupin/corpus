@@ -8,8 +8,8 @@ import type { DocRow } from "@corpus/contract";
  * and the nulls are load-bearing: `stale: null` is *fresh*, `unread: null` means
  * "not a thread" rather than "seen", and a test that spells them by hand
  * eventually spells one of them wrong and asserts against a row the server would
- * never send. It ships from `@corpus/kit/testing` because a plugin writing tests
- * for its own `ListItem` needs exactly this.
+ * never send. It ships from `@corpus/kit/testing` because every suite that
+ * renders a row — in this package and in `apps/ui` — needs exactly this.
  */
 export function docRowFixture(overrides: Partial<DocRow> = {}): DocRow {
   return {

@@ -4,9 +4,10 @@ import {
   useDoc,
   useSetDocArchived,
   useUpdateDocById,
+  type OpenPayload,
+  type RevealTarget,
   type RowNotice,
 } from "@corpus/kit";
-import type { OpenPayload, RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Column } from "../board/Column";
 import { measureColumns, previewOrder } from "../board/columnDrag";

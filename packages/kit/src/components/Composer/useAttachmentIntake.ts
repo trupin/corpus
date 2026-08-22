@@ -14,11 +14,10 @@ import {
  *
  * **Why this lives in the kit** (UI-070). SPEC.md §10's rider binds *every*
  * composer — "the global composer, a thread's reply box, a comment on a document
- * selection, a comment on a turn or on a selection within one, **and any
- * composer a plugin contributes**" — and a plugin may import nothing but
- * `@corpus/kit` (§10). While this hook sat in `apps/ui`, the one composer
- * outside that tree was the one composer that could not take a file, and the
- * only ways to fix it were to copy the hook into the plugin or to move it here.
+ * selection, a comment on a turn or on a selection within one" — and the surest
+ * way to satisfy a sentence about all of them is one implementation they all
+ * import. While this hook sat in `apps/ui`, each composer reached it by a
+ * different path and the newest one reached it not at all.
  * `composerKeys.ts` next door settled the same argument the same way.
  *
  * Two details are load-bearing and easy to get wrong:

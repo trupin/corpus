@@ -29,8 +29,8 @@ import { remarkTableCellBreaks } from "./tableBreaks.js";
  * See `tableBreaks.ts` for why the scope is that narrow.
  *
  * **One renderer, every host.** The column reader, focus mode, thread turns and
- * plugin surfaces all render bodies through this component, which is what lets
- * UI-006 swap the read path for TipTap in exactly one place.
+ * the compose preview all render bodies through this component, which is what
+ * lets UI-006 swap the read path for TipTap in exactly one place.
  */
 
 export interface MarkdownViewProps {
@@ -65,7 +65,7 @@ export interface MarkdownViewProps {
    *   ragged lines. A markdown author who wants a break already has two ways
    *   to write one; a person typing into a textarea has none.
    *
-   * A plugin surface rendering through this component keeps today's behavior
+   * A surface rendering documents through this component keeps today's behavior
    * until it opts in — its bodies are documents, not chat.
    */
   readonly hardBreaks?: boolean | undefined;
@@ -171,8 +171,8 @@ export function MarkdownView({
        * Every fenced block on a rendered surface is a copyable canvas (SPEC.md
        * §10's rider). It is wired here, at the one renderer, rather than at the
        * thread: the rider is about *rendered* markdown, and a fence in a turn,
-       * in a `view` body and in a plugin's read surface are the same block seen
-       * from three hosts. The editable body is TipTap and reaches none of this.
+       * in a `view` body and in a compose preview are the same block seen from
+       * three hosts. The editable body is TipTap and reaches none of this.
        */
       pre: CodeFence,
       /*
@@ -181,7 +181,7 @@ export function MarkdownView({
        * left as a bare relative `src` that loads nothing, and a click opens it
        * full-screen wherever a viewer is mounted. Wired here, at the one
        * renderer, for the reason the fence is: a picture in a turn, in a `view`
-       * body and in a plugin's read surface is the same picture seen from three
+       * body and in a compose preview is the same picture seen from three
        * hosts. `src` is optional on the hast node and an image without one is
        * not an image, so it renders as nothing rather than as a broken box.
        */

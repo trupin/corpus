@@ -1,7 +1,7 @@
 /*
  * `design/index.html`'s autocomplete, shipped from the kit with the component
- * that emits it — like `markdown.css` — so a plugin rendering a composer
- * inherits the same menu rather than approximating it.
+ * that emits it — like `markdown.css` — so every surface rendering a completing
+ * input inherits the same menu rather than approximating it.
  *
  *     import "@corpus/kit/autocomplete.css";
  *

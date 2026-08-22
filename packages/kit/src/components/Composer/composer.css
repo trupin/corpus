@@ -6,10 +6,10 @@
  *     import "@corpus/kit/composer.css";
  *
  * `PendingAttachments` draws `.pending-atts` / `.att-chip`; `AttachButton` draws
- * `.clip`. SPEC.md §10's rider binds "any composer a plugin contributes" to the
- * same three intake routes and the same chip previews as the board's own, and a
- * plugin can import the components but not `apps/ui/src/thread/thread.css` — so
- * the look travels with them or it does not travel at all (UI-070).
+ * `.clip`. SPEC.md §10's rider binds *every* composer to the same three intake
+ * routes and the same chip previews, and the components ship from here while
+ * `apps/ui/src/thread/thread.css` does not — so the look travels with them or it
+ * does not travel at all (UI-070).
  *
  * Values resolve against `@corpus/kit/tokens.css`, and the chip's ✕ assumes the
  * host's `button` reset (no border, no padding, inherited font) — the same

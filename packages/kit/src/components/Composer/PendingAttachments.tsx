@@ -6,8 +6,8 @@ import type { PendingAttachment } from "./useAttachmentIntake.js";
  * the preview SPEC.md §6 requires before a file is sent.
  *
  * Published from the kit with {@link useAttachmentIntake} and `AttachButton`
- * (UI-070): a plugin composer that could take a file but drew its own chips
- * would be a second implementation of the one thing §6 describes as a look.
+ * (UI-070): a composer that could take a file but drew its own chips would be a
+ * second implementation of the one thing §6 describes as a look.
  * Import the anatomy with it:
  *
  *     import "@corpus/kit/composer.css";

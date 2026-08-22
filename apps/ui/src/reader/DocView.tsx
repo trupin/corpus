@@ -7,9 +7,9 @@ import {
   THREAD_DOC_TYPE,
   useDoc,
   useDocs,
+  type RevealTarget,
   type RowNotice,
 } from "@corpus/kit";
-import type { RevealTarget } from "@corpus/kit/plugin";
 import { useRef, type ReactElement } from "react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";

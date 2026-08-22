@@ -1,5 +1,4 @@
-import { useSetResident, useSetThreadStatus, type RowNotice } from "@corpus/kit";
-import type { RevealTarget } from "@corpus/kit/plugin";
+import { useSetResident, useSetThreadStatus, type RevealTarget, type RowNotice } from "@corpus/kit";
 import { useCallback, useEffect, useMemo, type MouseEvent, type ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import type { MenuAction } from "../menu/menuModel";

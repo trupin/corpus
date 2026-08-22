@@ -1,11 +1,10 @@
 /**
- * `@corpus/kit` — the only import surface plugins may use (SPEC.md §10).
+ * `@corpus/kit` — the shared UI kit `apps/ui` is built from (SPEC.md §10).
  *
- * This module is a contract, not a convenience barrel. Everything a plugin or a
- * board component is allowed to reach for is here, and the omissions are as
+ * This module is a contract, not a convenience barrel. The omissions are as
  * deliberate as the exports: the generated `openapi-fetch` client, the raw
  * `CorpusApi`, and `@corpus/contract/client`'s transport internals are **not**
- * re-exported, because a plugin that can construct its own client bypasses the
+ * re-exported, because a surface that constructs its own client bypasses the
  * kit's cache, its keys and its invalidation — and then the board stops
  * updating in ways no test would catch.
  *
@@ -15,9 +14,9 @@
  *     import "@corpus/kit/tokens.css";
  *     import "@corpus/kit/row.css";
  *
- * Importing them is how a plugin — or `apps/ui` itself — inherits Corpus theming,
- * including the light/dark contract described in `src/tokens.css`, and the row
- * anatomy described in `src/row/row.css`.
+ * Importing them is how `apps/ui` inherits Corpus theming, including the
+ * light/dark contract described in `src/tokens.css`, and the row anatomy
+ * described in `src/row/row.css`.
  */
 
 export { PACKAGE_NAME } from "./packageName.js";
@@ -41,7 +40,6 @@ export {
   type DocsFilter,
   type FormAnswerInput,
   type JobsParams,
-  type PluginRequestInit,
   type RelatedParams,
   type RequestOptions,
   type SearchParams,
@@ -80,7 +78,6 @@ export {
   type JobLogView,
   type UseJobLogOptions,
 } from "./query/useJobLog.js";
-export { usePluginQuery } from "./query/usePluginQuery.js";
 export { useQueueStatus } from "./query/useQueueStatus.js";
 // SPEC.md §7's roster — who is running, read behind `["agents"]` like any other
 // projection. A read and never a push, so there is no poll and no `staleTime`
@@ -140,8 +137,7 @@ export {
 export {
   // `AGENTS_KEY` joined its siblings here in UI-109: UI-108 published the roster
   // hook without the key the server names to invalidate it, so a board surface
-  // — or a plugin — could read the roster and had no supported way to say it had
-  // gone stale.
+  // could read the roster and had no supported way to say it had gone stale.
   AGENTS_KEY,
   canonicalFilter,
   docKey,
@@ -152,8 +148,6 @@ export {
   jobKey,
   jobsListKey,
   JOBS_KEY,
-  PLUGIN_KEY_PREFIX,
-  pluginKey,
   QUEUE_KEY,
   relatedKey,
   searchKey,
@@ -165,10 +159,9 @@ export {
   type QueryKeySegment,
 } from "./query/keys.js";
 
-// Type-aware rows (SPEC.md §10). `Row` is the default renderer and the seam a
-// plugin's registered `ListItem` replaces (PLUGINS-001) — which is why the prop
-// types ship beside the component: a conforming `ListItem` cannot be written
-// without them.
+// Type-aware rows (SPEC.md §10). `Row` is the list-item renderer every column
+// uses, and its prop types ship beside it because a host that wraps or
+// delegates to it cannot be written without them.
 export { Row, type ListItemComponent, type RowProps } from "./row/Row.js";
 export {
   AgeChip,
@@ -178,10 +171,9 @@ export {
   NeedsYouBadge,
   QueuedDot,
   UnreadBadge,
-  // A plugin's own `ListItem` replaces `Row` wholesale, so the rule deciding
-  // which unread pill a row draws ships with the badge rather than staying
-  // private — re-deriving it per plugin is how the aggregate pill goes missing
-  // again, one surface at a time.
+  // The rule deciding which unread pill a row draws ships with the badge rather
+  // than staying private — a second row implementation that re-derived it is how
+  // the aggregate pill goes missing again, one surface at a time.
   unreadBadgeProps,
   WorkingDot,
   type AgentActivityDotProps,
@@ -248,7 +240,7 @@ export {
 export { isLineBreakTag, remarkTableCellBreaks } from "./markdown/tableBreaks.js";
 // One image renderer for every host (SPEC.md §10's "images open full-size"):
 // the authenticated attachment fetch and the click-to-open affordance, so a
-// plugin's read surface draws pictures exactly as a turn does. The viewer
+// document body draws pictures exactly as a turn does. The viewer
 // itself is the app's — `ImageViewerProvider` is the door to it, and images
 // below no provider are simply not clickable. See `markdown/imageViewer.tsx`
 // for why that split and not a viewer in this package.
@@ -279,8 +271,8 @@ export {
 // `isAddressableTarget` is published for the same reason and one level down: it
 // is the rule deciding *which* `agent-def` / `skill` rows may be offered at all
 // (SERVER-125), and any surface outside this hook that offers a mention target —
-// the board's designate menu today, a plugin's own picker tomorrow — must ask
-// the same question rather than re-derive it (UI-123).
+// the board's designate menu is the one today — must ask the same question
+// rather than re-derive it (UI-123).
 export {
   applyCompletion,
   AUTOCOMPLETE_LIMIT,
@@ -310,9 +302,8 @@ export {
 } from "./components/Autocomplete/index.js";
 
 // SPEC.md §10's composer key contract — `↵` newline, `⌘↵` primary, `⇧⌘↵`
-// secondary — as one function, because the sentence binds every composer in the
-// app *and* every composer a plugin contributes, and a plugin may import
-// nothing but this package.
+// secondary — as one function, because the sentence binds *every* composer in
+// the app, and the several that exist must not each re-derive it.
 export {
   AttachButton,
   COMPOSER_NEWLINE_HINT,
@@ -332,8 +323,7 @@ export {
 // SPEC.md §10's "every composer can choose how much thought the work gets"
 // (rider signed 2026-08-06). Here rather than in `apps/ui` for the same reason
 // the key contract and the attachment intake are: the sentence binds every
-// composer in the app *and* every composer a plugin contributes, and a plugin
-// may import nothing but this package.
+// composer in the app, so the choice ships once and every composer reads it.
 //
 // The levels are never enumerated here — `weight/weightLevels.ts` says why an
 // enum in this package would be wrong per workspace rather than merely
@@ -361,8 +351,8 @@ export {
 // stating who answers and at what weight, opening to change either — and, for
 // a resident's lane, the sentence that replaces a weight control whose choice
 // would be discarded (SPEC.md §7 and §10, rider signed 2026-08-19). Here for
-// the same reason: §10's enumeration binds every composer a plugin
-// contributes. Stylesheet subpath: `import "@corpus/kit/address.css"`.
+// the same reason: §10's enumeration binds every composer, and five of them
+// mount this control. Stylesheet subpath: `import "@corpus/kit/address.css"`.
 export {
   answeringRow,
   composerAddress,
@@ -391,7 +381,7 @@ export {
 // SPEC.md §7's recipient — the composer offers the live roster, the default is
 // computed from where the message is posted, and an override routes one
 // message. Here for the weight family's reason: the sentence binds every
-// composer in the app and every composer a plugin contributes.
+// composer in the app, and one copy is what keeps them saying the same thing.
 export {
   laneLine,
   laneLiveness,
@@ -439,6 +429,19 @@ export {
   type ScopeWalk,
   type ScopeWalkInput,
 } from "./recipient/index.js";
+
+// How any surface asks a reader to open a document, and where inside it to
+// land (UI-037). Types only, and here rather than in `apps/ui` because the
+// board, the comments tab, the anchored threads and focus mode all speak this
+// vocabulary — one spelling of an open is what keeps "open it" and "point at
+// something inside it" from becoming two mechanisms.
+export type {
+  OpenPayload,
+  OpenRequest,
+  RevealItem,
+  RevealTarget,
+  RevealThread,
+} from "./open/openRequest.js";
 
 // One spelling of "how long ago" for the whole board (SPEC.md §7's roster line
 // and §8's pending row sit one composer apart).

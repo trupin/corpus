@@ -1,6 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import { folderOf } from "@corpus/kit";
-import type { OpenPayload, OpenRequest, RevealTarget } from "@corpus/kit/plugin";
+import { folderOf, type OpenPayload, type OpenRequest, type RevealTarget } from "@corpus/kit";
 import {
   createContext,
   useCallback,

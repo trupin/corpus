@@ -10,10 +10,10 @@ import {
   useResidentLane,
   useSetThreadStatus,
   useThread,
+  type RevealTarget,
   type RowNotice,
   type ThreadTurn,
 } from "@corpus/kit";
-import type { RevealTarget } from "@corpus/kit/plugin";
 import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from "react";
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 import { summaryFromRow, type ThreadSummary } from "./CollapsedThread";

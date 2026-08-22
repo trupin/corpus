@@ -9,9 +9,9 @@ import { stalenessLevel } from "./staleness.js";
  * that are both correctness rather than taste: the chips must correspond
  * *exactly* to the row's own `attention` array as the server computed it (no
  * sniffing of titles, bodies or timestamps to guess a reason), and a code the
- * table has never heard of must still render — plugins extend the system
- * (SPEC.md §10) and a reason line that silently drops a row's only explanation
- * is worse than an ugly one.
+ * table has never heard of must still render — the server's vocabulary may grow
+ * ahead of this build, and a reason line that silently drops a row's only
+ * explanation is worse than an ugly one.
  *
  * ## The vocabulary delta, recorded rather than papered over
  *
@@ -59,7 +59,7 @@ export const REASON_CHIP_CLASSES = {
 
 /**
  * What a label may read off the row beyond its own code. Internal: the public
- * functions take the two values positionally, so a plugin never has to build
+ * functions take the two values positionally, so a caller never has to build
  * this object to ask for a chip.
  */
 interface ReasonContext {

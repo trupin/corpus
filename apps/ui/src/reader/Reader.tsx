@@ -1,5 +1,4 @@
-import type { RowNotice } from "@corpus/kit";
-import type { RevealTarget } from "@corpus/kit/plugin";
+import type { RevealTarget, RowNotice } from "@corpus/kit";
 import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import type { NavEntry } from "../board/useBoardLocalState";

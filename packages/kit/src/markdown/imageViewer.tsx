@@ -16,15 +16,15 @@ import { createContext, useContext, useMemo, type ReactElement, type ReactNode }
  * direction runs the other way), so the viewer lives in the app and the kit
  * publishes the door to it.
  *
- * **Why a context and not a prop.** `MarkdownView` renders from six hosts today
- * — the column reader, focus mode, thread turns, the compose preview, plugin
- * surfaces — and turn attachments are not a `MarkdownView` at all. A prop is a
+ * **Why a context and not a prop.** `MarkdownView` renders from several hosts
+ * today — the column reader, focus mode, thread turns, the compose preview —
+ * and turn attachments are not a `MarkdownView` at all. A prop is a
  * thing every host must remember to thread, and the hosts that would forget it
  * are precisely the ones this issue exists to fix. The callback identity is
  * memoised here so a provider re-render does not remount every image below it.
  *
- * Absent a provider — a plugin's own harness, a component test, a preview
- * rendered outside the shell — {@link useImageViewer} answers `null` and images
+ * Absent a provider — a component test, a preview rendered outside the shell —
+ * {@link useImageViewer} answers `null` and images
  * render as plain images. Not clickable, and not advertising a click that would
  * do nothing.
  */

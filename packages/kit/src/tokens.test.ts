@@ -136,7 +136,7 @@ describe("tokens.css", () => {
     const pkg = JSON.parse(
       readFileSync(join(KIT_SRC, "..", "package.json"), "utf8"),
     ) as KitPackageJson;
-    // Consumers (apps/ui, plugins) import `@corpus/kit/tokens.css`; without
+    // `apps/ui` imports `@corpus/kit/tokens.css`; without
     // this entry Node/Vite ESM resolution rejects the subpath outright.
     expect(pkg.exports["./tokens.css"]).toBe("./src/tokens.css");
     // CSS has no compile step — `tsc` emits nothing for it — so the export

@@ -1,4 +1,4 @@
-import type { RevealItem, RevealTarget } from "@corpus/kit/plugin";
+import type { RevealItem, RevealTarget } from "@corpus/kit";
 import { DISCOVERY_BUDGET_MS } from "../plugins/registry";
 import type { ToastNotice } from "../shell/Toasts";
 import "./reveal.css";

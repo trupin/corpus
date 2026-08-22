@@ -88,7 +88,7 @@ describe("the reserved image box", () => {
     //
     // **The default is the reading measure, not a thumbnail** (PR #53 review).
     // Prose is the surface with no host to retune it — a document body, a
-    // turn's message, a plugin's canvas — and an image there carries content
+    // turn's message, a compose preview — and an image there carries content
     // someone has to read. A 240px default made the full-screen viewer the
     // ordinary way to read one, which SPEC.md §10's third clause forbids, and
     // on a surface with no viewer mounted there is no viewer to fall back on.

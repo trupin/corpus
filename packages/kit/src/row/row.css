@@ -334,8 +334,8 @@
   padding: 1px 7px;
   border-radius: 99px;
   white-space: nowrap;
-  /* The neutral chip: the vocabulary a plugin (or a newer server) extends into,
-     and the one `failed-job` uses. It borrows none of the three axes. */
+  /* The neutral chip: the vocabulary a newer server extends into, and the one
+     `failed-job` uses. It borrows none of the three axes. */
   background: var(--surface-2);
   color: var(--ink-2);
 }

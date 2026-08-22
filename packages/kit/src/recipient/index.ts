@@ -23,9 +23,9 @@
  *     one lane is not drawn two ways.
  *
  * It ships from the kit rather than from `apps/ui` for the reason `WeightPicker`
- * does: five first-party composers mount it, a composer a plugin contributes
- * must be able to offer the same roster with one import — and, since UI-109, the
- * board reads the roster through the same vocabulary rather than a parallel one.
+ * does: five composers mount it and must offer the same roster from one copy —
+ * and, since UI-109, the board reads the roster through the same vocabulary
+ * rather than a parallel one.
  */
 
 export { LaneDot, type LaneDotProps } from "./LaneDot.js";

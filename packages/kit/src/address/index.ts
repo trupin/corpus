@@ -15,8 +15,8 @@
  *   - `address.css` — the anatomy, as a subpath: `@corpus/kit/address.css`.
  *
  * It ships from the kit for the reason the controls it replaced did: §10's
- * enumeration binds "any composer a plugin contributes", and kit is how a
- * plugin gets a first-party affordance with one import and no copy. The
+ * enumeration binds every composer, and kit is how each of them gets the same
+ * affordance with one import and no copy. The
  * derivations underneath — `useComposerRecipient`, `useComposerWeight`,
  * `composerReachesAgent` — are unchanged and still published beside it.
  */

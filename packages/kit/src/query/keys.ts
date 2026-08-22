@@ -22,16 +22,14 @@ import {
  * test, and then serves stale data forever. Re-exporting the contract's
  * builders makes a rename a compile error on both sides at once.
  *
- * Two shapes are the kit's own and deliberately absent from the contract, whose
+ * One shape is the kit's own and deliberately absent from the contract, whose
  * vocabulary is closed at whatever `QUERY_KEY_NAMES` lists and pinned by a test:
+ * {@link HEALTH_KEY}, because the liveness probe is a *client* concern. No
+ * server mutation invalidates it; the SSE bridge does, on every connect and
+ * every drop, which is the only honest signal the UI has about reachability.
  *
- * - {@link HEALTH_KEY} — the liveness probe is a *client* concern. No server
- *   mutation invalidates it; the SSE bridge does, on every connect and every
- *   drop, which is the only honest signal the UI has about reachability.
- * - {@link pluginKey} — the `x/<plugin>/…` namespace of SPEC.md §10. Plugins
- *   ship independently of the contract, so their keys cannot live in a closed
- *   set. The bridge never allowlists core shapes, so these round-trip through
- *   exactly the same invalidation path.
+ * The retrieval shapes below are the kit's own for the same closed-vocabulary
+ * reason, and hang under prefixes the server already emits.
  */
 
 export {
@@ -55,18 +53,6 @@ export {
  * emits, and the server never emits this one.
  */
 export const HEALTH_KEY: QueryKey = ["health"];
-
-/** First segment of every plugin key — the `x/<plugin>/…` namespace (SPEC.md §10). */
-export const PLUGIN_KEY_PREFIX = "x";
-
-/**
- * Builds a plugin-namespaced key: `pluginKey("todos", "board")` is
- * `["x", "todos", "board"]`. Plugins must build keys through this so a plugin
- * can never collide with a core shape, or with another plugin.
- */
-export function pluginKey(plugin: string, ...parts: readonly QueryKeySegment[]): QueryKey {
-  return [PLUGIN_KEY_PREFIX, plugin, ...parts];
-}
 
 /**
  * A filter record as it appears inside a query key: sorted keys, sorted array

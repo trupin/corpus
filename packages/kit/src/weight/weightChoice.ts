@@ -91,11 +91,11 @@ export function subscribeWeightChoices(listener: () => void): () => void {
  * "forget my weights" action.
  *
  * **Reachable only through `@corpus/kit/testing`** (UI-082's PR #35 review), never through the
- * package root. It was on the plugin surface until a review pointed out what
- * that publishes: an action §10 does not describe, offered to plugin authors as
- * though it were one, and callable from a plugin to wipe every composer's
- * standing choice out from under the person who made them. The test-support
- * subpath is where a helper whose own docblock says "for the suites" belongs.
+ * package root. It was on the runtime surface until a review pointed out what
+ * that publishes: an action §10 does not describe, offered as though it were
+ * one, and callable to wipe every composer's standing choice out from under the
+ * person who made them. The test-support subpath is where a helper whose own
+ * docblock says "for the suites" belongs.
  */
 export function resetWeightChoices(): void {
   if (choices.size === 0) return;
