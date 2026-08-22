@@ -143,9 +143,58 @@ export interface ColumnComponentProps {
 export type DerivedDocStatus = Exclude<DocStatus, "archived">;
 
 /**
+ * What a {@link PluginDocType.deriveDue} derivation answers.
+ *
+ * A wrapper rather than a bare `string | null` because a due date has **three**
+ * answers where a status has two, and collapsing any pair of them is the bug
+ * PLUGINS-018 exists to prevent:
+ *
+ * - `{ due: "YYYY-MM-DD" }` — this is the document's deadline.
+ * - `{ due: null }` — the derivation applies and the answer is *no deadline*.
+ *   The field is **absent** from the document, not `null`-and-therefore-today:
+ *   a list nobody dated must never appear in Attention.
+ * - `null` (the outer value) — the derivation does **not** apply and whatever
+ *   the document already stores stands, exactly like {@link DerivedDocStatus}.
+ *
+ * The middle case is the one a bare `string | null` cannot say, and it is the
+ * one that has to clear the field when the last dated item is checked.
+ */
+export interface DerivedDocDue {
+  /** An ISO calendar date (`YYYY-MM-DD`), or `null` for "no deadline". */
+  readonly due: string | null;
+}
+
+/**
  * One document type a plugin owns. Every renderer is optional: a type with no
  * `View` renders through the standard document view, no `ListItem` through the
  * kit `Row`, no `DocPanel` with no panel — absence always means "core default".
+ *
+ * **Derived fields** (`deriveStatus`, `deriveDue`) are one seam with one member
+ * per core field, not one mechanism each. Every member follows the same three
+ * rules, so learning one teaches the rest:
+ *
+ * 1. The function here is the UI half, and its presence IS the declaration:
+ *    a surface that would offer an edit of that field renders it locked
+ *    instead (§11 — "a field that was never the person's to set").
+ * 2. `null` means *the derivation does not apply* and the **stored** value
+ *    stands. Every member owns the same two not-applicable states — a stored
+ *    status of `archived` (archiving says where a document is kept, which no
+ *    reading of its content can imply) and content that cannot be read
+ *    (deriving over a broken record would be a quiet claim about it) — so no
+ *    caller can apply them differently, or to one field and not another.
+ * 3. The declaration is readable **without loading UI code**: the type's entry
+ *    in the plugin's `types.yaml` carries `derived<Field>: true` (`true` is the
+ *    only spelling — absent means not derived, `false` is not a way of saying
+ *    so), and the executable non-UI counterpart is exported from
+ *    `plugins/<dir>/server/derive.ts` — one module for every field, so a
+ *    second field is never a second discovery rule. The plugin's own
+ *    `parity.test.ts` pins all three declarations against each other, per
+ *    field, in both directions.
+ *
+ * Every derivation is pure and cheap — no fetching, no React, no side effects,
+ * no clock. They are called on render paths and, through their non-UI
+ * counterparts, on the server's projection path, where a reading that depended
+ * on the time of day would make a reprojection non-deterministic.
  */
 export interface PluginDocType {
   /** The frontmatter `type` this entry claims. Must also appear in the plugin's `types.yaml`. */
@@ -165,33 +214,35 @@ export interface PluginDocType {
   /**
    * Declares that this type's `status` is **derived from the document's own
    * content rather than set** (SPEC.md §12 — "A todo document's status is its
-   * items", rider signed 2026-08-12), and computes it. The function's presence
-   * IS the declaration on the UI side: a surface that would offer a status
-   * edit renders the field locked instead (§11 — "a field that was never the
-   * person's to set"), showing `deriveStatus(doc) ?? doc.frontmatter.status`.
+   * items", rider signed 2026-08-12), and computes it. Surfaces show
+   * `deriveStatus(doc) ?? doc.frontmatter.status`.
    *
-   * The contract, identical for every caller:
-   *
-   * - Returns {@link DerivedDocStatus} — the derivation chooses between `open`
-   *   and `resolved` and nothing else.
-   * - Returns `null` when the derivation does not apply, and the **stored**
-   *   value stands. That covers exactly two states, and the function owns both
-   *   so no caller can apply them differently: a document whose stored status
-   *   is `archived` (archiving is not a claim about content and is never
-   *   derived over), and a document whose content cannot be read (deriving
-   *   over an unreadable record would be a quiet claim about a broken state —
-   *   the same rule a plugin's panel applies to its counts).
-   * - Pure and cheap: no fetching, no React, no side effects — it is called on
-   *   render paths and, through its non-UI counterpart, on the server's
-   *   projection path.
-   *
-   * The declaration must be readable **without loading UI code** too: a type
-   * declaring it here also carries `derivedStatus: true` on its entry in the
-   * plugin's `types.yaml`, and the executable non-UI counterpart is the
-   * default export of `plugins/<dir>/server/derive.ts` — the plugin's own
-   * `parity.test.ts` pins all three against each other, in both directions.
+   * Returns {@link DerivedDocStatus} — the derivation chooses between `open`
+   * and `resolved` and nothing else — or `null` under rule 2 above. Its
+   * non-UI counterpart is `types.yaml`'s `derivedStatus: true` plus the
+   * **default** export of `plugins/<dir>/server/derive.ts`.
    */
   readonly deriveStatus?: (doc: Doc) => DerivedDocStatus | null;
+  /**
+   * Declares that this type's `due` is **derived from the document's own
+   * content rather than set**, and computes it (PLUGINS-018). Surfaces show
+   * `deriveDue(doc)?.due ?? doc.frontmatter.due`, and a surface that would
+   * offer a `due` edit renders it locked, for the same §11 reason the status
+   * control is locked.
+   *
+   * The field it derives is core's own `due` (SPEC.md §5 — "optional deadline
+   * (ISO date) on ANY type — surfaces in Attention and filters"), which is why
+   * a document-level rollup of a plugin's item-level deadlines belongs here
+   * and not in a surface of the plugin's own: Attention, `--due overdue`,
+   * `--needs due` and `--needs me` all read the document's field and none of
+   * them can be taught to read a plugin's items.
+   *
+   * Returns {@link DerivedDocDue}, whose three answers are the whole contract,
+   * or `null` under rule 2 above. Its non-UI counterpart is `types.yaml`'s
+   * `derivedDue: true` plus the **named** `deriveDue` export of
+   * `plugins/<dir>/server/derive.ts`.
+   */
+  readonly deriveDue?: (doc: Doc) => DerivedDocDue | null;
 }
 
 /**

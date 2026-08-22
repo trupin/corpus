@@ -20,6 +20,7 @@ const TypesFileSchema = z.object({
       label: z.string().min(1),
       seedTemplate: z.string().min(1).optional(),
       derivedStatus: z.literal(true).optional(),
+      derivedDue: z.literal(true).optional(),
     }),
   ),
 });
@@ -51,20 +52,25 @@ describe("types.yaml ↔ manifest.ts parity", () => {
   });
 
   /**
-   * PLUGINS-016: derived status is declared twice — `deriveStatus` in the
-   * manifest, `derivedStatus: true` in types.yaml — and the two must agree per
-   * type, in both directions. The fixture declares neither, which is a state
-   * this invariant covers exactly like todos' both.
+   * PLUGINS-016 (`status`) and PLUGINS-018 (`due`): every derived field is
+   * declared twice — `derive<Field>` in the manifest, `derived<Field>: true` in
+   * types.yaml — and the two must agree per type and per field, in both
+   * directions. The fixture declares neither field, which is a state this
+   * invariant covers exactly like todos' both.
    */
-  it("declares derived status in both files or in neither, per type", () => {
-    const flagged = new Map(
-      declaredTypes().map((entry) => [entry.type, entry.derivedStatus === true]),
-    );
-    for (const docType of manifest.docTypes) {
-      expect(
-        flagged.get(docType.type),
-        `"${docType.type}": manifest deriveStatus and types.yaml derivedStatus disagree`,
-      ).toBe(typeof docType.deriveStatus === "function");
-    }
-  });
+  it.each([
+    { field: "status", manifest: "deriveStatus", flag: "derivedStatus" },
+    { field: "due", manifest: "deriveDue", flag: "derivedDue" },
+  ] as const)(
+    "declares derived $field in both files or in neither, per type",
+    ({ manifest: fn, flag }) => {
+      const flagged = new Map(declaredTypes().map((entry) => [entry.type, entry[flag] === true]));
+      for (const docType of manifest.docTypes) {
+        expect(
+          flagged.get(docType.type),
+          `"${docType.type}": manifest ${fn} and types.yaml ${flag} disagree`,
+        ).toBe(typeof docType[fn] === "function");
+      }
+    },
+  );
 });

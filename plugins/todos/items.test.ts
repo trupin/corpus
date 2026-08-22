@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendItemToBody,
+  deriveDue,
   deriveStatus,
   docSource,
   dueCount,
@@ -637,6 +638,120 @@ describe("deriveStatus", () => {
     expect(deriveStatus({ body: "- [x] body item\n", extra: { items: [item()] } }, "open")).toBe(
       "resolved",
     );
+  });
+});
+
+/**
+ * PLUGINS-018 — **a todo document's deadline is its earliest open item's**.
+ * The reporter's case is the first test: an item eighteen days overdue used to
+ * leave the document's `due` empty, so `--due overdue`, `--needs due` and
+ * `--needs me` all answered "no documents match" while something was late.
+ */
+describe("deriveDue", () => {
+  it("reports the earliest open item's deadline — the reporter's overdue case", () => {
+    expect(
+      deriveDue(
+        {
+          body: "- [ ] call the dentist (due: 2026-08-04)\n- [ ] renew the passport (due: 2026-09-30)\n",
+        },
+        "open",
+      ),
+    ).toEqual({ due: "2026-08-04" });
+  });
+
+  it("takes the earliest whatever the body order, and ignores checked items", () => {
+    // Body order is late-then-early: the answer is the date, not the position.
+    expect(
+      deriveDue({ body: "- [ ] b (due: 2026-09-30)\n- [ ] a (due: 2026-08-04)\n" }, "open"),
+    ).toEqual({ due: "2026-08-04" });
+    // A checked item that was due yesterday is finished work, not a deadline.
+    expect(
+      deriveDue({ body: "- [x] a (due: 2026-01-01)\n- [ ] b (due: 2026-09-30)\n" }, "open"),
+    ).toEqual({ due: "2026-09-30" });
+  });
+
+  it("moves to the next deadline when the earliest item is checked, and clears at the last", () => {
+    const two = "- [ ] a (due: 2026-08-04)\n- [ ] b (due: 2026-09-30)\n";
+    expect(deriveDue({ body: two }, "open")).toEqual({ due: "2026-08-04" });
+    const first = "- [x] a (due: 2026-08-04)\n- [ ] b (due: 2026-09-30)\n";
+    expect(deriveDue({ body: first }, "open")).toEqual({ due: "2026-09-30" });
+    const both = "- [x] a (due: 2026-08-04)\n- [x] b (due: 2026-09-30)\n";
+    expect(deriveDue({ body: both }, "open")).toEqual({ due: null });
+  });
+
+  it("says `no deadline` — never a date — for a list nobody dated", () => {
+    // The distinction the wrapper exists for: the derivation APPLIES and the
+    // answer is nothing, which must leave the field absent rather than make an
+    // undated list look due today.
+    expect(deriveDue({ body: "- [ ] a\n- [ ] b\n" }, "open")).toEqual({ due: null });
+    expect(deriveDue({ body: "" }, "open")).toEqual({ due: null });
+    expect(deriveDue({ body: "## Notes\n\nProse only.\n" }, "open")).toEqual({ due: null });
+    expect(deriveDue(undefined, "open")).toEqual({ due: null });
+  });
+
+  it("does not read a fenced example's marker as a deadline", () => {
+    expect(deriveDue({ body: "```\n- [ ] example (due: 2026-01-01)\n```\n" }, "open")).toEqual({
+      due: null,
+    });
+  });
+
+  it("ignores text that does not parse as the marker — never an error (SPEC.md §12)", () => {
+    expect(deriveDue({ body: "- [ ] a (due: soon)\n" }, "open")).toEqual({ due: null });
+    expect(deriveDue({ body: "- [ ] a (due: 2026-08-04) trailing\n" }, "open")).toEqual({
+      due: null,
+    });
+  });
+
+  it("derives nothing for an archived document — the seam's shared carve-out", () => {
+    expect(deriveDue({ body: "- [ ] a (due: 2026-08-04)\n" }, "archived")).toBeNull();
+    expect(deriveDue({ body: "" }, "archived")).toBeNull();
+  });
+
+  it("derives nothing when the items cannot be read", () => {
+    const malformed = { body: "", extra: { items: "nope" } };
+    expect(readItems(malformed).ok).toBe(false);
+    expect(deriveDue(malformed, "open")).toBeNull();
+  });
+
+  it("reads the same items the stats panel counts — legacy frontmatter included", () => {
+    expect(
+      deriveDue({ body: "", extra: { items: [item({ due: "2026-08-04" })] } }, "open"),
+    ).toEqual({ due: "2026-08-04" });
+    // A checked legacy item is finished work here too.
+    expect(
+      deriveDue({ body: "", extra: { items: [item({ done: true, due: "2026-08-04" })] } }, "open"),
+    ).toEqual({ due: null });
+    // Dual storage: readItems lets the body win, and so does the derivation.
+    expect(
+      deriveDue(
+        {
+          body: "- [ ] body item (due: 2026-09-30)\n",
+          extra: { items: [item({ due: "2026-01-01" })] },
+        },
+        "open",
+      ),
+    ).toEqual({ due: "2026-09-30" });
+  });
+
+  it("answers the same for the same document twice — no clock, so reprojection is stable", () => {
+    const source = { body: "- [ ] a (due: 2026-08-04)\n" };
+    expect(deriveDue(source, "open")).toEqual(deriveDue(source, "open"));
+  });
+
+  it("agrees with the two readings already built on the same items", () => {
+    const items = parseBodyItems(
+      "- [x] done (due: 2026-01-01)\n- [ ] a (due: 2026-08-04)\n- [ ] b\n",
+    );
+    // One open item carries a deadline...
+    expect(dueCount(items)).toBe(1);
+    // ...and it is the one the rollup reports, and it is overdue.
+    const derived = deriveDue(
+      { body: "- [x] done (due: 2026-01-01)\n- [ ] a (due: 2026-08-04)\n- [ ] b\n" },
+      "open",
+    );
+    expect(derived).toEqual({ due: "2026-08-04" });
+    const overdue = items.filter((entry) => isOverdue(entry, new Date("2026-08-22T00:00:00Z")));
+    expect(overdue.map((entry) => entry.due)).toEqual([derived?.due]);
   });
 });
 

@@ -5,7 +5,7 @@ import * as YAML from "yaml";
 import { z } from "zod";
 import { parseBodyItems } from "./items.js";
 import manifest from "./manifest.js";
-import derive from "./server/derive.js";
+import derive, { deriveDue } from "./server/derive.js";
 import { TODO_DOC_TYPE, TODOS_COLUMN_TYPE } from "./shared.js";
 
 /**
@@ -28,9 +28,23 @@ const TypesFileSchema = z.object({
       // `true` or absent, never `false`: two spellings of "not derived" would
       // be a second thing for the server and this test to disagree about.
       derivedStatus: z.literal(true).optional(),
+      derivedDue: z.literal(true).optional(),
     }),
   ),
 });
+
+/**
+ * The derived-field seam, enumerated once so a third field is one row here
+ * rather than a third copy of the same test (PLUGINS-016 landed `status`,
+ * PLUGINS-018 `due`). Each row names the three places one field is declared:
+ * the manifest function the UI calls, the `types.yaml` flag the server and the
+ * CLI read without executing anything, and the `server/derive.ts` export the
+ * server executes.
+ */
+const DERIVED_FIELDS = [
+  { field: "status", manifest: "deriveStatus", flag: "derivedStatus" },
+  { field: "due", manifest: "deriveDue", flag: "derivedDue" },
+] as const;
 
 function declared(): z.infer<typeof TypesFileSchema>["types"] {
   const raw = readFileSync(join(import.meta.dirname, "types.yaml"), "utf8");
@@ -62,21 +76,25 @@ describe("types.yaml ↔ manifest.ts parity", () => {
   });
 
   /**
-   * PLUGINS-016: the derived-status declaration is readable from both sides —
-   * the UI from the manifest's `deriveStatus` function, the server and CLI
-   * from `derivedStatus: true` in types.yaml — so the two must agree per type,
-   * in **both** directions, exactly like the type list itself.
+   * PLUGINS-016 for `status`, PLUGINS-018 for `due`: every derived field is
+   * declared from both sides — the UI from the manifest's `derive<Field>`
+   * function, the server and CLI from `derived<Field>: true` in types.yaml —
+   * so the two must agree per type **and** per field, in both directions,
+   * exactly like the type list itself.
    */
-  it("declares derived status in both files or in neither, per type", () => {
-    const flagged = new Map(declared().map((entry) => [entry.type, entry.derivedStatus === true]));
-    for (const docType of manifest.docTypes) {
-      expect(
-        flagged.get(docType.type),
-        `"${docType.type}": manifest deriveStatus and types.yaml derivedStatus disagree`,
-      ).toBe(typeof docType.deriveStatus === "function");
-    }
-    expect(flagged.get(TODO_DOC_TYPE)).toBe(true);
-  });
+  it.each(DERIVED_FIELDS)(
+    "declares derived $field in both files or in neither, per type",
+    ({ manifest: fn, flag }) => {
+      const flagged = new Map(declared().map((entry) => [entry.type, entry[flag] === true]));
+      for (const docType of manifest.docTypes) {
+        expect(
+          flagged.get(docType.type),
+          `"${docType.type}": manifest ${fn} and types.yaml ${flag} disagree`,
+        ).toBe(typeof docType[fn] === "function");
+      }
+      expect(flagged.get(TODO_DOC_TYPE)).toBe(true);
+    },
+  );
 });
 
 describe("the manifest", () => {
@@ -101,7 +119,7 @@ describe("the manifest", () => {
    * answer 3), and the `View` slot itself stays contracted and covered by the
    * underscore fixture plugin.
    */
-  it("registers the todo doc type with no View, and with ListItem, DocPanel, validate and deriveStatus", () => {
+  it("registers the todo doc type with no View, and with ListItem, DocPanel, validate and both derivations", () => {
     const docType = manifest.docTypes.find((entry) => entry.type === TODO_DOC_TYPE);
     expect(docType).toBeDefined();
     expect(docType?.View).toBeUndefined();
@@ -110,6 +128,8 @@ describe("the manifest", () => {
     expect(typeof docType?.validate).toBe("function");
     // SPEC.md §12 (rider signed 2026-08-12): status is derived, never set.
     expect(typeof docType?.deriveStatus).toBe("function");
+    // PLUGINS-018: and so is `due`, from the same items.
+    expect(typeof docType?.deriveDue).toBe("function");
   });
 
   it("registers one column type whose default query pins the doc type", () => {
@@ -186,6 +206,63 @@ describe("manifest.deriveStatus ↔ server/derive parity", () => {
     expect(deriveStatus?.(doc("open", "- [x] a\n"))).toBe("resolved");
     expect(deriveStatus?.(doc("resolved", "- [ ] a\n"))).toBe("open");
     expect(deriveStatus?.(doc("archived", "- [x] a\n"))).toBeNull();
+  });
+});
+
+/**
+ * PLUGINS-018, the same third leg one field over: the manifest's `deriveDue`
+ * (what the UI calls) and `server/derive.ts`'s `deriveDue` export (what the
+ * server calls) must answer identically for the same document, or the board
+ * and the file could disagree about a deadline — which is the disagreement
+ * this whole issue exists to end.
+ */
+describe("manifest.deriveDue ↔ server/derive parity", () => {
+  const deriveDueFn = manifest.docTypes[0]?.deriveDue;
+
+  const doc = (
+    status: string,
+    body: string,
+    extra?: Readonly<Record<string, unknown>>,
+  ): Parameters<NonNullable<typeof deriveDueFn>>[0] =>
+    ({
+      body,
+      frontmatter: { type: TODO_DOC_TYPE, status, extra: extra ?? {} },
+    }) as unknown as Parameters<NonNullable<typeof deriveDueFn>>[0];
+
+  it("answers identically across the whole matrix", () => {
+    const matrix: readonly [string, string, Readonly<Record<string, unknown>> | undefined][] = [
+      ["open", "- [ ] a (due: 2026-08-04)\n- [ ] b (due: 2026-09-30)\n", undefined],
+      ["open", "- [x] a (due: 2026-08-04)\n- [ ] b (due: 2026-09-30)\n", undefined],
+      ["open", "- [x] a (due: 2026-08-04)\n- [x] b (due: 2026-09-30)\n", undefined],
+      ["open", "- [ ] undated\n", undefined],
+      ["resolved", "", undefined],
+      ["open", "```\n- [ ] example (due: 2026-01-01)\n```\n", undefined],
+      ["archived", "- [ ] a (due: 2026-08-04)\n", undefined],
+      ["open", "", { items: "nope" }],
+      ["open", "", { items: [{ text: "a", done: false, due: "2026-08-04" }] }],
+    ];
+    for (const [status, body, extra] of matrix) {
+      const viaManifest = deriveDueFn?.(doc(status, body, extra));
+      const viaServer = deriveDue({ type: TODO_DOC_TYPE, status, body, extra });
+      expect(viaManifest, `status=${status} body=${JSON.stringify(body)}`).toEqual(viaServer);
+    }
+  });
+
+  it("agrees on the concrete answers, not only on agreeing", () => {
+    // The reporter's case: the earliest open deadline reaches the document.
+    expect(
+      deriveDueFn?.(doc("open", "- [ ] a (due: 2026-08-04)\n- [ ] b (due: 2026-09-30)\n")),
+    ).toEqual({ due: "2026-08-04" });
+    // Checking it moves the deadline on; checking the last one clears it.
+    expect(
+      deriveDueFn?.(doc("open", "- [x] a (due: 2026-08-04)\n- [ ] b (due: 2026-09-30)\n")),
+    ).toEqual({ due: "2026-09-30" });
+    expect(deriveDueFn?.(doc("open", "- [x] a (due: 2026-08-04)\n"))).toEqual({ due: null });
+    // Undated is `no deadline`, never a date — and never "not applicable".
+    expect(deriveDueFn?.(doc("open", "- [ ] undated\n"))).toEqual({ due: null });
+    // Archived and unreadable are the seam's shared carve-outs.
+    expect(deriveDueFn?.(doc("archived", "- [ ] a (due: 2026-08-04)\n"))).toBeNull();
+    expect(deriveDueFn?.(doc("open", "", { items: "nope" }))).toBeNull();
   });
 });
 

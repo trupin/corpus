@@ -8,13 +8,24 @@
 # (SPEC.md §12), which is what "its type's template can ship starter items in
 # its body like any template pre-fill" means.
 #
-# `derivedStatus: true` declares that this type's `status` is derived from the
-# document's own content, never set (SPEC.md §12, rider signed 2026-08-12) —
-# the non-TS half of the manifest's `deriveStatus`. The executable derivation
-# for the server is the default export of `server/derive.ts`; the flag is what
-# lets the server and CLI know the field is derived without executing anything.
+# `derived<Field>: true` declares that this type's core field is derived from
+# the document's own content, never set — the non-TS half of the manifest's
+# matching `derive<Field>` function. The flag is what lets the server and the
+# CLI know a field is not anyone's to set without executing a line of plugin
+# code; the executable derivations all live in `server/derive.ts`, one module
+# for every field, so a second derived field is never a second discovery rule.
+# `true` is the only spelling — absent means not derived, and `false` is not a
+# way of saying so.
+#
+#   derivedStatus  SPEC.md §12, rider signed 2026-08-12 — a todo document's
+#                  status is its items. `server/derive.ts`'s default export.
+#   derivedDue     PLUGINS-018 — a todo document's deadline is its earliest
+#                  open item's, which is what puts an item's `(due: …)` marker
+#                  in front of §5's Attention, `--due overdue`, `--needs due`
+#                  and `--needs me`. `server/derive.ts`'s `deriveDue` export.
 types:
   - type: todo
     label: Todo
     seedTemplate: seeds/todo-template.md
     derivedStatus: true
+    derivedDue: true

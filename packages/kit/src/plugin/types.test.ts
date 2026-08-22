@@ -3,6 +3,7 @@ import type { Doc } from "@corpus/contract";
 import { definePlugin } from "./index.js";
 import type {
   ColumnComponentProps,
+  DerivedDocDue,
   DerivedDocStatus,
   DocPanelProps,
   DocViewProps,
@@ -39,6 +40,7 @@ const full = {
       DocPanel: (_props: DocPanelProps) => null,
       validate: (_doc: Doc) => [],
       deriveStatus: (doc: Doc) => (doc.frontmatter.status === "archived" ? null : "open"),
+      deriveDue: (doc: Doc) => (doc.frontmatter.status === "archived" ? null : { due: null }),
     },
   ],
   columns: [
@@ -159,6 +161,54 @@ describe("deriveStatus", () => {
 
   it("stays optional — a type without it has a status somebody sets", () => {
     expectTypeOf<"open" | "resolved">().toExtend<DerivedDocStatus>();
+    definePlugin({ id: "p", name: "P", docTypes: [{ type: "t" }], columns: [] });
+  });
+});
+
+/**
+ * PLUGINS-018 — the derived-`due` declaration, the same seam one field over.
+ * The type pins the distinction the whole issue turns on: a due date has three
+ * answers, and the middle one — "the derivation applies and there is no
+ * deadline" — is the one a bare `string | null` could not say.
+ */
+describe("deriveDue", () => {
+  it("admits a date, a null date, and the does-not-apply fallback", () => {
+    definePlugin({
+      id: "p",
+      name: "P",
+      docTypes: [{ type: "t", deriveDue: () => ({ due: "2026-08-04" }) }],
+      columns: [],
+    });
+    definePlugin({
+      id: "p",
+      name: "P",
+      docTypes: [{ type: "t", deriveDue: () => ({ due: null }) }],
+      columns: [],
+    });
+    definePlugin({
+      id: "p",
+      name: "P",
+      docTypes: [{ type: "t", deriveDue: () => null }],
+      columns: [],
+    });
+  });
+
+  it("keeps `no deadline` and `does not apply` distinguishable — they are different types", () => {
+    expectTypeOf<DerivedDocDue>().toEqualTypeOf<{ readonly due: string | null }>();
+    expectTypeOf<null>().not.toExtend<DerivedDocDue>();
+  });
+
+  it("rejects a bare date — the wrapper is what carries the third answer", () => {
+    definePlugin({
+      id: "p",
+      name: "P",
+      // @ts-expect-error — a derivation answers `{ due }`, never a bare string
+      docTypes: [{ type: "t", deriveDue: () => "2026-08-04" }],
+      columns: [],
+    });
+  });
+
+  it("stays optional — a type without it has a due date somebody sets", () => {
     definePlugin({ id: "p", name: "P", docTypes: [{ type: "t" }], columns: [] });
   });
 });

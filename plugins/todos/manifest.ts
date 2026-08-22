@@ -1,5 +1,5 @@
 import { definePlugin } from "@corpus/kit/plugin";
-import { deriveStatus, docSource, itemProblems } from "./items.js";
+import { deriveDue, deriveStatus, docSource, itemProblems } from "./items.js";
 import { TODO_DOC_TYPE, TODOS_COLUMN_TYPE } from "./shared.js";
 import { TodoDocPanel } from "./ui/TodoDocPanel.js";
 import { TodoListItem } from "./ui/TodoListItem.js";
@@ -49,6 +49,11 @@ export default definePlugin({
       // types.yaml and by `server/derive.ts` for the surfaces that never load
       // UI code; parity.test.ts pins the three against each other.
       deriveStatus: (doc) => deriveStatus(docSource(doc), doc.frontmatter.status),
+      // PLUGINS-018: the same seam, one field over. A todo document's deadline
+      // is its earliest open item's, so §5's `due` — the field Attention,
+      // `--due overdue`, `--needs due` and `--needs me` all read — finally sees
+      // the `(due: …)` markers §12 puts on items.
+      deriveDue: (doc) => deriveDue(docSource(doc), doc.frontmatter.status),
     },
   ],
   columns: [
