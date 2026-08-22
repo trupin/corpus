@@ -39,6 +39,15 @@ const DocTypeSchema = z.object({
       message: "docTypes[].validate must be a function",
     })
     .optional(),
+  // PLUGINS-016: the derived-status declaration. A manifest carrying anything
+  // but a function here is refused whole at discovery (plugin skipped, logged
+  // warning) — a declaration a surface would call must be callable, and half
+  // a manifest is worse than none.
+  deriveStatus: z
+    .custom<(doc: never) => unknown>((value) => typeof value === "function", {
+      message: "docTypes[].deriveStatus must be a function",
+    })
+    .optional(),
 });
 
 const ColumnTypeSchema = z.object({

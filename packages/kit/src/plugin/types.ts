@@ -1,4 +1,4 @@
-import type { Doc } from "@corpus/contract";
+import type { Doc, DocStatus } from "@corpus/contract";
 import type { ComponentType } from "react";
 import type { RowProps } from "../row/Row.js";
 
@@ -132,6 +132,17 @@ export interface ColumnComponentProps {
 }
 
 /**
+ * What a {@link PluginDocType.deriveStatus} derivation may choose between.
+ *
+ * `archived` is deliberately not in it (SPEC.md §12, rider signed 2026-08-12):
+ * archiving says where a document is kept, which no reading of its content can
+ * imply — "the derivation chooses between `open` and `resolved` and nothing
+ * else". Derived from the contract's status ladder so a change to §5's
+ * vocabulary breaks here loudly instead of drifting.
+ */
+export type DerivedDocStatus = Exclude<DocStatus, "archived">;
+
+/**
  * One document type a plugin owns. Every renderer is optional: a type with no
  * `View` renders through the standard document view, no `ListItem` through the
  * kit `Row`, no `DocPanel` with no panel — absence always means "core default".
@@ -151,6 +162,36 @@ export interface PluginDocType {
    * Reserved: core does not invoke it in v1.
    */
   readonly validate?: (doc: Doc) => readonly string[];
+  /**
+   * Declares that this type's `status` is **derived from the document's own
+   * content rather than set** (SPEC.md §12 — "A todo document's status is its
+   * items", rider signed 2026-08-12), and computes it. The function's presence
+   * IS the declaration on the UI side: a surface that would offer a status
+   * edit renders the field locked instead (§11 — "a field that was never the
+   * person's to set"), showing `deriveStatus(doc) ?? doc.frontmatter.status`.
+   *
+   * The contract, identical for every caller:
+   *
+   * - Returns {@link DerivedDocStatus} — the derivation chooses between `open`
+   *   and `resolved` and nothing else.
+   * - Returns `null` when the derivation does not apply, and the **stored**
+   *   value stands. That covers exactly two states, and the function owns both
+   *   so no caller can apply them differently: a document whose stored status
+   *   is `archived` (archiving is not a claim about content and is never
+   *   derived over), and a document whose content cannot be read (deriving
+   *   over an unreadable record would be a quiet claim about a broken state —
+   *   the same rule a plugin's panel applies to its counts).
+   * - Pure and cheap: no fetching, no React, no side effects — it is called on
+   *   render paths and, through its non-UI counterpart, on the server's
+   *   projection path.
+   *
+   * The declaration must be readable **without loading UI code** too: a type
+   * declaring it here also carries `derivedStatus: true` on its entry in the
+   * plugin's `types.yaml`, and the executable non-UI counterpart is the
+   * default export of `plugins/<dir>/server/derive.ts` — the plugin's own
+   * `parity.test.ts` pins all three against each other, in both directions.
+   */
+  readonly deriveStatus?: (doc: Doc) => DerivedDocStatus | null;
 }
 
 /**

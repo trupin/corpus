@@ -740,6 +740,50 @@ export function openItems(items: readonly TodoItem[]): readonly TodoItem[] {
   return items.filter((item) => !item.done);
 }
 
+/** What {@link deriveStatus} may choose between — never `archived` (SPEC.md §12). */
+export type DerivedTodoStatus = "open" | "resolved";
+
+/**
+ * **A todo document's status is its items** (SPEC.md §12, rider signed
+ * 2026-08-12; PLUGINS-016): at least one item and no open items reads
+ * `resolved`; every other list reads `open`, including an empty one, which has
+ * completed nothing.
+ *
+ * `null` means the derivation does not apply and the **stored** value stands,
+ * in exactly two states, both owned here so no caller can apply them
+ * differently:
+ *
+ * - `stored === "archived"` — archiving says where a document is kept, which
+ *   no checkbox can imply; an archived list reads `archived` whatever its
+ *   items say, and unarchiving returns it to whichever of the two its items
+ *   say at that moment (which this function then answers).
+ * - Items that cannot be read — a malformed legacy `extra.items` key. The
+ *   DocPanel renders no stats over that state because a number over a broken
+ *   list is a quiet claim about a broken state, and a derived status is the
+ *   same claim in one word, so it follows the same rule: derive nothing.
+ *
+ * Everything else derives from **the same {@link readItems} the stats panel
+ * counts** — a not-yet-migrated document derives from its legacy frontmatter
+ * items, a dual-storage document from its body — which is what makes the
+ * rider's "the two can therefore never disagree" true by construction rather
+ * than by coincidence. This is also why the derivation is the plugin's and not
+ * a core task-list read: `readItems` and core's own parse (remark-gfm, the
+ * editor's) demonstrably diverge on blockquoted task lines, unclosed fences
+ * and ordered-list task items, and none of the legacy-frontmatter states is
+ * visible to any body parse at all (PLUGINS-016's recorded evidence).
+ *
+ * Callers compose the fallback themselves: `deriveStatus(...) ?? stored`.
+ */
+export function deriveStatus(
+  source: ItemsSource | undefined,
+  stored: string,
+): DerivedTodoStatus | null {
+  if (stored === "archived") return null;
+  const read = readItems(source);
+  if (!read.ok) return null;
+  return read.items.length > 0 && read.items.every((item) => item.done) ? "resolved" : "open";
+}
+
 /** How many open items carry a deadline — the design's `2 due` row badge. */
 export function dueCount(items: readonly TodoItem[]): number {
   return openItems(items).filter((item) => item.due !== undefined).length;

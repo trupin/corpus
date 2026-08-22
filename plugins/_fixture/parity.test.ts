@@ -19,13 +19,18 @@ const TypesFileSchema = z.object({
       type: z.string().min(1),
       label: z.string().min(1),
       seedTemplate: z.string().min(1).optional(),
+      derivedStatus: z.literal(true).optional(),
     }),
   ),
 });
 
-function declaredInYaml(): readonly string[] {
+function declaredTypes(): z.infer<typeof TypesFileSchema>["types"] {
   const raw = readFileSync(join(import.meta.dirname, "types.yaml"), "utf8");
-  return TypesFileSchema.parse(YAML.parse(raw)).types.map((entry) => entry.type);
+  return TypesFileSchema.parse(YAML.parse(raw)).types;
+}
+
+function declaredInYaml(): readonly string[] {
+  return declaredTypes().map((entry) => entry.type);
 }
 
 describe("types.yaml ↔ manifest.ts parity", () => {
@@ -42,6 +47,24 @@ describe("types.yaml ↔ manifest.ts parity", () => {
     const declared = new Set(manifest.docTypes.map((docType) => docType.type));
     for (const type of declaredInYaml()) {
       expect(declared, `types.yaml declares "${type}" but the manifest does not`).toContain(type);
+    }
+  });
+
+  /**
+   * PLUGINS-016: derived status is declared twice — `deriveStatus` in the
+   * manifest, `derivedStatus: true` in types.yaml — and the two must agree per
+   * type, in both directions. The fixture declares neither, which is a state
+   * this invariant covers exactly like todos' both.
+   */
+  it("declares derived status in both files or in neither, per type", () => {
+    const flagged = new Map(
+      declaredTypes().map((entry) => [entry.type, entry.derivedStatus === true]),
+    );
+    for (const docType of manifest.docTypes) {
+      expect(
+        flagged.get(docType.type),
+        `"${docType.type}": manifest deriveStatus and types.yaml derivedStatus disagree`,
+      ).toBe(typeof docType.deriveStatus === "function");
     }
   });
 });

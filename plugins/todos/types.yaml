@@ -7,7 +7,14 @@
 # frontmatter. That works since PLUGINS-005 because items ARE body text
 # (SPEC.md §12), which is what "its type's template can ship starter items in
 # its body like any template pre-fill" means.
+#
+# `derivedStatus: true` declares that this type's `status` is derived from the
+# document's own content, never set (SPEC.md §12, rider signed 2026-08-12) —
+# the non-TS half of the manifest's `deriveStatus`. The executable derivation
+# for the server is the default export of `server/derive.ts`; the flag is what
+# lets the server and CLI know the field is derived without executing anything.
 types:
   - type: todo
     label: Todo
     seedTemplate: seeds/todo-template.md
+    derivedStatus: true

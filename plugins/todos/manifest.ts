@@ -1,5 +1,5 @@
 import { definePlugin } from "@corpus/kit/plugin";
-import { docSource, itemProblems } from "./items.js";
+import { deriveStatus, docSource, itemProblems } from "./items.js";
 import { TODO_DOC_TYPE, TODOS_COLUMN_TYPE } from "./shared.js";
 import { TodoDocPanel } from "./ui/TodoDocPanel.js";
 import { TodoListItem } from "./ui/TodoListItem.js";
@@ -44,6 +44,11 @@ export default definePlugin({
       // since PLUGINS-005, and the only thing left that can be malformed is a
       // pre-migration `extra.items` key.
       validate: (doc) => itemProblems(docSource(doc)),
+      // SPEC.md §12 (rider signed 2026-08-12): a todo document's status is its
+      // items — derived, never set. Mirrored by `derivedStatus: true` in
+      // types.yaml and by `server/derive.ts` for the surfaces that never load
+      // UI code; parity.test.ts pins the three against each other.
+      deriveStatus: (doc) => deriveStatus(docSource(doc), doc.frontmatter.status),
     },
   ],
   columns: [

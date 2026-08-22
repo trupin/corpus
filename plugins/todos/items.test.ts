@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendItemToBody,
+  deriveStatus,
   docSource,
   dueCount,
   hasLegacyItems,
@@ -577,6 +578,65 @@ describe("derivations", () => {
     // A completed item is never overdue, and neither is one with no deadline.
     expect(isOverdue(item({ due: "2026-07-10", done: true }), today)).toBe(false);
     expect(isOverdue(item(), today)).toBe(false);
+  });
+});
+
+/**
+ * PLUGINS-016 — **a todo document's status is its items** (SPEC.md §12, rider
+ * signed 2026-08-12). The matrix is the rider read literally: at least one
+ * item and no open items reads `resolved`; every other list reads `open`,
+ * including an empty one; `archived` and unreadable items derive nothing and
+ * the stored value stands.
+ */
+describe("deriveStatus", () => {
+  it("reads resolved for a list with at least one item and no open items", () => {
+    expect(deriveStatus({ body: "- [x] a\n" }, "open")).toBe("resolved");
+    expect(deriveStatus({ body: "- [x] a\n- [X] b (due: 2026-01-01)\n" }, "open")).toBe("resolved");
+  });
+
+  it("reads open while any item is open, whatever the stored value says", () => {
+    expect(deriveStatus({ body: "- [ ] a\n" }, "open")).toBe("open");
+    expect(deriveStatus({ body: "- [x] a\n- [ ] b\n" }, "resolved")).toBe("open");
+  });
+
+  it("reads open for an empty list, which has completed nothing", () => {
+    expect(deriveStatus({ body: "" }, "resolved")).toBe("open");
+    expect(deriveStatus({ body: "## Notes\n\nProse only.\n" }, "resolved")).toBe("open");
+    expect(deriveStatus(undefined, "open")).toBe("open");
+  });
+
+  it("does not read a fenced example as an item — checked or not", () => {
+    // Items only inside a fenced code block are example text: the list is empty.
+    expect(deriveStatus({ body: "```\n- [ ] example\n```\n" }, "open")).toBe("open");
+    expect(deriveStatus({ body: "- [x] real\n\n```\n- [ ] example\n```\n" }, "open")).toBe(
+      "resolved",
+    );
+  });
+
+  it("derives nothing for an archived document — archiving is not a claim about items", () => {
+    expect(deriveStatus({ body: "- [ ] still open\n" }, "archived")).toBeNull();
+    expect(deriveStatus({ body: "- [x] all done\n" }, "archived")).toBeNull();
+    expect(deriveStatus({ body: "" }, "archived")).toBeNull();
+  });
+
+  it("derives nothing when the items cannot be read — the DocPanel's own no-stats rule", () => {
+    const malformed = { body: "", extra: { items: "nope" } };
+    expect(readItems(malformed).ok).toBe(false);
+    expect(deriveStatus(malformed, "open")).toBeNull();
+    expect(deriveStatus(malformed, "resolved")).toBeNull();
+  });
+
+  it("reads the same items the stats panel counts — legacy frontmatter included", () => {
+    // A not-yet-migrated document: the panel counts the legacy items, so the
+    // status is their reading too, or the chip and the counts would disagree.
+    expect(deriveStatus({ body: "", extra: { items: [item({ done: true })] } }, "open")).toBe(
+      "resolved",
+    );
+    expect(deriveStatus({ body: "", extra: { items: [item()] } }, "open")).toBe("open");
+    // Dual storage: readItems lets the body win, and so does the derivation.
+    expect(deriveStatus({ body: "- [x] body item\n", extra: { items: [item()] } }, "open")).toBe(
+      "resolved",
+    );
   });
 });
 

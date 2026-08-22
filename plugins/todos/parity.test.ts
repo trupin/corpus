@@ -5,6 +5,7 @@ import * as YAML from "yaml";
 import { z } from "zod";
 import { parseBodyItems } from "./items.js";
 import manifest from "./manifest.js";
+import derive from "./server/derive.js";
 import { TODO_DOC_TYPE, TODOS_COLUMN_TYPE } from "./shared.js";
 
 /**
@@ -24,6 +25,9 @@ const TypesFileSchema = z.object({
       type: z.string().min(1),
       label: z.string().min(1),
       seedTemplate: z.string().min(1).optional(),
+      // `true` or absent, never `false`: two spellings of "not derived" would
+      // be a second thing for the server and this test to disagree about.
+      derivedStatus: z.literal(true).optional(),
     }),
   ),
 });
@@ -56,6 +60,23 @@ describe("types.yaml ↔ manifest.ts parity", () => {
     expect(declared().map((entry) => entry.type)).toEqual([TODO_DOC_TYPE]);
     expect(declared()[0]?.label).toBe("Todo");
   });
+
+  /**
+   * PLUGINS-016: the derived-status declaration is readable from both sides —
+   * the UI from the manifest's `deriveStatus` function, the server and CLI
+   * from `derivedStatus: true` in types.yaml — so the two must agree per type,
+   * in **both** directions, exactly like the type list itself.
+   */
+  it("declares derived status in both files or in neither, per type", () => {
+    const flagged = new Map(declared().map((entry) => [entry.type, entry.derivedStatus === true]));
+    for (const docType of manifest.docTypes) {
+      expect(
+        flagged.get(docType.type),
+        `"${docType.type}": manifest deriveStatus and types.yaml derivedStatus disagree`,
+      ).toBe(typeof docType.deriveStatus === "function");
+    }
+    expect(flagged.get(TODO_DOC_TYPE)).toBe(true);
+  });
 });
 
 describe("the manifest", () => {
@@ -80,13 +101,15 @@ describe("the manifest", () => {
    * answer 3), and the `View` slot itself stays contracted and covered by the
    * underscore fixture plugin.
    */
-  it("registers the todo doc type with no View, and with ListItem, DocPanel and validate", () => {
+  it("registers the todo doc type with no View, and with ListItem, DocPanel, validate and deriveStatus", () => {
     const docType = manifest.docTypes.find((entry) => entry.type === TODO_DOC_TYPE);
     expect(docType).toBeDefined();
     expect(docType?.View).toBeUndefined();
     expect(typeof docType?.ListItem).toBe("function");
     expect(typeof docType?.DocPanel).toBe("function");
     expect(typeof docType?.validate).toBe("function");
+    // SPEC.md §12 (rider signed 2026-08-12): status is derived, never set.
+    expect(typeof docType?.deriveStatus).toBe("function");
   });
 
   it("registers one column type whose default query pins the doc type", () => {
@@ -117,6 +140,52 @@ describe("the manifest", () => {
       "items: must be a list of items; found string",
     ]);
     expect(validate?.(doc("## Notes\n", [{ text: "a" }]))?.join("; ")).toContain("items[0].done");
+  });
+});
+
+/**
+ * PLUGINS-016's third leg: the declaration's two executable halves — the
+ * manifest's `deriveStatus` (what the UI calls) and `server/derive.ts`'s
+ * default export (what the server calls) — must answer identically for the
+ * same document, or the board and the file could disagree about the one field
+ * the rider promises they never disagree about (SPEC.md §12).
+ */
+describe("manifest.deriveStatus ↔ server/derive parity", () => {
+  const deriveStatus = manifest.docTypes[0]?.deriveStatus;
+
+  const doc = (
+    status: string,
+    body: string,
+    extra?: Readonly<Record<string, unknown>>,
+  ): Parameters<NonNullable<typeof deriveStatus>>[0] =>
+    // The derivation reads type, status, body and extra; the fixture states
+    // only what is under test, exactly as the validate fixture above does.
+    ({
+      body,
+      frontmatter: { type: TODO_DOC_TYPE, status, extra: extra ?? {} },
+    }) as unknown as Parameters<NonNullable<typeof deriveStatus>>[0];
+
+  it("answers identically across the whole rider matrix", () => {
+    const matrix: readonly [string, string, Readonly<Record<string, unknown>> | undefined][] = [
+      ["open", "- [x] a\n- [x] b\n", undefined], // all done → resolved
+      ["open", "- [x] a\n- [ ] b\n", undefined], // one open → open
+      ["resolved", "", undefined], // empty list → open
+      ["open", "```\n- [ ] example\n```\n", undefined], // fenced only → open
+      ["archived", "- [x] a\n", undefined], // archived stands → null
+      ["open", "", { items: "nope" }], // unreadable → null
+      ["open", "", { items: [{ text: "a", done: true }] }], // legacy → resolved
+    ];
+    for (const [status, body, extra] of matrix) {
+      const viaManifest = deriveStatus?.(doc(status, body, extra));
+      const viaServer = derive({ type: TODO_DOC_TYPE, status, body, extra });
+      expect(viaManifest, `status=${status} body=${JSON.stringify(body)}`).toBe(viaServer);
+    }
+  });
+
+  it("agrees on the concrete answers, not only on agreeing", () => {
+    expect(deriveStatus?.(doc("open", "- [x] a\n"))).toBe("resolved");
+    expect(deriveStatus?.(doc("resolved", "- [ ] a\n"))).toBe("open");
+    expect(deriveStatus?.(doc("archived", "- [x] a\n"))).toBeNull();
   });
 });
 

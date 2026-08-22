@@ -3,6 +3,7 @@ import type { Doc } from "@corpus/contract";
 import { definePlugin } from "./index.js";
 import type {
   ColumnComponentProps,
+  DerivedDocStatus,
   DocPanelProps,
   DocViewProps,
   ListItemProps,
@@ -37,6 +38,7 @@ const full = {
       ListItem: (_props: ListItemProps) => null,
       DocPanel: (_props: DocPanelProps) => null,
       validate: (_doc: Doc) => [],
+      deriveStatus: (doc: Doc) => (doc.frontmatter.status === "archived" ? null : "open"),
     },
   ],
   columns: [
@@ -113,6 +115,51 @@ describe("the open payload", () => {
   it("keeps a plugin `Component` assignable when it only ever opens by id", () => {
     const Column = (props: ColumnComponentProps) => props.onOpen?.("doc_a") ?? null;
     expectTypeOf(Column).parameter(0).toExtend<ColumnComponentProps>();
+  });
+});
+
+/**
+ * PLUGINS-016 — the derived-status declaration (SPEC.md §12, rider signed
+ * 2026-08-12). The type pins the rider's own bound: the derivation chooses
+ * between `open` and `resolved` and nothing else, with `null` meaning "does
+ * not apply — the stored value stands".
+ */
+describe("deriveStatus", () => {
+  it("admits open, resolved, and null — the does-not-apply fallback", () => {
+    definePlugin({
+      id: "p",
+      name: "P",
+      docTypes: [{ type: "t", deriveStatus: () => "open" }],
+      columns: [],
+    });
+    definePlugin({
+      id: "p",
+      name: "P",
+      docTypes: [{ type: "t", deriveStatus: () => "resolved" }],
+      columns: [],
+    });
+    definePlugin({
+      id: "p",
+      name: "P",
+      docTypes: [{ type: "t", deriveStatus: () => null }],
+      columns: [],
+    });
+  });
+
+  it("rejects archived — it is not a claim about content, and is never derived", () => {
+    expectTypeOf<"archived">().not.toExtend<DerivedDocStatus>();
+    definePlugin({
+      id: "p",
+      name: "P",
+      // @ts-expect-error — the derivation may not choose `archived` (SPEC.md §12)
+      docTypes: [{ type: "t", deriveStatus: () => "archived" }],
+      columns: [],
+    });
+  });
+
+  it("stays optional — a type without it has a status somebody sets", () => {
+    expectTypeOf<"open" | "resolved">().toExtend<DerivedDocStatus>();
+    definePlugin({ id: "p", name: "P", docTypes: [{ type: "t" }], columns: [] });
   });
 });
 

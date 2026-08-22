@@ -58,6 +58,32 @@ describe("validateManifest", () => {
     if (!result.ok) expect(result.error).toContain('columns declares the type "board" twice');
   });
 
+  it("passes a docType declaring deriveStatus as a function (PLUGINS-016)", () => {
+    const manifest = {
+      id: "p",
+      name: "P",
+      docTypes: [{ type: "todo", deriveStatus: () => null }],
+      columns: [],
+    };
+    const result = validateManifest(manifest);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.manifest).toBe(manifest);
+  });
+
+  it("fails a deriveStatus that is not a function — the discovery-side refusal", () => {
+    // `derivedStatus: true` is the types.yaml spelling; in the manifest the
+    // declaration IS the function, so a bare flag here is a broken manifest
+    // and the whole plugin is skipped with a warning, never loaded halfway.
+    const result = validateManifest({
+      id: "p",
+      name: "P",
+      docTypes: [{ type: "todo", deriveStatus: true }],
+      columns: [],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("deriveStatus must be a function");
+  });
+
   it("fails a component field that is not a function, naming the field", () => {
     const result = validateManifest({
       id: "p",
