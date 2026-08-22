@@ -4,7 +4,27 @@
 ui
 
 ## Status
-todo
+closed — obsoleted by SHARED-064 (Phase 41): every item here exists to make a core affordance reachable from a plugin, and there are no plugins.
+
+**Closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-064 removed the plugin
+surface on the user's instruction — *"I want it fully gone, no trace of it in the
+codebase or the specs."* Every one of this issue's five items exists to make a
+core affordance **reachable from a plugin**: the selector rule, the reveal
+matcher, a plugin-facing menu frame, an escape-layer registration seam,
+`usePluginMutation`, and a plugin-facing composer primitive. With no plugin there
+is one consumer of each, `apps/ui`, and no drift surface between a producer and a
+consumer that could disagree.
+
+**The one real defect it carried is already fixed.** Item 1b cites PR #19's MAJOR
+of 2026-08-03 — a deadlined duplicate revealing the first namesake — which was
+fixed in that PR. What remained here was the *structural* ask to publish the
+matcher so an external producer could not restate the rule wrongly again. There
+is no external producer.
+
+The spec sentence this issue was raised against — *"menus come through the plugin
+kit"*, signed 2026-08-02 into what was then §11 — went with the plugin sections.
+The Spec References below keep the pre-renumber section numbers, as every issue
+filed before 2026-08-22 does. Kept as a record rather than deleted.
 
 ## Priority
 P1

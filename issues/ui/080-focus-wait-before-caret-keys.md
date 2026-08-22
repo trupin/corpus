@@ -8,6 +8,14 @@ ui
 
 todo
 
+**Amended 2026-08-22 by SHARED-065 (Phase 41).** Two references to
+`apps/ui/e2e/todos-menu.spec.ts` are removed — the file is deleted with the
+plugin surface (SHARED-064, UI-150). It appeared only in the *"Already correct —
+do not touch"* inventory and in an acceptance criterion asking that it stay
+green, so nothing this issue asks anyone to fix has changed. **The sixteen-site
+arithmetic below is unaffected**: the deleted site was never one of the fourteen
+remaining.
+
 ## Priority
 
 P2 (nice-to-have)
@@ -147,8 +155,8 @@ exclude them explicitly; do not leave a fourth unexamined class behind.
 
 `abandon.spec.ts:56` and `:83`; `board.spec.ts:93`; `smoke.spec.ts:90` and `:97`;
 `images.spec.ts:302` and `:307`; `compose-keyboard.spec.ts:270`;
-`context-menu.spec.ts:150`, `:203`, `:205`, `:231`, `:265`; `collapse.spec.ts:349`;
-`todos-menu.spec.ts:261`. Each carries an awaited `toBeVisible()`,
+`context-menu.spec.ts:150`, `:203`, `:205`, `:231`, `:265`; `collapse.spec.ts:349`.
+Each carries an awaited `toBeVisible()`,
 `toBeFocused()`, `toBeEnabled()` or equivalent between the click and the key.
 `query-editor.spec.ts` and `search.spec.ts` use locator-scoped `press` /
 `pressSequentially` on an already-open input and are not preceded by a bare click.
@@ -178,8 +186,7 @@ its arithmetic.
 - [ ] The four global-hotkey sites are explicitly **decided**: fixed with an
       appropriate condition (the shape `board.spec.ts:90-93` already uses), or
       excluded with a comment saying why
-- [ ] `todos-menu.spec.ts` and every file touched still passes at default workers
-      and under deliberate load
+- [ ] Every file touched still passes at default workers and under deliberate load
 - [ ] The reproduction is re-run at one site as proof the mechanism is understood:
       blur between click and key, observe the corrupted output, restore
 

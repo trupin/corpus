@@ -231,7 +231,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-038 | Column header sort control wraps in narrow columns; degrade label to "last ↓" (dogfood) | done | P2 | — |
 | UI-039 | Column query editor: autocomplete + syntax help (dogfood) | done | P2 | — |
 | SERVER-051 | Embed worker emits SSE invalidations for index status (§11 pill rider) | done | P1 | — |
-| UI-045 | Kit surface for plugin menus, selectors, mutations (PLUGINS-009 debt; selector-drift hazard) | todo | P1 | PLUGINS-009 |
+| UI-045 | Kit surface for plugin menus, selectors, mutations (PLUGINS-009 debt; selector-drift hazard) | closed | P1 | PLUGINS-009 |
 | UI-046 | Dev-only: StrictMode drops thread reveals on cached docs (PLUGINS-009 finding) | todo | P2 | — |
 | UI-040 | Console strip: semantic-index pill with live progress (§11 rider, signed) | done | P1 | SERVER-051 |
 | UI-041 | Copy button on fenced blocks in rendered turns (§11 canvas rider, signed) | done | P1 | — |
@@ -382,8 +382,8 @@ belongs to the same fix wave.
 | UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | done | P1 | UI-062 |
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
 | UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
-| UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | todo | P2 | UI-073 |
-| INFRA-020 | Two tests fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
+| UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | closed | P2 | UI-073 |
+| INFRA-020 | Tests that fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
 | SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | closed | P1 | — |
 | SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | done | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
@@ -429,14 +429,14 @@ belongs to the same fix wave.
 | SHARED-022 | Choosing the model for a request — weight levels, honoured as a directive (SIGNED, applied) | done | P2 | — |
 | UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | done | P2 | SHARED-022, CONTRACT-039, SERVER-069, AGENT-015 |
 | AGENT-015 | Skill states the weight levels the picker reads, and honours a stated one | done | P2 | SHARED-022 |
-| PLUGINS-014 | The todos composer offers no weight control (PR #35 review) | todo | P2 | UI-082 |
+| PLUGINS-014 | The todos composer offers no weight control (PR #35 review) | closed | P2 | UI-082 |
 | CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
 | UI-079 | `reveal.spec` waits on a decoration with a finite lifetime — **misfiled**, the spec was right; replaced by UI-140 | closed | P2 | — |
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
-| SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
+| SERVER-065 | Three projection readers swallow a failed `readdir` silently | todo | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | done | P1 | INFRA-008 |
 | INFRA-023 | New nanoid advisory blocks every commit; scoped override clears it | done | P1 | INFRA-010 |
@@ -1228,7 +1228,7 @@ left in a report.
 | SHARED-061 | A surface is as large as its place allows (SIGNED 2026-08-21, applied) | done | P0 | — |
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
-| UI-144 | A deleted document's reveal names the wrong absence, and a ref is written in render (PR #54 re-review NITs) | todo | P3 | — |
+| UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | todo | P3 | — |
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | todo | P1 | SHARED-061 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
@@ -1237,7 +1237,7 @@ left in a report.
 | SHARED-062 | A todo list's `due` is its items, and a hand-written date does not survive (SIGNED 2026-08-22, applied) | done | P0 | — |
 | SHARED-063 | §11's reader menu offers Resolve on every document that has one (SIGNED 2026-08-22, applied) | done | P1 | — |
 | UI-147 | The mockup still draws the eased column open that UI-146 removed | todo | P2 | UI-146 |
-| SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | todo | P2 | — |
+| SERVER-135 | The derived-field refusal is transcribed into the UI with no parity test (UI-092 finding) | closed | P2 | — |
 
 ## Phase 41 — The core is the whole of it (2026-08-22, v0.18.0 scope)
 

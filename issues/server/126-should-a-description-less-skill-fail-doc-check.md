@@ -8,6 +8,14 @@ server
 
 todo
 
+**Amended 2026-08-22 by SHARED-065 (Phase 41), and kept open.** Two clauses cited
+plugins. The *"Against"* case said skills arrive from three places, one of them a
+plugin — SHARED-064 removed that source, so it now says two, and **the argument
+is unweakened**: the point was always that a hand-edited skill is not our defect.
+The design note said an open `DocTypeSchema` means "a plugin type is not a
+fault"; the rule outlives its cause and now names an unrecognised type. The
+question this issue exists to answer is untouched.
+
 ## Priority
 
 P2
@@ -58,8 +66,8 @@ an existing workspace start failing `doc check` with exit 6?**
 this root. A skill Claude Code cannot load is exactly as dead as a persona it
 cannot load, which is the reasoning SERVER-123 accepted for `.claude/agents/`.
 
-**Against.** A workspace's skills arrive from three places — `corpus init`, a
-plugin, and a person's own hand — and only the first is under our control. A
+**Against.** A workspace's skills arrive from two places — `corpus init` and a
+person's own hand — and only the first is under our control. A
 finding that fires on files we shipped correctly but that a user has since edited
 is a finding about their editing, not about a defect. Exit 6 on a working
 workspace teaches people to ignore exit 6.
@@ -90,8 +98,9 @@ a person may reasonably trim.
 
 Read SERVER-124's decision record first. It settled three edge cases that apply
 here unchanged: a field present but `null` is treated as absent and waived;
-`anchors` gets no special case; and `DocTypeSchema` is deliberately open, so a
-plugin type is not a fault.
+`anchors` gets no special case; and `DocTypeSchema` is deliberately open, so **a
+type the core does not recognise is not a fault** (SPEC §12's M6 — it was written
+against plugin types, and SHARED-064 kept the rule while removing that cause).
 
 Note that `description` was the field whose only repair was an `--extra` flag the
 error text did not name. If this is extended, check that the repair is expressible

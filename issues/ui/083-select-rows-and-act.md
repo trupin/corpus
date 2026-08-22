@@ -256,9 +256,10 @@ bulk delete is excluded from it entirely.
 - `esc` with an overlay open, a reader open, and a non-empty selection — three
   presses, in that order
 - Right-click on a row while a selection exists in **another** column
-- A plugin column, whose rows render through the plugin's `ListItem` — decide
-  whether selection reaches them, and say why in the code rather than discovering
-  it in review
+- ~~A plugin column, whose rows render through the plugin's `ListItem`~~ —
+  **struck 2026-08-22 by SHARED-065 (Phase 41).** SHARED-064 removed the plugin
+  surface, so every column renders its rows through the core `Row`. There is no
+  second renderer for selection to reach or miss.
 
 ## Testing Strategy
 

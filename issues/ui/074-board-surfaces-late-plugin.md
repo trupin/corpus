@@ -4,7 +4,21 @@
 ui
 
 ## Status
-todo
+closed — obsoleted by SHARED-064 (Phase 41): its whole subject is late plugin discovery, which UI-150 deletes.
+
+**Closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-064 removed the plugin
+surface on the user's instruction — *"I want it fully gone, no trace of it in the
+codebase or the specs."* This issue's whole subject is **late plugin
+discovery**: a registration that settles after first paint and re-lays-out three
+board surfaces. UI-150 deletes the registry, the slot dispatch and
+`PluginColumnBody`, so there is no asynchronous registration for the board to
+wait on and no *"plugin missing"* card to show falsely. `NewListPicker`'s
+registration dependency goes the same way.
+
+Each of the three acceptance criteria names an effect of that discovery, so none
+outlives it. The reproduction technique it cites,
+`apps/ui/e2e/plugin-late-arrival.spec.ts`, is deleted with the surface it holds
+open. Kept as a record rather than deleted.
 
 ## Priority
 P2

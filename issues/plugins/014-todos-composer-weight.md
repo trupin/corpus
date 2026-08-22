@@ -6,7 +6,18 @@ plugins
 
 ## Status
 
-todo
+closed — obsoleted by SHARED-064 (Phase 41): the todos plugin, and the composer this issue is about, are deleted.
+
+**Closed 2026-08-22 by SHARED-065 (Phase 41).** SHARED-064 removed the plugin
+surface and the todos plugin on the user's instruction — *"I want it fully gone,
+no trace of it in the codebase or the specs"* — and `todo` is not a document
+type. The whole subject of this issue is
+`plugins/todos/ui/TodoItemComposer.tsx`, which INFRA-031 deletes with the rest of
+`plugins/`. There is no todos composer to give a weight control to. Nothing here
+survives its cause: UI-082 already published the control and the level parser
+from `@corpus/kit` with a `RUNTIME_SURFACE` entry, and this issue only ever asked
+the todos composer to import them.
+Kept as a record rather than deleted.
 
 ## Priority
 
