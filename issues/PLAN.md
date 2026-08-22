@@ -1263,6 +1263,15 @@ was written for.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-064 | The plugin system is removed, and the core is the whole of it (SIGNED 2026-08-22, applied) | done | P0 | — |
+| AGENT-042 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-064 |
+| UI-149 | Relocate the reader's open payloads out of the plugin surface, then delete it | todo | P0 | SHARED-064 |
+| SERVER-136 | Delete the server's plugin discovery, registry and derived-field seam | todo | P0 | SHARED-064 |
+| UI-150 | Delete the UI's plugin registry, slot dispatch and plugin columns | todo | P0 | UI-149 |
+| CLI-060 | Delete the CLI's plugin discovery, command topics and template install | todo | P0 | SHARED-064 |
+| CONTRACT-074 | Delete the contract's plugin types and the /api/x route note | todo | P0 | CLI-060 |
+| INFRA-031 | Delete the plugins workspace, its tooling and its docs | todo | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |
+| SHARED-065 | Sweep every open issue clean of plugins and todos | todo | P0 | — |
+| AGENT-043 | Does a workspace skill covering a domain oblige the comment loop to apply it? | todo | P2 | SHARED-064 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
