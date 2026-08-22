@@ -1275,3 +1275,52 @@ that nothing tells you your skills are stale until the agent tries the verb.
 | SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
 | PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | todo | P1 | PLUGINS-016 |
 | CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | todo | P2 | — |
+
+
+## Phase 40 — Your documents stop lying about their status (2026-08-21, v0.17.0 scope)
+
+**Two signed riders have been half-built for thirteen days.** SHARED-030
+(frontmatter hides behind an edit mode §11 abolished) and SHARED-036 (a todo
+list says `open` after its last item is checked) were both signed 2026-08-08.
+Their vocabulary half landed — SHARED-031 settled `status` as one vocabulary,
+PLUGINS-015 fixed the column's checkbox — and the mechanism half did not.
+
+**The missing half is why the user stopped using the todos plugin.** PLUGINS-018
+records it in their words: an item **18 days overdue** answered `no documents
+match` to `--due overdue`, to `--needs due` and to `--needs me`. Three separate
+ways of asking what is late, and all three said no while something was late.
+They wrote that this *"decided against the plugin for personal tasks"* and that
+a document-level rollup would make that decision worth reopening. This phase is
+that rollup.
+
+**One adjudication, made at kickoff so nobody re-litigates it.** SHARED-036's
+summary says the user chose *derived-and-read-only* over *an auto-flipped stored
+field*, on the ground that "a stored value that something else keeps in sync is
+a value that can drift". SERVER-085 then writes the derived value into the
+file's frontmatter, which reads like the rejected option. **It is not, and the
+signed text settles it**: *"The file never disagrees with what is shown: the
+derived value is written into the document's frontmatter whenever the server
+writes the document."* The field is a **shadow of the derivation**, rewritten
+from the body on every server write — nobody sets it and it cannot drift through
+any path the server owns. The one path it can drift through is an out-of-band
+edit, which SERVER-085 names as its own open problem and must answer.
+
+**Critical path**: PLUGINS-016 → SERVER-085 → { PLUGINS-018, UI-092 }. UI-093,
+UI-094, SERVER-100 and SERVER-054 are independent and run beside it.
+
+**Rows live in their original phase tables** (Phase 14, Phase 29, Phase 6),
+following the Phase 7b precedent. The scope, in dependency order:
+
+- **PLUGINS-016** — a plugin doc type derives its own status _(the seam; everything waits on it)_
+- **SERVER-085** — the board, queries and the file all agree on it _(the mechanism)_
+- **PLUGINS-018** — a todo item's due date reaches its document _(the user's report)_
+- **UI-092** — a derived status shows its value and its source, uneditable
+- **UI-093** — frontmatter controls are always live and save on change _(independent)_
+- **UI-094** — right-clicking a document offers Resolve _(independent)_
+- **SERVER-100** — a document with no `title:` wakes the agent on the save that adds one _(nearby debt)_
+- **SERVER-054** — the board row's pending-agent dot uses a replaced heuristic _(nearby debt)_
+
+**Riskiest: SERVER-085.** Projection, write-back and doctor convergence in one
+issue, with PLUGINS-018 and UI-092 behind it. If it slips, UI-092 and UI-094 are
+dropped and the rest ships — a derived status you can see is worth having
+without the control that displays its provenance.
