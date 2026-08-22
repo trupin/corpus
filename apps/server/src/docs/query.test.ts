@@ -1346,6 +1346,13 @@ describe("row fields", () => {
       turns: [{ author: "user", ts: daysAgo(1), body: LONG_TURN }],
     });
 
+    // `awaitingAgent` is a question about the queue (SERVER-054), so the one
+    // thread that awaits the agent is the one an unsettled event names.
+    // `th_resolved` carries the same shape *and* an unsettled event, which is
+    // what makes the resolved case a real assertion rather than an absence.
+    fields.queuedEvent("pending", "evt_whole0001", { threadId: "th_whole" });
+    fields.queuedEvent("in-progress", "evt_resolved1", { threadId: "th_resolved" });
+
     fields.seen({ th_anchored: daysAgo(2) });
     fields.reproject();
   });
@@ -1419,18 +1426,33 @@ describe("row fields", () => {
     expect(row("th_whole").unread).toBe(true);
   });
 
-  it("awaits the agent only in an open thread it was drawn into, on a user turn", () => {
+  it("awaits the agent exactly when an unsettled queue event names the thread", () => {
+    // SERVER-054. The predicate is the queue's, not the thread's.
     expect(row("th_whole").awaitingAgent).toBe(true);
-    // Same shape, but resolved — a settled thread stops waiting (SPEC.md §8).
+
+    // Resolved, and still awaiting: resolving a thread cancels no queued event
+    // (SPEC.md §8; UI-058 dropped the client's `!resolved` gate for this reason),
+    // so the answer follows the event and not the status.
     expect(row("th_resolved")).toMatchObject({
       agent: "engaged",
-      lastAuthor: "user",
+      status: "resolved",
+      awaitingAgent: true,
+    });
+
+    // The agent was never drawn in, and nothing is queued.
+    expect(row("th_detached")).toMatchObject({ agent: "none", awaitingAgent: false });
+  });
+
+  it("does not await the agent on a thread it is engaged in with nothing queued", () => {
+    // The shape the old heuristic could not tell apart from a real request:
+    // `agent: engaged` never comes back down (see `threads/participation.ts`),
+    // so a thread that has *ever* asked looked like a thread that is *still*
+    // asking. `th_anchored` is engaged and open with no unsettled event.
+    expect(row("th_anchored")).toMatchObject({
+      agent: "engaged",
+      status: "open",
       awaitingAgent: false,
     });
-    // The agent was never drawn in.
-    expect(row("th_detached")).toMatchObject({ agent: "none", awaitingAgent: false });
-    // The last turn already is the agent's reply.
-    expect(row("th_anchored").awaitingAgent).toBe(false);
   });
 
   it("renders an undated document as null rather than an epoch", () => {
@@ -1446,12 +1468,159 @@ describe("row fields", () => {
     expect(row("doc_evergreen").stale).toBeNull();
   });
 
-  it("keeps `awaitingAgent` in step with the `agent` and `author` filters", () => {
+  it("keeps `awaitingAgent` null on documents and derived from the queue on threads", () => {
+    // The old assertion here tied this column to the `agent=` and `author=`
+    // chips — "one vocabulary" — which was the defect wearing its justification
+    // (SERVER-054): those chips ask what a thread's history contains and this
+    // asks what the queue is holding. What survives is the shape rule: the
+    // column is thread-only, and on a thread it is exactly the queue's answer.
+    const queued = new Set(["th_whole", "th_resolved"]);
     for (const item of queryDocs(fields.db, DocsQuerySchema.parse({ limit: "200" }), NOW).items) {
-      if (item.agent === null) continue;
-      expect(item.awaitingAgent).toBe(
-        item.agent !== "none" && item.lastAuthor === "user" && item.status === "open",
+      if (item.agent === null) {
+        expect(item.awaitingAgent).toBeNull();
+        continue;
+      }
+      expect(item.awaitingAgent).toBe(queued.has(item.id));
+    }
+  });
+});
+
+// SERVER-054, the four corners the issue names: note/ask × outstanding/settled,
+// plus each queue state on its own. Its own workspace so the statuses can be
+// enumerated without perturbing the row-fields fixture.
+describe("awaitingAgent — the pending-agent dot is the queue's answer", () => {
+  let queue: Workspace;
+
+  const rowFor = (id: string): DocRow => {
+    const found = queryDocs(queue.db, DocsQuerySchema.parse({ limit: "200" }), NOW).items.find(
+      (item) => item.id === id,
+    );
+    expect(found, `no row for ${id}`).toBeDefined();
+    return found as DocRow;
+  };
+
+  beforeAll(() => {
+    queue = createWorkspace("awaiting");
+    queue.doc({ id: "doc_home", path: "data/docs/notes/home.md" });
+
+    // Every thread below is `agent: engaged`, `status: open`, last turn by the
+    // user — byte for byte the state the old heuristic reported as awaiting.
+    // What separates them is only what the queue holds.
+    for (const id of [
+      "th_noteonly",
+      "th_pending0",
+      "th_progress",
+      "th_deferred",
+      "th_processd",
+      "th_failedjb",
+      "th_abandond",
+    ]) {
+      queue.thread({
+        id,
+        title: id,
+        parent: "doc_home",
+        agent: "engaged",
+        turns: [
+          { author: "user", ts: daysAgo(3), body: "@agent thoughts?" },
+          { author: "agent", ts: daysAgo(2), body: "Here you go." },
+          { author: "user", ts: daysAgo(1), body: "Noting this; no need to reply." },
+        ],
+      });
+    }
+
+    queue.queuedEvent("pending", "evt_pending01", { threadId: "th_pending0" });
+    queue.queuedEvent("in-progress", "evt_progres1", { threadId: "th_progress" });
+    queue.queuedEvent("deferred", "evt_deferred", { threadId: "th_deferred" });
+    queue.queuedEvent("processed", "evt_processd", { threadId: "th_processd" });
+    queue.queuedEvent("failed", "evt_failedjb", { threadId: "th_failedjb" });
+    queue.queuedEvent("abandoned", "evt_abandond", { threadId: "th_abandond" });
+    queue.reproject();
+  });
+
+  afterAll(() => {
+    queue.close();
+  });
+
+  it("stays dark for a note-only turn, which enqueued nothing", () => {
+    // The live report UI-058 was filed for, surviving in the row's dot: the
+    // thread is engaged, open and last spoken to by the person, and nothing was
+    // asked of anybody.
+    expect(rowFor("th_noteonly")).toMatchObject({
+      agent: "engaged",
+      status: "open",
+      lastAuthor: "user",
+      awaitingAgent: false,
+    });
+  });
+
+  it.each([
+    ["pending", "th_pending0"],
+    ["in-progress", "th_progress"],
+    ["deferred", "th_deferred"],
+  ])("lights for a %s event — the three non-terminal states", (_status, id) => {
+    // `deferred` counts (SPEC.md §7): claimed work the agent parked because a
+    // person was editing, returned to `pending` on its own. The reply is coming.
+    expect(rowFor(id).awaitingAgent).toBe(true);
+  });
+
+  it.each([
+    ["processed", "th_processd"],
+    ["failed", "th_failedjb"],
+    ["abandoned", "th_abandond"],
+  ])("stays dark for a %s event — the three terminal states", (_status, id) => {
+    expect(rowFor(id).awaitingAgent).toBe(false);
+  });
+
+  it("says nothing about a failed job, which has its own Attention reason", () => {
+    // Not silence about the failure: `needs=failed-job` is where "this needs
+    // you" lives, and it is a different claim from "the agent is on it".
+    expect(rowFor("th_failedjb").attention).toContain("failed-job");
+    expect(rowFor("th_failedjb").awaitingAgent).toBe(false);
+  });
+
+  it("does not put a waiting thread into Attention", () => {
+    // The issue that filed this said `needs=me` filters on the same field. It
+    // does not, and must not: `NEEDS_REASONS` is
+    // unread-reply | form | due | stale | failed-job (SPEC.md §9.2), and none of
+    // them is "the agent is working on it". Attention is what needs *you*, and a
+    // request the agent is already holding needs nobody. So there is one
+    // derivation and nothing for a filter to drift from — asserted rather than
+    // assumed, because adding the reason would be a silent change to which
+    // documents a view returns.
+    expect(rowFor("th_pending0").attention).toEqual([]);
+    const attention = queryDocs(
+      queue.db,
+      DocsQuerySchema.parse({ needs: "me", limit: "200" }),
+      NOW,
+    ).items.map((item) => item.id);
+    expect(attention).not.toContain("th_pending0");
+    expect(attention).not.toContain("th_progress");
+    expect(attention).not.toContain("th_deferred");
+  });
+
+  it("lights a thread named by a plugin's own payload key", () => {
+    // The matching rule is `FAILED_JOB_SQL`'s — every top-level payload value,
+    // never a fixed key list — because payload shapes belong to whoever defines
+    // the event type (SPEC.md §7, §10).
+    const plugin = createWorkspace("awaiting-plugin");
+    try {
+      plugin.doc({ id: "doc_home", path: "data/docs/notes/home.md" });
+      plugin.thread({
+        id: "th_plugin01",
+        title: "Plugin work",
+        parent: "doc_home",
+        agent: "none",
+        turns: [{ author: "user", ts: daysAgo(1), body: "Note." }],
+      });
+      plugin.queuedEvent("pending", "evt_plugin01", { todoId: "th_plugin01" });
+      plugin.reproject();
+      const found = queryDocs(plugin.db, DocsQuerySchema.parse({ limit: "200" }), NOW).items.find(
+        (item) => item.id === "th_plugin01",
       );
+      // `agent: none` and all: the queue is the authority, not the thread field.
+      expect(found).toMatchObject({ agent: "none", awaitingAgent: true });
+    } finally {
+      plugin.close();
     }
   });
 });

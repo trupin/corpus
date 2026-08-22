@@ -124,6 +124,20 @@ function shouldEnqueue(input: ParticipationInput, status: ThreadStatus): boolean
  *
  * `engaged` is terminal: resolving a thread stops the re-trigger without
  * unwinding the fact that the agent took part.
+ *
+ * **The field only ever climbs, and that is intentional** (SERVER-054, after
+ * UI-058 found it reads like a bug). Nothing lowers it: not the agent's reply,
+ * not a resolve, not a `requestsAgent: false` turn. It records that the agent is
+ * *in* this conversation, which is what §8's automatic re-trigger reads — a
+ * field that came back down would make a thread stop working the moment its last
+ * exchange settled, and the person would have to say `@agent` again in a
+ * conversation the agent is plainly part of.
+ *
+ * So it answers "has the agent been drawn in", and it **cannot** answer "is a
+ * reply outstanding now". The second question is the queue's: an unsettled event
+ * naming the thread (`docs/needs.ts`'s `AWAITING_AGENT_SQL`). Two surfaces built
+ * the second answer out of this field and both were wrong the same way — a
+ * "note only" turn, which enqueues nothing, lit a pending-agent indicator.
  */
 function nextAgentState(current: ThreadAgent, author: Actor, enqueue: boolean): ThreadAgent {
   if (author === "agent" && current === "requested") return "engaged";

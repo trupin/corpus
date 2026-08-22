@@ -45,18 +45,91 @@ export function isThreadUnread(db: ProjectionDb, threadId: string, mark: string)
 }
 
 /**
- * The pending-agent affordance (SPEC.md §8, §11): the agent has been drawn into
- * an open thread and the last turn is not yet its reply.
+ * SPEC.md §7's three **non-terminal** queue states — the states in which work is
+ * genuinely still owed.
  *
- * It lives beside {@link UNREAD_SQL} rather than in the row builder because it
- * is written as the conjunction of exactly the columns `agent=` and `author=`
- * filter on (`t.agent`, `t.last_author`) — the indicator and those chips read
- * one vocabulary, so `?agent=engaged&author=user` and the badge cannot disagree.
- * A thread with no turns has `last_author IS NULL` and is therefore not awaiting
- * anything: the agent is drawn in *by* a turn.
+ * `pending` and `in-progress` are §7's live states. `deferred` is neither live
+ * nor terminal and belongs here all the same: the agent claimed the event and
+ * parked it because a person was editing, and it returns to `pending` on its own
+ * when that session ends, so the reply is still coming. `processed`, `failed`
+ * and `abandoned` are terminal — nothing more arrives without somebody asking
+ * again — and a failed event has its own Attention reason ({@link
+ * FAILED_JOB_SQL}), which is where "this needs you" belongs rather than here.
+ *
+ * The wire deliberately publishes no `outstanding` shorthand (`JobsQuerySchema`:
+ * "which statuses count as unsettled is a reading of SPEC.md §7's state machine,
+ * and baking one caller's reading into the wire would make every other caller
+ * live with it"), so the reading is spelled out per caller. This is the server's,
+ * and it is the same three the two UI callers pass as
+ * `?status=pending,in-progress,deferred`.
  */
-export const AWAITING_AGENT_SQL =
-  "(t.id IS NOT NULL AND t.agent <> 'none' AND t.status = 'open' AND t.last_author = 'user')";
+export const OUTSTANDING_EVENT_STATUSES = ["pending", "in-progress", "deferred"] as const;
+
+const OUTSTANDING_EVENT_STATUS_LIST = OUTSTANDING_EVENT_STATUSES.map(
+  (status) => `'${status}'`,
+).join(", ");
+
+/**
+ * The pending-agent affordance (SPEC.md §8, §11): **the queue still owes this
+ * thread something**.
+ *
+ * **This is a question about the queue, and it used to be a guess about the
+ * thread** (SERVER-054, following UI-058 which fixed the same lie one level up).
+ * The old fragment was `t.agent <> 'none' AND t.status = 'open' AND
+ * t.last_author = 'user'`, and no part of that can tell "the newest turn asked
+ * for the agent" from "this thread asked for the agent at some point":
+ *
+ * - `t.agent` only ever **climbs** (`none → requested → engaged`; see
+ *   `threads/participation.ts`, and the note on the column in
+ *   `projection/schema.ts`). Nothing lowers it — not the agent's reply, not a
+ *   resolve, not a `requestsAgent: false` turn — so once a thread has engaged
+ *   the agent the conjunct is true forever.
+ * - `t.last_author = 'user'` is then the whole predicate, and §8's "note only"
+ *   toggle exists precisely so a person can add a turn **without** summoning
+ *   anybody. Measured on a real server with the queue drained to
+ *   `{pending: 0, inProgress: 0, deferred: 0}`, one note-only reply
+ *   (`"eventId": null` — nothing was enqueued) flipped this to true and lit the
+ *   row's pending-agent dot.
+ *
+ * A turn records nothing about whether it asked (`TurnSchema` is `{author, ts,
+ * body}`; `requestsAgent` is a request-time instruction persisted nowhere), so
+ * the turn stream cannot answer it either. **The queue can**: §8 enqueues
+ * `comment.created` exactly when a comment requests the agent, and §7 moves that
+ * event through its statuses until it settles. So "is a reply still owed" is
+ * "does an unsettled event name this row", which is a fact the server already
+ * stores.
+ *
+ * **The matching rule is {@link FAILED_JOB_SQL}'s, deliberately** — every
+ * top-level payload value, not a fixed key list. Two sibling predicates in one
+ * file may not read a payload two ways, and the reason that rule was chosen
+ * holds here unchanged: payload shapes belong to whoever defines the event type,
+ * so a plugin's event naming its document under its own key still lights the row
+ * without a server change (SPEC.md §7, §10).
+ *
+ * **How this relates to the client's own scan, since both read the queue.**
+ * `packages/kit`'s `useAgentActivity` asks a *different* question of the same
+ * source: it needs each job's own `status` and `lastLine` to separate §8's
+ * *working* from *waiting*, which a row column cannot carry, and its answer is
+ * bounded by one response's worth of unfinished jobs. This column answers only
+ * "something is outstanding here", unwindowed, which is exactly the case the
+ * client's window can drop. Where they can differ they differ in one direction
+ * only: `Job.originId` names the **first** of `threadId`, `parentId`, `docId`
+ * that the corpus still holds, so this fragment's set is a superset — a parent
+ * thread whose child thread has an unfinished event also reads as waiting, which
+ * §8's "a reply in a child thread is collected, the conversation continues in
+ * the parent" makes true rather than merely harmless. What must not differ, and
+ * no longer does, is the **source**: neither side infers a pending agent from
+ * thread state.
+ *
+ * The old fragment's stated virtue — that it was written from the columns
+ * `agent=` and `author=` filter on, so the chips and the badge "read one
+ * vocabulary" — was the defect wearing its justification. Those filters ask what
+ * a thread's history contains, and this asks what the queue is holding now.
+ */
+export const AWAITING_AGENT_SQL = `(t.id IS NOT NULL AND EXISTS (
+  SELECT 1 FROM events e, json_each(e.payload_json) je
+   WHERE e.status IN (${OUTSTANDING_EVENT_STATUS_LIST}) AND je.value = t.id
+))`;
 
 /**
  * An unanswered form is an agent turn of an **open** thread carrying an
