@@ -1,3 +1,4 @@
+import type { Doc } from "@corpus/contract";
 import { usePluginRegistry, type PluginRegistry } from "../plugins/registry";
 
 /**
@@ -9,7 +10,10 @@ import { usePluginRegistry, type PluginRegistry } from "../plugins/registry";
  *
  * - The frontmatter form (UI-093) renders the status control *populated and
  *   uneditable*, with {@link FieldLock.reason} as its hint — SHARED-030's "a
- *   field that was never the person's to set", which is not an edit mode.
+ *   field that was never the person's to set", which is not an edit mode. On a
+ *   `derived` lock (UI-092) it stops rendering a control at all and states the
+ *   value, and it asks one **additional** question first — see
+ *   {@link formStatusLock}, which narrows this answer and never replaces it.
  * - A document's action menu (UI-094) **omits** Resolve/Reopen instead. SPEC.md
  *   §11's context menu lists "exactly that item's existing actions", and an item
  *   nothing the user does could arm is not an action — it is a caption. The
@@ -25,8 +29,22 @@ import { usePluginRegistry, type PluginRegistry } from "../plugins/registry";
  * they were written stop agreeing.
  */
 export interface FieldLock {
+  /**
+   * **Which of the two reasons this is**, so a caller can act on the kind rather
+   * than on the wording of {@link FieldLock.reason}.
+   *
+   * The two are not the same shape of fact and UI-092 draws them differently. A
+   * `derived` value was computed from the document and is a **statement**; an
+   * `archived` one was decided by a person and is a control whose act lives on
+   * another route. A surface that told them apart by matching the reason text
+   * would break the first time the wording changed.
+   */
+  readonly kind: FieldLockKind;
   readonly reason: string;
 }
+
+/** See {@link FieldLock.kind}. */
+export type FieldLockKind = "archived" | "derived";
 
 /**
  * The whole of what deciding the question takes: **two fields**, and both a
@@ -50,7 +68,27 @@ const ARCHIVED = "archived";
  * refused outright (SERVER-039).
  */
 const ARCHIVED_LOCK: FieldLock = {
+  kind: "archived",
   reason: "archived — Unarchive in the ⋯ menu brings it back",
+};
+
+/**
+ * The same boundary, on a document whose type would otherwise derive its status.
+ *
+ * §12's rider is explicit that these two facts do not blend: *"`archived` is not
+ * derived, because it is not a claim about what is left to do. It says where a
+ * document is kept (§5), which no checkbox can imply, so an archived todo
+ * document reads `archived` whatever its items say."* The plain archived reason
+ * would be true here but would leave the reader to guess which of the two rules
+ * put the word there, on the one document where both could have — so this one
+ * says which, and says the derivation is only suspended rather than gone
+ * (unarchiving returns the document to whichever value its content states).
+ */
+const ARCHIVED_OVER_DERIVED_LOCK: FieldLock = {
+  kind: "archived",
+  reason:
+    "archived — where this document is kept, not a reading of its content. " +
+    "Unarchive in the ⋯ menu brings it back",
 };
 
 /**
@@ -63,8 +101,14 @@ const ARCHIVED_LOCK: FieldLock = {
  * the control UI-092 renders.
  */
 const DERIVED_LOCK: FieldLock = {
+  kind: "derived",
   reason: "derived from this document’s own content, so it is nobody’s to set",
 };
+
+/** Whether any loaded plugin declares this type's status derived (PLUGINS-016). */
+function declaresDerivedStatus(type: string, registry: PluginRegistry): boolean {
+  return registry.docTypes.get(type)?.docType.deriveStatus !== undefined;
+}
 
 /**
  * Why this document's status is not this person's to set, or `null` when it is.
@@ -82,8 +126,9 @@ const DERIVED_LOCK: FieldLock = {
  * uneditable because a manifest could not be read has no way back (UI-092).
  */
 export function statusLock(subject: StatusSubject, registry: PluginRegistry): FieldLock | null {
-  if (subject.status === ARCHIVED) return ARCHIVED_LOCK;
-  if (registry.docTypes.get(subject.type)?.docType.deriveStatus !== undefined) return DERIVED_LOCK;
+  const derives = declaresDerivedStatus(subject.type, registry);
+  if (subject.status === ARCHIVED) return derives ? ARCHIVED_OVER_DERIVED_LOCK : ARCHIVED_LOCK;
+  if (derives) return DERIVED_LOCK;
   return null;
 }
 
@@ -96,4 +141,66 @@ export function statusLock(subject: StatusSubject, registry: PluginRegistry): Fi
  */
 export function useStatusLock(subject: StatusSubject): FieldLock | null {
   return statusLock(subject, usePluginRegistry());
+}
+
+/**
+ * The derived value this document's type states, or `null` when the derivation
+ * **declines** — the document is archived, or its content cannot be read
+ * (`PluginDocType.deriveStatus` rule 2).
+ *
+ * Contained the way the server contains the same call
+ * (`apps/server/src/plugins/derived-fields.ts`): a derivation is plugin code on
+ * a render path, and a throw here would blank the reader over a document the
+ * user can otherwise edit. A throw is therefore read as *declining*, which lands
+ * on the side that leaves the field the person's.
+ */
+function derivedStatus(doc: Doc, registry: PluginRegistry): string | null {
+  const derive = registry.docTypes.get(doc.frontmatter.type)?.docType.deriveStatus;
+  if (derive === undefined) return null;
+  try {
+    return derive(doc);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * {@link statusLock}, **plus the one question a form may ask and a menu may
+ * not** — does this type's derivation actually have something to say about
+ * *this* document?
+ *
+ * This is not a second predicate and it cannot become one. It calls
+ * {@link statusLock} for the answer and may only ever **narrow** it: it never
+ * locks a field the shared predicate left open, and it never touches an
+ * `archived` lock. All it can do is release the one case §12 says was never
+ * derived in the first place — a document whose content the derivation cannot
+ * read, where "the stored value stands" and so the stored value is once again
+ * the person's to set (PLUGINS-016 rule 2, SHARED-036's *unreadable items* edge
+ * case).
+ *
+ * **Why the two surfaces are allowed to differ here** (orchestrator decision,
+ * 2026-08-21). Answering this needs the document's **body**, and
+ * {@link StatusSubject} carries `type` and `status` because that is all a row
+ * has — the keyboard path reads its subject back off a painted element. So the
+ * menu stays at the declaration's altitude and omits Resolve for the whole type,
+ * which errs toward not offering an act that would be refused. The form holds
+ * the `Doc` already, so it can be exact. The two answers differ for exactly one
+ * document: a **legacy, unmigrated** todo whose items are still in
+ * `extra.items`, where the menu offers no Resolve and the form offers an
+ * ordinary status control. That is rare, it is in the safe direction, and the
+ * person can still resolve such a document — from the form.
+ *
+ * The alternative was a third field on {@link StatusSubject} carrying the
+ * derived value, which would have made every row's menu depend on a fetch, and
+ * it was rejected for that.
+ */
+export function formStatusLock(doc: Doc, registry: PluginRegistry): FieldLock | null {
+  const lock = statusLock(doc.frontmatter, registry);
+  if (lock === null || lock.kind !== "derived") return lock;
+  return derivedStatus(doc, registry) === null ? null : lock;
+}
+
+/** {@link formStatusLock} against the live registry — see {@link useStatusLock}. */
+export function useFormStatusLock(doc: Doc): FieldLock | null {
+  return formStatusLock(doc, usePluginRegistry());
 }

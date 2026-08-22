@@ -225,10 +225,28 @@ export interface PluginDocType {
   readonly deriveStatus?: (doc: Doc) => DerivedDocStatus | null;
   /**
    * Declares that this type's `due` is **derived from the document's own
-   * content rather than set**, and computes it (PLUGINS-018). Surfaces show
-   * `deriveDue(doc)?.due ?? doc.frontmatter.due`, and a surface that would
-   * offer a `due` edit renders it locked, for the same §11 reason the status
-   * control is locked.
+   * content rather than set**, and computes it (PLUGINS-018). A surface that
+   * would offer a `due` edit renders it locked, for the same §11 reason the
+   * status control is locked.
+   *
+   * **Compose it on the outer value, never with `??` on the inner one.** The
+   * derivation applies whenever this returns an object, *including* when that
+   * object's `due` is `null`:
+   *
+   * ```ts
+   * const derived = deriveDue(doc);
+   * const due = derived === null ? doc.frontmatter.due : derived.due;
+   * ```
+   *
+   * `deriveDue(doc)?.due ?? doc.frontmatter.due` is **wrong** and this comment
+   * carried it until SERVER-134's implementer caught it. That `??` collapses
+   * `{ due: null }` into the not-applicable case, so a list whose last dated
+   * item was just checked keeps a deadline it no longer has — the exact defect
+   * {@link DerivedDocDue}'s three answers exist to prevent.
+   *
+   * {@link PluginDocType.deriveStatus} genuinely has two answers, so its
+   * `deriveStatus(doc) ?? doc.frontmatter.status` is correct. Do not generalise
+   * from one to the other in either direction.
    *
    * The field it derives is core's own `due` (SPEC.md §5 — "optional deadline
    * (ISO date) on ANY type — surfaces in Attention and filters"), which is why

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { Doc } from "@corpus/contract";
+import type { Doc, DocStatus } from "@corpus/contract";
 import { docKey, type CorpusClient } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -10,6 +10,7 @@ import {
   setEditSessionClient,
 } from "../editor/editSessionFlush";
 import { AUTOSAVE_DEBOUNCE_MS } from "../editor/useAutosave";
+import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
 import {
   changedFields,
@@ -24,6 +25,9 @@ afterEach(() => {
   // The registry is module state, and an unmount from any test in this file
   // releases a surface into it (UI-044).
   resetEditSessionFlush();
+  // The plugin registry is module state too: a fixture left installed would
+  // silently lock the status control in every test that ran after it.
+  setPluginRegistry(EMPTY_REGISTRY);
   vi.useRealTimers();
 });
 
@@ -48,6 +52,8 @@ interface Mounted {
   readonly harness: ReturnType<typeof createCorpusTestHarness>;
   readonly notices: string[];
   readonly unmount: () => void;
+  /** The same mounted form, handed a newer document — what an SSE refetch does. */
+  readonly rerender: (doc: Doc) => void;
 }
 
 function mount(
@@ -57,15 +63,23 @@ function mount(
   const wire = options.wire ?? readerTransport({ docs: [doc] });
   const harness = createCorpusTestHarness({ fetch: wire.fetch });
   const notices: string[] = [];
-  const view = render(
+  const form = (shown: Doc) => (
     <FrontmatterForm
-      doc={doc}
+      doc={shown}
       selectTitle={options.selectTitle ?? false}
       onNotify={(notice) => notices.push(`${notice.tone}:${notice.message}`)}
-    />,
-    { wrapper: harness.Wrapper },
+    />
   );
-  return { wire, harness, notices, unmount: view.unmount };
+  const view = render(form(doc), { wrapper: harness.Wrapper });
+  return {
+    wire,
+    harness,
+    notices,
+    unmount: view.unmount,
+    rerender: (next) => {
+      view.rerender(form(next));
+    },
+  };
 }
 
 const title = (): HTMLTextAreaElement =>
@@ -529,6 +543,159 @@ describe("archiving is the ⋯ menu's, not this form's", () => {
     expect(title().readOnly).toBe(false);
     expect(tags().disabled).toBe(false);
     expect(due().disabled).toBe(false);
+  });
+});
+
+/**
+ * A derived status is a **statement**, not a control (UI-092).
+ *
+ * SPEC.md §12, rider signed 2026-08-12: *"the status control shows the derived
+ * value and says it comes from the items, which is not an edit mode but a field
+ * that was never the person's to set"*. What that rules out is the disabled
+ * `<select>` UI-094 shipped as a down-payment — a control someone switched off
+ * still says there is an act here.
+ *
+ * The **value** is the document's, exactly as the server sent it (SERVER-085).
+ * These cases never assert that the UI computed it, because it must not: the
+ * fixture derivation below decides whether the field is *settable*, and the
+ * status shown is always `doc.frontmatter.status`.
+ */
+describe("a derived status", () => {
+  /** Discovery, with one plugin declaring `todo`'s status derived. */
+  function install(deriveStatus: ((doc: Doc) => "open" | "resolved" | null) | undefined): void {
+    const registry = buildRegistry([
+      {
+        dir: "todos",
+        loaded: {
+          module: {
+            default: {
+              id: "todos",
+              name: "Todos",
+              docTypes: [{ type: "todo", ...(deriveStatus === undefined ? {} : { deriveStatus }) }],
+              columns: [],
+            },
+          },
+        },
+      },
+    ]);
+    expect(registry.warnings, "the fixture manifest must survive validation").toEqual([]);
+    setPluginRegistry(registry);
+  }
+
+  /** Reads the items the way the todos plugin does, and declines an empty body. */
+  const fromBody = (doc: Doc): "open" | "resolved" | null => {
+    if (doc.frontmatter.status === "archived") return null;
+    // An empty body stands in for items that cannot be read — the legacy
+    // `extra.items` document, which derives nothing.
+    if (doc.body === "") return null;
+    return doc.body.includes("- [ ]") ? "open" : "resolved";
+  };
+
+  const todo = (overrides: { status?: DocStatus; body?: string } = {}): Doc =>
+    docFixture({
+      body: overrides.body ?? "- [ ] pay the deposit\n",
+      path: "data/docs/todos/week.md",
+      frontmatter: {
+        id: "doc_m",
+        type: "todo",
+        title: "Week of Jul 20",
+        status: overrides.status ?? "open",
+      },
+    });
+
+  const statement = (): HTMLOutputElement => screen.getByRole<HTMLOutputElement>("status");
+
+  it("states the value where the control was, and names where it came from", () => {
+    install(fromBody);
+    mount({ doc: todo() });
+
+    expect(statement().textContent).toBe("open");
+    // Not a dropdown at all — not a disabled one, which would read as an act
+    // that is momentarily unavailable.
+    expect(screen.queryByRole("combobox", { name: /status/ })).toBeNull();
+    expect(screen.getByText(/derived from this document’s own content/)).toBeDefined();
+    // The label still names it: `<output>` is labelable, so the `status` field
+    // is what anything walking the form finds, exactly as it found the select.
+    // (The name carries the field's note too — that is this form's shape for
+    // every field, not something the statement introduced.)
+    expect(screen.getByLabelText(/^status/)).toBe(statement());
+  });
+
+  it("follows the document when the last item is checked, without changing shape", () => {
+    install(fromBody);
+    const { rerender } = mount({ doc: todo() });
+    const before = statement();
+    expect(before.textContent).toBe("open");
+
+    // What an SSE invalidation and its refetch hand the form: the same document,
+    // with the status the server derived and wrote (SERVER-085).
+    rerender(todo({ body: "- [x] pay the deposit\n", status: "resolved" }));
+
+    // Same element, same class — the value changed and the box did not
+    // (SHARED-057). A statement whose width followed its text would move the
+    // hint under it every time an item was checked.
+    expect(statement()).toBe(before);
+    expect(statement().textContent).toBe("resolved");
+    expect(statement().className).toBe("fm-statement");
+  });
+
+  it("issues no write of a status nobody set", async () => {
+    install(fromBody);
+    const { wire } = mount({ doc: todo() });
+
+    fireEvent.change(tags(), { target: { value: "home" } });
+    await waitFor(() => {
+      expect(wire.of("PUT")).toHaveLength(1);
+    });
+    expect(wire.of("PUT")[0]?.body).toEqual({ tags: ["home"] });
+    expect(Object.keys(wire.of("PUT")[0]?.body as object)).not.toContain("status");
+  });
+
+  it("leaves every other control live", () => {
+    install(fromBody);
+    mount({ doc: todo() });
+    expect(title().readOnly).toBe(false);
+    expect(tags().disabled).toBe(false);
+    expect(due().disabled).toBe(false);
+  });
+
+  it("hands the field back where the items cannot be read", () => {
+    // PLUGINS-016 rule 2: a derivation that declines leaves the stored value
+    // standing, and a stored value nothing derives is the person's to set.
+    install(fromBody);
+    mount({ doc: todo({ body: "" }) });
+
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(status().disabled).toBe(false);
+    expect(status().value).toBe("open");
+  });
+
+  it("is an ordinary control when the plugin is gone (§15 M6)", () => {
+    setPluginRegistry(EMPTY_REGISTRY);
+    mount({ doc: todo() });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(status().disabled).toBe(false);
+  });
+
+  it("is an ordinary control for a type that declares no derivation", () => {
+    install(undefined);
+    mount({ doc: todo() });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(status().disabled).toBe(false);
+  });
+
+  it("shows an archived todo as archived, and says that is not a reading of it", () => {
+    // §12: "`archived` is not derived… it says where a document is kept". So the
+    // control stays a control — there is an act, and it lives on another route —
+    // and its note says which of the two rules put the word there.
+    install(fromBody);
+    mount({ doc: todo({ status: "archived" }) });
+
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(status().value).toBe("archived");
+    expect(status().disabled).toBe(true);
+    expect(screen.getByText(/not a reading of its content/)).toBeDefined();
+    expect(screen.getByText(/Unarchive in the ⋯ menu/)).toBeDefined();
   });
 });
 

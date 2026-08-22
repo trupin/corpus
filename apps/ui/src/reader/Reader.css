@@ -485,6 +485,34 @@
   cursor: default;
 }
 
+/* A **derived** value, where a control would have been (UI-092, SPEC.md §12).
+   It keeps the control's metrics — the same cell, the same padding, the same
+   face, and a transparent border rather than none — so a type that derives its
+   status does not shift the row it sits in or the hint beneath it. What it drops
+   is the chrome: no field background, no frame, nothing that reads as an act
+   somebody switched off.
+
+   SHARED-057: the width is the cell's, so `open` and `resolved` are the same
+   box and the form does not move when one becomes the other. The value comes
+   from a closed vocabulary of short words (§5), so the clip below is a
+   guarantee rather than a reading path — it exists so that a status this UI has
+   never heard of cannot widen anything either. */
+.fm-statement {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ink);
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .archived-banner {
   border: 1px solid var(--line);
   background: var(--surface-2);

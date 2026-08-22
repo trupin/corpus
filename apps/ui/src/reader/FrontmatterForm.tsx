@@ -13,7 +13,7 @@ import {
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
-import { useStatusLock, type FieldLock } from "../doc/statusLock";
+import { useFormStatusLock, type FieldLock } from "../doc/statusLock";
 import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
 import { SaveChipView } from "../editor/SaveChip";
 import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
@@ -129,7 +129,16 @@ export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
  * row context menu asks the same question of a subject that is **not** a `Doc`,
  * and the only two honest ways to serve both callers were one predicate over the
  * fields they share or two predicates that would eventually disagree. This form
- * reads the answer through {@link useStatusLock} and decides nothing itself.
+ * reads the answer through `useFormStatusLock` and decides nothing itself —
+ * that hook is the shared predicate plus one narrowing question this form is
+ * able to ask because it holds the whole `Doc`.
+ *
+ * **The third state is a statement rather than a switched-off control**
+ * (UI-092). A `derived` lock replaces the `<select>` with the value in words:
+ * §12 says the control "shows the derived value and says it comes from the
+ * items", and a disabled dropdown says something else — that there is an act
+ * here, currently unavailable. There is no act here. An `archived` lock keeps
+ * the control, because there *is* one and it lives on another route (UI-020).
  */
 
 /** The options a select must offer: the editable set, plus its own value. */
@@ -287,6 +296,36 @@ function Field({ label, lock, hint, children }: FieldProps): ReactElement {
       {note === undefined ? null : <span className="fm-hint">{note}</span>}
     </label>
   );
+}
+
+/**
+ * A **derived** status: the value, stated, where the control would have been.
+ *
+ * SPEC.md §12 (rider signed 2026-08-12) asks for a status control that "shows
+ * the derived value and says it comes from the items", and §11 (SHARED-030) for
+ * a field that "shows the value and says where it comes from, and is editable by
+ * nobody". A disabled `<select>` gets the first half right and the second half
+ * wrong: it is the shape of an act, and every disabled act in this app is one a
+ * person could arm by doing something. Nothing arms this one, so there is no
+ * control here — only a reading of the document, with {@link Field}'s note
+ * beneath it saying where the reading came from.
+ *
+ * **`<output>`, not a `<span>`.** It is the element for a value the application
+ * computed, it is labelable — so the field's `status` label still names it — and
+ * its implicit `role="status"` means a value that flips under a reader (checking
+ * the last item) is announced rather than silently swapped.
+ *
+ * **The value is the server's** (SERVER-085), never re-derived here: two
+ * derivations are two chances to disagree, and where the server sends something
+ * this UI's copy of the plugin would not have derived, what the server sent is
+ * what the file says.
+ *
+ * SHARED-057: the box is the grid cell's, not the value's, so `open` and
+ * `resolved` occupy identical space and nothing on the form moves when one
+ * becomes the other. That is `.fm-statement`'s whole job.
+ */
+function StatusStatement({ status }: { readonly status: DocStatus }): ReactElement {
+  return <output className="fm-statement">{status}</output>;
 }
 
 export function FrontmatterForm({
@@ -540,7 +579,7 @@ export function FrontmatterForm({
   );
 
   const value = valueOf(doc, local);
-  const lock = useStatusLock(doc.frontmatter);
+  const lock = useFormStatusLock(doc);
   const folder = folderOf(doc.path);
 
   return (
@@ -636,21 +675,25 @@ export function FrontmatterForm({
           lock={lock}
           hint="archive from the ⋯ menu — a status flip would not move a skill’s folder"
         >
-          <select
-            className="fm-input"
-            value={value.status}
-            disabled={lock !== null}
-            onKeyDown={leaveOnEscape}
-            onChange={(event) => {
-              patch("status", event.target.value);
-            }}
-          >
-            {statusOptions(value.status).map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
+          {lock?.kind === "derived" ? (
+            <StatusStatement status={value.status} />
+          ) : (
+            <select
+              className="fm-input"
+              value={value.status}
+              disabled={lock !== null}
+              onKeyDown={leaveOnEscape}
+              onChange={(event) => {
+                patch("status", event.target.value);
+              }}
+            >
+              {statusOptions(value.status).map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          )}
         </Field>
         <Field label="due" lock={null}>
           <input

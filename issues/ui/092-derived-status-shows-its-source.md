@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -43,25 +43,72 @@ is worth its own issue because it is the one place where "always editable" and
 
 ## Acceptance Criteria
 
-- [ ] On a document whose type declares a derived status, the status control
+- [x] On a document whose type declares a derived status, the status control
       renders the derived value and is **not** interactive — not a disabled
       dropdown that looks momentarily clickable, but a control that reads as a
       statement
-- [ ] It says where the value comes from, in words, next to the value (the
+- [x] It says where the value comes from, in words, next to the value (the
       DocPanel's existing voice is the reference — "derived from the items", not
       an icon alone)
-- [ ] The row's status chip agrees with it, and with the board, and with the
+- [x] The row's status chip agrees with it, and with the board, and with the
       DocPanel's counts on the same screen
-- [ ] Checking the last item updates the control **without a reload**, via the
+- [x] Checking the last item updates the control **without a reload**, via the
       same SSE invalidation that updates the DocPanel counts
-- [ ] An archived todo document shows `archived`, and the control still explains
+- [x] An archived todo document shows `archived`, and the control still explains
       that `archived` is the stored decision rather than a derived value
-- [ ] A document whose items are unreadable falls back to an ordinary editable
+- [x] A document whose items are unreadable falls back to an ordinary editable
       status control — there is nothing to derive from, so the field is the
       person's again
-- [ ] With `plugins/todos/` deleted, a todo document's status control is an
-      ordinary editable one (§15 M6)
-- [ ] The frontmatter form's other controls are unaffected and stay live
+- [x] With `plugins/todos/` deleted, a todo document's status control is an
+      ordinary editable one (§15 M6) — covered by unit tests against
+      `EMPTY_REGISTRY`, which is exactly the registry a deleted plugin leaves
+- [x] The frontmatter form's other controls are unaffected and stay live
+
+## Decision — one predicate, and a form that may ask a sharper question
+
+**Made by the orchestrator, 2026-08-21, on UI-094's hand-off.** UI-094 left this
+issue's criterion *"a document whose items are unreadable falls back to an
+ordinary editable status control"* unmet, because `statusLock` reads the
+**declaration** (does this type derive?) and not the **derived value** (can it
+derive for this document?). Answering the second needs the body, and a row
+subject carries only `{type, status}`.
+
+**Chosen: the two surfaces may differ, and they differ in exactly one case.** No
+third field was added to the shared subject.
+
+- **The menu stays conservative.** A type that declares derivation offers no
+  Resolve. A row cannot know more without a request and a flicker on a
+  right-click, and being conservative errs toward not offering an act that would
+  be refused.
+- **The form consults the derivation**, because it holds the `Doc`. Where the
+  items cannot be read the derivation returns nothing, §12's "the stored value
+  stands" applies, and the control is an ordinary editable one.
+
+**How that was built without forking the predicate.** `statusLock(subject,
+registry)` still answers the declaration-level question for both callers, and
+nothing else decides "is this locked". The form calls `formStatusLock(doc,
+registry)`, which *calls* `statusLock` and may only ever **narrow** its answer —
+it never locks a field the shared predicate left open, and it never touches an
+`archived` lock. A test asserts that narrowing property over a table of
+subjects, so a future rival predicate cannot grow here quietly.
+
+`FieldLock` gained a `kind` (`"archived" | "derived"`) so both the composition
+and the rendering branch on the *kind* rather than on the wording of the reason.
+That was needed for correctness, not tidiness: `deriveStatus` returns `null` for
+an archived document **by rule**, so a check that only asked "did it derive?"
+would have unlocked a field the write path refuses outright (SERVER-039).
+
+**What the divergence costs, stated plainly.** The two surfaces disagree for a
+**legacy, unmigrated todo whose `items` key no longer parses** — the row menu
+offers no Resolve, the form offers an ordinary control. That is rare, it is in
+the safe direction (the menu withholds rather than promises), and a person can
+still resolve such a document, from the form. Both halves were measured in the
+real app — see the log below.
+
+One thing the reproduction taught: a **well-formed** legacy `items` key is *not*
+this case. `readItems` reads those items fine and the derivation applies, so the
+statement is shown. Only the malformed key (`todos-legacy.spec.ts`'s state 2)
+declines.
 
 ## Technical Design
 
@@ -70,8 +117,21 @@ is worth its own issue because it is the one place where "always editable" and
 - `apps/ui/src/reader/FrontmatterForm.tsx` — read the declaration PLUGINS-016
   adds and branch the status control on it
 - `apps/ui/src/reader/FrontmatterForm.test.tsx`
-- wherever the row-level status chip is rendered — it must read the same source,
-  not re-derive
+- ~~wherever the row-level status chip is rendered~~ — **no change needed**. The
+  row and the chip strip already read `status` off the resource the server sends,
+  and SERVER-085 puts the derived value there, so nothing re-derives. Confirmed
+  live: the row's `data-row-status` and the strip's chip both moved to `resolved`
+  in the same frame as the statement.
+
+**As built**, the file list is:
+
+- `apps/ui/src/doc/statusLock.ts` — `FieldLock.kind`, the derived-type archived
+  reason, `formStatusLock`, `useFormStatusLock`
+- `apps/ui/src/doc/statusLock.test.ts`
+- `apps/ui/src/reader/FrontmatterForm.tsx` — `StatusStatement`, the branch
+- `apps/ui/src/reader/FrontmatterForm.test.tsx`
+- `apps/ui/src/reader/Reader.css` — `.fm-statement`
+- `apps/ui/e2e/derived-status.spec.ts` — **new**
 
 ### Key Implementation Details
 
@@ -124,14 +184,149 @@ non-interactive cases.
 
 ## E2E Verification Log
 
-_[Agent fills: model run on, commands, observed output.]_
+**Model: Opus 5 (1M context).** Branch `phase-40-derived-status`. Nothing was
+committed by this agent.
+
+### What was built
+
+- `apps/ui/src/doc/statusLock.ts` — `FieldLock.kind`, an archived reason that
+  names itself as *not* a reading of the content on a derived type, and
+  `formStatusLock` / `useFormStatusLock` composed on top of `statusLock`.
+- `apps/ui/src/reader/FrontmatterForm.tsx` — a `derived` lock renders
+  `<output class="fm-statement">` carrying the server's value instead of a
+  `<select>`. An `archived` lock keeps the (disabled) control, because there
+  *is* an act and it lives on another route.
+- `apps/ui/src/reader/Reader.css` — `.fm-statement`: the control's metrics, none
+  of its chrome, and a width that is the grid cell's.
+- `apps/ui/e2e/derived-status.spec.ts` — 4 specs.
+
+### Unit tests
+
+```
+vitest run apps/ui/src/doc/statusLock.test.ts             → 18 passed
+vitest run apps/ui/src/reader/FrontmatterForm.test.tsx    → 50 passed
+vitest run apps/ui/src/{menu,doc,reader,plugins}          → 31 files, 489 passed
+tsc --noEmit -w apps/ui                                   → clean
+eslint + prettier on every touched file                   → clean
+```
+
+### Falsification — three mutations, each caught
+
+1. **Render the disabled select anyway** (`lock?.kind === "derived"` → `false`):
+   `states the value where the control was…` and `follows the document when the
+   last item is checked…` both fail.
+2. **Drop the form's extra check** (`formStatusLock` returns the lock
+   unconditionally): 3 fail, including the e2e-adjacent unit case `hands the
+   field back where the items cannot be read`.
+3. **Release the archived lock** (`lock.kind !== "derived"` guard removed):
+   `never releases an archived document, though the derivation declines for it
+   too` fails — the trap this composition exists to avoid.
+4. **`.fm-statement { width: max-content }`** (SHARED-057): the Playwright
+   geometry case fails, reporting the statement widening `47.3px → 67.9px` when
+   `open` became `resolved`.
+
+### Playwright, against the real UI (`CORPUS_UI_PORT=5773`, `--workers=1`)
+
+```
+e2e/derived-status.spec.ts                                    → 4 passed (10.9s)
+e2e/{todos,todos-menu,todos-legacy,reader,context-menu,doc-width}.spec.ts
+                                                              → 76 passed (1.5m)
+```
+
+One finding while writing them, recorded because it will bite the next geometry
+spec: **the column widens over a transition when a reader opens in it**, so a
+box measured too early reads the column still arriving. Measured that way the
+flip appeared to resize the form by 82px, none of it the statement's doing. The
+spec settles the form's box (UI-127's helper) before and after.
+
+### Real-app drill — a real `corpus` server, a real workspace, a real browser
+
+Workspace `init`ed in a scratch directory on port **8799** (the user's live
+server on 8765 was never touched), Vite dev on **5773** proxying to it, Chromium
+via Playwright.
+
+```
+corpus init ws --port 8799            → Initialized Corpus workspace, port 8799
+corpus server start                   → corpus 0.16.0 listening on 127.0.0.1:8799 (pid 50841)
+corpus doc create --type todo --title "Week of Aug 21" -m "…- [x] …\n- [ ] …"
+                                      → created doc_d5h247pb
+data/docs/inbox/week-of-aug-21.md     → status: open      (SERVER-085 wrote it)
+```
+
+Opened the document in its column reader and read the DOM:
+
+```
+BEFORE  statementTag  OUTPUT
+        statementText "open"
+        statementBox  {x 544.06, y 259.31, w 169.06, h 28.125}
+        formBox       {x 365, y 241.09, w 527.20, h 92.84}
+        hintBox       {x 544.06, y 290.44, w 169.06, h 43.5}
+        border        rgba(0, 0, 0, 0)      background rgba(0, 0, 0, 0)
+        selects       0
+        hint          "derived from this document’s own content, so it is nobody’s to set"
+        chip          "open"      panel 1 open / 1 done
+```
+
+Clicked the **last open item's checkbox in the body editor**:
+
+```
+flipped to resolved after 1336ms, with no reload
+AFTER   statementText "resolved"
+        statementBox  {x 544.06, y 259.31, w 169.06, h 28.125}   ← identical
+        formBox       {x 365, y 241.09, w 527.20, h 92.84}       ← identical
+        hintBox       {x 544.06, y 290.44, w 169.06, h 43.5}     ← identical
+        selects       0
+        chip          "resolved"  panel 0 open / 2 done
+window.__drill (set before the click) → "same page"              ← no reload
+data/docs/inbox/week-of-aug-21.md     → status: resolved         ← the file agrees
+```
+
+Unchecking it returned the statement to `open` and the file to `status: open`.
+
+**Archived** (`corpus doc archive doc_d5h247pb`, reopened from an Archive
+column):
+
+```
+statement  null            selects 1   value "archived"   disabled true
+hint       "archived — where this document is kept, not a reading of its content.
+            Unarchive in the ⋯ menu brings it back"
+chip       "archived"
+```
+
+**A legacy list whose `items` key does not parse** — created a todo, then
+hand-edited `items: nope` into its frontmatter (which is how such a document
+really arises) and let the watcher reproject:
+
+```
+legacy notice   data-todo-legacy="malformed"   (the plugin's own DocPanel)
+statement       null
+select          enabled, value "open", options [open, resolved]
+hint            "archive from the ⋯ menu — a status flip would not move a skill’s folder"
+selected "resolved" → data/docs/inbox/hand-edited-chores.md → status: resolved
+```
+
+And the deliberate divergence, measured on that same document:
+
+```
+doc_wt5znbhu row menu: open · open-focus · archive · delete      ← no Resolve
+```
+
+The menu withholds on the declaration, the form offers the control, and the
+person can still resolve the document. That is the decision recorded above,
+working in both directions.
+
+### Teardown
+
+`corpus server stop` (pid 50841), Vite killed. `lsof` shows **5773 and 8799
+free**; 8765 still held by the user's own server, untouched. No `vitest`,
+`playwright`, `chromium` or `vite` process left behind.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
