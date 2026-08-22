@@ -15,7 +15,6 @@ import {
   changedFields,
   FrontmatterForm,
   isDeliberate,
-  statusLock,
   tagsToText,
   textToTags,
 } from "./FrontmatterForm";
@@ -112,15 +111,11 @@ describe("isDeliberate", () => {
   });
 });
 
-describe("statusLock", () => {
-  it("leaves an ordinary document's status the person's to set", () => {
-    expect(statusLock(DOC)).toBeNull();
-  });
-
-  it("shows an archived status with the reason it is nobody's to set", () => {
-    expect(statusLock(ARCHIVED)?.reason).toContain("Unarchive in the ⋯ menu");
-  });
-});
+/*
+ * `statusLock`'s own cases moved with it to `doc/statusLock.test.ts` (UI-094).
+ * What stays here is what this form does with the answer — see the archived
+ * cases below, which render the control and read its hint.
+ */
 
 describe("changedFields", () => {
   it("carries only what changed", () => {

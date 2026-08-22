@@ -2,7 +2,7 @@
 import type { RowNotice } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { useState, type ReactElement } from "react";
@@ -112,13 +112,36 @@ function itemLabels(): string[] {
   return [...document.querySelectorAll(".cp-item .cp-quote")].map((node) => node.textContent ?? "");
 }
 
+/**
+ * Walks `↓` until `act` has focus.
+ *
+ * Counting keystrokes to an item is how these tests used to reach one, and it
+ * made them assertions about the **length** of a menu that other issues keep
+ * adding to — UI-094's Resolve moved every item below it down by one and broke
+ * five at once. What they claim is that the arrows reach an item and `↵` runs
+ * it, so that is what this walks. The e2e suite's `arrowTo` is the same rule in
+ * a real browser.
+ */
+async function arrowTo(user: UserEvent, act: string): Promise<void> {
+  for (let step = 0; step < 12; step += 1) {
+    if (focusedAction() === act) return;
+    await user.keyboard("{ArrowDown}");
+  }
+  expect(focusedAction()).toBe(act);
+}
+
 describe("DocMenu", () => {
-  it("offers Still current, Archive and Delete on a note", () => {
+  /**
+   * Resolve is here on a **note** since UI-094: SPEC.md §5's three statuses are
+   * one vocabulary and not a per-type one (rider signed 2026-08-12), so the set
+   * a note offers is the set a thread offers.
+   */
+  it("offers Still current, Resolve, Archive and Delete on a note", () => {
     mount();
-    expect(itemLabels()).toEqual(["Still current", "Archive", DELETE_LABEL]);
+    expect(itemLabels()).toEqual(["Still current", "Resolve", "Archive", DELETE_LABEL]);
   });
 
-  it("adds Resolve on a thread document, labelled by its current status", () => {
+  it("keeps Resolve on a thread document, labelled by its current status", () => {
     mount({ doc: THREAD, threadStatus: "open" });
     expect(itemLabels()).toEqual(["Still current", "Resolve", "Archive", DELETE_LABEL]);
     cleanup();
@@ -448,17 +471,24 @@ describe("the ⋯ sheet from the keyboard", () => {
     mountWithTrigger();
     await user.click(trigger());
 
-    await user.keyboard("{ArrowDown}");
-    expect(focusedAction()).toBe("review");
-    await user.keyboard("{ArrowDown}");
-    expect(focusedAction()).toBe("archive");
+    // Walked against the order the sheet actually rendered, so this stays a
+    // claim about the arrows rather than about how many items the menu has.
+    const order = [...document.querySelectorAll("[data-dm-pop] [role='menuitem']")].map(
+      (node) => (node as HTMLElement).dataset["act"] ?? "",
+    );
+    expect(order.length).toBeGreaterThan(2);
+
+    for (const act of order) {
+      await user.keyboard("{ArrowDown}");
+      expect(focusedAction()).toBe(act);
+    }
     await user.keyboard("{End}");
-    expect(focusedAction()).toBe("delete");
+    expect(focusedAction()).toBe(order.at(-1));
     await user.keyboard("{Home}");
-    expect(focusedAction()).toBe("review");
+    expect(focusedAction()).toBe(order[0]);
     // Clamped, not wrapped: ↑ at the top is not a jump to Delete…
     await user.keyboard("{ArrowUp}");
-    expect(focusedAction()).toBe("review");
+    expect(focusedAction()).toBe(order[0]);
   });
 
   it.each([
@@ -468,8 +498,7 @@ describe("the ⋯ sheet from the keyboard", () => {
     const user = userEvent.setup();
     const wire = mountWithTrigger();
     await user.click(trigger());
-    await user.keyboard("{ArrowDown}{ArrowDown}");
-    expect(focusedAction()).toBe("archive");
+    await arrowTo(user, "archive");
 
     await user.keyboard(press);
 
@@ -501,9 +530,8 @@ describe("the ⋯ sheet from the keyboard", () => {
       const user = userEvent.setup();
       const wire = mountWithTrigger();
       await user.click(trigger());
-      await user.keyboard("{ArrowDown}{ArrowDown}");
+      await arrowTo(user, "archive");
       const item = document.activeElement;
-      expect(focusedAction()).toBe("archive");
 
       const event = new KeyboardEvent("keydown", {
         key: "Enter",
@@ -532,8 +560,7 @@ describe("the ⋯ sheet from the keyboard", () => {
     const user = userEvent.setup();
     const wire = mountWithTrigger();
     await user.click(trigger());
-    await user.keyboard("{ArrowDown}{ArrowDown}");
-    expect(focusedAction()).toBe("archive");
+    await arrowTo(user, "archive");
 
     await user.keyboard("{Escape}");
 

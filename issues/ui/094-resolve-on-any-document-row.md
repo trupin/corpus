@@ -6,9 +6,7 @@ ui
 
 ## Status
 
-todo — **blocked on one design answer**, see "Blocked: where the settable-status
-predicate lives" below. Reproduction, the direction of the inconsistency, and the
-derived-status decision are all settled and recorded here.
+done
 
 ## Priority
 
@@ -49,22 +47,33 @@ hold.
 
 ## Acceptance Criteria
 
-- [ ] Resolve / Reopen appears in the row context menu for **any** document
+- [x] Resolve / Reopen appears in the row context menu for **any** document
       whose status is stored, not only threads
-- [ ] It appears on the reader's ⋯ menu on the same terms (both surfaces are
+- [x] It appears on the reader's ⋯ menu on the same terms (both surfaces are
       built from `useDocActions`; they must not diverge again)
-- [ ] The label flips to Reopen on an already-resolved document, as it does for
+- [x] The label flips to Reopen on an already-resolved document, as it does for
       threads today
-- [ ] A resolved document **stays visible** in the list it was in — per
+- [x] A resolved document **stays visible** in the list it was in — per
       SHARED-031, resolving is not a way to hide something. Confirm no column
       query silently filters it out; if one does, that is a separate finding to
       file, not something to fix by hiding the action
-- [ ] It is **not** offered on a document whose type derives its status
+- [x] It is **not** offered on a document whose type derives its status
       (PLUGINS-016) — there is nothing there for anyone to set
-- [ ] It is not offered on an archived document (the write path refuses leaving
+- [x] It is not offered on an archived document (the write path refuses leaving
       `archived` via `PUT`; offering it would promise a refusal)
-- [ ] Threads keep their existing behaviour exactly, including whatever
+- [x] Threads keep their existing behaviour exactly, including whatever
       `useSetThreadStatus` does beyond the status write
+
+> **One deliberate non-change, where criteria 6 and 7 pull against each other.**
+> An **archived thread** still offers Resolve, exactly as it did before. Criterion
+> 6 says the action is not offered on an archived document; criterion 7 says a
+> thread's behaviour is unchanged. The `isThread` branch is untouched, so 7 wins
+> here — and the reason it is safe to leave is that a thread's archived-ness is
+> not the status this menu reads: `apps/server/src/threads/read.ts:174` reports an
+> archived thread's status as `open`, because "an archived thread is still an
+> unresolved conversation". Making the two agree means deciding what `POST
+> /api/threads/{id}/resolve` should do to an archived thread, which is a server
+> question and not this issue's. Worth its own issue.
 
 ## Which way the inconsistency runs — measured, not assumed
 
@@ -126,7 +135,7 @@ user nothing. Rejected because:
 issue's fallback ("gate on the doc type being `todo` as a named temporary") is
 therefore **not** needed and must not be used.
 
-## Blocked: where the settable-status predicate lives
+## Where the settable-status predicate lives — answered, and moved
 
 `statusLock(doc: Doc): FieldLock | null` (UI-093, `FrontmatterForm.tsx`) answers
 exactly this issue's question, and its own doc comment claims to be the single
@@ -152,8 +161,9 @@ both changes to a file this issue was told not to touch. **The predicate must no
 be copied**: a second function deciding "may this status be set" is the shape that
 produced PR #48's CRITICAL.
 
-**Proposed answer, for the orchestrator to accept or replace** — new file
-`apps/ui/src/doc/statusLock.ts`:
+**The orchestrator answered: move it** (2026-08-21). New file
+`apps/ui/src/doc/statusLock.ts`, and it is a **move, not a fork** — the form calls
+the moved function and keeps no copy:
 
 - `export interface FieldLock { readonly reason: string }` — moved verbatim.
 - `export interface StatusSubject { readonly type: string; readonly status: string }`
@@ -163,12 +173,33 @@ produced PR #48's CRITICAL.
   `statusLock(subject, usePluginRegistry())`, so both surfaces re-render when
   discovery settles.
 
-`FrontmatterForm.tsx` then changes by three lines: import instead of define, and
-`const lock = useStatusLock(doc.frontmatter)`. `useDocActions` calls the same hook
-with its subject and drops Resolve when it returns non-`null`. UI-092 gets
-strictly smaller.
+`FrontmatterForm.tsx` changed by exactly that: one import, `const lock =
+useStatusLock(doc.frontmatter)`, and the definition replaced by a comment naming
+the new home. `useDocActions` calls the same hook with its subject and drops
+Resolve when it returns non-`null`.
 
-## Finding (not this issue's to fix) — the context menu is capped at 200px
+**The derived branch went in with the move**, because this issue needs it and a
+second place to put it is the thing the move exists to prevent. That has a
+deliberate consequence for the *form*, verified in the real app: a todo
+document's status control now renders **disabled**, with `derived from this
+document’s own content, so it is nobody’s to set` beneath it. Before, the form
+would happily `PUT` a status the type derives. This is a down-payment on UI-092,
+not a replacement for it — §12 asks for "a control that reads as a statement"
+showing the **derived value**, and a disabled `<select>` showing the stored one is
+not yet that.
+
+**One hand-off for UI-092.** Its criterion *"A document whose items are unreadable
+falls back to an ordinary editable status control"* is **not** satisfied here, and
+deliberately so. `statusLock` reads the type's *declaration* (`deriveStatus` is
+present), not the value the derivation would return, because the value needs the
+document body and {@link StatusSubject} carries only `type` and `status` — the two
+fields a row can supply. SHARED-031 part 2 speaks at the same altitude ("a type
+whose status is derived rather than set"), so the menu is right to omit on the
+type. If UI-092 still wants the unreadable-items exception on the form, it needs
+either a third field on the subject or a form-side composition on top of the
+lock — both are real design changes and neither should be made quietly.
+
+## Finding, now filed as UI-145 — the context menu is capped at 200px
 
 Measured, since SHARED-057 / SHARED-061 govern anything drawn here.
 `apps/ui/src/menu/menu.css` sets `.ctx-menu { max-height: min(60vh, 420px) }`, and
@@ -184,17 +215,32 @@ In a 720px viewport, a row menu with **five** items already overflows:
 ```
 
 So the effective bound is not the one the file names, and it is a chosen number
-rather than one taken from the room — SHARED-061's exact complaint. This issue's
-change adds a sixth item to a note's row menu, which makes an already-scrolling
-surface scroll further, but does not cause the defect. It wants its own issue,
-alongside UI-143.
+rather than one taken from the room — SHARED-061's exact complaint. Filed as
+UI-145 and **deliberately not fixed here**.
+
+**This change does not raise the maximum item count**, which was the condition on
+leaving it alone. The tallest row menu is a stale row's, and a stale *thread* row
+already carried seven items (`open · open-focus · review · resolve · triage ·
+archive · delete`). What changed is that a stale *note* row now reaches the same
+seven instead of six — pinned by `rowContextMenu.test.tsx`, which asserts that
+exact list.
 
 ## Technical Design
 
 ### Files to Create/Modify
 
+- `apps/ui/src/doc/statusLock.ts` — **new**: `FieldLock`, `StatusSubject`,
+  `statusLock(subject, registry)`, `useStatusLock(subject)`
+- `apps/ui/src/doc/statusLock.test.ts` — **new**
+- `apps/ui/src/reader/FrontmatterForm.tsx` — calls the moved predicate; keeps no copy
+- `apps/ui/src/reader/FrontmatterForm.test.tsx` — its `statusLock` cases moved out
 - `apps/ui/src/menu/docActions.ts` — replace the `isThread` gate
-- `apps/ui/src/menu/docActions.test.ts`
+- `apps/ui/src/menu/docActions.test.tsx`
+- `apps/ui/src/menu/rowContextMenu.test.tsx` — the enumerated row sets gain `resolve`
+- `apps/ui/src/reader/DocMenu.test.tsx` — the ⋯ set gains it, and the keyboard
+  walks stop counting keystrokes
+- `apps/ui/e2e/context-menu.spec.ts` — the note row's set, UI-036's todo/note
+  comparison, and five new specs
 
 ### Key Implementation Details
 
@@ -275,9 +321,7 @@ subject dispatches, not just that the item renders.
 
 ## E2E Verification Log
 
-**Model: Opus 5 (1M context).** Implementation is **not** done — the session
-stopped at the design question above, as instructed. What follows is the
-pre-fix reproduction and the measurements it produced.
+**Model: Opus 5 (1M context).**
 
 ### Pre-fix reproduction, in a real browser
 
@@ -344,22 +388,120 @@ The **maximum item count** does not rise from this change: a stale thread row
 already reaches the longest list, and the fix only lets a stale note reach the
 same length.
 
-### Not verified, because not implemented
+### After the fix — a real workspace, a real server, a real browser
 
-- A real document resolved from a row menu, and the file on disk showing
-  `status: resolved`.
-- The commit that write produces.
-- Reopen from the same menu.
-- A todo row offering no Resolve after the fix.
-- Falsification of the new tests.
+Not the isolated harness. A workspace made with the tool, its own server, and the
+dev server proxying to it:
+
+```
+corpus init  <scratch>/ws094          → port 8766, git initialized on main
+corpus server start                   → corpus 0.16.0 listening on http://127.0.0.1:8766 (pid 72785)
+corpus doc create --type note --title "Mortgage options" --folder inbox
+                                      → created doc_soyhvpeh — data/docs/inbox/mortgage-options.md
+corpus doc create --type todo --title "Inbox chores"     --folder inbox
+                                      → created doc_sxx4xzrr — data/docs/inbox/inbox-chores.md
+CORPUS_SERVER_ORIGIN=http://127.0.0.1:8766 VITE_CORPUS_TOKEN=<token> vite --port 5673
+```
+
+Chromium drove the board. Right-clicking the two rows:
+
+```
+NOTE ROW MENU: open · open-focus · resolve ("Resolve" / "status flip, committed") · archive · delete
+TODO ROW MENU: open · open-focus ·                                                  archive · delete
+```
+
+Clicking Resolve on the note:
+
+```
+AFTER RESOLVE — row still in column: 1, data-row-status: resolved
+NOTICE: ✓ Resolved “Mortgage options” — committed. It stays where it is. ✕
+RELABELLED MENU: … resolve ("Reopen" / "status flip, committed") …
+AFTER REOPEN  — data-row-status: open
+```
+
+**The file on disk**, `data/docs/inbox/mortgage-options.md`:
+
+```yaml
+id: doc_soyhvpeh
+type: note
+title: Mortgage options
+created: 2026-08-22T03:30:07Z
+updated: 2026-08-22T03:31:55Z
+tags: []
+status: resolved
+```
+
+**And the commit the server made** (`git log` in the workspace):
+
+```
+6e7589a user <user@corpus.local> doc edit: Mortgage options (doc_soyhvpeh) by user
+5404518 user <user@corpus.local> editing session: 2 documents by user
+528f6d0 user <user@corpus.local> workspace: initialize corpus workspace by user
+```
+
+Resolve → Reopen → Resolve is **one** commit, which is §4's open commit window
+doing its job rather than three writes being lost.
+
+### The frontmatter form, in the same running app
+
+Reading the `<select>` in the reader, on both documents:
+
+```
+note (resolved): {"disabled":false,"value":"resolved","options":["open","resolved"],
+                  "hint":"archive from the ⋯ menu — a status flip would not move a skill’s folder"}
+todo (derived):  {"disabled":true, "value":"open",    "options":["open","resolved"],
+                  "hint":"derived from this document’s own content, so it is nobody’s to set"}
+```
+
+The note's control is untouched by the move. The todo's is locked — the
+consequence of the derived branch living in the one predicate, argued above.
+
+### Falsification — three breaks, three reds
+
+1. **The new branch removed** (`else if (settable)` → dead): 13 red across
+   `docActions.test.tsx`, `rowContextMenu.test.tsx` and `DocMenu.test.tsx`.
+2. **The derived gate removed** from `statusLock`: 3 red in unit —
+   *"locks a type whose plugin derives its status"*, *"reads the declaration, not
+   the derived value"*, *"withholds it from a type that derives its status"* — and
+   2 red in a **real browser**, which is the one that matters, because it runs the
+   whole path: `plugins/todos/manifest.ts`'s `deriveStatus` → the UI registry →
+   the menu.
+3. **The archived gate removed**: 5 red, and one of them is
+   `FrontmatterForm.test.tsx`'s *"shows an archived status, disabled, and says
+   where the way out is"* — which is the proof that the form really reads the
+   moved function and holds no copy of it.
+
+Each break was restored and re-run green before the next.
+
+### Suites
+
+```
+vitest apps/ui/src   → 155 files, 3363 tests, all pass
+vitest packages/kit  →  60 files,  943 tests, all pass
+playwright e2e/context-menu.spec.ts → 30 passed
+playwright e2e/{todos-menu,collapse,reader-head-geometry,chrome-keys,comments-tab} → 54 passed
+playwright e2e/{clipboard,console,resident,turn-comment,attachments,anchor-layer,comment-move,address-geometry} → 96 passed, 1 flake
+```
+
+The one flake is `clipboard.spec.ts` → *"a plain-markdown paste still parses as
+markdown"*, which passes on its own and is a clipboard-permission race unrelated
+to menus.
+
+`tsc --noEmit` exit 0, `eslint` exit 0, `prettier --check` clean.
+
+### Ports and processes
+
+Server stopped (`stopped (pid 72785)`), Vite killed, 5673 and 8766 free,
+**8765 — the user's live server — never touched**. The probe spec and the two
+drill scripts were deleted.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Pre-fix reproduction logged
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Pre-fix reproduction logged
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

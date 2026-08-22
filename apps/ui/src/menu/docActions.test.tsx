@@ -6,9 +6,15 @@ import { cleanup, render, renderHook, screen, waitFor } from "@testing-library/r
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DocMenu } from "../reader/DocMenu";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
+import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
 import { DocMenuItems } from "./DocMenuItems";
-import { useDocActions, unarchivedMessage, type DocActionSubject } from "./docActions";
+import {
+  docStatusNotice,
+  useDocActions,
+  unarchivedMessage,
+  type DocActionSubject,
+} from "./docActions";
 import { RowMenuItems } from "./RowMenuItems";
 
 afterEach(() => {
@@ -41,7 +47,7 @@ function actionsOf(
   subject: DocActionSubject,
   wire: ReaderTransport = readerTransport({ docs: [] }),
   onNotify: (notice: RowNotice) => void = () => undefined,
-): { ids: () => string[]; run: (id: string) => void } {
+): { ids: () => string[]; labelOf: (id: string) => string | undefined; run: (id: string) => void } {
   const harness = createCorpusTestHarness({ fetch: wire.fetch });
   const { result } = renderHook(
     () =>
@@ -54,6 +60,7 @@ function actionsOf(
   );
   return {
     ids: () => result.current.map((action) => action.id),
+    labelOf: (id) => result.current.find((action) => action.id === id)?.label,
     run: (id) => {
       const action = result.current.find((item) => item.id === id);
       if (action === undefined) throw new Error(`no ${id} action`);
@@ -204,5 +211,206 @@ describe("both presentations show one set", () => {
     );
     expect(rendered()).toEqual(["open", "open-focus", "unarchive", "delete"]);
     expect(screen.getByText("Unarchive")).toBeDefined();
+  });
+});
+
+/**
+ * UI-094 — Resolve/Reopen on **every** document, not only a thread.
+ *
+ * SPEC.md §5's status ladder is one vocabulary for every type (rider signed
+ * 2026-08-12), and the menu was the last surface holding a per-type one: the
+ * frontmatter form has always offered `resolved` on a note. These assert which
+ * **mutation** each subject dispatches, not only that an item rendered — the two
+ * write paths are deliberately different and a menu that sent a note through the
+ * thread route would look identical here.
+ */
+describe("Resolve is offered wherever a status is settable", () => {
+  afterEach(() => {
+    setPluginRegistry(EMPTY_REGISTRY);
+  });
+
+  const RESOLVED_NOTE: DocActionSubject = { ...NOTE, status: "resolved" };
+  const THREAD: DocActionSubject = {
+    id: "th_fixture",
+    title: "About the rate",
+    type: "thread",
+    status: "open",
+  };
+  const TODO: DocActionSubject = {
+    id: "doc_todo",
+    title: "Inbox chores",
+    type: "todo" as const,
+    status: "open",
+  };
+
+  /** One doc type, declaring a derivation exactly as PLUGINS-016 defines it. */
+  function installDerivedType(type: string): void {
+    setPluginRegistry(
+      buildRegistry([
+        {
+          dir: "todos",
+          loaded: {
+            module: {
+              default: {
+                id: "todos",
+                name: "Todos",
+                docTypes: [{ type, deriveStatus: () => "resolved" as const }],
+                columns: [],
+              },
+            },
+          },
+        },
+      ]),
+    );
+  }
+
+  it("offers Resolve on an ordinary note, which nothing but this menu withheld", () => {
+    const resolve = actionsOf(NOTE).labelOf("resolve");
+    expect(resolve).toBe("Resolve");
+  });
+
+  it("flips the label to Reopen on an already-resolved document", () => {
+    expect(actionsOf(RESOLVED_NOTE).labelOf("resolve")).toBe("Reopen");
+  });
+
+  it("writes a note's status through PUT /api/docs/{id}, never the thread route", async () => {
+    const wire = readerTransport({ docs: [docFixture({ frontmatter: { id: "doc_m" } })] });
+    actionsOf(NOTE, wire).run("resolve");
+
+    await waitFor(() => {
+      expect(wire.of("PUT", "/api/docs/doc_m")).toHaveLength(1);
+    });
+    expect(wire.of("PUT", "/api/docs/doc_m")[0]?.body).toEqual({ status: "resolved" });
+    expect(wire.of("POST")).toHaveLength(0);
+  });
+
+  it("reopens by writing `open` back", async () => {
+    const wire = readerTransport({
+      docs: [docFixture({ frontmatter: { id: "doc_m", status: "resolved" } })],
+    });
+    actionsOf(RESOLVED_NOTE, wire).run("resolve");
+
+    await waitFor(() => {
+      expect(wire.of("PUT", "/api/docs/doc_m")).toHaveLength(1);
+    });
+    expect(wire.of("PUT", "/api/docs/doc_m")[0]?.body).toEqual({ status: "open" });
+  });
+
+  /**
+   * SPEC.md §6/§7: the thread route rewrites and commits the thread file and
+   * releases a designated resident. A note has no such route and a thread must
+   * not lose one, so the menu picks by subject rather than unifying them.
+   */
+  it("keeps a thread on POST …/resolve, with no doc write beside it", async () => {
+    const wire = readerTransport({ docs: [] });
+    actionsOf(THREAD, wire).run("resolve");
+
+    await waitFor(() => {
+      expect(wire.of("POST", "/api/threads/th_fixture/resolve")).toHaveLength(1);
+    });
+    expect(wire.of("PUT")).toHaveLength(0);
+  });
+
+  it("says what resolving did, and that the document has not moved", async () => {
+    const notify = vi.fn<(notice: RowNotice) => void>();
+    const wire = readerTransport({ docs: [docFixture({ frontmatter: { id: "doc_m" } })] });
+    actionsOf(NOTE, wire, notify).run("resolve");
+
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalled();
+    });
+    expect(notify.mock.calls.at(-1)?.[0]).toEqual({
+      tone: "info",
+      message: docStatusNotice("Mortgage options", true),
+    });
+    expect(docStatusNotice("Mortgage options", true)).toContain("stays where it is");
+  });
+
+  it("reports a refused status write rather than committing in silence", async () => {
+    const notify = vi.fn<(notice: RowNotice) => void>();
+    const wire = readerTransport({
+      docs: [docFixture({ frontmatter: { id: "doc_m" } })],
+      failing: { "PUT /api/docs/doc_m": 409 },
+    });
+    actionsOf(NOTE, wire, notify).run("resolve");
+
+    await waitFor(() => {
+      expect(notify.mock.calls.at(-1)?.[0]?.tone).toBe("error");
+    });
+    expect(notify.mock.calls.at(-1)?.[0]?.message).toContain("Resolve failed");
+  });
+
+  /**
+   * SERVER-039 refuses `PUT {status}` on an archived document, so the item would
+   * promise a refusal. SHARED-031 says the same thing from the other end:
+   * `archived` already *is* settled, and Unarchive — which the menu does offer —
+   * returns it to `resolved`.
+   */
+  it("withholds it from an archived document, whose write path refuses it", () => {
+    expect(actionsOf(ARCHIVED_SKILL).ids()).not.toContain("resolve");
+  });
+
+  /**
+   * SHARED-031 part 2, signed: "A type whose status is **derived** rather than
+   * set (§12) is such a case: it offers no Resolve, because there is nothing
+   * there for anyone to set."
+   */
+  it("withholds it from a type that derives its status", () => {
+    installDerivedType("todo");
+    expect(actionsOf(TODO).ids()).not.toContain("resolve");
+  });
+
+  it("offers it on that same type when no plugin claims it — the declaration is the gate", () => {
+    // §15 M6: with `plugins/todos/` gone, a todo document is an ordinary one.
+    expect(actionsOf(TODO).ids()).toContain("resolve");
+  });
+
+  it("leaves the derivation alone for other types", () => {
+    installDerivedType("todo");
+    expect(actionsOf(NOTE).ids()).toContain("resolve");
+  });
+
+  /**
+   * The whole point of one declaration: the ⋯ sheet and the row menu are the
+   * same array, so they were wrong together and are right together. The issue's
+   * premise that the row menu was the broken half is wrong — measured in a real
+   * browser, neither offered it.
+   */
+  it("reaches the row menu and the reader's ⋯ sheet in the same change", () => {
+    const harness = createCorpusTestHarness({ fetch: readerTransport({ docs: [] }).fetch });
+    render(
+      <RowMenuItems
+        subject={{ ...NOTE, staleLevel: 0 }}
+        close={() => undefined}
+        onOpen={() => undefined}
+        onOpenFocus={() => undefined}
+        onNotify={() => undefined}
+      />,
+      { wrapper: harness.Wrapper },
+    );
+    const fromRow = [...document.querySelectorAll("[role='menuitem']")].map(
+      (node) => (node as HTMLElement).dataset["act"] ?? "",
+    );
+    expect(fromRow).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
+    cleanup();
+
+    const doc = docFixture({ frontmatter: { id: "doc_m", title: "Mortgage options" } });
+    render(
+      <DocMenuItems
+        doc={doc}
+        threadStatus={null}
+        close={() => undefined}
+        onGone={() => undefined}
+        onNotify={() => undefined}
+      />,
+      {
+        wrapper: createCorpusTestHarness({ fetch: readerTransport({ docs: [doc] }).fetch }).Wrapper,
+      },
+    );
+    expect(
+      [...document.querySelectorAll("[role='menuitem']")].map(
+        (node) => (node as HTMLElement).dataset["act"] ?? "",
+      ),
+    ).toEqual(["review", "resolve", "archive", "delete"]);
   });
 });

@@ -13,6 +13,7 @@ import {
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
+import { useStatusLock, type FieldLock } from "../doc/statusLock";
 import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
 import { SaveChipView } from "../editor/SaveChip";
 import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
@@ -122,32 +123,14 @@ export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
  * SHARED-030: *"A field whose value is derived rather than authored… shows the
  * value and says where it comes from, and is editable by nobody — that is not an
  * edit mode, it is a field that was never the person's to set."* So a control
- * has three states here, not two: absent, live, or shown-with-a-reason. The
- * archived status below is the first of the third kind, and UI-092's derived
- * status for a todo list is the next one — which is why the reason travels with
- * the lock rather than being a special case inside one control.
- */
-export interface FieldLock {
-  readonly reason: string;
-}
-
-/**
- * Why the status control is not this person's to set, or `null` when it is.
+ * has three states here, not two: absent, live, or shown-with-a-reason.
  *
- * **The archive boundary** (UI-020): archiving and unarchiving are routes this
- * form does not call, so the control shows `archived` — a select needs its own
- * value among its options — and refuses to move off it, naming where the way
- * back is.
- *
- * A **derived** status (SHARED-036, UI-092) belongs here too and is not here
- * yet: this is the one function that decides the question for every caller.
+ * Both the shape and the predicate moved to `doc/statusLock.ts` in UI-094: the
+ * row context menu asks the same question of a subject that is **not** a `Doc`,
+ * and the only two honest ways to serve both callers were one predicate over the
+ * fields they share or two predicates that would eventually disagree. This form
+ * reads the answer through {@link useStatusLock} and decides nothing itself.
  */
-export function statusLock(doc: Doc): FieldLock | null {
-  if (doc.frontmatter.status === ARCHIVED) {
-    return { reason: "archived — Unarchive in the ⋯ menu brings it back" };
-  }
-  return null;
-}
 
 /** The options a select must offer: the editable set, plus its own value. */
 function statusOptions(current: DocStatus): readonly DocStatus[] {
@@ -557,7 +540,7 @@ export function FrontmatterForm({
   );
 
   const value = valueOf(doc, local);
-  const lock = statusLock(doc);
+  const lock = useStatusLock(doc.frontmatter);
   const folder = folderOf(doc.path);
 
   return (

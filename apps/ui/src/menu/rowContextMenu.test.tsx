@@ -207,13 +207,15 @@ describe("a row's context menu", () => {
     fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
 
     expect(screen.getByRole("menu", { name: "Actions for Mortgage options" })).toBeTruthy();
-    expect(menuActions()).toEqual(["open", "open-focus", "archive", "delete"]);
+    // `resolve` is in the row set since UI-094: SPEC.md §5's statuses are one
+    // vocabulary, so a note's set is a thread's set.
+    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
   });
 
-  it("adds resolve on a thread row", async () => {
+  it("keeps resolve on a thread row, which is now the same set a note offers", async () => {
     renderBoard([THREAD]);
     fireEvent.contextMenu(await row("th_1"), { clientX: 40, clientY: 60 });
-    expect(menuActions()).toContain("resolve");
+    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
   });
 
   it("shows the staleness quick actions only where the ramp already shows them", async () => {
@@ -225,7 +227,15 @@ describe("a row's context menu", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     fireEvent.contextMenu(await row("doc_c"), { clientX: 10, clientY: 10 });
-    expect(menuActions()).toEqual(["open", "open-focus", "review", "triage", "archive", "delete"]);
+    expect(menuActions()).toEqual([
+      "open",
+      "open-focus",
+      "review",
+      "resolve",
+      "triage",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("acts on the row under the cursor, not on the keyboard highlight", async () => {
@@ -326,7 +336,7 @@ describe("a row's context menu", () => {
 
     fireEvent.contextMenu(painted, { clientX: 40, clientY: 60 });
     expect(screen.getByRole("menu", { name: "Actions for Mortgage options" })).toBeTruthy();
-    expect(menuActions()).toEqual(["open", "open-focus", "archive", "delete"]);
+    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
   });
 
   it("acts on the document, not on the plugin — the menu archives through the core route", async () => {
