@@ -22,8 +22,8 @@ export const JobSchema = z
       .describe(
         "The type of the queue event this job is running — the same value as `QueueEvent.type`, " +
           `read from the projection rather than re-derived. Core values: ${CORE_QUEUE_EVENT_TYPES.join(", ")}. ` +
-          "Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define " +
-          "their own event types (SPEC.md §7, §10). The console's collapsed job row reads " +
+          "Open rather than enumerated for the same reason `QueueEvent.type` is: the set on the " +
+          "wire is not the set any one build knows (SPEC.md §7). The console's collapsed job row reads " +
           "`<type> · <originTitle>`, so this is what tells the user *what* is running, not just " +
           "what it is running on (SPEC.md §10).",
       ),

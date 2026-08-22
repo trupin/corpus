@@ -178,9 +178,9 @@ export const EditSessionEndReasonSchema = z.enum(EDIT_SESSION_END_REASONS);
  *
  * Declared beside its feature and **not** as a member of a discriminated union on
  * `QueueEventSchema`, for the reason `FormRespondPayloadSchema` (`./form.ts`)
- * spells out: §7 keeps the event `type` an open string because plugins own their
- * own types and payload shapes, so closing the envelope on the core set would
- * make every plugin event unrepresentable. A consumer that handles `doc.edited`
+ * spells out: §7 keeps the event `type` an open string because the set on the
+ * wire is not the set any one build knows, so closing the envelope on the core
+ * set would make every other event unrepresentable. A consumer that handles `doc.edited`
  * narrows with {@link parseDocEditedPayload}; one that does not is unaffected.
  *
  * **Actor scoping is in the schema, not in the server's memory.** §4: "Agent-

@@ -752,9 +752,11 @@ export const FormFieldRecordSchema = z
  *
  * **Why this is a schema beside `QueueEventSchema` rather than a member of a
  * discriminated union on it.** SPEC.md §7 keeps the event `type` an open string
- * because plugins define their own event types and own their own payload shapes;
+ * because the set on the wire is not the set any one build knows — an older
+ * workspace's queue, a hand-written `pending/` file and a newer server all
+ * reach it — and the payload's shape belongs to whatever defines the type;
  * turning `payload` into a union keyed on `type` would close that set at the
- * three core types and make every plugin event unrepresentable on the wire. The
+ * core types and make every other event unrepresentable on the wire. The
  * core payload is therefore *declared and parseable* without the envelope
  * becoming exhaustive: a consumer that handles `form.respond` narrows with
  * {@link parseFormRespondPayload}, and one that does not is unaffected.

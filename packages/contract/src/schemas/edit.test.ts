@@ -226,9 +226,12 @@ describe("parseDocEditedPayload", () => {
     expect(parseDocEditedPayload(editedEvent)).toEqual(payload);
   });
 
-  it.each(["comment.created", "form.respond", "todo.due"])("ignores a %s event", (type) => {
-    expect(parseDocEditedPayload({ ...editedEvent, type })).toBe(undefined);
-  });
+  it.each(["comment.created", "form.respond", "ledger.reconciled"])(
+    "ignores a %s event",
+    (type) => {
+      expect(parseDocEditedPayload({ ...editedEvent, type })).toBe(undefined);
+    },
+  );
 
   /** Events come off disk: an older server's payload is skipped, never thrown on. */
   it.each([{}, null, "not an object", { docId: "doc_a1b2c3" }])(

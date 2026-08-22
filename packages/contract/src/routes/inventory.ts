@@ -183,13 +183,11 @@
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
  * declaring a route nobody asked for fails the same test from the other side.
  *
- * Deliberately absent, so neither omission reads as a gap:
- * - **Plugin routes** (`/api/x/<plugin>/…`) — discovered at runtime from the
- *   plugin directory (SPEC.md §10), never declared in a static document.
- * - **`GET /api/openapi.json`** — the server's own introspection endpoint, which
- *   serves the live document behind the bearer guard. It is server-local rather
- *   than client-facing: no typed client method should exist for it, so it is not
- *   contract surface.
+ * Deliberately absent, so the omission does not read as a gap:
+ * **`GET /api/openapi.json`** — the server's own introspection endpoint, which
+ * serves the live document behind the bearer guard. It is server-local rather
+ * than client-facing: no typed client method should exist for it, so it is not
+ * contract surface.
  */
 export const ENDPOINT_INVENTORY = [
   "GET /api/health",

@@ -798,9 +798,9 @@ describe("the form.respond payload", () => {
     expect(parseFormRespondPayload({ type: "form.respond", payload })).toEqual(payload);
   });
 
-  it("declines an event of another type, core or plugin", () => {
+  it("declines an event of another type, core or unrecognised", () => {
     expect(parseFormRespondPayload({ type: "comment.created", payload })).toBeUndefined();
-    expect(parseFormRespondPayload({ type: "todos.moved", payload })).toBeUndefined();
+    expect(parseFormRespondPayload({ type: "ledger.reconciled", payload })).toBeUndefined();
   });
 
   /** Events come off disk: one written by an older server is skipped, not thrown on. */

@@ -107,7 +107,8 @@ export const docFilterShape = {
       ...queryParam("type"),
       description:
         `Comma-separated document types; values OR together. Core values: ${CORE_DOC_TYPES.join(", ")}. ` +
-        "Open rather than enumerated because plugins define their own types (SPEC.md §5, §10).",
+        "Open rather than enumerated because a workspace may hold documents of a type this build " +
+        "has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6).",
     }),
   status: z
     .enum(DOC_STATUSES)
@@ -428,9 +429,9 @@ const threadRowShape = {
         "`deferred`, SPEC.md §7 — `deferred` included, since a job parked while somebody edits " +
         "is still owed) carries this thread's id as a top-level value of its payload. The " +
         "payload is matched by value rather than by a fixed key list (`threadId`, `parentId`, " +
-        "…), the same way the `failed-job` attention reason matches one, so an event type " +
-        "defined by a plugin that names this thread under its own key lights the indicator with " +
-        "no server change (SPEC.md §7, §10). **It reads no thread state, deliberately** — not " +
+        "…), the same way the `failed-job` attention reason matches one, so an event type this " +
+        "build has never heard of that names this thread under its own key lights the indicator " +
+        "with no server change (SPEC.md §7). **It reads no thread state, deliberately** — not " +
         "`agent`, not `status`, not `lastAuthor`. In particular resolving a thread does not " +
         "clear it, because resolving cancels no queued event: the missing `status` test is the " +
         "rule here, not an omission. A note-only turn enqueues nothing, so it never sets this. " +
@@ -482,9 +483,12 @@ export const DocRowSchema = z
      * than one** unanswered form says how many are still open."
      *
      * **Why a scalar on the row, and not something on `attention`.** The reason
-     * codes are a flat list a plugin may extend (SPEC.md §10); widening an entry
-     * into `{code, count}` would rewrite every consumer of every reason for one
-     * reason's sake. A sibling field is additive, and nothing that renders a
+     * codes are a flat list the server may extend, and its vocabulary may grow
+     * ahead of any one client — `packages/kit`'s reason table renders a code it
+     * has never seen for exactly that reason. Widening an entry into
+     * `{code, count}` would rewrite every consumer of every reason for one
+     * reason's sake, and would break the readers that cannot be rebuilt in step
+     * with the server. A sibling field is additive, and nothing that renders a
      * reason chip today has to change to keep working.
      *
      * **Why not derived in the client.** A row carries no turns — `lastTurn` is
@@ -539,8 +543,9 @@ export const DocRowSchema = z
           "`needs=`, so any list can render reason chips. Empty when nothing applies; never " +
           "contains `me`, which is the union filter and not a reason. Entries stay bare codes: " +
           "the one reason with a number to report carries it in the sibling `unansweredForms`, " +
-          "because plugins extend this list (SPEC.md §10) and a code is what every consumer of " +
-          "every reason already reads.",
+          "because the server's vocabulary may grow ahead of the client reading it — a client " +
+          "must render a reason code it has never seen — and a bare code is what every consumer " +
+          "of every reason already reads.",
       ),
     snippets: z
       .array(SnippetSchema)

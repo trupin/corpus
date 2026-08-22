@@ -206,7 +206,7 @@ describe("readRequestedWeight", () => {
   /**
    * The key is event-type-agnostic on purpose: it rides beside whatever payload
    * the producing feature declares, so neither core payload has to grow a
-   * variant and a plugin's own event type carries it with no contract change.
+   * variant and any other event type carries it with no contract change.
    */
   it("reads it beside a core payload without disturbing that payload's own parse", () => {
     const formRespond = {

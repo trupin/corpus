@@ -7,8 +7,8 @@ import {
   RESERVED_FRONTMATTER_KEYS,
 } from "./extra.js";
 
-/** SPEC.md §12's reference payload — the shape the surface exists to carry. */
-const todoItems = {
+/** A hand-written frontmatter convention the core defines nothing about — the shape the surface exists to carry. */
+const handWrittenItems = {
   items: [
     { text: "follow up on X", done: false, ts: "2026-07-19T10:00:00Z" },
     { text: "renew the fixed rate", done: true, ts: "2026-07-20T09:00:00Z" },
@@ -20,8 +20,8 @@ describe("ExtraFrontmatter", () => {
     expect(ExtraFrontmatterSchema.parse({})).toEqual({});
   });
 
-  it("round-trips §12's todo items untouched", () => {
-    expect(ExtraFrontmatterSchema.parse(todoItems)).toEqual(todoItems);
+  it("round-trips a hand-written list of items untouched", () => {
+    expect(ExtraFrontmatterSchema.parse(handWrittenItems)).toEqual(handWrittenItems);
   });
 
   it("round-trips every plain-JSON value kind, null included", () => {

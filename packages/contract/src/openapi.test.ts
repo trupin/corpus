@@ -441,7 +441,7 @@ describe("GET /api/docs parameter grammar", () => {
     expect(param?.schema?.type).toBe("string");
     expect(param?.schema?.enum).toBeUndefined();
     expect(param?.description).toContain("note, thread, view, template, skill, agent-def");
-    expect(param?.description).toContain("plugins define their own");
+    expect(param?.description).toContain("a type this build has never heard of");
   });
 
   it("types `unread` as a boolean rather than a string", () => {
@@ -1448,9 +1448,9 @@ describe("the edit-session flush (CONTRACT-031)", () => {
 
 /**
  * CONTRACT-011: the extra-frontmatter surface and the first-class §10 view
- * keys. The schema descriptions here ARE the plugin contract — a plugin author
- * reads only the generated document — so these invariants pin the published
- * prose, not just the shapes.
+ * keys. The schema descriptions here ARE the published contract for anything
+ * that writes a non-core frontmatter key — the reader has only the generated
+ * document — so these invariants pin the published prose, not just the shapes.
  */
 /**
  * CONTRACT-037 — the contract half of SPEC.md §4's "One action, one commit"
@@ -1840,7 +1840,7 @@ describe("the extra-frontmatter surface (CONTRACT-011)", () => {
     },
   );
 
-  it("keeps extra an object of free values — the server never types a plugin's keys", () => {
+  it("keeps extra an object of free values — the server never types a key it does not define", () => {
     for (const name of ["DocFrontmatter", "DocRow"]) {
       expect(component(name).properties?.["extra"]?.type).toBe("object");
     }
@@ -1852,10 +1852,15 @@ describe("the extra-frontmatter surface (CONTRACT-011)", () => {
     expect(description).toContain("degrades in the client");
   });
 
-  it("publishes the column reference format where a plugin author will look", () => {
+  /**
+   * `column` outlived the surface that read it. The key is still written,
+   * validated and round-tripped, and the core renders no column from it — a
+   * published description that left that unsaid would read as a feature.
+   */
+  it("publishes the column reference format, and says the core renders nothing from it", () => {
     const description = JSON.stringify(component("DocFrontmatter").properties?.["column"]);
-    expect(description).toContain("<plugin>/<type>");
-    expect(description).toContain("plugin-missing");
+    expect(description).toContain("exactly one `/`");
+    expect(description).toContain("The core defines no column renderer");
   });
 
   it("states the null-clears rule on every clearable update field", () => {
@@ -3890,9 +3895,9 @@ describe("the forms surface", () => {
   });
 
   /**
-   * §7 keeps the event `type` open so plugins can define their own; a payload
-   * union keyed on `type` would close it. The core payload is documented on the
-   * envelope instead.
+   * §7 keeps the event `type` open, because the set on the wire is not the set
+   * any one build knows; a payload union keyed on `type` would close it. The
+   * core payload is documented on the envelope instead.
    */
   it("leaves the queue event payload open while naming the core form payload", () => {
     const payload = componentSchemas?.["QueueEvent"]?.properties?.["payload"];
@@ -3959,7 +3964,7 @@ describe("the CONTRACT-007 riders", () => {
     // (`doc.edited`, CONTRACT-028) must extend what both surfaces publish, and
     // a hand-copied list would have made that a test edit instead of a check.
     expect(description).toContain(CORE_QUEUE_EVENT_TYPES.join(", "));
-    expect(description).toContain("plugins define");
+    expect(description).toContain("not the set any one build knows");
     expect(description).toContain("QueueEvent.type");
   });
 });

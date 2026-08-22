@@ -12,7 +12,7 @@ describe("the turn delimiter", () => {
   it("accepts the two actors and nothing else", () => {
     expect(turnHeadings(`${heading("user")}\n`).map((h) => h.author)).toEqual(["user"]);
     expect(turnHeadings(`${heading("agent")}\n`).map((h) => h.author)).toEqual(["agent"]);
-    expect(turnHeadings(`${heading("plugin")}\n`)).toEqual([]);
+    expect(turnHeadings(`${heading("server")}\n`)).toEqual([]);
     expect(turnHeadings(`${heading("User")}\n`)).toEqual([]);
   });
 

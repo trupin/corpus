@@ -16,9 +16,15 @@ import { IsoDateSchema, IsoDateTimeSchema } from "./time.js";
 import { warningsField } from "./warning.js";
 
 /**
- * Document types the product itself defines (SPEC.md §5). The wire type stays an
- * open string because plugins declare their own types (e.g. `todo`, §10) — a
- * closed enum here would make every plugin a contract change.
+ * Document types the core defines, and they are all of them (SPEC.md §5).
+ *
+ * **The wire type stays an open string, deliberately** (SPEC.md §12's M6): a
+ * workspace may hold a document whose `type:` this build has never heard of —
+ * from the workspace's own history, or hand-written — and such a document must
+ * still open, render, search and pass `doc check`. A closed enum here would
+ * turn every one of them into a `400` at the boundary, which is the one
+ * failure this openness exists to prevent. Consumers that only handle the core
+ * six narrow with {@link CoreDocTypeSchema}.
  */
 export const CORE_DOC_TYPES = ["note", "thread", "view", "template", "skill", "agent-def"] as const;
 
@@ -28,7 +34,11 @@ export const DocTypeSchema = z
   .string()
   .min(1)
   .openapi({
-    description: `Document type. Core values: ${CORE_DOC_TYPES.join(", ")}. Plugins define their own.`,
+    description:
+      `Document type. Core values: ${CORE_DOC_TYPES.join(", ")}. Open rather than enumerated ` +
+      "because a workspace may hold a document whose type this build has never heard of — from " +
+      "its own history, or hand-written — and such a document still opens, renders and searches " +
+      "(SPEC.md §5, §12's M6).",
     example: "note",
   });
 
@@ -232,13 +242,14 @@ const UNDATED_DESCRIPTION = (which: string): string =>
  *    would mean the server reaching into a blob it promises never to read.
  * 2. §10 makes columns core product ("a column IS a `type: view` document");
  *    core keys are closed and validated here, and `query`'s well-formedness
- *    and `column`'s `<plugin>/<type>` format deserve `400`s at the write
- *    boundary, which `extra` deliberately never provides.
+ *    and `column`'s two-segment format deserve `400`s at the write boundary,
+ *    which `extra` deliberately never provides.
  * 3. It keeps `extra`'s contract absolute — *nothing* in it is ever
  *    interpreted by the server, with no view-key asterisk.
  *
- * Plugin keys (`todo.items`, SPEC.md §12) stay in `extra` (`./extra.js`);
- * that split — closed core, open extra — is the whole shape of the surface.
+ * Every other frontmatter key — anything the core does not define — stays in
+ * `extra` (`./extra.js`); that split — closed core, open extra — is the whole
+ * shape of the surface.
  *
  * Carried on **every** document, not only views: frontmatter is per-file and
  * `type` is an open string, so any file may hold the keys; they simply mean
@@ -295,9 +306,13 @@ const VIEW_QUERY_DESCRIPTION =
   "`null` when the file carries no `query` key.";
 
 const COLUMN_DESCRIPTION =
-  'Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — ' +
-  "e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an " +
-  "uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §12).";
+  "The `column` frontmatter key of this pinned view — a renderer name, stored and returned " +
+  "verbatim, in two non-empty whitespace-free segments separated by exactly one `/`. `null` " +
+  "when the file carries no `column` key. **The core defines no column renderer**: every " +
+  "pinned view renders as the filtered list its `query` describes (SPEC.md §10), so a value " +
+  "here selects nothing and changes no board position. It stays a validated core key rather " +
+  "than extra frontmatter because workspaces already hold it on disk and it must round-trip " +
+  "unchanged through every read and write.";
 
 const viewQueryValue = z.union([z.string(), z.number(), z.boolean()]);
 
@@ -305,7 +320,7 @@ export const ViewQuerySchema = z
   .record(z.string().min(1), z.union([viewQueryValue, z.array(viewQueryValue)]))
   .openapi({ description: VIEW_QUERY_DESCRIPTION });
 
-/** Exactly one `/` between non-empty, whitespace-free plugin and type names. */
+/** Exactly one `/` between two non-empty, whitespace-free segments. */
 export const COLUMN_REF_PATTERN = /^[^/\s]+\/[^/\s]+$/;
 
 /**
@@ -463,7 +478,7 @@ export const CreateDocRequestSchema = z
       .describe(`${VIEW_QUERY_DESCRIPTION} Null is the same as omitting it: no \`query\` key.`),
     column: z
       .string()
-      .regex(COLUMN_REF_PATTERN, 'A column reference is `"<plugin>/<type>"` — exactly one slash.')
+      .regex(COLUMN_REF_PATTERN, "A column reference is two segments with exactly one slash.")
       .nullable()
       .optional()
       .describe(`${COLUMN_DESCRIPTION} Null is the same as omitting it: no \`column\` key.`),
@@ -473,7 +488,7 @@ export const CreateDocRequestSchema = z
 
 /**
  * Strict (CONTRACT-017): with every field optional, a typoed key — `pinnned`,
- * or a plugin key sent at top level instead of inside `extra` — would otherwise
+ * or an extra-frontmatter key sent at top level instead of inside `extra` — would otherwise
  * validate as the empty update and silently change nothing.
  *
  * **The one request in this contract that presents a key** (SPEC.md §7,
@@ -525,7 +540,7 @@ export const UpdateDocRequestSchema = z
       .describe(`${VIEW_QUERY_DESCRIPTION} On update, \`null\` clears the key from the file.`),
     column: z
       .string()
-      .regex(COLUMN_REF_PATTERN, 'A column reference is `"<plugin>/<type>"` — exactly one slash.')
+      .regex(COLUMN_REF_PATTERN, "A column reference is two segments with exactly one slash.")
       .nullable()
       .optional()
       .describe(`${COLUMN_DESCRIPTION} On update, \`null\` clears the key from the file.`),

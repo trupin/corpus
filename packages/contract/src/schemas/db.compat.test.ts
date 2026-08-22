@@ -5,9 +5,9 @@ import { DoctorReportSchema, type DoctorReport } from "./db.js";
 /**
  * CONTRACT-025's additivity guarantee, asserted rather than asserted-in-prose.
  *
- * The rider adds `warnings` to a response that `apps/cli`, `apps/server` and any
- * plugin already read. "Additive" is a claim about two directions, and only one
- * of them is obvious:
+ * The rider adds `warnings` to a response that `apps/cli` and `apps/server`
+ * already read. "Additive" is a claim about two directions, and only one of them
+ * is obvious:
  *
  * - **Read.** Code written against the pre-rider types must still compile when
  *   handed a post-rider payload — i.e. nothing was removed, renamed, or widened.

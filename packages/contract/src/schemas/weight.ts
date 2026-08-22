@@ -218,9 +218,10 @@ export const requestedWeightField = RequestedWeightSchema.optional().describe(
  * **Event-type-agnostic**, deliberately. It is a property of *a request that
  * asked for work*, not of `comment.created`, so the core payload schemas
  * (`FormRespondPayloadSchema`, `DocEditedPayloadSchema`) do not have to grow a
- * variant each and a plugin's own event type can carry it with no contract
- * change at all. §7 keeps `QueueEvent.type` an open string for exactly that
- * reason; this convention respects it instead of closing the envelope.
+ * variant each and any other event type can carry it with no contract change at
+ * all. §7 keeps `QueueEvent.type` an open string, so the set of types this key
+ * may ride on is not knowable here; this convention respects that instead of
+ * closing the envelope.
  */
 export const REQUESTED_WEIGHT_PAYLOAD_KEY = "weight";
 

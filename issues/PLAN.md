@@ -1268,7 +1268,7 @@ was written for.
 | SERVER-136 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-064 |
 | UI-150 | Delete the UI's plugin registry, slot dispatch and plugin columns | todo | P0 | UI-149 |
 | CLI-060 | Delete the CLI's plugin discovery, command topics and template install | todo | P0 | SHARED-064 |
-| CONTRACT-074 | Delete the contract's plugin types and the /api/x route note | todo | P0 | CLI-060 |
+| CONTRACT-074 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-060 |
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | todo | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | todo | P0 | — |
 | SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | todo | P0 | UI-150, SERVER-136, CLI-060, CONTRACT-074 |

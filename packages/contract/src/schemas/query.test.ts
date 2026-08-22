@@ -133,8 +133,9 @@ describe("DocsQuery filter grammar", () => {
     expect(DocsQuerySchema.safeParse({ q: "" }).success).toBe(false);
   });
 
-  it("leaves `type` open, because plugins define their own document types", () => {
-    expect(DocsQuerySchema.parse({ type: "todo" }).type).toBe("todo");
+  /** SPEC.md §12's M6: a document of a type this build never heard of is searchable like any other. */
+  it("leaves `type` open, so an unrecognised type can still be filtered on", () => {
+    expect(DocsQuerySchema.parse({ type: "ledger" }).type).toBe("ledger");
   });
 
   it.each([
