@@ -508,9 +508,9 @@ cheapest moment for that to happen.
 | UI-093 | Frontmatter controls are always live and save on change | done | P1 | SHARED-030 |
 | PLUGINS-016 | A plugin doc type can derive its own status | done | P1 | SHARED-036 |
 | SERVER-085 | The board, queries and the file all agree on a derived status | done | P1 | SHARED-036, PLUGINS-016 |
-| UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-016, SERVER-085, UI-093 |
+| UI-092 | A derived status shows its value and its source, uneditable | done | P2 | PLUGINS-016, SERVER-085, UI-093 |
 | PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | done | P1 | SHARED-036 |
-| UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
+| UI-094 | Right-clicking a document offers no Resolve, though every document has one | done | P2 | SHARED-031 |
 | SHARED-038 | `--unstable` reaches §2.4 before it reaches the code | done | P1 | — |
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
 | CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
@@ -1232,6 +1232,7 @@ left in a report.
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | todo | P1 | SHARED-061 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | todo | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
+| SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
@@ -1276,7 +1277,7 @@ that nothing tells you your skills are stale until the agent tries the verb.
 | CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | todo | P1 | — |
 | CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | todo | P2 | — |
 | SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
-| PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | todo | P1 | PLUGINS-016 |
+| PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | done | P1 | PLUGINS-016 |
 | CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | todo | P2 | — |
 
 
