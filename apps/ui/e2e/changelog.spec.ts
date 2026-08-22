@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
+import { settledReader } from "./settle";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 
 /**
@@ -111,6 +112,9 @@ async function openNote(page: Page): Promise<StubCorpus> {
   await page.locator(".board").waitFor();
   await page.locator('.row[data-row-doc="doc_note"]').click();
   await page.locator(".reader .ProseMirror").waitFor();
+  // Every test below measures a height or a `y`, and the column is still easing
+  // open when the body first paints — see `settledReader`.
+  await settledReader(page);
   return corpus;
 }
 

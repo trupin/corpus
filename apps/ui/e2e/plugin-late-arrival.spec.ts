@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
+import { settledReader } from "./settle";
 import { stubCorpus } from "./stubCorpus";
 
 /**
@@ -246,12 +247,21 @@ test.describe("a plugin arriving after the reader opened", () => {
   /**
    * UI-071's drag, driven straight through the arrival.
    *
-   * The mousedown happens at the **earliest** moment the target is addressable
-   * at all, discovery is released while the button is down, and the mouseup
-   * follows. After the fix the earliest such moment is already past discovery,
-   * so the release is a no-op and the drag selects what it aimed at; before it,
-   * the same script pressed at y=306.7, released at y=317.2 and selected
-   * `ores that landed ` — seventeen characters of the first paragraph.
+   * The mousedown happens at the earliest moment the target is addressable
+   * **and nothing but discovery is still in motion**, discovery is released
+   * while the button is down, and the mouseup follows. After the fix the
+   * earliest such moment is already past discovery, so the release is a no-op
+   * and the drag selects what it aimed at; before it, the same script pressed
+   * at y=306.7, released at y=317.2 and selected `ores that landed ` —
+   * seventeen characters of the first paragraph.
+   *
+   * `settledReader` is what supplies the second half of that condition, and it
+   * takes nothing away from the first: discovery is held by the route
+   * throughout, so releasing it is still the only thing left that could move
+   * the words. Without it the drag starts inside the column's own 0.25s opening
+   * transition — the body rises 75.5px while the frontmatter grid reflows — and
+   * the selection came back empty, which is the animation being measured rather
+   * than the arrival this file is about.
    *
    * There is exactly one attempt on purpose. Re-measuring after a shift is what
    * makes a drag *recoverable*; it is not what makes it correct.
@@ -267,6 +277,7 @@ test.describe("a plugin arriving after the reader opened", () => {
       // The fixed behaviour: nothing is on screen to aim at yet.
       held.release();
       await page.locator("[data-todo-panel]").waitFor();
+      await settledReader(page);
       target = await boxOfText(page, TARGET);
     }
     expect(target, `no text node reads exactly “${TARGET}”`).not.toBeNull();
@@ -281,7 +292,12 @@ test.describe("a plugin arriving after the reader opened", () => {
     await page.mouse.move(target.x + target.width - 1, y);
     await page.mouse.up();
 
+    // Both observations before either assertion, so a failure names the cause
+    // rather than the first tripwire: words that moved under a pressed button
+    // are the defect, and a selection over the wrong words is its symptom.
+    const moved = await boxOfText(page, TARGET);
     const selected = await page.evaluate(() => window.getSelection()?.toString() ?? "");
+    expect(moved, `“${TARGET}” moved out from under the pointer mid-drag`).toEqual(target);
     expect(selected, `the drag meant for “${TARGET}” landed on other words`).toBe(TARGET);
     expect(held.hits()).toBeGreaterThan(0);
   });
@@ -322,25 +338,45 @@ test.describe("a plugin arriving after the reader opened", () => {
       if (main === null) return null;
       const editor = main.querySelector("[data-doc-editor]");
       /*
-       * What comes before the body **on screen**. The editor sits inside
-       * `.doc-body-slot` (UI-063), which is `display: contents` and therefore
-       * takes no room and reserves none — so when the editor is that wrapper's
-       * first child, the thing before the body is whatever precedes the wrapper.
+       * The editor sits inside `.doc-body-slot` (UI-063), which is
+       * `display: contents` and therefore takes no room and reserves none — so
+       * the wrapper's own position among `.doc-main`'s children is the body's
+       * position on screen.
        */
       const slot = editor?.closest(".doc-body-slot") ?? null;
-      const previous =
-        editor?.previousElementSibling ?? (slot === null ? null : slot.previousElementSibling);
+      if (slot === null) return null;
+      const children = [...main.children];
+      const title = children.findIndex((child) => child.classList.contains("title-grow"));
+      const body = children.indexOf(slot);
       return {
         panels: main.querySelectorAll(".doc-panel, [data-doc-panel-slot]").length,
-        // The frontmatter form's title, and nothing wedged between the two
-        // holding a place for a panel.
-        precededBy: previous === null ? null : previous.className,
+        /*
+         * Everything the reader draws between the document's name and its body.
+         * A placeholder holding a place for a panel has to *be* somewhere, so
+         * enumerating the gap catches one whether or not it carries the marker
+         * `panels` looks for, and wherever in the gap it sits.
+         */
+        between:
+          title < 0 || body < 0 ? null : children.slice(title + 1, body).map((c) => c.className),
+        slotDisplay: getComputedStyle(slot).display,
       };
     });
 
     expect(shape).not.toBeNull();
     expect(shape?.panels).toBe(0);
-    expect(shape?.precededBy).toContain("title-grow");
+    /*
+     * The frontmatter controls, and nothing else.
+     *
+     * This named `.title-grow` until UI-093, which is a change of neighbour and
+     * not of guarantee: the form used to render only while `editing`, so the
+     * title was the last thing before the body, and it is now always on screen
+     * with its three fields under the title. The gap between the two is what
+     * this test is about, and it still holds exactly one element — the one the
+     * form itself draws.
+     */
+    expect(shape?.between).toEqual(["fm-form"]);
+    // And the wrapper around the body reserves nothing of its own.
+    expect(shape?.slotDisplay).toBe("contents");
   });
 
   /**

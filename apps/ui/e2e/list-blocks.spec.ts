@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
+import { settledReader } from "./settle";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 
 /**
@@ -99,6 +100,9 @@ async function openNote(page: Page): Promise<StubCorpus> {
   await page.locator(".board").waitFor();
   await page.locator('.row[data-row-doc="doc_note"]').click();
   await page.locator(".reader .ProseMirror").waitFor();
+  // Every gesture below aims at a measured point, and the column is still
+  // easing open when the body first paints — see `settledReader`.
+  await settledReader(page);
   return corpus;
 }
 
@@ -136,6 +140,15 @@ async function rewriteClosingParagraph(page: Page, text: string): Promise<void> 
  * A click just inside the right edge of the paragraph's **last line box** has
  * neither problem: `getClientRects()` gives one rect per visual line however it
  * wrapped, and a plain click leaves an ordinary collapsed text caret.
+ *
+ * **`isCollapsed` alone is not the check, and it hid a real miss.** A caret is
+ * collapsed wherever it is, so a click that landed nowhere near this paragraph
+ * satisfied it and the `Enter`/`Tab` after it acted somewhere else entirely: on
+ * this branch the gesture sank the whole outer list under a new empty item, on
+ * 4 runs in 10, and the spec reported it as a serializer defect. The cause is
+ * above (`openNote` now waits for the column to stop easing open), and this is
+ * the tripwire that would have named it — the caret has to be **inside the
+ * paragraph that was aimed at**, not merely collapsed.
  */
 async function caretAtEndOf(page: Page, paragraph: Locator): Promise<void> {
   const point = await paragraph.evaluate((element) => {
@@ -146,7 +159,16 @@ async function caretAtEndOf(page: Page, paragraph: Locator): Promise<void> {
   });
   await page.mouse.click(point.x, point.y);
   await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.isCollapsed ?? false))
+    .poll(
+      () =>
+        paragraph.evaluate((element) => {
+          const selection = window.getSelection();
+          if (selection === null || !selection.isCollapsed) return false;
+          const at = selection.anchorNode;
+          return at !== null && element.contains(at);
+        }),
+      { message: "the click did not leave a caret inside the paragraph it aimed at" },
+    )
     .toBe(true);
 }
 
