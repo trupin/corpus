@@ -71,9 +71,10 @@ test.describe("the board", () => {
     // Presets are the library; folders come from `GET /api/tree`, which has no
     // server to answer it here, so the menu correctly offers none.
     await expect(menu.getByRole("menuitem", { name: /Due this week/ })).toBeVisible();
-    // Plugin column types come from the registry (PLUGINS-001): the dev tree
-    // carries plugins/_fixture, so its column type is a real picker entry.
-    await expect(menu.locator("[data-newlist='plugin:_fixture/sample']")).toBeVisible();
+    // Folders, presets and the search — and nothing from anywhere else. There
+    // was a fourth source until Phase 41, whatever column types the plugin
+    // registry had discovered (SHARED-064).
+    await expect(menu.locator("[data-newlist]")).toHaveCount(5);
     // "From current search" needs a search query, and UI-009 owns that.
     await expect(menu.locator("[data-newlist='search:current']")).toHaveCount(0);
 
@@ -95,8 +96,8 @@ test.describe("the board", () => {
    * offers, and this menu is what it opens. `.ac-menu`'s shared 200px ceiling
    * is the right register for a completion list — corpus-driven, filtered by
    * typing — and the wrong one here, where the items are the workspace's own
-   * folders, the presets and the registered plugin columns. Measured before the
-   * fix, seven items and nothing unusual:
+   * folders, the presets and the current search. Measured before the fix, seven
+   * items and nothing unusual:
    *
    *     1280×720    menu 272×200   219px of items in a 198px box   361px of room below
    *     1728×1080   menu 272×200   219px of items in a 198px box   541px of room below

@@ -5,8 +5,6 @@ import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry.js";
-import { resetSlotCache } from "../plugins/slots.js";
 import { memoryStorage } from "../testing/memoryStorage.js";
 import {
   backlinksSearch,
@@ -37,10 +35,10 @@ import { resetEscapeLayers } from "./useEscapeStack.js";
  * `getByText`/`not.toBeNull` passes identically before and after the fix and
  * proves nothing; every assertion here is on `querySelectorAll(...).length`.
  *
- * The last suite is the guard against the other way to make the count right: a
- * plugin `View` and the static markdown fallback place no threads at all, so for
- * them the below-body list is the *only* render and deleting the branch would
- * silently drop every thread on those documents.
+ * The last suite is the guard against the other way to make the count right: the
+ * static markdown fallback — a `view` document — places no threads at all, so
+ * for it the below-body list is the *only* render and deleting the branch would
+ * silently drop every thread on one.
  */
 
 const THREAD = "th_x";
@@ -203,13 +201,10 @@ async function conversationOnScreen(): Promise<void> {
 
 beforeEach(() => {
   vi.stubGlobal("localStorage", memoryStorage());
-  resetSlotCache();
 });
 
 afterEach(() => {
   cleanup();
-  setPluginRegistry(EMPTY_REGISTRY);
-  resetSlotCache();
   resetSeenMarks();
   clearCollapseState();
   resetEscapeLayers();
@@ -281,47 +276,25 @@ describe("a thread open in a reader, with children", () => {
 });
 
 /**
- * The other half of the fix, and the reason it is not a deletion: these bodies
- * place nothing, so the list below them is the only render their threads get.
+ * The other half of the fix, and the reason it is not a deletion: a `view`
+ * document's body places nothing, so the list below it is the only render its
+ * threads get.
  */
-const PLUGIN_TYPE = "fixture-note";
-
-const PLUGIN_DOC = docFixture({
-  frontmatter: { id: "doc_fx", type: PLUGIN_TYPE, title: "A fixture note" },
-  body: "The body a plugin owns.",
-});
-
 const VIEW_DOC = docFixture({
   frontmatter: { id: "doc_v", type: "view", title: "A saved query" },
   body: "The description of a view.",
 });
 
-function installPluginView(): void {
-  setPluginRegistry(
-    buildRegistry([
-      {
-        dir: "fx",
-        loaded: {
-          module: {
-            default: {
-              id: "fx",
-              name: "FX",
-              docTypes: [
-                {
-                  type: PLUGIN_TYPE,
-                  View: ({ doc }: { readonly doc: Doc }) => (
-                    <p data-fx-view="">plugin view of {doc.frontmatter.title}</p>
-                  ),
-                },
-              ],
-              columns: [],
-            },
-          },
-        },
-      },
-    ]),
-  );
-}
+/**
+ * And its opposite, which is the promise SPEC.md §12's M6 makes: a document
+ * whose `type:` this build does not recognise gets the **editor**, so it places
+ * its threads at their anchors like any note. It was the third case here until
+ * Phase 41, when a plugin could claim such a type with a `View` of its own.
+ */
+const UNKNOWN_TYPE_DOC = docFixture({
+  frontmatter: { id: "doc_fx", type: "todo", title: "Inbox chores" },
+  body: "- [ ] Call the plumber\n",
+});
 
 function docWire(doc: Doc, threads: readonly DocRow[]): ReaderTransport {
   const docId = doc.frontmatter.id;
@@ -336,7 +309,7 @@ const ON_DOC: readonly DocRow[] = [
   threadRowFixture({
     id: "th_p1",
     parent: "doc_fx",
-    title: "On the plugin doc",
+    title: "On the unrecognised doc",
     anchorQuote: null,
   }),
 ];
@@ -346,18 +319,6 @@ const ON_VIEW: readonly DocRow[] = [
 ];
 
 describe("a document whose body places no threads", () => {
-  it("still lists them below a plugin View — exactly once", async () => {
-    installPluginView();
-    render(<Column docId="doc_fx" transport={docWire(PLUGIN_DOC, ON_DOC)} />);
-    await waitFor(() => {
-      expect(document.querySelectorAll("[data-fx-view]")).toHaveLength(1);
-    });
-    await waitFor(() => {
-      expect(panelsOf("th_p1")).toHaveLength(1);
-    });
-    expect(document.querySelectorAll(".thread-slots")).toHaveLength(1);
-  });
-
   it("still lists them below a statically rendered body — exactly once", async () => {
     render(<Column docId="doc_v" transport={docWire(VIEW_DOC, ON_VIEW)} />);
     await waitFor(() => {
@@ -366,5 +327,22 @@ describe("a document whose body places no threads", () => {
     expect(document.querySelectorAll(".thread-slots")).toHaveLength(1);
     // The editor does not own a `view` document, so this really is the fallback.
     expect(document.querySelector('[data-doc-editor="doc_v"]')).toBeNull();
+  });
+});
+
+describe("a document whose type this build does not recognise", () => {
+  /**
+   * SPEC.md §12's M6. The editor owns it, so its threads are placed by the
+   * anchor layer and the below-body list stays empty — the same rendering a
+   * note gets, which is the whole promise.
+   */
+  it("gets the editor, and places its threads exactly once", async () => {
+    render(<Column docId="doc_fx" transport={docWire(UNKNOWN_TYPE_DOC, ON_DOC)} />);
+    await waitFor(() => {
+      expect(document.querySelector('[data-doc-editor="doc_fx"]')).not.toBeNull();
+    });
+    await waitFor(() => {
+      expect(panelsOf("th_p1")).toHaveLength(1);
+    });
   });
 });

@@ -310,9 +310,9 @@
  *
  * A composer's *pending* chips (`.pending-atts`, `.att-chip`) and its 📎
  * (`.clip`) are not here: they ship from `@corpus/kit/composer.css` with
- * `PendingAttachments` and `AttachButton`, which every composer in the app now
- * imports from the kit so that a plugin's composer can import them too (UI-070).
- * `main.tsx` loads that sheet with the other kit stylesheets.
+ * `PendingAttachments` and `AttachButton`, which every composer in the app
+ * imports from the kit so the three of them cannot drift (UI-070). `main.tsx`
+ * loads that sheet with the other kit stylesheets.
  *
  * What stays is this file's own: how a *sent* attachment renders inside a turn,
  * and the reply box's drop highlight (`.composer.dropping`, above), which is

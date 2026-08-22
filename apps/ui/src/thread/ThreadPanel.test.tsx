@@ -717,8 +717,8 @@ describe("designating a resident", () => {
 /**
  * A conversation rendered outside any reading surface: there is no reader for a
  * fold to belong to, so the rule still decides and every gesture is forgotten.
- * Rendering, rather than throwing, is the point — a plugin or a test that mounts
- * a panel on its own gets a panel.
+ * Rendering, rather than throwing, is the point — a test that mounts a panel on
+ * its own gets a panel.
  */
 describe("with no surface to belong to", () => {
   it("still obeys the rule, and keeps no folds", async () => {

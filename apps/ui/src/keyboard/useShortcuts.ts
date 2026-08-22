@@ -51,9 +51,8 @@ export function isWritingSurface(element: Element | null): boolean {
 /**
  * The board's own row control, exempted below **by name**.
  *
- * `@corpus/kit`'s `Row` is a `role="button"`, `tabindex="0"` element, and a
- * plugin `ListItem` may render a real `<button>` — either way it carries these
- * two attributes, because that pair is what the row cursor already reads
+ * `@corpus/kit`'s `Row` is a `role="button"`, `tabindex="0"` element carrying
+ * these two attributes, because that pair is what the row cursor already reads
  * (`useRowCursor.columnRows`). So the exemption is expressed in the same terms
  * the rest of the board expresses a row in, rather than in a marker a row could
  * be written without.

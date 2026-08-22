@@ -3,8 +3,8 @@ import type { CreateDocInput } from "@corpus/kit";
 
 /**
  * The new-list picker's offer, and what each choice creates (SPEC.md §10 — the
- * trailing ghost column: "a folder, a library/preset view, a plugin column
- * type, or from current search").
+ * trailing ghost column: "a folder, a library/preset view, or from current
+ * search").
  *
  * Every choice lands the same way: **one `POST /api/docs` creating a pinned
  * `type: view` document**. There is no other mechanism for a column to come
@@ -16,7 +16,7 @@ import type { CreateDocInput } from "@corpus/kit";
 /** Where view documents are filed, matching the workspace the seed ships. */
 export const VIEW_DOCUMENT_FOLDER = "views";
 
-export type NewListSource = "folder" | "preset" | "plugin" | "search";
+export type NewListSource = "folder" | "preset" | "search";
 
 export interface NewListChoice {
   /** Stable within a rendered menu; also the React key. */
@@ -24,8 +24,6 @@ export interface NewListChoice {
   readonly source: NewListSource;
   readonly title: string;
   readonly query: Readonly<Record<string, string>>;
-  /** A `"<plugin>/<type>"` reference for a plugin column (SPEC.md §10). */
-  readonly column?: string;
   /** A glyph the menu renders instead of the source's default. */
   readonly icon?: string;
   /** Secondary text — a folder's document count, a preset's filter. */
@@ -111,33 +109,6 @@ export function folderChoices(tree: FolderTree | undefined): readonly NewListCho
   return choices;
 }
 
-/** What one registered plugin column type offers the picker (SPEC.md §10). */
-export interface PluginColumnOffer {
-  /** The `"<plugin>/<type>"` column reference — plugin directory, not manifest id. */
-  readonly key: string;
-  readonly label: string;
-  readonly icon?: string;
-  readonly defaultQuery?: Readonly<Record<string, string>>;
-}
-
-/**
- * Plugin column types as picker choices. Choosing one creates the same pinned
- * view document every other choice creates, with `column: "<plugin>/<type>"`
- * merged in — which is the whole §10 contract: reorder, persistence, deletion
- * and stewardship come from the view document, never from the plugin.
- */
-export function pluginChoices(offers: readonly PluginColumnOffer[]): readonly NewListChoice[] {
-  return offers.map((offer) => ({
-    key: `plugin:${offer.key}`,
-    source: "plugin",
-    title: offer.label,
-    query: offer.defaultQuery ?? {},
-    column: offer.key,
-    detail: offer.key,
-    ...(offer.icon === undefined ? {} : { icon: offer.icon }),
-  }));
-}
-
 /** "From current search", offered only while a search query actually exists. */
 export function searchChoice(query: string): NewListChoice | null {
   const trimmed = query.trim();
@@ -168,7 +139,6 @@ export function columnRequest(choice: NewListChoice, order: number): CreateDocIn
     order,
     query: choice.query,
     evergreen: true,
-    ...(choice.column === undefined ? {} : { column: choice.column }),
   };
 }
 

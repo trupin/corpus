@@ -97,22 +97,6 @@ describe("columnRequest", () => {
     });
   });
 
-  it("carries a plugin column reference when the choice has one", () => {
-    expect(
-      columnRequest(
-        {
-          key: "plugin:todos",
-          source: "plugin",
-          title: "Todos",
-          query: { type: "todo" },
-          column: "todos/board",
-          detail: "todos",
-        },
-        10,
-      ),
-    ).toMatchObject({ column: "todos/board", type: "view", pinned: true });
-  });
-
   it("files new views where the seed workspace files its own", () => {
     const seed = readFileSync(
       fileURLToPath(

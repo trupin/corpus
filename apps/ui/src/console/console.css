@@ -20,7 +20,7 @@
  *
  * Without this, `.console { flex: none }` against `.board { flex: 1 }` means
  * every extra line the strip takes is a line the board loses: measured at
- * 39.94px → 45.88px the moment one skipped plugin wrapped, and the board fell
+ * 39.94px → 45.88px the moment one of its children wrapped, and the board fell
  * 622.50px → 616.56px with nobody touching anything (UI-133).
  *
  * **The number is measured, not guessed** (rider clause 3). The tallest child is
@@ -136,28 +136,6 @@
 .c-counts {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-
-/*
- * The plugin-load warning (SPEC.md §10, `ConsoleStrip.tsx`). It shipped with
- * **no rule at all**, which made it the one wrappable child in a row where
- * everything else is `nowrap` — a plugin id or a load reason could take a
- * second line out of the board (UI-133).
- *
- * It is the strip's designated shrinker: `flex: 0 1 auto` with `min-width: 0`
- * means a long id gives way here rather than squeezing the counts or pushing
- * the HALT button, and the whole warning is already in the span's `title`.
- *
- * The colour is inherited on purpose. Whether a skipped plugin should be
- * `--sepia` or `--signal` in the strip is a look decision the mockup does not
- * answer, and it is not this issue's to make.
- */
-.c-plugin-warn {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  flex: 0 1 auto;
 }
 
 /* The prototype's `.c-failed` colour, under the console-drawer-scoped name. */
@@ -761,12 +739,11 @@
  * and was not taken: an empty level list also means "this workspace declares
  * nothing", where the key is the true and final answer (UI-098: an absent answer
  * is never presented as one), and telling the two apart needs `useWeightLevels`
- * to publish whether its queries have settled, which is a plugin-facing kit
- * change. Approach 3 — shorten the labels — is not the product's to make.
+ * to publish whether its queries have settled, which is a kit change beyond
+ * this rule's reach. Approach 3 — shorten the labels — is not the product's to make.
  *
  * The seven sites UI-128 lists as latent (`RefNodeView`, `ScopeProvenance`, the
- * anchor chips, the search filter chips, the todo preview, `.scope-count`, the
- * agent pill) each want their own measurement first, but this is the answer they
+ * anchor chips, the search filter chips, `.scope-count`, the agent pill) each want their own measurement first, but this is the answer they
  * should reach for: fixed box in `ch` against the real vocabulary, ellipsis, and
  * the full value on a `title`.
  */

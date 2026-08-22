@@ -207,8 +207,8 @@
  *                                > label > input[type=checkbox] + span
  *                                > div   > p
  *
- * Split that way because the kit is the plugin contract (SPEC.md §10) and no
- * plugin can emit this markup: the kit carries no TipTap and no editor. The two
+ * Split that way because the kit carries no TipTap and no editor, so it cannot
+ * emit this markup at all — `MarkdownView` renders the read half. The two
  * halves must still *draw the same document the same way* — §10's "there is no
  * edit mode" is a visual promise, and `.doc-body` is what the editor puts on its
  * contenteditable and what every read surface puts on its wrapper — so the

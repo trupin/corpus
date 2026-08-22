@@ -94,7 +94,7 @@ const FIELD_DETAILS: Readonly<Record<string, FieldDetail>> = {
     multi: false,
   },
   type: {
-    summary: "Document type. Plugins add their own, so the set is open.",
+    summary: "Document type. The set is open — a workspace may hold its own.",
     values: { kind: "docType" },
     multi: true,
   },

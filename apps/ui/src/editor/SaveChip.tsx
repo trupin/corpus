@@ -50,8 +50,8 @@ const PublishContext = createContext<PublishSaveStatus | null>(null);
  *
  * Absent, the chip renders as the empty `.save-chip` element the head has
  * always carried — which is what keeps a surface with no editor (a thread
- * conversation, a plugin-rendered document) from reflowing when the editor is
- * not there.
+ * conversation, a `view` document) from reflowing when the editor is not
+ * there.
  */
 export function SaveStatusProvider({ children }: { readonly children: ReactNode }): ReactElement {
   const [value, setValue] = useState<SaveStatusValue>(IDLE);

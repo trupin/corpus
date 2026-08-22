@@ -1,11 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  isPluginRendered,
-  keepsNativeMenu,
-  selectionMenuTarget,
-  type SelectionSource,
-} from "./nativeMenu";
+import { keepsNativeMenu, selectionMenuTarget, type SelectionSource } from "./nativeMenu";
 
 /**
  * SPEC.md §10's two shared halves: the native menu survives where it is the
@@ -85,11 +80,6 @@ describe("keepsNativeMenu", () => {
     expect(keepsNativeMenu({ target: mount(html) })).toBe(true);
   });
 
-  it("keeps it inside a plugin-rendered surface", () => {
-    const host = mount('<div data-plugin-surface=""><p id="inner">todo</p></div>');
-    expect(keepsNativeMenu({ target: host.querySelector("#inner") })).toBe(true);
-  });
-
   it("keeps it for a target that is not an element at all", () => {
     expect(keepsNativeMenu({ target: null })).toBe(true);
     expect(keepsNativeMenu({ target: document })).toBe(true);
@@ -102,33 +92,18 @@ describe("keepsNativeMenu", () => {
 });
 
 /**
- * UI-036. The one question every suppression site asks, and the one it used to
- * ask instead: "did a plugin render this **surface**", never "does this
- * document's type have a plugin renderer".
+ * UI-036, restated for a product with no plugin surfaces (SHARED-064). The rule
+ * that survives is the one that was never about plugins: what menu a right-click
+ * gets is decided by what is under the pointer, never by the document's `type`.
+ * A row of a type this build does not recognise keeps the core menu.
  */
-describe("isPluginRendered", () => {
-  it("answers for anything inside a plugin surface, however deep", () => {
-    const host = mount(
-      '<div class="col-list" data-plugin-surface=""><div class="row" data-row-doc="doc_a">' +
-        '<span id="inner">item</span></div></div>',
-    );
-    expect(isPluginRendered(host)).toBe(true);
-    expect(isPluginRendered(host.querySelector("#inner"))).toBe(true);
-  });
-
-  it("answers no for a core row a plugin ListItem painted", () => {
-    // The core column list is core's surface; only the row's renderer came from
-    // a plugin, and the subject is still the document core holds.
+describe("a row of an unrecognised type", () => {
+  it("gets Corpus's own menu, exactly as a note row does", () => {
     const list = mount(
-      '<div class="col-list"><div class="row todo-row" data-row-doc="doc_a" ' +
+      '<div class="col-list"><div class="row" data-row-doc="doc_a" ' +
         'data-row-type="todo"><span class="row-title">Inbox chores</span></div></div>',
     );
-    expect(isPluginRendered(list.querySelector(".row"))).toBe(false);
-  });
-
-  it("answers no for anything that is not an element", () => {
-    expect(isPluginRendered(null)).toBe(false);
-    expect(isPluginRendered(document)).toBe(false);
+    expect(keepsNativeMenu({ target: list.querySelector(".row") })).toBe(false);
   });
 });
 
@@ -208,16 +183,6 @@ describe("selectionMenuTarget", () => {
     if (title === null) throw new Error("fixture did not render");
 
     expect(selectionMenuTarget(title, selectionOver(title))).toBeNull();
-  });
-
-  it("declines inside a plugin-rendered surface", () => {
-    const host = mount(
-      '<div data-plugin-surface=""><div class="doc-body"><p id="p1">todo</p></div></div>',
-    );
-    const paragraph = host.querySelector("#p1");
-    if (paragraph === null) throw new Error("fixture did not render");
-
-    expect(selectionMenuTarget(paragraph, selectionOver(paragraph))).toBeNull();
   });
 
   it("declines when there is no selection at all", () => {

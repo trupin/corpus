@@ -71,9 +71,9 @@ export interface OpenTarget {
  * The one place a bare id and a full request are reconciled.
  *
  * Both spellings exist because both are honest: a row click knows a document
- * and nothing else, while a plugin that renders items knows exactly which one
- * was clicked. Normalising at the seam means every surface below it handles one
- * shape (SPEC.md §10's `onOpen`, sprint-023 OC5).
+ * and nothing else, while a comment, a backlink or a thread-context link knows
+ * exactly where inside it to land. Normalising at the seam means every surface
+ * below it handles one shape (SPEC.md §10's `onOpen`, sprint-023 OC5).
  */
 export function openRequest(payload: OpenPayload): OpenRequest {
   return typeof payload === "string" ? { docId: payload } : payload;

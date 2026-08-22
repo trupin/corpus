@@ -313,9 +313,9 @@
   color: var(--ink-3);
 }
 
-/* An in-place card: a broken view document, a failed query, a missing plugin.
-   The column keeps its board position — a column that disappeared because its
-   own frontmatter is wrong is the failure this exists to prevent. */
+/* An in-place card: a broken view document, or a failed query. The column keeps
+   its board position — a column that disappeared because its own frontmatter is
+   wrong is the failure this exists to prevent. */
 .col-card {
   margin: 8px 4px;
   border: 1px solid var(--line);
@@ -400,8 +400,8 @@
  * The 200px it overrides is the right register for a **completion** list, whose
  * items come from the corpus and which a person filters by typing rather than
  * scrolling. This menu's items are the workspace's folders, the presets and the
- * registered plugin columns — a short bounded list, and the first menu an empty
- * board offers. At seven items it showed 198px of 219 at 1280×720 **and** at
+ * current search — a short bounded list, and the first menu an empty board
+ * offers. At seven items it showed 198px of 219 at 1280×720 **and** at
  * 1728×1080, with 361px and 541px of room below it respectively: the same
  * clipped box in a window twice the size.
  *

@@ -1,5 +1,4 @@
 import type { RevealItem, RevealTarget } from "@corpus/kit";
-import { DISCOVERY_BUDGET_MS } from "../plugins/registry";
 import type { ToastNotice } from "../shell/Toasts";
 import "./reveal.css";
 
@@ -9,8 +8,8 @@ import "./reveal.css";
  * A reveal names text, not a position: the caller knows the sentence, the item
  * or the quote it is pointing at, and nothing else. So this searches the
  * *rendered* surface rather than the markdown, which is what makes one
- * mechanism work in the editor, in a `MarkdownView` and inside a plugin's own
- * `View` — three renderers with three DOM shapes and no shared coordinate
+ * mechanism work in the editor, in a `MarkdownView` and in a thread's
+ * conversation — three renderers with three DOM shapes and no shared coordinate
  * system between them.
  *
  * **The flash is drawn, never applied.** The obvious implementation — add a
@@ -57,22 +56,34 @@ export const REVEAL_QUIET_FRAMES = 20;
 const REVEAL_MOUNT_MS = 2_000;
 
 /**
+ * The allowance for `GET /api/docs/:id` — the round trip `DocView` shows
+ * `Loading…` for, with no body at all on screen until it answers.
+ *
+ * Two seconds against a localhost server is not a slow read, it is a stalled
+ * one. It was `DISCOVERY_BUDGET_MS` until Phase 41, borrowed from the plugin
+ * registry because the same `Loading…` also covered plugin discovery. Discovery
+ * is gone (SHARED-064) and the fetch is not, so the term is named for the wait
+ * that is actually left rather than deleted with the mechanism that shared it.
+ */
+const REVEAL_FETCH_MS = 2_000;
+
+/**
  * The longest a reveal waits for a surface that never settles — the ceiling, and
  * the only duration in the mechanism.
  *
- * **Derived, not guessed.** `DocView` shows `Loading…` and no body at all while
- * plugin discovery is pending, and `DISCOVERY_BUDGET_MS` is the reader's own
- * promise that the body paints regardless past that point. A reveal that gave up
- * before then would be answering a question the surface was not yet able to
- * hear, which is exactly the defect UI-140 was filed for. So the ceiling is that
- * promise plus {@link REVEAL_MOUNT_MS} for the renderer that follows it.
+ * **Derived, not guessed**, and derived from the two things that stand between a
+ * reveal and the words it is looking for: the document has to arrive
+ * ({@link REVEAL_FETCH_MS}) and then it has to be drawn
+ * ({@link REVEAL_MOUNT_MS}). A reveal that gave up before both could have
+ * happened would be answering a question the surface was not yet able to hear,
+ * which is exactly the defect UI-140 was filed for.
  *
  * It is in milliseconds, deliberately, where {@link REVEAL_QUIET_FRAMES} is in
  * frames: a ceiling counted in frames would never expire in a tab nobody is
  * looking at, because a hidden tab paints none. The two units measure two
  * different things and neither converts into the other.
  */
-export const REVEAL_WAIT_MS = DISCOVERY_BUDGET_MS + REVEAL_MOUNT_MS;
+export const REVEAL_WAIT_MS = REVEAL_FETCH_MS + REVEAL_MOUNT_MS;
 
 /**
  * Consecutive frames the tracker may find nothing before it stops following.
@@ -490,9 +501,9 @@ export function revealItem(container: HTMLElement, target: RevealItem): (() => v
  * What the surface reads, as one string — the thing a reveal is waiting on.
  *
  * Deliberately the *whole* container rather than a marker class: the reveal seam
- * serves the editor, a `MarkdownView` and a plugin's own `View`, three renderers
- * with three DOM shapes, and the only fact common to all of them is that text a
- * reveal can find has to be text somebody can read.
+ * serves the editor, a `MarkdownView` and a thread's conversation, three
+ * renderers with three DOM shapes, and the only fact common to all of them is
+ * that text a reveal can find has to be text somebody can read.
  */
 export function surfaceText(container: HTMLElement): string {
   return container.textContent ?? "";
@@ -518,12 +529,10 @@ export function surfaceText(container: HTMLElement): string {
  * and deliberately does not mark `Loading…`, which is the state UI-140 exists
  * for.
  *
- * **What it cannot see**: a placeholder a plugin `View` paints *inside* the
- * marked body. No shipped plugin registers a `View` (todos deliberately does
- * not), and {@link REVEAL_QUIET_FRAMES} still has to elapse with the surface
- * completely still, so a placeholder that swaps within ~330 ms is covered
- * anyway. A `View` slower than that should mark its own arrival instead of its
- * host's.
+ * **What it cannot see**: a placeholder painted *inside* an already-marked
+ * body. {@link REVEAL_QUIET_FRAMES} still has to elapse with the surface
+ * completely still, so anything that swaps within ~330 ms is covered anyway. A
+ * renderer slower than that marks its own arrival rather than its host's.
  */
 export const REVEAL_SETTLED_ATTRIBUTE = "data-reader-settled";
 
@@ -569,7 +578,7 @@ export interface RevealLook {
  * **The defect this exists for.** The reveal used to retry five times, 80 ms
  * apart, and then spend the navigation instruction whether or not anything had
  * been drawn. On a cold open the reader shows `Loading…` and no document at all
- * while plugin discovery is pending, so those 320 ms were spent searching a
+ * until the fetch answers, so those 320 ms were spent searching a
  * placeholder — measured at 2.5% of opens under eight Playwright workers, and
  * ~19% with four cores otherwise busy. "Open this document **at this**" then
  * opened the document at the top and forgot what it was for.
@@ -585,8 +594,8 @@ export interface RevealLook {
  *   evidence. This is `not there`, and it is how a quote the document genuinely
  *   no longer contains still stops being asked for.
  * - **{@link REVEAL_WAIT_MS} passed either way.** The ceiling, so a surface that
- *   never settles — a plugin `View` that renders something else, a document that
- *   never arrives — terminates rather than searching forever.
+ *   never settles — a document that never arrives, a renderer that never marks
+ *   itself — terminates rather than searching forever.
  *
  * **Arrival is two questions, and either answer is enough** (PR #54 review). The
  * original asked only *did I watch it change*, which is evidence on a cold open

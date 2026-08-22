@@ -442,21 +442,33 @@ describe("Board", () => {
     expect(await screen.findByText("A note")).toBeDefined();
   });
 
-  it("keeps a column whose plugin is not installed, with a card in its list", async () => {
+  /**
+   * A `column:` reference used to name a plugin's own column renderer, and a
+   * view carrying one got that renderer or a "plugin missing" card in its place.
+   * The plugin system is gone (SHARED-064): a view document is a query, whatever
+   * else its frontmatter happens to say, so an old one still renders as the
+   * ordinary column it always was underneath.
+   */
+  it("renders a view document carrying a stale `column:` as an ordinary column", async () => {
     const wire = boardTransport({
-      views: [viewRow({ id: "doc_todos", title: "Todos", order: 10, column: "todos/board" })],
+      views: [
+        viewRow({
+          id: "doc_todos",
+          title: "Todos",
+          order: 10,
+          column: "todos/board",
+          query: { type: "todo" },
+        }),
+      ],
+      rows: { "?type=todo": [docRowFixture({ id: "doc_t1", title: "Inbox chores" })] },
     });
     const { container } = renderBoard(wire);
 
     await waitFor(() => {
       expect(container.querySelectorAll(".col[data-col]")).toHaveLength(1);
     });
-    // PLUGINS-001's PluginMissingCard: the column body degrades, the column
-    // stays — header, kind chip and controls intact, frontmatter untouched.
-    expect(container.querySelector(".plugin-missing-card")?.textContent).toContain(
-      "Plugin missing",
-    );
-    expect(container.querySelector(".col-kind")?.textContent).toBe("plugin");
+    expect(container.querySelector(".col-kind")?.textContent).toBe("view");
+    expect(await screen.findByText("Inbox chores")).toBeDefined();
   });
 
   it("fails a column's query in place while its siblings keep rendering", async () => {

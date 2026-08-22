@@ -1,5 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import type { ComponentType, KeyboardEvent, MouseEvent, ReactElement } from "react";
+import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
 import {
   AgentActivityDot,
   AgeChip,
@@ -20,7 +20,13 @@ import { useAgentActivity } from "./useRowSignals.js";
  * it never reads a board, a view document or a query. That is what lets the same
  * component render in a board column, in a search result list, and in an
  * anchored-thread list — and it is why {@link RowProps} is exported: a host that
- * wraps or delegates to a row cannot be written without the type.
+ * wraps a row, or builds its props before it has one, needs the type.
+ *
+ * **There is exactly one renderer, and no seam for a second.** A `ListItem`
+ * delegate prop existed here for the plugin system, so a plugin could replace
+ * the row wholesale for its own document type. The plugin system is gone
+ * (SHARED-064) and the delegate went with it: a row is one layout, and every
+ * list in the product draws it.
  *
  * Everything the row *derives* is derived from what the server already computed:
  * the staleness tier, the attention reasons, the unread and awaiting-agent
@@ -60,13 +66,6 @@ export interface RowProps {
   /** Injectable clock, so a test can pin the age label and the `reviewed` instant. */
   readonly now?: Date | undefined;
   /**
-   * A delegate renderer. When a host passes one, the row hands it every prop it
-   * received and renders nothing of its own — the whole row, not a slot inside
-   * it, because a row's anatomy is one layout and a partial override would be
-   * two of them.
-   */
-  readonly ListItem?: ComponentType<RowProps> | undefined;
-  /**
    * The keyboard row cursor is on this row (SPEC.md §10's `↑`/`↓`, `j`/`k`) —
    * the prototype's `.row.kbd` outline.
    *
@@ -77,9 +76,6 @@ export interface RowProps {
    */
   readonly cursor?: boolean | undefined;
 }
-
-/** What a delegate list item must accept. */
-export type ListItemComponent = ComponentType<RowProps>;
 
 /**
  * The prototype's `.needs-you` text, derived from the row's own reasons.
@@ -98,7 +94,7 @@ function needsYouText(attention: readonly string[]): string | null {
 }
 
 export function Row(props: RowProps): ReactElement {
-  const { row, onOpen, onNotify, unreadCount, now, ListItem, showReasons, cursor } = props;
+  const { row, onOpen, onNotify, unreadCount, now, showReasons, cursor } = props;
 
   const level = stalenessLevel(row.stale);
   const showActions = hasStaleActions(level);
@@ -107,12 +103,6 @@ export function Row(props: RowProps): ReactElement {
     ...(now ? { now: () => now } : {}),
   });
   const activity = useAgentActivity(row);
-
-  // Hooks run unconditionally; the delegation happens after them, so a delegate
-  // swapping in and out never changes this component's hook order.
-  // `ListItem: undefined` on the delegate is what stops a delegate that
-  // re-renders `Row` as its own fallback from recursing forever.
-  if (ListItem !== undefined) return <ListItem {...props} ListItem={undefined} />;
 
   const excerpt = rowExcerpt(row);
   const context = rowContext(row);

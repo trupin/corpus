@@ -15,7 +15,7 @@ afterEach(cleanup);
 
 describe("creationRequest", () => {
   it("creates into a folder column's folder", () => {
-    expect(creationRequest({ folder: "finance", plugin: null }, "Untitled")).toEqual({
+    expect(creationRequest({ folder: "finance" }, "Untitled")).toEqual({
       type: "note",
       title: "Untitled",
       folder: "finance",
@@ -35,16 +35,18 @@ describe("creationRequest", () => {
     expect(DEFAULT_DOC_FOLDER).toBe("inbox");
   });
 
-  it("creates a plugin column's own document type", () => {
-    expect(
-      creationRequest({ folder: null, plugin: { plugin: "todos", type: "todo" } }, "Untitled"),
-    ).toEqual({ type: "todo", title: "Untitled", folder: DEFAULT_DOC_FOLDER });
-  });
-
-  it("prefers the folder when a column is both folder-scoped and plugin-rendered", () => {
-    expect(
-      creationRequest({ folder: "todos", plugin: { plugin: "todos", type: "todo" } }, "Untitled"),
-    ).toEqual({ type: "todo", title: "Untitled", folder: "todos" });
+  /**
+   * Every column creates a `note`, whatever its query says. A column could name
+   * its own document type until Phase 41 (a plugin `column:` reference), and
+   * nothing can now: `＋` is zero-form creation, and the type is retyped in the
+   * document's own frontmatter if it should be something else.
+   */
+  it("creates a note from every column, whatever the column queries for", () => {
+    expect(creationRequest({ folder: "todos" }, "Untitled")).toEqual({
+      type: "note",
+      title: "Untitled",
+      folder: "todos",
+    });
   });
 });
 
@@ -54,7 +56,7 @@ describe("useCreateInColumn", () => {
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const { result } = renderHook(() => useCreateInColumn(), { wrapper: harness.Wrapper });
 
-    const id = await result.current.create({ folder: "finance", plugin: null });
+    const id = await result.current.create({ folder: "finance" });
 
     expect(id).toBe("doc_created");
     expect(wire.writes("POST")).toEqual([

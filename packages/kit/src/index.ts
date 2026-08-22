@@ -162,7 +162,7 @@ export {
 // Type-aware rows (SPEC.md §10). `Row` is the list-item renderer every column
 // uses, and its prop types ship beside it because a host that wraps or
 // delegates to it cannot be written without them.
-export { Row, type ListItemComponent, type RowProps } from "./row/Row.js";
+export { Row, type RowProps } from "./row/Row.js";
 export {
   AgeChip,
   // One call for the row's agent signal, so no row implementation has to decide

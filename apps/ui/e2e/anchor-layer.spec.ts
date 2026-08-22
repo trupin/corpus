@@ -7,8 +7,8 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * `anchors.spec.ts` declines to assert because it is a stylesheet suite.
  *
  * UI-027 is why this file exists. Every anchor assertion the suite had was
- * either a computed style over hand-written markup or, in `todos.spec.ts`, a
- * highlight the page had just *created*. Nothing anywhere loaded a document
+ * either a computed style over hand-written markup or a highlight the page had
+ * just *created*. Nothing anywhere loaded a document
  * that already had an anchor on it, and that is the state that shipped broken:
  * `offsetsComparable` rejected any body whose final newline the serializer
  * would have added, so a document created without one — which is most of them —

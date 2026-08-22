@@ -182,7 +182,7 @@ test.describe("the compose panel", () => {
   /**
    * UI-070. The chip and the 📎 are no longer this app's CSS: they ship from
    * `@corpus/kit/composer.css` with `PendingAttachments` and `AttachButton`, so
-   * that a plugin's composer inherits the look instead of approximating it.
+   * every composer in the app inherits the look instead of approximating it.
    *
    * Asserted **here**, in the cascade the real bundle produces, because that is
    * the only place the move can be wrong: a stylesheet the kit exports but

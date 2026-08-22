@@ -78,22 +78,16 @@ export interface DocSnapshot {
    */
   readonly pristineBody: string | null;
   /**
-   * True when the document carries plugin frontmatter (`extra`).
+   * True when the document carries frontmatter the core does not define
+   * (`extra`).
    *
-   * `extra` is **opaque passthrough the core never interprets** (SPEC.md §8's
-   * `extra_json`, §12), so a blank body is not evidence about a document that
-   * has any: whatever a plugin put there is content this rule cannot read, and
-   * deleting the document would destroy it unseen. Consulting `extra` rather
-   * than the plugin registry keeps the guard true even for a document whose
-   * plugin has been uninstalled, which is precisely when nothing else would
+   * `extra` is **opaque passthrough the core never interprets** (SPEC.md §9's
+   * `extra_json`), so a blank body is not evidence about a document that has
+   * any: whatever is in there is content this rule cannot read, and deleting
+   * the document would destroy it unseen. Asking the *document* rather than
+   * asking what wrote those keys is what keeps the guard true when nothing in
+   * this build recognises them, which is precisely when nothing else would
    * notice.
-   *
-   * The reference plugin is **not** the case this guards any more: SPEC.md §12
-   * puts todo items in the **body** as markdown task-list lines, so a todo
-   * document with items has a non-blank body and never reaches the guard, and a
-   * brand-new one with no items, no title and no `extra` is genuinely empty and
-   * is correctly removed like any other note (the comment here used to cite the
-   * old `extra.items` model — corrected, PR #12 review, MINOR 15).
    */
   readonly hasExtra: boolean;
 }
@@ -108,8 +102,8 @@ export interface DocSnapshot {
  *   — a thread is content the user deliberately created about this document,
  *   and removing the document would orphan it, which the same spec sentence
  *   forbids;
- * - a document carrying **plugin frontmatter** persists, because the core
- *   cannot read what a plugin put in `extra` and must not delete it unseen.
+ * - a document carrying frontmatter the core does not define persists, because
+ *   the core cannot read what is in `extra` and must not delete it unseen.
  */
 export function isAbandonable(snapshot: DocSnapshot): boolean {
   if (NON_ABANDONABLE_TYPES.has(snapshot.type)) return false;

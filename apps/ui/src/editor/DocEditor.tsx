@@ -76,19 +76,21 @@ function asPmNode(content: JSONContent): PmNode {
  * Whether the core would put the editor on this document type (UI-014).
  *
  * **Every markdown body, not only the core's.** This used to gate on
- * `CORE_DOC_TYPES`, which made a plugin-typed document — and any document whose
- * plugin had since been deleted — render through the static `MarkdownView`: a
- * body a person could read and not correct, in a product whose §10 principle is
- * that there is no edit mode. §10's "a removed plugin's documents render as
- * plain markdown" is about the absence of the plugin's *chrome*, not about the
- * body turning read-only; sprint-011 adjudicated "the editor owns doc bodies
- * always".
+ * `CORE_DOC_TYPES`, which made a document typed for something the core does not
+ * define render through the static `MarkdownView`: a body a person could read
+ * and not correct, in a product whose §10 principle is that there is no edit
+ * mode. sprint-011 adjudicated "the editor owns doc bodies always".
  *
- * A registered plugin `View` still wins, because it replaces the standard
- * document view wholesale. That precedence is not decided here — this answers
- * about the type alone, and `DocView` asks the plugin registry first — so a
- * plugin installed or deleted mid-session flips its documents between its
- * `View` and this editor with no second gate to keep in step.
+ * **This is the whole of SPEC.md §12's M6 in one predicate.** `type` is an open
+ * string on the wire (§5), a workspace holds whatever its owner and its agent
+ * have written, and a document this build has never heard of must still open,
+ * render its markdown with working checkboxes, be searchable and be commentable.
+ * Every one of those follows from returning `true` here.
+ *
+ * **There is one gate, and it is this one.** A plugin `View` could claim a type
+ * ahead of the editor until Phase 41, so `DocView` asked a registry before
+ * asking this — two gates that had to be kept in step. The plugin system is gone
+ * (SHARED-064) and so is the second gate: `DocView` asks this and renders.
  */
 export function editorHandlesType(type: string): boolean {
   return !NON_EDITABLE_TYPES.has(type);

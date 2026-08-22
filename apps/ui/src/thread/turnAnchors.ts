@@ -35,7 +35,7 @@ import { splitTrace } from "./Turn";
  * **Occurrence, never `indexOf`.** A turn repeats phrases — a reply quoting the
  * question, an agent restating an assumption — and an anchor that took the first
  * match would highlight a sentence the user never pointed at (PR #19's MAJOR,
- * where a plugin anchored on `exact` alone). The count of earlier occurrences in
+ * where a caller anchored on `exact` alone). The count of earlier occurrences in
  * the text *before* the selection is what picks the right one, and the selector
  * then carries `prefix`/`suffix` framing drawn from the whole turn, so the
  * server's rung 1 (`prefix + exact + suffix`) resolves it without ever needing

@@ -88,7 +88,7 @@ describe("isAbandonable", () => {
     expect(isAbandonable(snapshot({ threadCount: 1 }))).toBe(false);
   });
 
-  it("keeps a document whose content lives in plugin frontmatter", () => {
+  it("keeps a document whose content lives in frontmatter the core cannot read", () => {
     expect(isAbandonable(snapshot({ type: "todo", hasExtra: true }))).toBe(false);
   });
 

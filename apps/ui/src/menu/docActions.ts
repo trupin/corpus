@@ -9,7 +9,7 @@ import {
   type RowNotice,
   type StalenessLevel,
 } from "@corpus/kit";
-import { useStatusLock } from "../doc/fieldLock";
+import { statusLock } from "../doc/statusLock";
 import { threadStatusNotice } from "../thread/resolveNotice";
 import type { MenuAction } from "./menuModel";
 
@@ -182,13 +182,16 @@ export function useDocActions(
    * The form renders the control locked with the reason; this menu **omits** the
    * action instead, because §10's context menu lists "exactly that item's
    * existing actions" and an item nothing could ever arm is not one of them. The
-   * two cases it covers: an archived document, whose `PUT` the server refuses
-   * outright (SERVER-039) so offering the act would promise a refusal; and a
-   * type that **derives** its status (SPEC.md §12), where SHARED-031 part 2 says
-   * in signed text that it "offers no Resolve, because there is nothing there
-   * for anyone to set".
+   * one case left is an archived document, whose `PUT` the server refuses
+   * outright (SERVER-039), so offering the act would promise a refusal.
+   *
+   * There was a second case until Phase 41 — a type whose status a plugin
+   * **derived** from the document's content. `todo` was the only such type and
+   * the mechanism is gone (SHARED-064), so **every** document's status is its
+   * own to set again, whatever its `type:` says, which is what SPEC.md §10 now
+   * describes.
    */
-  const settable = useStatusLock(subject) === null;
+  const settable = statusLock(subject) === null;
   const list: MenuAction[] = [];
 
   if (surface === "row" && onOpen !== undefined) {

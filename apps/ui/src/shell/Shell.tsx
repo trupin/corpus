@@ -46,8 +46,8 @@ export function Shell(): ReactElement {
         <BoardCommandsProvider>
           <ContextMenuProvider>
             {/* Outermost of the surface hosts: an image can be clicked in the
-                board, in a thread, in focus mode and inside a plugin's view,
-                and the viewer opens over all of them. */}
+                board, in a thread and in focus mode, and the viewer opens over
+                all of them. */}
             <ImageViewerHost>
               <ShellSurfaces />
             </ImageViewerHost>

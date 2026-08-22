@@ -13,9 +13,9 @@ import { CORE_TYPE_VALUES } from "./grammar";
  * a number) has no vocabulary to enumerate.
  *
  * **Types and tags are what the workspace actually contains**, counted rather
- * than guessed, which is the point: a `type=` menu that lists `todo` because a
- * plugin's documents exist teaches the real corpus, while a hardcoded list
- * teaches the one somebody imagined. The core types are appended after the ones
+ * than guessed, which is the point: a `type=` menu that lists `todo` because
+ * documents of that type are on disk teaches the real corpus, while a hardcoded
+ * list teaches the one somebody imagined. The core types are appended after the ones
  * in use, marked as such, so an empty workspace is still learnable.
  *
  * **The sample is bounded and says so.** One `GET /api/docs` at the endpoint's
@@ -52,10 +52,10 @@ function byUseThenName(counts: ReadonlyMap<string, number>, noun: string): reado
 /**
  * Document types in use, then the core types that are not.
  *
- * `type` is an open string in the contract precisely because plugins define
- * their own (SPEC.md §5, §10), so "in use" is the only source that can know
- * about `todo` — and the core tail is what keeps `template` offerable in a
- * workspace that has never made one.
+ * `type` is an open string in the contract precisely so a workspace may hold a
+ * type this build does not define (SPEC.md §5), so "in use" is the only source
+ * that can know about `todo` — and the core tail is what keeps `template`
+ * offerable in a workspace that has never made one.
  */
 export function docTypeOptions(rows: readonly DocRow[]): readonly ValueOption[] {
   const counts = new Map<string, number>();

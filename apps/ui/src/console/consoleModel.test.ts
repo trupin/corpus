@@ -125,9 +125,9 @@ describe("the job row's label", () => {
     expect(label({ type: "agent.done", originTitle: null })).toBe("agent.done");
   });
 
-  it("keeps a plugin's own event type verbatim", () => {
-    expect(label({ type: "x/todos.rollover", originTitle: "Today" })).toBe(
-      "x/todos.rollover · Today",
+  it("keeps an event type the core does not define verbatim", () => {
+    expect(label({ type: "workspace.rollover", originTitle: "Today" })).toBe(
+      "workspace.rollover · Today",
     );
   });
 });

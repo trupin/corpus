@@ -292,22 +292,22 @@ describe("which documents get an editor", () => {
   });
 
   /**
-   * UI-014. The gate used to be `CORE_DOC_TYPES`, so a plugin-typed document —
-   * and every document of a plugin that had since been deleted — rendered
-   * through the static `MarkdownView`. §10 has no read-only markdown body; §10's
-   * "renders as plain markdown" is about losing the plugin's chrome.
+   * UI-014, and SPEC.md §12's M6. The gate used to be `CORE_DOC_TYPES`, so a
+   * document typed for something this build did not define rendered through the
+   * static `MarkdownView` — a body a person could read and not correct. §10 has
+   * no read-only markdown body, and the whole promise of the open `type:` (§5)
+   * is that such a document opens like any other.
    */
   it("takes every other markdown body, core or not", () => {
     expect(editorHandlesType("todo")).toBe(true);
-    expect(editorHandlesType("_fixture-note")).toBe(true);
     expect(editorHandlesType("a-type-nothing-has-ever-heard-of")).toBe(true);
   });
 
-  it("says nothing about plugin precedence, which the registry decides", () => {
-    // The answer is about the *type*, and does not change when a plugin claims
-    // it — `DocView` asks `resolveDocView` first, so there is one gate, not two.
-    // `DocView`'s own suite is where that precedence is pinned.
-    expect(editorHandlesType("fixture-note")).toBe(true);
+  it("is decided by the type and by nothing else", () => {
+    // There is one gate. A registry could claim a type ahead of this until Phase
+    // 41 (SHARED-064), and `DocView` had to ask it first; nothing asks anything
+    // now, so this answer is the answer.
+    expect(editorHandlesType("todo")).toBe(editorHandlesType("note"));
   });
 });
 

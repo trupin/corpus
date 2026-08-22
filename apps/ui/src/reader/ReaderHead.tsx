@@ -25,9 +25,9 @@ import type { NavEntry } from "./useNavStack";
  *
  * The `.save-chip` is now UI-006's `SaveChip`, which reads the editor's save
  * state from a context the reader host mounts. With no editor below it — a
- * thread's conversation, a plugin-typed document — it renders as the empty
- * element the head has always carried, so the head does not reflow when the
- * surface changes.
+ * thread's conversation, a `view` document — it renders as the empty element
+ * the head has always carried, so the head does not reflow when the surface
+ * changes.
  *
  * **The row is a fixed box holding text of unknown length**, and `Reader.css`'s
  * head block is where that is arranged (UI-135): the controls never yield, the

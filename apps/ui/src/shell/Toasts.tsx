@@ -190,8 +190,8 @@ function displaced(
 }
 
 /**
- * Pushes a toast. Outside a provider this is a no-op rather than a throw: a
- * plugin's row rendered in isolation should not crash for narrating itself.
+ * Pushes a toast. Outside a provider this is a no-op rather than a throw: a row
+ * rendered in isolation should not crash for narrating itself.
  */
 export function useToast(): Notify {
   return useContext(ToastContext);

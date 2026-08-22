@@ -6,8 +6,8 @@ import { readStoredWidth } from "./columnWidth";
  * document with `pinned: true`").
  *
  * Everything a column *is* — its title, its query, its board position, its
- * plugin renderer — lives in that document's frontmatter and reaches the client
- * as first-class fields on the collection row (CONTRACT-011). This module turns
+ * width — lives in that document's frontmatter and reaches the client as
+ * first-class fields on the collection row (CONTRACT-011). This module turns
  * one such row into the shape the board renders, and nothing here invents a
  * column: a board with no pinned view documents has no columns, by construction.
  *
@@ -20,7 +20,7 @@ import { readStoredWidth } from "./columnWidth";
  * copies of the query grammar that can disagree is worse than one round trip.
  */
 
-export const COLUMN_KINDS = ["view", "folder", "plugin"] as const;
+export const COLUMN_KINDS = ["view", "folder"] as const;
 
 export type ColumnKind = (typeof COLUMN_KINDS)[number];
 
@@ -29,12 +29,6 @@ export interface ColumnChip {
   /** The `GET /api/docs` parameter name — also the React key. */
   readonly key: string;
   readonly label: string;
-}
-
-/** A `column: "<plugin>/<type>"` reference (SPEC.md §10), already split. */
-export interface PluginColumnRef {
-  readonly plugin: string;
-  readonly type: string;
 }
 
 export interface BoardColumn {
@@ -56,7 +50,6 @@ export interface BoardColumn {
   readonly sortLabel: string;
   /** The folder a `folder:` query scopes to — where this column's `＋` creates. */
   readonly folder: string | null;
-  readonly plugin: PluginColumnRef | null;
   /**
    * The width the view document carries (SPEC.md §10), or `null` for the
    * default. An unusable stored value reads as `null` rather than as an error:
@@ -66,15 +59,12 @@ export interface BoardColumn {
   readonly width: number | null;
   /**
    * Why this column cannot be rendered from its own document, or `null`. Set
-   * only for defects the *client* can see (a `query` that is not a map, a
-   * malformed `column` reference); a query the server refuses surfaces through
+   * only for defects the *client* can see (a `query` that is not a map, a value
+   * a query string cannot carry); a query the server refuses surfaces through
    * the column's own failed request instead.
    */
   readonly error: string | null;
 }
-
-/** Exactly one `/` between non-empty, whitespace-free plugin and type names. */
-const COLUMN_REF_PATTERN = /^([^/\s]+)\/([^/\s]+)$/;
 
 /** Rendered as the `.sort` label; pagination is not a filter the user set. */
 const NON_CHIP_KEYS = new Set(["sort", "limit", "offset"]);
@@ -201,21 +191,6 @@ function readStoredQuery(query: unknown): {
   return { stored: query as Record<string, unknown>, error: null };
 }
 
-function readPlugin(column: string | null): {
-  readonly plugin: PluginColumnRef | null;
-  readonly error: string | null;
-} {
-  if (column === null || column === "") return { plugin: null, error: null };
-  const match = COLUMN_REF_PATTERN.exec(column);
-  if (match === null || match[1] === undefined || match[2] === undefined) {
-    return {
-      plugin: null,
-      error: `its \`column\` frontmatter is not a "<plugin>/<type>" reference: ${column}`,
-    };
-  }
-  return { plugin: { plugin: match[1], type: match[2] }, error: null };
-}
-
 /** The first folder a `folder:` query names — a column scopes to one directory. */
 function folderOfFilter(filter: Readonly<Record<string, string>>): string | null {
   const folder = filter["folder"];
@@ -233,7 +208,6 @@ function folderOfFilter(filter: Readonly<Record<string, string>>): string | null
 export function toBoardColumn(row: DocRow): BoardColumn {
   const { stored, error: queryError } = readStoredQuery(row.query);
   const compiled = compileQuery(stored);
-  const { plugin, error: pluginError } = readPlugin(row.column);
   const folder = folderOfFilter(compiled.filter);
   const sort = compiled.filter["sort"] ?? DEFAULT_SORT;
 
@@ -241,15 +215,14 @@ export function toBoardColumn(row: DocRow): BoardColumn {
     id: row.id,
     title: row.title,
     order: row.order,
-    kind: plugin !== null ? "plugin" : folder !== null ? "folder" : "view",
+    kind: folder !== null ? "folder" : "view",
     filter: compiled.filter,
     storedQuery: stored,
     chips: compiled.chips,
     sortLabel: SORT_LABELS[sort] ?? sort,
     folder,
-    plugin,
     width: readStoredWidth(row.extra),
-    error: queryError ?? pluginError ?? compiled.error,
+    error: queryError ?? compiled.error,
   };
 }
 

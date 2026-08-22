@@ -19,7 +19,7 @@ describe("resultKind", () => {
     expect(resultKind({ id: "doc_a1b2c3" })).toBe("doc");
   });
 
-  it("counts a plugin's document type as a document — the prefix is the same", () => {
+  it("counts an unrecognised document type as a document — the prefix is the same", () => {
     expect(resultKind({ id: "doc_todo1" })).toBe("doc");
   });
 

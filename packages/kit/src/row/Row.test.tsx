@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import type { DocRow } from "@corpus/contract";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCorpusTestHarness, docRowFixture } from "../testing/index.js";
 import { Row, type RowProps } from "./Row.js";
@@ -499,34 +498,6 @@ describe("the reason line", () => {
     expect(container.querySelector(".reason")).toBeNull();
     // The badge is not a reason chip and stays.
     expect(container.querySelector(".needs-you")).not.toBeNull();
-  });
-});
-
-describe("the delegate seam", () => {
-  it("delegates wholesale to a ListItem the host passes", () => {
-    function CustomItem({ row }: RowProps): ReactElement {
-      return <li data-custom-item={row.id}>{row.title}</li>;
-    }
-    const { container } = renderRow({
-      row: docRowFixture({ id: "doc_1", title: "Home maintenance" }),
-      ListItem: CustomItem,
-    });
-    expect(container.querySelector("[data-custom-item='doc_1']")?.textContent).toBe(
-      "Home maintenance",
-    );
-    expect(container.querySelector(".row")).toBeNull();
-  });
-
-  it("does not recurse when the delegate falls back to Row", () => {
-    function Fallback(props: RowProps): ReactElement {
-      return <Row {...props} />;
-    }
-    const { container } = renderRow({
-      row: docRowFixture({ title: "Fallback" }),
-      ListItem: Fallback,
-    });
-    expect(container.querySelectorAll(".row")).toHaveLength(1);
-    expect(container.querySelector(".row-title")?.textContent).toBe("Fallback");
   });
 });
 

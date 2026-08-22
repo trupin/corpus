@@ -4,8 +4,6 @@ import { useEffect, useRef, type ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { keepsNativeMenu } from "../menu/nativeMenu";
 import { RowMenuItems, subjectFromRow } from "../menu/RowMenuItems";
-import { usePluginRegistry } from "../plugins/registry";
-import { resolveListItem } from "../plugins/slots";
 import type { BoardColumn } from "./viewDoc";
 
 /**
@@ -15,9 +13,8 @@ import type { BoardColumn } from "./viewDoc";
  * kit's `Row` — taking the document record plus the callbacks the column
  * supplies, and nothing else. A row is told what it is and who to call; it is
  * never told which column it is in, which is what lets the same component
- * render in a board column, in a search result list, and inside a plugin's own
- * surface (PLUGINS-001 swaps it per document type through `Row`'s `ListItem`
- * seam, without this file changing).
+ * render in a board column and in a search result list. There is no per-type
+ * renderer and no delegate: one row anatomy, drawn for every document.
  */
 
 /** How long the list may go without persisting a scroll position it is given. */
@@ -58,9 +55,6 @@ export function ColumnList({
   const menu = useContextMenu();
   const restored = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Subscribe to plugin discovery, which settles after first render: a row
-  // whose type gains a plugin `ListItem` must swap renderers live.
-  usePluginRegistry();
 
   useEffect(() => {
     // Once, and only after the first results have laid out — restoring against
@@ -76,10 +70,6 @@ export function ColumnList({
     },
     [],
   );
-
-  // A `column:` reference never reaches this component: `Column` dispatches
-  // plugin columns to `PluginColumnBody` (registered → the plugin `Component`,
-  // unregistered → the "plugin missing" card) before any query is issued.
 
   if (error !== null) {
     return (
@@ -103,14 +93,11 @@ export function ColumnList({
         // here, or anywhere else on the page — does not suppress a row's own
         // menu (SPEC.md §10, user report 2026-07-30).
         if (row === undefined) return;
-        // Core paints no menu over a plugin-*rendered* surface: since the
-        // 2026-08-02 §10 amendment the plugin may contribute one of its own
-        // through the kit, so a half-populated core menu there would now be
-        // painting over somebody else's. `keepsNativeMenu` is where that rule
-        // lives — `[data-plugin-surface]` is one of its hosts. This list is
-        // core's own, so nothing here is one;
-        // the row's **type** is not consulted at all. It used to be, which cost
-        // every `todo` document row its entire core action set (UI-036).
+        // The browser keeps its menu inside an editable field and nowhere else
+        // here — `keepsNativeMenu` is where that rule lives. The row's **type**
+        // is not consulted at all, and must not be: a document whose type this
+        // build does not recognise is a core row for a core subject, and it gets
+        // the same actions as every other row (UI-036).
         if (keepsNativeMenu({ target: event.target })) return;
         event.preventDefault();
         menu.open({
@@ -151,9 +138,6 @@ export function ColumnList({
             cursor={row.id === cursorDocId}
             onOpen={onOpen}
             onNotify={onNotify}
-            // The PLUGINS-001 seam: a plugin `ListItem` replaces the default
-            // row for its doc type in every column list, boundary-wrapped.
-            ListItem={resolveListItem(row.type) ?? undefined}
           />
         ))
       )}

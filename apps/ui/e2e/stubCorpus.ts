@@ -193,9 +193,9 @@ export interface StubRow {
    *
    * Seeded rather than flatly `null`, which is what it was until the review of
    * PR #55: nothing read it, so nothing noticed, and no spec could put a **date**
-   * in front of a surface that shows one. `derived-due.spec.ts` is the surface —
-   * a `due` a plugin derives is stated rather than offered — and it needs a
-   * document whose deadline is not null to say anything about it at all.
+   * in front of a surface that shows one. The frontmatter form's `due` control
+   * is that surface, and it needs a document whose deadline is not null to say
+   * anything about it at all.
    */
   readonly due?: string | null;
   readonly pinned?: boolean;
@@ -296,9 +296,9 @@ interface StoredDoc {
   /**
    * Stamped on every write, exactly as the server stamps it. Kept per document
    * rather than as one frozen constant because a surface may legitimately key
-   * on "has this document changed" — the todos column's `(id, updated)`
-   * fingerprint is the shipped case (PLUGINS-007) — and a stub that never moves
-   * `updated` would make such a query look correct while pinning nothing.
+   * on "has this document changed" — a row's age label and the staleness ramp
+   * both read it — and a stub that never moves `updated` would make such a
+   * reading look correct while pinning nothing.
    */
   updated: string;
   /**
@@ -529,7 +529,7 @@ function fieldsOf(body: MultipartBody): Record<string, unknown> {
  */
 export interface StubJob {
   readonly eventId: string;
-  /** `comment.created`, `form.respond`, `doc.edited`, or a plugin's own. */
+  /** `comment.created`, `form.respond`, `doc.edited`, or one the core does not define. */
   readonly type: string;
   /** One of `QUEUE_EVENT_STATUSES`; the queue's three non-terminal ones are what §8 reads. */
   readonly status: QueueEventStatus;
@@ -2430,27 +2430,6 @@ export async function stubCorpus(
         } satisfies UpdateDocResponse);
       }
       return json(route, asDoc(doc));
-    }
-
-    /*
-     * `/api/x/**` — the plugin namespace, and the one place this stub still
-     * answers an empty body deliberately (UI-085).
-     *
-     * A plugin's routes are not in the generated contract, so nothing here can
-     * know their shapes and nothing here should invent them: the core stub is a
-     * stand-in for the **core** server. Every plugin spec registers its own
-     * handler after this one — Playwright matches most-recent-first, so theirs
-     * wins — and this is what a plugin surface meets when its spec has not.
-     *
-     * `{}` rather than the refusal below, and the difference is not politeness:
-     * a plugin client **validates** its responses (`plugins/todos` parses with
-     * Zod), so the empty body is refused at that boundary and the column draws
-     * its error card. The silence UI-085 is about is the silence of a body that
-     * *passes* unnoticed, which this one cannot do.
-     */
-    if (url.pathname.startsWith("/api/x/")) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
-      return;
     }
 
     /*

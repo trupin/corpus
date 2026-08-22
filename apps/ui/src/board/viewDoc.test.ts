@@ -32,7 +32,6 @@ describe("toBoardColumn", () => {
       kind: "view",
       filter: { type: "thread", status: "open" },
       folder: null,
-      plugin: null,
       error: null,
     });
     expect(column.chips.map((chip) => chip.label)).toEqual(["type: thread", "status: open"]);
@@ -59,10 +58,16 @@ describe("toBoardColumn", () => {
     expect(column.chips[0]?.label).toBe("folder: finance/");
   });
 
-  it("calls a `column:` view a plugin column and splits the reference", () => {
+  /**
+   * A `column:` reference used to name a plugin's own column renderer, and a
+   * view carrying one became a third kind of column. The plugin system is gone
+   * (SHARED-064) and the field is not this file's business any more: whatever a
+   * hand-edited view document says there, it is still a query the board runs.
+   */
+  it("ignores a `column:` reference, which no longer names anything", () => {
     const column = toBoardColumn(view({ column: "todos/board", query: { type: "todo" } }));
-    expect(column.kind).toBe("plugin");
-    expect(column.plugin).toEqual({ plugin: "todos", type: "board" });
+    expect(column.kind).toBe("view");
+    expect(column.filter).toEqual({ type: "todo" });
     expect(column.error).toBeNull();
   });
 
@@ -78,9 +83,6 @@ describe("toBoardColumn", () => {
     const broken = toBoardColumn(view({ query: "needs=me" as unknown as DocRow["query"] }));
     expect(broken.error).toContain("not a map of filters");
     expect(broken.id).toBe("doc_view");
-
-    const badColumn = toBoardColumn(view({ column: "todos" }));
-    expect(badColumn.error).toContain("<plugin>/<type>");
 
     const badValue = toBoardColumn(
       view({ query: { folder: { deep: true } } as unknown as DocRow["query"] }),

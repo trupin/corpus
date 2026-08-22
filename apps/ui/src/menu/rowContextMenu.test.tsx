@@ -3,8 +3,6 @@ import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
-import { resetSlotCache } from "../plugins/slots";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
 import { Board } from "../shell/Board";
 import { ToastProvider } from "../shell/Toasts";
@@ -26,14 +24,11 @@ import { ContextMenuProvider } from "./ContextMenuHost";
 
 beforeEach(() => {
   vi.stubGlobal("localStorage", memoryStorage());
-  resetSlotCache();
 });
 
 afterEach(() => {
   cleanup();
   resetEscapeLayers();
-  setPluginRegistry(EMPTY_REGISTRY);
-  resetSlotCache();
   vi.unstubAllGlobals();
 });
 
@@ -80,114 +75,10 @@ function renderBoard(rows: readonly ReturnType<typeof docRowFixture>[]): BoardTr
 }
 
 /**
- * A plugin owning `type`'s row (the PLUGINS-001 `ListItem` seam) — a *core*
- * column's row, painted by plugin code. UI-036: this is not a plugin-rendered
- * surface, and the core menu must reach it.
+ * A document whose `type:` this build does not recognise — the case SPEC.md
+ * §12's M6 protects. It is a core subject and gets the core menu.
  */
-function installListItemFor(type: string): void {
-  setPluginRegistry(
-    buildRegistry([
-      {
-        dir: "fx",
-        loaded: {
-          module: {
-            default: {
-              id: "fx",
-              name: "Fixture",
-              docTypes: [
-                {
-                  type,
-                  ListItem: ({
-                    row: item,
-                  }: {
-                    readonly row: { readonly id: string; readonly title: string };
-                  }) => (
-                    // `.row-title` and the row dataset are what a `ListItem`
-                    // owes the board — the shipped `TodoListItem` carries both,
-                    // and the ⇧F10 path reads the subject back off them.
-                    <div
-                      className="row"
-                      data-row-doc={item.id}
-                      data-row-type={type}
-                      data-row-status="open"
-                    >
-                      <span className="row-title">{item.title}</span> plugin row
-                    </div>
-                  ),
-                },
-              ],
-              columns: [],
-            },
-          },
-        },
-      },
-    ]),
-  );
-}
-
-const PLUGIN_VIEW = viewRow({
-  id: "doc_pluginview",
-  title: "Fixture board",
-  order: 20,
-  column: "fx/board",
-  query: {},
-});
-
-/** The id the fixture column body paints a row for — its own invention. */
-const PLUGIN_ROW_ID = "doc_plugin_row";
-
-/**
- * A plugin **column body**: everything below it is the plugin's own surface,
- * which is what sign-off item 4 excludes. It paints a row-shaped node on
- * purpose — the shape core's own cursor and menu look for — so the exclusion is
- * proved against the hardest case rather than an obviously foreign one.
- */
-function installFxColumn(): void {
-  setPluginRegistry(
-    buildRegistry([
-      {
-        dir: "fx",
-        loaded: {
-          module: {
-            default: {
-              id: "fx",
-              name: "Fixture",
-              docTypes: [],
-              columns: [
-                {
-                  type: "board",
-                  label: "FX board",
-                  Component: () => (
-                    <div
-                      className="row"
-                      data-row-doc={PLUGIN_ROW_ID}
-                      data-row-type="note"
-                      data-row-status="open"
-                    >
-                      <span className="row-title">Plugin body row</span>
-                    </div>
-                  ),
-                },
-              ],
-            },
-          },
-        },
-      },
-    ]),
-  );
-}
-
-function renderPluginColumn(): BoardTransport {
-  return renderColumns([PLUGIN_VIEW], []);
-}
-
-async function pluginRow(): Promise<HTMLElement> {
-  return waitFor(() => {
-    const element = document.querySelector<HTMLElement>(`.row[data-row-doc="${PLUGIN_ROW_ID}"]`);
-    if (element === null) throw new Error("no plugin column row");
-    return element;
-  });
-}
+const UNKNOWN_TYPE = docRowFixture({ id: "doc_a", title: "Inbox chores", type: "todo" });
 
 async function row(docId: string): Promise<HTMLElement> {
   return waitFor(() => {
@@ -320,28 +211,23 @@ describe("a row's context menu", () => {
   });
 
   /**
-   * UI-036. The v1 exclusion (sign-off item 4) is about surfaces a **plugin
-   * renders**; it used to be asked of the row's **type**, so registering a
-   * `ListItem` cost that document type its whole core action set in every
-   * column on the board — no open, no archive, no delete, no staleness. A
-   * `todo` document is a core subject and `RowMenuItems` needs nothing from the
-   * plugin: the subject is the `DocRow` core already holds.
+   * UI-036, and SPEC.md §12's M6 at the menu. The menu used to be decided partly
+   * by the row's **type** — a type a plugin claimed lost its whole core action
+   * set in every column, no open, no archive, no delete, no staleness. Nothing
+   * claims a type now (SHARED-064), and a document typed for something this
+   * build has never heard of is a core subject like any other: `RowMenuItems`
+   * needs nothing but the `DocRow` core already holds.
    */
-  it("gives a core row the core menu even when a plugin ListItem paints it", async () => {
-    installListItemFor("note");
-    renderBoard([FRESH]);
+  it("gives a row of an unrecognised type the whole core menu", async () => {
+    renderBoard([UNKNOWN_TYPE]);
 
-    const painted = await row("doc_a");
-    expect(painted.textContent).toContain("plugin row");
-
-    fireEvent.contextMenu(painted, { clientX: 40, clientY: 60 });
-    expect(screen.getByRole("menu", { name: "Actions for Mortgage options" })).toBeTruthy();
+    fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
+    expect(screen.getByRole("menu", { name: "Actions for Inbox chores" })).toBeTruthy();
     expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
   });
 
-  it("acts on the document, not on the plugin — the menu archives through the core route", async () => {
-    installListItemFor("note");
-    const wire = renderBoard([FRESH]);
+  it("acts on the document — the menu archives through the core route", async () => {
+    const wire = renderBoard([UNKNOWN_TYPE]);
 
     fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
     fireEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
@@ -350,21 +236,6 @@ describe("a row's context menu", () => {
       expect(wire.writes("POST")).toHaveLength(1);
     });
     expect(wire.writes("POST")[0]?.path).toBe("/api/docs/doc_a/archive");
-  });
-
-  /**
-   * The negative the signed rule still owns: rows a **plugin column body**
-   * renders are the plugin's own surface, and core declines to half-populate a
-   * menu over them.
-   */
-  it("leaves a plugin column body's own rows to the browser (v1 scope)", async () => {
-    installFxColumn();
-    renderPluginColumn();
-    const painted = await pluginRow();
-
-    fireEvent.contextMenu(painted, { clientX: 40, clientY: 60 });
-    expect(screen.queryByRole("menu")).toBeNull();
-    expect(painted.closest("[data-plugin-surface]")).not.toBeNull();
   });
 });
 
@@ -390,36 +261,16 @@ describe("the keyboard opening", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  /** UI-036, the keyboard half: ⇧F10 keys on the surface, not on the type. */
-  it("opens the core menu on a row a plugin ListItem painted", async () => {
-    installListItemFor("note");
-    renderBoard([FRESH]);
+  /** UI-036, the keyboard half: ⇧F10 reads the painted row, not its type. */
+  it("opens the core menu on a row of an unrecognised type", async () => {
+    renderBoard([UNKNOWN_TYPE]);
     await row("doc_a");
     fireEvent.keyDown(document, { key: "ArrowDown" });
 
     fireEvent.keyDown(document, { key: "F10", shiftKey: true });
 
-    const menu = screen.getByRole("menu", { name: "Actions for Mortgage options" });
+    const menu = screen.getByRole("menu", { name: "Actions for Inbox chores" });
     expect(document.activeElement).toBe(within(menu).getAllByRole("menuitem")[0]);
-  });
-
-  it("opens nothing on a plugin column body's row, whose surface is the plugin's", async () => {
-    installFxColumn();
-    const wire = renderPluginColumn();
-    const painted = await pluginRow();
-    fireEvent.mouseOver(painted);
-    fireEvent.keyDown(document, { key: "ArrowDown" });
-
-    fireEvent.keyDown(document, { key: "F10", shiftKey: true });
-    expect(screen.queryByRole("menu")).toBeNull();
-
-    // And the cursor really was on that row — `e` acts on it — so the silence
-    // above is the exclusion doing its job, not a cursor that never moved.
-    fireEvent.keyDown(document, { key: "e" });
-    await waitFor(() => {
-      expect(wire.writes("POST")).toHaveLength(1);
-    });
-    expect(wire.writes("POST")[0]?.path).toBe(`/api/docs/${PLUGIN_ROW_ID}/archive`);
   });
 });
 

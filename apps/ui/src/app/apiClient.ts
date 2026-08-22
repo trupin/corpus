@@ -50,8 +50,9 @@ function injectedToken(): string {
  * Where the bearer token comes from — and the only place in the app that decides.
  *
  * The kit takes the token as *configuration* and never sources it: it reads no
- * file, no cookie and no environment variable, so a plugin cannot reach through
- * it for credentials. That leaves provisioning here, and there are two sources:
+ * file, no cookie and no environment variable, so nothing that imports the kit
+ * can reach through it for credentials. That leaves provisioning here, and
+ * there are two sources:
  *
  * - **Production**: the workspace server injects the token into the very shell
  *   it serves, and `injectedToken()` reads it back out of the document

@@ -12,10 +12,9 @@ import { keepsNativeMenu } from "./nativeMenu";
  * and must not differ here either.
  *
  * **What it declines is as much of the contract as what it opens.** Inside the
- * editor with nothing selected, inside the title field, and over a plugin
- * `View`'s surface, the browser's own menu is the useful one and survives
- * untouched: spellcheck is the concrete case, and losing it is a regression a
- * user notices immediately.
+ * editor with nothing selected, and inside the title field, the browser's own
+ * menu is the useful one and survives untouched: spellcheck is the concrete
+ * case, and losing it is a regression a user notices immediately.
  *
  * A **selection** in the document body is handled before this ever runs, by
  * `useSelectionContextMenu` on the document view, which stops the event when it

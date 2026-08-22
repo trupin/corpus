@@ -22,8 +22,7 @@ import type { Locator, Page } from "@playwright/test";
  * surface still moving — measured that way, a `status` flip appeared to resize
  * the form by 82px, all of it the column arriving. (The column's own widening
  * stopped being a transition in UI-146; the reader still has other reasons to
- * settle late — a plugin panel after discovery, images decoding, a thread's
- * turns rendering.)
+ * settle late — images decoding, a thread's turns rendering.)
  *
  * This is a **fixture concern and never an assertion**. What a spec asserts is
  * that two settled boxes either side of a value change are identical

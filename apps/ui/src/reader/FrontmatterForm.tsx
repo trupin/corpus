@@ -19,14 +19,7 @@ import {
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
-import {
-  DERIVED_FIELDS,
-  NO_FIELD_LOCKS,
-  useFieldLocks,
-  type DerivedField,
-  type FieldLock,
-  type FieldLocks,
-} from "../doc/fieldLock";
+import { statusLock } from "../doc/statusLock";
 import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
 import { SaveChipView } from "../editor/SaveChip";
 import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
@@ -133,33 +126,21 @@ export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
 /**
  * A field the person may **see but not set**, and the sentence that says why.
  *
- * SHARED-030: *"A field whose value is derived rather than authored… shows the
- * value and says where it comes from, and is editable by nobody — that is not an
- * edit mode, it is a field that was never the person's to set."* So a control
- * has three states here, not two: absent, live, or shown-with-a-reason.
+ * One field, one reason: an archived document's `status`, whose act lives on
+ * another route (UI-020, SERVER-039). The control stays and is switched off,
+ * because there *is* an act here and the note says where — which is different
+ * from a field nobody could ever set.
  *
- * Both the shape and the predicate moved to `doc/fieldLock.ts` in UI-094: the
- * row context menu asks the same question of a subject that is **not** a `Doc`,
- * and the only two honest ways to serve both callers were one predicate over the
- * fields they share or two predicates that would eventually disagree. This form
- * reads the answer through `useFormStatusLock` and decides nothing itself —
- * that hook is the shared predicate plus one narrowing question this form is
- * able to ask because it holds the whole `Doc`.
+ * The predicate lives in `doc/statusLock.ts` and not here: the row context menu
+ * asks the same question of a subject that is **not** a `Doc`, and the only two
+ * honest ways to serve both callers were one predicate over the fields they
+ * share or two predicates that would eventually disagree.
  *
- * **The third state is a statement rather than a switched-off control**
- * (UI-092). A `derived` lock replaces the `<select>` with the value in words:
- * §12 says the control "shows the derived value and says it comes from the
- * items", and a disabled dropdown says something else — that there is an act
- * here, currently unavailable. There is no act here. An `archived` lock keeps
- * the control, because there *is* one and it lives on another route (UI-020).
- *
- * **`due` asks the same question of the same module** (`useFormDueLock`,
- * PLUGINS-018 / SERVER-134), and draws the answer the same way. It has to: the
- * server converges a derived `due` on every write it makes, so the live date
- * control this form shipped in UI-093 offered a change the write path undid in
- * the same request — pick a date, `200`, and the control snaps back to the
- * derived value with nothing said. UI-092's own summary warned against exactly
- * that, "offering a change the write path would immediately undo".
+ * **There used to be a second reason and a second locked field.** A plugin could
+ * declare a type's `status` or `due` *derived* from the document's content, in
+ * which case the control was replaced by a statement of the value — the third
+ * state SHARED-030 describes. The plugin system is gone (SHARED-064), no type
+ * derives anything, and both fields are ordinary again on every document.
  */
 
 /** The options a select must offer: the editable set, plus its own value. */
@@ -208,90 +189,59 @@ export function isDeliberate(field: FieldName, value: string): boolean {
  * through this function, and guarding the control alone would ship a refusal the
  * user could not connect to anything they did.
  *
- * **No locked field ever leaves here**, and `locks` is that guard — the same
- * rule for the same reason, one field over and then every field at once. The
- * control is not rendered while a lock is on, so this only ever fires for a
- * value set **before** the lock engaged — a status picked or a date typed in the
- * window before plugin discovery settles — which is exactly the case a
- * control-side guard cannot see.
- *
- * **Why it is a list and not a parameter per field** (PR #55 re-review, finding
- * 1). This shipped as `dueLocked`, a boolean covering `due` alone, and the same
- * race on `status` went unguarded — where it is worse, because the write path
- * answers a derived `status` with a `400` rather than converging it silently, and
- * a refused value left in the local map is then carried by every later save. Two
- * ad-hoc booleans would have been the same gap waiting on a third field. So the
- * filter runs over {@link DERIVED_FIELDS} and a field added there is guarded
- * without anybody remembering to guard it.
- *
- * The archive-boundary guard on `status` stays where it is and is **not** this
- * rule. It refuses a value in *both* directions across `archived` (UI-020,
- * SERVER-039), which no lock expresses: `archived` is a place a document is kept,
- * and the routes that move it are not this one.
+ * **The lock is not a second guard here** (Phase 41). `withoutLocked` used to
+ * strip every locked field from the body before it went out, because a plugin
+ * could declare `status` or `due` derived *after* the person had already typed
+ * into the control — a window a control-side guard cannot see. Nothing declares
+ * anything now (SHARED-064): the only lock left is the archive door, it is read
+ * straight off the document this function already holds, and the guard above is
+ * exactly it.
  */
-export function changedFields(
-  doc: Doc,
-  draft: Draft,
-  locks: FieldLocks = NO_FIELD_LOCKS,
-): UpdateDocRequest {
+export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
   const current = draftOf(doc);
   const changes: UpdateDocRequest = {};
   const title = draft.title.trim();
   if (title !== "" && title !== current.title) changes.title = title;
-  if (draft.tags.trim() !== current.tags) changes.tags = textToTags(draft.tags);
   if (draft.status !== current.status && draft.status !== ARCHIVED && current.status !== ARCHIVED) {
     changes.status = draft.status;
   }
+  if (draft.tags.trim() !== current.tags) changes.tags = textToTags(draft.tags);
   if (draft.due !== current.due) changes.due = draft.due === "" ? null : draft.due;
-  return withoutLocked(changes, locks);
+  return changes;
 }
 
 /**
- * The one gate: whatever the form would have sent, minus every field a lock says
- * is nobody's to set.
+ * **The field a refusal named**, read off the contract's own error shape rather
+ * than out of its prose.
  *
- * Written as a loop over {@link DERIVED_FIELDS} rather than as a condition per
- * field so that the set of guarded fields is the *list* and not this function's
- * memory of it.
- */
-function withoutLocked(changes: UpdateDocRequest, locks: FieldLocks): UpdateDocRequest {
-  const kept: { -readonly [K in keyof UpdateDocRequest]: UpdateDocRequest[K] } = { ...changes };
-  for (const field of DERIVED_FIELDS) {
-    if (locks[field] !== null) delete kept[field];
-  }
-  return kept;
-}
-
-/** Whether a form field is one a doc type may take away — see {@link DERIVED_FIELDS}. */
-function isDerivedField(name: FieldName): name is DerivedField {
-  return DERIVED_FIELDS.some((field) => field === name);
-}
-
-/**
- * The **derived fields a refusal named**, read off the contract's own error
- * shape rather than out of its prose.
- *
- * `assertDerivedFieldsNotSet` (SERVER-085) answers a `400 bad_request` whose
+ * `assertNotUnarchivingByPut` (SERVER-039) answers a `400 bad_request` whose
  * `issues` carry `path: "body.status"` — the field, structured, said by the only
- * party that knows. That is what makes this precise enough to act on: a `500`,
- * a dropped connection or any other failure names nothing, so nothing is
- * dropped and a save that merely failed still holds everything the person typed.
+ * party that knows. That is what makes this precise enough to act on: a `500`, a
+ * dropped connection or any other failure names nothing, so nothing is dropped
+ * and a save that merely failed still holds everything the person typed.
  *
- * Restricted to {@link DERIVED_FIELDS} on purpose. A refusal naming `title` says
- * the value was malformed, not that the field is nobody's, and the person's own
- * text is the last thing this form may throw away.
+ * **`status` and nothing else.** A refusal naming `title` says the value was
+ * malformed, not that the field is nobody's, and the person's own text is the
+ * last thing this form may throw away. It read a *list* of derived fields until
+ * Phase 41 — `status` and `due`, both of which a plugin could take away — and the
+ * list is one entry now that nothing derives anything (SHARED-064).
+ *
+ * `changedFields` already refuses to send a status across the archive door, so
+ * this fires for the one case it cannot see: the projection reports a document
+ * archived that its own frontmatter does not (a `SKILL.md` under
+ * `.claude/skills-archived/`), and only the server knows.
  */
-function refusedFields(error: Error): readonly DerivedField[] {
-  if (!(error instanceof CorpusRequestError)) return [];
-  return DERIVED_FIELDS.filter((field) =>
-    error.issues.some((issue) => issue.path === `body.${field}`),
+function statusRefused(error: Error): boolean {
+  return (
+    error instanceof CorpusRequestError &&
+    error.issues.some((issue) => issue.path === "body.status")
   );
 }
 
 /**
- * The local map, with the fields a refusal named removed.
+ * The local map, with `status` removed when a refusal named it.
  *
- * A refusal is the one place the server tells this form a field was never the
+ * A refusal is the one place the server tells this form a field was not the
  * person's to set, and a value that cannot be written is not an unsaved edit —
  * it is a value that will ride on every later patch and be refused again, which
  * is precisely the wedge PR #55's re-review measured: a `400` on `status`, then
@@ -300,13 +250,12 @@ function refusedFields(error: Error): readonly DerivedField[] {
  * Returns the map it was given when nothing was named, so the ordinary failure
  * path re-renders nothing at all.
  */
-function dropRefused(local: Local, refused: readonly DerivedField[]): Local {
-  if (refused.length === 0) return local;
+function dropRefused(local: Local, refused: boolean): Local {
+  if (!refused) return local;
   let kept: Local = {};
   for (const name of FIELD_NAMES) {
     const value = local[name];
-    if (value === undefined) continue;
-    if (isDerivedField(name) && refused.includes(name)) continue;
+    if (value === undefined || name === "status") continue;
     kept = withField(kept, name, value);
   }
   return kept;
@@ -386,7 +335,7 @@ function leaveOnEscape(event: KeyboardEvent<HTMLElement>): void {
 interface FieldProps {
   readonly label: string;
   /** Non-null when the value is shown but not settable — the reason is rendered. */
-  readonly lock: FieldLock | null;
+  readonly lock: string | null;
   /** What the field says when it is live and has something to say. */
   readonly hint?: string;
   readonly children: ReactNode;
@@ -394,96 +343,23 @@ interface FieldProps {
 
 /**
  * One labelled control, with the one line beneath it that says where its act
- * lives when it is not this control (UI-020) or why it is nobody's to set.
+ * lives when it is not this control (UI-020).
  *
  * The note comes from the lock when there is one, so a field never has to carry
  * two explanations that could disagree.
  */
 function Field({ label, lock, hint, children }: FieldProps): ReactElement {
-  const note = lock?.reason ?? hint;
+  const note = lock ?? hint;
   return (
     // `data-field` names the cell for anything addressing one from outside the
-    // form — the e2e suite, which since two fields can be statements can no
-    // longer say "the statement" and mean one thing. The label text is the
-    // field's identity here already, so this introduces no second name for it.
+    // form — the e2e suite. The label text is the field's identity here already,
+    // so this introduces no second name for it.
     <label className="fm-field" data-field={label}>
       <span>{label}</span>
       {children}
       {note === undefined ? null : <span className="fm-hint">{note}</span>}
     </label>
   );
-}
-
-/**
- * A **derived** status: the value, stated, where the control would have been.
- *
- * SPEC.md §12 (rider signed 2026-08-12) asks for a status control that "shows
- * the derived value and says it comes from the items", and §10 (SHARED-030) for
- * a field that "shows the value and says where it comes from, and is editable by
- * nobody". A disabled `<select>` gets the first half right and the second half
- * wrong: it is the shape of an act, and every disabled act in this app is one a
- * person could arm by doing something. Nothing arms this one, so there is no
- * control here — only a reading of the document, with {@link Field}'s note
- * beneath it saying where the reading came from.
- *
- * **`<output>`, not a `<span>`.** It is the element for a value the application
- * computed, it is labelable — so the field's `status` label still names it — and
- * its implicit `role="status"` means a value that flips under a reader (checking
- * the last item) is announced rather than silently swapped.
- *
- * **The value is the server's** (SERVER-085), never re-derived here: two
- * derivations are two chances to disagree, and where the server sends something
- * this UI's copy of the plugin would not have derived, what the server sent is
- * what the file says.
- *
- * It is `doc.frontmatter.status` and pointedly **not** the local overlay, which
- * is the same sentence read strictly (PR #55 re-review, finding 1). The overlay
- * can hold a value the person picked in the window before the lock engaged and
- * the server then refused — and a statement rendering that would print a status
- * the file does not have, under a note claiming the value came from the
- * document. Measured: `resolved` stated over a file reading `open`.
- *
- * SHARED-057: the box is the grid cell's, not the value's, so `open` and
- * `resolved` occupy identical space and nothing on the form moves when one
- * becomes the other. That is `.fm-statement`'s whole job.
- */
-function StatusStatement({ status }: { readonly status: DocStatus }): ReactElement {
-  return <output className="fm-statement">{status}</output>;
-}
-
-/**
- * What a locked, empty `due` says. It is a **reading of the document**, not a
- * placeholder: `DerivedDocDue`'s middle answer (`{due: null}`) means the
- * derivation applies and this document has no deadline, which is a fact the
- * person is being told rather than a blank waiting to be filled.
- *
- * A `—` or an empty box would say the other thing, and on this control the other
- * thing is false.
- */
-const NO_DEADLINE = "no deadline";
-
-/**
- * A **derived** `due`: {@link StatusStatement}'s element, one field over, for the
- * reasons that comment gives — an `<output>` because the application computed the
- * value, labelable so the `due` label still names it, and `role="status"` so a
- * deadline that changes under a screen reader is announced.
- *
- * **The value is the server's**, exactly as the status statement's is (SERVER-134
- * writes the derived `due` into the frontmatter on every write). Nothing here
- * re-derives it, and nothing here composes anything: `DerivedDocDue`'s three
- * answers are a trap for a surface that combines a derived value with a stored
- * one, and this surface never holds both. It is read from `doc.frontmatter.due`
- * and never from the local overlay, for the reason {@link StatusStatement}
- * gives.
- *
- * SHARED-057 / SHARED-061: the box is the grid cell's (`.fm-statement` is
- * `width: 100%`), so a date **appearing and disappearing** — which is what
- * checking the last dated item does — moves nothing on the form. `no deadline`
- * is a good deal wider than `2026-08-04`, which is precisely why the width may
- * not follow the text.
- */
-function DueStatement({ due }: { readonly due: string }): ReactElement {
-  return <output className="fm-statement">{due === "" ? NO_DEADLINE : due}</output>;
 }
 
 export function FrontmatterForm({
@@ -515,16 +391,6 @@ export function FrontmatterForm({
   const localRef = useRef<Local>(local);
   const docRef = useRef(doc);
   docRef.current = doc;
-  /**
-   * Every derived field's lock as of the last render, for {@link changedFields}'
-   * guard.
-   *
-   * A ref rather than a dependency because every write path here reads its inputs
-   * from refs, for the reason stated above: a flush armed several keystrokes ago
-   * must send what the form holds *now*. It is assigned where the locks are read,
-   * further down — every caller runs after a render has completed.
-   */
-  const locksRef = useRef<FieldLocks>(NO_FIELD_LOCKS);
   const inFlight = useRef(false);
   /** A change arrived while a `PUT` was on the wire; send it when that lands. */
   const queued = useRef(false);
@@ -603,7 +469,7 @@ export function FrontmatterForm({
        * value made every subsequent save of every field fail (PR #55 re-review,
        * finding 1).
        */
-      const kept = dropRefused(localRef.current, refusedFields(error));
+      const kept = dropRefused(localRef.current, statusRefused(error));
       if (kept !== localRef.current) {
         localRef.current = kept;
         setLocal(kept);
@@ -629,7 +495,7 @@ export function FrontmatterForm({
     const outgoing = docRef.current;
     const id = outgoing.frontmatter.id;
     if (isAbandoned(id)) return null;
-    const changes = changedFields(outgoing, valueOf(outgoing, localRef.current), locksRef.current);
+    const changes = changedFields(outgoing, valueOf(outgoing, localRef.current));
     if (Object.keys(changes).length === 0) return null;
     return { id, changes };
   }, []);
@@ -759,9 +625,7 @@ export function FrontmatterForm({
   );
 
   const value = valueOf(doc, local);
-  const stored = draftOf(doc);
-  const locks = useFieldLocks(doc);
-  locksRef.current = locks;
+  const statusReason = statusLock(doc.frontmatter);
   const folder = folderOf(doc.path);
 
   return (
@@ -854,53 +718,49 @@ export function FrontmatterForm({
         </Field>
         <Field
           label="status"
-          lock={locks.status}
+          lock={statusReason}
           hint="archive from the ⋯ menu — a status flip would not move a skill’s folder"
         >
-          {locks.status?.kind === "derived" ? (
-            <StatusStatement status={stored.status} />
-          ) : (
-            <select
-              className="fm-input"
-              value={value.status}
-              disabled={locks.status !== null}
-              onKeyDown={leaveOnEscape}
-              onChange={(event) => {
-                patch("status", event.target.value);
-              }}
-            >
-              {statusOptions(value.status).map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          )}
-        </Field>
-        <Field label="due" lock={locks.due}>
           {/*
-           * The `status` field's shape, deliberately unchanged — a `derived`
-           * lock is a statement, anything else is the control. `dueLock` returns
-           * only `derived` locks (there is no act on `due` on any route, so
-           * there is nothing for an `archived` lock to point at), so the second
-           * branch is the live control today. It is written this way rather than
-           * as `locks.due === null` so that the two fields answer a lock by its
-           * `kind` and not by which field it came from.
+           * Switched off rather than replaced by a statement of the value: there
+           * **is** an act on an archived document's status and it lives on
+           * another route, which the note above says (UI-020). A control the
+           * person can see and not use, with the way to arm it named, is the
+           * honest shape for that.
            */}
-          {locks.due?.kind === "derived" ? (
-            <DueStatement due={stored.due} />
-          ) : (
-            <input
-              className="fm-input"
-              type="date"
-              value={value.due}
-              disabled={locks.due !== null}
-              onKeyDown={leaveOnEscape}
-              onChange={(event) => {
-                patch("due", event.target.value);
-              }}
-            />
-          )}
+          <select
+            className="fm-input"
+            value={value.status}
+            disabled={statusReason !== null}
+            onKeyDown={leaveOnEscape}
+            onChange={(event) => {
+              patch("status", event.target.value);
+            }}
+          >
+            {statusOptions(value.status).map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {/*
+         * `due` is live on every document (Phase 41). A plugin could declare a
+         * type's deadline *derived* from its content, in which case this cell
+         * stated the value instead of offering a control — the whole of that is
+         * gone with the plugin system (SHARED-064), and a deadline is the
+         * person's to set on a `todo` document exactly as on a note.
+         */}
+        <Field label="due" lock={null}>
+          <input
+            className="fm-input"
+            type="date"
+            value={value.due}
+            onKeyDown={leaveOnEscape}
+            onChange={(event) => {
+              patch("due", event.target.value);
+            }}
+          />
         </Field>
       </div>
     </>

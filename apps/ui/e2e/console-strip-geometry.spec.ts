@@ -22,10 +22,10 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * The audit's numbers, reproduced here before the fix, at a 1000px viewport:
  *
  * ```
- * rest              strip 39.94  board 622.50  board bottom 679.06
- * one skipped plugin strip 45.88  board 616.56  board bottom 673.13
- * drawer, short detail  row 28.94  board 348.63
- * drawer, long detail   row 44.88  board 332.69
+ * rest                  strip 39.94  board 622.50  board bottom 679.06
+ * a wrapped strip child strip 45.88  board 616.56  board bottom 673.13
+ * drawer, short detail    row 28.94  board 348.63
+ * drawer, long detail     row 44.88  board 332.69
  * ```
  *
  * ## Why a browser
@@ -71,6 +71,12 @@ const CAUGHT_UP: IndexStatus = {
 };
 
 /** A real progress sentence: the server's wording, at the server's length. */
+/**
+ * A version string longer than `.c-status`'s 24ch bound — the server writes it,
+ * so the strip may not be sized by it (rider clause 2).
+ */
+const LONG_VERSION = "1.0.0-rc.20260822.nightly.build.7f3a19c";
+
 const LONG_DETAIL =
   "the configured embedding endpoint at http://127.0.0.1:11434 did not answer, " +
   "and the model nomic-embed-text is 46% downloaded — indexing resumes on its " +
@@ -116,8 +122,6 @@ interface Server {
   index: IndexStatus | null;
   /** `null` leaves the stub's own answer in place. */
   queue: QueueStatus | null;
-  /** Whether `plugins/todos/manifest.ts` throws at module scope. */
-  breakTodos: boolean;
   /** Whether `GET /api/health` answers at all. */
   health: boolean;
 }
@@ -149,28 +153,12 @@ async function serve(page: Page, server: Server): Promise<void> {
     if (!server.health) return route.abort("connectionrefused");
     return route.fallback();
   });
-  /*
-   * The glob in `plugins/registry.ts` imports `plugins/<dir>/manifest.ts`, which
-   * Vite serves as a module — from outside the UI's root, so the browser asks
-   * for `/@fs/…/plugins/todos/manifest.ts`, sometimes with a `?v=`/`?t=` suffix
-   * (`plugin-late-arrival.spec.ts` documents the same pattern). Only `todos`
-   * breaks, so the strip renders the single-warning wording a person actually
-   * meets rather than the plural summary.
-   */
-  await page.route("**/plugins/todos/manifest.ts*", async (route) => {
-    if (!server.breakTodos) return route.fallback();
-    return route.fulfill({
-      status: 200,
-      contentType: "text/javascript",
-      body: 'throw new Error("boom at module scope: cannot find package @corpus/todos-widgets");',
-    });
-  });
 }
 
 test.describe("the strip's height is not its text", () => {
   test("the board's box is identical in every strip state", async ({ page }) => {
     await page.setViewportSize(VIEWPORT);
-    const server: Server = { index: CAUGHT_UP, queue: null, breakTodos: false, health: true };
+    const server: Server = { index: CAUGHT_UP, queue: null, health: true };
     await serve(page, server);
 
     const board = page.locator(".board");
@@ -202,26 +190,19 @@ test.describe("the strip's height is not its text", () => {
       await expect(page.locator(".c-failed-jobs")).toHaveText("147 failed");
     });
 
-    server.breakTodos = true;
-    const warned = await state("a skipped plugin", async () => {
-      await expect(page.locator(".c-plugin-warn")).toHaveText("plugin todos skipped");
-    });
-
-    server.breakTodos = false;
     server.health = false;
     const unreachable = await state("a server that never answers", async () => {
       await expect(page.locator(".console-strip .c-failed")).toHaveText("server unreachable");
     });
 
     /*
-     * Every box, against the first. Before the fix `warned` was 616.56 against
-     * `noIndex`'s 622.50 — the −5.94px the wrapped warning took out of the
-     * board — and the drawer test below carries the larger −15.94px.
+     * Every box, against the first. Before the fix a wrapped strip child scored
+     * 616.56 against `noIndex`'s 622.50 — the −5.94px it took out of the board —
+     * and the drawer test below carries the larger −15.94px.
      */
     for (const [name, measured] of [
       ["a long index detail", longDetail],
       ["147 failed", failing],
-      ["a skipped plugin", warned],
       ["a server that never answers", unreachable],
     ] as const) {
       expect(measured, `${name} moved the board`).toEqual(noIndex);
@@ -230,11 +211,15 @@ test.describe("the strip's height is not its text", () => {
 
   test("the strip is one line, and it is the height it was measured for", async ({ page }) => {
     await page.setViewportSize(VIEWPORT);
-    await serve(page, { index: CAUGHT_UP, queue: null, breakTodos: true, health: true });
+    await serve(page, {
+      index: { ...CAUGHT_UP, state: "disabled", detail: LONG_DETAIL },
+      queue: BUSY_QUEUE,
+      health: true,
+    });
     await page.goto("/");
 
     const strip = page.locator(".console-strip");
-    await expect(page.locator(".c-plugin-warn")).toHaveText("plugin todos skipped");
+    await expect(page.locator(".index-pill")).toHaveText("index: disabled");
     await expect(strip).toHaveCSS("height", "40px");
     // The prototype's padding, unchanged — the height is added to it, not
     // instead of it (`design/index.html` is authoritative for look & feel).
@@ -242,18 +227,41 @@ test.describe("the strip's height is not its text", () => {
     expect(await clips(strip)).toBe(false);
   });
 
-  test("a truncated warning keeps the whole of itself in reach", async ({ page }) => {
+  /**
+   * Clause 2: a value the strip cannot fit is **revealed, not accommodated**.
+   *
+   * The subject was `.c-plugin-warn` — a skipped plugin's load reason, the one
+   * genuinely unbounded string the strip carried — until Phase 41 deleted the
+   * warning with the plugin system (SHARED-064). The rule outlives it, and
+   * `.c-status` is the string that tests it now: the version is the server's,
+   * `console.css` bounds the span at 24ch, and a long pre-release tag has to be
+   * reachable in place rather than allowed to widen the strip.
+   */
+  test("a truncated value keeps the whole of itself in reach", async ({ page }) => {
     await page.setViewportSize({ width: 620, height: 720 });
-    await serve(page, { index: CAUGHT_UP, queue: null, breakTodos: true, health: true });
+    await serve(page, { index: CAUGHT_UP, queue: null, health: true });
+    await page.route("**/api/health", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "ok",
+          version: LONG_VERSION,
+          uptimeSeconds: 1,
+          workspace: "/tmp/stub-workspace",
+        }),
+      }),
+    );
     await page.goto("/");
 
-    const warn = page.locator(".c-plugin-warn");
-    await expect(warn).toHaveText("plugin todos skipped");
-    // Clause 2: revealed, not accommodated. The strip cut it; `title` has it.
-    await expect(warn).toHaveAttribute(
-      "title",
-      /boom at module scope: cannot find package @corpus\/todos-widgets/,
-    );
+    const status = page.locator(".c-status");
+    // Whole in `title`…
+    await expect(status).toHaveAttribute("title", `corpus ${LONG_VERSION}`);
+    // …cut on screen, and the strip is still one unclipped line.
+    expect(
+      await status.evaluate((element) => element.scrollWidth > element.clientWidth),
+      "the version was not truncated — the fixture is no longer long enough",
+    ).toBe(true);
     expect(await clips(page.locator(".console-strip"))).toBe(false);
   });
 });
@@ -302,7 +310,6 @@ test.describe("the drawer's index row", () => {
     const server: Server = {
       index: { ...CAUGHT_UP, state: "disabled", detail: "no model" },
       queue: null,
-      breakTodos: false,
       health: true,
     };
     await serve(page, server);
@@ -332,7 +339,6 @@ test.describe("the drawer's index row", () => {
     await serve(page, {
       index: { ...CAUGHT_UP, state: "stale", pending: 12, failed: 9, detail: LONG_DETAIL },
       queue: null,
-      breakTodos: false,
       health: true,
     });
 

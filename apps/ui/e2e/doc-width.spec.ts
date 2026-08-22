@@ -313,11 +313,11 @@ test.describe("the document body's width, in a column", () => {
    * **What this test does and does not cover, stated rather than implied.** It
    * reveals through the comments list, which is the `jumpToThread` seam. That
    * seam is *not* the one the defect broke — checked, by restoring the observer
-   * and watching this test stay green — and the one that broke is the todo
-   * item's `revealItem`/`trackReveal` path in `reveal.spec.ts`, which caught it
+   * and watching this test stay green — and the one that broke is
+   * `revealItem`/`trackReveal`, pinned in `reveal.spec.ts`, which caught it
    * 20/20 and is where it stays caught. Reproducing that seam here would mean a
-   * second copy of the todos fixture with a plugin in it, and two copies of one
-   * seam drift. So this pins the half a width suite can honestly own — the
+   * second copy of its fixture, and two copies of one seam drift. So this pins
+   * the half a width suite can honestly own — the
    * reader still scrolls to what it was asked to show, with the control on
    * screen — and `docWidthControl.test.tsx` pins the rule the defect broke:
    * this control observes nothing and updates no state before paint.

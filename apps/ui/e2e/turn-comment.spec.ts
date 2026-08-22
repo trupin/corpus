@@ -314,8 +314,8 @@ test.describe("a thread's children, counted", () => {
     await expect(page.locator(placements(".reader", "th_framed"))).toHaveCount(1);
     await expect(page.locator(placements(".reader", "th_orphan"))).toHaveCount(1);
     // …and there is no second listing of the set below the conversation. The
-    // list itself is not gone (a plugin view still needs it); it is a thread
-    // that no longer takes it.
+    // list itself is not gone (a `view` document still needs it); it is a
+    // thread that no longer takes it.
     await expect(page.locator(".reader .thread-slots")).toHaveCount(0);
 
     // ⤢ — the same document view at the other measure.

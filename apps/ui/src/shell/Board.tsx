@@ -14,7 +14,6 @@ import { measureColumns, previewOrder } from "../board/columnDrag";
 import { nextOrder, reinsert } from "../board/columnOrder";
 import { useRegisterBoardCommands, type BoardCommands } from "../keyboard/boardCommands";
 import { useContextMenu } from "../menu/ContextMenuHost";
-import { isPluginRendered } from "../menu/nativeMenu";
 import { RowMenuItems, subjectFromElement } from "../menu/RowMenuItems";
 import { focusReplyComposer, replyRoot } from "../keyboard/focusReply";
 import { useActiveColumn } from "../keyboard/useActiveColumn";
@@ -383,12 +382,9 @@ export function Board(): ReactElement {
   const openRowMenu = useCallback(() => {
     const element = cursor.element();
     if (element === null) return;
-    // A plugin **column body** owns its surface, and since the 2026-08-02 §10
-    // amendment it may put its own menu on it through the kit — so core opens
-    // none there. Asked of the painted element, not of the row's type — a `todo`
-    // document row in an ordinary column is a core row with the core action set
-    // however it is painted (UI-036).
-    if (isPluginRendered(element)) return;
+    // The subject is read off the painted element, never from the row's type: a
+    // document whose `type:` this build does not recognise is a core row with
+    // the core action set (UI-036).
     const subject = subjectFromElement(element);
     if (subject === null) return;
     const rect = element.getBoundingClientRect();
@@ -505,10 +501,7 @@ export function Board(): ReactElement {
   const addToColumn = useCallback(
     async (column: BoardColumn) => {
       try {
-        const docId = await createInColumn.create({
-          folder: column.folder,
-          plugin: column.plugin,
-        });
+        const docId = await createInColumn.create({ folder: column.folder });
         openInColumn(column.id, docId);
         setSelectTitleFor(docId);
         toast({
