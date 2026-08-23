@@ -115,3 +115,29 @@ _Filled by the implementing agent; state the model._
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix
+
+---
+
+## Another instance, v0.20.0 harvest (2026-08-23)
+
+Recorded here rather than filed, because this issue exists for exactly this
+pattern and a fourth issue describing it would be a fourth description of one
+thing.
+
+Two whole-suite Playwright runs under load, single worker, on an unchanged tree:
+
+- run 1 failed `query-editor`, `reflect`, `resident`
+- run 2 failed `menu-room-geometry`, `table-pipes` — **a disjoint set**
+
+All 33 tests across those five files pass in isolation. The disjointness is the
+finding: it is the load, not the specs. The orchestrator's own final harvest run
+of the same suite passed 609 of 609.
+
+Two related facts from the same release, both worth having beside this:
+
+- **SERVER-140** was this shape and turned out to be a real ordering bug in a
+  test, not load — 3 of 4 runs green before, 10 of 10 after. So this pattern is
+  not a safe thing to assume.
+- **SERVER-146** was filed because one server test failed once in a gate and the
+  orchestrator read the summary line instead of keeping the log, losing the
+  name. Whatever is done here, capture to a file.

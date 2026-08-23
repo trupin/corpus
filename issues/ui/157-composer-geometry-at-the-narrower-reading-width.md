@@ -69,6 +69,23 @@ several widths.
 3. Click the address line with a real pointer, and again at 560 and at the
    maximum width.
 
+## Left behind, not fixed (2026-08-23)
+
+**The composer's hint shows 31px of a 107px sentence at 440px.** UI-157's
+implementer measured it and flagged it as a design smell rather than a defect,
+and I agreed and left it.
+
+It is **compliant**: the foot's yield order says the hint is the only item that
+ever gives, and what is cut is revealed on its `title`, which is SHARED-057's
+rule. The full 107.5px shows at 336 and at 560+, and 15.9px at 240.
+
+What is off is the tuning, not the rule. The yield order was set when 560 was
+the reading width. Phase 41 made 440 the default path column, so the width that
+now shows the *least* hint is the width most people read at.
+
+Not filed as its own issue because it is a judgment about a default, not a
+correctness question, and this release had four sentences already.
+
 ## E2E Verification Log
 
 **Model: opus.** Chromium via Playwright against the real Vite dev server on
