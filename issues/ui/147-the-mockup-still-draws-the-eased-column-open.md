@@ -75,4 +75,22 @@ same kind of drift, and doing them apart means reading the mockup twice.
 None automatable today. The check is a person opening both and comparing.
 
 ## E2E Verification Log
-_[Agent fills — state the model]_
+
+**Log filled 2026-08-22 by the orchestrator (opus), during Phase 41 scoping.**
+The work had landed and the row said `done`, but this log was left as its
+template — which is what sent me to re-check it. Verified on `main` at
+`583aa726`:
+
+```
+$ awk '/\.col\.reading/ {print FNR": "$0}' design/index.html | head -2
+12:     - `.col.reading` no longer eases its width, matching UI-146
+147:   .col.reading { width: 560px; transition: border-color 0.3s ease; }
+```
+
+The mockup transitions `border-color` only, which is what UI-146 shipped in the
+app, and the changelog line at the top of the file records the change. No width
+easing remains. Nothing to do.
+
+**UI-141 stays open**, which answers this issue's second criterion: the stale
+`💬` popover is a different surface and needs newly drawn UI, so it was not
+folded into this pass.
