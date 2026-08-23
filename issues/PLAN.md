@@ -722,7 +722,6 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
 | UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | done | P1 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | done | P1 | — |
-| SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 
 **Two findings are the user's, not mine to close:**
 
@@ -740,7 +739,6 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | AGENT-028 | Two product skills still say the empty tree is the repository's first commit (CLI-045 finding) | done | P1 | — |
 | CONTRACT-055 | `QUERY_KEY_VOCABULARY` does not say that queue transitions change the roster | done | P0 | — |
 | SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | done | P0 | CONTRACT-055 |
-| SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | — |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | done | P2 | SERVER-113 |
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
@@ -1284,7 +1282,6 @@ was written for.
 | AGENT-043 | Does a workspace skill covering a domain oblige the comment loop to apply it? | todo | P2 | SHARED-067 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
-| CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces (AGENT-040 escalation) | todo | P1 | — |
 
 
 ## Phase 39 — What the agent pays to use the CLI (2026-08-21, dogfood report)
@@ -1533,23 +1530,73 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | SHARED-070 | What else the agent pays for — a measured audit of token cost | done | P1 | fable | — |
 | AGENT-045 | The skills never ask for brief help, so CLI-056's saving is not taken | done | P1 | opus | CLI-056 |
 | UI-164 | A folder act refuses a document and the explorer says nothing (CONTRACT-078 AC4) | done | P2 | opus | CONTRACT-078 |
-| SERVER-142 | An out-of-band commit stages the tree as it later stands (SERVER-140 escalation) — **not in v0.20.0** | todo | P1 | fable | — |
 | CONTRACT-082 | The CLI pays 23ms a call for routes it never serves (CLI-058 measurement) | done | P1 | opus | — |
 | SERVER-143 | A view accepts an `order` the spec says it does not have (CLI-063 finding) | done | P1 | opus | — |
-| CLI-064 | A batch verb needs a decided exit code before it is worth building (CLI-058 recommendation) — **not in v0.20.0** | todo | P1 | fable | CLI-057, CLI-058 |
-| UI-165 | A column's thread margin cannot be reached by any gesture (UI-163 escalation) — **not in v0.20.0**, needs a user call | todo | P2 | opus | UI-163 |
-| AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document (AGENT-045 finding) — **not in v0.20.0**, needs a user call | todo | P1 | fable | CLI-060 |
 | CLI-066 | A body piped over a socket is dropped silently, exit 0 (SHARED-070 finding) | done | P0 | opus | — |
 | SERVER-145 | A settled event can be settled again, and `queue fail` needs no reason (SHARED-070 finding) | done | P0 | opus | — |
-| AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens (SHARED-070) — **not in v0.20.0** | todo | P1 | fable | SHARED-070 |
-| AGENT-048 | The standing style rule is paid twice per context (SHARED-070) — **not in v0.20.0** | todo | P2 | opus | SHARED-070 |
-| AGENT-049 | `queue idle` prints a shape the skill does not promise (SHARED-070) — **not in v0.20.0** | todo | P2 | opus | SHARED-070 |
-| SERVER-144 | Retrieval ranks the product's own skills into every pack (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
-| CLI-065 | `doc list --json` pays 293 tokens a row (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
-| SERVER-146 | One server test failed once under load and was not named — **not in v0.20.0** | todo | P2 | opus | — |
 | CONTRACT-083 | Three queue routes return a 409 they do not declare (SERVER-145 finding) | done | P1 | opus | SERVER-145 |
 | CLI-067 | `queue fail` needs a reason, and two help strings now contradict the server (SERVER-145 finding) | done | P1 | opus | SERVER-145 |
-| UI-166 | What full screen does to a turn's leading and measure (UI-156 recommendation) — **not in v0.20.0** | todo | P2 | opus | UI-156 |
-| INFRA-032 | A tampered generated artifact survives a green local run (CONTRACT-083 finding) — **not in v0.20.0** | todo | P2 | opus | — |
-| UI-167 | Designating a resident is reachable only by right-click (user report 2026-08-23) | todo | P0 | opus | — |
-| UI-168 | A resident's weight cannot be chosen from the app at all (user report 2026-08-23) | todo | P0 | opus | — |
+
+---
+
+## Phase 44 — A resident you can reach and size, and the backlog we decided on (2026-08-23, v0.21.0 scope)
+
+**Two halves, and the notes will say so** — the third time this repo has shipped
+a two-halved release, and the rule each time is the same: the headline names both
+rather than pretending they are one idea.
+
+**Half A — the resident becomes usable.** The user reported it in one sentence:
+_"There's no longer a way to attach a resident to a thread (at least not that I
+could find)."_ Traced before filing, and it is worse than a discoverability
+problem. The designation menu opens only from a right-click, on a card whose only
+visible buttons are resolve and collapse. And the weight — which §7's rider,
+signed 2026-08-19, makes the designation the **only** place to choose — is
+carried by the contract, the server and the CLI, and by neither `useResident` nor
+any surface. Every designation the app has ever made sent no weight.
+CONTRACT-071 finishes the arc: once a re-designation at a new weight is the
+ordinary gesture, a profile-only re-designation being invisible to the listener
+it replaces stops being theoretical.
+
+**Half B — the backlog, led by what is already decided.** Six issues carry
+signatures taken on 2026-08-23 and have no judgment left in them. Five are the
+SHARED-070 audit's own findings, headed by the largest single cost in the product
+— the comment skill, 15,228 tokens read whole on every event, 56% of a day. Three
+more are the product claiming what is not so: a status the contract never
+declared (a class hit three times in one release), a degradation notice that
+outlives the degradation, and a test that failed once and could not be named.
+
+**Order of work.** UI-167 and UI-168 first — they are the P0s and the half the
+release is named for. SERVER-142 and AGENT-047 start early because they are the
+two riskiest. The six decided issues need no design time and fill the gaps.
+Critical path: UI-168 → CONTRACT-071.
+
+**Where these rows came from.** All seventeen already had rows in earlier phases
+— fourteen filed during Phase 43 and marked "not in v0.20.0", plus SERVER-116,
+SERVER-119 and CONTRACT-071 from the standing backlog. Those rows were removed
+rather than duplicated: `scripts/check-issues.ts` refuses two rows for one id,
+and it is right to — two rows are two answers to "is this ready", and the
+readiness rule reads PLAN. The row lives in the phase the work lands in.
+
+**If it slips**: AGENT-047 goes first. It restructures the file every event
+reads, and its hardest criterion — no behavioural rule weakened — is one a green
+suite cannot confirm. Both halves stand without it.
+
+| ID | Title | Status | Priority | Model | Dependencies |
+| --- | --- | --- | --- | --- | --- |
+| UI-167 | Designating a resident is reachable only by right-click | todo | P0 | opus | — |
+| UI-168 | A resident's weight cannot be chosen from the app at all | todo | P0 | opus | — |
+| CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces | todo | P1 | opus | — |
+| SERVER-142 | An out-of-band commit stages the tree as it later stands | todo | P1 | fable | — |
+| UI-165 | A column's thread margin cannot be reached by any gesture | todo | P2 | opus | UI-163 |
+| UI-166 | What full screen does to a turn's leading and measure | todo | P2 | opus | UI-156 |
+| INFRA-032 | A tampered generated artifact survives a green local run | todo | P2 | opus | — |
+| AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document | todo | P1 | fable | CLI-060 |
+| CLI-064 | A batch verb needs a decided exit code before it is worth building | todo | P1 | fable | CLI-057, CLI-058 |
+| AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | todo | P1 | fable | SHARED-070 |
+| AGENT-048 | The standing style rule is paid twice per context | todo | P2 | opus | SHARED-070 |
+| AGENT-049 | `queue idle` prints a shape the skill does not promise | todo | P2 | opus | SHARED-070 |
+| SERVER-144 | Retrieval ranks the product's own skills into every pack | todo | P1 | opus | SHARED-070 |
+| CLI-065 | `doc list --json` pays 293 tokens a row | todo | P1 | opus | SHARED-070 |
+| SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | opus | — |
+| SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | opus | — |
+| SERVER-146 | One server test failed once under load and was not named | todo | P2 | opus | — |
