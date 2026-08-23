@@ -1329,6 +1329,14 @@ that nothing tells you your skills are stale until the agent tries the verb.
 | PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | done | P1 | PLUGINS-016 |
 | CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | todo | P2 | — |
 
+**The remaining six ship in v0.20.0, by the user's decision, 2026-08-23** —
+"include Phase 39 in this release, all of it, not just some issues". CLI-056,
+CLI-057, CLI-058, CLI-059, SERVER-133 and CONTRACT-070 are implemented under
+Phase 43's release and keep their rows here. That release therefore has two
+halves and its notes say so, exactly as v0.16.0's did. SHARED-070 was filed the
+same day and asks the question this phase did not: not what costs the most per
+call, but what costs the most over a loop.
+
 
 ## Phase 40 — Your documents stop lying about their status (2026-08-21, v0.17.0 scope)
 
@@ -1500,10 +1508,18 @@ unrelated, with a default wider than a column's — there is no column edge to
 follow there. SHARED-069 carries the rider, **unsigned**, and UI-163 implements
 it.
 
+**This release has a second half, and its notes must say so.** The user folded
+**all** of Phase 39 into it on 2026-08-23 — CLI-056, CLI-057, CLI-058, CLI-059,
+SERVER-133 and CONTRACT-070, what the agent pays to use the CLI. Those rows stay
+in Phase 39. This is the same shape v0.16.0 took, and the same rule applies: the
+headline names both halves rather than pretending they are one idea.
+
 **Order of work.** CONTRACT-081 first, then SERVER-141 and UI-161. SHARED-068 and
 SHARED-069 wait on the user's signatures and block nothing else, so UI-162 and
-UI-163 run whenever those signatures arrive. Critical path:
-CONTRACT-081 → SERVER-141 → UI-161.
+UI-163 run whenever those signatures arrive. Phase 39's six are independent of
+all of it and run alongside, inside the machine's three-agent cap. SHARED-070 is
+an audit and runs last, so a loop it measures is the one this release ships.
+Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |
@@ -1514,3 +1530,4 @@ CONTRACT-081 → SERVER-141 → UI-161.
 | UI-162 | The chip strip is the frontmatter editor | todo | P0 | fable | SHARED-068 |
 | SHARED-069 | A document's content fills the document — the SPEC rider, unsigned | todo | P0 | fable | — |
 | UI-163 | The body fills its column, and full screen keeps its own width | todo | P0 | opus | SHARED-069 |
+| SHARED-070 | What else the agent pays for — a measured audit of token cost | todo | P1 | fable | — |
