@@ -334,7 +334,11 @@ describe("the watcher — ignores", () => {
     // either side of it. The `structural` heuristic used to announce the key
     // here purely because a file had appeared (SERVER-020).
     expect(new Set(flat())).toEqual(
-      new Set([JSON.stringify(["docs"]), JSON.stringify(["docs", "doc_real"])]),
+      new Set([
+        JSON.stringify(["docs"]),
+        JSON.stringify(["docs", "doc_real"]),
+        JSON.stringify(["reflect"]),
+      ]),
     );
   });
 });
@@ -613,7 +617,7 @@ describe("the watcher — §7's roster", () => {
     // independent events and neither carries where the file came from, so
     // without that read this is indistinguishable from an arrival.
     await vi.waitFor(() => {
-      expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["agents"]]);
+      expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]]);
     }, WAIT);
   });
 
@@ -626,7 +630,7 @@ describe("the watcher — §7's roster", () => {
     await waitForKey(["queue"]);
     // A lane reports the work it is *holding*; a pending event is held by
     // nobody, so this frame is the queue's own table and nothing more.
-    expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"]]);
+    expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["reflect"]]);
     expect(flat()).not.toContain(JSON.stringify(["agents"]));
   });
 
@@ -662,7 +666,13 @@ describe("the watcher — §7's roster", () => {
     write(`data/threads/${LANE}.md`, designatedThread("Claims review, out of band"));
 
     await vi.waitFor(() => {
-      expect(batches).toContainEqual([["docs"], ["docs", LANE], ["threads", LANE], ["agents"]]);
+      expect(batches).toContainEqual([
+        ["docs"],
+        ["docs", LANE],
+        ["threads", LANE],
+        ["agents"],
+        ["reflect"],
+      ]);
     }, WAIT);
   });
 
@@ -708,7 +718,7 @@ describe("the watcher — §7's roster", () => {
     write("data/docs/note.md", doc("doc_note", "Note", "Still nothing to do with a lane."));
 
     await waitForKey(["docs", "doc_note"]);
-    expect(batches).toContainEqual([["docs"], ["docs", "doc_note"]]);
+    expect(batches).toContainEqual([["docs"], ["docs", "doc_note"], ["reflect"]]);
     expect(flat()).not.toContain(JSON.stringify(["agents"]));
   });
 });

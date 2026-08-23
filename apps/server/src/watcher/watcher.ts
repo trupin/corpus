@@ -167,6 +167,17 @@ export interface StartWatcherOptions {
    * watcher then projects and announces exactly as it always did.
    */
   readonly commitOutOfBand?: CommitOutOfBandChanges | undefined;
+  /**
+   * SPEC.md §7's quiet window, told about a batch that changed documents
+   * (SERVER-137).
+   *
+   * The out-of-band path does not go through `finishMutation`, so it needs its
+   * own line to the scheduler — and it is always a person's write: §4 authors an
+   * out-of-band commit `user`, and §9.1 says a change nobody attributed to the
+   * agent is a person's. So it restarts the window every time, and the batch
+   * that contained only a queue event or a job log restarts nothing.
+   */
+  readonly observeOutOfBandWrite?: (() => void) | undefined;
 }
 
 /**
@@ -212,6 +223,12 @@ interface FlushContext {
    */
   captureDerived(): void;
   /**
+   * Set the moment this batch touches its first document row, by the same call
+   * that snapshots the tree — an out-of-band write by a person, which is what
+   * SPEC.md §7's quiet window measures.
+   */
+  sawDocument: boolean;
+  /**
    * Documents this batch saw change on disk without the server having written
    * them — committed after the flush, authored `user` (SERVER-090). Order is the
    * order they were processed, which puts removals first (see `flush`), so a
@@ -231,7 +248,7 @@ interface DocumentIdentity {
 }
 
 export function startWatcher(options: StartWatcherOptions): WatcherHandle {
-  const { db, bus, selfWrites, commitOutOfBand } = options;
+  const { db, bus, selfWrites, commitOutOfBand, observeOutOfBandWrite } = options;
   const logger = options.logger ?? silentLogger;
   const debounceMs = options.debounceMs ?? WATCH_DEBOUNCE_MS;
   const maxBatchMs = options.maxBatchMs ?? WATCH_MAX_BATCH_MS;
@@ -622,7 +639,9 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     const context: FlushContext = {
       keys,
       commits,
+      sawDocument: false,
       captureDerived() {
+        context.sawDocument = true;
         treeBefore ??= folderTreeSignature(db);
         rosterBefore ??= rosterSignature(db);
       },
@@ -667,6 +686,12 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     if (treeBefore !== null && folderTreeSignature(db) !== treeBefore) keys.push(TREE_KEY);
     if (rosterBefore !== null && rosterSignature(db) !== rosterBefore) keys.push(AGENTS_KEY);
     if (keys.length > 0) bus.invalidate(keys);
+
+    // SPEC.md §7's quiet window (SERVER-137). Once per batch rather than once
+    // per file: a person saving forty documents from an editor is one burst of
+    // activity, and the window is a debounce over activity rather than a count
+    // of it.
+    if (context.sawDocument) observeOutOfBandWrite?.();
 
     // SPEC.md §4, SERVER-090: an out-of-band edit is committed for itself,
     // authored `user`. Chained rather than awaited — `flush()` is synchronous by

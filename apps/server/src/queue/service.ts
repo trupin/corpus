@@ -88,6 +88,24 @@ export interface QueueServiceOptions {
 export type CommitWindowCloser = () => Promise<void>;
 
 /**
+ * Told about every event this service moves, with the event **as it now is** —
+ * new status, new stamps — and told **before** the transition is announced
+ * (SERVER-137).
+ *
+ * That ordering is the whole reason it is a seam and not a caller of the queue:
+ * SPEC.md §7's reflection clock moves when a `workspace.reflect` job reaches
+ * `processed`, the same transition that sends `["queue"]` and, with it,
+ * `["reflect"]`. An observer that ran after the announcement would let a client
+ * refetch the clock it was told had changed and read the old one.
+ *
+ * **Synchronous, and it may not fail a transition.** The event has already
+ * moved on disk and been mirrored by the time this runs; an observer that
+ * throws is this service's problem to survive, exactly like
+ * {@link QueueEnqueueObserver}.
+ */
+export type QueueSettlementObserver = (event: StoredEvent) => void;
+
+/**
  * The statuses an event *finishes* in — SPEC.md §4's "a queue event finished,
  * however it finished — completed, failed, deferred (§7) or abandoned".
  *
@@ -248,6 +266,8 @@ export class QueueService {
   private enqueueObserver: QueueEnqueueObserver | undefined;
   /** Late-bound: see {@link attachWindowCloser}. Closes nothing until bound. */
   private closeCommitWindow: CommitWindowCloser = () => Promise.resolve();
+  /** Late-bound: see {@link observeSettled}. Tells nobody until bound. */
+  private settlementObserver: QueueSettlementObserver | undefined;
   /** Late-bound: see {@link attachScopeLookup}. Routes everything to the orchestrator until bound. */
   private findScopeRoot: ScopeRootLookup = NO_SCOPE_LOOKUP;
   /** Late-bound: see {@link attachLaneLiveness}. Nothing is live until bound. */
@@ -317,6 +337,38 @@ export class QueueService {
    */
   attachWindowCloser(close: CommitWindowCloser): void {
     this.closeCommitWindow = close;
+  }
+
+  /**
+   * Binds the one {@link QueueSettlementObserver}, which `createServer` does as
+   * soon as the reflection service exists.
+   *
+   * Late-bound for the reason every other seam here is: the observer reads the
+   * projection and this service is built before there is one. A queue built
+   * without an observer tells nobody, which is the right behaviour for a server
+   * that has no clock to move.
+   */
+  observeSettled(observer: QueueSettlementObserver): void {
+    this.settlementObserver = observer;
+  }
+
+  /**
+   * Runs the settlement observer, swallowing what it throws.
+   *
+   * The event has already moved and been mirrored; the transition may not be
+   * failed by whatever a downstream reader made of it.
+   */
+  private notifySettled(event: StoredEvent): void {
+    if (this.settlementObserver === undefined) return;
+    try {
+      this.settlementObserver(event);
+    } catch (error) {
+      this.logger.error("queue settlement observer failed", {
+        id: event.id,
+        status: event.status,
+        error: String(error),
+      });
+    }
   }
 
   /**
@@ -1168,6 +1220,10 @@ export class QueueService {
       const event = this.stamp(current.event, to, options.fields);
       await this.store.writeEvent(to, event);
       this.mirror.upsertEvent(event);
+      // Before the announcement, never after: SPEC.md §7's reflection clock
+      // moves on this very transition and rides out on the same frame
+      // (SERVER-137). See {@link QueueSettlementObserver}.
+      this.notifySettled(event);
       // The general shape of a settlement — complete, fail, defer, abandon — so
       // the roster is named whenever `in-progress` is one of the two ends, which
       // for every verb routed through here is the `from`.

@@ -1,0 +1,229 @@
+// SPEC.md §7's reflection, as one object: the ask, the clock, the status and the
+// quiet window (rider 9, 2026-08-22; SERVER-137).
+//
+// **Reflection is an act over the whole corpus, never a side effect of one
+// change.** Nothing in this file watches a field. A stage moved, a status
+// flipped, a tag, a move, an archive: none of them enqueues anything, and the
+// only thing a write does here is restart a timer.
+//
+// Two things produce a reflection and they meet in one function
+// ({@link ReflectService.ask} and the scheduler both reach `enqueueUnique`),
+// which is what makes "an ask while one is pending is answered with the pending
+// one, never doubled" true of *both* paths rather than of the one that was
+// written with it in mind.
+
+import type { Actor, ReflectAskResult, ReflectStatus } from "@corpus/contract";
+import { WORKSPACE_REFLECT_EVENT_TYPE } from "@corpus/contract";
+import { silentLogger, type Logger } from "../logger.js";
+import type { ProjectionDb } from "../projection/index.js";
+import type { EnqueueInput } from "../queue/service.js";
+import type { StoredEvent } from "../queue/store.js";
+import { advanceClock, readReflectState, recordAwaitingDigest } from "./clock.js";
+import { createReflectScheduler, type ReflectAttempt, type ReflectScheduler } from "./scheduler.js";
+import { countUnreflected, findLiveReflection, resolveDigest } from "./status.js";
+
+/**
+ * The `source` a reflection's event file carries (SPEC.md §7's queue contract).
+ *
+ * `source` names the producing surface, and here the two surfaces are the two
+ * things §7 says produce a reflection — a person asked, or the dust settled. An
+ * operator reading `corpus queue list` can tell them apart, which matters
+ * exactly when somebody is asking why a reflection happened.
+ */
+export const REFLECT_ASK_SOURCE = "reflect";
+export const REFLECT_QUIET_SOURCE = "reflect-quiet";
+
+/** Appends one line to a job's log; `undefined` on a server with no job service. */
+export type RecordAskLine = (eventId: string, line: string) => Promise<void>;
+
+export interface ReflectServiceOptions {
+  readonly corpusDir: string;
+  readonly projection: ProjectionDb;
+  readonly enqueue: (input: EnqueueInput) => Promise<StoredEvent>;
+  /** SPEC.md §7's window, re-read on every use — see `readQuietMinutes`. */
+  readonly quietMinutes: () => number;
+  /**
+   * Where the acting party is recorded. The route takes an actor header and the
+   * contract says the header "records who asked, which is what the job log and
+   * the digest thread report" — a `workspace.reflect` payload is `{ since }` and
+   * nothing else, and a `StoredEvent` has no actor field, so the job log is the
+   * one place that record can honestly live.
+   */
+  readonly recordAskLine?: RecordAskLine | undefined;
+  readonly logger?: Logger | undefined;
+}
+
+export interface ReflectService {
+  /** `POST /api/workspace/reflect`. Never refuses; see {@link enqueueUnique}. */
+  ask(actor: Actor): Promise<ReflectAskResult>;
+  /** `GET /api/workspace/reflect`. */
+  status(): ReflectStatus;
+  /** A mutation landed, by this party. Restarts the quiet window unless it is the agent's. */
+  observeWrite(actor: Actor): void;
+  /**
+   * A **standalone** thread was created by a write naming `job`. When that job
+   * is a reflection, the thread is that reflection's digest.
+   */
+  observeThreadCreated(job: string | undefined, threadId: string): void;
+  /**
+   * A queue event moved. Called by `QueueService` **before** it announces the
+   * transition, so a client refetching on the frame reads the clock this move
+   * set rather than the one before it.
+   */
+  observeSettled(event: StoredEvent): void;
+  /** Arms the first quiet window; see {@link ReflectScheduler.start}. */
+  start(): void;
+  stop(): void;
+  /** The armed window in ms, or `null`. Test seam, forwarded from the scheduler. */
+  readonly armedForMs: number | null;
+}
+
+export function createReflectService(options: ReflectServiceOptions): ReflectService {
+  const { corpusDir, projection, enqueue, quietMinutes } = options;
+  const logger = options.logger ?? silentLogger;
+
+  /**
+   * Serializes every enqueue decision in this process.
+   *
+   * "Read whether one is pending, then enqueue" is a read-modify-write, and two
+   * people pressing Reflect in the same tick is the ordinary case rather than the
+   * exotic one — it is the very case §7 legislates for. The queue's own chain
+   * does not help: it serializes the *writes*, and both callers would have
+   * already read `null`.
+   */
+  let chain: Promise<unknown> = Promise.resolve();
+  const serialize = <T>(work: () => Promise<T>): Promise<T> => {
+    const result = chain.then(work, work);
+    chain = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+
+  /**
+   * The one enqueue, shared by the ask and the quiet window.
+   *
+   * **`202` with the pending event, never a `409`** (SPEC.md §7, settled at PR
+   * #56's review): a second ask is not a mistake to correct, it is the same
+   * request arriving twice, and the honest answer is the reflection that is
+   * already going to run. `pending` is what tells a client which of the two
+   * happened, so it can say "asked" or "already asked" without holding ids it
+   * may never have seen.
+   */
+  const enqueueUnique = (source: string, line: string): Promise<ReflectAskResult> =>
+    serialize(async () => {
+      const since = readReflectState(corpusDir).reflected;
+      const live = findLiveReflection(projection);
+      if (live !== null) return { eventId: live, since, pending: true };
+
+      // The payload is one timestamp and nothing else (§7): the agent gathers
+      // the window itself. `null` means a corpus never reflected on, and it
+      // means *everything* rather than an empty window.
+      const event = await enqueue({
+        type: WORKSPACE_REFLECT_EVENT_TYPE,
+        source,
+        payload: { since },
+      });
+      if (options.recordAskLine !== undefined) {
+        try {
+          await options.recordAskLine(event.id, line);
+        } catch (error: unknown) {
+          // The event is already durable. A log line that did not land is worth
+          // reporting and is never worth failing the ask over.
+          logger.error("could not record who asked for a reflection", {
+            eventId: event.id,
+            error: String(error),
+          });
+        }
+      }
+      return { eventId: event.id, since, pending: false };
+    });
+
+  const attempt = async (): Promise<ReflectAttempt> => {
+    // §7's first condition, asked before anything is written: "the server
+    // enqueues one when something changed after the last reflection". An
+    // archive alone never starts a reflection because an archived document is
+    // not in this count, which is the reason CONTRACT-076 gives for excluding
+    // it — a document that shows on no board cannot carry a mark.
+    const state = readReflectState(corpusDir);
+    if (countUnreflected(projection, state.reflected) === 0) return "nothing-to-do";
+    const minutes = quietMinutes();
+    const result = await enqueueUnique(
+      REFLECT_QUIET_SOURCE,
+      `reflection enqueued after ${String(minutes)} min of quiet`,
+    );
+    return result.pending ? "busy" : "enqueued";
+  };
+
+  const scheduler: ReflectScheduler = createReflectScheduler({ quietMinutes, attempt, logger });
+
+  return {
+    ask(actor) {
+      return enqueueUnique(REFLECT_ASK_SOURCE, `reflection asked by ${actor}`);
+    },
+
+    status() {
+      const state = readReflectState(corpusDir);
+      return {
+        reflected: state.reflected,
+        pending: findLiveReflection(projection),
+        changed: countUnreflected(projection, state.reflected),
+        lastDigest: resolveDigest(projection, state.digest),
+        quiet: quietMinutes(),
+      };
+    },
+
+    observeWrite(actor) {
+      scheduler.noteWrite(actor);
+    },
+
+    observeThreadCreated(job, threadId) {
+      if (job === undefined) return;
+      const row = projection.prepare("SELECT type FROM events WHERE id = ?").get(job) as
+        { type: string } | undefined;
+      if (row?.type !== WORKSPACE_REFLECT_EVENT_TYPE) return;
+      try {
+        recordAwaitingDigest(corpusDir, job, threadId);
+      } catch (error: unknown) {
+        // The thread is written and committed; losing the note costs one link
+        // on a board bar and nothing else.
+        logger.error("could not record a reflection's digest thread", {
+          eventId: job,
+          threadId,
+          error: String(error),
+        });
+      }
+    },
+
+    observeSettled(event) {
+      if (event.type !== WORKSPACE_REFLECT_EVENT_TYPE) return;
+      // §7: the clock is "the `created` time of the last reflection **whose job
+      // was processed**". `failed`, `abandoned` and `deferred` leave it exactly
+      // where it was, so the retry that follows sees the same window.
+      if (event.status !== "processed") return;
+      try {
+        advanceClock(corpusDir, event.id, event.created);
+      } catch (error: unknown) {
+        // A transition may not fail because a derived file could not be
+        // written: the event has already moved.
+        logger.error("could not move the reflection clock", {
+          eventId: event.id,
+          error: String(error),
+        });
+      }
+    },
+
+    start() {
+      scheduler.start();
+    },
+
+    stop() {
+      scheduler.stop();
+    },
+
+    get armedForMs() {
+      return scheduler.armedForMs;
+    },
+  };
+}

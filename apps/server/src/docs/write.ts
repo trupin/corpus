@@ -493,6 +493,31 @@ export interface DocsWorkspace {
    * no job.
    */
   readonly jobs?: JobLookup | undefined;
+  /**
+   * SPEC.md §7's reflection, as the write path sees it (SERVER-137).
+   *
+   * The write path knows two things reflection needs and nothing else: a
+   * mutation landed, and who made it. It hands both over and asks no questions —
+   * whether that restarts a quiet window, and whether the window is even switched
+   * on, are the service's to answer.
+   *
+   * Optional, and absent in every test that has no queue: a workspace with no
+   * reflection service simply tells nobody, which costs an automatic reflection
+   * and nothing about the write.
+   */
+  readonly reflect?: WriteReflectObserver | undefined;
+}
+
+/**
+ * The half of `ReflectService` the write path is allowed to see.
+ *
+ * Declared here rather than imported from `reflect/` so the dependency runs one
+ * way: `reflect/` reads the projection and the queue, and `docs/` must not learn
+ * about either through a back door. TypeScript's structural typing is what makes
+ * the real service satisfy this without either module importing the other.
+ */
+export interface WriteReflectObserver {
+  observeWrite(actor: Actor): void;
 }
 
 /** What a resolved job says about where its work belongs. */
@@ -1451,6 +1476,13 @@ export async function finishMutation(
   }
   if (rosterSignature(workspace.projection) !== rosterBefore) measured.push(AGENTS_KEY);
   workspace.bus.invalidate(dedupeKeys(measured));
+
+  // SPEC.md §7's quiet window (SERVER-137). Every mutation reaches here and
+  // every mutation is told, actor and all — the timer measures *quiet*, and what
+  // is worth reflecting on is re-asked when it fires, so this side has no
+  // judgement to make and no verb list to keep in step. An agent's write is
+  // discarded by the service, not filtered here, for the same reason.
+  workspace.reflect?.observeWrite(request.actor);
 
   return commit;
 }

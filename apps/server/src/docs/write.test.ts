@@ -165,24 +165,24 @@ describe("the mutation pipeline", () => {
 
     const created = await createDoc(ws, { type: "note", title: "Announced" });
     expect(frames).toHaveLength(1);
-    expect(frames[0]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
+    expect(frames[0]).toEqual([["docs"], ["docs", created.id], ["tree"], ["reflect"]]);
     // The row already existed when the frame went out, so a client refetching
     // on the frame cannot read a stale collection.
     expect(rowsAtFrame[0]).toBe(1);
 
     ws.advance(60_000);
     await putDoc(ws, created.id, { body: "edited" });
-    expect(frames[1]).toEqual([["docs"], ["docs", created.id]]);
+    expect(frames[1]).toEqual([["docs"], ["docs", created.id], ["reflect"]]);
 
     ws.advance(60_000);
     await ws.post(`/api/docs/${created.id}/archive`, {});
     // Archived documents are counted in no folder, so archiving moves the badge
     // the tree draws — the same claim creation and deletion make (SERVER-018).
-    expect(frames[2]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
+    expect(frames[2]).toEqual([["docs"], ["docs", created.id], ["tree"], ["reflect"]]);
 
     ws.advance(60_000);
     await ws.post(`/api/docs/${created.id}/unarchive`, {});
-    expect(frames[3]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
+    expect(frames[3]).toEqual([["docs"], ["docs", created.id], ["tree"], ["reflect"]]);
 
     // Live again, so the move carries its count from one folder to another. An
     // archived document's move announces nothing, because it was counted in
@@ -190,11 +190,11 @@ describe("the mutation pipeline", () => {
     // invariant.
     ws.advance(60_000);
     await ws.post(`/api/docs/${created.id}/move`, { folder: "finance" });
-    expect(frames[4]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
+    expect(frames[4]).toEqual([["docs"], ["docs", created.id], ["tree"], ["reflect"]]);
 
     ws.advance(60_000);
     await ws.del(`/api/docs/${created.id}`);
-    expect(frames[5]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
+    expect(frames[5]).toEqual([["docs"], ["docs", created.id], ["tree"], ["reflect"]]);
 
     off();
     // Every payload is keys and nothing else — §2.2 rule 3.

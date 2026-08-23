@@ -165,7 +165,7 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     });
 
     expect(frames).toEqual([
-      [["docs"], ["docs", id], ["threads", id], ["docs", parent.id], ["tree"]],
+      [["docs"], ["docs", id], ["threads", id], ["docs", parent.id], ["tree"], ["reflect"]],
     ]);
   });
 
@@ -174,7 +174,7 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     const frames = await framesDuring(async () => {
       id = (await createThread(ws, { body: "asking" })).id;
     });
-    expect(frames).toEqual([[["docs"], ["docs", id], ["threads", id]]]);
+    expect(frames).toEqual([[["docs"], ["docs", id], ["threads", id], ["reflect"]]]);
   });
 
   // The media type is a wire detail; what the board has to refetch is not. Both
@@ -196,7 +196,7 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     });
 
     expect(frames).toEqual([
-      [["docs"], ["docs", id], ["threads", id], ["docs", parent.id], ["tree"]],
+      [["docs"], ["docs", id], ["threads", id], ["docs", parent.id], ["tree"], ["reflect"]],
     ]);
   });
 
@@ -212,8 +212,8 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     // `QUEUE_QUERY_KEYS`, not this module's (`["docs"]` because the
     // `failed-job` needs reason reads `events.status`, SERVER-028).
     expect(frames).toEqual([
-      [["docs"], ["docs", created.id], ["threads", created.id]],
-      [["queue"], ["jobs"], ["docs"]],
+      [["docs"], ["docs", created.id], ["threads", created.id], ["reflect"]],
+      [["queue"], ["jobs"], ["docs"], ["reflect"]],
     ]);
   });
 
@@ -228,7 +228,7 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     );
 
     expect(frames).toEqual([
-      [["docs"], ["docs", created.id], ["threads", created.id], ["docs", parent.id]],
+      [["docs"], ["docs", created.id], ["threads", created.id], ["docs", parent.id], ["reflect"]],
     ]);
   });
 

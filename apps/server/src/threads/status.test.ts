@@ -119,6 +119,7 @@ describe("POST /api/threads/{id}/resolve and /reopen", () => {
       ["docs", created.id],
       ["threads", created.id],
       ["docs", parent],
+      ["reflect"],
     ]);
   });
 

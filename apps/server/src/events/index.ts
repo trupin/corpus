@@ -19,11 +19,13 @@ export {
   DOCS_KEY,
   JOBS_KEY,
   QUEUE_KEY,
+  REFLECT_KEY,
   TREE_KEY,
   dedupeKeys,
   docKey,
   jobKey,
   threadKey,
+  withReflectKey,
 } from "./keys.js";
 export {
   GREETING_FRAME,

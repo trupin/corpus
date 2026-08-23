@@ -421,6 +421,15 @@ export async function createThread(
       },
     });
 
+    // SPEC.md §7: "one **standalone thread** per reflection, the digest".
+    // Recorded here because this is the only moment the two facts are in the
+    // same place — which job this write serves, and which thread it made — and
+    // the clock cannot ask for it later: a `workspace.reflect` payload names no
+    // thread, so nothing about the finished event says which thread was its
+    // digest. Only a standalone one: a thread with a parent is a comment the
+    // reflection left on a document, not the digest of it.
+    if (parentId === null) workspace.reflect?.observeThreadCreated(input.job, id);
+
     // After the write: an event may not name a thread that does not exist yet,
     // and the parked `queue idle` it wakes will read the thread immediately.
     const eventId = decision.enqueue

@@ -181,7 +181,7 @@ describe("POST /api/threads/{id}/seen", () => {
     unsubscribe();
 
     expect(frames).toEqual([
-      [["docs"], ["docs", created.id], ["threads", created.id], ["docs", parent]],
+      [["docs"], ["docs", created.id], ["threads", created.id], ["docs", parent], ["reflect"]],
     ]);
   });
 
@@ -197,7 +197,9 @@ describe("POST /api/threads/{id}/seen", () => {
     await ws.post(`/api/threads/${created.id}/seen`, {});
     unsubscribe();
 
-    expect(frames).toEqual([[["docs"], ["docs", created.id], ["threads", created.id]]]);
+    expect(frames).toEqual([
+      [["docs"], ["docs", created.id], ["threads", created.id], ["reflect"]],
+    ]);
     // Read state moves no folder badge, so no `["tree"]` — and no key outside
     // the contract's closed vocabulary.
     expect(frames.flat().flat()).not.toContain("tree");

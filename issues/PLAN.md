@@ -1267,6 +1267,7 @@ was written for.
 | AGENT-044 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-067 |
 | UI-154 | Relocate the reader's open payloads out of the plugin surface, then delete it | done | P0 | SHARED-067 |
 | SERVER-139 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-067 |
+| SERVER-140 | `commit-out-of-band` races chokidar against `selfWrites.record` — flaky under full-suite load (SERVER-137 finding) | todo | P2 | — |
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
 | CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
@@ -1450,7 +1451,7 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | AGENT-042 | Seed boards and a kanban; the skills and template say "a board is a document"; the skill handles `workspace.reflect` | todo | P0 | opus | SHARED-064, CLI-060, SERVER-137 |
 | SERVER-138 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | done | P0 | opus | CONTRACT-074 |
 | SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | done | P1 | opus | CONTRACT-075 |
-| SERVER-137 | Reflect on demand and when the dust settles: the event, the clock, the quiet window | todo | P1 | opus | CONTRACT-076 |
+| SERVER-137 | Reflect on demand and when the dust settles: the event, the clock, the quiet window | done | P1 | opus | CONTRACT-076 |
 | CLI-060 | Board flags, `--stage`, `--unset`, `corpus folder` and `corpus reflect`; `--pinned` and view `--order` go | done | P1 | opus | CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-138, SERVER-136, SERVER-137 |
 | CLI-061 | `corpus upgrade` and `corpus workspace upgrade` report the data migrations a workspace needs, as commands an agent can run | done | P0 | opus | CONTRACT-074, CLI-060 |
 | UI-148 | Boards: the board bar, columns read from the board document, order and pin writes go to the board, one board always open | todo | P0 | opus | CONTRACT-074, SERVER-138 |

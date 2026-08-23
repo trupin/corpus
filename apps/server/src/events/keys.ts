@@ -17,6 +17,7 @@
 // before it goes on the wire.
 
 import type { QueryKey } from "@corpus/contract";
+import { DOCS_KEY, QUEUE_KEY, REFLECT_KEY } from "@corpus/contract";
 
 export {
   AGENTS_KEY,
@@ -24,11 +25,48 @@ export {
   INDEX_KEY,
   JOBS_KEY,
   QUEUE_KEY,
+  REFLECT_KEY,
   TREE_KEY,
   docKey,
   jobKey,
   threadKey,
 } from "@corpus/contract";
+
+/**
+ * The two keys whose presence in a frame obliges it to carry `["reflect"]`,
+ * by identity rather than by reference.
+ */
+const OBLIGES_REFLECT: ReadonlySet<string> = new Set([
+  JSON.stringify(DOCS_KEY),
+  JSON.stringify(QUEUE_KEY),
+]);
+
+/**
+ * SPEC.md §7's reflection key, applied as the rule the contract publishes for
+ * it rather than as an entry in twenty key lists (CONTRACT-076).
+ *
+ * `GET /api/workspace/reflect` moves on two unrelated things — a document write
+ * changes its `changed` count, a queue transition changes `pending`, the clock
+ * and the last digest — so its published emitter rule is the union: **name
+ * `["reflect"]` wherever `["docs"]` is named, and wherever `["queue"]` is
+ * named**. Twenty-two call sites name one of those two, and a rule that has to
+ * be remembered at each of them is the defect SERVER-115 spent seven sites
+ * fixing. So it is applied **once, at the bus** — the single seam every emit
+ * passes through on its way to `GET /events` — which is also what the contract
+ * asks for in as many words: "an emitter can follow it without knowing what a
+ * reflection is, and a write added later inherits it".
+ *
+ * The two named keys are the **collection** spellings and nothing else. A
+ * `["docs", docId]` on its own is one open reader's row going stale, and every
+ * mutation that emits one emits `["docs"]` beside it — so matching the
+ * parameterised shape would add nothing and would make the rule harder to state.
+ *
+ * "And no others": a frame that names neither is left exactly as it was.
+ */
+export function withReflectKey(keys: readonly QueryKey[]): readonly QueryKey[] {
+  const obliged = keys.some((key) => OBLIGES_REFLECT.has(JSON.stringify(key)));
+  return obliged ? [...keys, REFLECT_KEY] : keys;
+}
 
 /**
  * Collapses a batch's keys to one occurrence each, in first-seen order.

@@ -271,6 +271,7 @@ describe("POST /api/threads/{id}/resident", () => {
       ["docs", created.id],
       ["threads", created.id],
       ["agents"],
+      ["reflect"],
     ]);
   });
 
@@ -637,6 +638,7 @@ describe("designating with no profile at all", () => {
       ["docs", created.id],
       ["threads", created.id],
       ["agents"],
+      ["reflect"],
     ]);
   });
 

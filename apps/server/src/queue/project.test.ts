@@ -8,7 +8,15 @@ import {
   QUEUE_EVENT_STATUSES,
   type QueueEventStatus,
 } from "@corpus/contract";
-import { AGENTS_KEY, DOCS_KEY, JOBS_KEY, QUEUE_KEY, jobKey } from "../events/index.js";
+import {
+  AGENTS_KEY,
+  DOCS_KEY,
+  JOBS_KEY,
+  QUEUE_KEY,
+  REFLECT_KEY,
+  jobKey,
+  withReflectKey,
+} from "../events/index.js";
 import {
   QUEUE_QUERY_KEYS,
   QUEUE_TRANSITION_QUERY_KEYS,
@@ -127,11 +135,34 @@ describe("what the contract publishes about the roster, held against the emitter
     /queue transition/i.test(QUERY_KEY_VOCABULARY[name].emittedBy),
   );
 
+  /**
+   * Held against the **frame**, not against the table.
+   *
+   * `["reflect"]` joined this list with CONTRACT-076 and it is deliberately not
+   * in either queue table: its published rule is "name it wherever `["docs"]` is
+   * named, and wherever `["queue"]` is named", which twenty-two call sites would
+   * each have had to remember. It is applied once, on the way out of the bus
+   * (`withReflectKey`), so what a queue transition actually sends is the table
+   * *after* that expansion — and that is what the contract's prose is about.
+   * Asserting the raw table here would have been a test that passed while the
+   * frame was wrong, or a table stuffed with a key its own call sites do not use.
+   */
   it("covers every key the contract says a queue transition emits", () => {
-    expect(claimedByTransition).toEqual(["docs", "queue", "jobs", "agents"]);
+    expect(claimedByTransition).toEqual(["docs", "queue", "jobs", "agents", "reflect"]);
+    const frame = withReflectKey(QUEUE_TRANSITION_QUERY_KEYS);
     for (const name of claimedByTransition) {
-      expect(QUEUE_TRANSITION_QUERY_KEYS).toContainEqual(QUERY_KEY_VOCABULARY[name].key(""));
+      expect(frame).toContainEqual(QUERY_KEY_VOCABULARY[name].key(""));
     }
+  });
+
+  // The other half of the same rule: an *enqueue* is not a transition into or
+  // out of `in-progress`, so it names no roster — but it does name `["queue"]`,
+  // so it names `["reflect"]`. A reflection going on the queue is precisely the
+  // moment the Reflect control has to start saying "reflecting…".
+  it("names the reflection clock on a plain enqueue, and never the roster", () => {
+    const frame = withReflectKey(queueTransitionKeys(undefined, "pending"));
+    expect(frame).toContainEqual(REFLECT_KEY);
+    expect(frame).not.toContainEqual(AGENTS_KEY);
   });
 
   it("carries the coupling the `queue` and `jobs` entries spell out in prose", () => {
