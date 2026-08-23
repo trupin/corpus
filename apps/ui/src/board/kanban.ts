@@ -25,6 +25,17 @@ import {
  * {@link canMove} answers wrongly, nothing downstream catches it.
  */
 
+/**
+ * What entering a stage the board maps to nothing writes (SPEC.md §5: "a stage
+ * with no mapping writes `open`").
+ *
+ * Spelled here as well as in the server's `docs/kanban.ts` because it is a
+ * *label*, and the wire carries no constant for it — the coupling reaches the UI
+ * only as a status on a saved document. The rule is one sentence of §5, so the
+ * duplication is a quotation rather than a second decision.
+ */
+export const UNMAPPED_STAGE_STATUS = "open";
+
 /** How a kanban's columns are drawn when the file names no transitions. */
 export const FUNNEL_HINT = "a drag moves one stage left or right";
 
@@ -179,7 +190,11 @@ export function stageColumnId(boardId: string, stage: string): string {
 /**
  * The chips a stage column's head draws, in the prototype's order: the scope's
  * own filters, this column's `field: value`, "or no stage" on the first, the
- * `→ <status>` a mapped stage writes, then the outgoing edges.
+ * `→ <status>` entering the stage writes, then the outgoing edges.
+ *
+ * **Every column of a kanban over `stage` carries that status chip**, because
+ * §5 gives every stage one — the map's status, or `open` where the map is
+ * silent. See the branch below for why the silent case is drawn muted.
  */
 function stageChips(
   scopeChips: readonly ColumnChip[],
@@ -207,6 +222,27 @@ function stageChips(
       label: `→ ${mapped}`,
       tone: "good",
       title: "Entering this stage writes this status",
+    });
+  } else if (kanban.field === "stage") {
+    // §5's **second** outcome, drawn because it is an outcome and not a
+    // silence: "a stage with no mapping writes `open`". The column with no
+    // entry in `kanban.status` is the one drop that can reopen resolved work,
+    // and while only mapped stages carried a chip it was also the only drop
+    // with nothing on the head to say so — the board looked like it wrote a
+    // status on some columns and left the document alone on the rest.
+    //
+    // Muted rather than `good`, because the two chips are two different facts:
+    // `→ resolved` is a choice the board's author wrote down, and `→ open` is
+    // what §5 does where they wrote nothing.
+    //
+    // Only for a kanban over `stage`. A kanban over `status` moves the status
+    // field itself, so the coupling never runs on it (the server skips those
+    // boards outright) and a `→ open` on its `resolved` column would be false.
+    chips.push({
+      key: "unmapped",
+      label: `→ ${UNMAPPED_STAGE_STATUS}`,
+      tone: "muted",
+      title: "This board maps no status to this stage, so entering it writes `open` (SPEC.md §5)",
     });
   }
   if (edges.length === 0) {

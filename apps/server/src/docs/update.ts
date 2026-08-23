@@ -623,7 +623,28 @@ export async function updateDocumentLocked(
       )
     : null;
   const coupledStatus = coupling?.status ?? null;
-  const statusCoupled = coupledStatus !== null && coupledStatus !== parsed.data["status"];
+  // Against the status **this write is about to leave on disk**, which is the
+  // patch's when it carries one and the file's otherwise — never the file's
+  // alone. `nextParsed` already holds `fields`, so this reads the pending value
+  // in one place rather than re-deriving it (the create path asks the same
+  // question of its own pending `fields["status"]`).
+  //
+  // The comparison has two jobs, and only the pending status does both:
+  //
+  // - **Override.** A caller that sent `stage` and a conflicting `status` asked
+  //   for two things that cannot both hold, and §5 says the stage decides.
+  //   Compared against the *stored* status instead, the override stood aside
+  //   whenever the coupled status happened to equal the one the document was
+  //   already carrying — so a board mapping two stages to `resolved` let a
+  //   `PUT {stage, status: "open"}` land `open` beside a stage mapped to
+  //   `resolved`, and an unmapped stage let a `resolved` stand on a document
+  //   that was `open` (PR #58 review).
+  // - **Silence on a no-op.** A stage move whose coupled status is what the
+  //   document already has, with no `status` in the patch, still writes nothing
+  //   and warns about nothing: pending equals stored, so this is false — which
+  //   keeps an ordinary drag between two stages the board maps the same way off
+  //   both the diff and §11's warnings.
+  const statusCoupled = coupledStatus !== null && coupledStatus !== nextParsed.data["status"];
   // Deliberately **not** through `assertNotUnarchivingByPut`. That rule refuses
   // a *caller* writing `status` off `archived` through this route, because for a
   // §7 skill the archive is a folder move a field edit cannot undo — and

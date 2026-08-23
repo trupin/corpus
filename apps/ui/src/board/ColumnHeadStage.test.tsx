@@ -90,11 +90,20 @@ describe("a stage column's header", () => {
     expect(container.querySelector(".col-kind")?.textContent).toBe("stage");
   });
 
-  it("draws the scope, the field, the sentinel note and the outgoing edges", () => {
+  it("draws the scope, the field, the sentinel note, the default status and the edges", () => {
     const { container } = renderHead(at("candidates"), acts(at("candidates")));
     const chips = [...container.querySelectorAll(".chips > .chip")].map((node) => node.textContent);
-    expect(chips).toEqual(["tag: housing", "stage: candidates", "or no stage", "→ visiting"]);
+    expect(chips).toEqual([
+      "tag: housing",
+      "stage: candidates",
+      "or no stage",
+      "→ open",
+      "→ visiting",
+    ]);
     expect(container.querySelector(".chips > .chip.edge")?.textContent).toBe("→ visiting");
+    // §5's second outcome is a status write like any other, so the head says it —
+    // muted, because nobody wrote it down: it is what the map's silence means.
+    expect(container.querySelector(".chips > .chip.good")).toBeNull();
   });
 
   it("draws the status a mapped stage writes, and `→ ∅` when nothing leads out", () => {

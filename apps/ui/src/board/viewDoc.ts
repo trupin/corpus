@@ -36,9 +36,10 @@ export type ColumnKind = (typeof COLUMN_KINDS)[number];
  * How a chip is painted (`design/navigation.html`'s column head).
  *
  * `on` is the stored-filter chip every view column already drew. The rest
- * arrived with the stage columns: `muted` is "or no stage", `good` is the
- * `→ <status>` a mapped stage writes on entry, and the two `edge` tones are the
- * dashed outgoing transitions — `edge-end` for a stage nothing leads out of.
+ * arrived with the stage columns: `muted` is "or no stage" and the `→ open` an
+ * unmapped stage writes, `good` is the `→ <status>` a **mapped** stage writes on
+ * entry, and the two `edge` tones are the dashed outgoing transitions —
+ * `edge-end` for a stage nothing leads out of.
  */
 export type ChipTone = "on" | "muted" | "good" | "edge" | "edge-end";
 
@@ -95,7 +96,16 @@ export interface StageColumn {
    * a status.
    */
   readonly holdsUnset: boolean;
-  /** The status entering this stage writes, or `null` for an unmapped stage. */
+  /**
+   * The status this stage has an entry for in the board's `kanban.status` map,
+   * or `null` where the map does not name it.
+   *
+   * **`null` is "no entry", not "writes nothing".** §5 gives every stage of a
+   * kanban a status on entry: a mapped stage writes what the map says, and every
+   * other one writes `open`. So an unmapped column is a column that reopens what
+   * lands in it, which is why its head still draws a `→ open` chip
+   * (`kanban.ts`).
+   */
   readonly mapped: string | null;
   /** The stages a **drag** from this column may reach, in board order. */
   readonly leadsTo: readonly string[];

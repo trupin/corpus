@@ -1234,6 +1234,7 @@ left in a report.
 | UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | todo | P2 | UI-149 |
 | UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | todo | P1 | UI-150 |
 | UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
+| UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | todo | P2 | UI-152, SERVER-138 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
@@ -1273,6 +1274,7 @@ was written for.
 | SERVER-140 | `commit-out-of-band` races chokidar against `selfWrites.record` — flaky under full-suite load (SERVER-137 finding) | todo | P2 | — |
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
 | CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
+| CLI-063 | The agent cannot reorder boards in one commit, and the UI now can (PR #58 review) | todo | P2 | CONTRACT-080, CLI-060 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
 | CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | todo | P2 | CONTRACT-075, SERVER-136 |
 | CONTRACT-079 | Record the two warning codes Phase 41 added from the server's tree (PR #58 review) | todo | P3 | CONTRACT-074, SERVER-138 |

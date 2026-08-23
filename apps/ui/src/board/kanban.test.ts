@@ -213,6 +213,7 @@ describe("deriveStageColumns", () => {
       "tag: housing",
       "stage: candidates",
       "or no stage",
+      "→ open",
       "→ visiting",
       "→ dropped",
     ]);
@@ -224,6 +225,42 @@ describe("deriveStageColumns", () => {
       "→ candidates",
     ]);
     expect(dropped?.chips.find((chip) => chip.label === "→ archived")?.tone).toBe("good");
+  });
+
+  /**
+   * §5's two outcomes, both drawn: a stage the map names writes that status, and
+   * a stage it does not names none — so entering it writes `open`. The unmapped
+   * column is the one drop that can reopen resolved work, and it used to be the
+   * only column whose head said nothing about what a drop would do (PR #58
+   * review).
+   */
+  it("says `→ open` on a stage the map does not name, muted rather than good", () => {
+    const offer = deriveStageColumns(board())[2];
+    const chip = offer?.chips.find((entry) => entry.key === "unmapped");
+    expect(chip?.label).toBe("→ open");
+    expect(chip?.tone).toBe("muted");
+    expect(chip?.title).toContain("maps no status to this stage");
+    // One status chip per column, never two.
+    expect(offer?.chips.filter((entry) => entry.label.startsWith("→ open"))).toHaveLength(1);
+    const done = deriveStageColumns(board())[3];
+    expect(done?.chips.find((entry) => entry.key === "unmapped")).toBeUndefined();
+  });
+
+  /**
+   * A kanban over `status` moves the field itself, so §5's coupling never runs
+   * on it — the server skips those boards outright. A `→ open` on its `resolved`
+   * column would be a promise nothing keeps.
+   */
+  it("draws no default-status chip on a kanban over `status`", () => {
+    const columns = deriveStageColumns(
+      board({
+        kanban: { field: "status", stages: ["open", "resolved", "archived"] },
+        query: { type: "note" },
+      }),
+    );
+    expect(
+      columns.flatMap((column) => column.chips).filter((chip) => chip.key === "unmapped"),
+    ).toEqual([]);
   });
 
   it("says `→ ∅` for a stage nothing leads out of", () => {

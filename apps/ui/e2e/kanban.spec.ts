@@ -175,12 +175,17 @@ test.describe("a kanban's columns are its stages", () => {
     await page.goto("/");
     await showHouse(page);
 
+    // Both of §5's outcomes are drawn: the map's status where the board names
+    // one, and the `open` an unmapped stage writes where it does not — muted,
+    // so the two facts stay distinguishable.
     await expect(page.locator(`${houseCol("candidates")} .chips > .chip`)).toHaveText([
       "folder: housing/",
       "stage: candidates",
       "or no stage",
+      "→ open",
       "→ visiting",
     ]);
+    await expect(page.locator(`${houseCol("candidates")} .chips > .chip.good`)).toHaveCount(0);
     await expect(page.locator(`${houseCol("done")} .chips > .chip`)).toHaveText([
       "folder: housing/",
       "stage: done",

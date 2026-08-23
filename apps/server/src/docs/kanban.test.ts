@@ -271,6 +271,22 @@ describe("a stage decides a status while the document is in a kanban (SPEC.md §
     expect(created.warnings.map((entry) => entry.code)).toContain("stage_status");
   });
 
+  /** The same override, on the verb that has no stored status to compare against. */
+  it("outranks a conflicting `status` on create too", async () => {
+    ws = createWriteWorkspace("kanban-create-conflict");
+    await board(ws, { title: "K", status: { done: "resolved" } });
+    ws.advance(60_000);
+
+    const created = await createDoc(ws, {
+      type: "note",
+      title: "Task",
+      stage: "done",
+      status: "open",
+    });
+    expect(statusOf(ws, created.path)).toBe("status: resolved");
+    expect(created.warnings.map((entry) => entry.code)).toContain("stage_status");
+  });
+
   /**
    * The scope is asked about the document **as this write will leave it**, not
    * as the row still holds it. A board whose own scope names a stage is the case
@@ -311,6 +327,104 @@ describe("a stage decides a status while the document is in a kanban (SPEC.md §
     expect((await putDoc(ws, doc.id, { status: "resolved" })).status).toBe(200);
     expect(ws.read(doc.path)).toContain("stage: doing");
     expect(statusOf(ws, doc.path)).toBe("status: resolved");
+  });
+
+  /**
+   * §5: the coupling **outranks a `status` in the same patch**, and it says so
+   * about the status the write is *trying to set* — not about the one the
+   * document is leaving. The case that separates the two is a board that maps
+   * two stages to one status: the document already carries that status, so a
+   * guard comparing the coupled status against the stored one finds them equal
+   * and stands aside, letting the caller's `open` land beside a stage the board
+   * maps to `resolved`.
+   */
+  it("outranks a conflicting `status` even when the coupled status is the one already stored", async () => {
+    ws = createWriteWorkspace("kanban-status-conflict-same");
+    await board(ws, {
+      title: "K",
+      stages: ["triage", "done", "done2"],
+      status: { done: "resolved", done2: "resolved" },
+    });
+    const doc = await createDoc(ws, { type: "note", title: "Task", stage: "done" });
+    expect(statusOf(ws, doc.path)).toBe("status: resolved");
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, doc.id, { stage: "done2", status: "open" });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      doc: { frontmatter: { status: string; stage: string } };
+      warnings: { code: string; detail: string }[];
+    };
+
+    // The stage decides, so the caller's `open` never lands.
+    expect(payload.doc.frontmatter.stage).toBe("done2");
+    expect(payload.doc.frontmatter.status).toBe("resolved");
+    expect(ws.read(doc.path)).toContain("stage: done2");
+    expect(statusOf(ws, doc.path)).toBe("status: resolved");
+
+    // And §11: the caller asked for a status it did not get, so the response
+    // names what happened instead.
+    const warning = payload.warnings.find((entry) => entry.code === "stage_status");
+    expect(warning?.detail).toContain("`done2`");
+    expect(warning?.detail).toContain("`resolved`");
+  });
+
+  /**
+   * The mirror: an **unmapped** stage writes `open` (§5's second outcome), and
+   * that outranks a `resolved` in the same patch too — including when the
+   * document is already `open`, which is the same equality the guard above trips
+   * over, from the other side.
+   */
+  it("outranks a conflicting `status` for an unmapped stage, which writes `open`", async () => {
+    ws = createWriteWorkspace("kanban-status-conflict-unmapped");
+    await board(ws, { title: "K", status: { done: "resolved" } });
+    const doc = await createDoc(ws, { type: "note", title: "Task" });
+    expect(statusOf(ws, doc.path)).toBe("status: open");
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, doc.id, { stage: "typo", status: "resolved" });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      doc: { frontmatter: { status: string; stage: string } };
+      warnings: { code: string; detail: string }[];
+    };
+
+    expect(payload.doc.frontmatter.stage).toBe("typo");
+    expect(payload.doc.frontmatter.status).toBe("open");
+    expect(ws.read(doc.path)).toContain("stage: typo");
+    expect(statusOf(ws, doc.path)).toBe("status: open");
+    const warning = payload.warnings.find((entry) => entry.code === "stage_status");
+    expect(warning?.detail).toContain("maps no status to that stage");
+    expect(warning?.detail).toContain("`open`");
+  });
+
+  /**
+   * The other half of the same comparison, which the fix must not break: a stage
+   * move whose coupled status is what the document already has, with no `status`
+   * in the patch, writes nothing and says nothing. There is no override to
+   * report, so a warning here would be noise on every ordinary drag between two
+   * stages the board maps the same way.
+   */
+  it("says nothing when the coupled status is what the document already carries", async () => {
+    ws = createWriteWorkspace("kanban-status-noop");
+    await board(ws, {
+      title: "K",
+      stages: ["triage", "done", "done2"],
+      status: { done: "resolved", done2: "resolved" },
+    });
+    const doc = await createDoc(ws, { type: "note", title: "Task", stage: "done" });
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, doc.id, { stage: "done2" });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { warnings: { code: string }[] };
+    expect(payload.warnings.map((entry) => entry.code)).not.toContain("stage_status");
+    expect(statusOf(ws, doc.path)).toBe("status: resolved");
+    // The stage moved, so this is one ordinary save: `status` is context in the
+    // diff rather than a line the coupling rewrote.
+    const diff = ws.git("show", "--format=", "HEAD");
+    expect(diff).toContain("+stage: done2");
+    expect(diff).not.toMatch(/^\+status:/m);
   });
 
   /**
