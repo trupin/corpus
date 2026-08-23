@@ -1443,9 +1443,9 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |
 | SHARED-064 | SPEC riders for the navigation model: explorer, boards as documents, paths, kanban graphs, reflection | done | P0 | fable | — |
-| CONTRACT-074 | Board fields, `stage`, and the end of `pinned` | todo | P0 | opus | SHARED-064 |
-| CONTRACT-075 | Folder routes: rename, archive, unarchive, delete | todo | P1 | opus | SHARED-064 |
-| CONTRACT-076 | `workspace.reflect`: the event, the ask route, and the status route | todo | P1 | opus | SHARED-064 |
+| CONTRACT-074 | Board fields, `stage`, and the end of `pinned` | done | P0 | opus | SHARED-064 |
+| CONTRACT-075 | Folder routes: rename, archive, unarchive, delete | done | P1 | opus | SHARED-064 |
+| CONTRACT-076 | `workspace.reflect`: the event, the ask route, and the status route | done | P1 | opus | SHARED-064 |
 | AGENT-042 | Seed boards and a kanban; the skills and template say "a board is a document"; the skill handles `workspace.reflect` | todo | P0 | opus | SHARED-064, CLI-060, SERVER-137 |
 | SERVER-138 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | todo | P0 | opus | CONTRACT-074 |
 | SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | todo | P1 | opus | CONTRACT-075 |
