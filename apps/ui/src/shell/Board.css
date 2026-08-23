@@ -1,14 +1,31 @@
 /* The board: a horizontal strip of columns with snap scrolling (SPEC.md §10).
    Columns themselves arrive with UI-003. */
 
+/* `design/navigation.html`'s `.board-wrap`: the column strip and the board it
+   maps, stacked as one region. The explorer becomes its sibling (UI-150), and
+   the console still pushes the pair from below, so the wrapper takes the
+   growing half of `.app`'s column and passes it on. */
+.board-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 .board {
   flex: 1;
   display: flex;
   gap: 14px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 16px 18px 12px;
+  /* 10px above, not `design/index.html`'s 16: the column strip now holds that
+     room, and `design/navigation.html` — authoritative for this surface —
+     re-cuts the padding for it. */
+  padding: 10px 18px 12px;
   scroll-snap-type: x proximity;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* Chromium/WebKit only; Firefox keeps its native scrollbar, which is fine. */
