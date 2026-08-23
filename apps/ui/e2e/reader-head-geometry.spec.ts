@@ -46,7 +46,10 @@ const VIEW = {
   path: "data/docs/views/inbox.md",
   order: 1,
   query: { folder: "inbox" },
-  extra: { width: 336 },
+  // The reading width this suite was measured at. It used to arrive by the
+  // reader-open widening (336 → 560); UI-149 removed the widening (rider 3),
+  // so the column now simply carries the width the measurements assume.
+  extra: { width: 560 },
 };
 
 /** The parent the excursion starts from — its title is what `.back` carries. */
@@ -250,7 +253,11 @@ const CHIP = `${COLUMN} .reader-head [data-save-chip]`;
 async function openWithLongBackLabel(page: Page): Promise<void> {
   await page.goto("/");
   await page.locator(".board").waitFor();
-  await page.locator('.row[data-row-doc="doc_parent"]').click();
+  // "Open here" — this suite measures the column's own reader head, whose back
+  // label names the list; a plain click now opens a path column instead
+  // (UI-149, rider 3), which carries its own head.
+  await page.locator('.row[data-row-doc="doc_parent"]').click({ button: "right" });
+  await page.locator('[role="menuitem"][data-act="open-here"]').click();
   await expect(page.locator(`${COLUMN} .reader-head .back-label`)).toHaveText(`‹ Inbox`);
   // Down one level, by the link the parent's own reader offers.
   await page.locator(`${COLUMN} .backlinks .ref`).click();
@@ -292,13 +299,11 @@ test.describe("the reader head never resizes because of what it holds", () => {
 
     const seen: Record<string, HeadGeometry> = {};
     /*
-     * Each measurement waits for the column to be at its settled reading width
-     * first. `.col.reading` animates its width over 250 ms (UI-019), and a
-     * sample taken inside that animation describes a row that is mid-flight
-     * rather than a row that resized — which is a different claim from the one
-     * this test makes. The head's own width is compared between states anyway,
-     * so a column that really did move still fails, and says so in its own
-     * name rather than the chip's.
+     * Each measurement confirms the column is at the suite's 560px first — the
+     * width its view document carries; since UI-149 a column never widens on
+     * its own. The head's own width is compared between states anyway, so a
+     * column that really did move still fails, and says so in its own name
+     * rather than the chip's.
      */
     const record = async (label: string): Promise<void> => {
       await expect(page.locator(COLUMN)).toHaveCSS("width", "560px");

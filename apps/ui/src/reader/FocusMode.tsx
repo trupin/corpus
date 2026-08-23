@@ -40,6 +40,14 @@ export interface FocusModeProps {
    * hosts, exactly as `DocView` is one document view rendered at two sizes.
    */
   readonly reveal?: RevealTarget | undefined;
+  /**
+   * What following a link inside full screen does (SPEC.md §10, rider 3: "a
+   * link inside full screen … lands as a loose path at the left edge"). The
+   * board passes it and closes the overlay first; when absent — a host outside
+   * the board — the overlay keeps its own in-memory stack, the pre-rider
+   * behaviour.
+   */
+  readonly onFollow?: ((docId: string, reveal?: RevealTarget) => void) | undefined;
   readonly onClose: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -71,6 +79,7 @@ function FocusReader({
   docId,
   listTitle,
   reveal,
+  onFollow,
   onClose,
   onNotify,
 }: FocusModeProps): ReactElement {
@@ -143,10 +152,16 @@ function FocusReader({
   });
 
   const navigate = useCallback(
-    (next: string, reveal?: RevealTarget) => {
-      stack.push(next, surface.currentScroll(), reveal);
+    (next: string, nextReveal?: RevealTarget) => {
+      // Rider 3: a link followed inside full screen closes the overlay and
+      // lands as a loose path at the left edge — the board owns both halves.
+      if (onFollow !== undefined) {
+        onFollow(next, nextReveal);
+        return;
+      }
+      stack.push(next, surface.currentScroll(), nextReveal);
     },
-    [stack, surface],
+    [onFollow, stack, surface],
   );
 
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Focus, onEscape: onClose });

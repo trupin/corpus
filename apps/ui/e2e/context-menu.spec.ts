@@ -80,8 +80,11 @@ test.describe("the context menu", () => {
 
     const menu = page.getByRole("menu", { name: "Actions for Mortgage options" });
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitem")).toHaveCount(5);
+    await expect(menu.getByRole("menuitem")).toHaveCount(6);
     await expect(menu.locator('[data-act="open"]')).toBeVisible();
+    // UI-149 (rider 3): the four ways to open — a path, the column's own
+    // reader, full screen; "open in… <board>" appears once a second board does.
+    await expect(menu.locator('[data-act="open-here"]')).toBeVisible();
     await expect(menu.locator('[data-act="open-focus"]')).toBeVisible();
     // UI-094: `resolve` is a note's action too — SPEC.md §5's three statuses are
     // one vocabulary, not a per-type one (rider signed 2026-08-12).
@@ -189,7 +192,7 @@ test.describe("the context menu", () => {
     await page.keyboard.press("ArrowDown");
     await expect(menu.locator('[data-act="open"]')).toBeFocused();
     await page.keyboard.press("ArrowDown");
-    await expect(menu.locator('[data-act="open-focus"]')).toBeFocused();
+    await expect(menu.locator('[data-act="open-here"]')).toBeFocused();
 
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();

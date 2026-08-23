@@ -1,8 +1,13 @@
+import { ChangedMark } from "@corpus/kit";
 import { useEffect, useRef, useState, type DragEvent, type ReactElement } from "react";
 import { useBoardSurface } from "../board/BoardsProvider";
 import type { Board } from "../board/boardDoc";
+import { pathColumnCount, pathsOf } from "../board/strip";
+import { useBoardCommands } from "../keyboard/boardCommands";
 import { BoardTabMenuItems } from "../menu/BoardTabMenuItems";
 import { useContextMenu } from "../menu/ContextMenuHost";
+import { ReflectControl } from "../reflect/ReflectControl";
+import { useChangedBoards } from "../reflect/useChangedBoards";
 import "./BoardBar.css";
 
 /**
@@ -20,10 +25,18 @@ import "./BoardBar.css";
  * keeps unique. None of it is board layout state the app holds — which is why
  * the agent can do all of it too, with no API of its own.
  *
- * **What is deliberately not here yet**: the explorer toggle (`⌘B`, UI-150), the
- * paths pill and "close paths" (UI-149), and the Reflect control (UI-153). The
- * prototype draws them in this bar and they arrive with their own issues; a
- * button that did nothing would be a promise the product does not keep.
+ * **The right of the bar is the corpus**, not this board: the Reflect control
+ * (UI-153) asks for a reflection over everything and carries the corpus count of
+ * what is unreflected, while each tab carries a dot for what *it* holds
+ * (SPEC.md §7's rider 9). It sits after `.boardbar-spacer`, so a label growing
+ * from `Reflect` to `Reflect · 12 changes since 3h` eats slack and moves no tab.
+ *
+ * **The showing board's paths** (UI-149, rider 3) sit left of the spacer: the
+ * count pill and "close paths", reading the same browser-local strip the board
+ * renders. **What is deliberately not here yet**: the explorer toggle (`⌘B`,
+ * UI-150). The prototype draws it in this bar and it arrives with its own
+ * issue; a button that did nothing would be a promise the product does not
+ * keep.
  */
 
 /** What the bar says when a workspace holds no board documents at all. */
@@ -40,6 +53,13 @@ interface TabProps {
   readonly isCurrent: boolean;
   readonly isDragging: boolean;
   readonly isRenaming: boolean;
+  /**
+   * This board holds at least one document changed since the agent last looked
+   * (SPEC.md §7's rider 9). Derived from rows already loaded — see
+   * {@link useChangedBoards} — so `false` means "nothing known", never "nothing
+   * there".
+   */
+  readonly isChanged: boolean;
   readonly dropSide: "before" | "after" | null;
   readonly onShow: () => void;
   readonly onDragStart: () => void;
@@ -57,6 +77,7 @@ function BoardTab({
   isCurrent,
   isDragging,
   isRenaming,
+  isChanged,
   dropSide,
   onShow,
   onDragStart,
@@ -152,6 +173,19 @@ function BoardTab({
         }}
       >
         <span className="board-tab-title">{board.title}</span>
+        {/*
+         * §7's mark: this board holds something the agent has not looked at.
+         * A dot and no number — the number is the corpus's, and it is one
+         * control away on the same bar.
+         *
+         * **The slot is reserved on every tab, and painted only when there is
+         * something to say** — the same arrangement `.row::before` uses for the
+         * staleness rail. Rendering the mark conditionally into the flow made
+         * the tab 14px wider while it was there, so a reflection landing shifted
+         * every tab after it: §10's "nothing resizes because of what it holds",
+         * measured (`reflect.spec.ts`).
+         */}
+        <span className="board-tab-mark">{isChanged ? <ChangedMark /> : null}</span>
         {board.kanban === null ? null : <span className="tag">kanban</span>}
         {board.defaultOpen ? (
           <span className="tag" title="Receives every open that names no board">
@@ -190,6 +224,15 @@ export function BoardBar(): ReactElement {
    */
   const [renaming, setRenaming] = useState<string | null>(null);
   const { boards, current } = surface;
+  /*
+   * The pill reads the same strip the board renders, through the bound slice;
+   * the close act goes through the board's command surface so the button and
+   * `⇧esc` are one implementation (rider 3's "one act").
+   */
+  const commands = useBoardCommands();
+  const pathCount = pathsOf(surface.local.strip).length;
+  const colCount = pathColumnCount(surface.local.strip);
+  const changed = useChangedBoards(boards);
 
   const openTabMenu = (
     board: Board,
@@ -282,6 +325,7 @@ export function BoardBar(): ReactElement {
             isCurrent={board.id === current?.id}
             isDragging={dragId === board.id}
             isRenaming={renaming === board.id}
+            isChanged={changed.has(board.id)}
             dropSide={dropAt?.id === board.id ? dropAt.side : null}
             onShow={() => {
               surface.showBoard(board.id);
@@ -327,7 +371,37 @@ export function BoardBar(): ReactElement {
       >
         ＋
       </button>
+      {/*
+       * The showing board's paths (SPEC.md §10, rider 3): the count pill and
+       * "close paths", left of the spacer. Browser-local state, so the pill is
+       * this browser's account of this board and nothing the corpus records.
+       */}
+      <span className="paths-pill" data-paths={String(pathCount)}>
+        {pathCount === 0 ? (
+          "no paths"
+        ) : (
+          <>
+            <b>{pathCount}</b>
+            {` path${pathCount === 1 ? "" : "s"} · ${String(colCount)} column${
+              colCount === 1 ? "" : "s"
+            }`}
+          </>
+        )}
+      </span>
+      <button
+        type="button"
+        className="btn-ghost close-paths"
+        title="Close every path on this board (⇧esc)"
+        disabled={pathCount === 0}
+        onClick={() => {
+          commands.closeAllPaths();
+        }}
+      >
+        close paths <kbd>⇧esc</kbd>
+      </button>
       <span className="boardbar-spacer" />
+      {/* The right of the bar is the corpus, not this board (SPEC.md §7). */}
+      <ReflectControl />
     </nav>
   );
 }

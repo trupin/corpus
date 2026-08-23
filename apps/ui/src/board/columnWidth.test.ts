@@ -3,11 +3,8 @@ import {
   DEFAULT_COLUMN_WIDTH,
   MAX_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
-  READING_WIDTH_CEILING,
-  readingFloor,
   clampColumnWidth,
   readStoredWidth,
-  renderedWidth,
 } from "./columnWidth";
 
 /**
@@ -65,60 +62,8 @@ describe("clampColumnWidth", () => {
   });
 });
 
-describe("readingFloor — the width a reader needs, as a floor and never a cap", () => {
-  it("is the widened base, bounded by the content measure", () => {
-    // Unchanged arithmetic: what changed is that this is now a floor the column
-    // may be raised to, not a ceiling imposed on the width the user chose.
-    expect(readingFloor(DEFAULT_COLUMN_WIDTH, WIDE_VIEWPORT)).toBe(560);
-    expect(readingFloor(300, WIDE_VIEWPORT)).toBe(500);
-    expect(readingFloor(800, WIDE_VIEWPORT)).toBe(READING_WIDTH_CEILING);
-  });
-});
-
-describe("renderedWidth — up automatically, down never (UI-113)", () => {
-  it("is the base when nothing has grown it", () => {
-    expect(renderedWidth(DEFAULT_COLUMN_WIDTH, 0, WIDE_VIEWPORT)).toBe(336);
-    expect(renderedWidth(800, 0, WIDE_VIEWPORT)).toBe(800);
-  });
-
-  it("never narrows a column that is already wider than the floor", () => {
-    // **The reported defect.** A column dragged to 800 opened at 560 — the app
-    // taking 240px off a width the user had chosen, because the reading measure
-    // was applied as a cap. Two screenshots and: "I don't want the size to
-    // shrink, ever."
-    expect(renderedWidth(800, READING_WIDTH_CEILING, WIDE_VIEWPORT)).toBe(800);
-    expect(renderedWidth(MAX_COLUMN_WIDTH, READING_WIDTH_CEILING, WIDE_VIEWPORT)).toBe(
-      MAX_COLUMN_WIDTH,
-    );
-  });
-
-  it("grows a column too narrow to show its content", () => {
-    // The one automatic change kept: "it can resize up automatically but not
-    // down."
-    expect(
-      renderedWidth(
-        DEFAULT_COLUMN_WIDTH,
-        readingFloor(DEFAULT_COLUMN_WIDTH, WIDE_VIEWPORT),
-        WIDE_VIEWPORT,
-      ),
-    ).toBe(560);
-    expect(renderedWidth(260, readingFloor(260, WIDE_VIEWPORT), WIDE_VIEWPORT)).toBeGreaterThan(
-      260,
-    );
-  });
-
-  it("keeps a grown column grown, because closing must not shrink it either", () => {
-    // The floor outlives the reader. Snapping back to the base on close would
-    // be the app resizing the column downward on its own, which is the whole
-    // complaint — "went back to what you set" is still the app moving it.
-    expect(renderedWidth(DEFAULT_COLUMN_WIDTH, 560, WIDE_VIEWPORT)).toBe(560);
-  });
-
-  it("still obeys the viewport, which is a constraint rather than an opinion", () => {
-    const narrow = 400;
-    expect(renderedWidth(MAX_COLUMN_WIDTH, 0, narrow)).toBeLessThanOrEqual(narrow);
-    expect(renderedWidth(DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, narrow)).toBeLessThanOrEqual(
-      narrow,
-    );
-  });
-});
+/*
+ * `readingFloor`/`renderedWidth` — the reader-open widening — were removed by
+ * UI-149 (SPEC.md §10, rider 3: a query column no longer widens; the reader
+ * column has its own width). Their suites went with them.
+ */

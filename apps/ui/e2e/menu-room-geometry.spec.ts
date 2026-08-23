@@ -190,7 +190,7 @@ test.describe("the context menu's ceiling", () => {
     expect(tall?.maxHeight ?? 0).toBeGreaterThan(short?.maxHeight ?? 0);
   });
 
-  test("lets a five-item row menu be read rather than scrolled at 720px", async ({ page }) => {
+  test("lets a six-item row menu be read rather than scrolled at 720px", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await stubCorpus(page, CORPUS);
     await page.goto("/");
@@ -198,7 +198,8 @@ test.describe("the context menu's ceiling", () => {
     const menu = await openRowMenu(page, "doc_note");
     const geometry = await geometryOf(menu);
 
-    expect(geometry.items).toBe(5);
+    // Six since UI-149 added "Open here" to the row set (rider 3).
+    expect(geometry.items).toBe(6);
     // The reproduction: 198 against 253 before the fix.
     expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.clientHeight);
     // And it is not fitting by luck — the window has room to spare it did not use.

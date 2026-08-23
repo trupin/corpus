@@ -100,6 +100,9 @@ test("a save refused as the reader closes still ends the sitting exactly once", 
 
   const column = page.locator('.col[data-col="doc_view_inbox"]');
   await column.locator(`.row[data-row-doc="${NOTE.id}"]`).click();
+  // The reader is a path column's since UI-149 (rider 3); its back-to-origin
+  // button carries the origin column's name.
+  const reader = page.locator(".pcol");
   await page.locator(`.reader[data-reader-doc="${NOTE.id}"]`).waitFor();
 
   // A save that lands: this is what opens the session on the server.
@@ -119,7 +122,7 @@ test("a save refused as the reader closes still ends the sitting exactly once", 
   // on top of it, with the save it triggers refused.
   injected.failNextSave();
   await page.keyboard.type(" The last sentence.");
-  await column.getByRole("button", { name: "‹ Inbox" }).click();
+  await reader.getByRole("button", { name: "‹ Inbox" }).click();
 
   // The teardown flush went out and was refused; the close path still ends the
   // session, over the range that actually committed.

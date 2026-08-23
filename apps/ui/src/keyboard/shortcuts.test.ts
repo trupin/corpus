@@ -39,6 +39,10 @@ describe("the shortcut registry", () => {
           (other.scope === shortcut.scope ||
             other.scope === "global" ||
             shortcut.scope === "global") &&
+          // Two escape-layer entries may share a key: the layer chain resolves
+          // them by z-order (`useEscapeStack`), never this dispatcher, and
+          // `esc` vs `⇧esc` is exactly such a pair (rider 3).
+          !(other.boundBy !== undefined && shortcut.boundBy !== undefined) &&
           matchesShortcut(other, press),
       );
       expect(
@@ -51,7 +55,11 @@ describe("the shortcut registry", () => {
   it("matches every key it declares, and no modified form it does not", () => {
     for (const { shortcut, probe } of shortcutProbes()) {
       expect(matchesShortcut(shortcut, event(probe)), shortcut.id).toBe(true);
-      expect(matchesShortcut(shortcut, event({ ...probe, altKey: true })), shortcut.id).toBe(false);
+      // Flipping ⌥ must always un-match: it is what separates `↵` from `⌥↵`.
+      expect(
+        matchesShortcut(shortcut, event({ ...probe, altKey: !(probe.altKey ?? false) })),
+        shortcut.id,
+      ).toBe(false);
     }
   });
 
@@ -105,8 +113,8 @@ describe("the shortcut registry", () => {
 
   it("generates one probe per accepted key of a chord", () => {
     expect(chordProbes({ keys: ["k", "K"], mod: true })).toEqual([
-      { key: "k", shiftKey: false, metaKey: true },
-      { key: "K", shiftKey: false, metaKey: true },
+      { key: "k", shiftKey: false, metaKey: true, altKey: false },
+      { key: "K", shiftKey: false, metaKey: true, altKey: false },
     ]);
   });
 
@@ -120,9 +128,11 @@ describe("the shortcut registry", () => {
     expect(SHORTCUTS.map((shortcut) => shortcut.id)).toEqual([
       "rows.move",
       "rows.open",
+      "rows.openHere",
       "rows.openFullScreen",
       "menu.open",
       "layers.close",
+      "paths.closeAll",
       "columns.switch",
       "columns.move",
       "boards.switch",
@@ -135,10 +145,12 @@ describe("the shortcut registry", () => {
     ]);
     expect(SHORTCUTS.map((shortcut) => shortcut.description)).toEqual([
       "move rows (also j / k)",
-      "open document",
+      "open — a new column to the right",
+      "open here, in this column",
       "open in full screen",
       "actions for the highlighted row",
-      "close / back",
+      "close the active path column / back",
+      "close every path on this board",
       "switch column (also [ / ])",
       "move column",
       "show the nth board",
@@ -163,7 +175,11 @@ describe("the shortcut registry", () => {
       (shortcut) =>
         shortcut.scope === "board" && shortcut.chords.some((chord) => chord.keys.includes("Enter")),
     );
-    expect(enter.map((shortcut) => shortcut.id)).toEqual(["rows.open", "rows.openFullScreen"]);
+    expect(enter.map((shortcut) => shortcut.id)).toEqual([
+      "rows.open",
+      "rows.openHere",
+      "rows.openFullScreen",
+    ]);
     for (const shortcut of enter) {
       expect(shortcut.yieldsToFocusedControl, shortcut.id).toBe(true);
     }

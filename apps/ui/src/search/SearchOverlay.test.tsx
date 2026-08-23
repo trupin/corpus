@@ -379,7 +379,13 @@ describe("the keyboard", () => {
     expect(container.querySelector<HTMLElement>(".sr.kbd")?.dataset["sr"]).toBe("doc_mortgage");
   });
 
-  it("opens the highlighted hit in its home column and closes", async () => {
+  /*
+   * Rider 3 (SPEC.md §10): the overlay's `↵` is an open with no origin, so it
+   * lands as a loose path at the board's left edge — a bare `docId`, with no
+   * placement read at all. The pre-rider home-column resolution and the
+   * document fetch it needed are gone with `resolveColumn`.
+   */
+  it("opens the highlighted hit — a loose path at the left edge — and closes", async () => {
     const user = userEvent.setup();
     const { handlers, onClose } = renderOverlay();
     await search(user, "mortgage options");
@@ -387,27 +393,8 @@ describe("the keyboard", () => {
     await user.keyboard("{ArrowDown}{Enter}");
 
     expect(onClose).toHaveBeenCalled();
-    /*
-     * A hit carries no folder, type or status, so the overlay reads the
-     * document — through the reader's own `["docs", id]` cache entry — and hands
-     * `resolveColumn` the same subject a board row would have.
-     */
     await waitFor(() => {
-      expect(handlers.open).toHaveBeenCalledWith({
-        docId: "doc_mortgage",
-        subject: { folder: "finance/housing", type: "note", status: "open" },
-      });
-    });
-  });
-
-  it("still opens the document when the placement read is refused", async () => {
-    const user = userEvent.setup();
-    const { handlers } = renderOverlay({ failing: { "/api/docs/doc_mortgage": 500 } });
-    await search(user, "mortgage options");
-
-    await user.keyboard("{ArrowDown}{Enter}");
-    await waitFor(() => {
-      expect(handlers.open).toHaveBeenCalledWith({ docId: "doc_mortgage", subject: null });
+      expect(handlers.open).toHaveBeenCalledWith({ docId: "doc_mortgage" });
     });
   });
 
@@ -543,11 +530,9 @@ describe("the create row", () => {
     });
     expect(onClose).toHaveBeenCalled();
     await waitFor(() => {
-      expect(handlers.open).toHaveBeenCalledWith({
-        docId: "doc_created",
-        subject: { folder: "inbox", type: "note", status: "open" },
-        selectTitle: true,
-      });
+      // Rider 3: the omnibox create has no origin row — a loose path, title
+      // selected.
+      expect(handlers.open).toHaveBeenCalledWith({ docId: "doc_created", selectTitle: true });
     });
     // The toast surface is an `aria-live` region, not a `role="status"` element:
     // the console strip owns that role (see `Toasts.tsx`).

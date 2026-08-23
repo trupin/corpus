@@ -318,9 +318,13 @@ test.describe("the reader's thread count", () => {
       subject: string,
       count: string,
     ): Promise<{ head: Box; id: Box; button: Box }> => {
+      // "Open here" — the head under test is the column's own, at the 240px
+      // the column carries; a plain click now opens a 440px path column
+      // instead (UI-149, rider 3).
       await page
         .locator(`.col[data-col="doc_view_${subject}"] .row[data-row-doc="doc_${subject}"]`)
-        .click();
+        .click({ button: "right" });
+      await page.locator('[role="menuitem"][data-act="open-here"]').click();
       const reader = page.locator(
         `.col[data-col="doc_view_${subject}"] .reader[data-reader-doc="doc_${subject}"] .reader-head`,
       );

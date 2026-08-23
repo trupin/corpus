@@ -1,4 +1,4 @@
-import type { AgentRoster, DocRow, QueueStatus } from "@corpus/contract";
+import type { AgentRoster, DocRow, QueueStatus, ReflectStatus } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -43,9 +43,38 @@ export interface BoardTransportOptions {
   /** Rows returned for a query with no entry in `rows`. */
   readonly defaultRows?: readonly DocRow[];
   readonly tree?: unknown;
+  /**
+   * What `GET /api/workspace/reflect` answers — the clock, the pending
+   * reflection, the corpus count and the quiet window (SPEC.md §7's rider 9).
+   *
+   * Answered rather than left to the catch-all for the reason UI-098 learned
+   * here twice: the board bar always renders the Reflect control, so the first
+   * surface to read a new field turns a silent `{}` into a component that reads
+   * `pending` off nothing and reports *reflecting…* forever.
+   *
+   * The default is {@link QUIET_REFLECT_STATUS} — a corpus the agent looked at
+   * after every fixture row was written — so nothing is marked unless a test
+   * says so. That is the honest default and not merely the convenient one: these
+   * fixtures seed documents dated 2026-07-01 and run no agent, and a clock
+   * *before* them would light every row in every board suite.
+   */
+  readonly reflect?: Partial<ReflectStatus>;
   /** Paths that answer with an error, mapped to the status to answer with. */
   readonly failing?: Readonly<Record<string, number>>;
 }
+
+/**
+ * A corpus reflected on after every fixture document was written — so
+ * `isUnreflected` is false for all of them, and no board suite grows a mark it
+ * did not ask for.
+ */
+export const QUIET_REFLECT_STATUS: ReflectStatus = {
+  reflected: "2026-08-01T09:00:00.000Z",
+  pending: null,
+  changed: 0,
+  lastDigest: null,
+  quiet: 30,
+};
 
 /** The board a fixture synthesises when the test names none. */
 export const DEFAULT_BOARD_ID = "doc_board_default";
@@ -166,6 +195,27 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
           },
         ],
       } satisfies AgentRoster);
+    }
+    /*
+     * `GET /api/workspace/reflect` — the board bar's Reflect control (UI-153).
+     * `POST` is the ask, and it answers `202` always: §7 says an ask while one
+     * is pending is answered with the pending one, never refused, so a fixture
+     * that raised a `409` here would let a test assert a refusal the server
+     * cannot produce.
+     */
+    if (url.pathname === "/api/workspace/reflect") {
+      const status: ReflectStatus = { ...QUIET_REFLECT_STATUS, ...options.reflect };
+      if (request.method === "POST") {
+        return json(
+          {
+            eventId: "evt_reflect",
+            since: status.reflected,
+            pending: status.pending !== null,
+          },
+          202,
+        );
+      }
+      return json(status);
     }
     if (url.pathname === "/api/docs" && request.method === "POST") {
       return json({ doc: created("doc_created"), warnings: [] }, 201);

@@ -1,0 +1,87 @@
+/**
+ * Paths (SPEC.md §10, rider 3; `design/navigation.html`'s `.path` / `.pcol`).
+ *
+ * The band is the snap target — a path scrolls as the unit it is — so its
+ * columns opt out of the `.col` snap they would otherwise inherit. The wash
+ * behind a band is the prototype's `--path-band`, derived from the accent so
+ * both themes get it from one declaration.
+ */
+
+.path {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  scroll-snap-align: start;
+}
+
+/* A loose path — no origin row — reads as settled: solid, quieter border. */
+.path.loose {
+  border-style: solid;
+  border-color: var(--line);
+}
+
+.pcol {
+  scroll-snap-align: none;
+}
+
+/* ── The path column's head: `◂ origin` · ⋯ · ✕ ─────────────────────── */
+
+.pcol-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.pcol-from {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.pcol-from b {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.path.loose .pcol-from b {
+  color: var(--ink-2);
+}
+
+.pcol-spacer {
+  flex: 1;
+}
+
+.pcol-head .hbtn {
+  color: var(--ink-3);
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  flex: none;
+  line-height: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.pcol-head .hbtn:hover {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+
+.pcol-head .pcol-close:hover {
+  color: var(--signal);
+  background: var(--signal-wash);
+}

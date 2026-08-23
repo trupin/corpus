@@ -43,6 +43,7 @@ function boardSpy(): BoardCommands & { readonly calls: string[] } {
     calls,
     moveRowCursor: record("moveRowCursor"),
     openRowAtCursor: record("openRowAtCursor"),
+    closeAllPaths: record("closeAllPaths"),
     switchColumn: record("switchColumn"),
     moveActiveColumn: record("moveActiveColumn"),
     toggleFocusMode: record("toggleFocusMode"),

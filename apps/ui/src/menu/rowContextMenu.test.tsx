@@ -103,13 +103,27 @@ describe("a row's context menu", () => {
     expect(screen.getByRole("menu", { name: "Actions for Mortgage options" })).toBeTruthy();
     // `resolve` is in the row set since UI-094: SPEC.md §5's statuses are one
     // vocabulary, so a note's set is a thread's set.
-    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
+    expect(menuActions()).toEqual([
+      "open",
+      "open-here",
+      "open-focus",
+      "resolve",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("keeps resolve on a thread row, which is now the same set a note offers", async () => {
     renderBoard([THREAD]);
     fireEvent.contextMenu(await row("th_1"), { clientX: 40, clientY: 60 });
-    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
+    expect(menuActions()).toEqual([
+      "open",
+      "open-here",
+      "open-focus",
+      "resolve",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("shows the staleness quick actions only where the ramp already shows them", async () => {
@@ -123,6 +137,7 @@ describe("a row's context menu", () => {
     fireEvent.contextMenu(await row("doc_c"), { clientX: 10, clientY: 10 });
     expect(menuActions()).toEqual([
       "open",
+      "open-here",
       "open-focus",
       "review",
       "resolve",
@@ -184,7 +199,7 @@ describe("a row's context menu", () => {
     expect(wire.writes("DELETE")[0]?.path).toBe("/api/docs/doc_a");
   });
 
-  it("opens the row in its column", async () => {
+  it("opens the row in a path off its column (rider 3)", async () => {
     renderBoard([FRESH]);
     fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
     const openItem = document.querySelector<HTMLElement>('[role="menuitem"][data-act="open"]');
@@ -192,8 +207,21 @@ describe("a row's context menu", () => {
     fireEvent.click(openItem);
 
     await waitFor(() => {
-      expect(document.querySelector('.reader[data-reader-doc="doc_a"]')).not.toBeNull();
+      expect(document.querySelector('.pcol .reader[data-reader-doc="doc_a"]')).not.toBeNull();
     });
+  });
+
+  it("opens the row here, in the column's own reader, from Open here", async () => {
+    renderBoard([FRESH]);
+    fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
+    const hereItem = document.querySelector<HTMLElement>('[role="menuitem"][data-act="open-here"]');
+    if (hereItem === null) throw new Error("no open-here item");
+    fireEvent.click(hereItem);
+
+    await waitFor(() => {
+      expect(document.querySelector('.qcol .reader[data-reader-doc="doc_a"]')).not.toBeNull();
+    });
+    expect(document.querySelector(".pcol")).toBeNull();
   });
 
   it("leaves the native menu alone off any row, and on a field", async () => {
@@ -225,7 +253,14 @@ describe("a row's context menu", () => {
 
     fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
     expect(screen.getByRole("menu", { name: "Actions for Inbox chores" })).toBeTruthy();
-    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
+    expect(menuActions()).toEqual([
+      "open",
+      "open-here",
+      "open-focus",
+      "resolve",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("acts on the document — the menu archives through the core route", async () => {

@@ -101,18 +101,22 @@ async function openWithReveal(page: Page, reveal: Reveal | null): Promise<void> 
     ([columnId, docId, boardId, pending]) => {
       window.localStorage.setItem(
         "corpus.board",
-        // v3 (UI-148): the column map is nested under the board that holds it.
+        // v4 (UI-149): the board's slice is its strip — query columns and
+        // paths in order. The seeded reader is the column's own ("open here").
         JSON.stringify({
-          version: 3,
+          version: 4,
           board: boardId,
           boards: {
             [boardId]: {
-              columns: {
-                [columnId]: {
+              seq: 1,
+              strip: [
+                {
+                  kind: "query",
+                  view: columnId,
                   scroll: 0,
                   nav: [{ docId, scrollY: 0, ...(pending === null ? {} : { reveal: pending }) }],
                 },
-              },
+              ],
             },
           },
         }),
@@ -184,10 +188,13 @@ async function storedEntry(page: Page, columnId: string = VIEW.id): Promise<Stor
       const parsed = JSON.parse(raw) as {
         boards?: Record<
           string,
-          { columns?: Record<string, { nav?: StoredEntry[] } | undefined> } | undefined
+          { strip?: { kind: string; view?: string; nav?: StoredEntry[] }[] } | undefined
         >;
       };
-      return parsed.boards?.[boardId]?.columns?.[column]?.nav?.at(-1) ?? null;
+      const item = parsed.boards?.[boardId]?.strip?.find(
+        (entry) => entry.kind === "query" && entry.view === column,
+      );
+      return item?.nav?.at(-1) ?? null;
     },
     [columnId, STUB_BOARD_ID] as const,
   );

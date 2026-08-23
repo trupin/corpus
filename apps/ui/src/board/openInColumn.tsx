@@ -1,5 +1,4 @@
-import type { DocRow } from "@corpus/contract";
-import { folderOf, type OpenPayload, type OpenRequest, type RevealTarget } from "@corpus/kit";
+import type { OpenPayload, OpenRequest, RevealTarget } from "@corpus/kit";
 import {
   createContext,
   useCallback,
@@ -10,59 +9,53 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import type { BoardColumn } from "./viewDoc";
 
 /**
- * "Open this document, wherever it lives" — the one implementation of scroll,
- * flash and open (SPEC.md §10).
+ * "Open this document, wherever the caller is" — the one seam every surface
+ * outside the board opens documents through (SPEC.md §10, rider 3).
  *
- * Three surfaces need it and none of them is inside the board: the search
- * overlay's `↵` (UI-009), the console's `↗ open` (UI-011), and UI-010's
- * keyboard. They are all siblings of `<Board>` in the shell, so the capability
- * is published through a context and *registered* by the board, which is the
- * only component that knows which columns exist, where they are on screen, and
- * which document each one has open.
+ * Since rider 3, **every open lands in a path**. A caller that names a column
+ * is looking at a row, and the path hangs off it; a caller that only knows a
+ * document — the search overlay's `↵`, the console's `↗ open`, a lane-scope
+ * row, a link inside full screen, "open in" another board — lands as a **loose
+ * path at the left edge** of the showing board. There is no home-column
+ * resolution any more: the folder/type precedence this module used to carry
+ * (`resolveColumn`) died with the rider, because a loose path is a place of its
+ * own and no longer a guess about which column a document "belongs" to.
  *
- * The alternative — each caller reaching into the board's local state — is how a
- * second scroll-and-flash implementation gets written, and then two surfaces
- * disagree about which column a document belongs to.
+ * The surfaces that need this are all siblings of `<Board>` in the shell, so
+ * the capability is published through a context and *registered* by the board,
+ * which is the only component that holds the strip.
  */
-
-/** What resolution needs to know about a document. */
-export interface OpenSubject {
-  /** Folder relative to `data/docs/`, without a trailing slash; `null` at the root. */
-  readonly folder: string | null;
-  readonly type: string;
-  readonly status: string;
-}
 
 export interface OpenTarget {
   readonly docId: string;
   /**
-   * The document's own placement, when the caller has it. A search result and a
-   * board row both do; a job knows only an `originId`, and omitting this is
-   * legal — resolution then falls through to the first column rather than
-   * costing a request the caller did not ask for.
-   */
-  readonly subject?: OpenSubject | null;
-  /**
-   * The column to open in, when the caller is *looking at* the document rather
-   * than resolving where it lives — the keyboard's `↵` on a highlighted row
-   * (SPEC.md §10: "open the highlighted document **in its column**").
-   *
-   * Resolution is skipped when this is given, because a row's column is not a
-   * guess: it is the column that fetched it, and a row visible in a narrower
-   * column than the one `resolveColumn` would pick must not jump elsewhere under
-   * the cursor. Everything else about the act — the scroll, the flash, the push
-   * onto that column's navigation stack — is the same code path.
+   * The column whose row the caller is looking at — the keyboard's `↵`, a row
+   * click. The path opens directly to its right, hung off that row (rider 3).
+   * Checked against the live column set: an SSE frame may have removed the
+   * column between the keystroke and this call, and the open then lands loose.
    */
   readonly columnId?: string | null;
+  /**
+   * The origin the path should record, when it is not simply "this row"
+   * — UI-150's explorer passes `{ view: "explorer", doc }`. A view that is not
+   * a live column slot lands the path loose at the left edge, which is where
+   * the explorer's preview path lives anyway.
+   */
+  readonly origin?: { readonly view: string; readonly doc: string } | null;
+  /**
+   * Forces the landing: `"left"` opens a loose path at the left edge even when
+   * a column is named. Omitted, the placement is derived — `"origin"` when a
+   * live column is named, `"left"` otherwise.
+   */
+  readonly placement?: "origin" | "left";
   /** Focus *and* select the title on arrival — the omnibox's "ready to type". */
   readonly selectTitle?: boolean;
   /**
    * Where inside the document to land (UI-037): an item of its text, or one of
-   * its threads. Additive — every caller that only knows a document keeps
-   * opening it at the top, which is the same act it always was.
+   * its threads. Rides the path column's first `NavEntry`, exactly as it rode
+   * the column reader's.
    */
   readonly reveal?: RevealTarget | undefined;
 }
@@ -80,7 +73,7 @@ export function openRequest(payload: OpenPayload): OpenRequest {
 }
 
 export interface BoardNavigation {
-  /** Resolves a home column, scrolls it in, flashes it, opens the document. */
+  /** Opens the document in a path, scrolls its column in and flashes it. */
   readonly open: (target: OpenTarget) => void;
   /** Scrolls a column into view and flashes it — save-as-view's new column. */
   readonly revealColumn: (columnId: string) => void;
@@ -134,8 +127,9 @@ export function BoardNavigationProvider({
 }
 
 /**
- * The consumer seam. `useOpenInColumn().open({docId, subject})` is how every
- * surface outside the board opens a document.
+ * The consumer seam. `useOpenInColumn().open({docId})` is how every surface
+ * outside the board opens a document — and since rider 3, where it lands is a
+ * path, loose at the left edge unless the caller named the row it came from.
  */
 export function useOpenInColumn(): BoardNavigation {
   return useContext(BoardNavigationContext).navigation;
@@ -150,85 +144,6 @@ export function useRegisterBoardNavigation(handlers: BoardNavigation): void {
       register(null);
     };
   }, [handlers, register]);
-}
-
-/** A search result or a board row, as resolution sees it. */
-export function docSubject(row: Pick<DocRow, "path" | "type" | "status">): OpenSubject {
-  const folder = folderOf(row.path).replace(/\/+$/, "");
-  return { folder: folder === "" ? null : folder, type: row.type, status: row.status };
-}
-
-/** `finance/housing` is inside `finance`, but `financial` is not. */
-function isInside(folder: string, scope: string): boolean {
-  return folder === scope || folder.startsWith(`${scope}/`);
-}
-
-function columnFolder(column: BoardColumn): string | null {
-  return column.folder === null ? null : column.folder.replace(/\/+$/, "");
-}
-
-function listValues(raw: string | undefined): readonly string[] {
-  if (raw === undefined || raw === "") return [];
-  return raw.split(",").map((value) => value.trim());
-}
-
-/**
- * Which column a document belongs to, in a stated precedence.
- *
- * A column is a **candidate** only if the document could actually appear in it:
- * its `folder:` scope contains the document, and its `type:`/`status:` filters
- * do not exclude it. Among the candidates:
- *
- * 1. **Folder** — the most specific folder column wins. Placement is the primary
- *    organization (SPEC.md §10), so a document in `finance/housing` belongs to
- *    the Housing column over the Finance one, and to either over a type filter
- *    that also happens to match.
- * 2. **Type / status** — a column filtering on both outranks one filtering on
- *    either, which outranks an unfiltered column.
- * 3. **The first column** — when no column would have it at all. A document
- *    whose home column was archived still opens somewhere, because "nothing
- *    happened" is the worst possible answer to `↵`.
- *
- * `null` only when the board has no columns at all, which is the genuinely
- * empty case the ghost column already speaks for.
- */
-export function resolveColumn(
-  columns: readonly BoardColumn[],
-  subject: OpenSubject | null,
-): string | null {
-  if (columns.length === 0) return null;
-  if (subject === null) return columns[0]?.id ?? null;
-
-  let best: BoardColumn | null = null;
-  let bestScore = -1;
-
-  for (const column of columns) {
-    const scope = columnFolder(column);
-    const types = listValues(column.filter["type"]);
-    const statuses = listValues(column.filter["status"]);
-
-    // A filter the document contradicts disqualifies the column outright: a
-    // `type: thread` column must never be where a note opens, and a column
-    // scoped to another folder must never claim a document that is not in it.
-    if (scope !== null && (subject.folder === null || !isInside(subject.folder, scope))) continue;
-    if (types.length > 0 && !types.includes(subject.type)) continue;
-    if (statuses.length > 0 && !statuses.includes(subject.status)) continue;
-
-    // Placement outranks any type or status filter, and a deeper folder outranks
-    // a shallower one — `finance/housing` beats `finance` beats "notes".
-    const score =
-      (scope === null ? 0 : 1000 + scope.length * 10) +
-      (types.length > 0 ? 2 : 0) +
-      (statuses.length > 0 ? 1 : 0);
-    if (score > bestScore) {
-      best = column;
-      bestScore = score;
-    }
-  }
-
-  // No column would have it. Somewhere still beats nowhere: an `↵` that does
-  // nothing is the worst answer, and the flash says where it landed.
-  return best?.id ?? columns[0]?.id ?? null;
 }
 
 /** How long a column's accent border stays lit after being scrolled to. */

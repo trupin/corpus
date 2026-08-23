@@ -280,9 +280,10 @@ test.describe("the board", () => {
     await expect(column.locator('.row[data-row-doc="doc_chore"] .row-title')).toHaveText(
       "Call the plumber",
     );
-    // It opens: clicking the row gives the ordinary reader.
+    // It opens: clicking the row gives the ordinary reader — in a path column
+    // to the right, as every row click does since UI-149 (rider 3).
     await column.locator('.row[data-row-doc="doc_chore"]').click();
-    await expect(column.locator(".reader .ProseMirror")).toBeVisible();
+    await expect(page.locator(".pcol .reader .ProseMirror")).toBeVisible();
 
     expect(uncaught).toEqual([]);
   });

@@ -144,7 +144,12 @@ describe("resizing a column", () => {
     expect(column().style.width).toBe(`${String(336 + COLUMN_RESIZE_STEP)}px`);
   });
 
-  it("widens relative to the chosen base when a document opens in it", async () => {
+  /**
+   * Rider 3 (SPEC.md §10): "a query column no longer widens when it opens a
+   * reader" — the reader opens in a **path column** with its own width, and
+   * the query column keeps exactly the width its document carries.
+   */
+  it("keeps its chosen width when a row opens — the reader is a path column's", async () => {
     renderBoard([viewRow({ ...NARROW, extra: { width: 300 } })]);
     await handle();
     expect(column().style.width).toBe("300px");
@@ -155,10 +160,10 @@ describe("resizing a column", () => {
     });
 
     await waitFor(() => {
-      expect(document.querySelector(".reader")).not.toBeNull();
+      expect(document.querySelector(".pcol .reader")).not.toBeNull();
     });
-    // 300 × (560/336) = 500 — its own base widened, not a fixed 560.
-    expect(column().style.width).toBe("500px");
+    expect(column().style.width).toBe("300px");
+    expect(document.querySelector<HTMLElement>(".pcol")?.style.width).toBe("440px");
   });
 
   it("announces its bounds to assistive technology", async () => {

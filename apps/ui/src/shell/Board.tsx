@@ -30,38 +30,68 @@ import { NewListPicker } from "../board/NewListPicker";
 import {
   COLUMN_FLASH_MS,
   openRequest,
-  resolveColumn,
   useRegisterBoardNavigation,
   type BoardNavigation,
 } from "../board/openInColumn";
+import { PathBand, type PathActs } from "../board/PathBand";
+import {
+  closeAllPaths as closeAllPathsAct,
+  closeCol,
+  closeWholePath,
+  detachPath,
+  docAtKey,
+  newPathRight,
+  openDocsOn,
+  openFromPath,
+  openFromView,
+  openLoose,
+  originDocOf,
+  parsePathKey,
+  pathColumnKey,
+  pathsOf,
+  reconcileStrip,
+  restartPathHere,
+  setPathColStack,
+  setPathColWidth,
+  type PathItem,
+  type StripResult,
+} from "../board/strip";
 import { openDocId } from "../board/useBoardLocalState";
 import { useColumns } from "../board/useColumns";
 import { useCreateInColumn } from "../board/useCreateInColumn";
 import type { BoardColumn } from "../board/viewDoc";
 import { FocusMode } from "../reader/FocusMode";
 import { pushEntry } from "../reader/useNavStack";
+import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { useToast } from "./Toasts";
 import "./Board.css";
 import "../board/Column.css";
+import "../board/Path.css";
 
 /**
- * The showing board (SPEC.md §10): a horizontally scrolling strip of columns
- * with snap scrolling, and a trailing ghost column that never lets it be a blank
- * screen.
+ * The showing board (SPEC.md §10): a horizontally scrolling strip of query
+ * columns **and paths**, with snap scrolling, and a trailing ghost column that
+ * never lets it be a blank screen.
  *
- * **Boards and columns are documents.** Nothing here decides what the board
- * holds — the corpus does, through a `type: board` document listing the ids of
- * `type: view` documents (rider 2). Reordering, adding and removing a column
- * write the *board* document; renaming and re-querying write the *view*. That is
- * what makes the layout auto-committed, stewardable by the agent, and the same
- * in a second browser. The only state this component keeps for itself is the
- * state that is genuinely about *this* browser: where each list is scrolled and
- * which document each column has open.
+ * **Boards and columns are documents; paths are not.** What query columns the
+ * board holds is corpus state — a `type: board` document listing view ids
+ * (rider 2) — and every reorder, add and remove writes documents through the
+ * board surface. The **paths** between those columns are rider 3's other half:
+ * browser-local chains of reader columns hanging off origin rows, held in the
+ * strip (`strip.ts`) under this board's `localStorage` slice, recorded in no
+ * document ever.
  *
- * The scroller stays in `shell/` because `.board` is one of the shell's regions
- * (top bar · board bar · board · console); everything a column *is* lives in
- * `../board/`.
+ * The strip rendered below is the stored one **reconciled against the fetched
+ * column set at render time** — query items in board order, paths keeping their
+ * place relative to the column before them — and the reconciled value is
+ * committed back in an effect, so what is on screen and what is stored converge
+ * without a frame that shows neither.
  */
+
+/** What the loop rule says when it re-centres instead of opening (rider 3). */
+export const ALREADY_IN_PATH_MESSAGE =
+  "Already in this path — re-centred on its column. Nothing was closed.";
+
 export function Board(): ReactElement {
   const surface = useBoardSurface();
   const board = surface.current;
@@ -103,9 +133,9 @@ export function Board(): ReactElement {
   const dragSource = useRef<readonly BoardColumn[]>([]);
   const moving = useRef(false);
 
-  const { prune, setNav, setScroll, forColumn } = local;
+  const { setNav, setScroll, forColumn } = local;
 
-  /** Following a row, a ref or a backlink: a push onto that column's stack. */
+  /** "Open here" in a query column: a push onto that column's own stack. */
   const openInColumn = useCallback(
     (columnId: string, docId: string, reveal?: RevealTarget) => {
       setNav(columnId, pushEntry(forColumn(columnId).nav, docId, 0, reveal));
@@ -129,13 +159,29 @@ export function Board(): ReactElement {
   }, [columns, preview]);
 
   const serverIds = columns.map((column) => column.id).join(",");
+  const orderedIds = ordered.map((column) => column.id).join(",");
 
-  // Local entries for columns that no longer exist — an archived view, one the
-  // agent removed — go with them, along with whatever reader they had open.
+  /**
+   * The strip as this render draws it: the stored one, reconciled against the
+   * rendered column order (drag preview included, so paths follow the column
+   * they hang off while it moves).
+   */
+  const strip = useMemo(
+    () => reconcileStrip(local.strip, orderedIds === "" ? [] : orderedIds.split(",")),
+    [local.strip, orderedIds],
+  );
+  const stripRef = useRef(strip);
+  stripRef.current = strip;
+
+  // What was rendered is what is stored — including dropping the paths and
+  // entries of columns that no longer exist (an archived view, one the agent
+  // removed). Guarded exactly as the old prune was: never against a set that
+  // is merely still loading.
+  const { commitStrip } = local;
   useEffect(() => {
     if (isPending || error !== null) return;
-    prune(serverIds === "" ? [] : serverIds.split(","));
-  }, [error, isPending, prune, serverIds]);
+    if (strip !== local.strip) commitStrip(strip);
+  }, [commitStrip, error, isPending, local.strip, strip]);
 
   /**
    * The preview is held until the corpus agrees with it — that is the whole
@@ -168,7 +214,7 @@ export function Board(): ReactElement {
       element.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     }
     setScrollTo(null);
-  }, [ordered, scrollTo]);
+  }, [strip, scrollTo]);
 
   // The accent border the prototype lights for 1.5 s after a column is scrolled
   // to. Its transition is covered by the shipped `.col` reduced-motion guard in
@@ -184,11 +230,97 @@ export function Board(): ReactElement {
   }, [flashing]);
 
   /**
-   * The board's half of the `useOpenInColumn` seam (SPEC.md §10).
+   * The keyboard's column order is the strip's: query columns and path columns,
+   * left to right, one key space (`strip.ts`).
+   */
+  const stripKeys = useMemo(
+    () =>
+      strip.strip.flatMap((item) =>
+        item.kind === "query"
+          ? [{ id: item.view }]
+          : item.cols.map((_, index) => ({ id: pathColumnKey(item.id, index) })),
+      ),
+    [strip],
+  );
+
+  const active = useActiveColumn(stripKeys);
+  const activeColumnId = active.id;
+  /** The active **query** column, when the active key names one. */
+  const activeColumn = ordered.find((column) => column.id === activeColumnId) ?? null;
+  const cursor = useRowCursor({ board: boardEl, activeColumnId });
+
+  /**
+   * Applies a strip act: commit, then focus — pin (a keyboard-authority claim,
+   * so the column sliding under a stationary cursor cannot steal it), scroll
+   * in, and flash unless the caller is a quiet act like Back. The loop rule's
+   * re-centre also says so, because a click that closed nothing and moved the
+   * board needs its one-line account (rider 3).
+   */
+  const applyStrip = useCallback(
+    (result: StripResult, options: { readonly flash?: boolean } = {}) => {
+      if (result.board !== stripRef.current) commitStrip(result.board);
+      if (result.focus !== null) {
+        active.pin(result.focus);
+        setScrollTo(result.focus);
+        if (options.flash !== false) setFlashing(result.focus);
+      }
+      if (result.recentred) toast({ tone: "info", message: ALREADY_IN_PATH_MESSAGE });
+    },
+    [active, commitStrip, toast],
+  );
+
+  const closeEveryPath = useCallback(() => {
+    const result = closeAllPathsAct(stripRef.current);
+    if (result.closed === 0) return;
+    commitStrip(result.board);
+    if (result.focus !== null) {
+      active.pin(result.focus);
+      setScrollTo(result.focus);
+    }
+    toast({
+      tone: "info",
+      message: `Closed ${String(result.closed)} path${result.closed === 1 ? "" : "s"}.`,
+    });
+  }, [active, commitStrip, toast]);
+
+  /**
+   * `esc` and `⇧esc` on the board (SPEC.md §10's keyboard scheme): after the
+   * overlays and focus mode — their layers outrank this one — `⇧esc` closes
+   * every path, plain `esc` closes the **active path column**, and only then
+   * does a query column's reader get its back. Registered only while a path
+   * exists, so a path-free board keeps the pre-rider chain byte for byte.
+   */
+  const pathCount = pathsOf(strip).length;
+  useEscapeLayer({
+    active: pathCount > 0,
+    priority: EscapeLayerPriority.PathStrip,
+    onEscape: (event) => {
+      if (event.shiftKey) {
+        closeEveryPath();
+        return;
+      }
+      const key = active.id;
+      if (key === null) return;
+      const parsed = parsePathKey(key);
+      if (parsed !== null) {
+        applyStrip(closeCol(stripRef.current, parsed.pathId, parsed.index), { flash: false });
+        return;
+      }
+      // A query column's reader, behind this layer only while paths exist:
+      // the same one-entry Back its own layer performs.
+      const nav = forColumn(key).nav;
+      if (nav.length > 0) setNav(key, nav.slice(0, -1));
+    },
+  });
+
+  /**
+   * The board's half of the `useOpenInColumn` seam (SPEC.md §10, rider 3):
+   * every open lands in a path. A live named column hangs the path off its row;
+   * everything else — no column, a column an SSE frame just removed, an
+   * explicit `placement: "left"` — lands loose at the left edge.
    *
    * Resolution reads the *rendered* column set through a ref so the published
-   * handlers keep a stable identity: the search overlay holds them across every
-   * keystroke, and a new function per render would re-register on each one.
+   * handlers keep a stable identity across keystrokes.
    */
   const orderedRef = useRef<readonly BoardColumn[]>(ordered);
   orderedRef.current = ordered;
@@ -196,28 +328,26 @@ export function Board(): ReactElement {
   const navigation = useMemo<BoardNavigation>(
     () => ({
       open: (target) => {
-        // A caller that names a column is looking at the row; resolution is for
-        // callers that only know a document. The named column is still checked
-        // against the live set, because an SSE frame may have unpinned it
-        // between the keystroke and this call.
-        const named =
-          target.columnId != null &&
-          orderedRef.current.some((column) => column.id === target.columnId)
-            ? target.columnId
+        const named = target.origin?.view ?? target.columnId;
+        const view =
+          target.placement !== "left" &&
+          named != null &&
+          orderedRef.current.some((column) => column.id === named)
+            ? named
             : null;
-        const columnId = named ?? resolveColumn(orderedRef.current, target.subject ?? null);
-        if (columnId === null) return;
-        openInColumn(columnId, target.docId, target.reveal);
+        const result =
+          view !== null
+            ? openFromView(stripRef.current, view, target.docId, target.reveal)
+            : openLoose(stripRef.current, target.docId, target.reveal);
+        applyStrip(result);
         setSelectTitleFor(target.selectTitle === true ? target.docId : null);
-        setScrollTo(columnId);
-        setFlashing(columnId);
       },
       revealColumn: (columnId) => {
         setScrollTo(columnId);
         setFlashing(columnId);
       },
     }),
-    [openInColumn],
+    [applyStrip],
   );
 
   useRegisterBoardNavigation(navigation);
@@ -255,18 +385,19 @@ export function Board(): ReactElement {
     [board, surface, toast],
   );
 
-  const active = useActiveColumn(ordered);
-  const activeColumnId = active.id;
-  const activeColumn = ordered[active.index] ?? null;
-  const cursor = useRowCursor({ board: boardEl, activeColumnId });
-
   /**
    * The document the active column has open, if any — `e` and `f` act on it in
-   * preference to the row under the cursor (SPEC.md §10: "archive the open (or
-   * highlighted) document"). The fetch costs nothing: the reader below is
-   * already asking for exactly this key.
+   * preference to the row under the cursor (SPEC.md §10). For a query column
+   * that is its in-place reader's top; for a path column, the column's own
+   * document. The fetch costs nothing: the reader below is already asking for
+   * exactly this key.
    */
-  const openInActive = activeColumnId === null ? null : openDocId(forColumn(activeColumnId));
+  const openInActive =
+    activeColumnId === null
+      ? null
+      : parsePathKey(activeColumnId) === null
+        ? openDocId(forColumn(activeColumnId))
+        : docAtKey(strip, activeColumnId);
   const openDoc = useDoc(openInActive ?? undefined);
 
   /**
@@ -277,14 +408,12 @@ export function Board(): ReactElement {
    * full-viewport overlay makes the column under that resting cursor fire
    * `mouseover`, and `activate` would hand it the board on the strength of a
    * gesture nobody made — leaving `esc` dead over a column with no reader open
-   * (the UI-022 finding: seven dead presses, surviving a reload, cured by
-   * wiggling the mouse). So the close arms the keyboard's latch on the column
-   * that is already active; the next real `mousemove` releases it and
-   * hover-follows-active resumes untouched.
+   * (the UI-022 finding). So the close arms the keyboard's latch on the column
+   * that is already active; the next real `mousemove` releases it.
    *
-   * It must stay the only close: `esc`, `⌫`, the ✕ button and the depth-0
-   * auto-close all arrive as `FocusMode`'s `onClose`, and `f` toggles through
-   * here too. A close that skipped it would reproduce the bug "only sometimes".
+   * It must stay the only close: `esc`, `⌫`, the ✕ button, the depth-0
+   * auto-close and rider 3's link-follow (which closes focus before landing the
+   * loose path) all arrive here, and `f` toggles through here too.
    */
   const closeFocus = useCallback(() => {
     active.hold();
@@ -293,8 +422,9 @@ export function Board(): ReactElement {
 
   /**
    * `⇧←`/`⇧→` — the keyboard drag (SPEC.md §10). Same `persistMove` the pointer
-   * drag ends in, so `order` is written through UI-003's one path; a silent
-   * no-op at either end, with no wrap-around and no write.
+   * drag ends in, so the board document is written through one path; a silent
+   * no-op at either end, with no wrap-around and no write — and a no-op on a
+   * path column, which is not a board-document column and cannot be "moved".
    */
   const moveActiveColumn = useCallback(
     (delta: -1 | 1) => {
@@ -401,30 +531,39 @@ export function Board(): ReactElement {
               ...(activeColumnId === null ? {} : { columnId: activeColumnId }),
             });
           }}
+          onOpenHere={() => {
+            if (activeColumnId !== null && parsePathKey(activeColumnId) === null) {
+              openInColumn(activeColumnId, subject.id);
+            }
+          }}
           onOpenFocus={() => {
-            navigation.open({
-              docId: subject.id,
-              ...(activeColumnId === null ? {} : { columnId: activeColumnId }),
-            });
             setFocusDoc({ columnTitle: activeColumn?.title ?? "", docId: subject.id });
           }}
           onNotify={notify}
         />
       ),
     });
-  }, [activeColumn, activeColumnId, contextMenu, cursor, navigation, notify]);
+  }, [activeColumn, activeColumnId, contextMenu, cursor, navigation, notify, openInColumn]);
 
   /** The board's half of the keyboard seam: §10's bindings, phrased as acts. */
   const commands = useMemo<BoardCommands>(
     () => ({
       moveRowCursor: cursor.move,
-      openRowAtCursor: (fullScreen) => {
+      openRowAtCursor: (mode) => {
         if (cursor.docId === null || activeColumnId === null) return;
-        navigation.open({ docId: cursor.docId, columnId: activeColumnId });
-        if (fullScreen) {
+        if (mode === "fullScreen") {
+          // `⇧↵` opens **directly** in full screen (§10): the overlay and
+          // nothing else — closing it returns to the board exactly as it was.
           setFocusDoc({ columnTitle: activeColumn?.title ?? "", docId: cursor.docId });
+          return;
         }
+        if (mode === "here") {
+          if (parsePathKey(activeColumnId) === null) openInColumn(activeColumnId, cursor.docId);
+          return;
+        }
+        navigation.open({ docId: cursor.docId, columnId: activeColumnId });
       },
+      closeAllPaths: closeEveryPath,
       switchColumn: (delta) => {
         const next = active.switchBy(delta);
         if (next !== null) setScrollTo(next);
@@ -451,12 +590,14 @@ export function Board(): ReactElement {
       activeColumn,
       activeColumnId,
       archiveTarget,
+      closeEveryPath,
       closeFocus,
       cursor,
       focusDoc,
       moveActiveColumn,
       navigation,
       openInActive,
+      openInColumn,
       openRowMenu,
       toast,
     ],
@@ -496,11 +637,16 @@ export function Board(): ReactElement {
     void persistMove(source, from, to);
   }, [dragId, persistMove, preview]);
 
+  /**
+   * `＋` on a column (SPEC.md §10's creation bullet): the new document "opens
+   * immediately in a path off its column, title selected, ready to type" — the
+   * row it will grow under that column's own query is the path's origin.
+   */
   const addToColumn = useCallback(
     async (column: BoardColumn) => {
       try {
         const docId = await createInColumn.create({ folder: column.folder });
-        openInColumn(column.id, docId);
+        applyStrip(openFromView(stripRef.current, column.id, docId));
         setSelectTitleFor(docId);
         toast({
           tone: "info",
@@ -510,7 +656,7 @@ export function Board(): ReactElement {
         toast({ tone: "error", message: `Create failed — ${(cause as Error).message}` });
       }
     },
-    [createInColumn, openInColumn, toast],
+    [applyStrip, createInColumn, toast],
   );
 
   const editColumn = useCallback(
@@ -562,6 +708,54 @@ export function Board(): ReactElement {
     [board, createDoc, surface, toast],
   );
 
+  /** Rider 3's marks, derived from the strip at render — never stored on rows. */
+  const openSet = useMemo(() => openDocsOn(strip), [strip]);
+  const byId = useMemo(() => new Map(ordered.map((column) => [column.id, column])), [ordered]);
+
+  /** One act bundle per path — what `PathBand` hands its columns. */
+  const actsFor = useCallback(
+    (path: PathItem): PathActs => ({
+      follow: (index, docId, fromScrollY, reveal) => {
+        applyStrip(openFromPath(stripRef.current, path.id, index, docId, { reveal, fromScrollY }));
+      },
+      setStack: (index, stack) => {
+        applyStrip(setPathColStack(stripRef.current, path.id, index, stack), { flash: false });
+      },
+      setWidth: (index, width) => {
+        commitStrip(setPathColWidth(stripRef.current, path.id, index, width));
+      },
+      closeAfter: (index) => {
+        applyStrip(closeCol(stripRef.current, path.id, index), { flash: false });
+      },
+      closeWholePath: () => {
+        applyStrip(closeWholePath(stripRef.current, path.id), { flash: false });
+      },
+      restartHere: (index) => {
+        applyStrip(restartPathHere(stripRef.current, path.id, index));
+        toast({
+          tone: "info",
+          message: "Path restarted here — nothing hangs off a row any more.",
+        });
+      },
+      newPathRight: (index) => {
+        applyStrip(newPathRight(stripRef.current, path.id, index));
+      },
+      detach: () => {
+        commitStrip(detachPath(stripRef.current, path.id));
+        toast({
+          tone: "info",
+          message: "Path kept — the next pick from its origin row opens a new one.",
+        });
+      },
+      focusMode: (docId) => {
+        const originTitle =
+          path.origin === null ? null : (byId.get(path.origin.view)?.title ?? null);
+        setFocusDoc({ columnTitle: originTitle ?? "path", docId });
+      },
+    }),
+    [applyStrip, byId, commitStrip, toast],
+  );
+
   return (
     <main
       ref={boardEl}
@@ -611,7 +805,7 @@ export function Board(): ReactElement {
         </div>
       ) : null}
 
-      {board !== null && !isPending && columns.length === 0 ? (
+      {board !== null && !isPending && columns.length === 0 && pathCount === 0 ? (
         <div className="board-empty">
           <b>{board.title} is empty</b>
           Add columns to <code>boards/{board.id}.md</code> — with the ＋ beside this, or by asking
@@ -619,78 +813,107 @@ export function Board(): ReactElement {
         </div>
       ) : null}
 
-      {ordered.map((column) => (
-        <Column
-          key={column.id}
-          column={column}
-          isActive={column.id === activeColumnId}
-          isDragging={column.id === dragId}
-          isFlashing={column.id === flashing}
-          local={forColumn(column.id)}
-          selectTitle={openDocId(forColumn(column.id)) === selectTitleFor}
-          cursorDocId={column.id === activeColumnId ? cursor.docId : null}
-          onActivate={() => {
-            active.activate(column.id);
-          }}
-          onScroll={(scrollTop) => {
-            setScroll(column.id, scrollTop);
-          }}
-          onOpen={(target: OpenPayload) => {
-            const request = openRequest(target);
-            openInColumn(column.id, request.docId, request.reveal);
-          }}
-          onNav={(nav) => {
-            setNav(column.id, nav);
-            if (nav.length === 0) setSelectTitleFor(null);
-          }}
-          onFocusMode={(target: OpenPayload) => {
-            const request = openRequest(target);
-            setFocusDoc({
-              columnTitle: column.title,
-              docId: request.docId,
-              reveal: request.reveal,
-            });
-          }}
-          onAdd={() => {
-            void addToColumn(column);
-          }}
-          onRename={(title) => {
-            void editColumn(
-              column,
-              { title },
-              `Renamed — the view document’s title is now “${title}”.`,
-              "Rename",
-            );
-          }}
-          onEditQuery={(query) => {
-            void editColumn(
-              column,
-              { query: Object.keys(query).length === 0 ? null : query },
-              `Query updated — “${column.title}” now filters on the corpus, not on this browser.`,
-              "Edit query",
-            );
-          }}
-          onRemove={() => {
-            // The **board** document, by index: the view is left exactly where
-            // it was, and a board listing the same view twice loses the copy the
-            // user is looking at rather than both (SPEC.md §10, rider 2).
-            //
-            // The index is read from the *fetched* set rather than from the
-            // rendered one, because the rendered one may be a drag preview and
-            // the write goes to the array the server is holding.
-            const at = columns.findIndex((entry) => entry.id === column.id);
-            if (at >= 0) void surface.removeColumn(at, column.title);
-          }}
-          onDragStart={() => {
-            dragSource.current = ordered;
-            dropped.current = false;
-            setDragId(column.id);
-            setPreview(ordered.map((entry) => entry.id));
-          }}
-          onDragEnd={finishDrag}
-          onNotify={notify}
-        />
-      ))}
+      {strip.strip.map((item) => {
+        if (item.kind === "path") {
+          const originTitle =
+            item.origin === null ? null : (byId.get(item.origin.view)?.title ?? null);
+          return (
+            <PathBand
+              key={`path-${String(item.id)}`}
+              path={item}
+              originTitle={originTitle}
+              activeKey={activeColumnId}
+              flashingKey={flashing}
+              selectTitleFor={selectTitleFor}
+              acts={actsFor(item)}
+              onActivate={(key) => {
+                active.activate(key);
+              }}
+              onNotify={notify}
+            />
+          );
+        }
+        const column = byId.get(item.view);
+        if (column === undefined) return null;
+        const columnLocal = { scroll: item.scroll, nav: item.nav };
+        return (
+          <Column
+            key={column.id}
+            column={column}
+            isActive={column.id === activeColumnId}
+            isDragging={column.id === dragId}
+            isFlashing={column.id === flashing}
+            local={columnLocal}
+            selectTitle={openDocId(columnLocal) === selectTitleFor}
+            cursorDocId={column.id === activeColumnId ? cursor.docId : null}
+            originDocId={originDocOf(strip, column.id)}
+            openDocIds={openSet}
+            onActivate={() => {
+              active.activate(column.id);
+            }}
+            onScroll={(scrollTop) => {
+              setScroll(column.id, scrollTop);
+            }}
+            onOpenRow={(docId) => {
+              applyStrip(openFromView(stripRef.current, column.id, docId));
+            }}
+            onOpen={(target: OpenPayload) => {
+              const request = openRequest(target);
+              openInColumn(column.id, request.docId, request.reveal);
+            }}
+            onNav={(nav) => {
+              setNav(column.id, nav);
+              if (nav.length === 0) setSelectTitleFor(null);
+            }}
+            onFocusMode={(target: OpenPayload) => {
+              const request = openRequest(target);
+              setFocusDoc({
+                columnTitle: column.title,
+                docId: request.docId,
+                reveal: request.reveal,
+              });
+            }}
+            onAdd={() => {
+              void addToColumn(column);
+            }}
+            onRename={(title) => {
+              void editColumn(
+                column,
+                { title },
+                `Renamed — the view document’s title is now “${title}”.`,
+                "Rename",
+              );
+            }}
+            onEditQuery={(query) => {
+              void editColumn(
+                column,
+                { query: Object.keys(query).length === 0 ? null : query },
+                `Query updated — “${column.title}” now filters on the corpus, not on this browser.`,
+                "Edit query",
+              );
+            }}
+            onRemove={() => {
+              // The **board** document, by index: the view is left exactly where
+              // it was, and a board listing the same view twice loses the copy the
+              // user is looking at rather than both (SPEC.md §10, rider 2).
+              //
+              // The index is read from the *fetched* set rather than from the
+              // rendered one, because the rendered one may be a drag preview and
+              // the write goes to the array the server is holding.
+              const at = columns.findIndex((entry) => entry.id === column.id);
+              if (at >= 0) void surface.removeColumn(at, column.title);
+            }}
+            onDragStart={() => {
+              dragSource.current = ordered;
+              dropped.current = false;
+              setDragId(column.id);
+              setPreview(ordered.map((entry) => entry.id));
+            }}
+            onDragEnd={finishDrag}
+            onNotify={notify}
+          />
+        );
+      })}
 
       {/* No board is no place to put a column, so the ghost is absent rather
           than offering a creation that has nowhere to land. */}
@@ -712,6 +935,12 @@ export function Board(): ReactElement {
           docId={focusDoc.docId}
           listTitle={focusDoc.columnTitle}
           reveal={focusDoc.reveal}
+          onFollow={(docId, reveal) => {
+            // Rider 3: a link inside full screen closes it and lands as a
+            // loose path at the left edge of the showing board.
+            closeFocus();
+            applyStrip(openLoose(stripRef.current, docId, reveal));
+          }}
           onClose={closeFocus}
           onNotify={notify}
         />

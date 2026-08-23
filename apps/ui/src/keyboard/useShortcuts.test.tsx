@@ -30,6 +30,7 @@ function boardSpy(): BoardCommands & { readonly calls: string[] } {
     calls,
     moveRowCursor: record("moveRowCursor"),
     openRowAtCursor: record("openRowAtCursor"),
+    closeAllPaths: record("closeAllPaths"),
     switchColumn: record("switchColumn"),
     moveActiveColumn: record("moveActiveColumn"),
     toggleFocusMode: record("toggleFocusMode"),
@@ -60,6 +61,7 @@ describe("useShortcuts", () => {
     fireEvent.keyDown(document, { key: "j" });
     fireEvent.keyDown(document, { key: "ArrowUp" });
     fireEvent.keyDown(document, { key: "Enter" });
+    fireEvent.keyDown(document, { key: "Enter", altKey: true });
     fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
     fireEvent.keyDown(document, { key: "]" });
     fireEvent.keyDown(document, { key: "ArrowRight", shiftKey: true });
@@ -73,8 +75,9 @@ describe("useShortcuts", () => {
     expect(board.calls).toEqual([
       "moveRowCursor:1",
       "moveRowCursor:-1",
-      "openRowAtCursor:false",
-      "openRowAtCursor:true",
+      "openRowAtCursor:path",
+      "openRowAtCursor:here",
+      "openRowAtCursor:fullScreen",
       "switchColumn:1",
       "moveActiveColumn:1",
       "toggleFocusMode",
@@ -424,7 +427,7 @@ describe("useShortcuts", () => {
 
       fireEvent.keyDown(document, { key: "Enter" });
       fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
-      expect(board.calls).toEqual(["openRowAtCursor:false", "openRowAtCursor:true"]);
+      expect(board.calls).toEqual(["openRowAtCursor:path", "openRowAtCursor:fullScreen"]);
     });
 
     it("still opens the highlighted row when nothing focusable holds focus", () => {
@@ -437,7 +440,7 @@ describe("useShortcuts", () => {
         board,
       });
       fireEvent.keyDown(document, { key: "Enter" });
-      expect(board.calls).toEqual(["openRowAtCursor:false"]);
+      expect(board.calls).toEqual(["openRowAtCursor:path"]);
     });
   });
 

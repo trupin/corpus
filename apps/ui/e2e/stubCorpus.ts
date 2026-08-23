@@ -1,17 +1,20 @@
 import {
   DEFAULT_RECENT_JOBS,
+  DEFAULT_REFLECT_QUIET_MINUTES,
   ORCHESTRATOR_LANE,
   extractFormSource,
   formAnswerRecord,
   formatFormAnswerBody,
   FormSchema,
   isFormAnswerBody,
+  isUnreflected,
   parseFormAnswerBody,
   turnHeadings,
   unreadableAnswer,
   unterminatedFence,
   validateFormAnswer,
   type CaptureResult,
+  type Actor,
   type ConflictError,
   type CreateThreadResponse,
   type DeleteDocResult,
@@ -41,6 +44,8 @@ import {
   type QueueStatus,
   type ReattachConflictError,
   type ReattachThreadResponse,
+  type ReflectAskResult,
+  type ReflectStatus,
   type Relation,
   type RelatedDocs,
   type Resident,
@@ -143,6 +148,8 @@ type StubPayload =
   | QueueStatus
   | ReattachConflictError
   | ReattachThreadResponse
+  | ReflectAskResult
+  | ReflectStatus
   | RelatedDocs
   | StaleKeyError
   | SearchResults
@@ -214,6 +221,28 @@ export interface StubRow {
   /** SPEC.md §5's workflow position. */
   readonly stage?: string | null;
   readonly parent?: string | null;
+  /**
+   * When this document was last written, as the file holds it.
+   *
+   * Seeded because SPEC.md §7's reflection compares it against the corpus's
+   * clock, and every stubbed document was frozen at {@link SEEDED_AT} — so no
+   * spec could put a document on either side of a clock without moving the
+   * clock itself, which is the *other* half of the comparison. A spec about what
+   * changed needs both halves.
+   */
+  readonly updated?: string;
+  /**
+   * Who wrote last (`DocRow.lastActor`, CONTRACT-074).
+   *
+   * It was flatly `user` until UI-153, which is the value this stub's one writer
+   * — the page — genuinely has. §7's rule that **the agent's own writes never
+   * count as unreflected** cannot be reached from a stub that says everything
+   * was written by a person, so a spec seeds the agent's own documents here: the
+   * digest thread a reflection posts, and the changelog entries it writes.
+   * {@link StubCorpus.writeAsAgent} moves it too, because that write really is
+   * the agent's.
+   */
+  readonly lastActor?: Actor;
   readonly extra?: Readonly<Record<string, unknown>>;
   /** A staleness tier, or `null` for fresh — SPEC.md §5's ramp, never a string. */
   readonly stale?: StaleTier | null;
@@ -318,6 +347,8 @@ interface StoredDoc {
    * that lands, and by an out-of-band one.
    */
   key: string;
+  /** Who wrote last (CONTRACT-074) — see {@link StubRow.lastActor}. */
+  lastActor: Actor;
   /**
    * Whether the agent is in this thread (SPEC.md §8) — `none` until a turn asks
    * for it. Meaningless on a non-thread document, and reported as `null` there.
@@ -580,7 +611,27 @@ export interface StubOptions {
    * not gets the composer exactly as it was before the feature.
    */
   readonly lanes?: readonly AgentLane[];
+  /**
+   * The reflection clock, as `GET /api/workspace/reflect` reports it
+   * (SPEC.md §7's rider 9) — everything except `changed`, which this stub
+   * **derives** (see below).
+   *
+   * The default is a clock *after* every seeded document, so no spec grows a
+   * mark it did not ask for: `SEEDED_AT` is 2026-07-01 and every write stamps
+   * seconds after it, so a corpus reflected on in 2026-08 is quiet. A spec about
+   * what changed moves the clock **back**, and the rows it seeded become
+   * unreflected without anything else moving.
+   */
+  readonly reflect?: {
+    readonly reflected?: string | null;
+    readonly pending?: string | null;
+    readonly lastDigest?: string | null;
+    readonly quiet?: number;
+  };
 }
+
+/** The clock a stub reports unless a spec moves it — after every seeded write. */
+export const STUB_REFLECTED_AT = "2026-08-01T09:00:00.000Z";
 
 export interface StubCorpus {
   /** Every `/api` request the page made, in order. */
@@ -649,6 +700,21 @@ export interface StubCorpus {
    * it is two moments, not a state.
    */
   readonly releaseLane: (lane: string) => Promise<void>;
+  /**
+   * **A reflection landing** — the queue transition SPEC.md §7's marks clear on.
+   *
+   * It happens in a process this suite does not run, so a spec that wants to see
+   * the board go quiet has to move the clock itself. Like every other writer on
+   * this interface it moves the corpus **behind the page's back**: nothing the
+   * page did caused it, so no `invalidateQueries` of its own is coming, and what
+   * repaints the bar and the columns is the `invalidate` frame a spec pushes
+   * afterwards — which is the whole point, since "the marks clear when the job
+   * lands" is otherwise indistinguishable from "they were never drawn".
+   *
+   * The clock advances to `at`, the pending reflection clears, and `digest`
+   * becomes the thread the control links to.
+   */
+  readonly landReflection: (at: string, digest?: string) => Promise<void>;
 }
 
 function seeded(row: StubRow): StoredDoc {
@@ -670,8 +736,9 @@ function seeded(row: StubRow): StoredDoc {
     parent: row.parent ?? null,
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
-    updated: SEEDED_AT,
+    updated: row.updated ?? SEEDED_AT,
     key: nextStubKey(),
+    lastActor: row.lastActor ?? "user",
     agent: "none",
     related: row.related ?? null,
     unread: row.unread ?? false,
@@ -845,10 +912,18 @@ function isDocStatus(value: unknown): value is DocStatus {
  * which is precisely the state the mechanism exists to detect — and every
  * conflict spec would then be testing the stub's memory rather than the board's.
  */
-function stampUpdated(doc: StoredDoc): void {
+function stampUpdated(doc: StoredDoc, actor: Actor = "user"): void {
   writes += 1;
   doc.updated = new Date(Date.parse(SEEDED_AT) + writes * 1000).toISOString();
   doc.key = nextStubKey();
+  /*
+   * And who wrote it (CONTRACT-074). It travels with `updated` for the same
+   * reason the key does: SPEC.md §7 reads the pair together — a document is
+   * unreflected when it changed *and* somebody other than the agent changed it —
+   * so a stub that advanced one without the other could report a state the
+   * server never produces.
+   */
+  doc.lastActor = actor;
 }
 
 /**
@@ -914,6 +989,18 @@ export async function stubCorpus(
    * changed.
    */
   let halted = false;
+
+  /*
+   * The reflection clock, the pending reflection and the last digest (SPEC.md
+   * §7's rider 9). Mutable for `halted`'s reason: the ask and the landing are
+   * the two things whose whole observable effect is this state, and a stub that
+   * answered them without moving it would let the Reflect control look correct
+   * while the corpus it reports never changed.
+   */
+  let reflectedAt: string | null = options.reflect?.reflected ?? STUB_REFLECTED_AT;
+  let pendingReflection: string | null = options.reflect?.pending ?? null;
+  let lastDigest: string | null = options.reflect?.lastDigest ?? null;
+  let reflectionAsks = 0;
 
   /*
    * The roster **is** the set of designations, as it is on the server (SPEC.md
@@ -1105,7 +1192,7 @@ export async function stubCorpus(
        * agent has already looked at — a value no browser spec is in a position
        * to move. UI-153 will need a seed for it.
        */
-      lastActor: "user",
+      lastActor: doc.lastActor,
       stage: doc.stage,
       order: doc.order,
       query: doc.query,
@@ -1493,6 +1580,53 @@ export async function stubCorpus(
     });
 
     if (url.pathname === "/api/queue/status") return json(route, queueStatus());
+
+    /*
+     * `GET /api/workspace/reflect` and the ask (SPEC.md §7's rider 9, UI-153).
+     *
+     * **`changed` is derived, never seeded.** The server counts it with the
+     * contract's `isUnreflected` and the board marks each row with the identical
+     * call, and a test asserts the two agree — so a stub that took a number for
+     * it could report `2 changes` over a board with three marks on it, and the
+     * one property the whole design rests on would be untestable here. It counts
+     * the same store the rows come from, with the same function.
+     *
+     * The ask answers **`202` always**, never a `409`: §7's "an ask while one is
+     * pending is answered with the pending one, never doubled". `pending` is
+     * what tells the two apart, and the second ask enqueues nothing.
+     */
+    const reflectStatus = (): ReflectStatus => ({
+      reflected: reflectedAt,
+      pending: pendingReflection,
+      changed: [...store.values()].filter((doc) =>
+        isUnreflected(
+          { updated: doc.updated, lastActor: doc.lastActor, status: doc.status },
+          reflectedAt,
+        ),
+      ).length,
+      lastDigest,
+      quiet: options.reflect?.quiet ?? DEFAULT_REFLECT_QUIET_MINUTES,
+    });
+
+    if (url.pathname === "/api/workspace/reflect") {
+      if (method === "POST") {
+        const already = pendingReflection !== null;
+        if (!already) {
+          reflectionAsks += 1;
+          pendingReflection = `evt_reflect_${String(reflectionAsks)}`;
+        }
+        return json(
+          route,
+          {
+            eventId: pendingReflection ?? "evt_reflect_0",
+            since: reflectedAt,
+            pending: already,
+          } satisfies ReflectAskResult,
+          202,
+        );
+      }
+      return json(route, reflectStatus());
+    }
 
     /*
      * `POST /api/queue/halt` and `/api/queue/resume` — the strip's HALT control
@@ -2632,11 +2766,19 @@ export async function stubCorpus(
       jobs[index] = { ...job, status: "in-progress" };
       return Promise.resolve();
     },
+    landReflection: (at, digest) => {
+      reflectedAt = at;
+      pendingReflection = null;
+      if (digest !== undefined) lastDigest = digest;
+      return Promise.resolve();
+    },
     writeAsAgent: (docId, body) => {
       const doc = store.get(docId);
       if (doc === undefined) throw new Error(`writeAsAgent: no ${docId}`);
       doc.body = body;
-      stampUpdated(doc);
+      // The **agent's** write, so it stamps the agent (SPEC.md §7's amendment:
+      // what the agent writes is its output, not new work for it).
+      stampUpdated(doc, "agent");
       return Promise.resolve(doc.key);
     },
   };

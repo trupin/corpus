@@ -73,6 +73,13 @@ export const DELETE_ARMED_LABEL = "Really delete? Click again";
 export const DELETE_ARMED_META =
   "permanent · git keeps history · its threads become orphaned records";
 
+/** One "open in… <board>" target: a board that is not the showing one. */
+export interface BoardTarget {
+  readonly id: string;
+  readonly title: string;
+  readonly open: () => void;
+}
+
 export interface DocActionSubject {
   readonly id: string;
   readonly title: string;
@@ -94,8 +101,17 @@ export interface DocActionOptions {
   readonly close: () => void;
   /** The document left: the host pops it off its navigation stack. */
   readonly onGone?: (() => void) | undefined;
+  /** Open — a path off this row (SPEC.md §10, rider 3; the `↵` act). */
   readonly onOpen?: (() => void) | undefined;
+  /** Open here — the column's own in-place reader (the `⌥↵` act). */
+  readonly onOpenHere?: (() => void) | undefined;
   readonly onOpenFocus?: (() => void) | undefined;
+  /**
+   * "open in… <boards>" (rider 3): one item per other board, each landing the
+   * document as a loose path at the left edge of that board. Built by the
+   * caller from the board surface, so this module stays board-free.
+   */
+  readonly boardTargets?: readonly BoardTarget[] | undefined;
   /**
    * Show this document's comments list (SPEC.md §10's rider, UI-063).
    *
@@ -111,7 +127,8 @@ export function useDocActions(
   subject: DocActionSubject,
   options: DocActionOptions,
 ): readonly MenuAction[] {
-  const { surface, onNotify, close, onGone, onOpen, onOpenFocus, onComments } = options;
+  const { surface, onNotify, close, onGone, onOpen, onOpenHere, onOpenFocus, onComments } = options;
+  const { boardTargets } = options;
   const actions = useRowActions({ id: subject.id, title: subject.title }, { onNotify });
 
   /*
@@ -193,21 +210,44 @@ export function useDocActions(
   const settable = statusLock(subject) === null;
   const list: MenuAction[] = [];
 
+  /*
+   * The four ways to open a row (SPEC.md §10, rider 3): a path off the row, the
+   * column's own reader, the full-screen overlay, and a loose path on another
+   * board. The keys named in the metas are the registry's own.
+   */
   if (surface === "row" && onOpen !== undefined) {
     list.push({
       id: "open",
       label: "Open",
-      meta: "in this column’s reader",
+      meta: "a new column to the right (↵)",
       run: onOpen,
+    });
+  }
+  if (surface === "row" && onOpenHere !== undefined) {
+    list.push({
+      id: "open-here",
+      label: "Open here",
+      meta: "in this column’s own reader (⌥↵)",
+      run: onOpenHere,
     });
   }
   if (surface === "row" && onOpenFocus !== undefined) {
     list.push({
       id: "open-focus",
-      label: "Open in focus",
-      meta: "full screen (⇧↵)",
+      label: "Open in full screen",
+      meta: "the overlay (⇧↵)",
       run: onOpenFocus,
     });
+  }
+  if (surface === "row") {
+    for (const target of boardTargets ?? []) {
+      list.push({
+        id: `open-in-board:${target.id}`,
+        label: `Open in ${target.title}`,
+        meta: "a loose path at that board’s left edge",
+        run: target.open,
+      });
+    }
   }
 
   // The comments list, first on the reader's menu because it is a place to go

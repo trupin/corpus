@@ -28,6 +28,13 @@ import { useEffect, useRef } from "react";
 export const EscapeLayerPriority = {
   /** A column reader. Bottom of the chain — SPEC.md §10 says "then the column reader". */
   Reader: 0,
+  /**
+   * The board's path layer (SPEC.md §10, rider 3): "`esc` closes the active
+   * path column (after overlays and focus mode, before the column reader's
+   * back)", and `⇧esc` closes every path. Registered only while the showing
+   * board holds a path, so a path-free board leaves `esc` exactly where it was.
+   */
+  PathStrip: 5,
   /** Focus mode: full-viewport, `z-index: 35`. */
   Focus: 10,
   /** The search overlay and other modal surfaces above focus mode (`z-index: 40`). */

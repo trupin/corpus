@@ -23,11 +23,19 @@ import {
  * the act rather than as the key, so the registry stays the only place a key
  * appears and this stays the only place the board's behaviour does.
  */
+/** The three ways `↵` opens a row (SPEC.md §10, rider 3). */
+export type OpenRowMode = "path" | "here" | "fullScreen";
+
 export interface BoardCommands {
   /** `↑`/`↓`, `j`/`k`: moves the row cursor in the active column, clamped at both ends. */
   readonly moveRowCursor: (delta: -1 | 1) => void;
-  /** `↵` opens the highlighted row in its column; `⇧↵` also raises focus mode. */
-  readonly openRowAtCursor: (fullScreen: boolean) => void;
+  /**
+   * `↵` opens the highlighted row in a **path** off its row; `⌥↵` opens it
+   * here, in the column's own reader; `⇧↵` opens it directly in full screen.
+   */
+  readonly openRowAtCursor: (mode: OpenRowMode) => void;
+  /** `⇧esc`, and the bar's "close paths": every path on the showing board. */
+  readonly closeAllPaths: () => void;
   /** `←`/`→`, `[`/`]`: switches the active column, clamped at both ends. */
   readonly switchColumn: (delta: -1 | 1) => void;
   /** `⇧←`/`⇧→`: moves the active column by rewriting the board document's `columns`. */
@@ -45,6 +53,7 @@ export interface BoardCommands {
 const NO_BOARD: BoardCommands = {
   moveRowCursor: () => undefined,
   openRowAtCursor: () => undefined,
+  closeAllPaths: () => undefined,
   switchColumn: () => undefined,
   moveActiveColumn: () => undefined,
   toggleFocusMode: () => undefined,
@@ -82,7 +91,8 @@ export function BoardCommandsProvider({
   const commands = useMemo<BoardCommands>(
     () => ({
       moveRowCursor: (delta) => registered.current?.moveRowCursor(delta),
-      openRowAtCursor: (fullScreen) => registered.current?.openRowAtCursor(fullScreen),
+      openRowAtCursor: (mode) => registered.current?.openRowAtCursor(mode),
+      closeAllPaths: () => registered.current?.closeAllPaths(),
       switchColumn: (delta) => registered.current?.switchColumn(delta),
       moveActiveColumn: (delta) => registered.current?.moveActiveColumn(delta),
       toggleFocusMode: () => registered.current?.toggleFocusMode(),

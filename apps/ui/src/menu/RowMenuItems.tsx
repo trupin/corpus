@@ -1,7 +1,8 @@
 import type { DocRow } from "@corpus/contract";
 import { stalenessLevel, type RowNotice, type StalenessLevel } from "@corpus/kit";
 import type { ReactElement } from "react";
-import { useDocActions } from "./docActions";
+import { useMaybeBoardSurface } from "../board/BoardsProvider";
+import { useDocActions, type BoardTarget } from "./docActions";
 import { MenuItems } from "./MenuItems";
 
 /**
@@ -57,7 +58,10 @@ export function subjectFromElement(element: HTMLElement): RowSubject | null {
 export interface RowMenuItemsProps {
   readonly subject: RowSubject;
   readonly close: () => void;
+  /** Open — a path off this row (SPEC.md §10, rider 3). */
   readonly onOpen: () => void;
+  /** Open here — the column's own in-place reader. */
+  readonly onOpenHere: () => void;
   readonly onOpenFocus: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -66,15 +70,39 @@ export function RowMenuItems({
   subject,
   close,
   onOpen,
+  onOpenHere,
   onOpenFocus,
   onNotify,
 }: RowMenuItemsProps): ReactElement {
+  /*
+   * "open in… <boards>" (rider 3) — one item per board that is not showing,
+   * each landing the document as a loose path at that board's left edge. Read
+   * through the tolerant accessor: a menu rendered outside the provider (a
+   * component test) simply offers no board items, which is also the honest
+   * answer for a workspace with one board.
+   */
+  const boards = useMaybeBoardSurface();
+  const boardTargets: readonly BoardTarget[] =
+    boards === null
+      ? []
+      : boards.boards
+          .filter((board) => board.id !== boards.current?.id)
+          .map((board) => ({
+            id: board.id,
+            title: board.title,
+            open: () => {
+              boards.openOnBoard(board.id, subject.id);
+            },
+          }));
+
   const actions = useDocActions(subject, {
     surface: "row",
     onNotify,
     close,
     onOpen,
+    onOpenHere,
     onOpenFocus,
+    boardTargets,
   });
   return <MenuItems actions={actions} onDone={close} />;
 }

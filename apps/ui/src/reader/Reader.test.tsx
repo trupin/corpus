@@ -323,7 +323,14 @@ describe("Reader", () => {
     });
   });
 
-  it("empties the stack on ⇧esc, the keyboard form of shift-clicking Back", async () => {
+  /**
+   * `⇧esc` is "close every path on this board" since rider 3 (SPEC.md §10),
+   * dispatched by the board's own layer. With no paths that layer is absent,
+   * and the reader's layer **consumes the press without acting**: a key whose
+   * one meaning is "close paths" must not fall back to popping history.
+   * Straight-to-list stays on shift-clicking Back.
+   */
+  it("consumes ⇧esc without acting — the key belongs to close-every-path now", async () => {
     const { container } = render(
       <Host
         wire={fullWire()}
@@ -336,9 +343,13 @@ describe("Reader", () => {
     await showsTitle(container, "Mortgage options");
 
     fireEvent.keyDown(document, { key: "Escape", shiftKey: true });
-    await waitFor(() => {
-      expect(container.querySelector(".reader")).toBeNull();
-    });
+    // Still on the same document, at the same depth: nothing popped.
+    await showsTitle(container, "Mortgage options");
+    expect(container.querySelector(".reader")).not.toBeNull();
+
+    // A plain esc still goes back one entry.
+    fireEvent.keyDown(document, { key: "Escape" });
+    await showsTitle(container, "Rates");
   });
 
   /**

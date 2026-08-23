@@ -165,16 +165,15 @@ test.describe("the reader's shipped stylesheet", () => {
   });
 
   /**
-   * The other half of the same guarantee, in the running board.
-   *
-   * UI-019 made the reader-open width a ratio over the column's own base rather
-   * than a second hard constant, so the prototype's 560 px is no longer
-   * readable out of the stylesheet — but it is still exactly what a column with
-   * no chosen width lands on, and that is the promise `design/index.html` makes.
-   * Asserting it here keeps the prototype measure pinned where it now actually
-   * lives.
+   * The other half of the same guarantee, in the running board — remeasured for
+   * UI-149 (SPEC.md §10, rider 3): "a query column no longer widens when it
+   * opens a reader: the reader column has its own width". The reader a row
+   * click opens is a **path column** at `design/navigation.html`'s 440px, and
+   * the query column keeps exactly the width its document carries.
    */
-  test("a column with no chosen width still opens to the prototype's 560px", async ({ page }) => {
+  test("a row click opens a 440px path column and the query column keeps its width", async ({
+    page,
+  }) => {
     await stubCorpus(page, [
       {
         id: "doc_view_inbox",
@@ -192,8 +191,9 @@ test.describe("the reader's shipped stylesheet", () => {
     await expect(column).toHaveCSS("width", "336px");
 
     await page.locator('.row[data-row-doc="doc_note"]').click();
-    await expect(column.locator(".reader")).toBeVisible();
-    await expect(column).toHaveCSS("width", "560px");
+    await expect(page.locator(".pcol .reader")).toBeVisible();
+    await expect(column).toHaveCSS("width", "336px");
+    await expect(page.locator(".pcol")).toHaveCSS("width", "440px");
   });
 
   test("gives focus mode a full viewport and a wider measure", async ({ page }) => {

@@ -51,6 +51,8 @@ export interface KeyChord {
   readonly shift?: boolean | undefined;
   /** `true` requires ⌘ or Ctrl; omitted requires neither. */
   readonly mod?: boolean | undefined;
+  /** `true` requires ⌥; omitted requires it absent (`⌥↵` is "open here"). */
+  readonly alt?: boolean | undefined;
   /** The `<kbd>` chip in the cheat sheet. Omitted when the description names the key. */
   readonly label?: string | undefined;
 }
@@ -155,7 +157,7 @@ export function chordDirection(event: KeyboardEvent): -1 | 1 {
 
 export function matchesChord(chord: KeyChord, event: KeyboardEvent): boolean {
   if (!chord.keys.includes(event.key)) return false;
-  if (event.altKey) return false;
+  if ((chord.alt ?? false) !== event.altKey) return false;
   if ((chord.mod ?? false) !== (event.metaKey || event.ctrlKey)) return false;
   if (chord.shift !== undefined && chord.shift !== event.shiftKey) return false;
   return true;
@@ -171,6 +173,7 @@ export function chordProbes(chord: KeyChord): readonly KeyboardEventInit[] {
     key,
     shiftKey: chord.shift ?? false,
     metaKey: chord.mod === true,
+    altKey: chord.alt === true,
   }));
 }
 
@@ -207,9 +210,21 @@ export const SHORTCUTS: readonly Shortcut[] = [
     scope: "board",
     yieldsToFocusedControl: true,
     group: "rows",
-    description: "open document",
+    description: "open — a new column to the right",
     run: (context) => {
-      context.board.openRowAtCursor(false);
+      context.board.openRowAtCursor("path");
+    },
+  },
+  {
+    id: "rows.openHere",
+    chords: [{ keys: ["Enter"], shift: false, alt: true, label: "⌥↵" }],
+    scope: "board",
+    /** A button activates on `↵` whatever the modifiers, so this yields too. */
+    yieldsToFocusedControl: true,
+    group: "rows",
+    description: "open here, in this column",
+    run: (context) => {
+      context.board.openRowAtCursor("here");
     },
   },
   {
@@ -221,7 +236,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     group: "rows",
     description: "open in full screen",
     run: (context) => {
-      context.board.openRowAtCursor(true);
+      context.board.openRowAtCursor("fullScreen");
     },
   },
   {
@@ -247,7 +262,21 @@ export const SHORTCUTS: readonly Shortcut[] = [
     scope: "global",
     boundBy: "escape-layer",
     group: "layers",
-    description: "close / back",
+    description: "close the active path column / back",
+  },
+  {
+    /**
+     * Rider 3's "close every path on this board". Dispatched by the board's
+     * own escape layer (`EscapeLayerPriority.PathStrip`), which outranks the
+     * readers and yields to focus mode and the overlays — declared here so the
+     * cheat sheet stays provably complete, exactly as `layers.close` is.
+     */
+    id: "paths.closeAll",
+    chords: [{ keys: ["Escape"], shift: true, label: "⇧esc" }],
+    scope: "board",
+    boundBy: "escape-layer",
+    group: "layers",
+    description: "close every path on this board",
   },
   {
     id: "columns.switch",

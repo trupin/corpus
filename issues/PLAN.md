@@ -1231,6 +1231,7 @@ left in a report.
 | UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | todo | P3 | — |
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | done | P1 | SHARED-061 |
 | UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | todo | P1 | UI-145 |
+| UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | todo | P2 | UI-149 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
@@ -1455,7 +1456,7 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | CLI-060 | Board flags, `--stage`, `--unset`, `corpus folder` and `corpus reflect`; `--pinned` and view `--order` go | done | P1 | opus | CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-138, SERVER-136, SERVER-137 |
 | CLI-061 | `corpus upgrade` and `corpus workspace upgrade` report the data migrations a workspace needs, as commands an agent can run | done | P0 | opus | CONTRACT-074, CLI-060 |
 | UI-148 | Boards: the board bar, columns read from the board document, order and pin writes go to the board, one board always open | done | P0 | opus | CONTRACT-074, SERVER-138 |
-| UI-149 | Paths: a row opens a column to the right, no loops, open here, restart, new path right, keep, close, close all — and every `open()` caller lands in a path | todo | P0 | fable | UI-148 |
+| UI-149 | Paths: a row opens a column to the right, no loops, open here, restart, new path right, keep, close, close all — and every `open()` caller lands in a path | done | P0 | fable | UI-148 |
 | UI-152 | Kanban boards: derived stage columns, a drag follows the transition graph, stage and status chips, the graph drawn | todo | P1 | opus | UI-148, SERVER-138 |
 | UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | todo | P0 | opus | UI-149, CONTRACT-075 |
 | UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | todo | P1 | opus | UI-149 |

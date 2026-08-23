@@ -16,6 +16,7 @@ import {
 } from "react";
 import { useToast } from "../shell/Toasts";
 import { BOARD_DOCUMENT_FOLDER, resolveBoard, type Board } from "./boardDoc";
+import { openLoose } from "./strip";
 import { nextBoardOrder, planBoardReorder } from "./boardOrder";
 import {
   bindBoardLocalState,
@@ -51,6 +52,12 @@ export interface BoardSurface {
   readonly local: BoardLocalStateApi;
   /** Shows a board that is already on the bar. */
   readonly showBoard: (boardId: string) => void;
+  /**
+   * "Open in <board>" (SPEC.md §10, rider 3): lands the document as a **loose
+   * path at the left edge** of the named board and shows it. The write goes to
+   * that board's browser-local strip — a board document never records a path.
+   */
+  readonly openOnBoard: (boardId: string, docId: string) => void;
   /**
    * **The explorer's act** (SPEC.md §10, rider 1: "a `type: board` document in
    * the tree *is* the board: clicking it shows that board, restoring it first if
@@ -126,6 +133,22 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
       chooseBoard(boardId);
     },
     [chooseBoard],
+  );
+
+  const openOnBoard = useCallback(
+    (boardId: string, docId: string) => {
+      /*
+       * The act is the same loose-left landing every origin-less open gets —
+       * including the re-centre when the target board already shows the
+       * document in a path. The flash cannot ride a board switch (the target
+       * board mounts fresh), so the landing announces itself by being the
+       * left-most column.
+       */
+      const result = openLoose(store.stripOf(boardId), docId);
+      store.commitStrip(boardId, result.board);
+      chooseBoard(boardId);
+    },
+    [chooseBoard, store],
   );
 
   const openBoard = useCallback(
@@ -309,6 +332,7 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
       error,
       local,
       showBoard,
+      openOnBoard,
       openBoard,
       createBoard,
       renameBoard,
@@ -333,6 +357,7 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
       moveBoard,
       moveColumn,
       openBoard,
+      openOnBoard,
       removeColumn,
       renameBoard,
       setDefaultBoard,
@@ -352,4 +377,15 @@ export function useBoardSurface(): BoardSurface {
   const surface = useContext(BoardsContext);
   if (surface === null) throw new Error("useBoardSurface must be used inside <BoardsProvider>");
   return surface;
+}
+
+/**
+ * The surface, or `null` outside the provider — for components that merely
+ * *decorate* with board knowledge (a row menu's "open in… <boards>") and are
+ * legitimately rendered without one in component tests. Anything that *needs*
+ * the surface keeps using {@link useBoardSurface}, whose throw is the guard
+ * against a silent empty board.
+ */
+export function useMaybeBoardSurface(): BoardSurface | null {
+  return useContext(BoardsContext);
 }

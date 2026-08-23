@@ -85,7 +85,14 @@ const NOTE: StubRow = {
 
 /** One animation frame's worth of the geometry a reader can see. */
 interface Frame {
-  /** `.doc-body`'s viewport position and measure. */
+  /**
+   * `.doc-body`'s position and measure. `top` and `closing` are viewport
+   * coordinates; `left` is **relative to the hosting column card**, because
+   * since UI-149 (rider 3) opening a document snap-scrolls the board to bring
+   * the new path column into view — deliberate, user-visible navigation, not
+   * the content-driven reflow this suite exists to forbid. Movement *inside*
+   * the column still fails: the body's offset within its card never changes.
+   */
   readonly top: number;
   readonly left: number;
   readonly width: number;
@@ -117,9 +124,11 @@ async function sampleFrames(page: Page, ms: number): Promise<void> {
       const last = paragraphs[paragraphs.length - 1];
       if (body !== null && last !== undefined) {
         const box = body.getBoundingClientRect();
+        const host = body.closest(".col");
+        const hostLeft = host === null ? 0 : host.getBoundingClientRect().left;
         frames.push({
           top: round(box.top),
-          left: round(box.left),
+          left: round(box.left - hostLeft),
           width: round(box.width),
           closing: round(last.getBoundingClientRect().top),
           scrollTop: scroller instanceof HTMLElement ? scroller.scrollTop : -1,

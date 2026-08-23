@@ -31,6 +31,9 @@ const VIEW = {
   query: { type: "thread" },
 };
 
+/** The reader a row click opens — a path column since UI-149 (rider 3). */
+const reader = (page: import("@playwright/test").Page) => page.locator(".pcol");
+
 const column = (page: import("@playwright/test").Page) =>
   page.locator('.col[data-col="doc_view_threads"]');
 
@@ -80,7 +83,7 @@ test.describe("a request nobody has picked up", () => {
 
       // In the card: the sentence itself, and the clock it counts from.
       await row(page, "th_ask").click();
-      const pending = column(page).locator(".thread-card .working");
+      const pending = reader(page).locator(".thread-card .working");
       await expect(pending).toBeVisible();
       await expect(pending).toHaveAttribute("data-pending-state", "waiting");
       await expect(pending).toHaveText("queued — waiting to be picked up");
@@ -110,7 +113,7 @@ test.describe("a request nobody has picked up", () => {
       expect(page.url().endsWith("/")).toBe(true);
 
       // …and the row's dot now pulses, because now something is running.
-      await column(page).getByRole("button", { name: "‹ Threads" }).click();
+      await reader(page).getByRole("button", { name: "‹ Threads" }).click();
       await expect(row(page, "th_ask")).toBeVisible();
       await expect(column(page).locator(".working-dot")).toHaveCount(1);
       await expect(column(page).locator(".queued-dot")).toHaveCount(0);

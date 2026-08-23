@@ -51,7 +51,18 @@ const THREADS_VIEW: StubRow = {
   path: "data/docs/views/threads.md",
   query: { type: "thread" },
   order: 1,
+  // The reading width this suite's slot geometry was measured at. It used to
+  // arrive by the reader-open widening (336 → 560); UI-149 removed the
+  // widening (rider 3), so the helpers below open **in the column** ("open
+  // here") and the column simply carries the width the measurements assume.
+  extra: { width: 560 },
 };
+
+/** Opens `th_host` in the column's own reader, at the seeded 560px. */
+async function openHostHere(page: Page): Promise<void> {
+  await page.locator('.row[data-row-doc="th_host"]').click({ button: "right" });
+  await page.locator('[role="menuitem"][data-act="open-here"]').click();
+}
 
 const HOST: StubRow = {
   id: "th_host",
@@ -503,7 +514,7 @@ async function openWith(page: Page, lanes: readonly AgentLane[], height: number)
   });
   await page.goto("/");
   await page.locator(".board").waitFor();
-  await page.locator('.row[data-row-doc="th_host"]').click();
+  await openHostHere(page);
   await expect(page.locator('.reader [data-composer="th_host"]')).toBeVisible();
   await page.mouse.move(AWAY.x, AWAY.y);
   const line = page.locator('button[data-address-line="th_host"]');
@@ -1033,7 +1044,7 @@ async function openReply(page: Page, lanes: readonly AgentLane[]): Promise<HeldB
   const held = await holdSkillBody(page);
   await page.goto("/");
   await page.locator(".board").waitFor();
-  await page.locator('.row[data-row-doc="th_host"]').click();
+  await openHostHere(page);
   await expect(page.locator('.reader [data-composer="th_host"]')).toBeVisible();
   await page.mouse.move(AWAY.x, AWAY.y);
   return held;
