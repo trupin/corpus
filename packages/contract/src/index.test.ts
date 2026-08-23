@@ -46,4 +46,16 @@ describe("@corpus/contract entry point", () => {
   it("exports the turn-append mounting helper the dual-media route needs", () => {
     expect(typeof contract.mountAppendTurn).toBe("function");
   });
+
+  /**
+   * CONTRACT-070. The heading scan reaches the server and the CLI through this
+   * barrel and nowhere else — it is the whole reason the scan moved here, so a
+   * missing export is a second copy waiting to be written.
+   */
+  it.each(["headingSections", "enclosingHeadings", "renderHeadingPath"])(
+    "exports the format rule %s, so neither application keeps a copy",
+    (name) => {
+      expect(typeof contract[name as keyof typeof contract]).toBe("function");
+    },
+  );
 });

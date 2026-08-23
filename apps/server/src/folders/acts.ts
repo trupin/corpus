@@ -48,6 +48,7 @@ import type {
   Actor,
   DeleteFolderResult,
   DeletedFolderDoc,
+  FolderRefusal,
   FolderStatusChange,
   FolderStatusResult,
   MovedFolderDoc,
@@ -195,6 +196,7 @@ export async function setFolderArchived(
     const stage: string[] = [];
     const project: string[] = [];
     const warnings: Warning[] = [];
+    const refused: FolderRefusal[] = [];
 
     for (const member of members) {
       try {
@@ -213,11 +215,11 @@ export async function setFolderArchived(
       } catch (error) {
         // §10's rule for a bulk act — "applies to what it can and reports what
         // it could not", and "never refuses the whole set because of one
-        // document". The result shape has no per-document refusal to carry
-        // (CONTRACT-075), so the document is absent from `documents`, which is
-        // the honest answer to "what did this act change", and the reason is
-        // logged where an operator can read it.
-        refusalLogged(workspace, folder, verb, member.id, error);
+        // document". The document keeps the status it had, so it is still in
+        // `documents` (this act reports the status each document *has*), and
+        // `refused` is what says why it kept it (CONTRACT-078). The log half
+        // stays: §11 wants an operator to be able to read the throw itself.
+        refused.push(refusalReported(workspace, folder, verb, member.id, error));
       }
     }
 
@@ -246,6 +248,7 @@ export async function setFolderArchived(
       // status the document **has**, and after `finishMutation` the projection
       // is the answer to that.
       documents: statusesAfter(workspace, members),
+      refused,
       warnings: [...warnings, ...commitWarnings(commit)],
     };
   });
@@ -280,6 +283,7 @@ export async function deleteFolder(
     const source = folderPath(folder);
     const documents = documentsUnder(workspace.projection, folder);
     const removed: DeletedFolderDoc[] = [];
+    const refused: FolderRefusal[] = [];
     const orphanedThreadIds = new Set<string>();
     const stage: string[] = [];
     const unproject: string[] = [];
@@ -296,7 +300,9 @@ export async function deleteFolder(
         unproject.push(...plan.unproject);
         for (const id of plan.orphanedThreadIds) orphanedThreadIds.add(id);
       } catch (error) {
-        refusalLogged(workspace, folder, "delete", member.id, error);
+        // The document still exists, so it is absent from `documents` — which
+        // names what the delete removed — and named in `refused` instead.
+        refused.push(refusalReported(workspace, folder, "delete", member.id, error));
       }
     }
 
@@ -333,7 +339,7 @@ export async function deleteFolder(
       });
     }
 
-    return { documents: removed, warnings: commitWarnings(commit) };
+    return { documents: removed, refused, warnings: commitWarnings(commit) };
   });
 }
 
@@ -530,24 +536,35 @@ function statusesAfter(
 }
 
 /**
- * §11's log half for a document a folder act could not apply to. The act stands
- * for everything it did apply to; this is what stops the one it could not from
- * being silent.
+ * One document a folder act could not apply to: logged for an operator (§11's
+ * log half) **and** returned to the caller (CONTRACT-078's `refused`). Both,
+ * because they answer different questions — the log carries the throw as it
+ * arrived, and the response carries the one sentence a person reading the
+ * folder menu needs.
+ *
+ * The message is the error's own, not a class: every refusal here has the same
+ * remedy — fix that document and run the act again — and a class would have to
+ * be guessed from a caught `unknown`, where a vanished file and a validator's
+ * refusal arrive as the same kind of throw.
  */
-function refusalLogged(
+function refusalReported(
   workspace: DocsWorkspace,
   folder: string,
   verb: string,
   docId: string,
   error: unknown,
-): void {
+): FolderRefusal {
+  const message = error instanceof Error ? error.message : String(error);
   workspace.logger.error("a folder act could not apply to one document", {
     folder: folderPath(folder),
     verb,
     docId,
     error: String(error),
-    note: "the act stands for every other document; this one is absent from the result",
+    note: "the act stands for every other document; this one is named in `refused`",
   });
+  // Never empty: the contract requires a reason, and an error with no message
+  // still has a class name worth printing.
+  return { id: docId, message: message === "" ? String(error) : message };
 }
 
 /**

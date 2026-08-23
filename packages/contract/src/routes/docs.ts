@@ -43,7 +43,10 @@ export const listDocs = createRoute({
     "`agent`, `author` and `unread` — no-op for non-thread types rather than erroring (SPEC.md " +
     "§9.2). `isParent` is not one of them: it selects roots — documents with no parent — for " +
     "every type, and is the one filter that is **refused** in combination, since `parent=<id>` " +
-    "with `isParent=true` is a contradiction and answers `400`. Every row carries its Attention " +
+    "with `isParent=true` is a contradiction and answers `400`. `folder` matches a folder and " +
+    "everything under it, threads included through their parents, unless `folderScope=self` " +
+    "narrows it to the documents filed directly in that folder — a modifier, so it too answers " +
+    "`400` when it arrives without a `folder`. Every row carries its Attention " +
     "reasons; rows carry search snippets when `q` is set.",
   request: { query: DocsQuerySchema },
   responses: {
@@ -217,7 +220,13 @@ export const updateDoc = createRoute({
     "**A stale key is a `409`**, carrying the document as it now stands and a fresh key for it — " +
     "one exchange, never a bare refusal, and never a lost edit: nothing was written and the " +
     "content is yours to resend. The saved document in a `200` likewise carries the fresh key for " +
-    "the next write, so a writer that keeps writing never has to re-read.",
+    "the next write, so a writer that keeps writing never has to re-read.\n\n" +
+    "**One field on this route is user-only, and it answers `403`**: `origin: null`, the detach " +
+    "(SPEC.md §9.2). A request carrying it under `x-corpus-author: agent` is **rejected** with " +
+    "`403` and writes nothing, because detaching is a person's correction of where " +
+    "their work was filed and an agent that could undo it could quietly move an artifact out of " +
+    "the scope it belongs to. Every other field on this route is open to both parties, so the " +
+    "`403` is about that one key and never about editing.",
   request: {
     params: DocIdParamSchema,
     headers: ActorHeaderSchema,
@@ -237,6 +246,11 @@ export const updateDoc = createRoute({
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
+    // CONTRACT-059. `origin: null` is user-only, and the server has always
+    // refused it for an agent actor — the field's own description said so in
+    // prose while the machine-readable half declared nothing. A consumer
+    // reading descriptions knew; a consumer generating handlers did not.
+    403: FORBIDDEN_RESPONSE,
     404: NOT_FOUND_RESPONSE,
     409: STALE_KEY_RESPONSE,
   },

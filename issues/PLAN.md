@@ -721,7 +721,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
 | SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
 | UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | done | P1 | — |
-| CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
+| CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | done | P1 | — |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 
 **Two findings are the user's, not mine to close:**
@@ -1276,8 +1276,8 @@ was written for.
 | CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
 | CLI-063 | The agent cannot reorder boards in one commit, and the UI now can (PR #58 review) | todo | P2 | CONTRACT-080, CLI-060 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
-| CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | todo | P2 | CONTRACT-075, SERVER-136 |
-| CONTRACT-079 | Record the two warning codes Phase 41 added from the server's tree (PR #58 review) | todo | P3 | CONTRACT-074, SERVER-138 |
+| CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | done | P2 | CONTRACT-075, SERVER-136 |
+| CONTRACT-079 | Record the two warning codes Phase 41 added from the server's tree (PR #58 review) | done | P3 | CONTRACT-074, SERVER-138 |
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
 | SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
@@ -1327,7 +1327,7 @@ that nothing tells you your skills are stale until the agent tries the verb.
 | CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | done | P2 | — |
 | SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
 | PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | done | P1 | PLUGINS-016 |
-| CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | todo | P2 | — |
+| CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | done | P2 | — |
 
 **The remaining six ship in v0.20.0, by the user's decision, 2026-08-23** —
 "include Phase 39 in this release, all of it, not just some issues". CLI-056,
@@ -1523,7 +1523,7 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |
-| CONTRACT-081 | A folder listing that stops at the folder: `folderScope=self` | todo | P0 | opus | — |
+| CONTRACT-081 | A folder listing that stops at the folder: `folderScope=self` | done | P0 | opus | — |
 | SERVER-141 | List a folder's own documents | todo | P0 | opus | CONTRACT-081 |
 | UI-161 | The explorer draws a document under every expanded ancestor | todo | P0 | opus | CONTRACT-081, SERVER-141 |
 | SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
@@ -1532,3 +1532,4 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | UI-163 | The body fills its column, and full screen keeps its own width | todo | P0 | opus | SHARED-069 |
 | SHARED-070 | What else the agent pays for — a measured audit of token cost | todo | P1 | fable | — |
 | AGENT-045 | The skills never ask for brief help, so CLI-056's saving is not taken | todo | P1 | opus | CLI-056 |
+| UI-164 | A folder act refuses a document and the explorer says nothing (CONTRACT-078 AC4) | todo | P2 | opus | CONTRACT-078 |

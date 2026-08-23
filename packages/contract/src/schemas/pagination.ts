@@ -41,7 +41,15 @@ export const PaginationQuerySchema = z.object({
 
 export const PageMetaSchema = z
   .object({
-    total: z.number().int().min(0).describe("Total rows matching the query, ignoring pagination."),
+    total: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "Total rows matching the query, ignoring pagination — and ignoring **only** pagination. " +
+          "Every filter the request carried narrows the count exactly as it narrows the page, so " +
+          "the bound line a list draws is always about the set that list is showing.",
+      ),
     limit: z.number().int().min(1),
     offset: z.number().int().min(0),
   })

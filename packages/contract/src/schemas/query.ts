@@ -59,6 +59,32 @@ export const DocSortSchema = z.enum(DOC_SORTS);
 
 export const DEFAULT_DOC_SORT = "-updated" satisfies (typeof DOC_SORTS)[number];
 
+/**
+ * How far under `folder` a collection listing reaches (CONTRACT-081).
+ *
+ * The pair is named rather than spelled as a boolean, because a boolean would
+ * have to pick which way round `true` means and the reader would have to
+ * remember it. `tree` and `self` each name the set being asked for.
+ *
+ * The two sets exist because two surfaces ask the same question differently. A
+ * board's folder column shows a folder's work **and** the conversations about
+ * it, so it wants the whole subtree with threads inherited from their parents —
+ * that is what `folder` has always meant. The explorer draws one row per folder
+ * and asks each folder for its own documents, so it wants exactly one level, and
+ * the tree reading is what makes a document appear under every expanded ancestor
+ * at once.
+ */
+export const FOLDER_SCOPES = ["tree", "self"] as const;
+
+export const FolderScopeSchema = z.enum(FOLDER_SCOPES);
+
+/**
+ * `tree` — the reading `folder` has always had. The default is not a taste
+ * decision: this parameter arrives under a route many callers already use, and
+ * defaulting to `self` would silently narrow every board column in the product.
+ */
+export const DEFAULT_FOLDER_SCOPE = "tree" satisfies (typeof FOLDER_SCOPES)[number];
+
 /** Relative deadline windows, so a client never has to compute "today" itself. */
 export const DUE_KEYWORDS = ["overdue", "today", "week"] as const;
 
@@ -193,7 +219,8 @@ export const docFilterShape = {
       ...queryParam("folder"),
       description:
         "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads " +
-        "inherit their parent document's folder (SPEC.md §10).",
+        "inherit their parent document's folder (SPEC.md §10). How far down it reaches is " +
+        "`folderScope`'s to say on the collection query, which defaults to the tree.",
     }),
   parent: DocumentIdSchema.optional().openapi({
     ...queryParam("parent"),
@@ -314,6 +341,38 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
         "confident answer to a question nobody asked. `parent=<id>&isParent=false` is merely " +
         "redundant and is accepted.",
     }),
+  /**
+   * Published after `isParent` so the two docs-only parameters sit together and
+   * the shared shape stays one spread.
+   *
+   * **Optional rather than `.default()`, deliberately** — the one place this
+   * module departs from `sort`. A zod default is applied before the refinements
+   * run, so a defaulted `folderScope` is indistinguishable from a sent one, and
+   * the rule below ("a scope with nothing to scope is a `400`") could then only
+   * be enforced for `self`. Absent means `tree`; the published `default` says so
+   * in the document, where a client reads it.
+   */
+  folderScope: FolderScopeSchema.optional().openapi({
+    ...queryParam("folderScope"),
+    default: DEFAULT_FOLDER_SCOPE,
+    description:
+      "How far under `folder` the listing reaches — a **modifier of `folder`**, meaningless " +
+      "without it. `tree` (the default, and what `folder` has always meant) matches the folder " +
+      "and every descendant, plus the threads whose parent document is filed under it: a folder " +
+      "column shows a folder's work *and* the conversations about it (SPEC.md §10). `self` " +
+      "matches the documents filed **directly** in the folder — a path with no further `/` after " +
+      "the prefix — and inherits nothing, so a thread whose parent sits in the folder while its " +
+      "own file does not is **absent**: a thread is a document, and its own path decides where " +
+      "it is filed. `self` is the explorer's reading, one row per folder with that folder's own " +
+      "documents under it (SPEC.md §10, rider 1), and it is what keeps one document from being " +
+      "drawn under every expanded ancestor at once. `page.total` counts the same set the page " +
+      "draws from at either scope, so a `self` listing's bound line is about the folder's own " +
+      "documents and not its subtree's. **Sent without `folder` it is a `400` naming `folder`**, " +
+      "rather than a silent no-op over the whole corpus: there is no folder for it to stop at. " +
+      "A `folder` naming nothing answers an empty page at either scope, and the root — `folder` " +
+      "spelled as `data/docs` or `/`, since the parameter is non-empty — with `self` is the " +
+      "documents at the top of the tree.",
+  }),
   needs: needsFilter,
   sort: DocSortSchema.default(DEFAULT_DOC_SORT).openapi({
     ...queryParam("sort"),
@@ -348,6 +407,23 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
       "`parent=<id>` and `isParent=true` contradict: `parent` asks for the children of a " +
       "document and `isParent=true` asks for documents with no parent. Drop one.",
     path: ["isParent"],
+  })
+  /**
+   * A scope with nothing to scope (CONTRACT-081). `folderScope` narrows what
+   * `folder` matches, so without `folder` it modifies nothing — and the two
+   * readings of answering anyway are both bad: `self` would silently return the
+   * unscoped corpus, and `tree` would look like it had been honoured. The `400`
+   * is the honest code by this file's own rule: naming a `folder` fixes the
+   * request, so the caller is not sent in circles. It applies to `tree` as well
+   * as to `self`, because the mistake is the same one either way and a
+   * parameter that is quietly ignored for one value and enforced for the other
+   * teaches nothing.
+   */
+  .refine((query) => query.folderScope === undefined || query.folder !== undefined, {
+    message:
+      "`folderScope` narrows what `folder` matches and needs a `folder` to narrow. Pass " +
+      "`folder`, or drop `folderScope`.",
+    path: ["folderScope"],
   });
 
 /**
@@ -591,6 +667,7 @@ export type StaleTier = z.infer<typeof StaleTierSchema>;
 export type NeedsReason = z.infer<typeof NeedsReasonSchema>;
 export type NeedsFilter = z.infer<typeof NeedsFilterSchema>;
 export type DocSort = z.infer<typeof DocSortSchema>;
+export type FolderScope = z.infer<typeof FolderScopeSchema>;
 export type DueKeyword = z.infer<typeof DueKeywordSchema>;
 export type DocsQuery = z.infer<typeof DocsQuerySchema>;
 export type SnippetField = z.infer<typeof SnippetFieldSchema>;

@@ -32,6 +32,7 @@ function workspace(prefix: string): WriteWorkspace {
 type FolderResponse = {
   status: number;
   documents: { id: string; path?: string; status?: string }[];
+  refused: { id: string; message: string }[];
   warnings: { code: string; detail: string }[];
 };
 
@@ -50,8 +51,31 @@ async function act(
   return {
     status: response.status,
     documents: (payload["documents"] ?? []) as FolderResponse["documents"],
+    refused: (payload["refused"] ?? []) as FolderResponse["refused"],
     warnings: (payload["warnings"] ?? []) as FolderResponse["warnings"],
   };
+}
+
+/**
+ * Makes one document unreadable, for every user including root.
+ *
+ * Its file is replaced by a **directory**, so the read fails with `EISDIR`
+ * rather than by a permission bit — the reason `withBrokenQueue` swaps a
+ * directory for a file: a mode a container running as root ignores proves
+ * nothing. The projection still holds the row, so the act still counts the
+ * document as a member of the folder and then cannot apply to it, which is
+ * exactly the state CONTRACT-078 is about.
+ *
+ * The directory is given a file of its own so a delete's tidy-up pass cannot
+ * prune it: an empty directory left where a document was is exactly what that
+ * pass exists to remove, and the point here is that the document's place
+ * survives the act.
+ */
+function unreadable(ws: WriteWorkspace, path: string): void {
+  const absolute = join(ws.root, path);
+  rmSync(absolute, { force: true });
+  mkdirSync(absolute);
+  writeFileSync(join(absolute, "occupied"), "", "utf8");
 }
 
 /** Commit subjects newest-first, so a test can say "the act made exactly one". */
@@ -402,6 +426,42 @@ describe("POST /api/folders/archive and /unarchive", () => {
     expect(subjects(ws).length).toBe(before);
   });
 
+  /**
+   * CONTRACT-078, and §10's bulk rule made observable: an act "applies to what
+   * it can and reports what it could not". Before `refused`, the second half was
+   * a line in a server log — the caller was told the folder was archived and one
+   * document quietly was not.
+   */
+  it("names the document it could not apply to, and archives the rest", async () => {
+    const ws = workspace("archive-refused");
+    const first = await createDoc(ws, { type: "note", title: "One", folder: "f", body: "x" });
+    const second = await createDoc(ws, { type: "note", title: "Two", folder: "f", body: "y" });
+    ws.advance(60_000);
+    unreadable(ws, "data/docs/f/one.md");
+
+    const result = await act(ws, "archive", { path: "f" });
+
+    expect(result.status).toBe(200);
+    expect(result.refused.map((entry) => entry.id)).toEqual([first.id]);
+    expect(result.refused[0]?.message).not.toBe("");
+    // The act stands for everything it could apply to, and one commit was made.
+    expect(await listIds(ws, "folder=f&includeArchived=true&status=archived")).toEqual([second.id]);
+    expect(subjects(ws)[0]).toBe("folder archive: data/docs/f (1 document) by user");
+    // A status act reports the status each document *has*, so the refused one is
+    // listed too — carrying the status it kept, which `refused` explains.
+    expect(result.documents.find((document) => document.id === first.id)?.status).not.toBe(
+      "archived",
+    );
+  });
+
+  it("carries an empty refusal list when every document took the act", async () => {
+    const ws = workspace("archive-nothing-refused");
+    await createDoc(ws, { type: "note", title: "One", folder: "g", body: "x" });
+    ws.advance(60_000);
+
+    expect((await act(ws, "archive", { path: "g" })).refused).toEqual([]);
+  });
+
   it("answers 404 for a folder this workspace does not hold", async () => {
     const ws = workspace("archive-404");
     expect((await act(ws, "archive", { path: "nowhere" })).status).toBe(404);
@@ -470,6 +530,29 @@ describe("POST /api/folders/delete", () => {
     expect((await act(ws, "delete", { path: "nowhere" }, "agent")).status).toBe(403);
     expect(ws.exists("data/docs/f/one.md")).toBe(true);
     expect(subjects(ws).length).toBe(before);
+  });
+
+  /**
+   * The same rule as the archive above, on the shape that differs: a delete
+   * reports what it *removed*, so a document it could not remove is **absent**
+   * from `documents` and named in `refused`. Both halves are asserted, because
+   * the absence alone is what the caller used to get, and it reads exactly like
+   * a document that was never there.
+   */
+  it("names the document it could not delete, and leaves it on disk", async () => {
+    const ws = workspace("delete-refused");
+    const first = await createDoc(ws, { type: "note", title: "One", folder: "f", body: "x" });
+    const second = await createDoc(ws, { type: "note", title: "Two", folder: "f", body: "y" });
+    ws.advance(60_000);
+    unreadable(ws, "data/docs/f/one.md");
+
+    const result = await act(ws, "delete", { path: "f" });
+
+    expect(result.status).toBe(200);
+    expect(result.refused.map((entry) => entry.id)).toEqual([first.id]);
+    expect(result.documents.map((entry) => entry.id)).toEqual([second.id]);
+    expect(ws.exists("data/docs/f/one.md")).toBe(true);
+    expect(ws.exists("data/docs/f/two.md")).toBe(false);
   });
 
   it("answers 404 for a folder this workspace does not hold", async () => {
