@@ -121,9 +121,11 @@ describe("corpus doc create", () => {
     expect(JSON.parse(stub.requests[0]?.body ?? "")).toMatchObject({ folder: "does/not/exist" });
   });
 
-  it("creates a pinned view in one request — SPEC.md §10's promise, on the wire", async () => {
+  it("creates a view in one request — SPEC.md §10's promise, on the wire", async () => {
     // The command from the verb's own example, minus the body: what an agent
-    // types for "pin me a view of unresolved finance threads".
+    // types for "give me a view of unresolved finance threads". A view is a
+    // saved query and nothing more since rider 2 — what puts it on a board is
+    // the board's own `--columns`, which is the next test.
     const stub = await startStubServer(jsonResponder(201, CREATED));
     const harness = stubContext(stub, {
       flags: {
@@ -131,8 +133,6 @@ describe("corpus doc create", () => {
         title: "Unresolved finance",
         folder: "views",
         evergreen: "true",
-        pinned: "true",
-        order: "4",
         query: ["type=thread", "status=open", "tag=finance"],
       },
       actor: "agent",
@@ -146,10 +146,63 @@ describe("corpus doc create", () => {
       title: "Unresolved finance",
       folder: "views",
       evergreen: true,
-      pinned: true,
-      // A YAML number, not a quoted one: the board sorts on it.
-      order: 4,
       query: { type: "thread", status: "open", tag: "finance" },
+    });
+  });
+
+  it("creates a whole board in one request — columns, position, default-open", async () => {
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, {
+      flags: {
+        type: "board",
+        title: "Attention",
+        folder: "views",
+        columns: "doc_v1e2w3,doc_v4e5w6",
+        order: "1",
+        "default-open": "true",
+      },
+      actor: "agent",
+    });
+
+    await runDocCreate(harness.context, { stdinIsBodySource: false });
+
+    expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
+      type: "board",
+      title: "Attention",
+      folder: "views",
+      // A list, in display order: the order is the value (rider 2).
+      columns: ["doc_v1e2w3", "doc_v4e5w6"],
+      // A YAML number, not a quoted one: the board bar sorts on it.
+      order: 1,
+      defaultOpen: true,
+    });
+  });
+
+  it("creates a whole kanban in one request, graph and status map included", async () => {
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, {
+      flags: {
+        type: "board",
+        title: "Triage",
+        kanban:
+          '{"field":"stage","stages":["triage","doing","done"],' +
+          '"transitions":{"triage":["doing"]},"status":{"done":"resolved"}}',
+        query: ["type=note"],
+      },
+    });
+
+    await runDocCreate(harness.context, { stdinIsBodySource: false });
+
+    expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
+      type: "board",
+      title: "Triage",
+      kanban: {
+        field: "stage",
+        stages: ["triage", "doing", "done"],
+        transitions: { triage: ["doing"] },
+        status: { done: "resolved" },
+      },
+      query: { type: "note" },
     });
   });
 
@@ -163,8 +216,6 @@ describe("corpus doc create", () => {
         title: "Todos",
         folder: "views",
         evergreen: "true",
-        pinned: "true",
-        order: "5",
         query: ["type=note"],
       },
     });
@@ -172,26 +223,34 @@ describe("corpus doc create", () => {
     await runDocCreate(harness.context, { stdinIsBodySource: false });
 
     expect(Object.keys(JSON.parse(stub.requests[0]?.body ?? "") as object).sort()).toEqual(
-      ["type", "title", "folder", "evergreen", "pinned", "order", "query"].sort(),
+      ["type", "title", "folder", "evergreen", "query"].sort(),
     );
   });
 
-  it("omits every view key the caller did not name", async () => {
+  it("omits every board key the caller did not name", async () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
-    const harness = stubContext(stub, { flags: { type: "note", title: "T", pinned: "false" } });
+    const harness = stubContext(stub, { flags: { type: "note", title: "T", stage: "triage" } });
 
     await runDocCreate(harness.context, { stdinIsBodySource: false });
 
     expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
       type: "note",
       title: "T",
-      pinned: false,
+      stage: "triage",
     });
   });
 
-  it("refuses a malformed view flag before any request", async () => {
+  it("refuses a malformed board flag before any request", async () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
-    for (const flags of [{ order: "first" }, { pinned: "yes" }, { query: ["type"] }]) {
+    for (const flags of [
+      { order: "first" },
+      { "default-open": "yes" },
+      { query: ["type"] },
+      { stage: "" },
+      { columns: "a,,b" },
+      { kanban: "{not json}" },
+      { kanban: '{"field":"stage","stages":["a"],"transitions":{"a":["a"]}}' },
+    ]) {
       const harness = stubContext(stub, { flags: { type: "view", title: "T", ...flags } });
       const error: unknown = await runDocCreate(harness.context, {
         stdinIsBodySource: false,

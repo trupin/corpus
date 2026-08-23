@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ExitCode, renderError, StaleKeyError, toProblem } from "../../errors.js";
 import { DOC, rekeyed } from "./fixtures.js";
-import { staleKeyError } from "./render.js";
+import { documentLines, effectLines, otherWarnings, staleKeyError } from "./render.js";
 
 /**
  * SPEC.md §7's refusal, and the two recoveries it has to be able to name.
@@ -139,5 +139,102 @@ describe("the machine surface of the refusal that prompted CLI-042", () => {
     const keyed = toProblem(staleKeyError(409, DOC)).hint;
     const patched = toProblem(staleKeyError(409, DOC, { keyed: false })).hint;
     expect(keyed).not.toBe(patched);
+  });
+});
+
+describe("the board and workflow keys in `doc show`", () => {
+  const withFrontmatter = (patch: Partial<(typeof DOC)["frontmatter"]>) =>
+    documentLines({ ...DOC, frontmatter: { ...DOC.frontmatter, ...patch } });
+
+  it("prints nothing for an ordinary note, which carries none of them", () => {
+    const lines = documentLines(DOC).join("\n");
+    for (const key of ["stage", "order", "default-open", "columns", "kanban"]) {
+      expect(lines, `an ordinary note printed ${key}`).not.toContain(key);
+    }
+  });
+
+  it("prints a stage when the document carries one", () => {
+    expect(withFrontmatter({ stage: "triage" })).toContain("stage triage");
+  });
+
+  it("prints a board's position and its default-open flag", () => {
+    const lines = withFrontmatter({ order: 2, defaultOpen: true });
+    expect(lines).toContain("order 2");
+    expect(lines).toContain("default-open yes");
+  });
+
+  it("prints an order of 0, which is a real position and not an absent key", () => {
+    // The guard is `!== null`, not falsiness: `order: 0` is the leftmost board.
+    expect(withFrontmatter({ order: 0 })).toContain("order 0");
+  });
+
+  it("prints the columns in board order", () => {
+    expect(withFrontmatter({ columns: ["doc_a1b2", "doc_c3d4"] })).toContain(
+      "columns doc_a1b2, doc_c3d4",
+    );
+  });
+
+  it("tells an empty column list from an absent one — the Files board has the first", () => {
+    expect(withFrontmatter({ columns: [] })).toContain("columns —");
+    expect(withFrontmatter({ columns: null }).join("\n")).not.toContain("columns");
+  });
+
+  it("flattens a kanban to its field, its stages, its graph and its status map", () => {
+    expect(
+      withFrontmatter({
+        kanban: {
+          field: "stage",
+          stages: ["triage", "doing", "done"],
+          transitions: { triage: ["doing"], doing: ["done", "triage"] },
+          status: { done: "resolved" },
+        },
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        "kanban over stage: triage, doing, done",
+        "  transitions triage → doing · doing → done, triage",
+        "  status done → resolved",
+      ]),
+    );
+  });
+
+  it("prints no graph line for an omitted graph, and an explicit one for an empty graph", () => {
+    // Absent is the linear funnel; `{}` is a graph nothing may be dragged along.
+    expect(withFrontmatter({ kanban: { field: "stage", stages: ["a"] } }).join("\n")).not.toContain(
+      "transitions",
+    );
+    expect(
+      withFrontmatter({ kanban: { field: "stage", stages: ["a"], transitions: {} } }),
+    ).toContain("  transitions —");
+  });
+});
+
+describe("the two effect warnings", () => {
+  const stageStatus = {
+    code: "stage_status" as const,
+    detail:
+      "stage `done` set status to `resolved`: this document is in the kanban Triage (doc_b0a1), " +
+      "whose `kanban.status` map decides a status on entry (SPEC.md §5).",
+  };
+  const cleared = {
+    code: "default_open_cleared" as const,
+    detail: "`default-open` was cleared from Attention (doc_o1d2).",
+  };
+  const commit = { code: "commit_failed" as const, detail: "the hook rejected it" };
+
+  it("hands each effect back verbatim, one line each", () => {
+    expect(effectLines([stageStatus, cleared])).toEqual([stageStatus.detail, cleared.detail]);
+  });
+
+  it("keeps the whole sentence, past the 120 characters a warning suffix would cut", () => {
+    // The board that decided is named after that mark, and it is the one fact a
+    // person whose document jumped to `resolved` needs.
+    expect(stageStatus.detail.length).toBeGreaterThan(120);
+    expect(effectLines([stageStatus])[0]).toContain("doc_b0a1");
+  });
+
+  it("leaves every other warning for the success line's suffix, and takes it out of nothing else", () => {
+    expect(otherWarnings([stageStatus, commit, cleared])).toEqual([commit]);
+    expect(effectLines([commit])).toEqual([]);
   });
 });

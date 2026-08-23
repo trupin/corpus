@@ -1,11 +1,13 @@
 import { agentsCommand } from "../commands/agents.js";
 import { dbTopic } from "../commands/db/index.js";
 import { docTopic } from "../commands/doc/index.js";
+import { folderTopic } from "../commands/folder/index.js";
 import { healthCommand } from "../commands/health.js";
 import { indexTopic } from "../commands/index-maintenance/index.js";
 import { initCommand } from "../commands/init/index.js";
 import { jobTopic } from "../commands/job/index.js";
 import { queueTopic } from "../commands/queue/index.js";
+import { reflectCommand } from "../commands/reflect.js";
 import { searchCommand } from "../commands/search.js";
 import { serverTopic } from "../commands/server/index.js";
 import { skillTopic } from "../commands/skill/index.js";
@@ -36,11 +38,19 @@ export const registry: Registry = validateRegistry({
   // is deliberately not a topic — a topic would invite `corpus agents register`
   // or `corpus agents heartbeat`, and SPEC.md §7 has neither: presence is the
   // parked request and nothing else, so the roster is only ever read.
-  commands: [agentsCommand, healthCommand, initCommand, searchCommand, upgradeCommand],
+  commands: [
+    agentsCommand,
+    healthCommand,
+    initCommand,
+    reflectCommand,
+    searchCommand,
+    upgradeCommand,
+  ],
   topics: [
     workspaceTopic,
     serverTopic,
     docTopic,
+    folderTopic,
     threadTopic,
     skillTopic,
     queueTopic,

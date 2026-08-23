@@ -10,7 +10,8 @@ import { describe, expect, it } from "vitest";
  * verb that touched a document file, or ran a state-changing git command, would
  * fork the one write path every guarantee in SPEC.md §11 rests on — and the
  * result on disk looks the same until two writers race. That scan covers the
- * topics the rule is about: `doc`, `thread`, `db`, and `index-maintenance` —
+ * topics the rule is about: `doc`, `folder`, `thread`, `db`, and
+ * `index-maintenance` —
  * the `corpus index` verbs, whose directory is named for the barrel collision it
  * avoids. The lifecycle and scaffolding
  * topics (`server`, `init`) legitimately write the CLI's own two files — the
@@ -58,7 +59,7 @@ import { describe, expect, it } from "vitest";
  */
 
 /** Topics whose verbs are pure API clients: they may not touch the filesystem at all. */
-const WRITE_RESTRICTED_TOPICS = ["doc", "thread", "db", "index-maintenance"];
+const WRITE_RESTRICTED_TOPICS = ["doc", "folder", "thread", "db", "index-maintenance"];
 
 /** Write APIs, their sync twins, and the stream that bypasses both. */
 const FORBIDDEN_FS = [
@@ -265,6 +266,11 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
       "doc/sections.ts",
       "doc/show.ts",
       "doc/unarchive.ts",
+      "folder/delete.ts",
+      "folder/index.ts",
+      "folder/rename.ts",
+      "folder/report.ts",
+      "folder/status.ts",
       "index-maintenance/index.ts",
       "index-maintenance/rebuild.ts",
       "index-maintenance/status.ts",
@@ -369,6 +375,11 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "doc/show.ts",
       "doc/unarchive.ts",
       "filters.ts",
+      "folder/delete.ts",
+      "folder/index.ts",
+      "folder/rename.ts",
+      "folder/report.ts",
+      "folder/status.ts",
       "health.ts",
       "index-maintenance/index.ts",
       "index-maintenance/rebuild.ts",
@@ -389,6 +400,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "queue/lane.ts",
       "queue/poll.ts",
       "queue/transitions.ts",
+      "reflect.ts",
       "resident.ts",
       "retrieval.ts",
       "search.ts",

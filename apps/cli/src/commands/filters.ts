@@ -26,10 +26,16 @@ import type { CommandContext, FlagSpec } from "../registry/types.js";
  * through {@link collectDocFilters}. What stays local to a verb is what the two
  * endpoints genuinely disagree about: `q` (optional on the collection query,
  * required on ranked retrieval), `--limit` (a page size against a top-k cap),
- * and the list-only `--pinned`, `--is-parent`, `--sort` and `--offset`, which
+ * and the list-only `--is-parent`, `--sort` and `--offset`, which
  * `/api/search` does not accept and which therefore must not appear on `search`.
  *
- * `--is-parent` is the one of those four that is a genuine structural filter and
+ * **`--pinned` used to be the fourth of those, and is gone** (CLI-060, rider 2
+ * signed 2026-08-22). A view document has no `pinned` any more — a board lists
+ * its own columns — so the filter left `GET /api/docs` in the same act.
+ * `--stage` joined this shared list on the same day, on `docFilterShape`, which
+ * is why it lands on both verbs with no edit in either.
+ *
+ * `--is-parent` is the one of those three that is a genuine structural filter and
  * would belong in this shared list on the merits — ranked retrieval over roots
  * only is a sensible ask. It is local to `doc list` because SPEC.md §9.2's
  * signed `/api/search` parameter string does not carry it while the signed
@@ -69,10 +75,10 @@ type AssertAssignable<Expected, Actual extends Expected> = Actual;
 type _SharedFiltersAreCollectionFilters = AssertAssignable<DocsListQuery, DocFilters>;
 
 /**
- * The fourteen shared flags, in the order `doc list` has always published them.
- * `--pinned` sits between `--unread` and `--due` on that verb, which is why it
- * is spliced in with {@link insertFlagAfter} rather than the array being cut in
- * two: a filter added here still lands on both verbs with no second edit.
+ * The fifteen shared flags, in the order `doc list` has always published them.
+ * `--is-parent` sits between `--unread` and `--due` on that verb, which is why
+ * it is spliced in with {@link insertFlagAfter} rather than the array being cut
+ * in two: a filter added here still lands on both verbs with no second edit.
  */
 export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
   {
@@ -104,6 +110,18 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
     type: "string",
     valueName: "status",
     description: `Lifecycle status: ${DOC_STATUSES.join(", ")}. Passing it replaces the default archived exclusion.`,
+  },
+  {
+    name: "stage",
+    type: "string",
+    valueName: "a,b",
+    description:
+      "Comma-separated stage values (SPEC.md §5); values OR together like `--type` and `--tag`, " +
+      "and each is an **exact** match. **An empty element selects documents with no stage at " +
+      "all** — the null sentinel — so `--stage ,triage` is one request for a kanban's first " +
+      'column, which holds its first stage _and_ everything unstaged, and `--stage ""` on its ' +
+      "own selects the unstaged. It can never collide with a real stage, because a written stage " +
+      "is a non-empty comma-free string. Not thread-only: any document may carry a stage.",
   },
   {
     name: "include-archived",
@@ -209,6 +227,10 @@ export function collectDocFilters(context: FlagSource): DocFilters {
   const tag = flags.string("tag");
   const folder = flags.string("folder");
   const status = oneOf(context, "status", DOC_STATUSES);
+  // Open-valued and, uniquely, meaningful when empty: `--stage ""` is the null
+  // sentinel and selects documents carrying no stage at all, so absence and the
+  // empty string are two different filters and only `undefined` means "none".
+  const stage = flags.string("stage");
   const parent = flags.string("parent");
   const references = flags.string("references");
   const agent = oneOf(context, "agent", THREAD_AGENT_STATES);
@@ -226,6 +248,7 @@ export function collectDocFilters(context: FlagSource): DocFilters {
     ...(tag === undefined ? {} : { tag }),
     ...(folder === undefined ? {} : { folder }),
     ...(status === undefined ? {} : { status }),
+    ...(stage === undefined ? {} : { stage }),
     ...(parent === undefined ? {} : { parent }),
     ...(references === undefined ? {} : { references }),
     ...(agent === undefined ? {} : { agent }),

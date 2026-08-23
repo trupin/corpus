@@ -1,4 +1,4 @@
-import type { Doc } from "@corpus/contract";
+import type { Doc, Warning } from "@corpus/contract";
 import { StaleKeyError } from "../../errors.js";
 
 /**
@@ -34,6 +34,43 @@ const MAX_QUOTE = 60;
  */
 export function keyLine(doc: Doc): string {
   return `key ${doc.key}`;
+}
+
+/**
+ * The two warnings that report **a second thing this write did**, given a line
+ * of their own instead of a place in the success line's suffix (CLI-060).
+ *
+ * `stage_status` says the stage the caller set decided the document's `status`
+ * too (SPEC.md §5's coupling), naming the board that decided. `default_open_
+ * cleared` says setting `default-open` on one board took it off another. Both
+ * are effects on state the caller neither sent nor asked about, which is exactly
+ * what §11 says must not have to be learned from `git log`.
+ *
+ * They cannot ride {@link warningSuffix}'s single line: it collapses the detail
+ * to 120 characters, and both of these say *which board* past that mark — the
+ * one fact a person whose document jumped to `resolved` needs before they can go
+ * and change it. So they are printed whole, one per line, in the server's own
+ * words. Nothing is rephrased here; the server writes the sentence and this
+ * decides where it goes.
+ */
+export const EFFECT_WARNING_CODES: readonly Warning["code"][] = [
+  "stage_status",
+  "default_open_cleared",
+];
+
+const isEffect = (warning: Warning): boolean => EFFECT_WARNING_CODES.includes(warning.code);
+
+/** The effect warnings' details, verbatim, one line each; empty when there are none. */
+export function effectLines(warnings: readonly Warning[]): readonly string[] {
+  return warnings.filter(isEffect).map((warning) => warning.detail);
+}
+
+/**
+ * Everything {@link effectLines} did not take, for the success line's suffix —
+ * so a `commit_failed` still lands there and nothing is reported twice.
+ */
+export function otherWarnings(warnings: readonly Warning[]): readonly Warning[] {
+  return warnings.filter((warning) => !isEffect(warning));
 }
 
 /**
@@ -88,6 +125,8 @@ export function documentLines(doc: Doc): readonly string[] {
   // decorate a line nobody asked for.
   if (frontmatter.origin !== null) lines.push(`origin ${frontmatter.origin}`);
 
+  lines.push(...boardLines(frontmatter));
+
   // Only when the document actually carries one of them: an always-printed
   // "due — · reviewed — · evergreen no" is noise on every note in the corpus.
   if (frontmatter.due !== null || frontmatter.reviewed !== null || frontmatter.evergreen) {
@@ -112,6 +151,71 @@ export function documentLines(doc: Doc): readonly string[] {
   }
 
   lines.push("", doc.body.trim() === "" ? "(no body)" : doc.body.trimEnd());
+  return lines;
+}
+
+/**
+ * The §10 board and workflow keys, each printed **only when the document carries
+ * it** (CLI-060).
+ *
+ * Same rule as the `due · reviewed · evergreen` row above and for the same
+ * reason: every one of these is null on every ordinary note, so printing them
+ * unconditionally would add five lines of `—` to every read in the corpus to
+ * serve the handful of documents that are boards. A board, read here, shows its
+ * whole configuration; a note shows none of it and is not made longer by the
+ * existence of boards.
+ *
+ * `columns: []` is deliberately **not** the same as no `columns` key — a board
+ * with an empty list is what the Files board is — so an empty list prints as
+ * `columns —` and an absent key prints nothing at all.
+ *
+ * The kanban block is flattened rather than dumped: the field and the stages on
+ * one line, the graph and the status map on their own lines when they exist.
+ * `--json` carries it whole, which is where a caller that needs the structure
+ * reads it.
+ */
+function boardLines(frontmatter: Doc["frontmatter"]): readonly string[] {
+  const lines: string[] = [];
+
+  if (frontmatter.stage !== null) lines.push(`stage ${frontmatter.stage}`);
+  if (frontmatter.order !== null) lines.push(`order ${String(frontmatter.order)}`);
+  if (frontmatter.defaultOpen) lines.push("default-open yes");
+  if (frontmatter.columns !== null) {
+    lines.push(
+      `columns ${frontmatter.columns.length === 0 ? NONE : frontmatter.columns.join(", ")}`,
+    );
+  }
+  if (frontmatter.kanban !== null) lines.push(...kanbanLines(frontmatter.kanban));
+
+  return lines;
+}
+
+function kanbanLines(kanban: NonNullable<Doc["frontmatter"]["kanban"]>): readonly string[] {
+  const lines = [`kanban over ${kanban.field}: ${kanban.stages.join(", ")}`];
+
+  const transitions = Object.entries(kanban.transitions ?? {});
+  if (kanban.transitions !== undefined) {
+    // An empty graph is a real, different statement from an absent one — nothing
+    // may be dragged anywhere — so it prints rather than vanishing.
+    lines.push(
+      `  transitions ${
+        transitions.length === 0
+          ? NONE
+          : transitions.map(([from, to]) => `${from} → ${to.join(", ")}`).join(" · ")
+      }`,
+    );
+  }
+
+  const statuses = Object.entries(kanban.status ?? {});
+  if (kanban.status !== undefined) {
+    lines.push(
+      `  status ${
+        statuses.length === 0
+          ? NONE
+          : statuses.map(([stage, status]) => `${stage} → ${status}`).join(" · ")
+      }`,
+    );
+  }
   return lines;
 }
 

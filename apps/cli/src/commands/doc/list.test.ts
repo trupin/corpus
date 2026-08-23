@@ -150,13 +150,12 @@ describe("corpus doc list", () => {
 
     await runDocList(
       stubContext(stub, {
-        flags: { "include-archived": true, unread: true, pinned: true },
+        flags: { "include-archived": true, unread: true },
       }).context,
     );
     expect(query(stub.requests[1])).toEqual({
       includeArchived: "true",
       unread: "true",
-      pinned: "true",
     });
   });
 
@@ -379,6 +378,7 @@ describe("the doc list command spec", () => {
       "tag",
       "folder",
       "status",
+      "stage",
       "include-archived",
       "needs",
       "parent",
@@ -386,7 +386,6 @@ describe("the doc list command spec", () => {
       "agent",
       "author",
       "unread",
-      "pinned",
       "is-parent",
       "due",
       "since",

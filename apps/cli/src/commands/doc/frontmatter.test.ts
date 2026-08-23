@@ -3,15 +3,21 @@ import { describe, expect, it } from "vitest";
 import { ExitCode, exitCodeFor, isCliError } from "../../errors.js";
 import { ParsedFlags, type FlagValue } from "../../parse-args.js";
 import {
+  BOARD_KEY_FLAGS,
   combineExtraPatches,
+  parseBoardFlags,
+  parseColumns,
   parseExtraFlags,
   parseExtraJsonFlags,
   parseExtraValue,
+  parseKanban,
   parseOrder,
   parseQuery,
-  parseViewFlags,
-  VIEW_KEY_FLAGS,
+  parseStage,
+  parseUnsetKeys,
+  UNSET_FLAG,
 } from "./frontmatter.js";
+import type { FlagSpec } from "../../registry/types.js";
 
 const flagsOf = (values: Record<string, FlagValue>): ParsedFlags =>
   new ParsedFlags(new Map(Object.entries(values)));
@@ -158,7 +164,7 @@ describe("`column` after the plugin surface went", () => {
   });
 
   it("has no flag of its own on either verb", () => {
-    expect(VIEW_KEY_FLAGS.map((flag) => flag.name)).not.toContain("column");
+    expect(BOARD_KEY_FLAGS.map((flag: FlagSpec) => flag.name)).not.toContain("column");
   });
 });
 
@@ -234,59 +240,264 @@ describe("--query", () => {
   it.each(["type", "=thread"])("is a usage error on the pair shape %s", (entry) => {
     expect(exitCodeFor(thrown(() => parseQuery([entry])))).toBe(ExitCode.usageError);
   });
-});
 
-describe("the view flags as a patch fragment", () => {
-  it("names only the keys the caller named", () => {
-    expect(parseViewFlags(flagsOf({ pinned: "true" }))).toEqual({ pinned: true });
-    expect(parseViewFlags(flagsOf({}))).toEqual({});
-  });
-
-  it("carries all three at once", () => {
-    expect(parseViewFlags(flagsOf({ pinned: "true", order: "4", query: ["type=thread"] }))).toEqual(
-      { pinned: true, order: 4, query: { type: "thread" } },
-    );
-  });
-
-  it("carries every clearing form", () => {
-    expect(parseViewFlags(flagsOf({ pinned: "false", order: "null", query: ["null"] }))).toEqual({
-      pinned: false,
-      order: null,
-      query: null,
+  it("takes the whole map as one JSON object", () => {
+    expect(parseQuery(['{"type":"thread","tag":["finance","housing"]}'])).toEqual({
+      type: "thread",
+      tag: ["finance", "housing"],
     });
   });
 
-  it("refuses a non-boolean --pinned", () => {
-    expect(exitCodeFor(thrown(() => parseViewFlags(flagsOf({ pinned: "yes" }))))).toBe(
+  it("refuses the JSON form mixed with pairs", () => {
+    const error = thrown(() => parseQuery(['{"type":"thread"}', "status=open"]));
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("not both");
+  });
+
+  it("is a usage error on a JSON object that is not a flat map", () => {
+    const error = thrown(() => parseQuery(['{"filters":{"type":"note"}}']));
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("not a board query");
+  });
+
+  it("is a usage error on a `{`-leading value that is not JSON at all", () => {
+    expect(exitCodeFor(thrown(() => parseQuery(["{type: thread}"])))).toBe(ExitCode.usageError);
+  });
+});
+
+describe("--stage", () => {
+  it("passes a value through exactly as typed", () => {
+    expect(parseStage("triage")).toBe("triage");
+    expect(parseStage("In Review")).toBe("In Review");
+  });
+
+  it("is absent when the flag is", () => {
+    expect(parseStage(undefined)).toBeUndefined();
+  });
+
+  it("refuses the empty string and points at --unset stage", () => {
+    // `--stage ""` looks like "clear it" and is not: the empty string is the
+    // *filter's* null sentinel, and `--unset stage` is what removes the key.
+    const error = thrown(() => parseStage(""));
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(hint(error)).toContain("--unset stage");
+  });
+
+  it("does not pre-validate a comma — the boundary that owns the rule refuses it", () => {
+    // `StageValueSchema` refuses one with a `400` naming the filter it would
+    // break. A second copy of that rule here is a copy that can disagree.
+    expect(parseStage("triage,doing")).toBe("triage,doing");
+  });
+});
+
+describe("--columns", () => {
+  it("splits a comma-separated list, keeping the order", () => {
+    expect(parseColumns("doc_a1b2,doc_c3d4")).toEqual(["doc_a1b2", "doc_c3d4"]);
+  });
+
+  it("trims around a comma, so a readable command line still works", () => {
+    expect(parseColumns("doc_a1b2, doc_c3d4")).toEqual(["doc_a1b2", "doc_c3d4"]);
+  });
+
+  it("reads the empty string as the empty list — a board with no columns", () => {
+    expect(parseColumns("")).toEqual([]);
+    expect(parseColumns("   ")).toEqual([]);
+  });
+
+  it("is absent when the flag is, which is what leaves the key alone", () => {
+    expect(parseColumns(undefined)).toBeUndefined();
+  });
+
+  it("refuses a blank entry rather than dropping it — dropping one shifts every column after", () => {
+    const error = thrown(() => parseColumns("doc_a1b2,,doc_c3d4"));
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("blank entry");
+  });
+});
+
+describe("--kanban", () => {
+  it("carries the whole block, graph and status map included", () => {
+    expect(
+      parseKanban(
+        '{"field":"stage","stages":["triage","doing","done"],' +
+          '"transitions":{"triage":["doing"]},"status":{"done":"resolved"}}',
+      ),
+    ).toEqual({
+      field: "stage",
+      stages: ["triage", "doing", "done"],
+      transitions: { triage: ["doing"] },
+      status: { done: "resolved" },
+    });
+  });
+
+  it("keeps an omitted transitions absent — absent is the linear funnel, `{}` is not", () => {
+    const kanban = parseKanban('{"field":"stage","stages":["a","b"]}');
+    expect(kanban).toEqual({ field: "stage", stages: ["a", "b"] });
+    expect(kanban).not.toHaveProperty("transitions");
+  });
+
+  it("keeps an empty transitions, which is a different statement", () => {
+    expect(parseKanban('{"field":"stage","stages":["a"],"transitions":{}}')).toEqual({
+      field: "stage",
+      stages: ["a"],
+      transitions: {},
+    });
+  });
+
+  it("clears the block with null", () => {
+    expect(parseKanban("null")).toBeNull();
+  });
+
+  it("is absent when the flag is", () => {
+    expect(parseKanban(undefined)).toBeUndefined();
+  });
+
+  it("is a usage error on text that is not JSON", () => {
+    const error = thrown(() => parseKanban("{field: stage}"));
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("not valid JSON");
+  });
+
+  it.each([
+    ['{"stages":["a"]}', "field"],
+    ['{"field":"stage","stages":[]}', "stages"],
+    ['{"field":"stage","stages":["a"],"transitionz":{}}', "transitionz"],
+    ['{"field":"stage","stages":["a"],"transitions":{"a":["a"]}}', "itself"],
+    ['{"field":"stage","stages":["a"],"transitions":{"b":["a"]}}', "stages"],
+    ['{"field":"stage","stages":["a"],"status":{"b":"open"}}', "stages"],
+    ['{"field":"status","stages":["triage"]}', "not a status"],
+    ['{"field":"stage","stages":["a","a"]}', "duplicate stage"],
+  ])("refuses %s before anything is sent, naming %s", (raw, named) => {
+    const error = thrown(() => parseKanban(raw));
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain(named);
+  });
+});
+
+describe("--unset", () => {
+  it("collects the keys as typed, in order", () => {
+    expect(parseUnsetKeys(["pinned", "order"])).toEqual(["pinned", "order"]);
+  });
+
+  it("is absent when the flag is", () => {
+    expect(parseUnsetKeys([])).toBeUndefined();
+  });
+
+  it("takes file spellings, not wire ones — `default-open` is the key a file holds", () => {
+    expect(parseUnsetKeys(["default-open"])).toEqual(["default-open"]);
+  });
+
+  it.each(["id", "type", "created"])("refuses %s by name, before any request", (key) => {
+    const error = thrown(() => parseUnsetKeys(["title", key]));
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain(key);
+  });
+});
+
+describe("the board flags as a patch fragment", () => {
+  it("names only the keys the caller named", () => {
+    expect(parseBoardFlags(flagsOf({ stage: "triage" }))).toEqual({ stage: "triage" });
+    expect(parseBoardFlags(flagsOf({}))).toEqual({});
+  });
+
+  it("carries all six at once", () => {
+    expect(
+      parseBoardFlags(
+        flagsOf({
+          stage: "triage",
+          order: "4",
+          query: ["type=thread"],
+          columns: "doc_a1b2",
+          kanban: '{"field":"stage","stages":["triage"]}',
+          "default-open": "true",
+        }),
+      ),
+    ).toEqual({
+      stage: "triage",
+      order: 4,
+      query: { type: "thread" },
+      columns: ["doc_a1b2"],
+      kanban: { field: "stage", stages: ["triage"] },
+      defaultOpen: true,
+    });
+  });
+
+  it("carries every clearing form", () => {
+    expect(
+      parseBoardFlags(
+        flagsOf({
+          order: "null",
+          query: ["null"],
+          columns: "",
+          kanban: "null",
+          "default-open": "false",
+        }),
+      ),
+    ).toEqual({ order: null, query: null, columns: [], kanban: null, defaultOpen: false });
+  });
+
+  it("refuses a non-boolean --default-open", () => {
+    expect(exitCodeFor(thrown(() => parseBoardFlags(flagsOf({ "default-open": "yes" }))))).toBe(
       ExitCode.usageError,
     );
   });
 });
 
 describe("the flag declarations", () => {
-  it("declares the three view keys once, for both verbs to share", () => {
-    expect(VIEW_KEY_FLAGS.map((flag) => flag.name)).toEqual(["pinned", "order", "query"]);
-    expect(VIEW_KEY_FLAGS.find((flag) => flag.name === "query")?.repeated).toBe(true);
+  it("declares the six board keys once, for both verbs to share", () => {
+    expect(BOARD_KEY_FLAGS.map((flag: FlagSpec) => flag.name)).toEqual([
+      "stage",
+      "order",
+      "columns",
+      "kanban",
+      "default-open",
+      "query",
+    ]);
+    expect(BOARD_KEY_FLAGS.find((flag: FlagSpec) => flag.name === "query")?.repeated).toBe(true);
   });
 
-  it("names every reserved view key in a flag, so the refusal has somewhere to point", () => {
-    const named = new Set(VIEW_KEY_FLAGS.map((flag) => flag.name));
-    for (const key of ["pinned", "order", "query"]) {
+  it("declares --unset separately, because only `doc edit` has anything to remove", () => {
+    expect(BOARD_KEY_FLAGS.map((flag: FlagSpec) => flag.name)).not.toContain("unset");
+    expect(UNSET_FLAG.repeated).toBe(true);
+  });
+
+  it("no longer declares --pinned, which rider 2 removed", () => {
+    expect(BOARD_KEY_FLAGS.map((flag: FlagSpec) => flag.name)).not.toContain("pinned");
+    expect(RESERVED_FRONTMATTER_KEYS).not.toContain("pinned");
+  });
+
+  it("names every reserved board key in a flag, so the refusal has somewhere to point", () => {
+    const named = new Set(BOARD_KEY_FLAGS.map((flag: FlagSpec) => flag.name));
+    for (const key of ["stage", "order", "query", "columns", "kanban"]) {
       expect(RESERVED_FRONTMATTER_KEYS).toContain(key);
       expect(named.has(key), key).toBe(true);
     }
+    // `default-open` is the file spelling and `defaultOpen` the wire one; both
+    // are reserved, and the one flag covers them.
+    expect(RESERVED_FRONTMATTER_KEYS).toContain("default-open");
+    expect(named.has("default-open")).toBe(true);
   });
 });
 
-describe("the reserved-key refusal covers the view keys", () => {
+describe("the reserved-key refusal covers the board keys", () => {
   it.each([
-    ["pinned=true", "--pinned"],
+    ["stage=triage", "--stage"],
     ["order=1", "--order"],
     ["query=x", "--query"],
+    ["columns=a", "--columns"],
+    ["kanban=x", "--kanban"],
+    ["default-open=true", "--default-open"],
+    ["defaultOpen=true", "--default-open"],
   ])("refuses --extra %s and names %s", (entry, flag) => {
     const error = thrown(() => parseExtraFlags([entry]));
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
     expect(String(error)).toContain("is a core frontmatter key");
     expect(hint(error)).toContain(flag);
+  });
+
+  it("lets `pinned` through to `extra`, which is how a migration removes it", () => {
+    // Rider 2 took it out of the core, so it is an ordinary key the core does
+    // not define — and `--extra pinned=null` deletes it under RFC 7386.
+    expect(parseExtraFlags(["pinned=null"])).toEqual({ pinned: null });
   });
 });

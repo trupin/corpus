@@ -18,13 +18,15 @@ import {
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import {
+  BOARD_KEY_FLAGS,
   combineExtraPatches,
+  parseBoardFlags,
   parseExtraFlags,
   parseExtraJsonFlags,
-  parseViewFlags,
-  VIEW_KEY_FLAGS,
+  parseUnsetKeys,
+  UNSET_FLAG,
 } from "./frontmatter.js";
-import { keyLine } from "./render.js";
+import { effectLines, keyLine, otherWarnings } from "./render.js";
 
 /**
  * The value grammar and the `--extra` parser moved to `./frontmatter.js` when
@@ -128,7 +130,7 @@ function missingKey(id: string): UsageError {
       `Read the document first — \`corpus doc show ${id}\` prints its \`key\` — then send this ` +
       `edit again with \`--key <key>\`. The key names the version you read, so writing without ` +
       `one is writing over something you never saw (SPEC.md §7). A write that names its own ` +
-      `delta (--add-tag, --status, --folder, a view key) needs no key. Nothing was sent to the ` +
+      `delta (--add-tag, --status, --folder, a board key) needs no key. Nothing was sent to the ` +
       `server.`,
   });
 }
@@ -232,7 +234,8 @@ export async function runDocEdit(
     parseExtraFlags(context.flags.strings("extra")),
     parseExtraJsonFlags(context.flags.strings("extra-json")),
   );
-  const view = parseViewFlags(context.flags);
+  const board = parseBoardFlags(context.flags);
+  const unset = parseUnsetKeys(context.flags.strings("unset"));
   const key = parseKey(context.flags.string("key"));
 
   const body = await resolveBody(context, dependencies);
@@ -278,9 +281,12 @@ export async function runDocEdit(
     // whole object back would race every other writer of a key this invocation
     // never mentioned.
     ...(extra === undefined ? {} : { extra }),
-    // The §10 view keys are *not* a merge patch — each is one core field, and
-    // an unnamed one is simply absent here.
-    ...view,
+    // `unset` names its own delta, exactly as `removeTags` does: it removes the
+    // keys it names and says nothing about the rest of the frontmatter.
+    ...(unset === undefined ? {} : { unset }),
+    // The §10 view and board keys are *not* a merge patch — each is one core
+    // field, and an unnamed one is simply absent here.
+    ...board,
   };
 
   // `--key` is not a change and is not counted as one: an edit that presents a
@@ -288,7 +294,7 @@ export async function runDocEdit(
   // trade a usage error for a write that rewrites the document with itself.
   if (body === undefined && Object.keys(patch).length === 0) {
     throw new UsageError(`nothing to change on ${id}.`, {
-      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra, --extra-json, --pinned, --order, --query.",
+      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra, --extra-json, --stage, --order, --query, --columns, --kanban, --default-open, --unset.",
     });
   }
 
@@ -309,8 +315,13 @@ export async function runDocEdit(
 
   context.out.emit(response);
   context.out.line(
-    `edited ${id}${describeAnchors(response.anchors, response.doc)}${warningSuffix(response.warnings)}`,
+    `edited ${id}${describeAnchors(response.anchors, response.doc)}${warningSuffix(otherWarnings(response.warnings))}`,
   );
+  // A second thing this write did — a stage that decided a status, a
+  // `default-open` taken off another board — whole, on its own line, because the
+  // suffix above cuts a detail at 120 characters and both of these name the
+  // deciding board past that mark (CLI-060).
+  for (const line of effectLines(response.warnings)) context.out.line(line);
   // The fresh key, on its own line, because §7's "every write that lands gives
   // you a fresh key for the next one" is only true for the agent if the CLI says
   // what it is. Without it a chain of edits costs a read between every pair.
@@ -359,10 +370,16 @@ export const editCommand: WorkspaceCommandSpec = {
     "names a **command** where the server can only name a route. `--extra` and `--extra-json` " +
     "write non-core frontmatter keys — the " +
     "column `width` of SPEC.md §10 among them — as a merge patch: named keys replace, `null` " +
-    "removes, unnamed keys are untouched. `--pinned`, `--order` and `--query` write " +
-    "the three **view keys** of SPEC.md §10, which are core fields rather than `extra` ones: a " +
-    "board column IS a `type: view` document with `pinned: true`, so pinning, reordering and " +
-    "reconfiguring one is this verb, and the board follows over SSE with no reload. An edit that " +
+    "removes, unnamed keys are untouched. `--stage`, `--order`, `--query`, `--columns`, " +
+    "`--kanban` and `--default-open` write the **board and view keys** of SPEC.md §10, which are " +
+    "core fields rather than `extra` ones: a board IS a `type: board` document listing its " +
+    "columns, so adding, removing or reordering a column is `--columns` on the **board**, and " +
+    "the board bar follows over SSE with no reload. **`--stage` may write a `status` too** — " +
+    "while a document is in a kanban its stage decides its status through that board's explicit " +
+    "map (§5's coupling) — and when it does, this verb prints the server's own sentence about it " +
+    "on a line of its own, naming the board that decided. `--unset <key>` removes a frontmatter " +
+    "key outright, named as the file writes it, which is how SPEC.md §2.4's data migrations drop " +
+    "a key the tool has stopped reading (`--unset pinned`). An edit that " +
     "names no change at all is a usage error, not an empty request.\n\n" +
     "**Replacing the body means presenting the document's `--key`** (SPEC.md §7). Read the " +
     "document with `corpus doc show <id>`, which prints the key, and present that key here: a " +
@@ -376,7 +393,7 @@ export const editCommand: WorkspaceCommandSpec = {
     "edits costs one read at the start rather than one between every pair.\n\n" +
     "**A write that names its own delta needs no key**, and none of them started asking for one: " +
     "`--add-tag`, `--remove-tag`, `--status`, `--due`, `--reviewed`, `--evergreen`, `--extra`, " +
-    "`--extra-json` and the view keys all merge with whatever else happened rather than " +
+    "`--extra-json`, `--unset` and the board keys all merge with whatever else happened rather than " +
     "overwriting it, as do `corpus doc move|archive|unarchive`. Presenting `--key` alongside them " +
     "anyway is welcome and is still checked, so a caller that always sends what it read needs no " +
     "rule about which fields are which.",
@@ -462,7 +479,7 @@ export const editCommand: WorkspaceCommandSpec = {
         "everywhere else (`9007199254740993` stores as `9007199254740992`); quote it to keep the " +
         "digits. Only the keys named are sent: the rest of `extra` is untouched " +
         "byte-for-byte, never read-modify-written. Naming a **core** key (`title`, `status`, " +
-        "`due`, `tags`, `pinned`, `order`, `query`, `id`, …) is a usage error before " +
+        "`due`, `tags`, `stage`, `order`, `query`, `columns`, `kanban`, `default-open`, `id`, …) is a usage error before " +
         "any request, pointing at the real flag where there is one.",
     },
     {
@@ -483,7 +500,8 @@ export const editCommand: WorkspaceCommandSpec = {
         "is a usage error rather than a key that stores a string that looks like an object. A " +
         "key named by both flags is refused rather than silently resolved.",
     },
-    ...VIEW_KEY_FLAGS,
+    ...BOARD_KEY_FLAGS,
+    UNSET_FLAG,
     ...bodyFlags("The replacement document body"),
     JOB_FLAG,
   ],
@@ -522,14 +540,24 @@ export const editCommand: WorkspaceCommandSpec = {
         "Reconfigure a column's query: naming any key replaces the whole map, so this is the view's query in full — the board re-renders the column's rows over SSE.",
     },
     {
-      command: "corpus doc edit doc_v1e2w3 --pinned false --from agent",
+      command: "corpus doc edit doc_b0a1r2d3 --columns doc_v1e2w3,doc_v4e5w6 --from agent",
       description:
-        "Unpin a view: the column leaves the board live, and the document stays exactly where it is, re-pinnable with `--pinned true`.",
+        "Reorder a board's columns, or drop one: the list is the board's, in display order, and it replaces the whole of it. The column leaves the board live over SSE and the view document stays exactly where it is, ready to be named by another board.",
     },
     {
-      command: "corpus doc edit doc_v1e2w3 --order 1.5 --from agent",
+      command: "corpus doc edit doc_b0a1r2d3 --order 1.5 --from agent",
       description:
-        "Reorder: a midpoint lands the column between the first and second without renumbering the rest of the board.",
+        "Reorder the board bar: a midpoint lands this board between the first and second without renumbering the rest.",
+    },
+    {
+      command: "corpus doc edit doc_a1b2c3 --stage doing --from agent",
+      description:
+        "Move a document along a kanban. If the board's `kanban.status` map couples that stage to a status, the status is written in the same commit and the second line of the output says so, naming the board that decided.",
+    },
+    {
+      command: "corpus doc edit doc_v1e2w3 --unset pinned --unset order --from agent",
+      description:
+        "The SPEC.md §2.4 migration `corpus upgrade` names for a view written before rider 2: drop the two keys the tool has stopped reading. Keys are named as the file writes them, and removing one the document does not carry is a no-op.",
     },
     {
       command: 'corpus doc edit doc_a1b2c3 --extra-json publish=\'{"target":"blog"}\'',

@@ -38,15 +38,6 @@ const MAX_TITLE = 60;
  */
 type DocsListQuery = NonNullable<paths["/api/docs"]["get"]["parameters"]["query"]>;
 
-/** The board's own filter, which ranked retrieval has no use for and does not accept. */
-const PINNED_FLAG: FlagSpec = {
-  name: "pinned",
-  type: "boolean",
-  description:
-    "Only documents pinned to the board as columns (SPEC.md §10) — in practice `type: view` " +
-    "documents. Selects the pinned side only.",
-};
-
 /**
  * The structural filter, and the one flag on this verb whose **name argues
  * against its meaning** (CONTRACT-042). `isParent=true` selects _roots_ —
@@ -59,12 +50,12 @@ const PINNED_FLAG: FlagSpec = {
  * (`apps/ui/src/board/query/grammar.ts`); do not "correct" either of them into
  * the other meaning.
  *
- * **A `true|false` value rather than a bare boolean**, unlike `--pinned` and
- * `--unread` above it. Those select their true side only and absent may safely
- * read as false; here `false` is a real query — the children the board's other
- * chip shows — so `true`, `false` and absent have to stay three distinct
- * answers, which is exactly what `parseTriStateBoolean` is for (`--evergreen`,
- * `--requests-agent`, `doc create --pinned`).
+ * **A `true|false` value rather than a bare boolean**, unlike `--unread` above
+ * it. That one selects its true side only and absent may safely read as false;
+ * here `false` is a real query — the children the board's other chip shows — so
+ * `true`, `false` and absent have to stay three distinct answers, which is
+ * exactly what `parseTriStateBoolean` is for (`--evergreen`,
+ * `--requests-agent`, `doc edit --default-open`).
  *
  * The `--parent`/`--is-parent true` contradiction is documented **here** and not
  * on `--parent`: that flag is shared with `corpus search`, where this one does
@@ -90,16 +81,12 @@ const IS_PARENT_FLAG: FlagSpec = {
 };
 
 /**
- * The shared filters with this verb's own two spliced into the positions they
- * are published in — `--pinned` after `--unread`, `--is-parent` after
- * `--pinned`, which is the order `GET /api/docs` publishes its parameters in. A
- * filter added to the shared list still lands on both verbs with no edit here.
+ * The shared filters with this verb's own one spliced into the position it is
+ * published in — `--is-parent` after `--unread`, which is the order
+ * `GET /api/docs` publishes its parameters in. A filter added to the shared list
+ * still lands on both verbs with no edit here.
  */
-const LIST_FILTER_FLAGS = insertFlagAfter(
-  insertFlagAfter(DOC_FILTER_FLAGS, "unread", PINNED_FLAG),
-  "pinned",
-  IS_PARENT_FLAG,
-);
+const LIST_FILTER_FLAGS = insertFlagAfter(DOC_FILTER_FLAGS, "unread", IS_PARENT_FLAG);
 
 export async function runDocList(context: WorkspaceCommandContext): Promise<void> {
   const query = collectQuery(context);
@@ -126,11 +113,11 @@ export async function runDocList(context: WorkspaceCommandContext): Promise<void
  * the route is here — a filter the agent cannot reach from the CLI is a filter
  * it has to re-implement by reading every row.
  *
- * The fourteen structured filters come from the shared module `corpus search`
+ * The fifteen structured filters come from the shared module `corpus search`
  * also uses (`../filters.ts`), because the two endpoints are contracted to take
- * the same set. What is collected here is what is genuinely this verb's: the
- * optional `q`, the board's `--pinned`, the structural `--is-parent`, and the
- * ordering and paging a ranked top-k has no use for.
+ * the same set — `--stage` among them since rider 5. What is collected here is
+ * what is genuinely this verb's: the optional `q`, the structural
+ * `--is-parent`, and the ordering and paging a ranked top-k has no use for.
  */
 function collectQuery(context: WorkspaceCommandContext): DocsListQuery {
   const { flags } = context;
@@ -153,9 +140,6 @@ function collectQuery(context: WorkspaceCommandContext): DocsListQuery {
     ...(sort === undefined ? {} : { sort }),
     ...(limit === undefined ? {} : { limit }),
     ...(offset === undefined ? {} : { offset }),
-    // Selects only its true side: absent means "no such filter", and the false
-    // side is a query the board's chips do not offer either.
-    ...(flags.boolean("pinned") ? { pinned: true } : {}),
     // `--is-parent false` *is* a query the board offers, so `false` is sent as
     // `false` rather than collapsed into absence. The contradiction with
     // `--parent` is left to the server: it owns the grammar, its `400` names the
@@ -227,8 +211,8 @@ export const listCommand: WorkspaceCommandSpec = {
         "which `--json` includes; `--sort relevance` needs this flag and is refused without it.",
     },
     // The structured filters, from the one definition `corpus search` shares,
-    // plus this verb's own two spliced back into their published positions
-    // rather than the shared list being cut in pieces.
+    // plus this verb's own one spliced back into its published position
+    // rather than the shared list being cut in two.
     ...LIST_FILTER_FLAGS,
     {
       name: "sort",
@@ -266,6 +250,13 @@ export const listCommand: WorkspaceCommandSpec = {
     {
       command: "corpus doc list --needs me --folder finance",
       description: "What wants attention inside one folder — the board's Attention view, filtered.",
+    },
+    {
+      command: 'corpus doc list --stage ",triage" --type note',
+      description:
+        "A kanban's first column in one request (SPEC.md §10): the empty element is the null " +
+        "sentinel, so this is every note in `triage` **and** every note carrying no stage at " +
+        'all. `--stage ""` on its own selects only the unstaged.',
     },
     {
       command: "corpus doc list --is-parent true",
