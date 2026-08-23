@@ -188,8 +188,8 @@
  * `SPEC.md`.
  *
  * `POST /api/boards/order` (CONTRACT-080) is derived from SPEC.md §10's rider
- * 2, signed 2026-08-22, and **§9.2 does not list it**: it joins the pending
- * amendments rather than the undocumented. The derivation is one sentence of the
+ * 2, signed 2026-08-22. **§9.2 gained a catalogue line for it on 2026-08-23**,
+ * stating only what the rider mandates; the line is unratified and says so. The derivation is one sentence of the
  * rider — "reordering boards writes `order` on every board, **in one commit**" —
  * and the deriving step is that no other route can say it. §4's commit window
  * folds one party's editing session on one document, so a `PUT` per board is a
@@ -197,12 +197,13 @@
  * carries §10's *selection* acts, which §9.2 enumerates and a reorder is not
  * one of. An act over a set with no route is an act the rider cannot have, so
  * the route is the rider. It sits after the folder acts because those are its
- * only neighbours in kind. The §9.2 bullet is the orchestrator's to draft.
+ * only neighbours in kind. The §9.2 bullet has been drafted and awaits the user.
  *
  * `POST /api/workspace/reflect` and `GET /api/workspace/reflect`
  * (CONTRACT-076) are derived from SPEC.md §7's reflection rider (rider 9,
- * signed 2026-08-22) rather than from §9.2, and **§9.2 does not list them**:
- * they join the inventory's pending amendments rather than the undocumented.
+ * signed 2026-08-22) rather than from §9.2. **§9.2 gained a catalogue line for
+ * them on 2026-08-23**, stating only what the rider mandates; it is
+ * unratified and says so.
  * The derivation is short because the rider is explicit. It says a person asks
  * for a reflection from "the board bar's Reflect control, or `corpus reflect`",
  * and a person reaches the workspace only through the server (Architecture

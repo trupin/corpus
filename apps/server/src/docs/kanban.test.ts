@@ -428,6 +428,36 @@ describe("a stage decides a status while the document is in a kanban (SPEC.md §
   });
 
   /**
+   * Raised by PR #58's third review, which noticed the fixed guard changed this
+   * case without anyone saying so: before the fix a caller who sent the *same*
+   * status the coupling was about to write got a `stage_status` warning, as a
+   * side effect of the buggy operand. Now they get silence.
+   *
+   * Silence is the reading taken, and this test is what pins it. §11's rationale
+   * for the warning is "a status a caller neither sent nor was told about" — a
+   * caller who sent it was told by their own request. Rider 2's "named in the
+   * response" is read as governing what the caller did not ask for. The other
+   * reading is defensible; if it is ever preferred, this test is the one to
+   * change, deliberately, rather than to discover.
+   */
+  it("says nothing when the caller sent the very status the coupling would write", async () => {
+    ws = createWriteWorkspace("kanban-status-agrees");
+    await board(ws, {
+      title: "K",
+      stages: ["triage", "done"],
+      status: { done: "resolved" },
+    });
+    const doc = await createDoc(ws, { type: "note", title: "Task", stage: "triage" });
+    ws.advance(60_000);
+
+    const response = await putDoc(ws, doc.id, { stage: "done", status: "resolved" });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { warnings: { code: string }[] };
+    expect(payload.warnings.map((entry) => entry.code)).not.toContain("stage_status");
+    expect(statusOf(ws, doc.path)).toBe("status: resolved");
+  });
+
+  /**
    * §10, rider 6: "the server does not enforce transitions, it enforces the
    * status map". Skipping the graph is exactly how a person or the CLI moves a
    * document a drag cannot.
